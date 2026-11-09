@@ -109,10 +109,10 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
           </template>
         </UTabs>
       </aside>
-      <!-- Hidden, not unmounted, in Data mode so the canvas does not reload. -->
+      <!-- Hidden, not unmounted, in Data mode so the canvas does not reload. The canvas zooms and pans edge to edge. -->
       <main
         v-show="editor.mode !== 'data'"
-        class="min-w-0 flex-1 bg-muted p-4"
+        class="min-w-0 flex-1 bg-muted"
       >
         <EditorNodeMenu class="size-full">
           <EditorCanvas @key="message => editor.shortcut(message.key, message.meta, message.shift)" />

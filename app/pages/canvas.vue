@@ -10,6 +10,7 @@ import type { DropTarget } from '#shared/editor/dropTarget'
 import type { StylePatch } from '#shared/editor/preview'
 import { previewTree, settlePreviews } from '#shared/editor/preview'
 import { breakpointAt, DRAG_MIME, draggedNodeId, dropPosition, laysOutInRow, resolveDrop } from '#shared/editor/dropTarget'
+import { FRAME_MIN_HEIGHT, wheelPixels, zoomShortcut } from '#shared/editor/viewport'
 
 /**
  * The editor canvas, loaded in an iframe. It renders whatever page the
@@ -21,6 +22,9 @@ import { breakpointAt, DRAG_MIME, draggedNodeId, dropPosition, laysOutInRow, res
  * selects the template, while outlines and drops stay on the first copy.
  * Style previews from the editor render over the page until it clears them
  * or a render shows their values (committed), so a commit never flickers.
+ * The editor shows one canvas per device frame, as tall as its content
+ * (reported on resize), and zooms and pans them itself: wheel, middle-drag
+ * and space are forwarded. Only the active frame labels the selection.
  */
 definePageMeta({ layout: false })
 
@@ -32,6 +36,10 @@ useTheme(theme)
 const view = ref<CanvasView>('page')
 const selectedId = ref<string | null>(null)
 const hoveredId = ref<string | null>(null)
+const active = ref(true)
+/** The editor's zoom; outlines and the selection label are scaled back to keep their screen size. */
+const zoom = ref(1)
+const root = useTemplateRef<HTMLDivElement>('root')
 /** Uncommitted style patches by node id. */
 const previews = shallowRef<Record<string, StylePatch>>({})
 const shownPage = computed(() => {
@@ -85,7 +93,9 @@ function onMessage(event: MessageEvent) {
     view.value = message.view
   } else if (message.type === 'bildr:select') {
     selectedId.value = message.nodeId
-    if (message.nodeId) firstCopy(message.nodeId)?.scrollIntoView({ block: 'nearest' })
+  } else if (message.type === 'bildr:active') {
+    active.value = message.active
+    zoom.value = message.zoom
   } else if (message.type === 'bildr:hover') {
     hoveredId.value = message.nodeId
   } else if (message.type === 'bildr:preview') {
@@ -114,8 +124,41 @@ function onClick(event: MouseEvent) {
   if (id) post({ type: 'bildr:click', nodeId: id })
 }
 
+/** The last pointer position of a middle-button pan, in screen pixels (zoom-independent). */
+let pan: { x: number, y: number } | null = null
+
 function onMouseDown(event: MouseEvent) {
   event.preventDefault()
+  if (event.button === 1 && view.value === 'page') pan = { x: event.screenX, y: event.screenY }
+}
+
+function onPanMove(event: MouseEvent) {
+  if (!pan) return
+  post({ type: 'bildr:pan', dx: event.screenX - pan.x, dy: event.screenY - pan.y })
+  pan = { x: event.screenX, y: event.screenY }
+}
+
+function onMouseUp() {
+  pan = null
+}
+
+/** A middle click would open a link in a new tab. */
+function onAuxClick(event: MouseEvent) {
+  event.preventDefault()
+}
+
+// The token sheet scrolls itself; the page view is zoomed and panned by the editor.
+function onWheel(event: WheelEvent) {
+  if (view.value !== 'page') return
+  event.preventDefault()
+  post({
+    type: 'bildr:wheel',
+    dx: wheelPixels(event.deltaX, event.deltaMode),
+    dy: wheelPixels(event.deltaY, event.deltaMode),
+    zoom: event.ctrlKey || event.metaKey,
+    x: event.clientX,
+    y: event.clientY
+  })
 }
 
 /** A right-click opens the editor's node menu; the editor places it over the iframe. */
@@ -128,10 +171,27 @@ function onContextMenu(event: MouseEvent) {
 const SHORTCUT_KEYS = new Set(['Delete', 'Backspace', 'Escape'])
 function onKeyDown(event: KeyboardEvent) {
   const meta = event.metaKey || event.ctrlKey
-  if (!SHORTCUT_KEYS.has(event.key) && !(meta && ['z', 'y', 'd'].includes(event.key.toLowerCase()))) return
+  if (event.code === 'Space' && view.value === 'page') {
+    event.preventDefault()
+    if (!event.repeat) post({ type: 'bildr:space', down: true })
+    return
+  }
+  const zoom = zoomShortcut({ code: event.code, key: event.key, meta, shift: event.shiftKey })
+  if (!zoom && !SHORTCUT_KEYS.has(event.key) && !(meta && ['z', 'y', 'd'].includes(event.key.toLowerCase()))) return
   event.preventDefault()
-  post({ type: 'bildr:key', key: event.key, meta, shift: event.shiftKey })
+  post({ type: 'bildr:key', key: event.key, code: event.code, meta, shift: event.shiftKey })
 }
+
+function onKeyUp(event: KeyboardEvent) {
+  if (event.code !== 'Space' || view.value !== 'page') return
+  event.preventDefault()
+  post({ type: 'bildr:space', down: false })
+}
+
+// The editor sizes the frame to the content, so the page never scrolls inside it.
+const sizeObserver = import.meta.client
+  ? new ResizeObserver(() => view.value === 'page' && post({ type: 'bildr:size', height: Math.ceil(root.value?.offsetHeight ?? 0) }))
+  : null
 
 /** The drop slot under the pointer, plus where to draw it. */
 function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } | null {
@@ -201,8 +261,14 @@ onMounted(() => {
   document.addEventListener('mousedown', onMouseDown, true)
   document.addEventListener('contextmenu', onContextMenu, true)
   document.addEventListener('keydown', onKeyDown)
+  document.addEventListener('keyup', onKeyUp)
+  document.addEventListener('mousemove', onPanMove)
+  document.addEventListener('mouseup', onMouseUp)
+  document.addEventListener('auxclick', onAuxClick, true)
+  document.addEventListener('wheel', onWheel, { passive: false })
   frame = requestAnimationFrame(track)
   post({ type: 'bildr:ready' })
+  if (root.value) sizeObserver?.observe(root.value)
 })
 
 onBeforeUnmount(() => {
@@ -217,12 +283,23 @@ onBeforeUnmount(() => {
   document.removeEventListener('mousedown', onMouseDown, true)
   document.removeEventListener('contextmenu', onContextMenu, true)
   document.removeEventListener('keydown', onKeyDown)
+  document.removeEventListener('keyup', onKeyUp)
+  document.removeEventListener('mousemove', onPanMove)
+  document.removeEventListener('mouseup', onMouseUp)
+  document.removeEventListener('auxclick', onAuxClick, true)
+  document.removeEventListener('wheel', onWheel)
+  sizeObserver?.disconnect()
   cancelAnimationFrame(frame)
 })
 </script>
 
 <template>
-  <div class="relative min-h-screen">
+  <div
+    ref="root"
+    class="relative"
+    :class="{ 'min-h-screen': view === 'tokens' }"
+    :style="view === 'page' ? { minHeight: `${FRAME_MIN_HEIGHT}px` } : undefined"
+  >
     <EditorTokenSheet v-if="view === 'tokens'" />
     <BildrPage
       v-else-if="shownPage"
@@ -230,19 +307,20 @@ onBeforeUnmount(() => {
       :base="base"
       :lists="lists"
       editable
-      class="min-h-screen"
+      :style="{ minHeight: `${FRAME_MIN_HEIGHT}px` }"
     />
     <div
       v-for="(box, kind) in boxes"
       v-show="box"
       :key="kind"
-      class="pointer-events-none absolute z-50 rounded-sm outline-2 -outline-offset-1"
-      :class="kind === 'selected' ? 'outline-blue-500' : 'outline-dashed outline-blue-500/60'"
-      :style="box ? { top: `${box.top}px`, left: `${box.left}px`, width: `${box.width}px`, height: `${box.height}px` } : undefined"
+      class="pointer-events-none absolute z-50 rounded-sm"
+      :class="kind === 'selected' ? 'outline-solid outline-blue-500' : 'outline-dashed outline-blue-500/60'"
+      :style="box ? { top: `${box.top}px`, left: `${box.left}px`, width: `${box.width}px`, height: `${box.height}px`, outlineWidth: `${2 / zoom}px`, outlineOffset: `${-1 / zoom}px` } : undefined"
     >
       <span
-        v-if="kind === 'selected' && box"
-        class="absolute -top-5 left-0 rounded-t-sm bg-blue-500 px-1.5 text-[10px] leading-5 text-white"
+        v-if="kind === 'selected' && box && active"
+        class="absolute bottom-full left-0 origin-bottom-left rounded-t-sm bg-blue-500 px-1.5 text-[10px] leading-5 whitespace-nowrap text-white"
+        :style="{ transform: `scale(${1 / zoom})` }"
       >{{ box.label }}</span>
     </div>
     <div

@@ -51,7 +51,7 @@ async function publish() {
 
     <UTooltip
       v-if="editor.mode !== 'data'"
-      :text="`${editor.device.label} · ${editor.device.width}px; styles edit ${editor.device.breakpoint ? `${editor.device.breakpoint}:` : 'the base'}`"
+      :text="`Active frame: ${editor.device.label} · ${editor.device.width}px; styles edit ${editor.device.breakpoint ? `${editor.device.breakpoint}:` : 'the base'}`"
     >
       <EditorSegmented
         :items="devices"

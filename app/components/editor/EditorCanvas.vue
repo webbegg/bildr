@@ -1,41 +1,229 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui'
 import type { CanvasToEditor, CanvasView, EditorToCanvas } from '#shared/editor/protocol'
 import { isCanvasMessage } from '#shared/editor/protocol'
 import { createThrottle, PREVIEW_INTERVAL } from '#shared/editor/preview'
+import type { DeviceId } from '#shared/editor/styleFields'
+import { DEVICES } from '#shared/editor/styleFields'
+import type { Point, Viewport, ZoomCommand } from '#shared/editor/viewport'
+import { boundsOf, fitView, FRAME_GAP, FRAME_MIN_HEIGHT, layoutFrames, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
+/**
+ * The editor canvas. The page view is a Figma-style infinite surface showing
+ * one frame per device side by side, each a `/canvas` iframe at the device's
+ * native width (so `md:`/`lg:` match it) and as tall as its content, all
+ * scaled by one zoom/pan transform. Every frame gets the same messages, so
+ * selection, hover and previews show in all of them; the active frame is
+ * `editor.device`, the breakpoint the style panel edits. Wheel pans,
+ * Cmd/Ctrl + wheel or pinch zooms around the pointer, space- or middle-drag
+ * pans; the iframes forward those gestures. The `tokens` view is one plain
+ * iframe with the theme's token preview sheet.
+ */
 const { view = 'page' } = defineProps<{ view?: CanvasView }>()
 const editor = useEditor()
-const frame = useTemplateRef<HTMLIFrameElement>('frame')
+const emit = defineEmits<{ key: [message: Extract<CanvasToEditor, { type: 'bildr:key' }>] }>()
 const stage = useTemplateRef<HTMLDivElement>('stage')
+const tokenFrame = useTemplateRef<HTMLIFrameElement>('tokenFrame')
 
-// The page view is as wide as the editor's device, so the canvas media queries
-// (`md:`, `lg:`) match it; a device wider than the stage is scaled down to fit.
+/** The mounted frame iframes by device; null keys the token preview. */
+const frames = new Map<DeviceId | null, HTMLIFrameElement>()
+function frameRef(id: DeviceId) {
+  return (el: unknown) => {
+    if (el) frames.set(id, el as HTMLIFrameElement)
+    else frames.delete(id)
+  }
+}
+
+const FRAMES_KEY = 'bildr:canvas-frames'
+/** All frames, or only the active one (small screens, performance); remembered across reloads. */
+const singleFrame = ref(view === 'page' && localStorage.getItem(FRAMES_KEY) === 'single')
+const heights = reactive<Partial<Record<DeviceId, number>>>({})
+const shownDevices = computed(() => (singleFrame.value ? [editor.device] : DEVICES))
+const layout = computed(() => {
+  const rects = layoutFrames(shownDevices.value.map(d => ({ width: d.width, height: Math.max(FRAME_MIN_HEIGHT, heights[d.id] ?? 0) })), FRAME_GAP)
+  return shownDevices.value.map((device, i) => ({ device, rect: rects[i]! }))
+})
+
+const viewport = ref<Viewport>({ x: 0, y: 0, zoom: 1 })
 const stageSize = reactive({ width: 0, height: 0 })
 const observer = import.meta.client
   ? new ResizeObserver(([entry]) => Object.assign(stageSize, { width: entry!.contentRect.width, height: entry!.contentRect.height }))
   : null
-const frameStyle = computed(() => {
-  const width = editor.device.width
-  const scale = stageSize.width ? Math.min(1, stageSize.width / width) : 1
-  return { width: `${width}px`, height: `${stageSize.height / scale}px`, transform: `translateX(-50%) scale(${scale})` }
-})
-const emit = defineEmits<{ key: [message: Extract<CanvasToEditor, { type: 'bildr:key' }>] }>()
+/** Room around fitted content, in screen px; the frame labels sit in it. */
+const FIT_PADDING = 48
+/** Until the user zooms or pans, the view keeps fitting the frames as they load and grow. */
+let autoFit = true
 
-function post(message: EditorToCanvas) {
+function fit() {
+  viewport.value = fitView(boundsOf(layout.value.map(f => f.rect)), stageSize, FIT_PADDING)
+}
+
+watch([layout, () => stageSize.width, () => stageSize.height], () => {
+  if (autoFit && stageSize.width) fit()
+})
+
+function zoomTo(zoom: number, at: Point = { x: stageSize.width / 2, y: stageSize.height / 2 }) {
+  autoFit = false
+  viewport.value = zoomAround(viewport.value, zoom, at)
+}
+
+function zoomCommand(command: ZoomCommand) {
+  autoFit = false
+  if (command === 'fit') fit()
+  else if (command === 'reset') zoomTo(1)
+  else zoomTo(stepZoom(viewport.value.zoom, command === 'in' ? 1 : -1))
+}
+
+function panBy(dx: number, dy: number) {
+  autoFit = false
+  viewport.value = { ...viewport.value, x: viewport.value.x + dx, y: viewport.value.y + dy }
+}
+
+/** A wheel at a stage point: Cmd/Ctrl (or a pinch) zooms around it, else it pans. */
+function wheel(dx: number, dy: number, zoom: boolean, at: Point) {
+  if (zoom) zoomTo(wheelZoom(viewport.value.zoom, dy), at)
+  else panBy(-dx, -dy)
+}
+
+function stagePoint(clientX: number, clientY: number): Point {
+  const rect = stage.value!.getBoundingClientRect()
+  return { x: clientX - rect.left, y: clientY - rect.top }
+}
+
+function onStageWheel(event: WheelEvent) {
+  event.preventDefault()
+  wheel(wheelPixels(event.deltaX, event.deltaMode), wheelPixels(event.deltaY, event.deltaMode), event.ctrlKey || event.metaKey, stagePoint(event.clientX, event.clientY))
+}
+
+/** A wheel forwarded by a frame, at its canvas coordinates. */
+function onFrameWheel(el: HTMLIFrameElement, { dx, dy, zoom, x, y }: Extract<CanvasToEditor, { type: 'bildr:wheel' }>) {
+  const rect = el.getBoundingClientRect()
+  wheel(dx, dy, zoom, stagePoint(rect.left + x * viewport.value.zoom, rect.top + y * viewport.value.zoom))
+}
+
+// Space held shows a grab layer over the frames, so the drag lands in the editor, not in a canvas.
+const spaceHeld = ref(false)
+const panning = ref(false)
+const pointerInStage = ref(false)
+
+function onStagePointerDown(event: PointerEvent) {
+  if (event.button !== 1 && !(event.button === 0 && spaceHeld.value)) return
+  event.preventDefault()
+  const target = event.currentTarget as HTMLElement
+  target.setPointerCapture(event.pointerId)
+  let last = { x: event.clientX, y: event.clientY }
+  panning.value = true
+  const move = (e: PointerEvent) => {
+    panBy(e.clientX - last.x, e.clientY - last.y)
+    last = { x: e.clientX, y: e.clientY }
+  }
+  const up = () => {
+    panning.value = false
+    target.removeEventListener('pointermove', move)
+    target.removeEventListener('pointerup', up)
+    target.removeEventListener('pointercancel', up)
+  }
+  target.addEventListener('pointermove', move)
+  target.addEventListener('pointerup', up)
+  target.addEventListener('pointercancel', up)
+}
+
+function isEditable(target: EventTarget | null): boolean {
+  return !!(target as HTMLElement | null)?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]')
+}
+
+function onWindowKeyDown(event: KeyboardEvent) {
+  if (editor.mode === 'data' || isEditable(event.target)) return
+  if (event.code === 'Space') {
+    if (!pointerInStage.value && !spaceHeld.value) return
+    event.preventDefault()
+    spaceHeld.value = true
+    return
+  }
+  const command = zoomShortcut({ code: event.code, key: event.key, meta: event.metaKey || event.ctrlKey, shift: event.shiftKey })
+  if (!command) return
+  event.preventDefault()
+  zoomCommand(command)
+}
+
+function onWindowKeyUp(event: KeyboardEvent) {
+  if (event.code !== 'Space' || !spaceHeld.value) return
+  event.preventDefault()
+  spaceHeld.value = false
+}
+
+const zoomItems = computed<DropdownMenuItem[][]>(() => [
+  [
+    { label: 'Zoom in', icon: 'i-lucide-zoom-in', kbds: ['meta', '+'], onSelect: () => zoomCommand('in') },
+    { label: 'Zoom out', icon: 'i-lucide-zoom-out', kbds: ['meta', '-'], onSelect: () => zoomCommand('out') }
+  ],
+  [
+    { label: 'Zoom to fit', kbds: ['shift', '1'], onSelect: () => zoomCommand('fit') },
+    { label: 'Zoom to 50%', onSelect: () => zoomTo(0.5) },
+    { label: 'Zoom to 100%', kbds: ['shift', '0'], onSelect: () => zoomTo(1) },
+    { label: 'Zoom to 200%', onSelect: () => zoomTo(2) }
+  ],
+  [
+    { label: 'All frames', type: 'checkbox', checked: !singleFrame.value, onUpdateChecked: () => setSingleFrame(false) },
+    { label: 'Active frame only', type: 'checkbox', checked: singleFrame.value, onUpdateChecked: () => setSingleFrame(true) }
+  ]
+])
+
+function setSingleFrame(value: boolean) {
+  singleFrame.value = value
+  localStorage.setItem(FRAMES_KEY, value ? 'single' : 'all')
+  autoFit = true
+}
+
+// In single-frame mode another active frame is another frame to fit.
+watch(() => editor.deviceId, () => {
+  if (singleFrame.value) autoFit = true
+})
+
+function activate(id: DeviceId | null) {
+  if (id) editor.deviceId = id
+}
+
+function frameTitle(id: DeviceId, label: string): string {
+  // The active frame keeps the plain "Canvas" title the e2e scripts and assistive tech look for.
+  return id === editor.deviceId ? 'Canvas' : `Canvas ${label}`
+}
+
+function post(el: HTMLIFrameElement, message: EditorToCanvas) {
   // The document lives in reactive proxies, which postMessage cannot clone.
-  frame.value?.contentWindow?.postMessage(JSON.parse(JSON.stringify(message)), window.location.origin)
+  el.contentWindow?.postMessage(JSON.parse(JSON.stringify(message)), window.location.origin)
+}
+
+function broadcast(message: EditorToCanvas) {
+  for (const el of frames.values()) post(el, message)
+}
+
+function renderMessage(): EditorToCanvas | null {
+  if (!editor.page || !editor.project || !editor.theme) return null
+  return { type: 'bildr:render', page: editor.page, base: `/p/${editor.project.slug}`, theme: editor.theme, view, lists: editor.lists }
 }
 
 function render() {
-  if (!editor.page || !editor.project || !editor.theme) return
-  post({ type: 'bildr:render', page: editor.page, base: `/p/${editor.project.slug}`, theme: editor.theme, view, lists: editor.lists })
-  post({ type: 'bildr:select', nodeId: editor.selectedId })
+  const message = renderMessage()
+  if (!message) return
+  broadcast(message)
+  broadcast({ type: 'bildr:select', nodeId: editor.selectedId })
 }
 
-/** Replays a canvas right-click on the iframe, in editor coordinates, for an enclosing EditorNodeMenu. */
-function openNodeMenu({ nodeId, x, y }: Extract<CanvasToEditor, { type: 'bildr:contextmenu' }>) {
-  const el = frame.value
-  if (!el) return
+/** Brings a frame that just loaded up to date with the others. */
+function sync(id: DeviceId | null, el: HTMLIFrameElement) {
+  const message = renderMessage()
+  if (!message) return
+  post(el, message)
+  post(el, { type: 'bildr:select', nodeId: editor.selectedId })
+  post(el, { type: 'bildr:hover', nodeId: editor.hoveredId })
+  if (id) post(el, { type: 'bildr:active', active: id === editor.deviceId, zoom: viewport.value.zoom })
+  const preview = editor.stylePreview
+  if (preview) post(el, { type: 'bildr:preview', nodeId: preview.nodeId, style: preview.style })
+}
+
+/** Replays a canvas right-click on its iframe, in editor coordinates, for an enclosing EditorNodeMenu. */
+function openNodeMenu(el: HTMLIFrameElement, { nodeId, x, y }: Extract<CanvasToEditor, { type: 'bildr:contextmenu' }>) {
   const rect = el.getBoundingClientRect()
   const scale = el.offsetWidth ? rect.width / el.offsetWidth : 1
   const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: rect.left + x * scale, clientY: rect.top + y * scale })
@@ -43,22 +231,39 @@ function openNodeMenu({ nodeId, x, y }: Extract<CanvasToEditor, { type: 'bildr:c
 }
 
 function onMessage(event: MessageEvent) {
-  if (event.source !== frame.value?.contentWindow || !isCanvasMessage<CanvasToEditor>(event.data)) return
+  const [id, el] = [...frames].find(([, frame]) => frame.contentWindow === event.source) ?? []
+  if (!el || !isCanvasMessage<CanvasToEditor>(event.data)) return
   const message = event.data
-  if (message.type === 'bildr:ready') render()
+  if (message.type === 'bildr:ready') sync(id ?? null, el)
   else if (message.type === 'bildr:hover') editor.hoveredId = message.nodeId
-  else if (message.type === 'bildr:click') editor.selectedId = message.nodeId
-  else if (message.type === 'bildr:key') emit('key', message)
-  else if (message.type === 'bildr:contextmenu') openNodeMenu(message)
-  else if (message.type === 'bildr:drop') editor.drop(message.payload, { parentId: message.parentId, index: message.index })
+  else if (message.type === 'bildr:click') {
+    editor.selectedId = message.nodeId
+    activate(id ?? null)
+  } else if (message.type === 'bildr:key') {
+    const command = view === 'page' ? zoomShortcut(message) : null
+    if (command) zoomCommand(command)
+    else emit('key', message)
+  } else if (message.type === 'bildr:contextmenu') {
+    activate(id ?? null)
+    openNodeMenu(el, message)
+  } else if (message.type === 'bildr:drop') {
+    activate(id ?? null)
+    editor.drop(message.payload, { parentId: message.parentId, index: message.index })
+  } else if (id && message.type === 'bildr:size') heights[id] = message.height
+  else if (id && message.type === 'bildr:wheel') onFrameWheel(el, message)
+  else if (id && message.type === 'bildr:pan') panBy(message.dx, message.dy)
+  else if (id && message.type === 'bildr:space') spaceHeld.value = message.down
 }
 
 watch(() => [editor.page, editor.theme, editor.lists], render, { deep: true })
-watch(() => editor.selectedId, nodeId => post({ type: 'bildr:select', nodeId }))
-watch(() => editor.hoveredId, nodeId => post({ type: 'bildr:hover', nodeId }))
+watch(() => editor.selectedId, nodeId => broadcast({ type: 'bildr:select', nodeId }))
+watch(() => editor.hoveredId, nodeId => broadcast({ type: 'bildr:hover', nodeId }))
+watch([() => editor.deviceId, () => viewport.value.zoom], ([deviceId, zoom]) => {
+  for (const [id, el] of frames) if (id) post(el, { type: 'bildr:active', active: id === deviceId, zoom })
+})
 
 // Style previews move with a drag, so they are throttled; a clear goes at once and drops any pending one.
-const previews = createThrottle<Extract<EditorToCanvas, { type: 'bildr:preview' }>>(post, PREVIEW_INTERVAL)
+const previews = createThrottle<Extract<EditorToCanvas, { type: 'bildr:preview' }>>(broadcast, PREVIEW_INTERVAL)
 // After the render watcher, so a commit's clear always follows the render that shows the committed value.
 watch(() => editor.stylePreview, (next, prev) => {
   if (prev && prev.nodeId !== next?.nodeId) previews.flush({ type: 'bildr:preview', nodeId: prev.nodeId, style: null })
@@ -67,10 +272,18 @@ watch(() => editor.stylePreview, (next, prev) => {
 
 onMounted(() => {
   window.addEventListener('message', onMessage)
+  if (view === 'tokens') {
+    if (tokenFrame.value) frames.set(null, tokenFrame.value)
+    return
+  }
+  window.addEventListener('keydown', onWindowKeyDown)
+  window.addEventListener('keyup', onWindowKeyUp)
   if (stage.value) observer?.observe(stage.value)
 })
 onBeforeUnmount(() => {
   window.removeEventListener('message', onMessage)
+  window.removeEventListener('keydown', onWindowKeyDown)
+  window.removeEventListener('keyup', onWindowKeyUp)
   observer?.disconnect()
 })
 </script>
@@ -78,7 +291,7 @@ onBeforeUnmount(() => {
 <template>
   <iframe
     v-if="view === 'tokens'"
-    ref="frame"
+    ref="tokenFrame"
     src="/canvas"
     title="Token preview"
     class="size-full rounded-lg bg-white shadow-sm ring ring-default"
@@ -86,15 +299,68 @@ onBeforeUnmount(() => {
   <div
     v-else
     ref="stage"
-    class="relative size-full overflow-hidden"
+    class="relative size-full overflow-clip select-none"
+    data-canvas-stage
+    @wheel="onStageWheel"
+    @pointerdown="onStagePointerDown"
+    @pointerenter="pointerInStage = true"
+    @pointerleave="pointerInStage = false"
   >
-    <iframe
-      ref="frame"
-      src="/canvas"
-      title="Canvas"
-      :data-device="editor.device.id"
-      class="absolute top-0 left-1/2 origin-top rounded-lg bg-white shadow-sm ring ring-default"
-      :style="frameStyle"
+    <div
+      class="absolute top-0 left-0 origin-top-left"
+      :style="{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})` }"
+      data-canvas-content
+    >
+      <div
+        v-for="{ device, rect } in layout"
+        :key="device.id"
+        class="absolute"
+        :style="{ left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
+        :data-frame="device.id"
+        :data-active="device.id === editor.deviceId || undefined"
+      >
+        <!-- Labels and the active outline keep their screen size at any zoom. -->
+        <button
+          type="button"
+          class="absolute bottom-full left-0 origin-bottom-left pb-1.5 text-[11px] whitespace-nowrap"
+          :class="device.id === editor.deviceId ? 'text-(--editor-selection)' : 'text-muted hover:text-default'"
+          :style="{ transform: `scale(${1 / viewport.zoom})` }"
+          data-frame-label
+          @click="activate(device.id)"
+        >
+          {{ device.label }} · {{ device.width }}
+        </button>
+        <iframe
+          :ref="frameRef(device.id)"
+          src="/canvas"
+          :title="frameTitle(device.id, device.label)"
+          :data-device="device.id"
+          class="block size-full bg-white"
+          :style="device.id === editor.deviceId ? { outline: `${2 / viewport.zoom}px solid var(--editor-selection)` } : undefined"
+        />
+      </div>
+    </div>
+    <div
+      v-if="spaceHeld || panning"
+      class="absolute inset-0 z-10"
+      :class="panning ? 'cursor-grabbing' : 'cursor-grab'"
+      data-pan-layer
     />
+    <UDropdownMenu
+      :items="zoomItems"
+      size="sm"
+      :content="{ side: 'top', align: 'end' }"
+    >
+      <UButton
+        :label="`${Math.round(viewport.zoom * 100)}%`"
+        trailing-icon="i-lucide-chevron-up"
+        color="neutral"
+        variant="soft"
+        size="xs"
+        class="absolute right-3 bottom-3 z-20 tabular-nums"
+        aria-label="Zoom"
+        data-zoom-menu
+      />
+    </UDropdownMenu>
   </div>
 </template>
