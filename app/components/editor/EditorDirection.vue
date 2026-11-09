@@ -61,6 +61,7 @@ onBeforeUnmount(() => document.removeEventListener('focusin', onFocusIn))
     <EditorSegmented
       class="flex-1"
       tooltips
+      dense
       :items="segments"
       :model-value="axis(value)"
       :inherited="axis(inherited)"
@@ -78,7 +79,7 @@ onBeforeUnmount(() => document.removeEventListener('focusin', onFocusIn))
       </template>
       <button
         type="button"
-        class="grid h-7 w-6 shrink-0 place-items-center rounded-md bg-muted text-dimmed hover:text-highlighted"
+        class="grid h-6 w-6 shrink-0 place-items-center rounded-[5px] bg-elevated text-dimmed hover:text-highlighted"
         aria-label="More direction options"
       >
         <UIcon

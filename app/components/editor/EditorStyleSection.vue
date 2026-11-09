@@ -1,29 +1,39 @@
 <script setup lang="ts">
 /**
- * A collapsible style section header (Stacki's SectionBlock). Closed, a dot
- * says what is inside: blue when the device sets a value, orange when it only
- * inherits. The parent owns `open`, so Shift-click can toggle every section.
- * The `actions` slot puts quick actions in the header, next to the chevron.
+ * A collapsible panel section with a Figma UI3 header: the title, then its
+ * actions (such as Fill's "+") on the right. Closed, a dot says what is
+ * inside: blue when the device sets a value, orange when it only inherits.
+ * The parent owns `open`, so Shift-click can toggle every section. An `empty`
+ * section (a Fill with no fill) is a header only.
  */
-defineProps<{ label: string, open: boolean, mark?: 'set' | 'inherited' }>()
+defineProps<{ label: string, open: boolean, mark?: 'set' | 'inherited', empty?: boolean }>()
 const emit = defineEmits<{ toggle: [event: MouseEvent] }>()
 </script>
 
 <template>
   <section
-    class="border-b border-default"
+    class="group/section border-b border-default"
     :data-style-section="label"
     :data-open="open || undefined"
   >
-    <div class="flex h-9 items-center gap-1 pe-3">
+    <div class="flex h-9 items-center gap-0.5 pe-2">
       <button
         type="button"
-        class="flex h-full min-w-0 flex-1 items-center gap-2 ps-3 text-left"
+        class="flex h-full min-w-0 flex-1 items-center gap-1.5 ps-3 text-left"
         :aria-expanded="open"
         :title="`${open ? 'Collapse' : 'Expand'} ${label} (Shift-click: all sections)`"
         @click="emit('toggle', $event)"
       >
-        <span class="flex-1 text-xs font-semibold text-highlighted">{{ label }}</span>
+        <span
+          class="text-[11px] font-semibold"
+          :class="empty ? 'text-muted' : 'text-highlighted'"
+        >{{ label }}</span>
+        <UIcon
+          name="i-lucide-chevron-down"
+          class="size-3 shrink-0 text-dimmed transition-transform"
+          :class="open ? 'opacity-0 group-hover/section:opacity-100' : '-rotate-90'"
+          aria-hidden="true"
+        />
         <span
           v-if="!open && mark"
           class="size-1.5 shrink-0 rounded-full"
@@ -33,21 +43,11 @@ const emit = defineEmits<{ toggle: [event: MouseEvent] }>()
           :aria-label="mark === 'set' ? `${label} has values on this device` : `${label} inherits values from a smaller device`"
         />
       </button>
-      <slot
-        v-if="open"
-        name="actions"
-      />
-      <UIcon
-        name="i-lucide-chevron-down"
-        class="size-3.5 shrink-0 cursor-pointer text-dimmed transition-transform"
-        :class="{ '-rotate-90': !open }"
-        aria-hidden="true"
-        @click="emit('toggle', $event)"
-      />
+      <slot name="actions" />
     </div>
     <div
-      v-if="open"
-      class="space-y-1.5 px-3 pb-3"
+      v-if="open && !empty"
+      class="space-y-2 px-3 pb-3"
     >
       <slot />
     </div>

@@ -1,15 +1,19 @@
 <script setup lang="ts">
 /**
  * A text field that commits on change (blur or Enter) rather than on every
- * keystroke, so each edit is a single undo step.
+ * keystroke, so each edit is a single undo step. The `soft` variant is the
+ * borderless Figma field of the right panel.
  */
-const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm' }>(), { size: 'sm' })
+const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft' }>(), { size: 'sm', variant: 'outline' })
 const emit = defineEmits<{ commit: [value: string] }>()
 
 const draft = ref(props.modelValue)
 watch(() => props.modelValue, (value) => {
   draft.value = value
 })
+
+// The soft field is the panel's 24 px Figma field.
+const ui = computed(() => (props.variant === 'soft' ? { base: props.multiline ? 'rounded-[5px] text-[11px]' : 'h-6 rounded-[5px] text-[11px]' } : undefined))
 
 function commit() {
   if (draft.value !== props.modelValue) emit('commit', draft.value)
@@ -24,6 +28,8 @@ function commit() {
     :rows="3"
     autoresize
     :size="size"
+    :variant="variant"
+    :ui="ui"
     class="w-full"
     @change="commit"
   />
@@ -32,6 +38,8 @@ function commit() {
     v-model="draft"
     :placeholder="placeholder"
     :size="size"
+    :variant="variant"
+    :ui="ui"
     class="w-full"
     @change="commit"
     @keydown.esc="draft = modelValue"

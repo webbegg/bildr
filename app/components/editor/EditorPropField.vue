@@ -4,10 +4,10 @@ import type { Provenance } from '#shared/editor/styleFields'
 import { enclosingForm, FORM_TYPE } from '#shared/runtime/form'
 
 /**
- * One Settings row: a label pill (accent when the prop differs from the
- * component default; click for Reset to default, Alt-click resets) and the
- * control for the prop's kind. Controls carry the prop label as their
- * accessible name.
+ * One Settings row in the Figma field style: a compact caption (blue when the
+ * prop differs from the component default; click for Reset to default,
+ * Alt-click resets) and the borderless control for the prop's kind. Controls
+ * carry the prop label as their accessible name.
  */
 const props = defineProps<{ def: PropDef, value: PropValue, changed: boolean }>()
 const emit = defineEmits<{ update: [value: PropValue], reset: [] }>()
@@ -60,15 +60,18 @@ function onLinkMode(mode: string) {
   if (mode === EXTERNAL) return
   emit('update', mode === NONE ? '' : mode)
 }
+
+// The 24 px Figma field.
+const SELECT_UI = { base: 'h-6 rounded-[5px] text-[11px]', trailingIcon: 'size-3 text-dimmed' }
 </script>
 
 <template>
   <div
-    class="grid min-h-7 grid-cols-[84px_minmax(0,1fr)] items-start gap-2"
+    class="grid min-h-6 grid-cols-[80px_minmax(0,1fr)] items-start gap-2"
     :data-prop-row="def.name"
   >
     <div
-      class="flex h-7 min-w-0 items-center"
+      class="flex h-6 min-w-0 items-center"
       :data-field-label="def.name"
     >
       <EditorFieldLabel
@@ -87,6 +90,7 @@ function onLinkMode(mode: string) {
         :placeholder="def.kind === 'image' ? 'https://' : undefined"
         :aria-label="def.label"
         size="xs"
+        variant="soft"
         @commit="emit('update', $event)"
       />
       <EditorIconInput
@@ -94,6 +98,7 @@ function onLinkMode(mode: string) {
         :model-value="text"
         :aria-label="def.label"
         size="xs"
+        variant="soft"
         @commit="emit('update', $event)"
       />
       <UInputNumber
@@ -101,11 +106,14 @@ function onLinkMode(mode: string) {
         :model-value="Number(value)"
         :aria-label="def.label"
         size="xs"
+        variant="soft"
+        :ui="{ base: 'h-6 rounded-[5px] text-[11px]' }"
         class="w-full"
         @update:model-value="$event != null && emit('update', $event)"
       />
       <EditorSegmented
         v-else-if="def.kind === 'boolean'"
+        dense
         :model-value="String(value === true)"
         :items="BOOLEAN_ITEMS"
         :aria-label="def.label"
@@ -117,6 +125,8 @@ function onLinkMode(mode: string) {
         :items="def.options ?? []"
         :aria-label="def.label"
         size="xs"
+        variant="soft"
+        :ui="SELECT_UI"
         class="w-full"
         @update:model-value="emit('update', $event)"
       />
@@ -126,6 +136,8 @@ function onLinkMode(mode: string) {
         :items="collectionItems"
         :aria-label="def.label"
         size="xs"
+        variant="soft"
+        :ui="SELECT_UI"
         class="w-full"
         @update:model-value="emit('update', $event === NONE ? '' : $event)"
       />
@@ -135,6 +147,8 @@ function onLinkMode(mode: string) {
         :items="fieldItems"
         :aria-label="def.label"
         size="xs"
+        variant="soft"
+        :ui="SELECT_UI"
         class="w-full"
         @update:model-value="emit('update', $event === NONE ? '' : $event)"
       />
@@ -144,6 +158,7 @@ function onLinkMode(mode: string) {
         placeholder="Put this Input in a Form with a collection"
         :aria-label="def.label"
         size="xs"
+        variant="soft"
         @commit="emit('update', $event)"
       />
       <div
@@ -155,6 +170,8 @@ function onLinkMode(mode: string) {
           :items="linkItems"
           :aria-label="def.label"
           size="xs"
+          variant="soft"
+          :ui="SELECT_UI"
           class="w-full"
           @update:model-value="onLinkMode"
         />
@@ -164,6 +181,7 @@ function onLinkMode(mode: string) {
           placeholder="https://example.com"
           :aria-label="`${def.label} URL`"
           size="xs"
+          variant="soft"
           @commit="emit('update', $event)"
         />
       </div>

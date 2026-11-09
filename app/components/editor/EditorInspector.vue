@@ -193,6 +193,8 @@ function renamePage(field: 'name' | 'slug', value: string) {
           :items="devices"
           :icon="device.icon"
           size="xs"
+          variant="soft"
+          :ui="{ trailingIcon: 'size-3 text-dimmed' }"
           class="min-w-0 flex-1"
           aria-label="Breakpoint"
           data-breakpoint-select
@@ -249,6 +251,8 @@ function renamePage(field: 'name' | 'slug', value: string) {
             size="xs"
           >
             <EditorCommitInput
+              size="xs"
+              variant="soft"
               :model-value="editor.page.name"
               @commit="renamePage('name', $event)"
             />
@@ -258,6 +262,8 @@ function renamePage(field: 'name' | 'slug', value: string) {
             size="xs"
           >
             <EditorCommitInput
+              size="xs"
+              variant="soft"
               :model-value="editor.page.slug"
               @commit="renamePage('slug', $event)"
             />

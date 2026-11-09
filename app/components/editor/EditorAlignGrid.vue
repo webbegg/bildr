@@ -4,7 +4,7 @@ import { previewFocusedOption } from '#shared/editor/preview'
 import type { Provenance } from '#shared/editor/styleFields'
 
 /**
- * Flex alignment (Stacki's AlignControl): a 3×3 dot grid over a live mini
+ * Flex alignment (Figma's alignment box): a 3×3 dot grid over a live mini
  * preview, plus X and Y selects. X is the horizontal screen axis, so in a
  * column it drives `items` and Y `justify`; in a row the other way round.
  * A dot sets both axes (a distributed `justify` such as `between` is kept);
@@ -96,7 +96,7 @@ const axes = computed(() => [{ name: 'X', axis: xAxis.value }, { name: 'Y', axis
 <template>
   <div class="flex min-w-0 gap-2">
     <div
-      class="relative w-[68px] shrink-0 overflow-hidden rounded-md bg-muted ring-1 ring-default ring-inset focus-within:bg-elevated/40"
+      class="relative w-[68px] shrink-0 overflow-hidden rounded-[5px] bg-elevated ring-inset focus-within:ring-1 focus-within:ring-(color:--editor-selection)"
       role="group"
       aria-label="Alignment"
       data-align-grid
@@ -141,25 +141,28 @@ const axes = computed(() => [{ name: 'X', axis: xAxis.value }, { name: 'Y', axis
       </div>
     </div>
     <div class="flex min-w-0 flex-1 flex-col gap-1">
-      <div
+      <EditorField
         v-for="{ name, axis } in axes"
         :key="name"
-        class="grid grid-cols-[16px_minmax(0,1fr)] items-center gap-1.5"
       >
-        <EditorFieldLabel
-          :label="name"
-          :title="getStyleToken(axis)!.label"
-          :provenance="props[axis]"
-          :device="device"
-          @reset="emit('reset', axis)"
-        />
+        <template #prefix>
+          <EditorFieldLabel
+            variant="prefix"
+            :label="name"
+            :title="getStyleToken(axis)!.label"
+            :provenance="props[axis]"
+            :device="device"
+            @reset="emit('reset', axis)"
+          />
+        </template>
         <USelect
           :model-value="own(axis)"
           :items="options(axis)"
           :placeholder="shownOf(axis)"
+          variant="none"
           size="xs"
-          class="h-7 w-full bg-muted font-mono ring-0"
-          :ui="{ trailingIcon: 'size-3 text-dimmed' }"
+          class="h-full min-w-0 flex-1 ps-0 text-[11px]"
+          :ui="{ trailingIcon: 'size-3 text-dimmed', placeholder: 'text-toned' }"
           :aria-label="getStyleToken(axis)!.label"
           :data-style-key="axis"
           :content="optionPreview(axis)"
@@ -170,7 +173,7 @@ const axes = computed(() => [{ name: 'X', axis: xAxis.value }, { name: 'Y', axis
             <span :data-option-value="option.value">{{ option.label }}</span>
           </template>
         </USelect>
-      </div>
+      </EditorField>
     </div>
   </div>
 </template>

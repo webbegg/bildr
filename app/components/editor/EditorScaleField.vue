@@ -4,11 +4,12 @@ import { parseScaleInput, scalePx, SHIFT_STOPS, stepScale } from '#shared/editor
 import { scrubStops, startScrub } from '#shared/editor/scrub'
 
 /**
- * A token-scale field (Stacki's scrubbable number field, over a scale): shows
+ * A token-scale field (Figma's scrubbable number field, over a scale): shows
  * the value with its px size at the project density. Dragging the field or its
- * `label` slot scrubs through the scale (Shift: four stops per step), Up/Down
- * step, typing a scale value (or a px size on it) commits on Enter or blur and
- * anything else reverts, and the chevron lists every value.
+ * `prefix` slot (the letter or icon in front) scrubs through the scale (Shift:
+ * four stops per step), Up/Down step, typing a scale value (or a px size on
+ * it) commits on Enter or blur and anything else reverts, and the chevron
+ * (shown on hover) lists every value.
  *
  * Gestures `preview` the value they hold (null when they end) and `commit`
  * once: on release, Enter, an arrow step or a pick. Escape cancels a scrub,
@@ -27,7 +28,7 @@ const props = defineProps<{
   stepper?: boolean
 }>()
 const emit = defineEmits<{ preview: [value: string | null], commit: [value: string] }>()
-const slots = defineSlots<{ label?: () => unknown }>()
+const slots = defineSlots<{ prefix?: () => unknown }>()
 const editor = useEditor()
 
 const field = ref<HTMLElement | null>(null)
@@ -136,28 +137,28 @@ defineExpose({ scrub })
 
 <template>
   <div
-    v-if="slots.label"
-    class="flex min-w-0 cursor-ew-resize"
-    :data-field-label="token.key"
-    @pointerdown="scrub"
-  >
-    <slot name="label" />
-  </div>
-  <div
     ref="field"
-    class="flex h-7 min-w-0 items-center rounded-md bg-muted ps-2 transition-shadow"
-    :class="focused ? 'cursor-text ring-1 ring-(color:--editor-selection)' : 'cursor-ew-resize hover:bg-[#0d0d0d]'"
+    class="group/field flex h-6 min-w-0 items-center rounded-[5px] bg-elevated ring-inset"
+    :class="[focused ? 'cursor-text ring-1 ring-(color:--editor-selection)' : 'cursor-ew-resize hover:ring-1 hover:ring-white/10', slots.prefix ? '' : 'ps-2']"
     :data-style-key="token.key"
     :data-scrubbing="draft !== null || undefined"
     v-bind="$attrs"
     @pointerdown="scrub"
   >
+    <div
+      v-if="slots.prefix"
+      class="flex h-full shrink-0 cursor-ew-resize items-center"
+      :data-field-label="token.key"
+      @pointerdown.stop="scrub"
+    >
+      <slot name="prefix" />
+    </div>
     <input
       ref="input"
       :value="focused ? text : shown ?? ''"
       :placeholder="(focused ? current : undefined) ?? placeholder ?? '—'"
       :aria-label="token.label"
-      class="w-0 min-w-0 flex-1 bg-transparent font-mono text-xs outline-none placeholder:text-dimmed"
+      class="w-0 min-w-0 flex-1 bg-transparent text-[11px] tabular-nums outline-none placeholder:text-dimmed"
       :class="[focused ? 'cursor-text' : 'pointer-events-none', value !== undefined || draft !== null ? 'text-highlighted' : 'text-toned']"
       spellcheck="false"
       autocomplete="off"
@@ -168,7 +169,7 @@ defineExpose({ scrub })
     >
     <span
       v-if="hint"
-      class="ms-1 shrink-0 font-mono text-[11px] text-dimmed"
+      class="ms-1 shrink-0 text-[10px] text-dimmed tabular-nums"
     >{{ hint }}</span>
     <template v-if="stepper">
       <button
@@ -192,7 +193,7 @@ defineExpose({ scrub })
     >
       <button
         type="button"
-        class="grid h-full w-6 shrink-0 place-items-center text-dimmed hover:text-highlighted"
+        class="grid h-full w-5 shrink-0 place-items-center text-dimmed opacity-0 group-focus-within/field:opacity-100 group-hover/field:opacity-100 hover:text-highlighted focus-visible:opacity-100 aria-expanded:opacity-100"
         :aria-label="`${token.label} values`"
         @pointerdown.stop
       >

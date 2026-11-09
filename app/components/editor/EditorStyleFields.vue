@@ -1,19 +1,22 @@
 <script setup lang="ts">
-import { getStyleToken, isResponsiveToken, parseStyleKey, styleClasses, styleKey } from '#shared/design/tokens'
+import { getStyleToken, isResponsiveToken, styleClasses, styleKey } from '#shared/design/tokens'
 import type { StyleToken } from '#shared/design/tokens'
-import { isContainerType, isFlexType, structuralStyle } from '#shared/document/components'
+import { structuralStyle } from '#shared/document/components'
+import type { PanelSection } from '#shared/editor/panel'
+import { PANEL_SECTIONS, paddingMode, panelFields, panelSectionMark, sectionAdd, sectionPresent, sectionRemove, spacingProvenance } from '#shared/editor/panel'
 import { previewFocusedOption } from '#shared/editor/preview'
+import type { Side } from '#shared/editor/spacing'
 import { spacingSide, spacingWrite } from '#shared/editor/spacing'
-import type { Provenance, StyleSection } from '#shared/editor/styleFields'
-import { fieldLabel, sectionMark, STYLE_SECTIONS, styleProvenance } from '#shared/editor/styleFields'
+import { styleProvenance } from '#shared/editor/styleFields'
 
 /**
- * Design-token controls for a node's style, in Stacki's collapsible sections:
- * scale fields to scrub and step, the spacing box, direction and alignment for
- * flex containers, swatches from the project theme, and segments or selects
- * with previews for the rest. Responsive tokens edit the editor device's
- * breakpoint (Mobile is the base, Tablet `md:`, Desktop `lg:`); each row's
- * label shows whether the device sets the value or inherits it.
+ * Design-token controls for a node's style, in Figma UI3's sections: compact
+ * fields with a letter or icon in front (drag it to scrub the token scale),
+ * auto layout with direction, alignment, gap and padding, and Fill, Stroke and
+ * Effects that a "+" adds and a "−" removes. Colour tokens show as variable
+ * chips. Responsive tokens edit the editor device's breakpoint (Mobile is the
+ * base, Tablet `md:`, Desktop `lg:`); a field's prefix, or the dot beside a
+ * row, is blue when the device sets the value and orange when it inherits.
  *
  * Controls `preview` what a gesture holds and `commit` once; this panel emits
  * the commit as one `update` (one undo step) and passes previews on.
@@ -43,7 +46,6 @@ const inherited = (key: string) => {
 }
 /** The key a token is written to on the current device. */
 const keyAt = (key: string) => (isResponsiveToken(token(key)) ? styleKey(key, editor.device.breakpoint) : key)
-const label = (key: string) => ({ label: fieldLabel(token(key)), title: token(key).label, provenance: provenance(key), device: editor.device.label })
 
 function setField(key: string, next: string | null) {
   const p = provenance(key)
@@ -64,51 +66,88 @@ const previewTokens = (patch: Record<string, string> | null) => emit('preview', 
 /** Select content that previews the option under the pointer or keyboard focus (items carry `data-option-value`). */
 const optionPreview = (key: string) => previewFocusedOption(value => preview(key, value))
 
-// Controls show for the node types they apply to, and for any node that sets their tokens.
-const sets = (...keys: string[]) => Object.keys(props.styles).some(key => keys.includes(parseStyleKey(key)?.token.key ?? ''))
-const show = computed(() => {
-  const flex = isFlexType(props.type)
-  return {
-    direction: flex || sets('direction'),
-    align: flex || sets('items', 'justify'),
-    gap: isContainerType(props.type) || sets('gap'),
-    cols: ['Grid', 'List'].includes(props.type) || sets('cols'),
-    self: !props.root || sets('self'),
-    colSpan: ['Grid', 'List'].includes(props.parentType ?? '') || sets('colSpan')
-  }
-})
+const fields = computed(() => panelFields({ type: props.type, parentType: props.parentType, root: props.root, style: props.styles }))
 const direction = computed(() => own('direction') ?? inherited('direction') ?? structuralStyle(props.type).direction ?? 'col')
 
-/** The Align label stands for both axes: set if either is set here, and its reset clears both. */
-const alignProvenance = computed((): Provenance => {
-  const both = [provenance('items'), provenance('justify')]
-  const set = both.filter(p => p.state === 'set')
-  if (set.length) return { state: 'set', key: 'items', value: set.map(p => p.value).join(' / ') }
-  const from = both.find(p => p.state === 'inherited')
-  return from ?? { state: 'unset' }
+// The letter or icon in front of each field, as in Figma.
+const PREFIX: Record<string, { label?: string, icon?: string }> = {
+  w: { label: 'W' },
+  minH: { label: 'H' },
+  maxW: { label: 'Max' },
+  cols: { icon: 'i-lucide-columns-3' },
+  colSpan: { icon: 'i-lucide-move-horizontal' },
+  px: { icon: 'i-lucide-unfold-horizontal' },
+  py: { icon: 'i-lucide-unfold-vertical' },
+  pt: { icon: 'i-lucide-panel-top' },
+  pr: { icon: 'i-lucide-panel-right' },
+  pb: { icon: 'i-lucide-panel-bottom' },
+  pl: { icon: 'i-lucide-panel-left' },
+  text: { icon: 'i-lucide-a-large-small' },
+  font: { icon: 'i-lucide-bold' },
+  rounded: { icon: 'i-lucide-radius' },
+  border: { icon: 'i-lucide-menu' }
+}
+const gapIcon = computed(() => (direction.value.startsWith('row') ? 'i-lucide-align-horizontal-space-between' : 'i-lucide-align-vertical-space-between'))
+
+/** The provenance label of a token, as a prefix (or a row dot with `variant`). */
+const label = (key: string, variant: 'prefix' | 'dot' = 'prefix') => ({
+  variant,
+  label: PREFIX[key]?.label ?? token(key).label,
+  icon: key === 'gap' ? gapIcon.value : PREFIX[key]?.icon,
+  title: token(key).label,
+  provenance: provenance(key),
+  device: editor.device.label
 })
-function resetAlign() {
-  const patch = Object.fromEntries(['items', 'justify'].flatMap((key) => {
-    const p = provenance(key)
-    return p.state === 'set' ? [[p.key, null]] : []
-  }))
+
+// Padding: horizontal and vertical, or per side once a side is set ("individual padding").
+const breakpoint = computed(() => editor.device.breakpoint)
+const mode = computed(() => paddingMode(props.styles, breakpoint.value))
+const individual = ref(mode.value === 'sides')
+watch(mode, (value) => {
+  individual.value = value === 'sides'
+})
+const paddingFields = computed((): { key: string, side: Side }[] => individual.value
+  ? [{ key: 'pl', side: 'left' }, { key: 'pt', side: 'top' }, { key: 'pr', side: 'right' }, { key: 'pb', side: 'bottom' }]
+  : [{ key: 'px', side: 'left' }, { key: 'py', side: 'top' }])
+const paddingProvenance = (side: Side) => spacingProvenance(props.styles, 'p', side, breakpoint.value)
+const paddingValue = (side: Side, state: 'set' | 'inherited') => {
+  const p = paddingProvenance(side)
+  return p.state === state ? p.value : undefined
+}
+const paddingWrite = (side: Side, value: string) => spacingWrite(props.styles, 'p', side, individual.value ? 'side' : 'axis', breakpoint.value, value)
+const paddingLabel = (key: string, side: Side) => ({ ...label(key), provenance: paddingProvenance(side) })
+function paddingReset(side: Side) {
+  const p = paddingProvenance(side)
+  if (p.state === 'set') emit('update', { [p.key]: null })
+}
+
+/** Leaving individual padding writes the left and top values as horizontal and vertical padding. */
+function toggleIndividual() {
+  const next = !individual.value
+  individual.value = next
+  if (next) return
+  const patch: Record<string, string | null> = {}
+  for (const side of ['left', 'top'] as const) {
+    const resolved = spacingSide(props.styles, 'p', side, breakpoint.value)
+    if (resolved?.state === 'set') Object.assign(patch, spacingWrite(props.styles, 'p', side, 'axis', breakpoint.value, resolved.value))
+  }
   if (Object.keys(patch).length) emit('update', patch)
 }
 
 // Center horizontally: margin-x auto, or back to none when the node is centred here.
-const centered = computed(() => ['left', 'right'].every(side => spacingSide(props.styles, 'm', side as 'left' | 'right', editor.device.breakpoint)?.value === 'auto'))
+const centered = computed(() => ['left', 'right'].every(side => spacingSide(props.styles, 'm', side as 'left' | 'right', breakpoint.value)?.value === 'auto'))
 function toggleCenter() {
-  const bp = editor.device.breakpoint
+  const bp = breakpoint.value
   if (!centered.value) return emit('update', spacingWrite(props.styles, 'm', 'left', 'axis', bp, 'auto'))
   const patch = Object.fromEntries(['mx', 'ml', 'mr', 'm'].map(base => styleKey(base, bp)).filter(key => props.styles[key] === 'auto').map(key => [key, null]))
   if (Object.keys(patch).length) emit('update', patch)
 }
 
-// Collapsed sections, per section, across nodes and reloads.
-const COLLAPSED_KEY = 'bildr:style-collapsed'
-function readCollapsed(): Partial<Record<StyleSection, boolean>> {
+// Collapsed sections, per section, across nodes and reloads; the margins box starts closed.
+const COLLAPSED_KEY = 'bildr:panel-collapsed'
+function readCollapsed(): Partial<Record<PanelSection, boolean>> {
   try {
-    return JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '{}')
+    return JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '{ "Spacing": true }')
   } catch {
     return {}
   }
@@ -117,10 +156,24 @@ const collapsed = ref(readCollapsed())
 watch(collapsed, value => localStorage.setItem(COLLAPSED_KEY, JSON.stringify(value)), { deep: true })
 
 /** Shift-click applies the header's next state to every section. */
-function toggle(section: StyleSection, event: MouseEvent) {
+function toggle(section: PanelSection, event: MouseEvent) {
   const next = !collapsed.value[section]
-  const targets = event.shiftKey ? STYLE_SECTIONS : [section]
+  const targets = event.shiftKey ? PANEL_SECTIONS : [section]
   collapsed.value = { ...collapsed.value, ...Object.fromEntries(targets.map(s => [s, next])) }
+}
+
+// Fill, Stroke and Effects: "+" in the header adds a default, "−" on the row removes it.
+const ADDABLE: PanelSection[] = ['Fill', 'Stroke', 'Effects']
+const present = (section: PanelSection) => !ADDABLE.includes(section) || sectionPresent(props.styles, section, editor.deviceId)
+function add(section: PanelSection) {
+  const patch = sectionAdd(section)
+  if (!patch) return
+  collapsed.value = { ...collapsed.value, [section]: false }
+  emit('update', patch)
+}
+function remove(section: PanelSection) {
+  const patch = sectionRemove(props.styles, section)
+  if (Object.keys(patch).length) emit('update', patch)
 }
 
 const segments = (key: string, icons: Record<string, string> = {}, labels: Record<string, string> = {}) =>
@@ -141,28 +194,28 @@ const SELF_ICONS: Record<string, string> = {
   stretch: 'i-lucide-stretch-vertical'
 }
 const SELF_LABELS: Record<string, string> = { auto: 'Auto', start: 'Start', center: 'Center', end: 'End', stretch: 'Stretch' }
-// A corner glyph per radius, at the glyph's own small scale.
-const RADIUS_PX: Record<string, string> = { 'none': '0', 'sm': '1.5px', 'md': '2.5px', 'lg': '3.5px', 'xl': '5px', '2xl': '6.5px', '3xl': '8px', 'full': '12px' }
 
-const ROW = 'grid min-h-7 grid-cols-[64px_minmax(0,1fr)] items-center gap-2'
-const SELECT_UI = { trailingIcon: 'size-3 text-dimmed' }
+// A select in a field shell, and the dot column in the section's left padding.
+const SELECT = 'h-full min-w-0 flex-1 ps-0 text-[11px]'
+const SELECT_UI = { trailingIcon: 'size-3 text-dimmed', placeholder: 'text-toned' }
+const DOT = 'absolute inset-y-0 -left-3 flex w-3 items-center justify-center'
+const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted hover:bg-white/8 hover:text-highlighted'
 </script>
 
 <template>
   <div :data-editing-breakpoint="editor.device.breakpoint ?? 'base'">
     <EditorStyleSection
-      v-for="section in STYLE_SECTIONS"
+      v-for="section in fields.sections"
       :key="section"
       :label="section"
       :open="!collapsed[section]"
-      :mark="sectionMark(styles, section, editor.deviceId)"
+      :mark="panelSectionMark(styles, section, editor.deviceId)"
+      :empty="!present(section)"
       @toggle="toggle(section, $event)"
     >
-      <template
-        v-if="section === 'Spacing'"
-        #actions
-      >
+      <template #actions>
         <UTooltip
+          v-if="section === 'Layout'"
           text="Center horizontally"
           :delay-duration="500"
         >
@@ -176,20 +229,35 @@ const SELECT_UI = { trailingIcon: 'size-3 text-dimmed' }
             @click="toggleCenter"
           />
         </UTooltip>
+        <UTooltip
+          v-else-if="ADDABLE.includes(section) && !present(section)"
+          :text="`Add ${section.toLowerCase()}`"
+          :delay-duration="500"
+        >
+          <UButton
+            icon="i-lucide-plus"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            :aria-label="`Add ${section.toLowerCase()}`"
+            :data-section-add="section"
+            @click="add(section)"
+          />
+        </UTooltip>
       </template>
 
-      <template v-if="section === 'Layout'">
+      <template v-if="section === 'Auto layout'">
         <div
-          v-if="show.direction"
-          :class="ROW"
+          v-if="fields.direction"
+          class="relative"
           data-style-row="direction"
         >
           <div
-            class="flex min-w-0"
+            :class="DOT"
             data-field-label="direction"
           >
             <EditorFieldLabel
-              v-bind="label('direction')"
+              v-bind="label('direction', 'dot')"
               @reset="setField('direction', null)"
             />
           </div>
@@ -201,88 +269,127 @@ const SELECT_UI = { trailingIcon: 'size-3 text-dimmed' }
             @commit="setField('direction', $event)"
           />
         </div>
-        <div
-          v-if="show.align"
-          class="grid grid-cols-[64px_minmax(0,1fr)] gap-2"
+        <EditorAlignGrid
+          v-if="fields.align"
+          :items="provenance('items')"
+          :justify="provenance('justify')"
+          :direction="direction"
+          :device="editor.device.label"
           data-style-row="alignment"
-        >
-          <div class="flex h-7 min-w-0 items-center">
-            <EditorFieldLabel
-              label="Align"
-              title="Align items and justify content"
-              :provenance="alignProvenance"
-              :device="editor.device.label"
-              @reset="resetAlign"
-            />
-          </div>
-          <EditorAlignGrid
-            :items="provenance('items')"
-            :justify="provenance('justify')"
-            :direction="direction"
-            :device="editor.device.label"
-            @preview="previewTokens"
-            @commit="commitTokens"
-            @reset="setField($event, null)"
-          />
-        </div>
+          @preview="previewTokens"
+          @commit="commitTokens"
+          @reset="setField($event, null)"
+        />
         <div
-          v-if="show.gap"
-          :class="ROW"
-          data-style-row="gap"
+          v-if="fields.gap || fields.cols || fields.colSpan"
+          class="grid grid-cols-2 gap-2"
         >
           <EditorScaleField
-            :token="token('gap')"
-            :value="own('gap')"
-            :inherited="inherited('gap')"
-            placeholder="0"
-            @preview="preview('gap', $event)"
-            @commit="setField('gap', $event)"
+            v-for="key in (['gap', 'cols', 'colSpan'] as const).filter(k => fields[k])"
+            :key="key"
+            :token="token(key)"
+            :value="own(key)"
+            :inherited="inherited(key)"
+            :placeholder="key === 'gap' ? '0' : undefined"
+            :stepper="key === 'cols'"
+            :data-style-row="key"
+            @preview="preview(key, $event)"
+            @commit="setField(key, $event)"
           >
-            <template #label>
+            <template #prefix>
               <EditorFieldLabel
-                v-bind="label('gap')"
-                @reset="setField('gap', null)"
+                v-bind="label(key)"
+                @reset="setField(key, null)"
               />
             </template>
           </EditorScaleField>
         </div>
         <div
-          v-if="show.cols"
-          :class="ROW"
-          data-style-row="cols"
+          class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_24px] gap-x-2 gap-y-1.5"
+          data-style-row="padding"
+          :data-padding-mode="individual ? 'sides' : 'axes'"
         >
-          <EditorScaleField
-            :token="token('cols')"
-            :value="own('cols')"
-            :inherited="inherited('cols')"
-            stepper
-            @preview="preview('cols', $event)"
-            @commit="setField('cols', $event)"
+          <template
+            v-for="({ key, side }, i) in paddingFields"
+            :key="key"
           >
-            <template #label>
+            <EditorScaleField
+              :token="token(key)"
+              :value="paddingValue(side, 'set')"
+              :inherited="paddingValue(side, 'inherited')"
+              placeholder="0"
+              :data-style-row="key"
+              @preview="emit('preview', $event === null ? null : paddingWrite(side, $event))"
+              @commit="emit('update', paddingWrite(side, $event))"
+            >
+              <template #prefix>
+                <EditorFieldLabel
+                  v-bind="paddingLabel(key, side)"
+                  @reset="paddingReset(side)"
+                />
+              </template>
+            </EditorScaleField>
+            <UTooltip
+              v-if="i === 1"
+              text="Individual padding"
+              :delay-duration="500"
+            >
+              <button
+                type="button"
+                class="grid size-6 place-items-center rounded-[5px]"
+                :class="individual ? 'bg-white/14 text-highlighted' : 'text-muted hover:bg-white/8 hover:text-highlighted'"
+                aria-label="Individual padding"
+                :aria-pressed="individual"
+                @click="toggleIndividual"
+              >
+                <UIcon
+                  name="i-lucide-square-dashed"
+                  class="size-3"
+                />
+              </button>
+            </UTooltip>
+          </template>
+        </div>
+      </template>
+
+      <template v-else-if="section === 'Layout'">
+        <div class="grid grid-cols-2 gap-2">
+          <EditorScaleField
+            v-for="key in ['w', 'minH', 'maxW']"
+            :key="key"
+            :token="token(key)"
+            :value="own(key)"
+            :inherited="inherited(key)"
+            placeholder="auto"
+            :data-style-row="key"
+            @preview="preview(key, $event)"
+            @commit="setField(key, $event)"
+          >
+            <template #prefix>
               <EditorFieldLabel
-                v-bind="label('cols')"
-                @reset="setField('cols', null)"
+                v-bind="label(key)"
+                @reset="setField(key, null)"
               />
             </template>
           </EditorScaleField>
         </div>
         <div
-          v-if="show.self"
-          :class="ROW"
+          v-if="fields.self"
+          class="relative"
           data-style-row="self"
         >
           <div
-            class="flex min-w-0"
+            :class="DOT"
             data-field-label="self"
           >
             <EditorFieldLabel
-              v-bind="label('self')"
+              v-bind="label('self', 'dot')"
               @reset="setField('self', null)"
             />
           </div>
           <EditorSegmented
             tooltips
+            dense
             :items="segments('self', SELF_ICONS, SELF_LABELS)"
             :model-value="own('self')"
             :inherited="inherited('self')"
@@ -290,26 +397,6 @@ const SELECT_UI = { trailingIcon: 'size-3 text-dimmed' }
             data-style-key="self"
             @update:model-value="setField('self', $event)"
           />
-        </div>
-        <div
-          v-if="show.colSpan"
-          :class="ROW"
-          data-style-row="colSpan"
-        >
-          <EditorScaleField
-            :token="token('colSpan')"
-            :value="own('colSpan')"
-            :inherited="inherited('colSpan')"
-            @preview="preview('colSpan', $event)"
-            @commit="setField('colSpan', $event)"
-          >
-            <template #label>
-              <EditorFieldLabel
-                v-bind="label('colSpan')"
-                @reset="setField('colSpan', null)"
-              />
-            </template>
-          </EditorScaleField>
         </div>
       </template>
 
@@ -322,99 +409,91 @@ const SELECT_UI = { trailingIcon: 'size-3 text-dimmed' }
       />
 
       <div
-        v-else-if="section === 'Size'"
-        class="grid grid-cols-[44px_minmax(0,1fr)_44px_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5"
+        v-else-if="section === 'Appearance'"
+        class="grid grid-cols-2 gap-2"
       >
         <EditorScaleField
-          v-for="key in ['w', 'maxW', 'minH']"
-          :key="key"
-          :token="token(key)"
-          :value="own(key)"
-          :inherited="inherited(key)"
-          placeholder="auto"
-          :data-style-row="key"
-          @preview="preview(key, $event)"
-          @commit="setField(key, $event)"
+          :token="token('rounded')"
+          :value="own('rounded')"
+          :inherited="inherited('rounded')"
+          placeholder="none"
+          data-style-row="rounded"
+          @preview="preview('rounded', $event)"
+          @commit="setField('rounded', $event)"
         >
-          <template #label>
+          <template #prefix>
             <EditorFieldLabel
-              v-bind="label(key)"
-              @reset="setField(key, null)"
+              v-bind="label('rounded')"
+              @reset="setField('rounded', null)"
             />
           </template>
         </EditorScaleField>
       </div>
 
       <template v-else-if="section === 'Typography'">
-        <div
-          :class="ROW"
-          data-style-row="text"
-        >
+        <div class="grid grid-cols-2 gap-2">
           <EditorScaleField
             :token="token('text')"
             :value="own('text')"
             :inherited="inherited('text')"
             placeholder="base"
+            data-style-row="text"
             @preview="preview('text', $event)"
             @commit="setField('text', $event)"
           >
-            <template #label>
+            <template #prefix>
               <EditorFieldLabel
                 v-bind="label('text')"
                 @reset="setField('text', null)"
               />
             </template>
           </EditorScaleField>
-        </div>
-        <div
-          :class="ROW"
-          data-style-row="font"
-        >
-          <div
-            class="flex min-w-0"
-            data-field-label="font"
-          >
-            <EditorFieldLabel
-              v-bind="label('font')"
-              @reset="setField('font', null)"
-            />
-          </div>
-          <USelect
-            :model-value="own('font')"
-            :items="options(token('font'))"
-            :placeholder="inherited('font') ?? 'normal'"
-            size="xs"
-            class="h-7 w-full bg-muted ring-0"
-            :ui="SELECT_UI"
-            :aria-label="token('font').label"
-            data-style-key="font"
-            :content="optionPreview('font')"
-            @update:model-value="setField('font', $event)"
-            @update:open="!$event && preview('font', null)"
-          >
-            <template #item-label="{ item: option }">
-              <span
-                :class="styleClasses({ font: option.value })"
-                :data-option-value="option.value"
-              >{{ option.label }}</span>
+          <EditorField data-style-row="font">
+            <template #prefix>
+              <EditorFieldLabel
+                v-bind="label('font')"
+                @reset="setField('font', null)"
+              />
             </template>
-          </USelect>
+            <USelect
+              :model-value="own('font')"
+              :items="options(token('font'))"
+              :placeholder="inherited('font') ?? 'normal'"
+              variant="none"
+              size="xs"
+              :class="SELECT"
+              :ui="SELECT_UI"
+              :aria-label="token('font').label"
+              data-style-key="font"
+              :content="optionPreview('font')"
+              @update:model-value="setField('font', $event)"
+              @update:open="!$event && preview('font', null)"
+            >
+              <template #item-label="{ item: option }">
+                <span
+                  :class="styleClasses({ font: option.value })"
+                  :data-option-value="option.value"
+                >{{ option.label }}</span>
+              </template>
+            </USelect>
+          </EditorField>
         </div>
         <div
-          :class="ROW"
+          class="relative"
           data-style-row="align"
         >
           <div
-            class="flex min-w-0"
+            :class="DOT"
             data-field-label="align"
           >
             <EditorFieldLabel
-              v-bind="label('align')"
+              v-bind="label('align', 'dot')"
               @reset="setField('align', null)"
             />
           </div>
           <EditorSegmented
             tooltips
+            dense
             :items="segments('align', ALIGN_ICONS, ALIGN_LABELS)"
             :model-value="own('align')"
             :inherited="inherited('align')"
@@ -423,182 +502,144 @@ const SELECT_UI = { trailingIcon: 'size-3 text-dimmed' }
             @update:model-value="setField('align', $event)"
           />
         </div>
-        <div
-          :class="ROW"
+        <EditorSwatchPicker
+          v-if="editor.theme"
+          icon="i-lucide-baseline"
+          :token="token('color')"
+          :value="own('color')"
+          :theme="editor.theme"
           data-style-row="color"
-        >
-          <div
-            class="flex min-w-0"
-            data-field-label="color"
-          >
-            <EditorFieldLabel
-              v-bind="label('color')"
-              @reset="setField('color', null)"
-            />
-          </div>
-          <EditorSwatchPicker
-            v-if="editor.theme"
-            :token="token('color')"
-            :value="own('color')"
-            :theme="editor.theme"
-            @preview="preview('color', $event)"
-            @update="setField('color', $event)"
-          />
-        </div>
+          @preview="preview('color', $event)"
+          @update="setField('color', $event)"
+          @clear="setField('color', null)"
+        />
       </template>
 
       <div
-        v-else-if="section === 'Backgrounds'"
-        :class="ROW"
+        v-else-if="section === 'Fill'"
+        class="flex items-center gap-1"
         data-style-row="bg"
       >
-        <div
-          class="flex min-w-0"
-          data-field-label="bg"
-        >
-          <EditorFieldLabel
-            v-bind="label('bg')"
-            @reset="setField('bg', null)"
-          />
-        </div>
         <EditorSwatchPicker
           v-if="editor.theme"
+          class="flex-1"
           :token="token('bg')"
           :value="own('bg')"
           :theme="editor.theme"
           @preview="preview('bg', $event)"
           @update="setField('bg', $event)"
+          @clear="setField('bg', null)"
         />
+        <button
+          type="button"
+          :class="REMOVE"
+          aria-label="Remove fill"
+          @click="remove('Fill')"
+        >
+          <UIcon
+            name="i-lucide-minus"
+            class="size-3"
+          />
+        </button>
       </div>
 
-      <template v-else-if="section === 'Borders'">
-        <div
-          :class="ROW"
+      <div
+        v-else-if="section === 'Stroke'"
+        class="flex items-center gap-1"
+        data-style-row="stroke"
+      >
+        <EditorSwatchPicker
+          v-if="editor.theme"
+          class="min-w-0 flex-1"
+          :token="token('borderColor')"
+          :value="own('borderColor')"
+          :theme="editor.theme"
+          data-style-row="borderColor"
+          @preview="preview('borderColor', $event)"
+          @update="setField('borderColor', $event)"
+          @clear="setField('borderColor', null)"
+        />
+        <EditorScaleField
+          class="w-16 shrink-0"
+          :token="token('border')"
+          :value="own('border')"
+          placeholder="0"
           data-style-row="border"
+          @preview="preview('border', $event)"
+          @commit="setField('border', $event)"
         >
-          <div
-            class="flex min-w-0"
-            data-field-label="border"
-          >
+          <template #prefix>
             <EditorFieldLabel
               v-bind="label('border')"
               @reset="setField('border', null)"
             />
-          </div>
-          <EditorSegmented
-            :items="segments('border')"
-            :model-value="own('border')"
-            aria-label="Border width"
-            data-style-key="border"
-            @update:model-value="setField('border', $event)"
-          />
-        </div>
-        <div
-          :class="ROW"
-          data-style-row="borderColor"
+          </template>
+        </EditorScaleField>
+        <button
+          type="button"
+          :class="REMOVE"
+          aria-label="Remove stroke"
+          @click="remove('Stroke')"
         >
-          <div
-            class="flex min-w-0"
-            data-field-label="borderColor"
-          >
-            <EditorFieldLabel
-              v-bind="label('borderColor')"
-              @reset="setField('borderColor', null)"
-            />
-          </div>
-          <EditorSwatchPicker
-            v-if="editor.theme"
-            :token="token('borderColor')"
-            :value="own('borderColor')"
-            :theme="editor.theme"
-            @preview="preview('borderColor', $event)"
-            @update="setField('borderColor', $event)"
+          <UIcon
+            name="i-lucide-minus"
+            class="size-3"
           />
-        </div>
-        <div
-          :class="ROW"
-          data-style-row="rounded"
-        >
-          <div
-            class="flex min-w-0"
-            data-field-label="rounded"
-          >
-            <EditorFieldLabel
-              v-bind="label('rounded')"
-              @reset="setField('rounded', null)"
-            />
-          </div>
-          <USelect
-            :model-value="own('rounded')"
-            :items="options(token('rounded'))"
-            placeholder="none"
-            size="xs"
-            class="h-7 w-full bg-muted font-mono ring-0"
-            :ui="SELECT_UI"
-            :aria-label="token('rounded').label"
-            data-style-key="rounded"
-            :content="optionPreview('rounded')"
-            @update:model-value="setField('rounded', $event)"
-            @update:open="!$event && preview('rounded', null)"
-          >
-            <template #item-label="{ item: option }">
-              <span :data-option-value="option.value">{{ option.label }}</span>
-            </template>
-            <template #leading>
-              <span
-                class="block size-3 border-t-[1.5px] border-l-[1.5px] border-current text-muted"
-                :style="{ borderTopLeftRadius: RADIUS_PX[own('rounded') ?? 'none'] }"
-              />
-            </template>
-            <template #item-leading="{ item: option }">
-              <span
-                class="block size-3 border-t-[1.5px] border-l-[1.5px] border-current text-muted"
-                :style="{ borderTopLeftRadius: RADIUS_PX[option.value] }"
-              />
-            </template>
-          </USelect>
-        </div>
-      </template>
+        </button>
+      </div>
 
       <div
         v-else-if="section === 'Effects'"
-        :class="ROW"
+        class="flex items-center gap-1"
         data-style-row="shadow"
       >
-        <div
-          class="flex min-w-0"
-          data-field-label="shadow"
-        >
-          <EditorFieldLabel
-            v-bind="label('shadow')"
-            @reset="setField('shadow', null)"
-          />
-        </div>
-        <USelect
-          :model-value="own('shadow')"
-          :items="options(token('shadow'))"
-          placeholder="none"
-          size="xs"
-          class="h-7 w-full bg-muted font-mono ring-0"
-          :ui="SELECT_UI"
-          :aria-label="token('shadow').label"
-          data-style-key="shadow"
-          :content="optionPreview('shadow')"
-          @update:model-value="setField('shadow', $event)"
-          @update:open="!$event && preview('shadow', null)"
-        >
-          <template #item-label="{ item: option }">
-            <span :data-option-value="option.value">{{ option.label }}</span>
-          </template>
-          <template #item-leading="{ item: option }">
-            <span class="grid size-5 place-items-center rounded-[3px] bg-neutral-300">
-              <span
-                class="block size-3 rounded-[2px] bg-white"
-                :class="styleClasses({ shadow: option.value })"
-              />
+        <EditorField class="flex-1">
+          <template #prefix>
+            <span class="grid w-6 place-items-center">
+              <span class="block size-2.5 rounded-[2px] border border-current text-muted shadow-[1px_1px_0_currentColor]" />
             </span>
           </template>
-        </USelect>
+          <USelect
+            :model-value="own('shadow')"
+            :items="options(token('shadow'))"
+            placeholder="none"
+            variant="none"
+            size="xs"
+            :class="SELECT"
+            :ui="SELECT_UI"
+            :aria-label="token('shadow').label"
+            data-style-key="shadow"
+            :content="optionPreview('shadow')"
+            @update:model-value="setField('shadow', $event)"
+            @update:open="!$event && preview('shadow', null)"
+          >
+            <template #default="{ modelValue }">
+              <span class="truncate">Drop shadow <span class="text-dimmed">{{ modelValue }}</span></span>
+            </template>
+            <template #item-label="{ item: option }">
+              <span :data-option-value="option.value">{{ option.label }}</span>
+            </template>
+            <template #item-leading="{ item: option }">
+              <span class="grid size-5 place-items-center rounded-[3px] bg-neutral-300">
+                <span
+                  class="block size-3 rounded-[2px] bg-white"
+                  :class="styleClasses({ shadow: option.value })"
+                />
+              </span>
+            </template>
+          </USelect>
+        </EditorField>
+        <button
+          type="button"
+          :class="REMOVE"
+          aria-label="Remove effects"
+          @click="remove('Effects')"
+        >
+          <UIcon
+            name="i-lucide-minus"
+            class="size-3"
+          />
+        </button>
       </div>
     </EditorStyleSection>
   </div>

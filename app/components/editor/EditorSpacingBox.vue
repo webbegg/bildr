@@ -231,7 +231,10 @@ const TONE = {
           class="w-60"
           data-spacing-editor
         >
-          <div class="grid grid-cols-[80px_minmax(0,1fr)] items-center gap-2 p-2">
+          <div class="space-y-1 p-2">
+            <p class="truncate text-[11px] text-muted">
+              {{ editingToken.label }}
+            </p>
             <EditorScaleField
               :token="editingToken"
               :value="editingOwn"
@@ -239,11 +242,7 @@ const TONE = {
               placeholder="0"
               @preview="editPreview"
               @commit="editCommit"
-            >
-              <template #label>
-                <span class="truncate text-[11px] text-muted">{{ editingToken.label }}</span>
-              </template>
-            </EditorScaleField>
+            />
           </div>
           <button
             type="button"
