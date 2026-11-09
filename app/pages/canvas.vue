@@ -113,7 +113,7 @@ function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } 
   const node = id ? findNode(root, id) : undefined
   if (!nodeEl || !node) return null
   const rect = nodeEl.getBoundingClientRect()
-  const horizontal = findParent(root, node.id)?.parent.type === 'Row'
+  const horizontal = ['Row', 'Grid'].includes(findParent(root, node.id)?.parent.type ?? '')
   const position = placeholder || node === root
     ? 'inside'
     : dropPosition(rect, { x: event.clientX, y: event.clientY }, { container: isContainerType(node.type), horizontal })

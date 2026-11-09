@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ProjectSchema } from '#shared/document/schema'
+import { ProjectSchema, propValueProblem } from '#shared/document/schema'
 import { COMPONENTS, getComponent } from '#shared/document/components'
 import { cloneWithNewIds, createNode, createProject, slugify } from '#shared/document/factory'
 import { findParent, walk } from '#shared/document/tree'
@@ -59,18 +59,48 @@ describe('document schema', () => {
 describe('component registry', () => {
   it('ships the MVP palette', () => {
     expect(COMPONENTS.map(c => c.type)).toEqual(
-      ['Container', 'Row', 'Column', 'Heading', 'Text', 'Image', 'Button', 'Link', 'Input', 'Card']
+      ['Container', 'Row', 'Column', 'Grid', 'Heading', 'Text', 'Image', 'Button', 'Link', 'Input', 'Card']
     )
+  })
+
+  it('ships a Grid container with three columns by default', () => {
+    expect(getComponent('Grid')).toMatchObject({ container: true, icon: 'i-lucide-layout-grid' })
+    expect(createNode('Grid').style).toEqual({ cols: '3', gap: '6' })
+  })
+
+  it('aligns the children of stacked containers to the start by default', () => {
+    expect(createNode('Container').style).toEqual({ p: '4', gap: '3', items: 'start' })
+    expect(createNode('Column').style).toEqual({ gap: '3', items: 'start' })
+    expect(createNode('Card').style).toEqual({ gap: '3', items: 'start' })
+    expect(createProject('My App').pages[0]!.root.style).toEqual({ gap: '4', items: 'start', color: 'default' })
+  })
+
+  it('lets Text inherit its colour', () => {
+    expect(createNode('Text').style).toEqual({})
+  })
+
+  it('gives Button a leading and trailing icon and Link a leading icon, empty by default', () => {
+    expect(createNode('Button').props).toMatchObject({ icon: '', trailingIcon: '' })
+    expect(createNode('Link').props).toMatchObject({ icon: '' })
+    expect(getComponent('Button')!.props.find(p => p.name === 'icon')!.kind).toBe('icon')
+  })
+
+  it('accepts an empty or i-lucide-* icon and rejects anything else', () => {
+    const icon = getComponent('Button')!.props.find(p => p.name === 'icon')!
+    expect(propValueProblem(icon, '')).toBeUndefined()
+    expect(propValueProblem(icon, 'i-lucide-coffee')).toBeUndefined()
+    expect(propValueProblem(icon, 'i-lucide-arrow-right-2')).toBeUndefined()
+    for (const bad of ['coffee', 'i-lucide-', 'i-heroicons-star', 'i-lucide-Coffee', 'i-lucide-a--b', 42]) {
+      expect(propValueProblem(icon, bad)).toBe('"icon" must be an i-lucide-* icon name, e.g. i-lucide-coffee')
+    }
   })
 
   it('declares default styles as design tokens', () => {
     for (const def of COMPONENTS) {
       for (const [key, value] of Object.entries(def.defaultStyle)) expect(styleTokenProblem(key, value)).toBeUndefined()
     }
-    expect(createNode('Container').style).toEqual({ p: '4', gap: '3' })
     expect(createNode('Row').style).toEqual({ gap: '3', items: 'center' })
     expect(createNode('Image').style).toEqual({ w: 'full' })
-    expect(createProject('My App').pages[0]!.root.style).toEqual({ p: '6', gap: '4' })
   })
 
   it('creates nodes with the default props of their component', () => {

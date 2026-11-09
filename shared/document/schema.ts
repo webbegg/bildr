@@ -103,6 +103,8 @@ export function nodeTreeProblems(node: DocNode, seen: Set<string>, isRoot = fals
   return problems
 }
 
+export const ICON_NAME = /^i-lucide-[a-z0-9]+(?:-[a-z0-9]+)*$/
+
 /** Returns a problem message when `value` does not fit the prop definition. */
 export function propValueProblem(def: PropDef, value: PropValue): string | undefined {
   switch (def.kind) {
@@ -112,6 +114,10 @@ export function propValueProblem(def: PropDef, value: PropValue): string | undef
       return typeof value === 'boolean' ? undefined : `"${def.name}" must be a boolean`
     case 'select':
       return def.options?.includes(String(value)) ? undefined : `"${def.name}" must be one of ${def.options?.join(', ')}`
+    case 'icon':
+      return value === '' || (typeof value === 'string' && ICON_NAME.test(value))
+        ? undefined
+        : `"${def.name}" must be an i-lucide-* icon name, e.g. i-lucide-coffee`
     default:
       return typeof value === 'string' ? undefined : `"${def.name}" must be a string`
   }

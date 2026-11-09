@@ -28,6 +28,9 @@ describe('style fields', () => {
     expect(styleFieldControl(getStyleToken('border')!)).toBe('segmented')
     expect(styleFieldControl(getStyleToken('rounded')!)).toBe('select')
     expect(styleFieldControl(getStyleToken('font')!)).toBe('select')
+    expect(styleFieldControl(getStyleToken('self')!)).toBe('segmented')
+    expect(styleFieldControl(getStyleToken('cols')!)).toBe('select')
+    expect(styleFieldControl(getStyleToken('colSpan')!)).toBe('select')
   })
 
   it('lists the set tokens in registry order with their classes', () => {

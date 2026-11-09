@@ -28,3 +28,6 @@
 @source inline("shadow-{none,xs,sm,md,lg,xl,2xl}");
 @source inline("items-{start,center,end,stretch,baseline}");
 @source inline("justify-{start,center,end,between,around,evenly}");
+@source inline("self-{auto,start,center,end,stretch}");
+@source inline("grid-cols-{1,2,3,4,5,6,12}");
+@source inline("col-span-{1,2,3,4,5,6,12,full}");

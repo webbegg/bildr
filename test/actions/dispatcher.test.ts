@@ -70,6 +70,15 @@ describe('action dispatcher', () => {
     await expect(bildr.call('project_get', { projectId: 'prj_missing' }, ui)).rejects.toMatchObject({ code: 'not_found' })
   })
 
+  it('sets a Button icon and rejects one that is not an i-lucide-* name', async () => {
+    const { bildr, projectId, pageId } = await setup()
+    await bildr.call('node_insert', { projectId, pageId, type: 'Button', props: { icon: 'i-lucide-coffee' } }, ui)
+    const [button] = await rootChildren(bildr, projectId)
+    expect(button!.props.icon).toBe('i-lucide-coffee')
+    await expect(bildr.call('node_update_props', { projectId, pageId, nodeId: button!.id, props: { icon: 'coffee' } }, ui))
+      .rejects.toMatchObject({ code: 'invalid' })
+  })
+
   it('duplicates a node right after the original with fresh ids', async () => {
     const { bildr, projectId, pageId } = await setup()
     const { nodeId } = await bildr.call<{ nodeId: string }>('node_insert', { projectId, pageId, type: 'Card', children: [{ type: 'Text' }] }, ui)
@@ -136,7 +145,7 @@ describe('action dispatcher', () => {
     await bildr.call('node_update_style', { projectId, pageId, nodeId, style: { rounded: 'xl', p: null } }, ui)
 
     const [card] = await rootChildren(bildr, projectId)
-    expect(card!.style).toEqual({ gap: '3', bg: 'primary', rounded: 'xl' })
+    expect(card!.style).toEqual({ gap: '3', items: 'start', bg: 'primary', rounded: 'xl' })
     expect(card!.children[0]!.style).toEqual({ color: 'error', mt: '10' })
   })
 

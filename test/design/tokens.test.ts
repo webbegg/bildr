@@ -16,8 +16,11 @@ describe('style token registry', () => {
     expect(STYLE_TOKENS.map(t => t.key)).toEqual([
       'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl', 'gap',
       'w', 'maxW', 'minH', 'bg', 'color', 'borderColor', 'text', 'font', 'align',
-      'border', 'rounded', 'shadow', 'items', 'justify'
+      'border', 'rounded', 'shadow', 'items', 'justify', 'self', 'cols', 'colSpan'
     ])
+    expect(getStyleToken('self')).toMatchObject({ prefix: 'self', group: 'Layout', values: ['auto', 'start', 'center', 'end', 'stretch'] })
+    expect(getStyleToken('cols')).toMatchObject({ prefix: 'grid-cols', group: 'Layout', values: ['1', '2', '3', '4', '5', '6', '12'] })
+    expect(getStyleToken('colSpan')).toMatchObject({ prefix: 'col-span', group: 'Layout', values: ['1', '2', '3', '4', '5', '6', '12', 'full'] })
     expect(getStyleToken('maxW')).toMatchObject({ prefix: 'max-w', group: 'Size' })
     expect(getStyleToken('bg')).toMatchObject({ kind: 'color', group: 'Color' })
     expect(getStyleToken('mt')!.values).toEqual(expect.arrayContaining(['0', '0.5', '10', 'auto']))
@@ -36,6 +39,7 @@ describe('style token registry', () => {
   it('maps tokens to Tailwind classes in registry order', () => {
     expect(styleClasses({ rounded: 'lg', bg: 'primary', mt: '10' })).toBe('mt-10 bg-primary rounded-lg')
     expect(styleClasses({ maxW: '2xl', w: '1/2', color: 'error', text: '2xl', border: '1' })).toBe('w-1/2 max-w-2xl text-error text-2xl border-1')
+    expect(styleClasses({ colSpan: 'full', cols: '3', self: 'center' })).toBe('self-center grid-cols-3 col-span-full')
     expect(styleClasses({})).toBe('')
   })
 

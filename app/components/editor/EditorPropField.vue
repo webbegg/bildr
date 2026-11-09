@@ -42,6 +42,11 @@ function onLinkMode(mode: string) {
       :placeholder="def.kind === 'image' ? 'https://' : undefined"
       @commit="emit('update', $event)"
     />
+    <EditorIconInput
+      v-else-if="def.kind === 'icon'"
+      :model-value="text"
+      @commit="emit('update', $event)"
+    />
     <UInputNumber
       v-else-if="def.kind === 'number'"
       :model-value="Number(value)"

@@ -119,7 +119,7 @@ describe('applyOperation', () => {
     const { project, pageId, rootId } = setup()
     const before = structuredClone(project.pages[0]!.root.style)
 
-    const inverse = applyOperation(project, { op: 'setStyle', pageId, nodeId: rootId, style: { mt: '10', bg: 'primary', p: null, gap: '' } })
+    const inverse = applyOperation(project, { op: 'setStyle', pageId, nodeId: rootId, style: { mt: '10', bg: 'primary', items: null, color: null, gap: '' } })
     expect(project.pages[0]!.root.style).toEqual({ mt: '10', bg: 'primary' })
 
     applyOperation(project, inverse)

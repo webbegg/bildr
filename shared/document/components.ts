@@ -7,7 +7,7 @@
 
 export type PropValue = string | number | boolean
 
-export type PropKind = 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'link' | 'image'
+export type PropKind = 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'link' | 'image' | 'icon'
 
 export interface PropDef {
   name: string
@@ -33,6 +33,8 @@ export const PAGE_ROOT_TYPE = 'Page'
 
 const COLORS = ['primary', 'secondary', 'success', 'info', 'warning', 'error', 'neutral']
 
+const ICON_HELP = 'A Lucide icon, e.g. i-lucide-coffee. Empty for none.'
+
 export const COMPONENTS: ComponentDef[] = [
   {
     type: 'Container',
@@ -41,7 +43,7 @@ export const COMPONENTS: ComponentDef[] = [
     description: 'A block that stacks its children vertically.',
     container: true,
     props: [],
-    defaultStyle: { p: '4', gap: '3' }
+    defaultStyle: { p: '4', gap: '3', items: 'start' }
   },
   {
     type: 'Row',
@@ -61,7 +63,16 @@ export const COMPONENTS: ComponentDef[] = [
     description: 'Lays out its children vertically.',
     container: true,
     props: [],
-    defaultStyle: { gap: '3' }
+    defaultStyle: { gap: '3', items: 'start' }
+  },
+  {
+    type: 'Grid',
+    label: 'Grid',
+    icon: 'i-lucide-layout-grid',
+    description: 'Lays out its children in equal columns; a child can span several with colSpan.',
+    container: true,
+    props: [],
+    defaultStyle: { cols: '3', gap: '6' }
   },
   {
     type: 'Heading',
@@ -84,7 +95,7 @@ export const COMPONENTS: ComponentDef[] = [
     props: [
       { name: 'text', label: 'Text', kind: 'textarea', default: 'Some text' }
     ],
-    defaultStyle: { color: 'toned' }
+    defaultStyle: {}
   },
   {
     type: 'Image',
@@ -107,6 +118,8 @@ export const COMPONENTS: ComponentDef[] = [
     props: [
       { name: 'label', label: 'Label', kind: 'text', default: 'Button' },
       { name: 'to', label: 'Link to', kind: 'link', default: '', description: 'A page slug or an absolute URL.' },
+      { name: 'icon', label: 'Icon', kind: 'icon', default: '', description: ICON_HELP },
+      { name: 'trailingIcon', label: 'Trailing icon', kind: 'icon', default: '', description: ICON_HELP },
       { name: 'color', label: 'Color', kind: 'select', default: 'primary', options: COLORS },
       { name: 'variant', label: 'Variant', kind: 'select', default: 'solid', options: ['solid', 'outline', 'soft', 'subtle', 'ghost', 'link'] },
       { name: 'size', label: 'Size', kind: 'select', default: 'md', options: ['xs', 'sm', 'md', 'lg', 'xl'] }
@@ -121,7 +134,8 @@ export const COMPONENTS: ComponentDef[] = [
     container: false,
     props: [
       { name: 'label', label: 'Label', kind: 'text', default: 'Link' },
-      { name: 'to', label: 'Link to', kind: 'link', default: '', description: 'A page slug or an absolute URL.' }
+      { name: 'to', label: 'Link to', kind: 'link', default: '', description: 'A page slug or an absolute URL.' },
+      { name: 'icon', label: 'Icon', kind: 'icon', default: '', description: ICON_HELP }
     ],
     defaultStyle: { color: 'primary' }
   },
@@ -145,7 +159,7 @@ export const COMPONENTS: ComponentDef[] = [
     description: 'A bordered surface holding other components.',
     container: true,
     props: [],
-    defaultStyle: { gap: '3' }
+    defaultStyle: { gap: '3', items: 'start' }
   }
 ]
 
