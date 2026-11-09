@@ -4,16 +4,15 @@ import { HAND_TOOL, INSERT_TOOLS, MOVE_TOOL, toolHint } from '#shared/editor/ins
 
 /**
  * The canvas's floating bar, Framer-style, centred at the bottom: Move (V)
- * and Hand (H) tools, the canvas light/dark preview, the zoom menu, and the
- * Preview link that opens the draft in a new tab. The insert tools have no
- * buttons; their letters arm them, and the bar then shows a hint chip.
+ * and Hand (H) tools, the canvas light/dark preview and the zoom menu. The
+ * insert tools have no buttons; their letters arm them, and the bar then
+ * shows a hint chip.
  */
 const { zoom, zoomItems } = defineProps<{ zoom: number, zoomItems: DropdownMenuItem[][] }>()
 const editor = useEditor()
 
 const tools = INSERT_TOOLS.filter(tool => tool.id === MOVE_TOOL || tool.id === HAND_TOOL)
 const hint = computed(() => toolHint(editor.tool))
-const previewHref = computed(() => `/preview/${editor.projectId}${editor.page ? `/${editor.page.slug}` : ''}`)
 </script>
 
 <template>
@@ -91,19 +90,5 @@ const previewHref = computed(() => `/preview/${editor.projectId}${editor.page ? 
         />
       </button>
     </UDropdownMenu>
-    <div
-      class="mx-1 h-5 w-px bg-white/10"
-      data-bar-divider
-    />
-    <a
-      :href="previewHref"
-      target="_blank"
-      rel="noopener"
-      class="flex h-8 items-center rounded-lg bg-(--editor-selection)/15 px-3 text-xs font-medium text-[#4aa8ff] hover:bg-(--editor-selection)/25"
-      aria-label="Preview"
-      data-preview-link
-    >
-      Preview
-    </a>
   </div>
 </template>
