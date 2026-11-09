@@ -3,6 +3,7 @@
  * (its tab id) so it can ignore change events caused by its own calls.
  */
 export default defineEventHandler(async (event) => {
+  guardRequest(event)
   const name = getRouterParam(event, 'name') ?? ''
   const body = await readBody(event).catch(() => undefined)
   const source = getHeader(event, 'x-bildr-source')

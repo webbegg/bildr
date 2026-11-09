@@ -6,6 +6,7 @@ import { createMcpServer } from '../mcp/server'
  * request. Unauthenticated, so local development only.
  */
 export default defineEventHandler(async (event) => {
+  guardRequest(event)
   const server = createMcpServer(useBildr())
   const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true })
   await server.connect(transport)
