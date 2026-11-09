@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import type { ButtonProps } from '@nuxt/ui'
+import { styleClasses } from '#shared/design/tokens'
 import type { DocNode } from '#shared/document/schema'
 import { resolveLink } from '#shared/runtime/render'
 
 /**
  * Renders one document node and its children. The editor canvas and the
  * published app share this component, so what you edit is what ships.
+ * Visual styling comes only from the node's design tokens; the template
+ * adds structural classes (flex direction, wrapping) and per-type fallbacks
+ * that a token of the same key replaces.
  */
 const props = defineProps<{ node: DocNode }>()
 const runtime = useRuntime()
@@ -13,16 +17,24 @@ const runtime = useRuntime()
 const p = computed(() => props.node.props)
 const text = (name: string) => String(p.value[name] ?? '')
 const link = computed(() => resolveLink(text('to'), runtime.base))
-const attrs = computed(() => ({ 'data-bildr-id': props.node.id, 'data-bildr-type': props.node.type, 'style': props.node.style }))
+const attrs = computed(() => ({ 'data-bildr-id': props.node.id, 'data-bildr-type': props.node.type }))
 const stacked = computed(() => ['Page', 'Container', 'Column'].includes(props.node.type))
+const tokens = computed(() => styleClasses(props.node.style))
+const withFallback = (fallback: Record<string, string>) => styleClasses({ ...fallback, ...props.node.style })
 
-const HEADING_CLASS: Record<string, string> = {
-  1: 'text-4xl font-bold tracking-tight',
-  2: 'text-3xl font-bold tracking-tight',
-  3: 'text-2xl font-semibold',
-  4: 'text-xl font-semibold'
+const HEADING_TOKENS: Record<string, Record<string, string>> = {
+  1: { text: '4xl', font: 'bold' },
+  2: { text: '3xl', font: 'bold' },
+  3: { text: '2xl', font: 'semibold' },
+  4: { text: 'xl', font: 'semibold' }
 }
-const level = computed(() => (text('level') in HEADING_CLASS ? text('level') : '2'))
+const level = computed(() => (text('level') in HEADING_TOKENS ? text('level') : '2'))
+
+// The card's gap spaces its inner stack; every other token styles the card itself.
+const card = computed(() => {
+  const { gap, ...rest } = props.node.style
+  return { root: styleClasses(rest), stack: gap ? styleClasses({ gap }) : '' }
+})
 </script>
 
 <template>
@@ -30,7 +42,7 @@ const level = computed(() => (text('level') in HEADING_CLASS ? text('level') : '
     v-if="stacked || node.type === 'Row'"
     v-bind="attrs"
     class="flex"
-    :class="[stacked ? 'flex-col' : 'flex-row', { 'flex-wrap': node.type === 'Row' && p.wrap, 'min-h-full': node.type === 'Page' }]"
+    :class="[stacked ? 'flex-col' : 'flex-row', { 'flex-wrap': node.type === 'Row' && p.wrap, 'min-h-full': node.type === 'Page' }, tokens]"
   >
     <BildrNode
       v-for="child in node.children"
@@ -47,7 +59,7 @@ const level = computed(() => (text('level') in HEADING_CLASS ? text('level') : '
     :is="`h${level}`"
     v-else-if="node.type === 'Heading'"
     v-bind="attrs"
-    :class="HEADING_CLASS[level]"
+    :class="[{ 'tracking-tight': Number(level) <= 2 }, withFallback(HEADING_TOKENS[level]!)]"
   >
     {{ text('text') }}
   </component>
@@ -55,7 +67,8 @@ const level = computed(() => (text('level') in HEADING_CLASS ? text('level') : '
   <p
     v-else-if="node.type === 'Text'"
     v-bind="attrs"
-    class="whitespace-pre-line text-toned"
+    class="whitespace-pre-line"
+    :class="tokens"
   >
     {{ text('text') }}
   </p>
@@ -65,7 +78,8 @@ const level = computed(() => (text('level') in HEADING_CLASS ? text('level') : '
     v-bind="attrs"
     :src="text('src')"
     :alt="text('alt')"
-    class="block max-w-full"
+    class="block"
+    :class="withFallback({ maxW: 'full' })"
   >
 
   <UButton
@@ -78,6 +92,7 @@ const level = computed(() => (text('level') in HEADING_CLASS ? text('level') : '
     :to="link?.to"
     :target="link?.external ? '_blank' : undefined"
     class="self-start"
+    :class="tokens"
   />
 
   <ULink
@@ -85,7 +100,8 @@ const level = computed(() => (text('level') in HEADING_CLASS ? text('level') : '
     v-bind="attrs"
     :to="link?.to"
     :target="link?.external ? '_blank' : undefined"
-    class="self-start text-primary underline-offset-4 hover:underline"
+    class="self-start underline-offset-4 hover:underline"
+    :class="tokens"
   >
     {{ text('label') }}
   </ULink>
@@ -94,6 +110,7 @@ const level = computed(() => (text('level') in HEADING_CLASS ? text('level') : '
     v-else-if="node.type === 'Input'"
     v-bind="attrs"
     :label="text('label')"
+    :class="tokens"
   >
     <UInput
       :placeholder="text('placeholder')"
@@ -105,10 +122,11 @@ const level = computed(() => (text('level') in HEADING_CLASS ? text('level') : '
   <UCard
     v-else-if="node.type === 'Card'"
     v-bind="attrs"
+    :class="card.root"
   >
     <div
       class="flex flex-col"
-      :style="{ gap: node.style.gap }"
+      :class="card.stack"
     >
       <BildrNode
         v-for="child in node.children"

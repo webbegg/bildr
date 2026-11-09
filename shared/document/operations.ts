@@ -1,6 +1,7 @@
-import { getComponent, isContainerType, isStyleKey } from './components'
+import { isStyleTokenKey, styleTokenProblem } from '../design/tokens'
+import { getComponent, isContainerType } from './components'
 import type { PropValue } from './components'
-import { nodeTreeProblems, PageSchema, propValueProblem, SlugSchema, StyleValueSchema } from './schema'
+import { nodeTreeProblems, PageSchema, propValueProblem, SlugSchema } from './schema'
 import type { DocNode, Page, Project } from './schema'
 import { containsNode, findNode, findParent, walk } from './tree'
 
@@ -118,8 +119,12 @@ export function applyOperation(project: Project, op: Operation): Operation {
       const page = getPage(project, op.pageId)
       const node = getNode(page, op.nodeId)
       for (const [key, value] of Object.entries(op.style)) {
-        if (!isStyleKey(key)) fail('invalid', `Unsupported style property "${key}"`)
-        if (value !== null && !StyleValueSchema.safeParse(value).success) fail('invalid', `Invalid value for "${key}"`)
+        if (value === null || value === '') {
+          if (!isStyleTokenKey(key)) fail('invalid', `Unknown style token "${key}"`)
+        } else {
+          const problem = styleTokenProblem(key, value)
+          if (problem) fail('invalid', problem)
+        }
       }
       const previous: Record<string, string | null> = {}
       for (const [key, value] of Object.entries(op.style)) {

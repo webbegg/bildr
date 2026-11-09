@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { COMPONENTS, STYLE_KEYS } from '#shared/document/components'
+import { STYLE_TOKENS } from '#shared/design/tokens'
+import { COMPONENTS } from '#shared/document/components'
 import { createProject } from '#shared/document/factory'
 import { IdSchema } from '#shared/document/schema'
 import { ActionError, defineAction } from './define'
@@ -36,10 +37,13 @@ export const projectGet = defineAction({
 
 export const componentsList = defineAction({
   name: 'components_list',
-  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and the editable style keys.',
+  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and default style; plus the design tokens a node style can use (key, label, group, allowed values).',
   input: z.object({}),
   readOnly: true,
-  run: async () => ({ components: COMPONENTS, styleKeys: STYLE_KEYS })
+  run: async () => ({
+    components: COMPONENTS,
+    tokens: STYLE_TOKENS.map(({ key, label, group, values }) => ({ key, label, group, values }))
+  })
 })
 
 export const historyGet = defineAction({

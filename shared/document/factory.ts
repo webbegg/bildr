@@ -33,7 +33,7 @@ export function createPage(name: string, slug = slugify(name)): Page {
     id: newId('p'),
     name,
     slug,
-    root: { id: newId('n'), type: PAGE_ROOT_TYPE, props: {}, style: { padding: '24px', gap: '16px' }, children: [] }
+    root: { id: newId('n'), type: PAGE_ROOT_TYPE, props: {}, style: { p: '6', gap: '4' }, children: [] }
   }
 }
 

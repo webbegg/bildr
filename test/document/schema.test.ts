@@ -3,6 +3,7 @@ import { ProjectSchema } from '#shared/document/schema'
 import { COMPONENTS, getComponent } from '#shared/document/components'
 import { cloneWithNewIds, createNode, createProject, slugify } from '#shared/document/factory'
 import { findParent, walk } from '#shared/document/tree'
+import { styleTokenProblem } from '#shared/design/tokens'
 
 describe('document schema', () => {
   it('accepts a freshly created project', () => {
@@ -14,6 +15,20 @@ describe('document schema', () => {
     project.pages[0]!.root.children.push({ id: 'x', type: 'Marquee', props: {}, style: {}, children: [] })
     const result = ProjectSchema.safeParse(project)
     expect(result.success).toBe(false)
+  })
+
+  it('rejects style values that are not design tokens', () => {
+    const project = createProject('My App')
+    const text = createNode('Text')
+    text.style = { padding: '16px' }
+    project.pages[0]!.root.children.push(text)
+    expect(ProjectSchema.safeParse(project).success).toBe(false)
+
+    text.style = { mt: '13' }
+    expect(ProjectSchema.safeParse(project).success).toBe(false)
+
+    text.style = { mt: '10', color: 'error' }
+    expect(ProjectSchema.safeParse(project).success).toBe(true)
   })
 
   it('rejects children under a non-container component', () => {
@@ -30,6 +45,16 @@ describe('component registry', () => {
     expect(COMPONENTS.map(c => c.type)).toEqual(
       ['Container', 'Row', 'Column', 'Heading', 'Text', 'Image', 'Button', 'Link', 'Input', 'Card']
     )
+  })
+
+  it('declares default styles as design tokens', () => {
+    for (const def of COMPONENTS) {
+      for (const [key, value] of Object.entries(def.defaultStyle)) expect(styleTokenProblem(key, value)).toBeUndefined()
+    }
+    expect(createNode('Container').style).toEqual({ p: '4', gap: '3' })
+    expect(createNode('Row').style).toEqual({ gap: '3', items: 'center' })
+    expect(createNode('Image').style).toEqual({ w: 'full' })
+    expect(createProject('My App').pages[0]!.root.style).toEqual({ p: '6', gap: '4' })
   })
 
   it('creates nodes with the default props of their component', () => {

@@ -104,10 +104,25 @@ describe('applyOperation', () => {
     expect(findNode(project.pages[0]!.root, button.id)!.props).toEqual(before)
   })
 
-  it('rejects style keys outside the allowed list', () => {
+  it('rejects style tokens outside the registry', () => {
     const { project, pageId, rootId } = setup()
     expect(() => applyOperation(project, { op: 'setStyle', pageId, nodeId: rootId, style: { position: 'fixed' } }))
+      .toThrow('Unknown style token "position"')
+    expect(() => applyOperation(project, { op: 'setStyle', pageId, nodeId: rootId, style: { mt: '13' } }))
+      .toThrow('"13" is not a value of style token "mt"')
+    expect(() => applyOperation(project, { op: 'setStyle', pageId, nodeId: rootId, style: { padding: '16px' } }))
       .toThrow(OperationError)
+  })
+
+  it('sets style tokens, removing null or empty ones, with an exact inverse', () => {
+    const { project, pageId, rootId } = setup()
+    const before = structuredClone(project.pages[0]!.root.style)
+
+    const inverse = applyOperation(project, { op: 'setStyle', pageId, nodeId: rootId, style: { mt: '10', bg: 'primary', p: null, gap: '' } })
+    expect(project.pages[0]!.root.style).toEqual({ mt: '10', bg: 'primary' })
+
+    applyOperation(project, inverse)
+    expect(project.pages[0]!.root.style).toEqual(before)
   })
 
   it('adds, updates and removes pages with inverses', () => {

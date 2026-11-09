@@ -1,36 +1,24 @@
-import type { StyleKey } from '../document/components'
+import { STYLE_TOKEN_GROUPS, STYLE_TOKENS } from '../design/tokens'
+import type { StyleToken, StyleTokenGroup } from '../design/tokens'
 
-/** How the style panel presents each style key. Keys without options are free CSS values. */
+/** How the style panel presents the design tokens: one select per token, grouped. */
 
-export const STYLE_GROUPS = ['Layout', 'Typography', 'Appearance'] as const
+/** The select value for "no token" (select items cannot use an empty value). */
+export const STYLE_DEFAULT = '__default'
 
-export type StyleGroup = typeof STYLE_GROUPS[number]
-
-export interface StyleField {
-  key: StyleKey
-  label: string
-  group: StyleGroup
-  placeholder?: string
-  options?: string[]
+export interface StyleFieldGroup {
+  group: StyleTokenGroup
+  fields: StyleToken[]
 }
 
-const ALIGN = ['flex-start', 'center', 'flex-end', 'stretch', 'baseline']
-const JUSTIFY = ['flex-start', 'center', 'flex-end', 'space-between', 'space-around', 'space-evenly']
+export function styleFieldGroups(): StyleFieldGroup[] {
+  return STYLE_TOKEN_GROUPS.map(group => ({ group, fields: STYLE_TOKENS.filter(t => t.group === group) }))
+}
 
-export const STYLE_FIELDS: StyleField[] = [
-  { key: 'padding', label: 'Padding', group: 'Layout', placeholder: '16px' },
-  { key: 'margin', label: 'Margin', group: 'Layout', placeholder: '0 auto' },
-  { key: 'gap', label: 'Gap', group: 'Layout', placeholder: '12px' },
-  { key: 'width', label: 'Width', group: 'Layout', placeholder: '100%' },
-  { key: 'maxWidth', label: 'Max width', group: 'Layout', placeholder: '960px' },
-  { key: 'minHeight', label: 'Min height', group: 'Layout', placeholder: '200px' },
-  { key: 'alignItems', label: 'Align items', group: 'Layout', options: ALIGN },
-  { key: 'justifyContent', label: 'Justify content', group: 'Layout', options: JUSTIFY },
-  { key: 'fontSize', label: 'Font size', group: 'Typography', placeholder: '16px' },
-  { key: 'fontWeight', label: 'Font weight', group: 'Typography', options: ['300', '400', '500', '600', '700', '800'] },
-  { key: 'textAlign', label: 'Text align', group: 'Typography', options: ['left', 'center', 'right', 'justify'] },
-  { key: 'color', label: 'Text color', group: 'Typography', placeholder: '#111827' },
-  { key: 'backgroundColor', label: 'Background', group: 'Appearance', placeholder: '#f9fafb' },
-  { key: 'border', label: 'Border', group: 'Appearance', placeholder: '1px solid #e5e7eb' },
-  { key: 'borderRadius', label: 'Radius', group: 'Appearance', placeholder: '8px' }
-]
+export function styleFieldItems(token: StyleToken): { label: string, value: string }[] {
+  return [{ label: 'Default', value: STYLE_DEFAULT }, ...token.values.map(value => ({ label: value, value }))]
+}
+
+export function styleFieldUpdate(key: string, selected: string): Record<string, string | null> {
+  return { [key]: selected === STYLE_DEFAULT ? null : selected }
+}

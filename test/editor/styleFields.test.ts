@@ -1,21 +1,30 @@
 import { describe, expect, it } from 'vitest'
-import { STYLE_KEYS } from '#shared/document/components'
-import { STYLE_FIELDS, STYLE_GROUPS } from '#shared/editor/styleFields'
+import { STYLE_TOKENS } from '#shared/design/tokens'
+import { STYLE_DEFAULT, styleFieldGroups, styleFieldItems, styleFieldUpdate } from '#shared/editor/styleFields'
 import { DRAG_MIME, draggedNodeId, nodeDragType, parseDragPayload } from '#shared/editor/dropTarget'
 
-describe('STYLE_FIELDS', () => {
-  it('covers every style key once, in a known group', () => {
-    expect(STYLE_FIELDS.map(f => f.key).sort()).toEqual([...STYLE_KEYS].sort())
-    for (const field of STYLE_FIELDS) expect(STYLE_GROUPS).toContain(field.group)
+describe('style fields', () => {
+  it('lists every design token once, grouped by its registry group', () => {
+    const groups = styleFieldGroups()
+    expect(groups.map(g => g.group)).toEqual(['Spacing', 'Size', 'Color', 'Typography', 'Border', 'Effects', 'Layout'])
+    expect(groups.flatMap(g => g.fields.map(f => f.key)).sort()).toEqual(STYLE_TOKENS.map(t => t.key).sort())
+    expect(groups.find(g => g.group === 'Spacing')!.fields.map(f => f.key)).toContain('mt')
   })
 
-  it('offers fixed options for the enumerated properties', () => {
-    const options = (key: string) => STYLE_FIELDS.find(f => f.key === key)?.options
-    expect(options('textAlign')).toEqual(['left', 'center', 'right', 'justify'])
-    expect(options('alignItems')).toContain('center')
-    expect(options('justifyContent')).toContain('space-between')
-    expect(options('fontWeight')).toContain('700')
-    expect(options('padding')).toBeUndefined()
+  it('offers "Default" plus the allowed values of a token', () => {
+    const items = styleFieldItems(STYLE_TOKENS.find(t => t.key === 'align')!)
+    expect(items).toEqual([
+      { label: 'Default', value: STYLE_DEFAULT },
+      { label: 'left', value: 'left' },
+      { label: 'center', value: 'center' },
+      { label: 'right', value: 'right' },
+      { label: 'justify', value: 'justify' }
+    ])
+  })
+
+  it('turns a pick into a style update, "Default" clearing the token', () => {
+    expect(styleFieldUpdate('mt', '10')).toEqual({ mt: '10' })
+    expect(styleFieldUpdate('mt', STYLE_DEFAULT)).toEqual({ mt: null })
   })
 })
 

@@ -93,7 +93,7 @@ describe('action dispatcher', () => {
     expect((await rootChildren(bildr, projectId))[0]!.props.text).toBe('Edited')
 
     await bildr.call('history_undo', { projectId }, ui)
-    await bildr.call('node_update_style', { projectId, pageId, nodeId, style: { color: 'red' } }, ui)
+    await bildr.call('node_update_style', { projectId, pageId, nodeId, style: { color: 'error' } }, ui)
     await expect(bildr.call('history_redo', { projectId }, ui)).rejects.toMatchObject({ code: 'invalid' })
   })
 
@@ -125,5 +125,43 @@ describe('action dispatcher', () => {
     const insert = listed.find(a => a.name === 'node_insert')!
     expect(insert.inputSchema).toMatchObject({ type: 'object' })
     expect(listed.find(a => a.name === 'project_get')!.readOnly).toBe(true)
+  })
+
+  it('styles nodes with design tokens, nested children included', async () => {
+    const { bildr, projectId, pageId } = await setup()
+    const { nodeId } = await bildr.call<{ nodeId: string }>('node_insert', {
+      projectId, pageId, type: 'Card', style: { bg: 'primary', p: '8' },
+      children: [{ type: 'Text', style: { color: 'error', mt: '10' } }]
+    }, ui)
+    await bildr.call('node_update_style', { projectId, pageId, nodeId, style: { rounded: 'xl', p: null } }, ui)
+
+    const [card] = await rootChildren(bildr, projectId)
+    expect(card!.style).toEqual({ gap: '3', bg: 'primary', rounded: 'xl' })
+    expect(card!.children[0]!.style).toEqual({ color: 'error', mt: '10' })
+  })
+
+  it('rejects unknown style keys and values with zod issues', async () => {
+    const { bildr, projectId, pageId, rootId } = await setup()
+    const bad = [
+      bildr.call('node_update_style', { projectId, pageId, nodeId: rootId, style: { mt: '13' } }, ui),
+      bildr.call('node_update_style', { projectId, pageId, nodeId: rootId, style: { padding: '16px' } }, ui),
+      bildr.call('node_insert', { projectId, pageId, type: 'Text', style: { bg: '#f00' } }, ui),
+      bildr.call('node_insert', { projectId, pageId, type: 'Row', children: [{ type: 'Text', style: { mt: '13' } }] }, ui)
+    ]
+    for (const call of bad) await expect(call).rejects.toMatchObject({ code: 'invalid_input', issues: expect.arrayContaining([expect.anything()]) })
+  })
+
+  it('describes style tokens as enums in the action schemas and in components_list', async () => {
+    const bildr = createBildr(memoryStorage())
+    const listed = bildr.list()
+    interface JsonSchema { properties: Record<string, JsonSchema>, additionalProperties?: boolean, enum?: string[], anyOf?: JsonSchema[] }
+    const schema = (name: string) => listed.find(a => a.name === name)!.inputSchema as unknown as JsonSchema
+    const updateStyle = schema('node_update_style').properties.style!
+    expect(updateStyle.additionalProperties).toBe(false)
+    expect(updateStyle.properties.mt!.anyOf![0]!.enum).toEqual(['0', '0.5', '1', '1.5', '2', '2.5', '3', '4', '5', '6', '8', '10', '12', '16', '20', '24', '32', 'auto'])
+    expect(schema('node_insert').properties.style!.properties.bg!.enum).toContain('primary-500')
+
+    const { tokens } = await bildr.call<{ tokens: { key: string, group: string, values: string[] }[] }>('components_list', {}, ui)
+    expect(tokens.find(t => t.key === 'mt')).toMatchObject({ group: 'Spacing', values: expect.arrayContaining(['10']) })
   })
 })

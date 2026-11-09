@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { getComponent, isContainerType, isStyleKey, PAGE_ROOT_TYPE } from './components'
+import { styleTokenProblem } from '../design/tokens'
+import { getComponent, isContainerType, PAGE_ROOT_TYPE } from './components'
 import type { PropDef, PropValue } from './components'
 
 /**
@@ -19,14 +20,13 @@ export interface DocNode {
 export const IdSchema = z.string().regex(/^[\w-]{1,64}$/, 'Invalid id')
 export const SlugSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use lowercase letters, digits, and dashes').max(64)
 export const PropValueSchema = z.union([z.string().max(5000), z.number(), z.boolean()])
-// No braces, semicolons, or angle brackets: style values stay single declarations.
-export const StyleValueSchema = z.string().max(200).regex(/^[^;{}<>]*$/, 'Invalid CSS value')
 
 export const NodeSchema: z.ZodType<DocNode> = z.lazy(() => z.object({
   id: IdSchema,
   type: z.string(),
   props: z.record(z.string(), PropValueSchema),
-  style: z.record(z.string(), StyleValueSchema),
+  // Design tokens (key → value from `shared/design/tokens`), checked in nodeTreeProblems.
+  style: z.record(z.string(), z.string()),
   children: z.array(NodeSchema)
 }))
 
@@ -71,7 +71,8 @@ export interface PublishedSnapshot {
 
 /**
  * Structural rules zod cannot express: known component types, children only
- * under containers, and ids unique across `seen`. Returns human-readable
+ * under containers, props and style tokens from the registries, and ids
+ * unique across `seen`. Returns human-readable
  * problems; empty means valid. `seen` collects every id visited.
  */
 export function nodeTreeProblems(node: DocNode, seen: Set<string>, isRoot = false): string[] {
@@ -90,8 +91,8 @@ export function nodeTreeProblems(node: DocNode, seen: Set<string>, isRoot = fals
       if (problem) problems.push(problem)
     }
     for (const [key, value] of Object.entries(n.style)) {
-      if (!isStyleKey(key)) problems.push(`Unsupported style property "${key}"`)
-      else if (!StyleValueSchema.safeParse(value).success) problems.push(`Invalid value for "${key}"`)
+      const problem = styleTokenProblem(key, value)
+      if (problem) problems.push(problem)
     }
     n.children.forEach(child => visit(child, false))
   }

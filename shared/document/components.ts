@@ -25,6 +25,7 @@ export interface ComponentDef {
   description: string
   container: boolean
   props: PropDef[]
+  /** Design tokens, see `shared/design/tokens`. */
   defaultStyle: Record<string, string>
 }
 
@@ -40,7 +41,7 @@ export const COMPONENTS: ComponentDef[] = [
     description: 'A block that stacks its children vertically.',
     container: true,
     props: [],
-    defaultStyle: { padding: '16px', gap: '12px' }
+    defaultStyle: { p: '4', gap: '3' }
   },
   {
     type: 'Row',
@@ -51,7 +52,7 @@ export const COMPONENTS: ComponentDef[] = [
     props: [
       { name: 'wrap', label: 'Wrap', kind: 'boolean', default: true }
     ],
-    defaultStyle: { gap: '12px', alignItems: 'center' }
+    defaultStyle: { gap: '3', items: 'center' }
   },
   {
     type: 'Column',
@@ -60,7 +61,7 @@ export const COMPONENTS: ComponentDef[] = [
     description: 'Lays out its children vertically.',
     container: true,
     props: [],
-    defaultStyle: { gap: '12px' }
+    defaultStyle: { gap: '3' }
   },
   {
     type: 'Heading',
@@ -83,7 +84,7 @@ export const COMPONENTS: ComponentDef[] = [
     props: [
       { name: 'text', label: 'Text', kind: 'textarea', default: 'Some text' }
     ],
-    defaultStyle: {}
+    defaultStyle: { color: 'toned' }
   },
   {
     type: 'Image',
@@ -95,7 +96,7 @@ export const COMPONENTS: ComponentDef[] = [
       { name: 'src', label: 'Source URL', kind: 'image', default: 'https://placehold.co/600x400' },
       { name: 'alt', label: 'Alt text', kind: 'text', default: '' }
     ],
-    defaultStyle: { width: '100%' }
+    defaultStyle: { w: 'full' }
   },
   {
     type: 'Button',
@@ -122,7 +123,7 @@ export const COMPONENTS: ComponentDef[] = [
       { name: 'label', label: 'Label', kind: 'text', default: 'Link' },
       { name: 'to', label: 'Link to', kind: 'link', default: '', description: 'A page slug or an absolute URL.' }
     ],
-    defaultStyle: {}
+    defaultStyle: { color: 'primary' }
   },
   {
     type: 'Input',
@@ -144,7 +145,7 @@ export const COMPONENTS: ComponentDef[] = [
     description: 'A bordered surface holding other components.',
     container: true,
     props: [],
-    defaultStyle: { gap: '12px' }
+    defaultStyle: { gap: '3' }
   }
 ]
 
@@ -156,17 +157,4 @@ export function getComponent(type: string): ComponentDef | undefined {
 
 export function isContainerType(type: string): boolean {
   return type === PAGE_ROOT_TYPE || getComponent(type)?.container === true
-}
-
-/** The style properties the style panel edits, as camelCase CSS keys. */
-export const STYLE_KEYS = [
-  'padding', 'margin', 'gap', 'width', 'maxWidth', 'minHeight',
-  'backgroundColor', 'color', 'fontSize', 'fontWeight', 'textAlign',
-  'border', 'borderRadius', 'alignItems', 'justifyContent'
-] as const
-
-export type StyleKey = typeof STYLE_KEYS[number]
-
-export function isStyleKey(key: string): key is StyleKey {
-  return (STYLE_KEYS as readonly string[]).includes(key)
 }
