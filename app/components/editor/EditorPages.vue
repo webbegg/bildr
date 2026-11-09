@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Page } from '#shared/document/schema'
+import { filterPages } from '#shared/editor/sidebar'
 
+/** The Pages panel: the project's pages, filtered by the sidebar search. */
+const { query = '' } = defineProps<{ query?: string }>()
 const editor = useEditor()
+const pages = computed(() => filterPages(editor.project?.pages ?? [], query))
 
 const newName = ref('')
 const adding = ref(false)
@@ -12,9 +16,7 @@ const renameValue = ref('')
 async function addPage() {
   const name = newName.value.trim()
   if (!name) return
-  const result = await editor.run<{ pageId: string }>('page_add', { name })
-  if (result) {
-    editor.selectPage(result.pageId)
+  if (await editor.addPage(name)) {
     newName.value = ''
     adding.value = false
   }
@@ -50,7 +52,7 @@ function menu(page: Page): DropdownMenuItem[] {
 </script>
 
 <template>
-  <div class="border-b border-default pb-2">
+  <div class="overflow-y-auto pb-2">
     <div class="flex items-center justify-between px-3 pt-3 pb-1">
       <p class="text-xs font-semibold text-muted uppercase">
         Pages
@@ -78,8 +80,14 @@ function menu(page: Page): DropdownMenuItem[] {
         @keydown.esc="adding = false"
       />
     </form>
+    <p
+      v-if="query && !pages.length"
+      class="px-3 py-2 text-xs text-dimmed"
+    >
+      No pages match “{{ query }}”.
+    </p>
     <div
-      v-for="page in editor.project?.pages"
+      v-for="page in pages"
       :key="page.id"
       class="group flex items-center gap-1 px-1.5"
     >

@@ -6,11 +6,6 @@ const editor = createEditor(String(route.params.projectId))
 provide(EDITOR_KEY, editor)
 useProjectSync(editor)
 
-const sidebarTabs = [
-  { label: 'Layers', icon: 'i-lucide-layers', slot: 'layers' as const },
-  { label: 'Components', icon: 'i-lucide-blocks', slot: 'components' as const }
-]
-
 const loadError = ref<string | null>(null)
 onMounted(() => editor.reload().catch((error) => {
   loadError.value = actionErrorMessage(error)
@@ -34,6 +29,12 @@ function allowsNavigation(target: EventTarget | null): boolean {
 }
 
 function onKeyDown(event: KeyboardEvent) {
+  // Cmd/Ctrl+P (preview, instead of printing) and Cmd/Ctrl+F (sidebar search) work from fields too.
+  const meta = event.metaKey || event.ctrlKey
+  if (meta && !event.shiftKey && !event.altKey && ['p', 'f'].includes(event.key.toLowerCase())) {
+    if (editor.shortcut(event.key, true, false)) event.preventDefault()
+    return
+  }
   // The layers tree handles its own arrow keys first.
   if (event.defaultPrevented || isEditable(event.target) || inFloatingLayer(event)) return
   if (editor.shortcut(event.key, event.metaKey || event.ctrlKey, event.shiftKey, allowsNavigation(event.target))) event.preventDefault()
@@ -85,40 +86,20 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
     <EditorToolbar />
     <div class="flex min-h-0 flex-1">
       <aside
-        v-if="editor.mode === 'design'"
-        class="flex w-64 shrink-0 flex-col border-r border-default"
-      >
-        <EditorDesignPanel class="min-h-0 flex-1" />
-      </aside>
-      <aside
-        v-else-if="editor.mode === 'data'"
+        v-if="editor.mode === 'data'"
         class="flex w-64 shrink-0 flex-col border-r border-default"
       >
         <DataCollections class="min-h-0 flex-1" />
       </aside>
       <aside
-        v-else
+        v-else-if="editor.mode === 'build'"
         class="flex w-64 shrink-0 flex-col border-r border-default"
       >
-        <EditorPages />
-        <UTabs
-          :items="sidebarTabs"
-          variant="link"
-          size="sm"
-          class="min-h-0 flex-1 gap-0"
-          :ui="{ list: 'px-3', content: 'min-h-0 flex-1' }"
-        >
-          <template #layers>
-            <EditorLayers class="h-full" />
-          </template>
-          <template #components>
-            <EditorPalette class="h-full" />
-          </template>
-        </UTabs>
+        <EditorSidebar class="min-h-0 flex-1" />
       </aside>
-      <!-- Hidden, not unmounted, in Data mode so the canvas does not reload. The canvas zooms and pans edge to edge. -->
+      <!-- Hidden, not unmounted, in the Data and Settings views so the canvas does not reload. The canvas zooms and pans edge to edge. -->
       <main
-        v-show="editor.mode !== 'data'"
+        v-show="editor.mode === 'build'"
         class="min-w-0 flex-1 bg-[#1e1e1e]"
         data-canvas-area
       >
@@ -132,20 +113,14 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
       >
         <DataView />
       </main>
-      <aside
-        v-if="editor.mode === 'design'"
-        class="flex w-80 shrink-0 flex-col border-l border-default bg-muted p-3"
+      <main
+        v-if="editor.mode === 'settings'"
+        class="min-w-0 flex-1 overflow-y-auto"
       >
-        <p class="mb-2 text-xs font-semibold text-muted uppercase">
-          Token preview
-        </p>
-        <EditorCanvas
-          view="tokens"
-          class="min-h-0 flex-1"
-        />
-      </aside>
+        <EditorSettings />
+      </main>
       <aside
-        v-else-if="editor.mode === 'build'"
+        v-if="editor.mode === 'build'"
         class="relative shrink-0 border-l border-default"
         :style="{ width: `${panelWidth}px` }"
         data-right-panel

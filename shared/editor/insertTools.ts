@@ -27,7 +27,8 @@ export const INSERT_TOOLS: InsertTool[] = [
   { id: 'Container', label: 'Frame', icon: 'i-lucide-frame', keys: ['F', 'A'] },
   { id: 'Text', label: 'Text', icon: 'i-lucide-type', keys: ['T'] },
   { id: 'Button', label: 'Button', icon: 'i-lucide-mouse-pointer-click', keys: ['B'] },
-  { id: 'Image', label: 'Image', icon: 'i-lucide-image', keys: ['I'] },
+  // No letter: `I` opens the Insert panel, as in Framer.
+  { id: 'Image', label: 'Image', icon: 'i-lucide-image', keys: [] },
   { id: 'Row', label: 'Row', icon: 'i-lucide-columns-3', keys: ['R'] },
   { id: 'Column', label: 'Column', icon: 'i-lucide-rows-3', keys: ['C'] }
 ]

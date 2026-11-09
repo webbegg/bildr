@@ -66,8 +66,12 @@ export function createEditor(projectId: string) {
   /** Layers rows whose children are hidden; kept in memory only. */
   const collapsed = ref(new Set<string>())
   const history = ref<{ undo: string | null, redo: string | null }>({ undo: null, redo: null })
-  /** Build edits the page; Design edits the project theme; Data edits collections and records. */
-  const mode = ref<'build' | 'design' | 'data'>('build')
+  /** The view, Framer's: Canvas (`build`) edits the pages, Data the collections and records, Settings the project. */
+  const mode = ref<'build' | 'data' | 'settings'>('build')
+  /** The Insert panel (`I`, or the sidebar's "+"): components to click or drag in. */
+  const insertOpen = ref(false)
+  /** Bumped by Cmd/Ctrl+F; the sidebar focuses its search on each bump. */
+  const searchRequest = ref(0)
   /** The canvas width, and the breakpoint the style panel edits (Mobile is the base, mobile-first). */
   const deviceId = ref<DeviceId>('mobile')
   const device = computed(() => DEVICES.find(d => d.id === deviceId.value)!)
@@ -194,6 +198,13 @@ export function createEditor(projectId: string) {
     hoveredId.value = null
   }
 
+  /** Adds a page and shows it; true when it was added. */
+  async function addPage(name: string): Promise<boolean> {
+    const result = await run<{ pageId: string }>('page_add', { name })
+    if (result) selectPage(result.pageId)
+    return !!result
+  }
+
   /** Inserts a palette component (at the selection by default) and selects it. */
   async function insert(type: string, target?: DropTarget): Promise<void> {
     const at = target ?? insertTargetForSelection(page.value!.root, selectedId.value)
@@ -201,14 +212,22 @@ export function createEditor(projectId: string) {
     if (result) selectedId.value = result.nodeId
   }
 
+  /** The draft preview of the current page: unpublished edits included. */
+  const previewUrl = computed(() => `/preview/${projectId}/${page.value?.slug ?? ''}`)
+
+  function openPreview(): void {
+    window.open(previewUrl.value, '_blank')
+  }
+
   /** Picks a canvas tool: Move, Hand, or an insert tool to arm. */
   function setTool(id: ToolId): void {
     tool.value = id
   }
 
-  // The insert tools work in Build mode only, so a mode switch returns to Move.
+  // The insert tools work on the Canvas only, so a view switch returns to Move.
   watch(mode, () => {
     tool.value = MOVE_TOOL
+    insertOpen.value = false
   })
 
   /** A canvas click with an insert tool armed: inserts its component there, selects it and returns to Move, like Figma. */
@@ -431,17 +450,22 @@ export function createEditor(projectId: string) {
    * arrows): the canvas and the layers tree pass it, a focused button does not.
    * Escape disarms an insert tool, else clears the selection (Figma would
    * select the parent; Shift+Enter does). Bare letters pick the canvas tools
-   * (V Move, H Hand, and the insert tools in Build mode); callers skip keys
-   * typed into fields.
+   * (V Move, H Hand, and the insert tools); `I` opens the Insert panel, as in
+   * Framer, rather than arming Image. Cmd/Ctrl+P opens the draft preview and
+   * Cmd/Ctrl+F the sidebar search. Callers skip keys typed into fields.
    */
   function shortcut(key: string, meta: boolean, shift: boolean, nav = false): boolean {
     const lower = key.toLowerCase()
-    const picked = toolForKey({ key, meta, shift })
-    // Move and Hand work on the Design canvas too; the insert tools edit the page in Build mode only.
-    const armed = picked && (mode.value === 'build' || !isInsertTool(picked)) ? picked : null
-    // Node shortcuts would act on a page the Data mode does not show.
-    if (mode.value === 'data' && !(meta && (lower === 'z' || lower === 'y'))) return false
-    if (meta && lower === 'z') (shift ? redo : undo)()
+    if (meta && !shift && lower === 'p') {
+      openPreview()
+      return true
+    }
+    // The Canvas view's shortcuts would act on a page the Data and Settings views do not show.
+    if (mode.value !== 'build' && !(meta && (lower === 'z' || lower === 'y'))) return false
+    const armed = toolForKey({ key, meta, shift })
+    if (meta && !shift && lower === 'f') searchRequest.value++
+    else if (!meta && !shift && lower === 'i') insertOpen.value = true
+    else if (meta && lower === 'z') (shift ? redo : undo)()
     else if (meta && lower === 'y') redo()
     else if (meta && lower === 'd') duplicate()
     else if (meta && lower === 'g') group()
@@ -460,9 +484,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, deviceId, device, themeDraft, stylePreview, page, selected, selectedNodes, theme,
+    projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, previewUrl, deviceId, device, themeDraft, stylePreview, page, selected, selectedNodes, theme,
     collectionId, collection, records, recordsTotal, recordsError, listCollections, lists,
-    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, insert, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }

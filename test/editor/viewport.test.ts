@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { boundsOf, clampZoom, fitView, layoutFrames, panView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { DEVICES } from '#shared/editor/styleFields'
+import { boundsOf, clampZoom, fitView, frameLabel, frameOrder, layoutFrames, panView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
 describe('panView', () => {
   it('moves the content with a drag from one screen point to another, at any zoom', () => {
@@ -107,6 +108,25 @@ describe('layoutFrames', () => {
 
   it('has empty bounds without frames', () => {
     expect(boundsOf([])).toEqual({ x: 0, y: 0, width: 0, height: 0 })
+  })
+})
+
+describe('frameOrder', () => {
+  it('shows the frames Desktop, Tablet, Mobile from left to right, like Framer', () => {
+    expect(frameOrder(DEVICES).map(d => d.id)).toEqual(['desktop', 'tablet', 'mobile'])
+  })
+
+  it('keeps a single frame', () => {
+    expect(frameOrder([DEVICES[0]!]).map(d => d.id)).toEqual(['mobile'])
+  })
+})
+
+describe('frameLabel', () => {
+  it('marks the base (mobile-first) frame as Primary', () => {
+    const [mobile, tablet, desktop] = DEVICES
+    expect(frameLabel(mobile!)).toBe('Mobile · 390 · Primary')
+    expect(frameLabel(tablet!)).toBe('Tablet · 768')
+    expect(frameLabel(desktop!)).toBe('Desktop · 1280')
   })
 })
 

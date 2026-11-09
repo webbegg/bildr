@@ -13,9 +13,10 @@ import { hiddenBadge, naturalDisplay, visibilityAt, visibilityToggle } from '#sh
  * As in Figma, Row and Column show auto layout arrows, and hovering shows an
  * eye that hides or shows the node on the editor's device (one undo step).
  * A row hidden there is dimmed with a crossed eye; one hidden only on other
- * devices names their breakpoints.
+ * devices names their breakpoints. With a search `filter` (the ids to show)
+ * only those rows show, expanded.
  */
-const props = defineProps<{ node: DocNode, depth: number }>()
+const props = defineProps<{ node: DocNode, depth: number, filter?: ReadonlySet<string> | null }>()
 const editor = useEditor()
 const row = useTemplateRef<HTMLElement>('row')
 
@@ -31,8 +32,9 @@ const preview = computed(() => {
   const text = props.node.props.text ?? props.node.props.label
   return !isRoot.value && typeof text === 'string' ? text : ''
 })
-const hasChildren = computed(() => props.node.children.length > 0)
-const collapsed = computed(() => editor.collapsed.has(props.node.id))
+const children = computed(() => (props.filter ? props.node.children.filter(child => props.filter!.has(child.id)) : props.node.children))
+const hasChildren = computed(() => children.value.length > 0)
+const collapsed = computed(() => !props.filter && editor.collapsed.has(props.node.id))
 const selected = computed(() => editor.selectedIds.includes(props.node.id))
 const dropAt = ref<DropPosition | null>(null)
 
@@ -188,10 +190,11 @@ function onDrop(event: DragEvent) {
       role="group"
     >
       <EditorLayerItem
-        v-for="child in node.children"
+        v-for="child in children"
         :key="child.id"
         :node="child"
         :depth="depth + 1"
+        :filter="filter"
       />
     </div>
   </div>

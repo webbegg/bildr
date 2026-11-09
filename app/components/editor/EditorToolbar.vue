@@ -1,16 +1,40 @@
 <script setup lang="ts">
-import type { DeviceId } from '#shared/editor/styleFields'
-import { DEVICES } from '#shared/editor/styleFields'
+import type { DropdownMenuItem } from '@nuxt/ui'
 
+/**
+ * The lean top bar, Framer's: back, the project menu and the views (Canvas,
+ * Data, Settings) on the left; undo/redo, Preview (Cmd/Ctrl+P, the draft) and
+ * Publish on the right. The canvas frames set the breakpoint, so there is no
+ * device toggle. Projects cannot be renamed yet (no `project_rename` action),
+ * so the menu only opens the published app or the project list.
+ */
 const editor = useEditor()
-const devices = DEVICES.map(d => ({ value: d.id, label: `${d.label} · ${d.width}px`, icon: d.icon }))
 const toast = useToast()
 const publishing = ref(false)
 
+const VIEWS = [{ value: 'build', label: 'Canvas' }, { value: 'data', label: 'Data' }, { value: 'settings', label: 'Settings' }]
+
 const { data: published, refresh } = useAsyncData(
   `published-${editor.projectId}`,
-  () => callAction<{ url: string, version: number } | null>('project_published_info', { projectId: editor.projectId })
+  () => callAction<{ url: string, version: number, publishedAt: string } | null>('project_published_info', { projectId: editor.projectId })
 )
+
+const projectMenu = computed<DropdownMenuItem[][]>(() => [
+  [{
+    label: published.value ? `Open published app · v${published.value.version}` : 'Not published yet',
+    icon: 'i-lucide-external-link',
+    disabled: !published.value,
+    to: published.value ? `${published.value.url}/${editor.page?.slug ?? ''}` : undefined,
+    target: '_blank'
+  }, {
+    label: 'Project settings',
+    icon: 'i-lucide-settings',
+    onSelect: () => {
+      editor.mode = 'settings'
+    }
+  }],
+  [{ label: 'All projects', icon: 'i-lucide-layout-grid', to: '/' }]
+])
 
 async function publish() {
   publishing.value = true
@@ -38,29 +62,28 @@ async function publish() {
       size="sm"
       aria-label="All projects"
     />
-    <span class="font-semibold">{{ editor.project?.name }}</span>
-    <span class="text-sm text-dimmed">/ {{ editor.mode === 'data' ? editor.collection?.name ?? 'Data' : editor.page?.name }}</span>
+    <UDropdownMenu
+      :items="projectMenu"
+      :content="{ align: 'start' }"
+    >
+      <UButton
+        :label="editor.project?.name"
+        trailing-icon="i-lucide-chevron-down"
+        color="neutral"
+        variant="ghost"
+        size="sm"
+        class="max-w-56 font-semibold"
+        data-project-menu
+      />
+    </UDropdownMenu>
 
     <EditorSegmented
-      :items="[{ value: 'build', label: 'Build' }, { value: 'design', label: 'Design' }, { value: 'data', label: 'Data' }]"
+      :items="VIEWS"
       :model-value="editor.mode"
-      class="ms-4 w-56"
+      class="ms-2 w-52"
       data-mode-toggle
-      @update:model-value="editor.mode = $event as 'build' | 'design' | 'data'"
+      @update:model-value="editor.mode = $event as 'build' | 'data' | 'settings'"
     />
-
-    <UTooltip
-      v-if="editor.mode !== 'data'"
-      :text="`Active frame: ${editor.device.label} · ${editor.device.width}px; styles edit ${editor.device.breakpoint ? `${editor.device.breakpoint}:` : 'the base'}`"
-    >
-      <EditorSegmented
-        :items="devices"
-        :model-value="editor.deviceId"
-        class="ms-2 w-28"
-        data-device-toggle
-        @update:model-value="editor.deviceId = $event as DeviceId"
-      />
-    </UTooltip>
 
     <div class="ms-auto flex items-center gap-2">
       <UTooltip
@@ -92,16 +115,21 @@ async function publish() {
         />
       </UTooltip>
       <slot name="actions" />
-      <UButton
-        v-if="published"
-        :to="`${published.url}/${editor.page?.slug ?? ''}`"
-        target="_blank"
-        icon="i-lucide-external-link"
-        color="neutral"
-        variant="ghost"
-        size="sm"
-        :label="`Live v${published.version}`"
-      />
+      <UTooltip
+        text="Preview the draft"
+        :kbds="['meta', 'p']"
+      >
+        <UButton
+          :to="editor.previewUrl"
+          target="_blank"
+          icon="i-lucide-play"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          aria-label="Preview"
+          data-preview
+        />
+      </UTooltip>
       <UButton
         icon="i-lucide-rocket"
         label="Publish"

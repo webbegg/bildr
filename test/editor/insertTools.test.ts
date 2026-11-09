@@ -14,13 +14,14 @@ describe('toolForKey', () => {
     expect(key('t')).toBe('Text')
     expect(key('T')).toBe('Text')
     expect(key('b')).toBe('Button')
-    expect(key('i')).toBe('Image')
     expect(key('r')).toBe('Row')
     expect(key('c')).toBe('Column')
   })
 
   it('ignores other keys', () => {
     expect(key('x')).toBeNull()
+    // `I` opens the Insert panel (Framer), so the Image tool has no letter.
+    expect(key('i')).toBeNull()
     expect(key('Enter')).toBeNull()
     expect(key(' ')).toBeNull()
   })

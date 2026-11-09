@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { spacingBasePx, THEME_COLORS, themeOptions } from '#shared/design/theme'
 import type { Theme } from '#shared/design/theme'
+import { filterByName } from '#shared/editor/sidebar'
 
-/** The Design section: edits the project theme; the canvas follows live. */
+/** Assets › Styles: edits the project theme; the canvas follows live. The sidebar search filters the rows by name. */
+const { query = '' } = defineProps<{ query?: string }>()
 const editor = useEditor()
 const options = themeOptions()
 
@@ -12,35 +14,36 @@ const radiusItems = options.radii.map(radius => ({ label: `${radius} · ${Number
 const spacingItems = options.spacings.map(({ name }) => ({ label: name, value: name }))
 const spacingHint = computed(() => `mt-10 = ${10 * spacingBasePx(theme.value.spacing)}px`)
 
+const colors = computed(() => filterByName(THEME_COLORS.map(name => ({ name })), query).map(c => c.name))
+const fields = computed(() => new Set(filterByName([{ name: 'Font' }, { name: 'Radius' }, { name: 'Spacing density' }], query).map(f => f.name)))
+
 function update(patch: Partial<Omit<Theme, 'colors'>>) {
   editor.updateTheme(patch)
 }
 </script>
 
 <template>
-  <div class="space-y-5 overflow-y-auto p-3">
-    <div>
-      <p class="text-xs font-semibold text-muted uppercase">
-        Design system
-      </p>
-      <p class="mt-1 text-xs text-dimmed">
-        The project theme. Every token class follows it, in the canvas and when published.
-      </p>
-    </div>
-
-    <section class="space-y-1.5">
+  <div class="space-y-4">
+    <section
+      v-if="colors.length"
+      class="space-y-1.5"
+    >
       <p class="text-xs font-medium text-muted">
         Colours
       </p>
       <EditorThemeColor
-        v-for="name in THEME_COLORS"
+        v-for="name in colors"
         :key="name"
         :name="name"
       />
     </section>
 
-    <section class="space-y-3">
+    <section
+      v-if="fields.size"
+      class="space-y-3"
+    >
       <UFormField
+        v-if="fields.has('Font')"
         label="Font"
         size="xs"
       >
@@ -53,6 +56,7 @@ function update(patch: Partial<Omit<Theme, 'colors'>>) {
         />
       </UFormField>
       <UFormField
+        v-if="fields.has('Radius')"
         label="Radius"
         size="xs"
         help="rounded-sm equals it; rounded-lg is twice it"
@@ -66,6 +70,7 @@ function update(patch: Partial<Omit<Theme, 'colors'>>) {
         />
       </UFormField>
       <UFormField
+        v-if="fields.has('Spacing density')"
         label="Spacing density"
         size="xs"
         :help="spacingHint"

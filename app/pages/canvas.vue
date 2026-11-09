@@ -236,7 +236,7 @@ function onKeyDown(event: KeyboardEvent) {
   const zoom = zoomShortcut({ code: event.code, key: event.key, meta, shift: event.shiftKey })
   const lower = event.key.toLowerCase()
   const armsTool = !!toolForKey({ key: event.key, meta, shift: event.shiftKey, alt: event.altKey })
-  if (!zoom && !armsTool && !SHORTCUT_KEYS.has(event.key) && !(meta && ['z', 'y', 'd', 'a', 'g'].includes(lower)) && !(event.shiftKey && !meta && lower === 'a')) return
+  if (!zoom && !armsTool && !SHORTCUT_KEYS.has(event.key) && !(meta && ['z', 'y', 'd', 'a', 'g', 'p', 'f'].includes(lower)) && !(event.shiftKey && !meta && lower === 'a')) return
   event.preventDefault()
   post({ type: 'bildr:key', key: event.key, code: event.code, meta, shift: event.shiftKey })
 }

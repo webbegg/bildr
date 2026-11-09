@@ -65,6 +65,22 @@ export function layoutFrames(sizes: Size[], gap: number): Rect[] {
   })
 }
 
+/**
+ * The device frames left to right, Framer-style: widest (Desktop) first and
+ * the narrowest, the mobile-first base, last. Storage stays mobile-first.
+ */
+export function frameOrder<T extends { width: number }>(devices: readonly T[]): T[] {
+  return [...devices].sort((a, b) => b.width - a.width)
+}
+
+/** The tooltip on the Primary frame's label. */
+export const PRIMARY_FRAME_HINT = 'Edits here apply to all sizes unless overridden.'
+
+/** A frame's label, e.g. `Tablet · 768`; the base frame (no breakpoint) is the Primary one. */
+export function frameLabel(device: { label: string, width: number, breakpoint?: string }): string {
+  return `${device.label} · ${device.width}${device.breakpoint ? '' : ' · Primary'}`
+}
+
 /** The smallest rectangle holding every rect. */
 export function boundsOf(rects: Rect[]): Rect {
   if (!rects.length) return { x: 0, y: 0, width: 0, height: 0 }

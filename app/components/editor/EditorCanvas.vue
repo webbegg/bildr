@@ -9,11 +9,12 @@ import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 import type { Point, Viewport, ZoomCommand } from '#shared/editor/viewport'
 import { isInsertTool, pointerMode } from '#shared/editor/insertTools'
-import { boundsOf, fitView, FRAME_GAP, FRAME_MIN_HEIGHT, layoutFrames, panView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { boundsOf, fitView, FRAME_GAP, FRAME_MIN_HEIGHT, frameLabel, frameOrder, layoutFrames, panView, PRIMARY_FRAME_HINT, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
 /**
  * The editor canvas. The page view is a Figma-style infinite surface showing
- * one frame per device side by side, each a `/canvas` iframe at the device's
+ * one frame per device side by side (Desktop, Tablet, then the Primary
+ * Mobile frame, as in Framer), each a `/canvas` iframe at the device's
  * native width (so `md:`/`lg:` match it) and as tall as its content, all
  * scaled by one zoom/pan transform. Every frame gets the same messages, so
  * selection, hover and previews show in all of them; the active frame is
@@ -48,7 +49,7 @@ const FRAMES_KEY = 'bildr:canvas-frames'
 /** All frames, or only the active one (small screens, performance); remembered across reloads. */
 const singleFrame = ref(view === 'page' && localStorage.getItem(FRAMES_KEY) === 'single')
 const heights = reactive<Partial<Record<DeviceId, number>>>({})
-const shownDevices = computed(() => (singleFrame.value ? [editor.device] : DEVICES))
+const shownDevices = computed(() => (singleFrame.value ? [editor.device] : frameOrder(DEVICES)))
 const layout = computed(() => {
   const rects = layoutFrames(shownDevices.value.map(d => ({ width: d.width, height: Math.max(FRAME_MIN_HEIGHT, heights[d.id] ?? 0) })), FRAME_GAP)
   return shownDevices.value.map((device, i) => ({ device, rect: rects[i]! }))
@@ -147,7 +148,7 @@ function isEditable(target: EventTarget | null): boolean {
 
 function onWindowKeyDown(event: KeyboardEvent) {
   if (event.key === 'Alt') broadcast({ type: 'bildr:alt', down: true })
-  if (editor.mode === 'data' || isEditable(event.target)) return
+  if (editor.mode !== 'build' || isEditable(event.target)) return
   if (event.code === 'Space') {
     if (!pointerInStage.value && !spaceHeld.value) return
     event.preventDefault()
@@ -381,16 +382,22 @@ onBeforeUnmount(() => {
         :data-active="device.id === editor.deviceId || undefined"
       >
         <!-- Labels and the active outline keep their screen size at any zoom. -->
-        <button
-          type="button"
-          class="absolute bottom-full left-0 origin-bottom-left pb-1.5 text-[11px] whitespace-nowrap"
-          :class="device.id === editor.deviceId ? 'text-(--editor-selection)' : 'text-muted hover:text-default'"
-          :style="{ transform: `scale(${1 / viewport.zoom})` }"
-          data-frame-label
-          @click="activate(device.id)"
+        <UTooltip
+          :text="PRIMARY_FRAME_HINT"
+          :disabled="!!device.breakpoint"
+          :content="{ side: 'top' }"
         >
-          {{ device.label }} · {{ device.width }}
-        </button>
+          <button
+            type="button"
+            class="absolute bottom-full left-0 origin-bottom-left pb-1.5 text-[11px] whitespace-nowrap"
+            :class="device.id === editor.deviceId ? 'text-(--editor-selection)' : 'text-muted hover:text-default'"
+            :style="{ transform: `scale(${1 / viewport.zoom})` }"
+            data-frame-label
+            @click="activate(device.id)"
+          >
+            {{ frameLabel(device) }}
+          </button>
+        </UTooltip>
         <iframe
           :ref="frameRef(device.id)"
           src="/canvas"
