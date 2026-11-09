@@ -26,6 +26,7 @@
 @source inline("border-{0,1,2,4,8}");
 @source inline("rounded-{none,sm,md,lg,xl,2xl,3xl,full}");
 @source inline("shadow-{none,xs,sm,md,lg,xl,2xl}");
+@source inline("{,sm:,md:,lg:}flex-{row,col,row-reverse,col-reverse}");
 @source inline("{,sm:,md:,lg:}items-{start,center,end,stretch,baseline}");
 @source inline("{,sm:,md:,lg:}justify-{start,center,end,between,around,evenly}");
 @source inline("{,sm:,md:,lg:}self-{auto,start,center,end,stretch}");

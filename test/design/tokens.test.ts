@@ -16,8 +16,10 @@ describe('style token registry', () => {
     expect(STYLE_TOKENS.map(t => t.key)).toEqual([
       'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl', 'gap',
       'w', 'maxW', 'minH', 'bg', 'color', 'borderColor', 'text', 'font', 'align',
-      'border', 'rounded', 'shadow', 'items', 'justify', 'self', 'cols', 'colSpan'
+      'border', 'rounded', 'shadow', 'direction', 'items', 'justify', 'self', 'cols', 'colSpan'
     ])
+    expect(getStyleToken('direction')).toMatchObject({ prefix: 'flex', group: 'Layout', values: ['row', 'col', 'row-reverse', 'col-reverse'] })
+    expect(isResponsiveToken(getStyleToken('direction')!)).toBe(true)
     expect(getStyleToken('self')).toMatchObject({ prefix: 'self', group: 'Layout', values: ['auto', 'start', 'center', 'end', 'stretch'] })
     expect(getStyleToken('cols')).toMatchObject({ prefix: 'grid-cols', group: 'Layout', values: ['1', '2', '3', '4', '5', '6', '12'] })
     expect(getStyleToken('colSpan')).toMatchObject({ prefix: 'col-span', group: 'Layout', values: ['1', '2', '3', '4', '5', '6', '12', 'full'] })

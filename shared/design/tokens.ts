@@ -77,6 +77,7 @@ export const STYLE_TOKENS: StyleToken[] = [
   { key: 'border', label: 'Border width', group: 'Border', prefix: 'border', values: ['0', '1', '2', '4', '8'] },
   { key: 'rounded', label: 'Radius', group: 'Border', prefix: 'rounded', values: ['none', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', 'full'] },
   { key: 'shadow', label: 'Shadow', group: 'Effects', prefix: 'shadow', values: ['none', 'xs', 'sm', 'md', 'lg', 'xl', '2xl'] },
+  { key: 'direction', label: 'Direction', group: 'Layout', prefix: 'flex', values: ['row', 'col', 'row-reverse', 'col-reverse'] },
   { key: 'items', label: 'Align items', group: 'Layout', prefix: 'items', values: ['start', 'center', 'end', 'stretch', 'baseline'] },
   { key: 'justify', label: 'Justify content', group: 'Layout', prefix: 'justify', values: ['start', 'center', 'end', 'between', 'around', 'evenly'] },
   { key: 'self', label: 'Align self', group: 'Layout', prefix: 'self', values: ['auto', 'start', 'center', 'end', 'stretch'] },

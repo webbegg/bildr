@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { getComponent } from '#shared/document/components'
 import type { PropValue } from '#shared/document/components'
+import { findParent } from '#shared/document/tree'
 import { breadcrumb } from '#shared/editor/selection'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES, hasStyleAt } from '#shared/editor/styleFields'
@@ -19,6 +20,7 @@ const node = computed(() => editor.selected)
 const isRoot = computed(() => !!node.value && node.value.id === editor.page?.root.id)
 const propDefs = computed(() => (node.value ? getComponent(node.value.type)?.props ?? [] : []))
 const icon = (type: string) => getComponent(type)?.icon ?? 'i-lucide-file'
+const parentType = computed(() => (node.value && editor.page ? findParent(editor.page.root, node.value.id)?.parent.type : undefined))
 const crumbs = computed(() => (node.value && editor.page ? breadcrumb(editor.page.root, node.value.id) : []))
 const crumbLabel = (crumb: { id: string, type: string }) => (crumb.id === editor.page?.root.id ? editor.page.name : crumb.type)
 
@@ -205,8 +207,12 @@ function renamePage(field: 'name' | 'slug', value: string) {
         role="tabpanel"
         data-tab="style"
       >
+        <!-- Previews reach the canvas in T21; until then only commits are applied. -->
         <EditorStyleFields
           :styles="node.style"
+          :type="node.type"
+          :parent-type="parentType"
+          :root="isRoot"
           @update="editor.updateStyle(node.id, $event)"
         />
       </div>

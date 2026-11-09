@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ButtonProps } from '@nuxt/ui'
 import { parseStyleKey, styleClasses } from '#shared/design/tokens'
+import { structuralStyle } from '#shared/document/components'
 import type { DocNode } from '#shared/document/schema'
 import { bindingItem, hasBindings, resolveBindings } from '#shared/runtime/bindings'
 import type { BindingItem } from '#shared/runtime/bindings'
@@ -11,8 +12,9 @@ import { resolveLink } from '#shared/runtime/render'
  * Renders one document node and its children. The editor canvas and the
  * published app share this component, so what you edit is what ships.
  * Visual styling comes only from the node's design tokens; the template
- * adds structural classes (flex direction, wrapping) and per-type fallbacks
- * that a token of the same key replaces. Inside a List, string props resolve
+ * adds structural classes (wrapping) and per-type fallbacks that a token of
+ * the same key replaces, the flex direction among them.
+ * Inside a List, string props resolve
  * `{{ item.<field> }}` against the current record; outside one, the canvas
  * shows bindings as written and published apps render them empty.
  * A Form is a `<form>` (see BildrForm); its Inputs are named by their field,
@@ -54,7 +56,7 @@ const selfFallback = computed((): Record<string, string> => {
   return props.inStack && fills ? { self: 'stretch' } : {}
 })
 const withFallback = (fallback: Record<string, string>) => styleClasses({ ...selfFallback.value, ...fallback, ...props.node.style })
-const tokens = computed(() => withFallback({}))
+const tokens = computed(() => withFallback(structuralStyle(props.node.type)))
 
 const HEADING_TOKENS: Record<string, Record<string, string>> = {
   1: { text: '4xl', font: 'bold' },
@@ -67,13 +69,13 @@ const level = computed(() => (text('level') in HEADING_TOKENS ? text('level') : 
 // The card's gap and items lay out its inner stack; every other token styles the card
 // itself. Its padding is a token too (UCard's body padding is zeroed), so `p-8`
 // replaces the default instead of adding to it. Breakpoint variants follow their base key.
-const STACK_KEYS = ['gap', 'items']
+const STACK_KEYS = ['direction', 'gap', 'items', 'justify']
 const card = computed(() => {
   const entries = Object.entries(props.node.style)
   const inStack = ([key]: [string, string]) => STACK_KEYS.includes(parseStyleKey(key)?.token.key ?? '')
   const stack = Object.fromEntries(entries.filter(inStack))
   const rest = Object.fromEntries(entries.filter(entry => !inStack(entry)))
-  return { root: styleClasses({ ...selfFallback.value, p: '6', ...rest }), stack: styleClasses(stack) }
+  return { root: styleClasses({ ...selfFallback.value, p: '6', ...rest }), stack: styleClasses({ ...structuralStyle('Card'), ...stack }) }
 })
 const icon = (name: string) => text(name) || undefined
 
@@ -104,7 +106,7 @@ const list = computed(() => {
     v-if="stacked || node.type === 'Row'"
     v-bind="attrs"
     class="flex"
-    :class="[stacked ? 'flex-col' : 'flex-row', { 'flex-wrap': node.type === 'Row' && p.wrap, 'min-h-full': node.type === 'Page' }, tokens]"
+    :class="[{ 'flex-wrap': node.type === 'Row' && p.wrap, 'min-h-full': node.type === 'Page' }, tokens]"
   >
     <BildrNode
       v-for="child in node.children"
@@ -244,7 +246,7 @@ const list = computed(() => {
     v-else-if="node.type === 'Form'"
     v-bind="attrs"
     :node="node"
-    class="flex flex-col"
+    class="flex"
     :class="tokens"
   >
     <BildrNode
@@ -266,7 +268,7 @@ const list = computed(() => {
     :ui="CARD_UI"
   >
     <div
-      class="flex flex-col"
+      class="flex"
       :class="card.stack"
     >
       <BildrNode
