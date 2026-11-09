@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DataRecord } from '#shared/data/records'
-import type { PublishedSnapshot } from '#shared/document/schema'
 import { listKey, listNodes, listQueryOf, listSearch } from '#shared/runtime/list'
+import type { VisitorSnapshot } from '#shared/runtime/visitor'
 
 /**
  * The published app: the last published snapshot, rendered by the shared runtime.
@@ -14,7 +14,7 @@ definePageMeta({ layout: false })
 
 const route = useRoute()
 const projectSlug = computed(() => String(route.params.project))
-const { data, error } = await useFetch<PublishedSnapshot>(() => `/api/published/${projectSlug.value}`)
+const { data, error } = await useFetch<VisitorSnapshot>(() => `/api/published/${projectSlug.value}`)
 
 const project = computed(() => data.value?.project)
 const page = computed(() => {

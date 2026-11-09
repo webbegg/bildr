@@ -20,6 +20,29 @@ import type { RecordStore } from './recordStore'
 /** Largest accepted request body of a public write. */
 export const PUBLIC_BODY_MAX_BYTES = 16 * 1024
 
+/**
+ * Reads a request body as UTF-8 text, counting bytes as they arrive, so a
+ * chunked body without `content-length` is never read past `maxBytes`:
+ * the read is cancelled there and `undefined` means "too large".
+ */
+export async function readCappedBody(stream: ReadableStream<Uint8Array> | undefined, maxBytes: number): Promise<string | undefined> {
+  if (!stream) return ''
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let bytes = 0
+  let text = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) return text + decoder.decode()
+    bytes += value.byteLength
+    if (bytes > maxBytes) {
+      await reader.cancel().catch(() => {})
+      return undefined
+    }
+    text += decoder.decode(value, { stream: true })
+  }
+}
+
 export function publicCollection(snapshot: PublishedSnapshot | undefined, slug: string): Collection | undefined {
   const collection = snapshot?.project.collections.find(c => c.slug === slug)
   return collection?.publicRead ? collection : undefined

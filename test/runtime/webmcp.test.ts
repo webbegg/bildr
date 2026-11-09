@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { getModelContext, registerWebMcpTools } from '#shared/runtime/webmcp'
 import type { ModelContext, WebMcpTool } from '#shared/runtime/webmcp'
-import { createNode, createPage, createProject } from '#shared/document/factory'
+import { createCollection, createNode, createPage, createProject } from '#shared/document/factory'
+import type { Project } from '#shared/document/schema'
 
 function fakeModelContext() {
   const tools = new Map<string, WebMcpTool>()
@@ -91,6 +92,139 @@ describe('registerWebMcpTools', () => {
     const { tools, cleanup } = setup()
     cleanup()
     expect(tools.size).toBe(0)
+  })
+})
+
+function cafe() {
+  const project = createProject('Café')
+  const menu = createCollection('Menu', 'menu', [
+    { key: 'name', label: 'Name', type: 'text' },
+    { key: 'price', label: 'Price', type: 'number' }
+  ])
+  const messages = createCollection('Messages', 'messages', [
+    { key: 'email', label: 'Email', type: 'text' },
+    { key: 'message', label: 'Message', type: 'text' }
+  ])
+  const characters = createCollection('Characters', 'characters', [{ key: 'name', label: 'Name', type: 'text' }], { type: 'api', url: 'https://example.com/api', itemsPath: 'results' })
+  const notes = createCollection('Notes', 'notes')
+  project.collections.push(
+    { ...menu, publicRead: true },
+    { ...messages, publicCreate: true },
+    { ...characters, publicRead: true, publicCreate: true },
+    notes
+  )
+  return project
+}
+
+function dataSetup(project: Project, respond: (url: string, init?: RequestInit) => Response) {
+  const fetch = vi.fn(async (url: string, init?: RequestInit) => respond(url, init))
+  const { modelContext, tools } = fakeModelContext()
+  registerWebMcpTools(modelContext, { getProject: () => project, getCurrentPage: () => project.pages[0], navigate: () => {}, fetch })
+  const call = async (name: string, input: Record<string, unknown> = {}) => tools.get(name)!.execute(input)
+  return { tools, fetch, call }
+}
+
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
+
+describe('list_records', () => {
+  const records = { total: 1, records: [{ id: 'r1', createdAt: '', updatedAt: '', values: { name: 'Latte', price: 3 } }] }
+
+  it('is registered read-only for the publicRead collections, listing their slugs and fields', () => {
+    const { tools } = dataSetup(cafe(), () => json(records))
+    const tool = tools.get('list_records')!
+    expect(tool.annotations).toEqual({ readOnlyHint: true })
+    expect(tool.description).toContain('menu (name: text, price: number)')
+    expect(tool.description).toContain('characters (name: text)')
+    expect(tool.description).not.toContain('messages')
+    expect(tool.description).not.toContain('notes')
+    expect(tool.inputSchema).toMatchObject({ properties: { collection: { type: 'string', enum: ['menu', 'characters'] } }, required: ['collection'] })
+  })
+
+  it('reads through the public endpoint with limit, filter and sort', async () => {
+    const { call, fetch } = dataSetup(cafe(), () => json(records))
+    const result = await call('list_records', { collection: 'menu', limit: 5, filter: { name: 'Latte' }, sort: '-price' })
+    expect(fetch).toHaveBeenCalledWith('/api/public/cafe/menu?limit=5&sort=price&dir=desc&filter%5Bname%5D=Latte', undefined)
+    expect(result.isError).toBeFalsy()
+    expect(JSON.parse(result.content[0]!.text)).toEqual(records)
+  })
+
+  it('asks for everything by default', async () => {
+    const { call, fetch } = dataSetup(cafe(), () => json(records))
+    await call('list_records', { collection: 'menu' })
+    expect(fetch).toHaveBeenCalledWith('/api/public/cafe/menu', undefined)
+  })
+
+  it('refuses a collection that is not publicRead without fetching', async () => {
+    const { call, fetch } = dataSetup(cafe(), () => json(records))
+    const result = await call('list_records', { collection: 'messages' })
+    expect(fetch).not.toHaveBeenCalled()
+    expect(result).toEqual({ isError: true, content: [{ type: 'text', text: 'Unknown collection "messages". Readable collections: menu, characters' }] })
+  })
+
+  it('returns the endpoint\'s generic error', async () => {
+    const { call } = dataSetup(cafe(), () => json({ statusCode: 502, statusMessage: 'Could not load the data', message: 'Could not load the data' }, 502))
+    expect(await call('list_records', { collection: 'characters' })).toEqual({ isError: true, content: [{ type: 'text', text: 'Could not load the data' }] })
+  })
+
+  it('is not registered when no collection is publicRead', () => {
+    const project = cafe()
+    project.collections = project.collections.map(c => ({ ...c, publicRead: false }))
+    expect(dataSetup(project, () => json(records)).tools.has('list_records')).toBe(false)
+  })
+})
+
+describe('submit_form', () => {
+  it('is registered for internal publicCreate collections only, listing their slugs and fields', () => {
+    const { tools } = dataSetup(cafe(), () => json({ id: 'rec_1' }, 201))
+    const tool = tools.get('submit_form')!
+    expect(tool.annotations).toBeUndefined()
+    expect(tool.description).toContain('messages (email: text, message: text)')
+    expect(tool.description).not.toContain('characters')
+    expect(tool.description).not.toContain('menu')
+    expect(tool.inputSchema).toMatchObject({
+      properties: { collection: { type: 'string', enum: ['messages'] }, values: { type: 'object' } },
+      required: ['collection', 'values']
+    })
+  })
+
+  it('posts the values to the public endpoint and returns its result', async () => {
+    const { call, fetch } = dataSetup(cafe(), () => json({ id: 'rec_1' }, 201))
+    const result = await call('submit_form', { collection: 'messages', values: { email: 'ana@example.com', message: 'Hi' } })
+    expect(fetch).toHaveBeenCalledWith('/api/public/cafe/messages', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ values: { email: 'ana@example.com', message: 'Hi' } })
+    })
+    expect(result.isError).toBeFalsy()
+    expect(JSON.parse(result.content[0]!.text)).toEqual({ id: 'rec_1' })
+  })
+
+  it('returns the endpoint\'s generic error', async () => {
+    const { call } = dataSetup(cafe(), () => json({ statusCode: 422, statusMessage: '"email" must be a string', message: '"email" must be a string' }, 422))
+    expect(await call('submit_form', { collection: 'messages', values: { email: 1 } })).toEqual({ isError: true, content: [{ type: 'text', text: '"email" must be a string' }] })
+  })
+
+  it('falls back to a generic message when the request fails', async () => {
+    const { call } = dataSetup(cafe(), () => {
+      throw new TypeError('Failed to fetch')
+    })
+    expect(await call('submit_form', { collection: 'messages', values: {} })).toEqual({ isError: true, content: [{ type: 'text', text: 'Could not send the form, try again later' }] })
+  })
+
+  it('refuses other collections without posting', async () => {
+    const { call, fetch } = dataSetup(cafe(), () => json({ id: 'rec_1' }, 201))
+    for (const collection of ['characters', 'menu']) {
+      expect(await call('submit_form', { collection, values: {} })).toEqual({ isError: true, content: [{ type: 'text', text: `Unknown collection "${collection}". Collections that take new records: messages` }] })
+    }
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('is not registered when no internal collection is publicCreate', () => {
+    const project = cafe()
+    project.collections = project.collections.filter(c => c.slug !== 'messages')
+    const { tools } = dataSetup(project, () => json({}))
+    expect(tools.has('submit_form')).toBe(false)
+    expect(tools.has('list_records')).toBe(true)
   })
 })
 

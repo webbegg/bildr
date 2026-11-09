@@ -8,11 +8,12 @@ const limiters = {
 
 /**
  * Throws 429 (with `retry-after`, in seconds) once this client went over the
- * public read or write budget of `projectSlug`. The client is the socket's
+ * public read or write budget of `projectSlug`, or of all unpublished
+ * projects together when it is `undefined`. The client is the socket's
  * address: `X-Forwarded-For` is ignored because any client can send it, so
  * behind a reverse proxy all visitors share the proxy's budget.
  */
-export function limitPublicRequest(event: H3Event, kind: keyof typeof limiters, projectSlug: string): void {
+export function limitPublicRequest(event: H3Event, kind: keyof typeof limiters, projectSlug: string | undefined): void {
   const verdict = limiters[kind].hit(publicRateKey(getRequestIP(event, { xForwardedFor: false }), projectSlug))
   if (verdict.allowed) return
   setResponseHeader(event, 'retry-after', verdict.retryAfter)

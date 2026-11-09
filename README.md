@@ -3,7 +3,7 @@
 A visual app builder where everything you can do in the editor, an agent can do too. Apps are a JSON document (`Project → Page[] → Node tree`). The editor and the published app render that document with the same runtime, and every change goes through one set of shared actions. The UI, the HTTP API and MCP all call those same actions.
 
 > [!WARNING]
-> `/mcp` and `/api/actions` have **no authentication**. Anyone who can reach the server can read and change every project. Run bildr for local development only, and do not expose it on a network.
+> `/mcp` and `/api/actions` have **no authentication**. Anyone who can reach the server can read and change every project. Run bildr for local development only, and do not expose it on a network. This goes for `nuxt dev` in particular: in dev mode, error responses include stack traces.
 
 ## Run it
 
@@ -24,6 +24,60 @@ Every project has its own design system, built on the Tailwind and Nuxt UI theme
 - **Style tokens:** a node's `style` stores one token per property, for example `{ "mt": "10", "bg": "primary", "rounded": "lg" }`. It renders as Tailwind classes (`mt-10 bg-primary rounded-lg`), in the editor and in the published HTML. The allowed keys and values live in `shared/design/tokens.ts`. `components_list` returns them, and the action schemas list them as enums.
 - **Responsive tokens:** layout tokens (Spacing, Size, Typography, Layout) also take a mobile-first breakpoint prefix `sm:`, `md:` or `lg:`. For example, `{ "cols": "1", "md:cols": "3" }` renders as `grid-cols-1 md:grid-cols-3`. Colours, borders and shadows have no breakpoint variants. In the editor, the device toggle (Mobile 390 / Tablet 768 / Desktop 1280) resizes the canvas, and the style panel edits that device's breakpoint: Mobile edits the base, Tablet `md:` and Desktop `lg:`. The panel also shows the values a device inherits from smaller ones.
 - Every allowed class is generated when the app is built (`app/assets/css/tokens.css`, produced by `pnpm tokens:css`). The theme is applied as CSS variables, so the same classes follow each project's theme without rebuilding CSS.
+
+## Data
+
+Apps can show and collect data. As with everything else, each step is an action, so an agent can do it over MCP too.
+
+### Collections and records
+
+- A **collection** has a name, a slug and typed fields (`text`, `number`, `boolean`, `date`, `image`). Its schema is part of the project document, so it is undoable and published with the snapshot. Two flags, both off by default, open it to published apps: `publicRead` and `publicCreate`.
+- **Records** are live data, stored per collection outside the document. They are not undone and not frozen at publish. Values are checked against the field types.
+- Manage both in the editor's **Data** mode: collections, fields, and a records table where you can add, edit and delete.
+- Actions:
+  - schema: `collection_create`, `collection_update`, `collection_delete`, `field_add`, `field_update`, `field_remove`
+  - records: `record_list` (filter by field equality, sort, limit, offset), `record_get`, `record_create`, `record_update`, `record_delete`
+
+### API sources
+
+A collection can also read its records live from a JSON endpoint, for example <https://rickandmortyapi.com/api/character>.
+
+1. In the Data mode, choose **From API** and paste the URL. `api_source_preview` fetches it server-side and finds the items array (`results`, `data`, `items`, or the root array).
+2. Review the proposed fields: key, label, type and path (nested objects are flattened one level, so `origin.name` becomes `originName`). Rename, retype or remove fields; the preview updates as you edit.
+3. Save. The collection keeps the URL, the items path and the field mapping.
+
+API collections are **read-only**: record writes are refused, and they cannot take public submissions. bildr fetches them on the server, for the canvas, for published apps and for agents. The fetch is limited:
+
+- http and https only, on ports 80, 443, 8080 or 8443
+- private, loopback and link-local addresses are refused after DNS resolution (an SSRF guard)
+- a 5 s timeout, a 1 MB response cap, and a 60 s cache
+
+There is no way to send auth headers. Do not put secrets such as API keys in the URL: the URL is stored in the project document, and agents and the editor can read it. (Published apps do not get it; see below.)
+
+### Lists and bindings
+
+A **List** is a container bound to a collection, with the props `collection`, `limit`, `sortField`, `sortDir`, `filterField` and `filterValue`. It renders its children once per record. Any string prop inside it can use `{{ item.<field> }}` bindings, for example a Text `{{ item.name }}`, an Image `src` of `{{ item.image }}`, or a Link `to` of `/menu/{{ item.slug }}`. In the canvas, a List shows the collection's current records, or placeholder rows while it is empty.
+
+### Forms and Button actions
+
+- A **Form** is a container with the props `collection` (an internal collection), `successMessage` and `redirectTo`. Each Input inside it has a `field` prop naming the collection field it fills.
+- A Button's `action` prop is `link` (the default; it opens `to`), `submit` (it submits the enclosing Form) or `toast` (it shows `message`).
+- On submit, the Form creates a record, then shows the success message or navigates to `redirectTo`. In the editor, the record is created with `record_create`. On a published app, it goes to the public endpoint below.
+
+### Public endpoints for published apps
+
+Published apps read and write data through `/api/public/<project-slug>/<collection-slug>`. They follow the **published** snapshot, so a flag change takes effect when you publish.
+
+- `GET` works only for `publicRead` collections. It returns `{ total, records }` with the declared fields only, at most 100 records per page. Query parameters: `limit`, `offset`, `sort`, `dir` (`asc` or `desc`) and `filter[<field>]=<value>`.
+- `POST` with JSON `{ "values": { "<field>": <value> } }` works only for `publicCreate` collections, and only internal ones. It answers `201 { id }`. There is no public update or delete; other methods (HEAD included) answer `405`.
+- There is no same-origin check, because published apps may be embedded anywhere. **Any website can post to a `publicCreate` collection.** The collection flags and these limits are the only protection:
+  - Only declared fields are kept, and each value must fit its field type. Fields are never required.
+  - A request body can be at most 16 KB (counted while it streams in), and a record at most 10 KB.
+  - A collection holds at most 5,000 records.
+  - Each IP address gets 10 writes and 120 reads per minute per project. The counters live in memory, so they reset on restart and are not shared between processes.
+  - `X-Forwarded-For` is ignored, because any client can send it. Behind a reverse proxy, all visitors share the proxy's one budget.
+- Errors are generic. The details only go to the server log.
+- `/api/published/<project-slug>`, which the published app loads, leaves out the URL, items path and field paths of API collections. The public `GET` resolves them on the server from the stored snapshot.
 
 ## Action HTTP API
 
@@ -54,12 +108,14 @@ Published apps (`/p/<project-slug>`) register [WebMCP](https://github.com/webmac
 - `list_pages` (read-only) lists every page with its `name`, `slug` and `url`.
 - `navigate_to_page` `{ slug }` shows another page. An unknown slug returns an error that lists the valid slugs.
 - `get_page_content` (read-only) returns the current page as a text outline, one line per element, with links shown as `→ target`.
+- `list_records` (read-only) `{ collection, limit?, filter?, sort? }` lists records of a `publicRead` collection through the public `GET` endpoint. `filter` is an object of field values to match, and `sort` is a field key, prefixed with `-` for descending (for example `"-price"`). The tool description lists the readable collections and their fields. It is registered only when at least one collection is `publicRead`.
+- `submit_form` `{ collection, values }` adds a record to an internal `publicCreate` collection through the public `POST` endpoint, and returns its result (`{ "id": "…" }`) or its generic error. It is registered only when at least one collection qualifies.
 
 WebMCP is still a draft, so this support is exploratory. To try it:
 
 1. Use Chrome 149 or later and open `chrome://flags/#enable-webmcp-testing`. Set it to **Enabled** and relaunch Chrome.
 2. Open a published app, for example <http://localhost:3000/p/landing>. WebMCP needs a secure context, and `localhost` counts as one.
-3. Use a WebMCP inspector extension or an in-browser agent to list the page's tools. You should see the three tools above.
+3. Use a WebMCP inspector extension or an in-browser agent to list the page's tools. You should see the three page tools above, plus the data tools if the app has public collections.
 
 ## MVP walkthrough (S8)
 
@@ -77,6 +133,11 @@ This walkthrough goes from an empty project to a published app that an agent bui
 2. **You tweak it in the editor.** Click the heading on the canvas, change its text in the properties panel on the right, and press Enter or leave the field. Undo and redo work with Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z.
 3. **Publish.** Click **Publish** in the editor toolbar.
 4. **Open the published app.** Go to `/p/landing`. It shows the published Home page with the project's theme, the elements carry the design-system classes (for example `bg-primary-50 p-10 rounded-2xl`), and the button opens `/p/landing/pricing`. In a WebMCP-enabled Chrome (see above), the page lists `list_pages`, `navigate_to_page` and `get_page_content`.
+5. **Optional: add data.** Ask the agent for a café menu and a contact form, for example:
+
+   > In "Landing", create a collection "Menu" with the fields name (text) and price (number), add three drinks, and turn on publicRead. Create a collection "Messages" with email and message (text) and turn on publicCreate. On the Home page, add a List of Menu sorted by price, with a Row showing `{{ item.name }}` and `{{ item.price }}`. Below it, add a Form for Messages with an email Input, a message Input and a submit Button. Publish.
+
+   Instead of the Menu collection, you can use an API source: in the Data mode, choose **From API** with <https://rickandmortyapi.com/api/character>, and list `{{ item.name }}` with an Image of `{{ item.image }}`. On `/p/landing`, the List shows one row per record and sending the form stores a message: it appears in the editor's Data mode, and `record_list` returns it. With WebMCP, `list_records { "collection": "menu" }` returns the drinks and `submit_form` stores a message.
 
 ## Checks
 

@@ -6,14 +6,15 @@ import { publicCollection, publicRecords } from '../../../utils/publicData'
  * `?limit=10&sort=price&dir=asc&filter[vegan]=true&offset=0`. No same-origin
  * guard: published apps may be embedded on other sites. API collections are
  * fetched server-side through the SSRF guard and the 60 s cache. Reads are
- * rate-limited per client; a failed API fetch answers a generic 502 and
- * logs the reason, which may name resolved addresses.
+ * rate-limited per client and published project (unpublished slugs share
+ * one budget); a failed API fetch answers a generic 502 and logs the
+ * reason, which may name resolved addresses. HEAD is not served (405).
  */
 export default defineEventHandler(async (event) => {
   const projectSlug = getRouterParam(event, 'projectSlug') ?? ''
-  limitPublicRequest(event, 'read', projectSlug)
   const { services } = useBildr()
   const snapshot = await services.getPublished(projectSlug)
+  limitPublicRequest(event, 'read', snapshot && projectSlug)
   const collection = publicCollection(snapshot, getRouterParam(event, 'collectionSlug') ?? '')
   if (!snapshot || !collection) throw createError({ statusCode: 404, statusMessage: 'Collection not found' })
   let stored

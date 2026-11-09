@@ -1,5 +1,6 @@
-import type { Page, Project } from '../document/schema'
+import type { Page } from '../document/schema'
 import { pageOutline } from './render'
+import type { VisitorCollection, VisitorProject } from './visitor'
 
 /**
  * WebMCP for published apps: the page registers tools on the browser's
@@ -27,10 +28,12 @@ export interface ModelContext {
 }
 
 export interface WebMcpHost {
-  getProject: () => Project | undefined
+  getProject: () => VisitorProject | undefined
   getCurrentPage: () => Page | undefined
   /** Navigates the app router to a path such as `/p/shop/pricing`. */
   navigate: (path: string) => unknown
+  /** Reaches the public data endpoint; defaults to the global `fetch`. */
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>
 }
 
 /** The WebMCP entry point if the browser has one: `document` first, then `navigator`. */
@@ -44,9 +47,98 @@ export function getModelContext(doc?: object, nav?: object): ModelContext | unde
 
 const text = (value: string, isError = false): WebMcpResult => ({ content: [{ type: 'text', text: value }], ...(isError ? { isError } : {}) })
 
-const pageUrl = (project: Project, page: Page) => `/p/${project.slug}/${page.slug}`
+const pageUrl = (project: VisitorProject, page: Page) => `/p/${project.slug}/${page.slug}`
+
+const describeCollections = (collections: VisitorCollection[]) =>
+  collections.map(c => `${c.slug} (${c.fields.map(f => `${f.key}: ${f.type}`).join(', ')})`).join('; ')
+
+/** The endpoint's answer as a tool result; its errors are generic, so they are passed on as they are. */
+async function endpointResult(response: Response, fallback: string): Promise<WebMcpResult> {
+  const body: unknown = await response.json().catch(() => undefined)
+  if (response.ok) return text(JSON.stringify(body))
+  const error = body as { message?: unknown, statusMessage?: unknown } | undefined
+  const message = [error?.message, error?.statusMessage].find(m => typeof m === 'string' && m)
+  return text(typeof message === 'string' ? message : fallback, true)
+}
+
+/**
+ * Tools for the published app's public collections, registered only when at
+ * least one collection qualifies. They go through the public data endpoint,
+ * which applies the published flags and limits again server-side.
+ */
+function dataTools(project: VisitorProject, host: WebMcpHost): WebMcpTool[] {
+  const request = (url: string, init?: RequestInit) => (host.fetch ?? globalThis.fetch)(url, init)
+  const endpoint = (slug: string) => `/api/public/${project.slug}/${slug}`
+  const readable = project.collections.filter(c => c.publicRead)
+  const tools: WebMcpTool[] = []
+  if (readable.length) {
+    tools.push({
+      name: 'list_records',
+      description: `List records of a public collection of this app. Collections (field: type): ${describeCollections(readable)}.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string', enum: readable.map(c => c.slug), description: 'The collection slug' },
+          limit: { type: 'integer', minimum: 1, maximum: 100, description: 'At most this many records (default 100)' },
+          filter: { type: 'object', description: 'Field key → value; records must equal every value, e.g. { "vegan": true }' },
+          sort: { type: 'string', description: 'Field key to sort by; prefix with "-" for descending, e.g. "-price"' }
+        },
+        required: ['collection']
+      },
+      annotations: { readOnlyHint: true },
+      execute: async (input) => {
+        const collection = readable.find(c => c.slug === input.collection)
+        if (!collection) return text(`Unknown collection "${String(input.collection)}". Readable collections: ${readable.map(c => c.slug).join(', ')}`, true)
+        const params = new URLSearchParams()
+        if (typeof input.limit === 'number') params.set('limit', String(input.limit))
+        if (typeof input.sort === 'string' && input.sort) {
+          const descending = input.sort.startsWith('-')
+          params.set('sort', descending ? input.sort.slice(1) : input.sort)
+          if (descending) params.set('dir', 'desc')
+        }
+        const filter = typeof input.filter === 'object' && input.filter !== null ? input.filter as Record<string, unknown> : {}
+        for (const [key, value] of Object.entries(filter)) {
+          if (['string', 'number', 'boolean'].includes(typeof value)) params.set(`filter[${key}]`, String(value))
+        }
+        const search = params.toString()
+        try {
+          return await endpointResult(await request(search ? `${endpoint(collection.slug)}?${search}` : endpoint(collection.slug)), 'Could not load the records')
+        } catch {
+          return text('Could not load the records', true)
+        }
+      }
+    })
+  }
+  const writable = project.collections.filter(c => c.publicCreate && c.source.type === 'internal')
+  if (writable.length) {
+    tools.push({
+      name: 'submit_form',
+      description: `Add a record to a collection of this app, like submitting its form. Fields are optional; unknown ones are dropped. Collections (field: type): ${describeCollections(writable)}.`,
+      inputSchema: {
+        type: 'object',
+        properties: {
+          collection: { type: 'string', enum: writable.map(c => c.slug), description: 'The collection slug' },
+          values: { type: 'object', description: 'Field key → value, e.g. { "email": "ana@example.com" }' }
+        },
+        required: ['collection', 'values']
+      },
+      execute: async (input) => {
+        const collection = writable.find(c => c.slug === input.collection)
+        if (!collection) return text(`Unknown collection "${String(input.collection)}". Collections that take new records: ${writable.map(c => c.slug).join(', ')}`, true)
+        const init = { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ values: input.values }) }
+        try {
+          return await endpointResult(await request(endpoint(collection.slug), init), 'Could not send the form, try again later')
+        } catch {
+          return text('Could not send the form, try again later', true)
+        }
+      }
+    })
+  }
+  return tools
+}
 
 function tools(host: WebMcpHost): WebMcpTool[] {
+  const project = host.getProject()
   return [
     {
       name: 'list_pages',
@@ -87,7 +179,8 @@ function tools(host: WebMcpHost): WebMcpTool[] {
         const page = host.getCurrentPage()
         return page ? text(pageOutline(page)) : text('No page is shown', true)
       }
-    }
+    },
+    ...(project ? dataTools(project, host) : [])
   ]
 }
 

@@ -41,11 +41,28 @@ describe('createRateLimiter', () => {
     limiter.hit('c')
     expect(limiter.size()).toBe(1)
   })
+
+  it('holds at most maxKeys keys inside one window, evicting the oldest', () => {
+    const clock = fakeClock()
+    const limiter = createRateLimiter({ limit: 1, windowMs: 60_000, now: clock.now, maxKeys: 100 })
+    for (let i = 0; i < 5000; i++) {
+      limiter.hit(`203.0.113.7|slug-${i}`)
+      clock.advance(1)
+    }
+    expect(limiter.size()).toBeLessThanOrEqual(100)
+    expect(limiter.hit('203.0.113.7|slug-4999').allowed).toBe(false)
+    expect(limiter.hit('203.0.113.7|slug-0').allowed).toBe(true)
+  })
 })
 
 describe('publicRateKey', () => {
   it('scopes a client address to one project', () => {
     expect(publicRateKey('203.0.113.7', 'cafe')).toBe('203.0.113.7|cafe')
     expect(publicRateKey(undefined, 'cafe')).toBe('unknown|cafe')
+  })
+
+  it('keys unknown projects together and caps the slug length', () => {
+    expect(publicRateKey('203.0.113.7', undefined)).toBe('203.0.113.7|*')
+    expect(publicRateKey('203.0.113.7', 'x'.repeat(5000))).toBe(`203.0.113.7|${'x'.repeat(64)}`)
   })
 })

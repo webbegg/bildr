@@ -3,7 +3,7 @@ import { MAX_RECORDS_PER_COLLECTION } from '#shared/data/records'
 import type { DataRecord } from '#shared/data/records'
 import { createCollection, createProject } from '#shared/document/factory'
 import type { Collection, PublishedSnapshot } from '#shared/document/schema'
-import { createPublicRecord } from '../../server/utils/publicData'
+import { createPublicRecord, readCappedBody } from '../../server/utils/publicData'
 import { createRecordStore } from '../../server/utils/recordStore'
 import { memoryStorage } from '../helpers'
 
@@ -25,6 +25,50 @@ async function submit(snap: PublishedSnapshot, body: unknown, slug = 'messages')
   const collection = snap.project.collections[0]!
   return { result, stored: await store.list(snap.project.id, collection.id), store }
 }
+
+/** A body sent in `chunkBytes` chunks, `chunks` of them (endless by default), counting what was read. */
+function chunkedBody(chunkBytes: number, chunks = Infinity) {
+  const sent = { bytes: 0, cancelled: false }
+  let left = chunks
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (left-- <= 0) return controller.close()
+      sent.bytes += chunkBytes
+      controller.enqueue(new TextEncoder().encode('x'.repeat(chunkBytes)))
+    },
+    cancel() {
+      sent.cancelled = true
+    }
+  }, { highWaterMark: 0 })
+  return { stream, sent }
+}
+
+describe('readCappedBody', () => {
+  it('reads a body up to the cap as text, multi-byte characters across chunks included', async () => {
+    const euro = new TextEncoder().encode('{"values":{"price":"€"}}')
+    const split = euro.indexOf(0xE2) + 1
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(euro.slice(0, split))
+        controller.enqueue(euro.slice(split))
+        controller.close()
+      }
+    })
+    expect(await readCappedBody(stream, 16 * 1024)).toBe('{"values":{"price":"€"}}')
+    expect(await readCappedBody(chunkedBody(1024, 16).stream, 16 * 1024)).toHaveLength(16 * 1024)
+  })
+
+  it('stops reading an endless chunked body once it passes the cap', async () => {
+    const { stream, sent } = chunkedBody(1024)
+    expect(await readCappedBody(stream, 16 * 1024)).toBeUndefined()
+    expect(sent.bytes).toBeLessThanOrEqual(17 * 1024)
+    expect(sent.cancelled).toBe(true)
+  })
+
+  it('reads a missing body as empty', async () => {
+    expect(await readCappedBody(undefined, 16 * 1024)).toBe('')
+  })
+})
 
 describe('createPublicRecord', () => {
   it('stores the submitted values of a publicCreate collection and returns the record', async () => {
