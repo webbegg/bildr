@@ -1,4 +1,5 @@
 import type { ActionDef } from './define'
+import { editorGetContext, editorNavigate, editorSetContext } from './editor'
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeUpdateProps, nodeUpdateStyle } from './node'
 import { pageAdd, pageDelete, pageRename } from './page'
 import { componentsList, historyGet, historyRedo, historyUndo, projectCreate, projectGet, projectList, projectPublish, projectPublishedInfo } from './project'
@@ -22,5 +23,8 @@ export const ACTIONS = [
   historyUndo,
   historyRedo,
   projectPublish,
-  projectPublishedInfo
+  projectPublishedInfo,
+  editorSetContext,
+  editorGetContext,
+  editorNavigate
 ] as ActionDef[]

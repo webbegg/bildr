@@ -13,6 +13,14 @@ export interface ChangeEvent {
   source?: string
 }
 
+/** One-shot request for open editors to switch page; not document state. */
+export interface NavigateEvent {
+  projectId: string
+  pageId: string
+  nodeId: string | null
+  source?: string
+}
+
 export interface ActionInfo {
   name: string
   description: string
@@ -28,13 +36,14 @@ export interface CallOptions {
 
 /**
  * The single dispatcher every surface goes through: look up, validate,
- * serialize per project, run, then emit change events. Nothing else may call
+ * serialize per project, run, then emit change and navigate events. Nothing else may call
  * an action's `run`.
  */
 export function createBildr(storage: KeyValueStorage, actions: ActionDef[] = ACTIONS) {
   const services = createServices(storage)
   const byName = new Map(actions.map(a => [a.name, a]))
   const listeners = new Set<(event: ChangeEvent) => void>()
+  const navigateListeners = new Set<(event: NavigateEvent) => void>()
   const locks = new Map<string, Promise<unknown>>()
 
   function withLock<T>(key: string | undefined, task: () => Promise<T>): Promise<T> {
@@ -57,17 +66,20 @@ export function createBildr(storage: KeyValueStorage, actions: ActionDef[] = ACT
     const input = parsed.data as Record<string, unknown>
 
     const changes: ChangeEvent[] = []
+    const navigations: NavigateEvent[] = []
     const ctx: ActionContext = {
       caller: options.caller,
       source: options.source,
       services,
-      notify: (projectId, version) => changes.push({ projectId, version, action: name, source: options.source })
+      notify: (projectId, version) => changes.push({ projectId, version, action: name, source: options.source }),
+      navigate: (projectId, pageId, nodeId) => navigations.push({ projectId, pageId, nodeId, source: options.source })
     }
 
     try {
       const projectId = typeof input.projectId === 'string' ? input.projectId : undefined
       const result = await withLock(action.readOnly ? undefined : projectId, () => action.run(input, ctx))
       if (!action.readOnly) for (const event of changes) listeners.forEach(listener => listener(event))
+      for (const event of navigations) navigateListeners.forEach(listener => listener(event))
       return result as T
     } catch (error) {
       if (error instanceof OperationError) throw new ActionError(error.code, error.message)
@@ -93,6 +105,11 @@ export function createBildr(storage: KeyValueStorage, actions: ActionDef[] = ACT
     onChange(listener: (event: ChangeEvent) => void): () => void {
       listeners.add(listener)
       return () => listeners.delete(listener)
+    },
+
+    onNavigate(listener: (event: NavigateEvent) => void): () => void {
+      navigateListeners.add(listener)
+      return () => navigateListeners.delete(listener)
     }
   }
 }

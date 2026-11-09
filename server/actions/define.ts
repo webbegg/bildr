@@ -16,6 +16,8 @@ export interface ActionContext {
   services: Services
   /** Records that `projectId` reached `version`; the dispatcher emits it on success. */
   notify: (projectId: string, version: number) => void
+  /** Asks open editors of `projectId` to show a page (and node); emitted on success, never stored. */
+  navigate: (projectId: string, pageId: string, nodeId: string | null) => void
 }
 
 export interface ActionDef<I extends z.ZodType = z.ZodType, O = unknown> {

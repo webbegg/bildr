@@ -4,6 +4,7 @@ definePageMeta({ layout: false })
 const route = useRoute()
 const editor = createEditor(String(route.params.projectId))
 provide(EDITOR_KEY, editor)
+useProjectSync(editor)
 
 const sidebarTabs = [
   { label: 'Layers', icon: 'i-lucide-layers', slot: 'layers' as const },

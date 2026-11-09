@@ -11,7 +11,7 @@ export const TAB_ID = import.meta.client ? crypto.randomUUID() : 'server'
 
 /** Calls an action over HTTP; the editor mutates documents only through this. */
 export function callAction<T = unknown>(name: string, input: Record<string, unknown> = {}): Promise<T> {
-  return $fetch(`/api/actions/${name}`, { method: 'POST', body: input, headers: { 'x-bildr-source': TAB_ID } }) as Promise<T>
+  return $fetch<T, string>(`/api/actions/${name}`, { method: 'POST', body: input, headers: { 'x-bildr-source': TAB_ID } }) as Promise<T>
 }
 
 export function actionErrorMessage(error: unknown): string {
