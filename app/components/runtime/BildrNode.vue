@@ -15,6 +15,8 @@ import { resolveLink } from '#shared/runtime/render'
  * that a token of the same key replaces. Inside a List, string props resolve
  * `{{ item.<field> }}` against the current record; outside one, the canvas
  * shows bindings as written and published apps render them empty.
+ * A Form is a `<form>` (see BildrForm); its Inputs are named by their field,
+ * and a Button's action links, submits the enclosing form, or shows a toast.
  */
 const props = defineProps<{
   node: DocNode
@@ -23,6 +25,7 @@ const props = defineProps<{
 }>()
 const runtime = useRuntime()
 const scope = useListItem()
+const toast = useToast()
 
 const p = computed(() => props.node.props)
 function bind(value: string): string {
@@ -43,7 +46,7 @@ const stacked = computed(() => ['Page', 'Container', 'Column'].includes(props.no
 // In a stack, block-level nodes fill the width whatever the stack's `items`, so sections
 // and fields keep spanning their parent; text only does so when it sets an alignment.
 // Buttons, links and short text follow the stack's `items`. A `self` token overrides both.
-const BLOCK_TYPES = ['Container', 'Row', 'Column', 'Grid', 'List', 'Card', 'Input']
+const BLOCK_TYPES = ['Container', 'Row', 'Column', 'Grid', 'List', 'Form', 'Card', 'Input']
 const selfFallback = computed((): Record<string, string> => {
   const { type, style } = props.node
   const aligned = Object.keys(style).some(key => parseStyleKey(key)?.token.key === 'align')
@@ -73,6 +76,13 @@ const card = computed(() => {
   return { root: styleClasses({ ...selfFallback.value, p: '6', ...rest }), stack: styleClasses(stack) }
 })
 const icon = (name: string) => text(name) || undefined
+
+// Only link buttons navigate; the others are plain buttons, and only submit ones send a form.
+const buttonAction = computed(() => (['submit', 'toast'].includes(text('action')) ? text('action') : 'link'))
+function onButtonClick() {
+  if (runtime.editable || buttonAction.value !== 'toast') return
+  toast.add({ title: text('message') || text('label'), icon: 'i-lucide-info' })
+}
 const CARD_UI = { body: 'p-0 sm:p-0' }
 
 // A List repeats its children per record of its query. In the canvas, an empty or
@@ -161,9 +171,11 @@ const list = computed(() => {
     :size="text('size') as ButtonProps['size']"
     :icon="icon('icon')"
     :trailing-icon="icon('trailingIcon')"
-    :to="link?.to"
-    :target="link?.external ? '_blank' : undefined"
+    :to="buttonAction === 'link' ? link?.to : undefined"
+    :target="buttonAction === 'link' && link?.external ? '_blank' : undefined"
+    :type="buttonAction === 'submit' ? 'submit' : 'button'"
     :class="tokens"
+    @click="onButtonClick"
   />
 
   <ULink
@@ -189,6 +201,7 @@ const list = computed(() => {
     :class="tokens"
   >
     <UInput
+      :name="text('field') || undefined"
       :placeholder="text('placeholder')"
       :type="text('inputType')"
       class="w-full"
@@ -226,6 +239,25 @@ const list = computed(() => {
       :parent-id="node.id"
     />
   </div>
+
+  <BildrForm
+    v-else-if="node.type === 'Form'"
+    v-bind="attrs"
+    :node="node"
+    class="flex flex-col"
+    :class="tokens"
+  >
+    <BildrNode
+      v-for="child in node.children"
+      :key="child.id"
+      :node="child"
+      in-stack
+    />
+    <BildrDropHint
+      v-if="runtime.editable && !node.children.length"
+      :parent-id="node.id"
+    />
+  </BildrForm>
 
   <UCard
     v-else-if="node.type === 'Card'"

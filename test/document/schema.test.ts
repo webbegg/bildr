@@ -65,7 +65,7 @@ describe('document schema', () => {
 describe('component registry', () => {
   it('ships the MVP palette', () => {
     expect(COMPONENTS.map(c => c.type)).toEqual(
-      ['Container', 'Row', 'Column', 'Grid', 'Heading', 'Text', 'Image', 'Button', 'Link', 'Input', 'List', 'Card']
+      ['Container', 'Row', 'Column', 'Grid', 'Heading', 'Text', 'Image', 'Button', 'Link', 'Input', 'List', 'Form', 'Card']
     )
   })
 

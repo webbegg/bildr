@@ -7,7 +7,8 @@ import type { Services } from './services'
  * description the agent reads, and a `run` that only the dispatcher calls.
  */
 
-export type ActionCaller = 'ui' | 'http' | 'mcp'
+/** `public`: an anonymous visitor of a published app, through the public data endpoint. */
+export type ActionCaller = 'ui' | 'http' | 'mcp' | 'public'
 
 export interface ActionContext {
   caller: ActionCaller
@@ -30,6 +31,11 @@ export interface ActionDef<I extends z.ZodType = z.ZodType, O = unknown> {
   readOnly?: boolean
   /** Hidden from agents (MCP); still callable by the editor. */
   uiOnly?: boolean
+  /**
+   * Server-only: callable by `public` callers alone, and never listed (so not
+   * on MCP or `/api/actions`). Public callers can call nothing else.
+   */
+  publicOnly?: boolean
   run: (input: z.infer<I>, ctx: ActionContext) => Promise<O>
 }
 

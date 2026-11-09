@@ -6,6 +6,8 @@ import { createCollection, fieldLabel, newId, slugify } from '#shared/document/f
 import type { Operation } from '#shared/document/operations'
 import { ApiPathSchema, ApiUrlSchema, CollectionSourceSchema, FieldKeySchema, FieldTypeSchema, IdSchema, SlugSchema } from '#shared/document/schema'
 import type { Collection, Field, Project } from '#shared/document/schema'
+import { createPublicRecord } from '../utils/publicData'
+import type { PublicWriteResult } from '../utils/publicData'
 import { ActionError, defineAction } from './define'
 import type { ActionContext } from './define'
 import { apiItems } from './services'
@@ -111,14 +113,14 @@ export const collectionCreate = defineAction({
 
 export const collectionUpdate = defineAction({
   name: 'collection_update',
-  description: 'Rename a collection, change its slug, or set its flags: publicRead lets published apps list its records, publicCreate lets them add records (e.g. a contact form). For API collections, source changes the URL or items path and fields replaces the whole mapping (key, label, type, path; use api_source_preview to see the items). Properties left out keep their value. One undo step.',
+  description: 'Rename a collection, change its slug, or set its flags: publicRead lets published apps list its records, publicCreate lets anonymous visitors of the published app add records (e.g. a contact form with a Form component). With publicCreate, anyone on the internet, including scripts on other websites, can post records to it (rate-limited, declared fields only, no update or delete); API collections never accept them. Flags take effect on the next publish. For API collections, source changes the URL or items path and fields replaces the whole mapping (key, label, type, path; use api_source_preview to see the items). Properties left out keep their value. One undo step.',
   input: z.object({
     projectId: IdSchema,
     collection: CollectionRef,
     name: z.string().trim().min(1).max(100).optional(),
     slug: SlugSchema.optional(),
     publicRead: z.boolean().optional().describe('Published apps may read the records'),
-    publicCreate: z.boolean().optional().describe('Published apps may create records'),
+    publicCreate: z.boolean().optional().describe('Anonymous visitors of the published app (and any other website) may create records'),
     source: SourceInput.optional(),
     fields: z.array(FieldInput).max(100).optional().describe('API collections only: the new mapping, in order')
   }),
@@ -249,6 +251,28 @@ export const recordCreate = defineAction({
     await ctx.services.records.save(project.id, collection.id, [...records, record])
     ctx.notifyData(project.id, project.version, collection.id)
     return readRecord(collection.fields, record)
+  }
+})
+
+/**
+ * A record from a published app's Form, for the public data endpoint only
+ * (`publicOnly`: not on MCP or `/api/actions`; agents use record_create). It
+ * runs under the project lock like record_create and tells open editors.
+ */
+export const publicRecordCreate = defineAction({
+  name: 'public_record_create',
+  description: 'Add a record to a publicCreate internal collection of the PUBLISHED app, as an anonymous visitor.',
+  input: z.object({ projectId: IdSchema, collection: z.string().max(64), body: z.unknown() }),
+  publicOnly: true,
+  run: async ({ projectId, collection: slug, body }, ctx): Promise<PublicWriteResult> => {
+    const snapshot = await ctx.services.publishedSnapshot(projectId)
+    if (!snapshot) return { ok: false, status: 404, message: 'Collection not found' }
+    const result = await createPublicRecord({ snapshot, collectionSlug: slug, body, store: ctx.services.records })
+    if (result.ok) {
+      const project = await ctx.services.loadProject(projectId)
+      ctx.notifyData(projectId, project.version, snapshot.project.collections.find(c => c.slug === slug)!.id)
+    }
+    return result
   }
 })
 

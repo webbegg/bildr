@@ -12,6 +12,11 @@ export interface RuntimeContext {
    * collection: the canvas shows a hint, published apps render nothing.
    */
   lists: Record<string, DataRecord[]>
+  /**
+   * Adds a record from a Form (published apps); rejects with a message to show.
+   * Absent in the canvas, where forms never submit.
+   */
+  submitForm?: (collection: string, values: Record<string, string>) => Promise<void>
 }
 
 export const RUNTIME_KEY: InjectionKey<RuntimeContext> = Symbol('bildr-runtime')

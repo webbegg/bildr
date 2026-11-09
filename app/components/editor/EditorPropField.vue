@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { PropDef, PropValue } from '#shared/document/components'
+import { enclosingForm, FORM_TYPE } from '#shared/runtime/form'
 
 const props = defineProps<{ def: PropDef, value: PropValue }>()
 const emit = defineEmits<{ update: [value: PropValue] }>()
@@ -22,11 +23,27 @@ const linkItems = computed(() => [
   { label: 'External URL', value: EXTERNAL }
 ])
 
-// A List's collection, by slug; a slug no collection has (e.g. after a delete) stays listed.
+// A value no option has (e.g. after a delete) stays listed as missing.
+const withMissing = (items: { label: string, value: string }[]) =>
+  text.value && !items.some(i => i.value === text.value) ? [...items, { label: `${text.value} (missing)`, value: text.value }] : items
+
+// A List's or Form's collection, by slug; a Form writes records, so it only offers internal ones.
 const collectionItems = computed(() => {
-  const items = [{ label: 'None', value: NONE }, ...(editor.project?.collections.map(c => ({ label: `${c.name} (${c.slug})`, value: c.slug })) ?? [])]
-  return text.value && !items.some(i => i.value === text.value) ? [...items, { label: `${text.value} (missing)`, value: text.value }] : items
+  const forForm = editor.selected?.type === FORM_TYPE
+  const collections = editor.project?.collections.filter(c => !forForm || c.source.type === 'internal') ?? []
+  return withMissing([{ label: 'None', value: NONE }, ...collections.map(c => ({ label: `${c.name} (${c.slug})`, value: c.slug }))])
 })
+
+// An Input's field: inside a Form with a collection, a choice of that collection's fields.
+const formCollection = computed(() => {
+  const root = editor.page?.root
+  const form = root && editor.selected ? enclosingForm(root, editor.selected.id) : undefined
+  return form ? editor.project?.collections.find(c => c.slug === form.props.collection) : undefined
+})
+const fieldItems = computed(() => withMissing([
+  { label: 'None', value: NONE },
+  ...(formCollection.value?.fields.map(f => ({ label: `${f.label} (${f.key})`, value: f.key })) ?? [])
+]))
 
 function onLinkMode(mode: string) {
   externalChosen.value = mode === EXTERNAL
@@ -80,6 +97,20 @@ function onLinkMode(mode: string) {
       size="sm"
       class="w-full"
       @update:model-value="emit('update', $event === NONE ? '' : $event)"
+    />
+    <USelect
+      v-else-if="def.kind === 'field' && formCollection"
+      :model-value="text || NONE"
+      :items="fieldItems"
+      size="sm"
+      class="w-full"
+      @update:model-value="emit('update', $event === NONE ? '' : $event)"
+    />
+    <EditorCommitInput
+      v-else-if="def.kind === 'field'"
+      :model-value="text"
+      placeholder="Put this Input in a Form with a collection"
+      @commit="emit('update', $event)"
     />
     <div
       v-else-if="def.kind === 'link'"

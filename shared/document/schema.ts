@@ -198,6 +198,10 @@ export function propValueProblem(def: PropDef, value: PropValue): string | undef
       return value === '' || (typeof value === 'string' && SlugSchema.safeParse(value).success)
         ? undefined
         : `"${def.name}" must be a collection slug, e.g. menu`
+    case 'field':
+      return value === '' || (typeof value === 'string' && FieldKeySchema.safeParse(value).success)
+        ? undefined
+        : `"${def.name}" must be a field key, e.g. email`
     default:
       return typeof value === 'string' ? undefined : `"${def.name}" must be a string`
   }

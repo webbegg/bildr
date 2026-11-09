@@ -63,7 +63,8 @@ export function createBildr(storage: KeyValueStorage, actions: ActionDef[] = ACT
 
   async function call<T = unknown>(name: string, rawInput: unknown, options: CallOptions): Promise<T> {
     const action = byName.get(name)
-    if (!action || (action.uiOnly && options.caller === 'mcp')) throw new ActionError('not_found', `Unknown action "${name}"`)
+    const hidden = !action || (action.uiOnly && options.caller === 'mcp') || (action.publicOnly === true) !== (options.caller === 'public')
+    if (hidden) throw new ActionError('not_found', `Unknown action "${name}"`)
 
     const parsed = action.input.safeParse(rawInput ?? {})
     if (!parsed.success) throw new ActionError('invalid_input', z.prettifyError(parsed.error), parsed.error.issues)
@@ -98,7 +99,7 @@ export function createBildr(storage: KeyValueStorage, actions: ActionDef[] = ACT
     services,
 
     list(): ActionInfo[] {
-      return actions.map(a => ({
+      return actions.filter(a => !a.publicOnly).map(a => ({
         name: a.name,
         description: a.description,
         readOnly: a.readOnly === true,

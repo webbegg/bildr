@@ -7,8 +7,11 @@
 
 export type PropValue = string | number | boolean
 
-/** `collection`: the slug of one of the project's collections ('' for none). */
-export type PropKind = 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'link' | 'image' | 'icon' | 'collection'
+/**
+ * `collection`: the slug of one of the project's collections ('' for none).
+ * `field`: a field key of the enclosing Form's collection ('' for none).
+ */
+export type PropKind = 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'link' | 'image' | 'icon' | 'collection' | 'field'
 
 export interface PropDef {
   name: string
@@ -114,11 +117,13 @@ export const COMPONENTS: ComponentDef[] = [
     type: 'Button',
     label: 'Button',
     icon: 'i-lucide-mouse-pointer-click',
-    description: 'A button, optionally linking to a page or URL.',
+    description: 'A button. Its action links to a page or URL (link, uses to), submits the enclosing Form (submit), or shows a toast with its message (toast).',
     container: false,
     props: [
       { name: 'label', label: 'Label', kind: 'text', default: 'Button' },
+      { name: 'action', label: 'Action', kind: 'select', default: 'link', options: ['link', 'submit', 'toast'], description: 'link opens "Link to"; submit sends the enclosing Form; toast shows the message.' },
       { name: 'to', label: 'Link to', kind: 'link', default: '', description: 'A page slug or an absolute URL.' },
+      { name: 'message', label: 'Toast message', kind: 'text', default: '', description: 'Shown by the toast action.' },
       { name: 'icon', label: 'Icon', kind: 'icon', default: '', description: ICON_HELP },
       { name: 'trailingIcon', label: 'Trailing icon', kind: 'icon', default: '', description: ICON_HELP },
       { name: 'color', label: 'Color', kind: 'select', default: 'primary', options: COLORS },
@@ -144,10 +149,11 @@ export const COMPONENTS: ComponentDef[] = [
     type: 'Input',
     label: 'Input',
     icon: 'i-lucide-text-cursor-input',
-    description: 'A labelled text field.',
+    description: 'A labelled text field. Inside a Form, field names the collection field its value is saved to.',
     container: false,
     props: [
       { name: 'label', label: 'Label', kind: 'text', default: 'Label' },
+      { name: 'field', label: 'Field', kind: 'field', default: '', description: 'The field of the Form\'s collection this input fills.' },
       { name: 'placeholder', label: 'Placeholder', kind: 'text', default: '' },
       { name: 'inputType', label: 'Type', kind: 'select', default: 'text', options: ['text', 'email', 'number', 'password'] }
     ],
@@ -167,6 +173,20 @@ export const COMPONENTS: ComponentDef[] = [
       { name: 'filterField', label: 'Filter field', kind: 'text', default: '', description: 'Only records whose field equals the filter value.' },
       { name: 'filterValue', label: 'Filter value', kind: 'text', default: '' },
       { name: 'layout', label: 'Layout', kind: 'select', default: 'stack', options: ['stack', 'grid', 'row'], description: 'grid uses the cols token.' }
+    ],
+    defaultStyle: { gap: '3', items: 'start' }
+  },
+  {
+    type: 'Form',
+    label: 'Form',
+    icon: 'i-lucide-send',
+    description: 'A form that adds a record to an internal collection on submit. Put Inputs inside (each with field set to a collection field) and a Button with action submit. In the published app the collection must be publicCreate; anyone, including other websites, can then post records to it.',
+    container: true,
+    props: [
+      { name: 'collection', label: 'Collection', kind: 'collection', default: '', description: 'The internal collection that receives the records.' },
+      { name: 'successMessage', label: 'Success message', kind: 'text', default: 'Thanks!', description: 'Toast shown after a successful submit.' },
+      { name: 'redirectTo', label: 'Then go to', kind: 'link', default: '', description: 'Optional page slug or URL to open after a successful submit.' },
+      { name: 'resetOnSuccess', label: 'Reset on success', kind: 'boolean', default: true }
     ],
     defaultStyle: { gap: '3', items: 'start' }
   },

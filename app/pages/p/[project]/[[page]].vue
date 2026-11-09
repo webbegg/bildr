@@ -7,6 +7,8 @@ import { listKey, listNodes, listQueryOf, listSearch } from '#shared/runtime/lis
  * The published app: the last published snapshot, rendered by the shared runtime.
  * Each List query on the page reads its records from the public data endpoint,
  * which serves only `publicRead` collections; a failed read renders nothing.
+ * Forms post their values to the same endpoint, which takes them only for
+ * `publicCreate` collections, and show its (generic) message on failure.
  */
 definePageMeta({ layout: false })
 
@@ -36,6 +38,15 @@ watch(queries, async (current) => {
   if (current === queries.value) lists.value = Object.fromEntries(entries.flat())
 }, { immediate: true })
 
+async function submitForm(collection: string, values: Record<string, string>): Promise<void> {
+  try {
+    await $fetch(`/api/public/${projectSlug.value}/${collection}`, { method: 'POST', body: { values } })
+  } catch (error) {
+    const data = (error as { data?: { message?: string } }).data
+    throw new Error(data?.message || 'Could not send the form, try again later', { cause: error })
+  }
+}
+
 useWebMcp(project, page)
 useTheme(() => project.value?.theme)
 
@@ -48,6 +59,7 @@ useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${p
     :page="page"
     :base="`/p/${projectSlug}`"
     :lists="lists"
+    :submit-form="submitForm"
     class="min-h-screen"
   />
   <UError

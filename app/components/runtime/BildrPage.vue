@@ -2,12 +2,19 @@
 import type { DataRecord } from '#shared/data/records'
 import type { Page } from '#shared/document/schema'
 
-const props = defineProps<{ page: Page, base: string, editable?: boolean, lists?: Record<string, DataRecord[]> }>()
+const props = defineProps<{
+  page: Page
+  base: string
+  editable?: boolean
+  lists?: Record<string, DataRecord[]>
+  submitForm?: RuntimeContext['submitForm']
+}>()
 
 provide(RUNTIME_KEY, reactive({
   base: computed(() => props.base),
   editable: computed(() => props.editable === true),
-  lists: computed(() => props.lists ?? {})
+  lists: computed(() => props.lists ?? {}),
+  submitForm: computed(() => props.submitForm)
 }) as RuntimeContext)
 </script>
 

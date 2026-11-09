@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { getComponent } from '#shared/document/components'
 import type { PropValue } from '#shared/document/components'
+import { FORM_TYPE, formFields, sampleValues } from '#shared/runtime/form'
 
 const editor = useEditor()
+const toast = useToast()
 
 const node = computed(() => editor.selected)
 const isRoot = computed(() => !!node.value && node.value.id === editor.page?.root.id)
@@ -10,6 +12,22 @@ const propDefs = computed(() => (node.value ? getComponent(node.value.type)?.pro
 
 function propValue(name: string, fallback: PropValue): PropValue {
   return node.value?.props[name] ?? fallback
+}
+
+// The canvas never submits forms (clicks select), so a Form is tried out here instead.
+const formCollection = computed(() => {
+  if (node.value?.type !== FORM_TYPE) return undefined
+  return editor.project?.collections.find(c => c.slug === node.value!.props.collection && c.source.type === 'internal')
+})
+
+async function testSubmit() {
+  const form = node.value
+  const collection = formCollection.value
+  if (!form || !collection) return
+  const mapped = formFields(form)
+  const values = sampleValues(collection.fields, new Date(), mapped.length ? mapped : undefined)
+  const record = await editor.run<{ id: string }>('record_create', { collection: collection.id, values })
+  if (record) toast.add({ title: `Test record added to ${collection.name}`, description: record.id, color: 'success', icon: 'i-lucide-check' })
 }
 
 function renamePage(field: 'name' | 'slug', value: string) {
@@ -103,6 +121,25 @@ function renamePage(field: 'name' | 'slug', value: string) {
           :value="propValue(def.name, def.default)"
           @update="editor.updateProps(node.id, { [def.name]: $event })"
         />
+      </div>
+
+      <div
+        v-if="node.type === FORM_TYPE"
+        class="space-y-1.5"
+      >
+        <UButton
+          label="Test submit"
+          icon="i-lucide-send"
+          color="neutral"
+          variant="outline"
+          size="sm"
+          block
+          :disabled="!formCollection"
+          @click="testSubmit"
+        />
+        <p class="text-xs text-dimmed">
+          {{ formCollection ? `Adds a record with sample values to ${formCollection.name}.` : 'Choose an internal collection to test this Form.' }}
+        </p>
       </div>
 
       <div>

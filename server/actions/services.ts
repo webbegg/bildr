@@ -65,6 +65,13 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
     return withDefaults(project)
   }
 
+  /** The last published copy of the project, if any. */
+  async function publishedSnapshot(projectId: string): Promise<PublishedSnapshot | undefined> {
+    const snapshot = await storage.getItem<PublishedSnapshot>(`published:${projectId}`)
+    if (snapshot) withDefaults(snapshot.project)
+    return snapshot ?? undefined
+  }
+
   async function loadHistory(projectId: string): Promise<History> {
     return await storage.getItem<History>(`history:${projectId}`) ?? { undo: [], redo: [] }
   }
@@ -131,11 +138,10 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
 
     async getPublished(slug: string): Promise<PublishedSnapshot | undefined> {
       const project = await projects.getBySlug(slug)
-      if (!project) return undefined
-      const snapshot = await storage.getItem<PublishedSnapshot>(`published:${project.id}`)
-      if (snapshot) withDefaults(snapshot.project)
-      return snapshot ?? undefined
+      return project ? publishedSnapshot(project.id) : undefined
     },
+
+    publishedSnapshot,
 
     async historyState(projectId: string): Promise<{ undo: string | null, redo: string | null }> {
       const history = await loadHistory(projectId)
