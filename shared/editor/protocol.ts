@@ -7,8 +7,11 @@ import type { Page } from '../document/schema'
  * the canvas; the canvas reports pointer and keyboard gestures back.
  */
 
+/** What a canvas shows: the page being edited, or the theme's token preview sheet. */
+export type CanvasView = 'page' | 'tokens'
+
 export type EditorToCanvas
-  = | { type: 'bildr:render', page: Page, base: string, theme: Theme }
+  = | { type: 'bildr:render', page: Page, base: string, theme: Theme, view: CanvasView }
     | { type: 'bildr:select', nodeId: string | null }
     | { type: 'bildr:hover', nodeId: string | null }
 

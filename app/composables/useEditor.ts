@@ -1,4 +1,5 @@
 import type { InjectionKey } from 'vue'
+import type { Theme, ThemePatch } from '#shared/design/theme'
 import type { Project } from '#shared/document/schema'
 import type { PropValue } from '#shared/document/components'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
@@ -32,9 +33,15 @@ export function createEditor(projectId: string) {
   const selectedId = ref<string | null>(null)
   const hoveredId = ref<string | null>(null)
   const history = ref<{ undo: string | null, redo: string | null }>({ undo: null, redo: null })
+  /** Build edits the page; Design edits the project theme. */
+  const mode = ref<'build' | 'design'>('build')
+  /** An uncommitted theme previewed in the canvas, e.g. while a colour picker drags. */
+  const themeDraft = shallowRef<Theme | null>(null)
 
   const page = computed(() => project.value?.pages.find(p => p.id === pageId.value) ?? project.value?.pages[0] ?? null)
   const selected = computed(() => (page.value && selectedId.value ? findNode(page.value.root, selectedId.value) ?? null : null))
+  /** The theme the canvas renders: the draft while previewing, else the project's. */
+  const theme = computed(() => themeDraft.value ?? project.value?.theme ?? null)
 
   async function reload(): Promise<void> {
     const [next, nextHistory] = await Promise.all([
@@ -115,6 +122,18 @@ export function createEditor(projectId: string) {
     await runOnPage('node_update_style', { nodeId, style })
   }
 
+  /** Previews a theme change in the canvas without committing it. */
+  function previewTheme(patch: ThemePatch): void {
+    const base = project.value?.theme
+    if (base) themeDraft.value = { ...base, ...patch, colors: { ...base.colors, ...patch.colors } }
+  }
+
+  /** Commits a theme change (one undo step) and drops any preview. */
+  async function updateTheme(patch: ThemePatch): Promise<void> {
+    await run('theme_update', patch)
+    themeDraft.value = null
+  }
+
   async function undo(): Promise<void> {
     if (history.value.undo) await run('history_undo')
   }
@@ -136,8 +155,8 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, selectedId, hoveredId, history, page, selected,
-    reload, run, runOnPage, selectPage, insert, drop, remove, duplicate, updateProps, updateStyle, undo, redo, shortcut
+    projectId, project, pageId, selectedId, hoveredId, history, mode, themeDraft, page, selected, theme,
+    reload, run, runOnPage, selectPage, insert, drop, remove, duplicate, updateProps, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }
 

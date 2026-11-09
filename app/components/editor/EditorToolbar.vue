@@ -37,6 +37,13 @@ async function publish() {
     <span class="font-semibold">{{ editor.project?.name }}</span>
     <span class="text-sm text-dimmed">/ {{ editor.page?.name }}</span>
 
+    <EditorSegmented
+      :items="[{ value: 'build', label: 'Build' }, { value: 'design', label: 'Design' }]"
+      :model-value="editor.mode"
+      class="ms-4 w-40"
+      @update:model-value="editor.mode = $event as 'build' | 'design'"
+    />
+
     <div class="ms-auto flex items-center gap-2">
       <UTooltip
         :text="editor.history.undo ? `Undo ${editor.history.undo}` : 'Nothing to undo'"

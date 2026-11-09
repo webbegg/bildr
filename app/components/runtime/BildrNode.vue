@@ -31,10 +31,13 @@ const HEADING_TOKENS: Record<string, Record<string, string>> = {
 const level = computed(() => (text('level') in HEADING_TOKENS ? text('level') : '2'))
 
 // The card's gap spaces its inner stack; every other token styles the card itself.
+// Its padding is a token too (UCard's body padding is zeroed), so `p-8` replaces
+// the default instead of adding to it.
 const card = computed(() => {
   const { gap, ...rest } = props.node.style
-  return { root: styleClasses(rest), stack: gap ? styleClasses({ gap }) : '' }
+  return { root: styleClasses({ p: '6', ...rest }), stack: gap ? styleClasses({ gap }) : '' }
 })
+const CARD_UI = { body: 'p-0 sm:p-0' }
 </script>
 
 <template>
@@ -123,6 +126,7 @@ const card = computed(() => {
     v-else-if="node.type === 'Card'"
     v-bind="attrs"
     :class="card.root"
+    :ui="CARD_UI"
   >
     <div
       class="flex flex-col"

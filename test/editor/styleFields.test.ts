@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { STYLE_TOKENS } from '#shared/design/tokens'
-import { STYLE_DEFAULT, styleFieldGroups, styleFieldItems, styleFieldUpdate } from '#shared/editor/styleFields'
+import { getStyleToken, STYLE_TOKENS } from '#shared/design/tokens'
+import { DEFAULT_THEME } from '#shared/design/theme'
+import { colorSwatchRows, setStyleTokens, spacingItems, styleFieldControl, styleFieldGroups } from '#shared/editor/styleFields'
 import { DRAG_MIME, draggedNodeId, nodeDragType, parseDragPayload } from '#shared/editor/dropTarget'
 
 describe('style fields', () => {
@@ -11,20 +12,71 @@ describe('style fields', () => {
     expect(groups.find(g => g.group === 'Spacing')!.fields.map(f => f.key)).toContain('mt')
   })
 
-  it('offers "Default" plus the allowed values of a token', () => {
-    const items = styleFieldItems(STYLE_TOKENS.find(t => t.key === 'align')!)
-    expect(items).toEqual([
-      { label: 'Default', value: STYLE_DEFAULT },
-      { label: 'left', value: 'left' },
-      { label: 'center', value: 'center' },
-      { label: 'right', value: 'right' },
-      { label: 'justify', value: 'justify' }
-    ])
+  it('counts the set tokens of each group', () => {
+    const groups = styleFieldGroups({ mt: '10', p: '4', bg: 'primary' })
+    expect(groups.find(g => g.group === 'Spacing')!.setCount).toBe(2)
+    expect(groups.find(g => g.group === 'Color')!.setCount).toBe(1)
+    expect(groups.find(g => g.group === 'Size')!.setCount).toBe(0)
   })
 
-  it('turns a pick into a style update, "Default" clearing the token', () => {
-    expect(styleFieldUpdate('mt', '10')).toEqual({ mt: '10' })
-    expect(styleFieldUpdate('mt', STYLE_DEFAULT)).toEqual({ mt: null })
+  it('picks a control per token: colour swatches, the spacing scale, segments for short lists, else a select', () => {
+    expect(styleFieldControl(getStyleToken('bg')!)).toBe('color')
+    expect(styleFieldControl(getStyleToken('borderColor')!)).toBe('color')
+    expect(styleFieldControl(getStyleToken('mt')!)).toBe('spacing')
+    expect(styleFieldControl(getStyleToken('gap')!)).toBe('spacing')
+    expect(styleFieldControl(getStyleToken('align')!)).toBe('segmented')
+    expect(styleFieldControl(getStyleToken('border')!)).toBe('segmented')
+    expect(styleFieldControl(getStyleToken('rounded')!)).toBe('select')
+    expect(styleFieldControl(getStyleToken('font')!)).toBe('select')
+  })
+
+  it('lists the set tokens in registry order with their classes', () => {
+    expect(setStyleTokens({ bg: 'primary-600', mt: '10', bogus: 'x' })).toEqual([
+      { key: 'mt', label: 'Margin top', value: '10', className: 'mt-10' },
+      { key: 'bg', label: 'Background', value: 'primary-600', className: 'bg-primary-600' }
+    ])
+  })
+})
+
+describe('spacing items', () => {
+  it('labels each scale value with its px size for the project spacing density', () => {
+    const mt = getStyleToken('mt')!
+    const items = spacingItems(mt, 'default')
+    expect(items.find(i => i.value === '10')).toEqual({ value: '10', label: '10 · 40px' })
+    expect(items.find(i => i.value === '0.5')).toEqual({ value: '0.5', label: '0.5 · 2px' })
+    expect(items.find(i => i.value === '0')).toEqual({ value: '0', label: '0 · 0px' })
+    expect(items.at(-1)).toEqual({ value: 'auto', label: 'auto' })
+    expect(spacingItems(mt, 'compact').find(i => i.value === '10')!.label).toBe('10 · 32px')
+    expect(spacingItems(mt, 'comfortable').find(i => i.value === '1.5')!.label).toBe('1.5 · 7.2px')
+    expect(items.map(i => i.value)).toEqual(mt.values)
+  })
+})
+
+describe('colour swatches', () => {
+  it('offers each semantic colour and its shades, painted with the project theme', () => {
+    const rows = colorSwatchRows(getStyleToken('bg')!, DEFAULT_THEME)
+    expect(rows.map(r => r.name)).toEqual(['primary', 'secondary', 'success', 'info', 'warning', 'error', 'neutral', 'design'])
+    const primary = rows[0]!.swatches
+    expect(primary[0]).toEqual({ value: 'primary', label: 'primary', color: 'var(--color-green-500, oklch(72.3% 0.219 149.579))' })
+    expect(primary[7]).toEqual({ value: 'primary-600', label: 'primary-600', color: expect.stringContaining('--color-green-600') })
+    expect(primary).toHaveLength(12)
+    // There is no bare `bg-neutral` utility, only its shades.
+    expect(rows[6]!.swatches.map(s => s.value)).not.toContain('neutral')
+    expect(rows[6]!.swatches).toHaveLength(11)
+  })
+
+  it('ends with the neutral design colours of that utility', () => {
+    const bg = colorSwatchRows(getStyleToken('bg')!, DEFAULT_THEME).at(-1)!.swatches
+    expect(bg.map(s => s.value)).toEqual(['default', 'muted', 'elevated', 'accented', 'inverted'])
+    expect(bg[0]!.color).toBe('#fff')
+    const text = colorSwatchRows(getStyleToken('color')!, DEFAULT_THEME).at(-1)!.swatches
+    expect(text.map(s => s.value)).toEqual(['default', 'highlighted', 'toned', 'muted', 'dimmed', 'inverted'])
+    expect(text[0]!.color).toBe('var(--color-slate-700, oklch(37.2% 0.044 257.287))')
+  })
+
+  it('follows the theme: a hex primary paints its own colour', () => {
+    const theme = { ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, primary: '#e11d48' } }
+    expect(colorSwatchRows(getStyleToken('bg')!, theme)[0]!.swatches[0]!.color).toBe('#e11d48')
   })
 })
 

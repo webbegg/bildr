@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { Theme } from '#shared/design/theme'
 import type { Page } from '#shared/document/schema'
-import type { CanvasToEditor, EditorToCanvas } from '#shared/editor/protocol'
+import type { CanvasToEditor, CanvasView, EditorToCanvas } from '#shared/editor/protocol'
 import { isCanvasMessage } from '#shared/editor/protocol'
 import { isContainerType } from '#shared/document/components'
 import { findNode, findParent } from '#shared/document/tree'
@@ -12,6 +12,8 @@ import { DRAG_MIME, draggedNodeId, dropPosition, resolveDrop } from '#shared/edi
  * The editor canvas, loaded in an iframe. It renders whatever page the
  * editor sends with the same runtime as the published app, draws hover and
  * selection outlines, and turns pointer and key gestures into messages.
+ * The `tokens` view shows the theme's token preview sheet instead.
+ * Outlines use a fixed editor colour, not the project's `primary`.
  */
 definePageMeta({ layout: false })
 
@@ -19,6 +21,7 @@ const page = shallowRef<Page | null>(null)
 const base = ref('')
 const theme = shallowRef<Theme | null>(null)
 useTheme(theme)
+const view = ref<CanvasView>('page')
 const selectedId = ref<string | null>(null)
 const hoveredId = ref<string | null>(null)
 
@@ -57,6 +60,7 @@ function onMessage(event: MessageEvent) {
     page.value = message.page
     base.value = message.base
     theme.value = message.theme
+    view.value = message.view
   } else if (message.type === 'bildr:select') {
     selectedId.value = message.nodeId
     if (message.nodeId) document.querySelector(`[data-bildr-id="${message.nodeId}"]`)?.scrollIntoView({ block: 'nearest' })
@@ -182,8 +186,9 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="relative min-h-screen">
+    <EditorTokenSheet v-if="view === 'tokens'" />
     <BildrPage
-      v-if="page"
+      v-else-if="page"
       :page="page"
       :base="base"
       editable
@@ -194,18 +199,18 @@ onBeforeUnmount(() => {
       v-show="box"
       :key="kind"
       class="pointer-events-none absolute z-50 rounded-sm outline-2 -outline-offset-1"
-      :class="kind === 'selected' ? 'outline-primary' : 'outline-dashed outline-primary/60'"
+      :class="kind === 'selected' ? 'outline-blue-500' : 'outline-dashed outline-blue-500/60'"
       :style="box ? { top: `${box.top}px`, left: `${box.left}px`, width: `${box.width}px`, height: `${box.height}px` } : undefined"
     >
       <span
         v-if="kind === 'selected' && box"
-        class="absolute -top-5 left-0 rounded-t-sm bg-primary px-1.5 text-[10px] leading-5 text-inverted"
+        class="absolute -top-5 left-0 rounded-t-sm bg-blue-500 px-1.5 text-[10px] leading-5 text-white"
       >{{ box.label }}</span>
     </div>
     <div
       v-if="indicator"
       class="pointer-events-none absolute z-50"
-      :class="indicator.line ? 'rounded-full bg-primary' : 'rounded-sm bg-primary/5 outline-2 -outline-offset-2 outline-primary'"
+      :class="indicator.line ? 'rounded-full bg-blue-500' : 'rounded-sm bg-blue-500/5 outline-2 -outline-offset-2 outline-blue-500'"
       :style="{ top: `${indicator.top}px`, left: `${indicator.left}px`, width: `${indicator.width}px`, height: `${indicator.height}px` }"
     />
   </div>

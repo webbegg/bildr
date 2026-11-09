@@ -43,7 +43,16 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
   >
     <EditorToolbar />
     <div class="flex min-h-0 flex-1">
-      <aside class="flex w-64 shrink-0 flex-col border-r border-default">
+      <aside
+        v-if="editor.mode === 'design'"
+        class="flex w-64 shrink-0 flex-col border-r border-default"
+      >
+        <EditorDesignPanel class="min-h-0 flex-1" />
+      </aside>
+      <aside
+        v-else
+        class="flex w-64 shrink-0 flex-col border-r border-default"
+      >
         <EditorPages />
         <UTabs
           :items="sidebarTabs"
@@ -63,7 +72,22 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
       <main class="min-w-0 flex-1 bg-muted p-4">
         <EditorCanvas @key="message => editor.shortcut(message.key, message.meta, message.shift)" />
       </main>
-      <aside class="w-80 shrink-0 overflow-y-auto border-l border-default">
+      <aside
+        v-if="editor.mode === 'design'"
+        class="flex w-80 shrink-0 flex-col border-l border-default bg-muted p-3"
+      >
+        <p class="mb-2 text-xs font-semibold text-muted uppercase">
+          Token preview
+        </p>
+        <EditorCanvas
+          view="tokens"
+          class="min-h-0 flex-1"
+        />
+      </aside>
+      <aside
+        v-else
+        class="w-80 shrink-0 overflow-y-auto border-l border-default"
+      >
         <EditorInspector />
       </aside>
     </div>

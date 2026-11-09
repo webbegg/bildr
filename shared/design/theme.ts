@@ -44,6 +44,11 @@ const SPACING_BASE = { compact: '0.2rem', default: '0.25rem', comfortable: '0.3r
 /** Spacing density: the Tailwind `--spacing` base every `p-*`, `m-*` and `gap-*` multiplies. */
 export const THEME_SPACINGS = Object.keys(SPACING_BASE) as [keyof typeof SPACING_BASE, ...(keyof typeof SPACING_BASE)[]]
 
+/** The `--spacing` base in px (at a 16px root), so `mt-10` is `10 * spacingBasePx` px. */
+export function spacingBasePx(spacing: keyof typeof SPACING_BASE): number {
+  return Number.parseFloat(SPACING_BASE[spacing]) * 16
+}
+
 // No `i` flag: JSON Schema patterns (the MCP tool schemas) drop regex flags.
 export const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
 
@@ -140,15 +145,25 @@ export function hexShades(hex: string): Record<Shade, string> {
   })) as Record<Shade, string>
 }
 
-function shadeValues(name: ThemeColorName, value: string): string[] {
-  if (HEX_COLOR.test(value)) {
-    const shades = hexShades(value.toLowerCase())
-    return SHADES.map(s => `--ui-color-${name}-${s}: ${shades[s]};`)
-  }
+function shadeValues(value: string): Record<Shade, string> {
+  if (HEX_COLOR.test(value)) return hexShades(value.toLowerCase())
   const palette = PALETTES[value as PaletteName]
   // Like Nuxt UI, prefer the app's own `--color-*` (e.g. the custom green) and fall back to Tailwind's.
   const variable = value === 'neutral' ? 'old-neutral' : value
-  return SHADES.map(s => `--ui-color-${name}-${s}: var(--color-${variable}-${s}, ${palette[s]});`)
+  return Object.fromEntries(SHADES.map(s => [s, `var(--color-${variable}-${s}, ${palette[s]})`])) as Record<Shade, string>
+}
+
+function shadeDeclarations(name: ThemeColorName, value: string): string[] {
+  const shades = shadeValues(value)
+  return SHADES.map(s => `--ui-color-${name}-${s}: ${shades[s]};`)
+}
+
+/**
+ * The CSS colour of a theme shade, as the themed document resolves it. For
+ * painting swatches in a document that does not carry the project theme.
+ */
+export function themeColorValue(theme: Theme, name: ThemeColorName, shade: Shade): string {
+  return shadeValues(theme.colors[name])[shade]
 }
 
 // Nuxt UI's neutral-derived colours (runtime/index.css), redeclared next to the
@@ -194,6 +209,22 @@ function fontStack(font: string): string {
   return def ? `'${font}', ${def.fallback}` : SYSTEM_STACK
 }
 
+export type NeutralColorKind = 'bg' | 'text' | 'border'
+
+/**
+ * The light-mode colour of a neutral design utility such as `bg-muted` or
+ * `text-default`, or undefined if the utility does not exist. Read from the
+ * declarations `themeCss` emits, so the two cannot drift.
+ */
+export function themeNeutralColor(theme: Theme, kind: NeutralColorKind, name: string): string | undefined {
+  const variable = name === 'default' ? `--ui-${kind}` : `--ui-${kind}-${name}`
+  const line = LIGHT_NEUTRALS.find(l => l.startsWith(`${variable}:`))
+  if (!line) return undefined
+  const value = line.slice(variable.length + 1, -1).trim()
+  const shade = /^var\(--ui-color-neutral-(\d+)\)$/.exec(value)?.[1] as Shade | undefined
+  return shade ? themeColorValue(theme, 'neutral', shade) : value
+}
+
 const block = (selector: string, lines: string[]) => `${selector} {\n${lines.map(l => `  ${l}`).join('\n')}\n}`
 
 /**
@@ -204,7 +235,7 @@ export function themeCss(theme: Theme): string {
   const semantic = THEME_COLORS.filter(c => c !== 'neutral')
   return [
     block(':root, :host', [
-      ...THEME_COLORS.flatMap(name => shadeValues(name, theme.colors[name])),
+      ...THEME_COLORS.flatMap(name => shadeDeclarations(name, theme.colors[name])),
       `--font-sans: ${fontStack(theme.font)};`,
       `--ui-radius: ${theme.radius};`,
       `--spacing: ${SPACING_BASE[theme.spacing]};`

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { PALETTES } from '#shared/design/palettes'
 import { palettesModule, parseTailwindPalettes } from '#shared/design/paletteSource'
-import { DEFAULT_THEME, hexShades, hexToOklch, THEME_FONTS, THEME_RADII, THEME_SPACINGS, themeCss, themeFontHref, ThemePatchSchema, ThemeSchema } from '#shared/design/theme'
+import { DEFAULT_THEME, hexShades, hexToOklch, spacingBasePx, THEME_FONTS, THEME_RADII, THEME_SPACINGS, themeColorValue, themeCss, themeFontHref, themeNeutralColor, ThemePatchSchema, ThemeSchema } from '#shared/design/theme'
 import type { Theme } from '#shared/design/theme'
 
 const TAILWIND_THEME = new URL('../../node_modules/tailwindcss/theme.css', import.meta.url)
@@ -121,6 +121,36 @@ describe('themeCss', () => {
 
   it('is unlayered, so it wins over the Nuxt UI and Tailwind defaults in @layer theme', () => {
     expect(themeCss(DEFAULT_THEME)).not.toContain('@layer')
+  })
+})
+
+describe('theme colour values (for editor swatches, outside the themed document)', () => {
+  it('resolves a palette shade like the generated CSS does', () => {
+    expect(themeColorValue(DEFAULT_THEME, 'primary', '500')).toBe('var(--color-green-500, oklch(72.3% 0.219 149.579))')
+    expect(themeColorValue(DEFAULT_THEME, 'neutral', '700')).toBe('var(--color-slate-700, oklch(37.2% 0.044 257.287))')
+    expect(themeColorValue({ ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, info: 'neutral' } }, 'info', '50'))
+      .toBe('var(--color-old-neutral-50, oklch(98.5% 0 none))')
+  })
+
+  it('resolves a hex colour to itself at 500 and to generated shades elsewhere', () => {
+    const theme: Theme = { ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, primary: '#E11D48' } }
+    expect(themeColorValue(theme, 'primary', '500')).toBe('#e11d48')
+    expect(themeColorValue(theme, 'primary', '50')).toBe(hexShades('#e11d48')['50'])
+  })
+
+  it('resolves the neutral design colours (light mode) per utility kind', () => {
+    expect(themeNeutralColor(DEFAULT_THEME, 'bg', 'default')).toBe('#fff')
+    expect(themeNeutralColor(DEFAULT_THEME, 'bg', 'muted')).toBe('var(--color-slate-50, oklch(98.4% 0.003 247.858))')
+    expect(themeNeutralColor(DEFAULT_THEME, 'text', 'default')).toBe('var(--color-slate-700, oklch(37.2% 0.044 257.287))')
+    expect(themeNeutralColor(DEFAULT_THEME, 'text', 'inverted')).toBe('#fff')
+    expect(themeNeutralColor(DEFAULT_THEME, 'border', 'accented')).toBe('var(--color-slate-300, oklch(86.9% 0.022 252.894))')
+    expect(themeNeutralColor(DEFAULT_THEME, 'bg', 'highlighted')).toBeUndefined()
+  })
+
+  it('gives the spacing base in px for each density', () => {
+    expect(spacingBasePx('compact')).toBe(3.2)
+    expect(spacingBasePx('default')).toBe(4)
+    expect(spacingBasePx('comfortable')).toBe(4.8)
   })
 })
 
