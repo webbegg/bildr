@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { boundsOf, clampZoom, fitView, layoutFrames, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { boundsOf, clampZoom, fitView, layoutFrames, panView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+
+describe('panView', () => {
+  it('moves the content with a drag from one screen point to another, at any zoom', () => {
+    expect(panView({ x: 10, y: 20, zoom: 0.5 }, { x: 300, y: 300 }, { x: 340, y: 270 })).toEqual({ x: 50, y: -10, zoom: 0.5 })
+  })
+
+  it('keeps the content point under the pointer through the drag', () => {
+    // At 200% from (0, 0), the pointer at (100, 100) is over content (50, 50); after the drag it is still.
+    const next = panView({ x: 0, y: 0, zoom: 2 }, { x: 100, y: 100 }, { x: 160, y: 40 })
+    expect([next.x + 50 * next.zoom, next.y + 50 * next.zoom]).toEqual([160, 40])
+  })
+})
 
 describe('clampZoom', () => {
   it('keeps the zoom within 10%–400%', () => {

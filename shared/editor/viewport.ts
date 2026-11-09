@@ -86,6 +86,11 @@ export function fitView(content: Rect, stage: Size, padding: number): Viewport {
   }
 }
 
+/** The viewport after a pan drag from screen point `from` to `to` (Hand tool, Space or middle drag): the content follows the pointer. */
+export function panView(view: Viewport, from: Point, to: Point): Viewport {
+  return { ...view, x: view.x + to.x - from.x, y: view.y + to.y - from.y }
+}
+
 /** Zooms to `zoom` (clamped) keeping the content under the screen point `at` in place. */
 export function zoomAround(view: Viewport, zoom: number, at: Point): Viewport {
   const next = clampZoom(zoom)

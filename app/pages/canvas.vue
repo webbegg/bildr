@@ -6,7 +6,9 @@ import type { CanvasToEditor, CanvasView, EditorToCanvas } from '#shared/editor/
 import { isCanvasMessage } from '#shared/editor/protocol'
 import { isContainerType } from '#shared/document/components'
 import { findNode, findParent } from '#shared/document/tree'
-import type { DropTarget } from '#shared/editor/dropTarget'
+import type { DropPosition, DropTarget } from '#shared/editor/dropTarget'
+import type { InsertHit } from '#shared/editor/insertTools'
+import { insertTargetAt, toolForKey } from '#shared/editor/insertTools'
 import type { StylePatch } from '#shared/editor/preview'
 import { previewTree, settlePreviews } from '#shared/editor/preview'
 import { breakpointAt, DRAG_MIME, draggedNodeId, dropPosition, laysOutInRow, resolveDrop } from '#shared/editor/dropTarget'
@@ -30,6 +32,9 @@ import { measure as measureLines } from '#shared/editor/measure'
  * and space are forwarded. Only the active frame labels the selection.
  * Every selected node is outlined; holding Alt (Option) over another element
  * draws Figma's red distance lines from the selection box in the active frame.
+ * With an insert tool armed the cursor is a crosshair, the pointer shows the
+ * insert slot with the drop indicator, and a click reports that slot.
+ * The editor's light/dark preview sets this document's colour mode class.
  */
 definePageMeta({ layout: false })
 
@@ -42,6 +47,8 @@ const view = ref<CanvasView>('page')
 const selectedId = ref<string | null>(null)
 const selectedIds = ref<string[]>([])
 const hoveredId = ref<string | null>(null)
+/** The armed insert tool's component type; null is Move. */
+const tool = ref<string | null>(null)
 /** Alt (Option) held, here or in the editor: measurements to the hovered element. */
 const alt = ref(false)
 const active = ref(true)
@@ -126,6 +133,13 @@ function onMessage(event: MessageEvent) {
     post({ type: 'bildr:rects', requestId: message.requestId, rects: nodeBoxes(message.nodeIds) })
   } else if (message.type === 'bildr:alt') {
     alt.value = message.down
+  } else if (message.type === 'bildr:tool') {
+    tool.value = message.tool
+    indicator.value = null
+  } else if (message.type === 'bildr:dark') {
+    // Also drops the system preference's class (Nuxt UI colour mode), so off always previews light.
+    document.documentElement.classList.toggle('dark', message.dark)
+    document.documentElement.classList.toggle('light', !message.dark)
   } else if (message.type === 'bildr:active') {
     active.value = message.active
     zoom.value = message.zoom
@@ -139,6 +153,7 @@ function onMessage(event: MessageEvent) {
 
 function onPointerMove(event: MouseEvent) {
   alt.value = event.altKey
+  if (tool.value) indicator.value = insertAt(event)?.indicator ?? null
   const id = nodeIdAt(event.target)
   if (id === hoveredId.value) return
   hoveredId.value = id
@@ -146,14 +161,21 @@ function onPointerMove(event: MouseEvent) {
 }
 
 function onPointerLeave() {
+  if (tool.value) indicator.value = null
   hoveredId.value = null
   post({ type: 'bildr:hover', nodeId: null })
 }
 
-/** In the canvas, clicks select: links don't navigate and buttons don't act. */
+/** In the canvas, clicks select (or insert, with a tool armed): links don't navigate and buttons don't act. */
 function onClick(event: MouseEvent) {
   event.preventDefault()
   event.stopPropagation()
+  if (tool.value) {
+    const insert = insertAt(event)
+    indicator.value = null
+    if (insert) post({ type: 'bildr:insert', ...insert.hit.target })
+    return
+  }
   const id = nodeIdAt(event.target)
   if (id) post({ type: 'bildr:click', nodeId: id, shift: event.shiftKey, meta: event.metaKey || event.ctrlKey })
 }
@@ -213,7 +235,8 @@ function onKeyDown(event: KeyboardEvent) {
   }
   const zoom = zoomShortcut({ code: event.code, key: event.key, meta, shift: event.shiftKey })
   const lower = event.key.toLowerCase()
-  if (!zoom && !SHORTCUT_KEYS.has(event.key) && !(meta && ['z', 'y', 'd', 'a', 'g'].includes(lower)) && !(event.shiftKey && !meta && lower === 'a')) return
+  const armsTool = !!toolForKey({ key: event.key, meta, shift: event.shiftKey, alt: event.altKey })
+  if (!zoom && !armsTool && !SHORTCUT_KEYS.has(event.key) && !(meta && ['z', 'y', 'd', 'a', 'g'].includes(lower)) && !(event.shiftKey && !meta && lower === 'a')) return
   event.preventDefault()
   post({ type: 'bildr:key', key: event.key, code: event.code, meta, shift: event.shiftKey })
 }
@@ -251,15 +274,33 @@ function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } 
     : dropPosition(rect, { x: event.clientX, y: event.clientY }, { container: isContainerType(node.type), horizontal })
   const target = resolveDrop(root, node.id, position, draggedNodeId(types))
   if (!target) return null
+  return { target, indicator: indicatorAt(rect, position, horizontal) }
+}
+
+/** The drop indicator for `position` relative to an element's viewport `rect`: its outline inside, else a line on that side. */
+function indicatorAt(rect: DOMRect, position: DropPosition, horizontal: boolean): Indicator {
   const box = { top: rect.top + window.scrollY, left: rect.left + window.scrollX, width: rect.width, height: rect.height }
-  if (position === 'inside') return { target, indicator: { ...box, line: false } }
+  if (position === 'inside') return { ...box, line: false }
   const end = position === 'after'
-  return {
-    target,
-    indicator: horizontal
-      ? { top: box.top, left: box.left + (end ? box.width : 0) - 1, width: 2, height: box.height, line: true }
-      : { top: box.top + (end ? box.height : 0) - 1, left: box.left, width: box.width, height: 2, line: true }
-  }
+  return horizontal
+    ? { top: box.top, left: box.left + (end ? box.width : 0) - 1, width: 2, height: box.height, line: true }
+    : { top: box.top + (end ? box.height : 0) - 1, left: box.left, width: box.width, height: 2, line: true }
+}
+
+/** The insert slot for an armed tool under the pointer, plus where to draw it. */
+function insertAt(event: MouseEvent): { hit: InsertHit, indicator: Indicator } | null {
+  const root = page.value?.root
+  const id = nodeIdAt(event.target)
+  const node = root && id && view.value === 'page' ? findNode(root, id) : undefined
+  if (!root || !node) return null
+  const breakpoint = breakpointAt(window.innerWidth)
+  const childRects = node.children.map(child => firstCopy(child.id)?.getBoundingClientRect() ?? new DOMRect())
+  const hit = insertTargetAt(root, node.id, { x: event.clientX, y: event.clientY }, childRects, breakpoint)
+  const markEl = hit && firstCopy(hit.mark.nodeId)
+  if (!hit || !markEl) return null
+  const parent = findParent(root, hit.mark.nodeId)?.parent
+  const horizontal = !!parent && laysOutInRow(parent, breakpoint)
+  return { hit, indicator: indicatorAt(markEl.getBoundingClientRect(), hit.mark.position, horizontal) }
 }
 
 function onDragOver(event: DragEvent) {
@@ -334,7 +375,8 @@ onBeforeUnmount(() => {
   <div
     ref="root"
     class="relative"
-    :class="{ 'min-h-screen': view === 'tokens' }"
+    :class="{ 'min-h-screen': view === 'tokens', 'cursor-crosshair! **:cursor-crosshair!': tool && view === 'page' }"
+    :data-armed-tool="tool ?? undefined"
     :style="view === 'page' ? { minHeight: `${FRAME_MIN_HEIGHT}px` } : undefined"
   >
     <EditorTokenSheet v-if="view === 'tokens'" />
@@ -384,6 +426,7 @@ onBeforeUnmount(() => {
       class="pointer-events-none absolute z-50"
       :class="indicator.line ? 'rounded-full bg-blue-500' : 'rounded-sm bg-blue-500/5 outline-2 -outline-offset-2 outline-blue-500'"
       :style="{ top: `${indicator.top}px`, left: `${indicator.left}px`, width: `${indicator.width}px`, height: `${indicator.height}px` }"
+      data-drop-indicator
     />
   </div>
 </template>

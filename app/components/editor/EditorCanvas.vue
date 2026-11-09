@@ -8,7 +8,8 @@ import type { NodeBox } from '#shared/editor/autoLayout'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 import type { Point, Viewport, ZoomCommand } from '#shared/editor/viewport'
-import { boundsOf, fitView, FRAME_GAP, FRAME_MIN_HEIGHT, layoutFrames, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { isInsertTool, pointerMode } from '#shared/editor/insertTools'
+import { boundsOf, fitView, FRAME_GAP, FRAME_MIN_HEIGHT, layoutFrames, panView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
 /**
  * The editor canvas. The page view is a Figma-style infinite surface showing
@@ -17,13 +18,16 @@ import { boundsOf, fitView, FRAME_GAP, FRAME_MIN_HEIGHT, layoutFrames, stepZoom,
  * scaled by one zoom/pan transform. Every frame gets the same messages, so
  * selection, hover and previews show in all of them; the active frame is
  * `editor.device`, the breakpoint the style panel edits. Wheel pans,
- * Cmd/Ctrl + wheel or pinch zooms around the pointer, space- or middle-drag
- * pans; the iframes forward those gestures. The `tokens` view is one plain
- * iframe with the theme's token preview sheet. The editor measures node
- * boxes in the active frame through this component (Shift+A), and Alt held
- * here shows the frames' measurements. The zoom menu also holds the Deep
- * select setting (on: a click selects the innermost element; off: Figma's
- * drill, where the first click selects a top-level element).
+ * Cmd/Ctrl + wheel or pinch zooms around the pointer, and a drag with the
+ * Hand tool, Space held or the middle button pans; the iframes forward those
+ * gestures. The `tokens` view is one plain iframe with the theme's token
+ * preview sheet. The editor measures node boxes in the active frame through
+ * this component (Shift+A), and Alt held here shows the frames'
+ * measurements. The floating bar's zoom menu also holds the Deep select
+ * setting (on: a click selects the innermost element; off: Figma's drill,
+ * where the first click selects a top-level element). The armed insert tool
+ * goes to the frames, which report where a click inserts, and so does the
+ * light/dark preview.
  */
 const { view = 'page' } = defineProps<{ view?: CanvasView }>()
 const editor = useEditor()
@@ -107,21 +111,24 @@ function onFrameWheel(el: HTMLIFrameElement, { dx, dy, zoom, x, y }: Extract<Can
   wheel(dx, dy, zoom, stagePoint(rect.left + x * viewport.value.zoom, rect.top + y * viewport.value.zoom))
 }
 
-// Space held shows a grab layer over the frames, so the drag lands in the editor, not in a canvas.
+// The Hand tool or Space held shows a grab layer over the frames, so the drag lands in the editor, not in a canvas (and never selects).
 const spaceHeld = ref(false)
 const panning = ref(false)
 const pointerInStage = ref(false)
+const panMode = computed(() => pointerMode(editor.tool, spaceHeld.value) === 'pan')
 
 function onStagePointerDown(event: PointerEvent) {
-  if (event.button !== 1 && !(event.button === 0 && spaceHeld.value)) return
+  if (event.button !== 1 && !(event.button === 0 && panMode.value)) return
   event.preventDefault()
   const target = event.currentTarget as HTMLElement
   target.setPointerCapture(event.pointerId)
   let last = { x: event.clientX, y: event.clientY }
   panning.value = true
   const move = (e: PointerEvent) => {
-    panBy(e.clientX - last.x, e.clientY - last.y)
-    last = { x: e.clientX, y: e.clientY }
+    const next = { x: e.clientX, y: e.clientY }
+    autoFit = false
+    viewport.value = panView(viewport.value, last, next)
+    last = next
   }
   const up = () => {
     panning.value = false
@@ -218,6 +225,10 @@ function selectMessage(): EditorToCanvas {
   return { type: 'bildr:select', nodeId: editor.selectedId, nodeIds: editor.selectedIds }
 }
 
+function toolMessage(): EditorToCanvas {
+  return { type: 'bildr:tool', tool: view === 'page' && isInsertTool(editor.tool) ? editor.tool : null }
+}
+
 function render() {
   const message = renderMessage()
   if (!message) return
@@ -232,6 +243,8 @@ function sync(id: DeviceId | null, el: HTMLIFrameElement) {
   post(el, message)
   post(el, selectMessage())
   post(el, { type: 'bildr:hover', nodeId: editor.hoveredId })
+  post(el, toolMessage())
+  post(el, { type: 'bildr:dark', dark: editor.previewDark })
   if (id) post(el, { type: 'bildr:active', active: id === editor.deviceId, zoom: viewport.value.zoom })
   const preview = editor.stylePreview
   if (preview) for (const nodeId of previewTargets(preview)) post(el, { type: 'bildr:preview', nodeId, style: preview.style })
@@ -275,6 +288,9 @@ function onMessage(event: MessageEvent) {
   else if (message.type === 'bildr:click') {
     editor.canvasClick(message.nodeId, message)
     activate(id ?? null)
+  } else if (message.type === 'bildr:insert') {
+    activate(id ?? null)
+    editor.insertWithTool({ parentId: message.parentId, index: message.index })
   } else if (message.type === 'bildr:rects') measures.get(message.requestId)?.(message.rects)
   else if (message.type === 'bildr:key') {
     const command = view === 'page' ? zoomShortcut(message) : null
@@ -295,6 +311,8 @@ function onMessage(event: MessageEvent) {
 watch(() => [editor.page, editor.theme, editor.lists], render, { deep: true })
 watch(() => editor.selectedIds, () => broadcast(selectMessage()))
 watch(() => editor.hoveredId, nodeId => broadcast({ type: 'bildr:hover', nodeId }))
+watch(() => editor.tool, () => broadcast(toolMessage()))
+watch(() => editor.previewDark, dark => broadcast({ type: 'bildr:dark', dark }))
 watch([() => editor.deviceId, () => viewport.value.zoom], ([deviceId, zoom]) => {
   for (const [id, el] of frames) if (id) post(el, { type: 'bildr:active', active: id === deviceId, zoom })
 })
@@ -384,26 +402,16 @@ onBeforeUnmount(() => {
       </div>
     </div>
     <div
-      v-if="spaceHeld || panning"
+      v-if="panMode || panning"
       class="absolute inset-0 z-10"
       :class="panning ? 'cursor-grabbing' : 'cursor-grab'"
       data-pan-layer
     />
-    <UDropdownMenu
-      :items="zoomItems"
-      size="sm"
-      :content="{ side: 'top', align: 'end' }"
-    >
-      <UButton
-        :label="`${Math.round(viewport.zoom * 100)}%`"
-        trailing-icon="i-lucide-chevron-up"
-        color="neutral"
-        variant="soft"
-        size="xs"
-        class="absolute right-3 bottom-3 z-20 tabular-nums"
-        aria-label="Zoom"
-        data-zoom-menu
-      />
-    </UDropdownMenu>
+    <!-- Raised above the bottom edge, clear of the Nuxt DevTools pill in dev. -->
+    <EditorFloatingBar
+      :zoom="viewport.zoom"
+      :zoom-items="zoomItems"
+      class="absolute bottom-14 left-1/2 z-20 -translate-x-1/2"
+    />
   </div>
 </template>

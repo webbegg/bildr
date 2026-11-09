@@ -10,6 +10,8 @@ import { inferAutoLayout, nearestSpacingToken } from '#shared/editor/autoLayout'
 import { collapsedAncestors, siblingMove, siblingMoves } from '#shared/editor/layers'
 import type { DropTarget } from '#shared/editor/dropTarget'
 import { insertTargetForSelection, moveTarget, parseDragPayload } from '#shared/editor/dropTarget'
+import type { ToolId } from '#shared/editor/insertTools'
+import { isInsertTool, MOVE_TOOL, toolForKey } from '#shared/editor/insertTools'
 import type { PreviewState, StylePatch } from '#shared/editor/preview'
 import { createStylePreview } from '#shared/editor/preview'
 import type { SelectionStep } from '#shared/editor/selection'
@@ -51,9 +53,14 @@ export function createEditor(projectId: string) {
     }
   })
   const hoveredId = ref<string | null>(null)
+  /** The canvas tool: Move, Hand (drags pan), or a component type the next canvas click inserts. */
+  const tool = ref<ToolId>(MOVE_TOOL)
   const DEEP_KEY = 'bildr:deep-select'
   /** On: a canvas click selects the innermost element. Off: Figma's drill (the first click selects a top-level element). */
   const deepSelect = ref(!import.meta.client || localStorage.getItem(DEEP_KEY) !== 'off')
+  const DARK_KEY = 'bildr:canvas-dark'
+  /** The canvas frames preview the project's dark colours; a view setting, never saved in the project. */
+  const previewDark = ref(import.meta.client && localStorage.getItem(DARK_KEY) === 'on')
   /** Measures node boxes in the active canvas frame; set by the canvas while it is mounted. */
   let measurer: ((nodeIds: string[]) => Promise<NodeBox[]>) | null = null
   /** Layers rows whose children are hidden; kept in memory only. */
@@ -192,6 +199,24 @@ export function createEditor(projectId: string) {
     const at = target ?? insertTargetForSelection(page.value!.root, selectedId.value)
     const result = await runOnPage<{ nodeId: string }>('node_insert', { type, ...at })
     if (result) selectedId.value = result.nodeId
+  }
+
+  /** Picks a canvas tool: Move, Hand, or an insert tool to arm. */
+  function setTool(id: ToolId): void {
+    tool.value = id
+  }
+
+  // The insert tools work in Build mode only, so a mode switch returns to Move.
+  watch(mode, () => {
+    tool.value = MOVE_TOOL
+  })
+
+  /** A canvas click with an insert tool armed: inserts its component there, selects it and returns to Move, like Figma. */
+  async function insertWithTool(target: DropTarget): Promise<void> {
+    const type = tool.value
+    if (!isInsertTool(type)) return
+    tool.value = MOVE_TOOL
+    await insert(type, target)
   }
 
   /** Handles a drop of a raw `application/x-bildr` payload onto a parent slot. */
@@ -334,6 +359,11 @@ export function createEditor(projectId: string) {
     localStorage.setItem(DEEP_KEY, value ? 'on' : 'off')
   }
 
+  function setPreviewDark(value: boolean): void {
+    previewDark.value = value
+    localStorage.setItem(DARK_KEY, value ? 'on' : 'off')
+  }
+
   /** Enter, Shift+Enter, Tab, Shift+Tab: steps the primary selection through the tree. */
   function navigate(step: SelectionStep): boolean {
     const root = page.value?.root
@@ -399,10 +429,16 @@ export function createEditor(projectId: string) {
    * Editor shortcuts, Figma's where they exist; returns true when `key` was
    * handled. `nav` allows the keys that also move focus or scroll (Enter, Tab,
    * arrows): the canvas and the layers tree pass it, a focused button does not.
-   * Escape clears the selection (Figma would select the parent; Shift+Enter does).
+   * Escape disarms an insert tool, else clears the selection (Figma would
+   * select the parent; Shift+Enter does). Bare letters pick the canvas tools
+   * (V Move, H Hand, and the insert tools in Build mode); callers skip keys
+   * typed into fields.
    */
   function shortcut(key: string, meta: boolean, shift: boolean, nav = false): boolean {
     const lower = key.toLowerCase()
+    const picked = toolForKey({ key, meta, shift })
+    // Move and Hand work on the Design canvas too; the insert tools edit the page in Build mode only.
+    const armed = picked && (mode.value === 'build' || !isInsertTool(picked)) ? picked : null
     // Node shortcuts would act on a page the Data mode does not show.
     if (mode.value === 'data' && !(meta && (lower === 'z' || lower === 'y'))) return false
     if (meta && lower === 'z') (shift ? redo : undo)()
@@ -412,7 +448,9 @@ export function createEditor(projectId: string) {
     else if (meta && lower === 'a' && page.value) selectedIds.value = selectAllSiblings(page.value.root, selectedIds.value)
     else if (!meta && shift && lower === 'a') autoLayout()
     else if (!meta && (key === 'Delete' || key === 'Backspace')) remove()
+    else if (key === 'Escape' && tool.value !== MOVE_TOOL) tool.value = MOVE_TOOL
     else if (key === 'Escape') selectedId.value = null
+    else if (armed) tool.value = armed
     else if (nav && !meta && key === 'Enter') return navigate(shift ? 'parent' : 'child')
     else if (nav && !meta && key === 'Tab') return navigate(shift ? 'prev' : 'next')
     else if (nav && !meta && !shift && (key === 'ArrowUp' || key === 'ArrowLeft') && selectedIds.value.length) moveSelection(-1)
@@ -422,10 +460,10 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, selectedId, selectedIds, hoveredId, deepSelect, collapsed, history, mode, deviceId, device, themeDraft, stylePreview, page, selected, selectedNodes, theme,
+    projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, deviceId, device, themeDraft, stylePreview, page, selected, selectedNodes, theme,
     collectionId, collection, records, recordsTotal, recordsError, listCollections, lists,
-    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, insert, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
-    canvasClick, selectRow, setDeepSelect, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
+    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, insert, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }
 

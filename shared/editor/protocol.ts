@@ -30,6 +30,13 @@ import type { StylePatch } from './preview'
  * `bildr:rects` and the same `requestId`, in canvas pixels. `bildr:alt` is
  * the Alt key held in the editor, which shows measurements to the hovered
  * element in the active frame.
+ *
+ * `bildr:tool` is the armed insert tool (a component type; null is Move):
+ * frames show a crosshair and the insert slot under the pointer, and a click
+ * reports that slot as `bildr:insert` instead of selecting.
+ *
+ * `bildr:dark` previews the project's dark colours: the frame puts `.dark` on
+ * its `<html>`, which the theme CSS answers with its dark values.
  */
 
 /** What a canvas shows: the page being edited, or the theme's token preview sheet. */
@@ -43,6 +50,8 @@ export type EditorToCanvas
     | { type: 'bildr:active', active: boolean, zoom: number }
     | { type: 'bildr:measure', requestId: number, nodeIds: string[] }
     | { type: 'bildr:alt', down: boolean }
+    | { type: 'bildr:tool', tool: string | null }
+    | { type: 'bildr:dark', dark: boolean }
 
 export type CanvasToEditor
   = | { type: 'bildr:ready' }
@@ -52,6 +61,7 @@ export type CanvasToEditor
     | { type: 'bildr:contextmenu', nodeId: string, x: number, y: number }
     | { type: 'bildr:key', key: string, code: string, meta: boolean, shift: boolean }
     | { type: 'bildr:drop', parentId: string, index: number, payload: string }
+    | { type: 'bildr:insert', parentId: string, index: number }
     | { type: 'bildr:size', height: number }
     | { type: 'bildr:wheel', dx: number, dy: number, zoom: boolean, x: number, y: number }
     | { type: 'bildr:pan', dx: number, dy: number }
