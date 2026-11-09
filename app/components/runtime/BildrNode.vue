@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ButtonProps } from '@nuxt/ui'
-import { parseStyleKey, styleClasses } from '#shared/design/tokens'
+import { displayFallback, parseStyleKey, styleClasses } from '#shared/design/tokens'
 import { structuralStyle } from '#shared/document/components'
 import type { DocNode } from '#shared/document/schema'
 import { bindingItem, hasBindings, resolveBindings } from '#shared/runtime/bindings'
@@ -13,7 +13,10 @@ import { resolveLink } from '#shared/runtime/render'
  * published app share this component, so what you edit is what ships.
  * Visual styling comes only from the node's design tokens; the template
  * adds structural classes (wrapping) and per-type fallbacks that a token of
- * the same key replaces, the flex direction among them.
+ * the same key replaces, the flex direction among them. A base `display`
+ * token replaces the template's display class (`flex`, `grid`, `block`), so
+ * `hidden` hides the node and `md:flex` shows it again from md up; the
+ * editor canvas hides it too, and the layers keep it selectable.
  * Inside a List, string props resolve
  * `{{ item.<field> }}` against the current record; outside one, the canvas
  * shows bindings as written and published apps render them empty.
@@ -57,6 +60,7 @@ const selfFallback = computed((): Record<string, string> => {
 })
 const withFallback = (fallback: Record<string, string>) => styleClasses({ ...selfFallback.value, ...fallback, ...props.node.style })
 const tokens = computed(() => withFallback(structuralStyle(props.node.type)))
+const display = (fallback: string) => displayFallback(fallback, props.node.style)
 
 const HEADING_TOKENS: Record<string, Record<string, string>> = {
   1: { text: '4xl', font: 'bold' },
@@ -89,7 +93,7 @@ const CARD_UI = { body: 'p-0 sm:p-0' }
 
 // A List repeats its children per record of its query. In the canvas, an empty or
 // unknown collection shows the children once as a placeholder (bindings as written).
-const LIST_LAYOUTS: Record<string, string> = { stack: 'flex flex-col', grid: 'grid', row: 'flex flex-row flex-wrap' }
+const LIST_LAYOUTS: Record<string, string> = { stack: 'flex-col', grid: '', row: 'flex-row flex-wrap' }
 const list = computed(() => {
   if (props.node.type !== 'List') return null
   const query = listQueryOf(p.value)
@@ -105,8 +109,7 @@ const list = computed(() => {
   <div
     v-if="stacked || node.type === 'Row'"
     v-bind="attrs"
-    class="flex"
-    :class="[{ 'flex-wrap': node.type === 'Row' && p.wrap, 'min-h-full': node.type === 'Page' }, tokens]"
+    :class="[display('flex'), { 'flex-wrap': node.type === 'Row' && p.wrap, 'min-h-full': node.type === 'Page' }, tokens]"
   >
     <BildrNode
       v-for="child in node.children"
@@ -123,8 +126,7 @@ const list = computed(() => {
   <div
     v-else-if="node.type === 'Grid'"
     v-bind="attrs"
-    class="grid"
-    :class="tokens"
+    :class="[display('grid'), tokens]"
   >
     <BildrNode
       v-for="child in node.children"
@@ -160,8 +162,7 @@ const list = computed(() => {
     v-bind="attrs"
     :src="imageSrc || undefined"
     :alt="text('alt')"
-    class="block"
-    :class="[withFallback({ maxW: 'full' }), { 'min-h-24 bg-elevated': !imageSrc }]"
+    :class="[display('block'), withFallback({ maxW: 'full' }), { 'min-h-24 bg-elevated': !imageSrc }]"
   >
 
   <UButton
@@ -186,7 +187,7 @@ const list = computed(() => {
     :to="link?.to"
     :target="link?.external ? '_blank' : undefined"
     class="underline-offset-4 hover:underline"
-    :class="[{ 'inline-flex items-center gap-1': icon('icon') }, tokens]"
+    :class="[icon('icon') && ['items-center gap-1', display('inline-flex')], tokens]"
   >
     <UIcon
       v-if="icon('icon')"
@@ -214,7 +215,7 @@ const list = computed(() => {
   <div
     v-else-if="list && (runtime.editable || list.items.length)"
     v-bind="attrs"
-    :class="[LIST_LAYOUTS[list.layout], tokens]"
+    :class="[display(list.layout === 'grid' ? 'grid' : 'flex'), LIST_LAYOUTS[list.layout], tokens]"
   >
     <p
       v-if="runtime.editable && list.hint"
@@ -246,8 +247,7 @@ const list = computed(() => {
     v-else-if="node.type === 'Form'"
     v-bind="attrs"
     :node="node"
-    class="flex"
-    :class="tokens"
+    :class="[display('flex'), tokens]"
   >
     <BildrNode
       v-for="child in node.children"

@@ -20,7 +20,7 @@ export type PanelSection = typeof PANEL_SECTIONS[number]
 const PADDING = ['p', 'px', 'py', 'pt', 'pr', 'pb', 'pl']
 const SECTION_KEYS: Record<PanelSection, string[]> = {
   'Auto layout': ['direction', 'items', 'justify', 'gap', 'cols', 'colSpan', ...PADDING],
-  'Layout': ['w', 'minH', 'maxW', 'self'],
+  'Layout': ['w', 'minH', 'maxW', 'self', 'display'],
   'Spacing': ['m', 'mx', 'my', 'mt', 'mr', 'mb', 'ml'],
   'Appearance': ['rounded'],
   'Typography': ['text', 'font', 'align', 'color'],
@@ -62,6 +62,8 @@ export interface PanelFields {
   cols: boolean
   colSpan: boolean
   self: boolean
+  /** Hide/show; the page root always shows. */
+  display: boolean
 }
 
 const GRID_TYPES = ['Grid', 'List']
@@ -79,7 +81,8 @@ export function panelFields(node: PanelNode): PanelFields {
     gap: isContainerType(node.type) || sets('gap'),
     cols: GRID_TYPES.includes(node.type) || sets('cols'),
     colSpan: gridChild || sets('colSpan'),
-    self: !node.root || sets('self')
+    self: !node.root || sets('self'),
+    display: !node.root || sets('display')
   }
 }
 

@@ -18,6 +18,7 @@ describe('panel sections', () => {
     expect(panelSection('w')).toBe('Layout')
     expect(panelSection('lg:maxW')).toBe('Layout')
     expect(panelSection('self')).toBe('Layout')
+    expect(panelSection('md:display')).toBe('Layout')
     expect(panelSection('mx')).toBe('Spacing')
     expect(panelSection('rounded')).toBe('Appearance')
     expect(panelSection('color')).toBe('Typography')
@@ -48,7 +49,8 @@ describe('panel fields', () => {
       gap: true,
       cols: false,
       colSpan: false,
-      self: true
+      self: true,
+      display: true
     })
   })
 
@@ -56,6 +58,7 @@ describe('panel fields', () => {
     const grid = panelFields({ type: 'Grid', style: {} })
     expect(grid).toMatchObject({ direction: false, align: false, gap: true, cols: true })
     expect(panelFields({ type: 'Page', root: true, style: {} }).self).toBe(false)
+    expect(panelFields({ type: 'Page', root: true, style: {} }).display).toBe(false)
   })
 
   it('hides Auto layout for a leaf, unless the leaf sets one of its tokens', () => {

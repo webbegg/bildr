@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { ContextMenuItem } from '@nuxt/ui'
-import { findParent } from '#shared/document/tree'
-import { siblingMove } from '#shared/editor/layers'
+import { findNode, findParent } from '#shared/document/tree'
+import { naturalDisplay, siblingMove, visibilityAt, visibilityToggle } from '#shared/editor/layers'
 import { siblingParent } from '#shared/editor/selection'
 
 /**
@@ -47,6 +47,8 @@ const items = computed<ContextMenuItem[][]>(() => {
   // Siblings wrap together in document order; a multi-selection of several parents cannot.
   const wrapIds = many ? [...editor.selectedIds].sort((a, b) => (findParent(root, a)?.index ?? 0) - (findParent(root, b)?.index ?? 0)) : [id]
   const cannotWrap = isRoot || (many && !siblingParent(root, wrapIds))
+  const node = findNode(root, id)
+  const hidden = node ? visibilityAt(node.style, editor.deviceId).hidden : false
   return [
     [
       { label: 'Duplicate', icon: 'i-lucide-copy', kbds: ['meta', 'd'], disabled: isRoot, onSelect: () => editor.duplicate(many ? undefined : id) },
@@ -58,6 +60,14 @@ const items = computed<ContextMenuItem[][]>(() => {
         children: (['Row', 'Column', 'Card', 'Grid'] as const).map(type => ({ label: type, onSelect: () => editor.wrap(wrapIds, type) }))
       },
       { label: 'Add auto layout', icon: 'i-lucide-layout-panel-left', kbds: ['shift', 'a'], disabled: cannotWrap, onSelect: () => editor.autoLayout() }
+    ],
+    [
+      {
+        label: hidden ? 'Show here' : 'Hide here',
+        icon: hidden ? 'i-lucide-eye' : 'i-lucide-eye-off',
+        disabled: isRoot || !node,
+        onSelect: () => node && editor.updateStyle(id, visibilityToggle(node.style, editor.deviceId, naturalDisplay(node)))
+      }
     ],
     [
       { label: 'Select parent', icon: 'i-lucide-arrow-up-left', disabled: !parent, onSelect: () => (editor.selectedId = parent?.id ?? id) },

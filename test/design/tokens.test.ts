@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { allTokenClasses, BREAKPOINTS, getStyleToken, isResponsiveToken, isStyleTokenKey, parseStyleKey, STYLE_TOKENS, styleClasses, styleKey, styleTokenProblem, tokenSafelistCss } from '#shared/design/tokens'
+import { allTokenClasses, BREAKPOINTS, displayFallback, getStyleToken, isResponsiveToken, isStyleTokenKey, parseStyleKey, STYLE_TOKENS, styleClasses, styleKey, styleTokenProblem, tokenSafelistCss } from '#shared/design/tokens'
 
 const TOKENS_CSS = new URL('../../app/assets/css/tokens.css', import.meta.url)
 
@@ -16,7 +16,7 @@ describe('style token registry', () => {
     expect(STYLE_TOKENS.map(t => t.key)).toEqual([
       'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl', 'gap',
       'w', 'maxW', 'minH', 'bg', 'color', 'borderColor', 'text', 'font', 'align',
-      'border', 'rounded', 'shadow', 'direction', 'items', 'justify', 'self', 'cols', 'colSpan'
+      'border', 'rounded', 'shadow', 'direction', 'items', 'justify', 'self', 'cols', 'colSpan', 'display'
     ])
     expect(getStyleToken('direction')).toMatchObject({ prefix: 'flex', group: 'Layout', values: ['row', 'col', 'row-reverse', 'col-reverse'] })
     expect(isResponsiveToken(getStyleToken('direction')!)).toBe(true)
@@ -94,6 +94,26 @@ describe('responsive style keys', () => {
   it('generates the variant classes in the safelist', () => {
     expect(allTokenClasses()).toEqual(expect.arrayContaining(['md:grid-cols-3', 'sm:mt-10', 'lg:col-span-full', 'md:text-2xl', 'lg:self-center']))
     expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:}grid-cols-{1,2,3,4,5,6,12}");')
+  })
+})
+
+describe('display token', () => {
+  it('is a responsive Layout token whose classes have no prefix', () => {
+    expect(getStyleToken('display')).toMatchObject({ prefix: '', group: 'Layout', values: ['hidden', 'block', 'flex', 'grid'] })
+    expect(styleClasses({ display: 'hidden' })).toBe('hidden')
+    expect(styleClasses({ 'display': 'hidden', 'md:display': 'flex', 'p': '4' })).toBe('p-4 hidden md:flex')
+    expect(styleTokenProblem('lg:display', 'grid')).toBeUndefined()
+    expect(styleTokenProblem('display', 'inline')).toBe('"inline" is not a value of style token "display"')
+    expect(allTokenClasses()).toEqual(expect.arrayContaining(['hidden', 'md:flex', 'lg:hidden', 'sm:grid']))
+    expect(allTokenClasses()).not.toContain('-hidden')
+    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:}{hidden,block,flex,grid}");')
+  })
+
+  it('replaces the template display class only when set at the base', () => {
+    expect(displayFallback('flex', {})).toBe('flex')
+    expect(displayFallback('grid', { 'md:display': 'hidden' })).toBe('grid')
+    expect(displayFallback('flex', { display: 'hidden' })).toBe('')
+    expect(displayFallback('block', { display: 'flex' })).toBe('')
   })
 })
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createNode, createPage } from '#shared/document/factory'
-import { collapsedAncestors, layerKeyAction, siblingMove, siblingMoves, visibleLayers } from '#shared/editor/layers'
+import { collapsedAncestors, hiddenBadge, layerKeyAction, naturalDisplay, siblingMove, siblingMoves, visibilityAt, visibilityToggle, visibleLayers } from '#shared/editor/layers'
 
 function fixture() {
   const page = createPage('Home')
@@ -58,6 +58,59 @@ describe('siblingMove', () => {
     expect(siblingMove(root, heading.id, -1)).toBeNull()
     expect(siblingMove(root, b.id, 1)).toBeNull()
     expect(siblingMove(root, root.id, 1)).toBeNull()
+  })
+})
+
+describe('visibilityAt', () => {
+  it('resolves the display token mobile-first and says which breakpoint it comes from', () => {
+    expect(visibilityAt({}, 'tablet')).toEqual({ hidden: false, source: undefined })
+    expect(visibilityAt({ display: 'hidden' }, 'mobile')).toEqual({ hidden: true, source: undefined, value: 'hidden' })
+    expect(visibilityAt({ display: 'hidden' }, 'desktop')).toEqual({ hidden: true, source: undefined, value: 'hidden' })
+    expect(visibilityAt({ 'display': 'hidden', 'md:display': 'flex' }, 'desktop')).toEqual({ hidden: false, source: 'md', value: 'flex' })
+    expect(visibilityAt({ 'lg:display': 'hidden' }, 'tablet')).toEqual({ hidden: false, source: undefined })
+    expect(visibilityAt({ 'sm:display': 'hidden' }, 'tablet')).toEqual({ hidden: true, source: 'sm', value: 'hidden' })
+  })
+
+  it('badges a row hidden only at other breakpoints', () => {
+    const style = { 'display': 'hidden', 'md:display': 'block', 'lg:display': 'hidden' }
+    expect(hiddenBadge(style, 'tablet')).toBe('base lg')
+    expect(hiddenBadge(style, 'mobile')).toBeNull()
+    expect(hiddenBadge({ 'md:display': 'hidden', 'lg:display': 'flex' }, 'desktop')).toBe('md')
+    expect(hiddenBadge({}, 'mobile')).toBeNull()
+  })
+})
+
+describe('naturalDisplay', () => {
+  it('is the display a node renders with when no display token applies', () => {
+    expect(naturalDisplay({ type: 'Row', props: {} })).toBe('flex')
+    expect(naturalDisplay({ type: 'Column', props: {} })).toBe('flex')
+    expect(naturalDisplay({ type: 'Button', props: {} })).toBe('flex')
+    expect(naturalDisplay({ type: 'Grid', props: {} })).toBe('grid')
+    expect(naturalDisplay({ type: 'List', props: { layout: 'grid' } })).toBe('grid')
+    expect(naturalDisplay({ type: 'List', props: {} })).toBe('flex')
+    expect(naturalDisplay({ type: 'Text', props: {} })).toBe('block')
+    expect(naturalDisplay({ type: 'Card', props: {} })).toBe('block')
+  })
+})
+
+describe('visibilityToggle', () => {
+  it('hides at the device breakpoint only, keeping wider devices as they were', () => {
+    expect(visibilityToggle({}, 'mobile', 'block')).toEqual({ 'display': 'hidden', 'md:display': 'block' })
+    expect(visibilityToggle({}, 'tablet', 'flex')).toEqual({ 'md:display': 'hidden', 'lg:display': 'flex' })
+    expect(visibilityToggle({}, 'desktop', 'flex')).toEqual({ 'lg:display': 'hidden' })
+    expect(visibilityToggle({ display: 'grid' }, 'mobile', 'grid')).toEqual({ 'display': 'hidden', 'md:display': 'grid' })
+    expect(visibilityToggle({ 'md:display': 'grid' }, 'mobile', 'flex')).toEqual({ display: 'hidden' })
+  })
+
+  it('shows again by removing the hide, undoing the override it wrote above', () => {
+    expect(visibilityToggle({ 'display': 'hidden', 'md:display': 'block' }, 'mobile', 'block')).toEqual({ 'display': null, 'md:display': null })
+    expect(visibilityToggle({ 'md:display': 'hidden', 'lg:display': 'flex' }, 'tablet', 'flex')).toEqual({ 'md:display': null, 'lg:display': null })
+    expect(visibilityToggle({ 'lg:display': 'hidden' }, 'desktop', 'flex')).toEqual({ 'lg:display': null })
+  })
+
+  it('shows a node hidden from a smaller breakpoint with its natural display', () => {
+    expect(visibilityToggle({ 'md:display': 'hidden' }, 'desktop', 'flex')).toEqual({ 'lg:display': 'flex' })
+    expect(visibilityToggle({ display: 'hidden' }, 'tablet', 'block')).toEqual({ 'md:display': 'block', 'lg:display': 'hidden' })
   })
 })
 

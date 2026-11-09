@@ -2,6 +2,7 @@
 import { getStyleToken, isResponsiveToken, styleClasses, styleKey } from '#shared/design/tokens'
 import type { StyleToken } from '#shared/design/tokens'
 import { structuralStyle } from '#shared/document/components'
+import { naturalDisplay } from '#shared/editor/layers'
 import type { PanelSection } from '#shared/editor/panel'
 import { PANEL_SECTIONS, paddingMode, panelFields, panelSectionMark, sectionAdd, sectionKeys, sectionPresent, sectionRemove, spacingProvenance } from '#shared/editor/panel'
 import { previewFocusedOption } from '#shared/editor/preview'
@@ -205,6 +206,7 @@ const SELF_ICONS: Record<string, string> = {
   stretch: 'i-lucide-stretch-vertical'
 }
 const SELF_LABELS: Record<string, string> = { auto: 'Auto', start: 'Start', center: 'Center', end: 'End', stretch: 'Stretch' }
+const DISPLAY_LABELS: Record<string, string> = { hidden: 'Hidden', block: 'Block', flex: 'Flex', grid: 'Grid' }
 
 // A select in a field shell, and the dot column in the section's left padding.
 const SELECT = 'h-full min-w-0 flex-1 ps-0 text-[11px]'
@@ -407,6 +409,31 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
             aria-label="Align self"
             data-style-key="self"
             @update:model-value="setField('self', $event)"
+          />
+        </div>
+        <div
+          v-if="fields.display"
+          class="relative"
+          data-style-row="display"
+        >
+          <div
+            :class="DOT"
+            data-field-label="display"
+          >
+            <EditorFieldLabel
+              v-bind="label('display', 'dot')"
+              @reset="setField('display', null)"
+            />
+          </div>
+          <EditorSegmented
+            dense
+            :items="segments('display', {}, DISPLAY_LABELS)"
+            :model-value="own('display')"
+            :inherited="inherited('display')"
+            :fallback="naturalDisplay({ type, props: {} })"
+            aria-label="Display"
+            data-style-key="display"
+            @update:model-value="setField('display', $event)"
           />
         </div>
       </template>

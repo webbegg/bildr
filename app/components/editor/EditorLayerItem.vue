@@ -3,18 +3,28 @@ import { getComponent, isContainerType } from '#shared/document/components'
 import type { DocNode } from '#shared/document/schema'
 import type { DropPosition } from '#shared/editor/dropTarget'
 import { DRAG_MIME, draggedNodeId, dropPosition, nodeDragType, resolveDrop } from '#shared/editor/dropTarget'
+import { hiddenBadge, naturalDisplay, visibilityAt, visibilityToggle } from '#shared/editor/layers'
 
 /**
  * A layers row after Stacki's tree: 16px of indent per level, a chevron that
  * collapses the children, the type icon, the type with its text in italics,
  * and a drag handle on hover. The whole row drags and takes drops; Shift+click
  * toggles the row in the selection.
+ * As in Figma, Row and Column show auto layout arrows, and hovering shows an
+ * eye that hides or shows the node on the editor's device (one undo step).
+ * A row hidden there is dimmed with a crossed eye; one hidden only on other
+ * devices names their breakpoints.
  */
 const props = defineProps<{ node: DocNode, depth: number }>()
 const editor = useEditor()
 const row = useTemplateRef<HTMLElement>('row')
 
-const icon = computed(() => getComponent(props.node.type)?.icon ?? 'i-lucide-file')
+const icon = computed(() => {
+  const { type, style } = props.node
+  if (type === 'Row' || type === 'Column') return (style.direction ?? (type === 'Row' ? 'row' : 'col')).startsWith('row') ? 'i-lucide-arrow-right' : 'i-lucide-arrow-down'
+  if (type === 'Grid') return 'i-lucide-grid-3x3'
+  return getComponent(type)?.icon ?? 'i-lucide-file'
+})
 const isRoot = computed(() => props.depth === 0)
 const name = computed(() => (isRoot.value ? editor.page?.name ?? 'Page' : props.node.type))
 const preview = computed(() => {
@@ -25,6 +35,12 @@ const hasChildren = computed(() => props.node.children.length > 0)
 const collapsed = computed(() => editor.collapsed.has(props.node.id))
 const selected = computed(() => editor.selectedIds.includes(props.node.id))
 const dropAt = ref<DropPosition | null>(null)
+
+const hidden = computed(() => visibilityAt(props.node.style, editor.deviceId).hidden)
+const badge = computed(() => hiddenBadge(props.node.style, editor.deviceId))
+function toggleVisibility() {
+  editor.updateStyle(props.node.id, visibilityToggle(props.node.style, editor.deviceId, naturalDisplay(props.node)))
+}
 
 // Keyboard steps and canvas clicks can select a row that is scrolled away.
 watch(selected, (value) => {
@@ -87,6 +103,7 @@ function onDrop(event: DragEvent) {
       :aria-expanded="hasChildren ? !collapsed : undefined"
       :aria-level="depth + 1"
       :data-layer-id="node.id"
+      :data-layer-hidden="hidden ? '' : undefined"
       :draggable="!isRoot"
       class="group flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-md pe-1 text-xs whitespace-nowrap select-none"
       :class="[
@@ -124,15 +141,24 @@ function onDrop(event: DragEvent) {
       <UIcon
         :name="icon"
         class="size-3.5 shrink-0"
-        :class="selected ? 'text-primary' : 'text-dimmed group-hover:text-muted'"
+        :class="[selected ? 'text-primary' : 'text-dimmed group-hover:text-muted', { 'opacity-45': hidden }]"
       />
-      <span class="min-w-0 flex-1 truncate">
+      <span
+        class="min-w-0 flex-1 truncate"
+        :class="{ 'opacity-45': hidden }"
+      >
         <span class="font-medium">{{ name }}</span>
         <span
           v-if="preview"
           class="ms-1.5 text-dimmed italic"
         >{{ preview }}</span>
       </span>
+      <span
+        v-if="badge"
+        class="shrink-0 text-[10px] text-dimmed"
+        :title="`Hidden at ${badge}`"
+        data-layer-badge
+      >{{ badge }}</span>
       <UIcon
         v-if="!isRoot"
         name="i-lucide-grip-vertical"
@@ -140,6 +166,22 @@ function onDrop(event: DragEvent) {
         aria-hidden="true"
         data-layer-handle
       />
+      <button
+        v-if="!isRoot"
+        type="button"
+        tabindex="-1"
+        class="flex h-full w-4 shrink-0 items-center justify-center rounded-sm hover:text-highlighted"
+        :class="hidden ? 'text-muted' : 'text-dimmed opacity-0 group-hover:opacity-100'"
+        :aria-label="hidden ? `Show ${name}` : `Hide ${name}`"
+        :aria-pressed="hidden"
+        data-layer-eye
+        @click.stop="toggleVisibility"
+      >
+        <UIcon
+          :name="hidden ? 'i-lucide-eye-off' : 'i-lucide-eye'"
+          class="size-3.5"
+        />
+      </button>
     </div>
     <div
       v-if="hasChildren && !collapsed"

@@ -32,3 +32,4 @@
 @source inline("{,sm:,md:,lg:}self-{auto,start,center,end,stretch}");
 @source inline("{,sm:,md:,lg:}grid-cols-{1,2,3,4,5,6,12}");
 @source inline("{,sm:,md:,lg:}col-span-{1,2,3,4,5,6,12,full}");
+@source inline("{,sm:,md:,lg:}{hidden,block,flex,grid}");

@@ -27,8 +27,8 @@ function styleTokensSchema(wrap: (values: z.ZodLiteral<string>, token: StyleToke
   return z.object(Object.fromEntries(STYLE_TOKENS.flatMap(t => variantsOf(t).map(b => [
     styleKey(t.key, b),
     wrap(z.literal(t.values), t).optional().describe(b
-      ? `${t.label} from the ${b} breakpoint up: Tailwind class ${b}:${t.prefix}-<value>`
-      : `${t.label}: Tailwind class ${t.prefix}-<value>`)
+      ? `${t.label} from the ${b} breakpoint up: Tailwind class ${b}:${t.prefix ? `${t.prefix}-` : ''}<value>`
+      : `${t.label}: Tailwind class ${t.prefix ? `${t.prefix}-` : ''}<value>`)
   ])))).strict()
 }
 

@@ -1,10 +1,16 @@
+import { parseStyleKey, styleKey } from '../design/tokens'
+import type { Breakpoint } from '../design/tokens'
+import { isFlexType } from '../document/components'
 import type { DocNode } from '../document/schema'
 import { findNode, findParent, pathTo } from '../document/tree'
 import type { DropTarget } from './dropTarget'
+import { DEVICES, styleProvenance } from './styleFields'
+import type { DeviceId } from './styleFields'
 
 /**
  * The layers tree's pure behaviour: which rows show when some are collapsed,
- * what the arrow keys do, and where Move up / Move down send a node.
+ * what the arrow keys do, where Move up / Move down send a node, and what the
+ * eye toggle reads and writes.
  */
 
 /** Row ids top to bottom; the children of a collapsed row are hidden. */
@@ -67,6 +73,69 @@ export function siblingMoves(root: DocNode, ids: readonly string[], delta: -1 | 
     moves.push({ nodeId: id, ...to })
   }
   return moves.sort((a, b) => (a.index - b.index) * -delta)
+}
+
+export interface Visibility {
+  hidden: boolean
+  /** The breakpoint of the `display` token that applies; undefined for the base, or when none does. */
+  source: Breakpoint | undefined
+  /** That token's value; absent when the node keeps its natural display. */
+  value?: string
+}
+
+/** Whether a node shows on a device, from its `display` tokens read mobile-first. */
+export function visibilityAt(style: Record<string, string>, device: DeviceId): Visibility {
+  const p = styleProvenance(style, 'display', device)
+  if (p.state === 'unset') return { hidden: false, source: undefined }
+  const source = p.state === 'set' ? parseStyleKey(p.key)?.breakpoint : p.from
+  return { hidden: p.value === 'hidden', source, value: p.value }
+}
+
+/** The other devices' breakpoints a node is hidden at (`base` for Mobile), e.g. `md`; null when none, or when hidden here. */
+export function hiddenBadge(style: Record<string, string>, device: DeviceId): string | null {
+  if (visibilityAt(style, device).hidden) return null
+  const others = DEVICES.filter(d => d.id !== device && visibilityAt(style, d.id).hidden)
+  return others.length ? others.map(d => d.breakpoint ?? 'base').join(' ') : null
+}
+
+/**
+ * The display a node renders with when no `display` token applies (children of
+ * flex and grid containers are blockified, so a Button's inline-flex is `flex`).
+ */
+export function naturalDisplay(node: Pick<DocNode, 'type' | 'props'>): string {
+  if (node.type === 'Grid' || (node.type === 'List' && node.props.layout === 'grid')) return 'grid'
+  if (node.type === 'Card') return 'block'
+  return isFlexType(node.type) || ['List', 'Button'].includes(node.type) ? 'flex' : 'block'
+}
+
+/**
+ * The style patch of the layers eye on a device: it hides or shows the node on
+ * that device only. Display tokens apply mobile-first, so hiding on Mobile
+ * also writes the display Tablet had, keeping wider frames as they were; and
+ * an override that the toggle no longer needs is removed, so hide then show
+ * gives the original style back. `natural` is the node's `naturalDisplay`.
+ */
+export function visibilityToggle(style: Record<string, string>, device: DeviceId, natural: string): Record<string, string | null> {
+  const index = DEVICES.findIndex(d => d.id === device)
+  const key = styleKey('display', DEVICES[index]!.breakpoint)
+  const next = DEVICES[index + 1]
+  const displayAt = (s: Record<string, string>, id: DeviceId) => visibilityAt(s, id).value ?? natural
+  const without = (s: Record<string, string>, k: string) => Object.fromEntries(Object.entries(s).filter(([other]) => other !== k))
+
+  const patch: Record<string, string | null> = {}
+  if (visibilityAt(style, device).hidden) patch[key] = visibilityAt(without(style, key), device).hidden ? natural : null
+  else patch[key] = 'hidden'
+  if (!next) return patch
+
+  const nextKey = styleKey('display', next.breakpoint)
+  const after = { ...without(style, key), ...(patch[key] ? { [key]: patch[key] } : {}) }
+  if (after[nextKey] === undefined) {
+    const before = displayAt(style, next.id)
+    if (displayAt(after, next.id) !== before) patch[nextKey] = before
+  } else if (after[nextKey] === displayAt(without(after, nextKey), next.id)) {
+    patch[nextKey] = null
+  }
+  return patch
 }
 
 /** The `node_move` slot one step up (-1) or down (1) among the node's siblings; null at either end or for the root. */

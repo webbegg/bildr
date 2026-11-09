@@ -32,7 +32,7 @@ export interface StyleToken {
   key: string
   label: string
   group: StyleTokenGroup
-  /** Tailwind utility prefix; the class is `${prefix}-${value}`. */
+  /** Tailwind utility prefix; the class is `${prefix}-${value}`, or just the value when empty (`display`). */
   prefix: string
   values: string[]
   kind?: 'color'
@@ -82,8 +82,22 @@ export const STYLE_TOKENS: StyleToken[] = [
   { key: 'justify', label: 'Justify content', group: 'Layout', prefix: 'justify', values: ['start', 'center', 'end', 'between', 'around', 'evenly'] },
   { key: 'self', label: 'Align self', group: 'Layout', prefix: 'self', values: ['auto', 'start', 'center', 'end', 'stretch'] },
   { key: 'cols', label: 'Grid columns', group: 'Layout', prefix: 'grid-cols', values: ['1', '2', '3', '4', '5', '6', '12'] },
-  { key: 'colSpan', label: 'Column span', group: 'Layout', prefix: 'col-span', values: ['1', '2', '3', '4', '5', '6', '12', 'full'] }
+  { key: 'colSpan', label: 'Column span', group: 'Layout', prefix: 'col-span', values: ['1', '2', '3', '4', '5', '6', '12', 'full'] },
+  // Hide/show per breakpoint: the classes are `hidden`, `md:flex`, ...
+  { key: 'display', label: 'Display', group: 'Layout', prefix: '', values: ['hidden', 'block', 'flex', 'grid'] }
 ]
+
+/** The class of a token value: `mt-10`, or `hidden` for a token without a prefix. */
+const tokenClass = (token: StyleToken, value: string) => (token.prefix ? `${token.prefix}-${value}` : value)
+
+/**
+ * The display class a template gives a node (`flex` for a stack, `grid` for a
+ * Grid), or none when the style sets a base `display` token, which replaces it.
+ * Breakpoint variants override it through their media queries.
+ */
+export function displayFallback(display: string, style: Record<string, string>): string {
+  return style.display !== undefined && getStyleToken('display')!.values.includes(style.display) ? '' : display
+}
 
 const BY_KEY = new Map(STYLE_TOKENS.map(t => [t.key, t]))
 
@@ -141,7 +155,7 @@ export function orderedStyleTokens(style: Record<string, string>): { key: string
     const key = styleKey(token.key, breakpoint)
     const value = style[key]
     if (value === undefined || !token.values.includes(value)) return []
-    return [{ key, token, breakpoint, value, className: styleKey(`${token.prefix}-${value}`, breakpoint) }]
+    return [{ key, token, breakpoint, value, className: styleKey(tokenClass(token, value), breakpoint) }]
   }))
 }
 
@@ -152,7 +166,7 @@ export function styleClasses(style: Record<string, string>): string {
 
 /** Every class the registry can produce, breakpoint variants included. */
 export function allTokenClasses(): string[] {
-  return STYLE_TOKENS.flatMap(t => variantsOf(t).flatMap(b => t.values.map(v => styleKey(`${t.prefix}-${v}`, b))))
+  return STYLE_TOKENS.flatMap(t => variantsOf(t).flatMap(b => t.values.map(v => styleKey(tokenClass(t, v), b))))
 }
 
 /** The contents of `app/assets/css/tokens.css`: one Tailwind `@source inline` per token. */
@@ -160,7 +174,7 @@ export function tokenSafelistCss(): string {
   const variants = `{,${BREAKPOINTS.map(b => `${b}:`).join(',')}}`
   const lines = STYLE_TOKENS.map((t) => {
     const values = t.values.length === 1 ? t.values[0] : `{${t.values.join(',')}}`
-    return `@source inline("${isResponsiveToken(t) ? variants : ''}${t.prefix}-${values}");`
+    return `@source inline("${isResponsiveToken(t) ? variants : ''}${t.prefix ? `${t.prefix}-` : ''}${values}");`
   })
   return [
     '/* Generated from shared/design/tokens.ts by `pnpm tokens:css`. Do not edit. */',
