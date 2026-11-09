@@ -2,13 +2,17 @@ import type { H3Error } from 'h3'
 import { ActionError } from '../actions/define'
 import { createBildr } from '../actions/runtime'
 import type { Bildr } from '../actions/runtime'
+import { createConsistentStorage } from './consistentStorage'
 import type { KeyValueStorage } from './projectStore'
 
 let instance: Bildr | undefined
 
-/** The process-wide dispatcher, backed by Nitro's `data` storage (`.data/kv` in dev). */
+/**
+ * The process-wide dispatcher, backed by Nitro's `data` storage (`.data/kv` in
+ * dev), wrapped so reads never race the fs driver's in-place writes.
+ */
 export function useBildr(): Bildr {
-  instance ??= createBildr(useStorage('data') as unknown as KeyValueStorage)
+  instance ??= createBildr(createConsistentStorage(useStorage('data') as unknown as KeyValueStorage))
   return instance
 }
 
