@@ -5,6 +5,7 @@ import { findParent } from '#shared/document/tree'
 import type { PropGroup } from '#shared/editor/propGroups'
 import { groupedProps, isDefaultProp, PROP_GROUPS } from '#shared/editor/propGroups'
 import { breadcrumb } from '#shared/editor/selection'
+import { sharedStyle } from '#shared/editor/panel'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES, hasStyleAt } from '#shared/editor/styleFields'
 import { FORM_TYPE, formFields, sampleValues } from '#shared/runtime/form'
@@ -13,13 +14,23 @@ import { FORM_TYPE, formFields, sampleValues } from '#shared/runtime/form'
  * The right panel: a sticky head with the element's identity, breadcrumb and
  * quick actions, then the Style and Settings tabs (both stay mounted). The
  * Style tab edits the breakpoint of the editor device, which its select and
- * the toolbar's device toggle both change.
+ * the toolbar's device toggle both change. With several nodes selected the
+ * head reads "N selected" and only the Style tab shows: their shared values,
+ * "Mixed" where they differ, and an edit goes to all of them (one undo step).
  */
 const editor = useEditor()
 const toast = useToast()
 
 const node = computed(() => editor.selected)
-const isRoot = computed(() => !!node.value && node.value.id === editor.page?.root.id)
+const multi = computed(() => editor.selectedNodes.length > 1)
+const shared = computed(() => (multi.value ? sharedStyle(editor.selectedNodes.map(n => n.style)) : { style: node.value?.style ?? {}, mixed: [] }))
+/** The type the Style tab shows fields for: the one all selected nodes share, else the primary's. */
+const styleType = computed(() => {
+  const types = new Set(editor.selectedNodes.map(n => n.type))
+  return types.size === 1 ? [...types][0]! : node.value?.type ?? ''
+})
+const styleTargets = computed(() => (multi.value ? editor.selectedNodes.map(n => n.id) : node.value?.id ?? []))
+const isRoot = computed(() => !!node.value && !multi.value && node.value.id === editor.page?.root.id)
 const propDefs = computed(() => (node.value ? getComponent(node.value.type)?.props ?? [] : []))
 const icon = (type: string) => getComponent(type)?.icon ?? 'i-lucide-file'
 const parentType = computed(() => (node.value && editor.page ? findParent(editor.page.root, node.value.id)?.parent.type : undefined))
@@ -29,8 +40,11 @@ const crumbLabel = (crumb: { id: string, type: string }) => (crumb.id === editor
 type Tab = 'style' | 'settings'
 // Until a tab is picked, nodes with a text prop open on Settings, where it is edited.
 const pickedTab = ref<Tab | null>(null)
-const tab = computed<Tab>(() => pickedTab.value ?? (propDefs.value.some(d => d.name === 'text') ? 'settings' : 'style'))
-const tabs: { value: Tab, label: string }[] = [{ value: 'style', label: 'Style' }, { value: 'settings', label: 'Settings' }]
+// Settings edit one node, so a multi-selection shows Style only.
+const tab = computed<Tab>(() => (multi.value ? 'style' : pickedTab.value ?? (propDefs.value.some(d => d.name === 'text') ? 'settings' : 'style')))
+const tabs = computed<{ value: Tab, label: string }[]>(() => (multi.value
+  ? [{ value: 'style', label: 'Style' }]
+  : [{ value: 'style', label: 'Style' }, { value: 'settings', label: 'Settings' }]))
 
 const devices = computed(() => DEVICES.map(d => ({
   value: d.id,
@@ -97,10 +111,20 @@ function renamePage(field: 'name' | 'slug', value: string) {
     >
       <div class="flex h-10 items-center gap-1.5 ps-3 pe-1.5">
         <UIcon
-          :name="icon(node.type)"
+          :name="multi ? 'i-lucide-boxes' : icon(node.type)"
           class="size-3.5 shrink-0 text-muted"
         />
-        <p class="min-w-0 flex-1 truncate text-xs font-semibold text-highlighted">
+        <p
+          v-if="multi"
+          class="min-w-0 flex-1 truncate text-xs font-semibold text-highlighted"
+          :data-selection-count="editor.selectedNodes.length"
+        >
+          {{ editor.selectedNodes.length }} selected
+        </p>
+        <p
+          v-else
+          class="min-w-0 flex-1 truncate text-xs font-semibold text-highlighted"
+        >
           {{ node.type }} <span class="ms-1 font-mono text-[11px] font-normal text-dimmed">{{ node.id }}</span>
         </p>
         <template v-if="!isRoot">
@@ -134,7 +158,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
       </div>
 
       <nav
-        v-if="crumbs.length"
+        v-if="crumbs.length && !multi"
         class="-mt-1 flex flex-wrap items-center gap-x-0.5 px-3 pb-2 text-[11px]"
         aria-label="Ancestors"
         data-inspector-breadcrumb
@@ -161,12 +185,13 @@ function renamePage(field: 'name' | 'slug', value: string) {
       </nav>
 
       <div
-        class="relative mx-3 mb-2 grid grid-cols-2 rounded-md bg-muted p-0.5"
+        class="relative mx-3 mb-2 grid rounded-md bg-muted p-0.5"
+        :class="multi ? 'grid-cols-1' : 'grid-cols-2'"
         role="tablist"
       >
         <span
-          class="absolute inset-y-0.5 left-0.5 w-[calc(50%-2px)] rounded-[6px] bg-accented transition-transform duration-200"
-          :class="{ 'translate-x-full': tab === 'settings' }"
+          class="absolute inset-y-0.5 left-0.5 rounded-[6px] bg-accented transition-transform duration-200"
+          :class="[multi ? 'w-[calc(100%-4px)]' : 'w-[calc(50%-2px)]', { 'translate-x-full': tab === 'settings' }]"
           aria-hidden="true"
         />
         <button
@@ -219,7 +244,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
     </div>
 
     <div
-      :key="node.id"
+      :key="multi ? editor.selectedIds.join() : node.id"
       class="pb-6"
     >
       <div
@@ -228,16 +253,18 @@ function renamePage(field: 'name' | 'slug', value: string) {
         data-tab="style"
       >
         <EditorStyleFields
-          :styles="node.style"
-          :type="node.type"
+          :styles="shared.style"
+          :mixed="shared.mixed"
+          :type="styleType"
           :parent-type="parentType"
           :root="isRoot"
-          @preview="editor.previewStyle(node.id, $event)"
-          @update="editor.updateStyle(node.id, $event)"
+          @preview="editor.previewStyle(styleTargets, $event)"
+          @update="editor.updateStyle(styleTargets, $event)"
         />
       </div>
 
       <div
+        v-if="!multi"
         v-show="tab === 'settings'"
         role="tabpanel"
         data-tab="settings"

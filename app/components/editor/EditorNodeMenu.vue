@@ -2,12 +2,15 @@
 import type { ContextMenuItem } from '@nuxt/ui'
 import { findParent } from '#shared/document/tree'
 import { siblingMove } from '#shared/editor/layers'
+import { siblingParent } from '#shared/editor/selection'
 
 /**
  * The node context menu (Stacki's ElementContextMenu) over its slot. A
  * right-click on a layers row opens it for that row's node; the canvas
  * forwards its right-clicks as `contextmenu` events carrying `bildrNodeId`.
- * The node gets selected, and items that don't apply (the root) are disabled.
+ * The node gets selected (a node of a multi-selection keeps the selection,
+ * and Duplicate, Wrap and Delete then act on all of it), and items that
+ * don't apply (the root) are disabled.
  */
 defineOptions({ inheritAttrs: false })
 
@@ -22,7 +25,7 @@ function onContextMenu(event: NodeMenuEvent) {
   nodeId.value = id
   // Nothing to act on: no menu (the trigger skips prevented events).
   if (!id) return event.preventDefault()
-  editor.selectedId = id
+  if (!editor.selectedIds.includes(id)) editor.selectedId = id
 }
 
 async function copyId(id: string) {
@@ -40,16 +43,21 @@ const items = computed<ContextMenuItem[][]>(() => {
   if (!id || !root) return []
   const isRoot = id === root.id
   const parent = findParent(root, id)?.parent
+  const many = editor.selectedIds.length > 1 && editor.selectedIds.includes(id)
+  // Siblings wrap together in document order; a multi-selection of several parents cannot.
+  const wrapIds = many ? [...editor.selectedIds].sort((a, b) => (findParent(root, a)?.index ?? 0) - (findParent(root, b)?.index ?? 0)) : [id]
+  const cannotWrap = isRoot || (many && !siblingParent(root, wrapIds))
   return [
     [
-      { label: 'Duplicate', icon: 'i-lucide-copy', kbds: ['meta', 'd'], disabled: isRoot, onSelect: () => editor.duplicate(id) },
-      { label: 'Wrap in Container', icon: 'i-lucide-square-dashed', disabled: isRoot, onSelect: () => editor.wrap(id, 'Container') },
+      { label: 'Duplicate', icon: 'i-lucide-copy', kbds: ['meta', 'd'], disabled: isRoot, onSelect: () => editor.duplicate(many ? undefined : id) },
+      { label: many ? 'Group in Container' : 'Wrap in Container', icon: 'i-lucide-square-dashed', kbds: ['meta', 'g'], disabled: cannotWrap, onSelect: () => editor.wrap(wrapIds, 'Container') },
       {
         label: 'Wrap in',
         icon: 'i-lucide-box',
-        disabled: isRoot,
-        children: (['Row', 'Column', 'Card', 'Grid'] as const).map(type => ({ label: type, onSelect: () => editor.wrap(id, type) }))
-      }
+        disabled: cannotWrap,
+        children: (['Row', 'Column', 'Card', 'Grid'] as const).map(type => ({ label: type, onSelect: () => editor.wrap(wrapIds, type) }))
+      },
+      { label: 'Add auto layout', icon: 'i-lucide-layout-panel-left', kbds: ['shift', 'a'], disabled: cannotWrap, onSelect: () => editor.autoLayout() }
     ],
     [
       { label: 'Select parent', icon: 'i-lucide-arrow-up-left', disabled: !parent, onSelect: () => (editor.selectedId = parent?.id ?? id) },
@@ -60,7 +68,7 @@ const items = computed<ContextMenuItem[][]>(() => {
       { label: 'Copy id', icon: 'i-lucide-hash', onSelect: () => copyId(id) }
     ],
     [
-      { label: 'Delete', icon: 'i-lucide-trash-2', color: 'error', kbds: ['delete'], disabled: isRoot, onSelect: () => editor.remove(id) }
+      { label: 'Delete', icon: 'i-lucide-trash-2', color: 'error', kbds: ['delete'], disabled: isRoot, onSelect: () => editor.remove(many ? undefined : id) }
     ]
   ]
 })

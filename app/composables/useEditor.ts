@@ -3,13 +3,17 @@ import type { DataRecord } from '#shared/data/records'
 import type { Theme, ThemePatch } from '#shared/design/theme'
 import type { Project } from '#shared/document/schema'
 import type { PropValue } from '#shared/document/components'
+import { isFlexType } from '#shared/document/components'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
-import { collapsedAncestors, siblingMove } from '#shared/editor/layers'
+import type { NodeBox } from '#shared/editor/autoLayout'
+import { inferAutoLayout, nearestSpacingToken } from '#shared/editor/autoLayout'
+import { collapsedAncestors, siblingMove, siblingMoves } from '#shared/editor/layers'
 import type { DropTarget } from '#shared/editor/dropTarget'
 import { insertTargetForSelection, moveTarget, parseDragPayload } from '#shared/editor/dropTarget'
 import type { PreviewState, StylePatch } from '#shared/editor/preview'
 import { createStylePreview } from '#shared/editor/preview'
-import { selectionAfterDelete } from '#shared/editor/selection'
+import type { SelectionStep } from '#shared/editor/selection'
+import { drillTarget, navigateSelection, selectAllSiblings, selectionAfterDelete, siblingParent, toggleSelection, topLevelSelection } from '#shared/editor/selection'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
@@ -37,8 +41,21 @@ export function createEditor(projectId: string) {
 
   const project = ref<Project | null>(null)
   const pageId = ref<string | null>(null)
-  const selectedId = ref<string | null>(null)
+  /** The selection in the order it was made; Shift+click adds and removes nodes. */
+  const selectedIds = ref<string[]>([])
+  /** The primary (last selected) node: the one the panel edits alone, and the editor context reports. Setting it selects only it. */
+  const selectedId = computed<string | null>({
+    get: () => selectedIds.value.at(-1) ?? null,
+    set: (id) => {
+      selectedIds.value = id ? [id] : []
+    }
+  })
   const hoveredId = ref<string | null>(null)
+  const DEEP_KEY = 'bildr:deep-select'
+  /** On: a canvas click selects the innermost element. Off: Figma's drill (the first click selects a top-level element). */
+  const deepSelect = ref(!import.meta.client || localStorage.getItem(DEEP_KEY) !== 'off')
+  /** Measures node boxes in the active canvas frame; set by the canvas while it is mounted. */
+  let measurer: ((nodeIds: string[]) => Promise<NodeBox[]>) | null = null
   /** Layers rows whose children are hidden; kept in memory only. */
   const collapsed = ref(new Set<string>())
   const history = ref<{ undo: string | null, redo: string | null }>({ undo: null, redo: null })
@@ -63,6 +80,7 @@ export function createEditor(projectId: string) {
 
   const page = computed(() => project.value?.pages.find(p => p.id === pageId.value) ?? project.value?.pages[0] ?? null)
   const selected = computed(() => (page.value && selectedId.value ? findNode(page.value.root, selectedId.value) ?? null : null))
+  const selectedNodes = computed(() => (page.value ? selectedIds.value.map(id => findNode(page.value!.root, id)).filter(n => n !== undefined) : []))
   /** The theme the canvas renders: the draft while previewing, else the project's. */
   const theme = computed(() => themeDraft.value ?? project.value?.theme ?? null)
   const collection = computed(() => project.value?.collections.find(c => c.id === collectionId.value) ?? project.value?.collections[0] ?? null)
@@ -106,7 +124,7 @@ export function createEditor(projectId: string) {
     project.value = next
     history.value = nextHistory
     if (!next.pages.some(p => p.id === pageId.value)) pageId.value = next.pages[0]!.id
-    if (selectedId.value && !findNode(page.value!.root, selectedId.value)) selectedId.value = null
+    if (selectedIds.value.some(id => !findNode(page.value!.root, id))) selectedIds.value = selectedIds.value.filter(id => findNode(page.value!.root, id))
   }
 
   /** Runs an action on this project; failures become a toast and return undefined. */
@@ -190,32 +208,138 @@ export function createEditor(projectId: string) {
     if (await runOnPage('node_move', { nodeId: data.id, ...to })) selectedId.value = data.id
   }
 
-  /** Deletes a node, the selection by default (never the page root); a deleted selection moves to a neighbour. */
-  async function remove(id = selectedId.value): Promise<void> {
+  /**
+   * Deletes a node, or the whole selection by default (one undo step, never
+   * the page root); a deleted selection moves to a neighbour, else the parent.
+   */
+  async function remove(id?: string): Promise<void> {
     const root = page.value?.root
-    if (!id || !root || id === root.id) return
-    const node = findNode(root, id)
-    const next = node && selectedId.value && containsNode(node, selectedId.value) ? selectionAfterDelete(root, id) : selectedId.value
-    if (await runOnPage('node_delete', { nodeId: id })) selectedId.value = next
+    if (!root) return
+    const ids = topLevelSelection(root, id ? [id] : selectedIds.value)
+    if (!ids.length) return
+    const gone = (other: string) => ids.some(deleted => containsNode(findNode(root, deleted)!, other))
+    let next = selectedIds.value.filter(other => !gone(other))
+    if (!next.length && selectedIds.value.length) {
+      const anchor = ids.includes(selectedId.value!) ? selectedId.value! : ids[0]!
+      const neighbour = selectionAfterDelete(root, anchor)
+      next = [neighbour && !gone(neighbour) ? neighbour : findParent(root, anchor)!.parent.id]
+    }
+    if (await runOnPage('node_delete', ids.length > 1 ? { nodeIds: ids } : { nodeId: ids[0] })) selectedIds.value = next
   }
 
-  async function duplicate(id = selectedId.value): Promise<void> {
-    if (!id || id === page.value?.root.id) return
-    const result = await runOnPage<{ nodeId: string }>('node_duplicate', { nodeId: id })
+  /** Duplicates a node, or the whole selection by default (one undo step), and selects the copies. */
+  async function duplicate(id?: string): Promise<void> {
+    const root = page.value?.root
+    const ids = root ? topLevelSelection(root, id ? [id] : selectedIds.value) : []
+    if (!ids.length) return
+    const result = await runOnPage<{ nodeIds: string[] }>('node_duplicate', ids.length > 1 ? { nodeIds: ids } : { nodeId: ids[0] })
+    if (result) selectedIds.value = result.nodeIds
+  }
+
+  type WrapType = 'Container' | 'Row' | 'Column' | 'Card' | 'Grid'
+
+  /** Wraps a node, or sibling nodes in the given order, in a new container (one undo step) and selects the container. */
+  async function wrap(ids: string | string[], type?: WrapType, style?: Record<string, string>): Promise<void> {
+    const list = typeof ids === 'string' ? [ids] : ids
+    if (!list.length || list.includes(page.value?.root.id ?? '')) return
+    const result = await runOnPage<{ nodeId: string }>('node_wrap', { ...(list.length > 1 ? { nodeIds: list } : { nodeId: list[0] }), type, style })
     if (result) selectedId.value = result.nodeId
   }
 
-  /** Wraps a node in a new container (one undo step) and selects the container. */
-  async function wrap(id: string, type?: 'Container' | 'Row' | 'Column' | 'Card' | 'Grid'): Promise<void> {
-    if (id === page.value?.root.id) return
-    const result = await runOnPage<{ nodeId: string }>('node_wrap', { nodeId: id, type })
-    if (result) selectedId.value = result.nodeId
+  /** The selection without the page root, if it is siblings (one parent); else a toast and null. */
+  function siblingSelection(what: string): string[] | null {
+    const root = page.value?.root
+    const ids = selectedIds.value.filter(id => id !== root?.id)
+    if (!root || !ids.length) return null
+    if (siblingParent(root, ids)) return ids
+    toast.add({ title: `Select siblings to ${what}`, description: 'The selected elements must share one parent.', color: 'warning', icon: 'i-lucide-circle-alert' })
+    return null
+  }
+
+  /** The boxes of nodes in the active frame; none without a canvas. */
+  function measureNodes(nodeIds: string[]): Promise<NodeBox[]> {
+    return measurer ? measurer(nodeIds) : Promise.resolve([])
+  }
+
+  function setMeasurer(fn: typeof measurer): void {
+    measurer = fn
+  }
+
+  /** Cmd/Ctrl+G: groups the selected siblings into a Container, in document order. */
+  async function group(): Promise<void> {
+    const ids = siblingSelection('group')
+    const root = page.value?.root
+    if (!ids || !root) return
+    await wrap([...ids].sort((a, b) => findParent(root, a)!.index - findParent(root, b)!.index), 'Container')
+  }
+
+  /**
+   * Shift+A, Figma's "Add auto layout": wraps the selected siblings in a Row
+   * (side by side) or Column (stacked) in their visual order, with the gap
+   * token nearest their spacing. A single container without a direction gets
+   * one instead (from how its children sit); any other single node is wrapped
+   * in a Column.
+   */
+  async function autoLayout(): Promise<void> {
+    const ids = siblingSelection('add auto layout')
+    const root = page.value?.root
+    if (!ids || !root) return
+    if (ids.length === 1) {
+      const node = findNode(root, ids[0]!)!
+      if (isFlexType(node.type) && node.style.direction === undefined) {
+        const boxes = await measureNodes(node.children.map(child => child.id))
+        const direction = boxes.length > 1 ? inferAutoLayout(boxes).direction : 'col'
+        return updateStyle(node.id, { direction })
+      }
+      return wrap(ids, 'Column')
+    }
+    const boxes = await measureNodes(ids)
+    if (boxes.length !== ids.length) return wrap(ids, 'Column')
+    const layout = inferAutoLayout(boxes)
+    const gap = nearestSpacingToken(layout.gapPx, project.value?.theme.spacing ?? 'default')
+    await wrap(layout.order, layout.direction === 'row' ? 'Row' : 'Column', { gap })
   }
 
   /** Moves a node one step up (-1) or down (1) among its siblings. */
   async function moveBy(id: string, delta: -1 | 1): Promise<void> {
     const to = page.value ? siblingMove(page.value.root, id, delta) : null
     if (to && await runOnPage('node_move', { nodeId: id, ...to })) selectedId.value = id
+  }
+
+  /** Arrow keys: moves every selected node one step among its siblings, as one undo step (nothing moves at an end). */
+  async function moveSelection(delta: -1 | 1): Promise<void> {
+    const root = page.value?.root
+    const ids = root ? topLevelSelection(root, selectedIds.value) : []
+    const moves = root && ids.length ? siblingMoves(root, ids, delta) : null
+    if (moves) await runOnPage('node_move_many', { moves })
+  }
+
+  /** A canvas click on the innermost element `id`: drills (or selects it with Deep select or Cmd/Ctrl); Shift toggles. */
+  function canvasClick(id: string, { shift, meta }: { shift: boolean, meta: boolean }): void {
+    const root = page.value?.root
+    const target = root ? drillTarget(root, selectedIds.value, id, { deep: deepSelect.value || meta }) : id
+    if (!target) return
+    if (shift) selectedIds.value = toggleSelection(selectedIds.value, target)
+    else selectedId.value = target
+  }
+
+  /** A layers row click; Shift toggles the row in the selection. */
+  function selectRow(id: string, shift: boolean): void {
+    if (shift) selectedIds.value = toggleSelection(selectedIds.value, id)
+    else selectedId.value = id
+  }
+
+  function setDeepSelect(value: boolean): void {
+    deepSelect.value = value
+    localStorage.setItem(DEEP_KEY, value ? 'on' : 'off')
+  }
+
+  /** Enter, Shift+Enter, Tab, Shift+Tab: steps the primary selection through the tree. */
+  function navigate(step: SelectionStep): boolean {
+    const root = page.value?.root
+    const next = root && selectedId.value ? navigateSelection(root, selectedId.value, step) : null
+    if (next) selectedId.value = next
+    return !!selectedId.value
   }
 
   function setCollapsed(id: string, value: boolean): void {
@@ -226,8 +350,8 @@ export function createEditor(projectId: string) {
   }
 
   // A selection made elsewhere (e.g. a canvas click) opens the collapsed rows hiding it.
-  watch(selectedId, (id) => {
-    const hidden = id && page.value ? collapsedAncestors(page.value.root, collapsed.value, id) : []
+  watch(selectedIds, (ids) => {
+    const hidden = page.value ? ids.flatMap(id => collapsedAncestors(page.value!.root, collapsed.value, id)) : []
     if (hidden.length) collapsed.value = new Set([...collapsed.value].filter(row => !hidden.includes(row)))
   })
 
@@ -235,18 +359,19 @@ export function createEditor(projectId: string) {
     await runOnPage('node_update_props', { nodeId, props })
   }
 
-  /** Previews a style patch on a canvas node without saving it; null ends the preview. */
-  function previewStyle(nodeId: string, style: StylePatch | null): void {
-    styles.preview(nodeId, style)
+  /** Previews a style patch on a canvas node, or on several, without saving it; null ends the preview. */
+  function previewStyle(nodeIds: string | string[], style: StylePatch | null): void {
+    styles.preview(nodeIds, style)
   }
 
-  /** Commits a style patch (one undo step); the canvas shows it until the reload has rendered it. */
-  async function updateStyle(nodeId: string, style: StylePatch): Promise<void> {
-    await styles.commit(nodeId, style, () => runOnPage('node_update_style', { nodeId, style }))
+  /** Commits a style patch to a node, or the same patch to several (one undo step); the canvas shows it until the reload has rendered it. */
+  async function updateStyle(nodeIds: string | string[], style: StylePatch): Promise<void> {
+    const target = typeof nodeIds === 'string' || nodeIds.length === 1 ? { nodeId: typeof nodeIds === 'string' ? nodeIds : nodeIds[0] } : { nodeIds }
+    await styles.commit(nodeIds, style, () => runOnPage('node_update_style', { ...target, style }))
   }
 
-  // A preview belongs to the node being styled.
-  watch([selectedId, () => page.value?.id], () => {
+  // A preview belongs to the nodes being styled.
+  watch([selectedIds, () => page.value?.id], () => {
     if (stylePreview.value) styles.preview(stylePreview.value.nodeId, null)
   })
 
@@ -270,24 +395,37 @@ export function createEditor(projectId: string) {
     if (history.value.redo) await run('history_redo')
   }
 
-  /** Editor shortcuts; returns true when `key` was handled. */
-  function shortcut(key: string, meta: boolean, shift: boolean): boolean {
+  /**
+   * Editor shortcuts, Figma's where they exist; returns true when `key` was
+   * handled. `nav` allows the keys that also move focus or scroll (Enter, Tab,
+   * arrows): the canvas and the layers tree pass it, a focused button does not.
+   * Escape clears the selection (Figma would select the parent; Shift+Enter does).
+   */
+  function shortcut(key: string, meta: boolean, shift: boolean, nav = false): boolean {
     const lower = key.toLowerCase()
     // Node shortcuts would act on a page the Data mode does not show.
     if (mode.value === 'data' && !(meta && (lower === 'z' || lower === 'y'))) return false
     if (meta && lower === 'z') (shift ? redo : undo)()
     else if (meta && lower === 'y') redo()
     else if (meta && lower === 'd') duplicate()
+    else if (meta && lower === 'g') group()
+    else if (meta && lower === 'a' && page.value) selectedIds.value = selectAllSiblings(page.value.root, selectedIds.value)
+    else if (!meta && shift && lower === 'a') autoLayout()
     else if (!meta && (key === 'Delete' || key === 'Backspace')) remove()
     else if (key === 'Escape') selectedId.value = null
+    else if (nav && !meta && key === 'Enter') return navigate(shift ? 'parent' : 'child')
+    else if (nav && !meta && key === 'Tab') return navigate(shift ? 'prev' : 'next')
+    else if (nav && !meta && !shift && (key === 'ArrowUp' || key === 'ArrowLeft') && selectedIds.value.length) moveSelection(-1)
+    else if (nav && !meta && !shift && (key === 'ArrowDown' || key === 'ArrowRight') && selectedIds.value.length) moveSelection(1)
     else return false
     return true
   }
 
   return reactive({
-    projectId, project, pageId, selectedId, hoveredId, collapsed, history, mode, deviceId, device, themeDraft, stylePreview, page, selected, theme,
+    projectId, project, pageId, selectedId, selectedIds, hoveredId, deepSelect, collapsed, history, mode, deviceId, device, themeDraft, stylePreview, page, selected, selectedNodes, theme,
     collectionId, collection, records, recordsTotal, recordsError, listCollections, lists,
-    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, insert, drop, remove, duplicate, wrap, moveBy, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
+    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, insert, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    canvasClick, selectRow, setDeepSelect, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }
 

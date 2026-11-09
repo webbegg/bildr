@@ -11,6 +11,9 @@ import type { StylePatch } from '#shared/editor/preview'
 import { previewTree, settlePreviews } from '#shared/editor/preview'
 import { breakpointAt, DRAG_MIME, draggedNodeId, dropPosition, laysOutInRow, resolveDrop } from '#shared/editor/dropTarget'
 import { FRAME_MIN_HEIGHT, wheelPixels, zoomShortcut } from '#shared/editor/viewport'
+import type { NodeBox } from '#shared/editor/autoLayout'
+import type { MeasureLine } from '#shared/editor/measure'
+import { measure as measureLines } from '#shared/editor/measure'
 
 /**
  * The editor canvas, loaded in an iframe. It renders whatever page the
@@ -25,6 +28,8 @@ import { FRAME_MIN_HEIGHT, wheelPixels, zoomShortcut } from '#shared/editor/view
  * The editor shows one canvas per device frame, as tall as its content
  * (reported on resize), and zooms and pans them itself: wheel, middle-drag
  * and space are forwarded. Only the active frame labels the selection.
+ * Every selected node is outlined; holding Alt (Option) over another element
+ * draws Figma's red distance lines from the selection box in the active frame.
  */
 definePageMeta({ layout: false })
 
@@ -35,7 +40,10 @@ const theme = shallowRef<Theme | null>(null)
 useTheme(theme)
 const view = ref<CanvasView>('page')
 const selectedId = ref<string | null>(null)
+const selectedIds = ref<string[]>([])
 const hoveredId = ref<string | null>(null)
+/** Alt (Option) held, here or in the editor: measurements to the hovered element. */
+const alt = ref(false)
 const active = ref(true)
 /** The editor's zoom; outlines and the selection label are scaled back to keep their screen size. */
 const zoom = ref(1)
@@ -49,8 +57,23 @@ const shownPage = computed(() => {
   return root === current.root ? current : { ...current, root }
 })
 
-interface Box { top: number, left: number, width: number, height: number, label: string }
-const boxes = reactive<{ hover: Box | null, selected: Box | null }>({ hover: null, selected: null })
+interface Box { id: string, top: number, left: number, width: number, height: number, label: string }
+const boxes = reactive<{ hover: Box | null, selected: Box[] }>({ hover: null, selected: [] })
+
+const toRect = (box: Box) => ({ x: box.left, y: box.top, width: box.width, height: box.height })
+/** The selection's bounds, measured from, and the hovered element's box, measured to. */
+const measurement = computed(() => {
+  const target = boxes.hover
+  if (!alt.value || !active.value || !target || !boxes.selected.length) return null
+  const rects = boxes.selected.map(toRect)
+  const x = Math.min(...rects.map(r => r.x))
+  const y = Math.min(...rects.map(r => r.y))
+  const from = { x, y, width: Math.max(...rects.map(r => r.x + r.width)) - x, height: Math.max(...rects.map(r => r.y + r.height)) - y }
+  return { target, lines: measureLines(from, toRect(target)) }
+})
+const lineStyle = (line: MeasureLine) => line.y1 === line.y2
+  ? { left: `${line.x1}px`, top: `${line.y1 - 0.5 / zoom.value}px`, width: `${line.length}px`, height: `${1 / zoom.value}px` }
+  : { left: `${line.x1 - 0.5 / zoom.value}px`, top: `${line.y1}px`, width: `${1 / zoom.value}px`, height: `${line.length}px` }
 
 interface Indicator { top: number, left: number, width: number, height: number, line: boolean }
 const indicator = ref<Indicator | null>(null)
@@ -71,13 +94,18 @@ function measure(id: string | null): Box | null {
   const el = id ? firstCopy(id) : null
   if (!el) return null
   const rect = el.getBoundingClientRect()
-  return { top: rect.top + window.scrollY, left: rect.left + window.scrollX, width: rect.width, height: rect.height, label: el.getAttribute('data-bildr-type') ?? '' }
+  return { id: id!, top: rect.top + window.scrollY, left: rect.left + window.scrollX, width: rect.width, height: rect.height, label: el.getAttribute('data-bildr-type') ?? '' }
+}
+
+/** The boxes of `ids` in canvas pixels, for the editor's auto layout; hidden or missing nodes have none. */
+function nodeBoxes(ids: string[]): NodeBox[] {
+  return ids.map(measure).filter((box): box is Box => !!box && (box.width > 0 || box.height > 0)).map(box => ({ id: box.id, ...toRect(box) }))
 }
 
 let frame = 0
 function track() {
-  boxes.hover = hoveredId.value !== selectedId.value ? measure(hoveredId.value) : null
-  boxes.selected = measure(selectedId.value)
+  boxes.hover = hoveredId.value && !selectedIds.value.includes(hoveredId.value) ? measure(hoveredId.value) : null
+  boxes.selected = selectedIds.value.map(measure).filter((box): box is Box => !!box)
   frame = requestAnimationFrame(track)
 }
 
@@ -93,6 +121,11 @@ function onMessage(event: MessageEvent) {
     view.value = message.view
   } else if (message.type === 'bildr:select') {
     selectedId.value = message.nodeId
+    selectedIds.value = message.nodeIds
+  } else if (message.type === 'bildr:measure') {
+    post({ type: 'bildr:rects', requestId: message.requestId, rects: nodeBoxes(message.nodeIds) })
+  } else if (message.type === 'bildr:alt') {
+    alt.value = message.down
   } else if (message.type === 'bildr:active') {
     active.value = message.active
     zoom.value = message.zoom
@@ -105,6 +138,7 @@ function onMessage(event: MessageEvent) {
 }
 
 function onPointerMove(event: MouseEvent) {
+  alt.value = event.altKey
   const id = nodeIdAt(event.target)
   if (id === hoveredId.value) return
   hoveredId.value = id
@@ -121,7 +155,7 @@ function onClick(event: MouseEvent) {
   event.preventDefault()
   event.stopPropagation()
   const id = nodeIdAt(event.target)
-  if (id) post({ type: 'bildr:click', nodeId: id })
+  if (id) post({ type: 'bildr:click', nodeId: id, shift: event.shiftKey, meta: event.metaKey || event.ctrlKey })
 }
 
 /** The last pointer position of a middle-button pan, in screen pixels (zoom-independent). */
@@ -168,21 +202,24 @@ function onContextMenu(event: MouseEvent) {
   if (id) post({ type: 'bildr:contextmenu', nodeId: id, x: event.clientX, y: event.clientY })
 }
 
-const SHORTCUT_KEYS = new Set(['Delete', 'Backspace', 'Escape'])
+const SHORTCUT_KEYS = new Set(['Delete', 'Backspace', 'Escape', 'Enter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 function onKeyDown(event: KeyboardEvent) {
   const meta = event.metaKey || event.ctrlKey
+  if (event.key === 'Alt') alt.value = true
   if (event.code === 'Space' && view.value === 'page') {
     event.preventDefault()
     if (!event.repeat) post({ type: 'bildr:space', down: true })
     return
   }
   const zoom = zoomShortcut({ code: event.code, key: event.key, meta, shift: event.shiftKey })
-  if (!zoom && !SHORTCUT_KEYS.has(event.key) && !(meta && ['z', 'y', 'd'].includes(event.key.toLowerCase()))) return
+  const lower = event.key.toLowerCase()
+  if (!zoom && !SHORTCUT_KEYS.has(event.key) && !(meta && ['z', 'y', 'd', 'a', 'g'].includes(lower)) && !(event.shiftKey && !meta && lower === 'a')) return
   event.preventDefault()
   post({ type: 'bildr:key', key: event.key, code: event.code, meta, shift: event.shiftKey })
 }
 
 function onKeyUp(event: KeyboardEvent) {
+  if (event.key === 'Alt') alt.value = false
   if (event.code !== 'Space' || view.value !== 'page') return
   event.preventDefault()
   post({ type: 'bildr:space', down: false })
@@ -310,19 +347,38 @@ onBeforeUnmount(() => {
       :style="{ minHeight: `${FRAME_MIN_HEIGHT}px` }"
     />
     <div
-      v-for="(box, kind) in boxes"
-      v-show="box"
-      :key="kind"
+      v-for="box in [...boxes.selected, ...(boxes.hover ? [boxes.hover] : [])]"
+      :key="box === boxes.hover ? 'hover' : box.id"
       class="pointer-events-none absolute z-50 rounded-sm"
-      :class="kind === 'selected' ? 'outline-solid outline-blue-500' : 'outline-dashed outline-blue-500/60'"
-      :style="box ? { top: `${box.top}px`, left: `${box.left}px`, width: `${box.width}px`, height: `${box.height}px`, outlineWidth: `${2 / zoom}px`, outlineOffset: `${-1 / zoom}px` } : undefined"
+      :class="box === boxes.hover
+        ? (measurement ? 'outline-solid outline-[#f24822]' : 'outline-dashed outline-blue-500/60')
+        : 'outline-solid outline-blue-500'"
+      :style="{ top: `${box.top}px`, left: `${box.left}px`, width: `${box.width}px`, height: `${box.height}px`, outlineWidth: `${(box === boxes.hover && measurement ? 1 : 2) / zoom}px`, outlineOffset: `${-1 / zoom}px` }"
+      :data-selection-box="box === boxes.hover ? undefined : box.id"
     >
       <span
-        v-if="kind === 'selected' && box && active"
+        v-if="box.id === selectedId && box !== boxes.hover && active"
         class="absolute bottom-full left-0 origin-bottom-left rounded-t-sm bg-blue-500 px-1.5 text-[10px] leading-5 whitespace-nowrap text-white"
         :style="{ transform: `scale(${1 / zoom})` }"
       >{{ box.label }}</span>
     </div>
+    <template v-if="measurement">
+      <div
+        v-for="(line, i) in measurement.lines"
+        :key="i"
+        class="pointer-events-none absolute z-50 bg-[#f24822]"
+        :style="lineStyle(line)"
+        data-measure-line
+        :data-measure-px="Math.round(line.length)"
+      >
+        <!-- Beside the line, as in Figma: below a horizontal one, right of a vertical one. -->
+        <span
+          class="absolute rounded-[3px] bg-[#f24822] px-1 text-[10px] leading-4 font-medium whitespace-nowrap text-white tabular-nums"
+          :class="line.y1 === line.y2 ? 'top-full left-1/2 origin-top' : 'top-1/2 left-full origin-left'"
+          :style="{ transform: line.y1 === line.y2 ? `translate(-50%, ${4 / zoom}px) scale(${1 / zoom})` : `translate(${4 / zoom}px, -50%) scale(${1 / zoom})` }"
+        >{{ Math.round(line.length) }}</span>
+      </div>
+    </template>
     <div
       v-if="indicator"
       class="pointer-events-none absolute z-50"

@@ -7,7 +7,8 @@ import { DRAG_MIME, draggedNodeId, dropPosition, nodeDragType, resolveDrop } fro
 /**
  * A layers row after Stacki's tree: 16px of indent per level, a chevron that
  * collapses the children, the type icon, the type with its text in italics,
- * and a drag handle on hover. The whole row drags and takes drops.
+ * and a drag handle on hover. The whole row drags and takes drops; Shift+click
+ * toggles the row in the selection.
  */
 const props = defineProps<{ node: DocNode, depth: number }>()
 const editor = useEditor()
@@ -22,7 +23,7 @@ const preview = computed(() => {
 })
 const hasChildren = computed(() => props.node.children.length > 0)
 const collapsed = computed(() => editor.collapsed.has(props.node.id))
-const selected = computed(() => editor.selectedId === props.node.id)
+const selected = computed(() => editor.selectedIds.includes(props.node.id))
 const dropAt = ref<DropPosition | null>(null)
 
 // Keyboard steps and canvas clicks can select a row that is scrolled away.
@@ -87,13 +88,13 @@ function onDrop(event: DragEvent) {
       :aria-level="depth + 1"
       :data-layer-id="node.id"
       :draggable="!isRoot"
-      class="group flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-md pe-1 text-xs whitespace-nowrap"
+      class="group flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-md pe-1 text-xs whitespace-nowrap select-none"
       :class="[
         selected ? 'bg-primary/10 text-highlighted' : editor.hoveredId === node.id ? 'bg-elevated text-highlighted' : 'text-toned hover:bg-elevated',
         dropAt && DROP_CLASS[dropAt]
       ]"
       :style="{ paddingLeft: `${2 + depth * 16}px` }"
-      @click="editor.selectedId = node.id"
+      @click="editor.selectRow(node.id, $event.shiftKey)"
       @mouseenter="editor.hoveredId = node.id"
       @dragstart="onDragStart"
       @dragover="onDragOver"

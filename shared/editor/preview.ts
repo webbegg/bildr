@@ -31,10 +31,16 @@ export function previewTree(root: DocNode, previews: Record<string, StylePatch>)
   return { ...root, style: applyStylePreview(root.style, patch), children }
 }
 
-/** The preview the editor shows on one canvas node. */
+/** The preview the editor shows on a canvas node, or on every selected node (`nodeIds`, when several). */
 export interface PreviewState {
   nodeId: string
+  nodeIds?: string[]
   style: StylePatch
+}
+
+function previewState(target: string | string[], style: StylePatch): PreviewState {
+  if (typeof target === 'string' || target.length === 1) return { nodeId: typeof target === 'string' ? target : target[0]!, style }
+  return { nodeId: target[0]!, nodeIds: target, style }
 }
 
 /**
@@ -46,13 +52,13 @@ export interface PreviewState {
 export function createStylePreview(onChange: (state: PreviewState | null) => void) {
   let commits = 0
   return {
-    preview(nodeId: string, style: StylePatch | null): void {
-      if (style) onChange({ nodeId, style })
+    preview(target: string | string[], style: StylePatch | null): void {
+      if (style) onChange(previewState(target, style))
       else if (!commits) onChange(null)
     },
-    async commit<T>(nodeId: string, style: StylePatch, run: () => Promise<T>): Promise<T> {
+    async commit<T>(target: string | string[], style: StylePatch, run: () => Promise<T>): Promise<T> {
       commits++
-      onChange({ nodeId, style })
+      onChange(previewState(target, style))
       try {
         return await run()
       } finally {

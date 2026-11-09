@@ -3,6 +3,8 @@ import type { DropdownMenuItem } from '@nuxt/ui'
 import type { CanvasToEditor, CanvasView, EditorToCanvas } from '#shared/editor/protocol'
 import { isCanvasMessage } from '#shared/editor/protocol'
 import { createThrottle, PREVIEW_INTERVAL } from '#shared/editor/preview'
+import type { PreviewState } from '#shared/editor/preview'
+import type { NodeBox } from '#shared/editor/autoLayout'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 import type { Point, Viewport, ZoomCommand } from '#shared/editor/viewport'
@@ -17,7 +19,11 @@ import { boundsOf, fitView, FRAME_GAP, FRAME_MIN_HEIGHT, layoutFrames, stepZoom,
  * `editor.device`, the breakpoint the style panel edits. Wheel pans,
  * Cmd/Ctrl + wheel or pinch zooms around the pointer, space- or middle-drag
  * pans; the iframes forward those gestures. The `tokens` view is one plain
- * iframe with the theme's token preview sheet.
+ * iframe with the theme's token preview sheet. The editor measures node
+ * boxes in the active frame through this component (Shift+A), and Alt held
+ * here shows the frames' measurements. The zoom menu also holds the Deep
+ * select setting (on: a click selects the innermost element; off: Figma's
+ * drill, where the first click selects a top-level element).
  */
 const { view = 'page' } = defineProps<{ view?: CanvasView }>()
 const editor = useEditor()
@@ -133,6 +139,7 @@ function isEditable(target: EventTarget | null): boolean {
 }
 
 function onWindowKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Alt') broadcast({ type: 'bildr:alt', down: true })
   if (editor.mode === 'data' || isEditable(event.target)) return
   if (event.code === 'Space') {
     if (!pointerInStage.value && !spaceHeld.value) return
@@ -147,6 +154,7 @@ function onWindowKeyDown(event: KeyboardEvent) {
 }
 
 function onWindowKeyUp(event: KeyboardEvent) {
+  if (event.key === 'Alt') broadcast({ type: 'bildr:alt', down: false })
   if (event.code !== 'Space' || !spaceHeld.value) return
   event.preventDefault()
   spaceHeld.value = false
@@ -166,6 +174,9 @@ const zoomItems = computed<DropdownMenuItem[][]>(() => [
   [
     { label: 'All frames', type: 'checkbox', checked: !singleFrame.value, onUpdateChecked: () => setSingleFrame(false) },
     { label: 'Active frame only', type: 'checkbox', checked: singleFrame.value, onUpdateChecked: () => setSingleFrame(true) }
+  ],
+  [
+    { label: 'Deep select', type: 'checkbox', checked: editor.deepSelect, onUpdateChecked: (value: boolean) => editor.setDeepSelect(value) }
   ]
 ])
 
@@ -203,11 +214,15 @@ function renderMessage(): EditorToCanvas | null {
   return { type: 'bildr:render', page: editor.page, base: `/p/${editor.project.slug}`, theme: editor.theme, view, lists: editor.lists }
 }
 
+function selectMessage(): EditorToCanvas {
+  return { type: 'bildr:select', nodeId: editor.selectedId, nodeIds: editor.selectedIds }
+}
+
 function render() {
   const message = renderMessage()
   if (!message) return
   broadcast(message)
-  broadcast({ type: 'bildr:select', nodeId: editor.selectedId })
+  broadcast(selectMessage())
 }
 
 /** Brings a frame that just loaded up to date with the others. */
@@ -215,11 +230,32 @@ function sync(id: DeviceId | null, el: HTMLIFrameElement) {
   const message = renderMessage()
   if (!message) return
   post(el, message)
-  post(el, { type: 'bildr:select', nodeId: editor.selectedId })
+  post(el, selectMessage())
   post(el, { type: 'bildr:hover', nodeId: editor.hoveredId })
   if (id) post(el, { type: 'bildr:active', active: id === editor.deviceId, zoom: viewport.value.zoom })
   const preview = editor.stylePreview
-  if (preview) post(el, { type: 'bildr:preview', nodeId: preview.nodeId, style: preview.style })
+  if (preview) for (const nodeId of previewTargets(preview)) post(el, { type: 'bildr:preview', nodeId, style: preview.style })
+}
+
+/** Pending `bildr:measure` requests by id; a frame that never answers resolves with no boxes. */
+const measures = new Map<number, (rects: NodeBox[]) => void>()
+let measureId = 0
+
+/** The boxes of nodes in the active frame, in its canvas pixels. */
+function measureNodes(nodeIds: string[]): Promise<NodeBox[]> {
+  const el = frames.get(editor.deviceId)
+  if (!el || !nodeIds.length) return Promise.resolve([])
+  const requestId = ++measureId
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => done([]), 1000)
+    const done = (rects: NodeBox[]) => {
+      clearTimeout(timer)
+      measures.delete(requestId)
+      resolve(rects)
+    }
+    measures.set(requestId, done)
+    post(el, { type: 'bildr:measure', requestId, nodeIds })
+  })
 }
 
 /** Replays a canvas right-click on its iframe, in editor coordinates, for an enclosing EditorNodeMenu. */
@@ -237,9 +273,10 @@ function onMessage(event: MessageEvent) {
   if (message.type === 'bildr:ready') sync(id ?? null, el)
   else if (message.type === 'bildr:hover') editor.hoveredId = message.nodeId
   else if (message.type === 'bildr:click') {
-    editor.selectedId = message.nodeId
+    editor.canvasClick(message.nodeId, message)
     activate(id ?? null)
-  } else if (message.type === 'bildr:key') {
+  } else if (message.type === 'bildr:rects') measures.get(message.requestId)?.(message.rects)
+  else if (message.type === 'bildr:key') {
     const command = view === 'page' ? zoomShortcut(message) : null
     if (command) zoomCommand(command)
     else emit('key', message)
@@ -256,18 +293,22 @@ function onMessage(event: MessageEvent) {
 }
 
 watch(() => [editor.page, editor.theme, editor.lists], render, { deep: true })
-watch(() => editor.selectedId, nodeId => broadcast({ type: 'bildr:select', nodeId }))
+watch(() => editor.selectedIds, () => broadcast(selectMessage()))
 watch(() => editor.hoveredId, nodeId => broadcast({ type: 'bildr:hover', nodeId }))
 watch([() => editor.deviceId, () => viewport.value.zoom], ([deviceId, zoom]) => {
   for (const [id, el] of frames) if (id) post(el, { type: 'bildr:active', active: id === deviceId, zoom })
 })
 
-// Style previews move with a drag, so they are throttled; a clear goes at once and drops any pending one.
-const previews = createThrottle<Extract<EditorToCanvas, { type: 'bildr:preview' }>>(broadcast, PREVIEW_INTERVAL)
+type PreviewMessage = Extract<EditorToCanvas, { type: 'bildr:preview' }>
+const previewTargets = (state: PreviewState) => state.nodeIds ?? [state.nodeId]
+// Style previews move with a drag, so they are throttled (one batch per selection); a clear goes at once and drops any pending one.
+const previews = createThrottle<PreviewMessage[]>(batch => batch.forEach(broadcast), PREVIEW_INTERVAL)
 // After the render watcher, so a commit's clear always follows the render that shows the committed value.
 watch(() => editor.stylePreview, (next, prev) => {
-  if (prev && prev.nodeId !== next?.nodeId) previews.flush({ type: 'bildr:preview', nodeId: prev.nodeId, style: null })
-  if (next) previews.push({ type: 'bildr:preview', nodeId: next.nodeId, style: next.style })
+  const kept = next ? previewTargets(next) : []
+  const cleared = prev ? previewTargets(prev).filter(nodeId => !kept.includes(nodeId)) : []
+  if (cleared.length) previews.flush(cleared.map(nodeId => ({ type: 'bildr:preview', nodeId, style: null })))
+  if (next) previews.push(kept.map(nodeId => ({ type: 'bildr:preview', nodeId, style: next.style })))
 }, { flush: 'post' })
 
 onMounted(() => {
@@ -279,8 +320,10 @@ onMounted(() => {
   window.addEventListener('keydown', onWindowKeyDown)
   window.addEventListener('keyup', onWindowKeyUp)
   if (stage.value) observer?.observe(stage.value)
+  editor.setMeasurer(measureNodes)
 })
 onBeforeUnmount(() => {
+  if (view === 'page') editor.setMeasurer(null)
   window.removeEventListener('message', onMessage)
   window.removeEventListener('keydown', onWindowKeyDown)
   window.removeEventListener('keyup', onWindowKeyUp)

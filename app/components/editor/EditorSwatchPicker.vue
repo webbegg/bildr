@@ -9,9 +9,10 @@ import { colorSwatch, colorSwatchRows } from '#shared/editor/styleFields'
  * A set token reads like a Figma variable: a swatch and the token name in a
  * chip; clicking opens the picker, and the detach button (on hover) clears
  * it. An `icon` goes in front, as a field prefix. Hovering a swatch previews
- * it until the pointer leaves or the picker closes.
+ * it until the pointer leaves or the picker closes. Without a value it reads
+ * `placeholder` ("None" by default; "Mixed" for a multi-selection).
  */
-const props = defineProps<{ token: StyleToken, value: string | undefined, theme: Theme, icon?: string }>()
+const props = defineProps<{ token: StyleToken, value: string | undefined, theme: Theme, icon?: string, placeholder?: string }>()
 const emit = defineEmits<{ update: [value: string], preview: [value: string | null], clear: [] }>()
 
 const open = ref(false)
@@ -65,7 +66,7 @@ function pick(value: string) {
         </span>
         <template v-else>
           <span class="ms-0.5 size-3.5 shrink-0 rounded-[3px] bg-[repeating-conic-gradient(var(--ui-bg-accented)_0_25%,transparent_0_50%)] bg-size-[6px_6px] ring-1 ring-white/10 ring-inset" />
-          <span class="truncate text-[11px] text-dimmed">None</span>
+          <span class="truncate text-[11px] text-dimmed">{{ placeholder ?? 'None' }}</span>
         </template>
       </button>
       <template #content>

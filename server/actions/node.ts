@@ -5,9 +5,10 @@ import type { PropValue } from '#shared/document/components'
 import { STYLE_TOKENS, styleKey, variantsOf } from '#shared/design/tokens'
 import type { StyleToken } from '#shared/design/tokens'
 import { IdSchema, PropValueSchema } from '#shared/document/schema'
-import type { DocNode } from '#shared/document/schema'
-import { findNode, findParent } from '#shared/document/tree'
+import type { DocNode, Page } from '#shared/document/schema'
+import { containsNode, findNode, findParent } from '#shared/document/tree'
 import { ActionError, defineAction } from './define'
+import type { ActionContext } from './define'
 import { assertFound } from './project'
 
 interface NodeSpec {
@@ -53,6 +54,30 @@ function buildNode(spec: NodeSpec): DocNode {
 
 const Target = { projectId: IdSchema, pageId: IdSchema }
 
+/** The `nodeId` or `nodeIds` fields of the actions that also act on several nodes at once (one undo step). */
+const Nodes = {
+  nodeId: IdSchema.optional().describe('The node to act on; or give nodeIds'),
+  nodeIds: z.array(IdSchema).min(1).optional().describe('Several nodes to act on at once, as one undo step; replaces nodeId')
+}
+
+function nodeIdsOf({ nodeId, nodeIds }: { nodeId?: string, nodeIds?: string[] }): string[] {
+  const ids = nodeIds ?? (nodeId ? [nodeId] : [])
+  if (!ids.length) throw new ActionError('invalid', 'Give nodeId or nodeIds')
+  return [...new Set(ids)]
+}
+
+async function loadPage(ctx: ActionContext, projectId: string, pageId: string): Promise<Page> {
+  const current = await ctx.services.loadProject(projectId)
+  return assertFound(current.pages.find(p => p.id === pageId), `Page "${pageId}" not found`)
+}
+
+/** The nodes of `ids` that are not inside another one of them, in `ids` order; refuses missing nodes and the root. */
+function outermost(page: Page, ids: string[], verb: string): DocNode[] {
+  const nodes = ids.map(id => assertFound(findNode(page.root, id), `Node "${id}" not found`))
+  if (nodes.includes(page.root)) throw new ActionError('forbidden', `The page root cannot be ${verb}`)
+  return nodes.filter(node => !nodes.some(other => other !== node && containsNode(other, node.id)))
+}
+
 export const nodeInsert = defineAction({
   name: 'node_insert',
   description: 'Insert a component, optionally with nested children, into a container node (defaults to the page root, at the end). Returns the new node id. Inside a List (bound to a collection slug), string props of its children such as text, label, src and to can use bindings like "{{ item.name }}" or "/menu/{{ item.id }}", resolved per record.',
@@ -88,10 +113,11 @@ export const nodeUpdateProps = defineAction({
 
 export const nodeUpdateStyle = defineAction({
   name: 'node_update_style',
-  description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). Tokens listing breakpoints also take a mobile-first prefix, e.g. { "md:cols": "3" } applies from the md breakpoint up. A null value removes the token.',
-  input: z.object({ ...Target, nodeId: IdSchema, style: StyleUpdateSchema }),
-  run: async ({ projectId, pageId, nodeId, style }, ctx) => {
-    const project = await ctx.services.mutate(ctx, projectId, 'Update style', [{ op: 'setStyle', pageId, nodeId, style }])
+  description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). Tokens listing breakpoints also take a mobile-first prefix, e.g. { "md:cols": "3" } applies from the md breakpoint up. A null value removes the token. With nodeIds the same tokens go to every node, as one undo step (all or nothing).',
+  input: z.object({ ...Target, ...Nodes, style: StyleUpdateSchema }),
+  run: async ({ projectId, pageId, style, ...nodes }, ctx) => {
+    const ops = nodeIdsOf(nodes).map(nodeId => ({ op: 'setStyle' as const, pageId, nodeId, style }))
+    const project = await ctx.services.mutate(ctx, projectId, 'Update style', ops)
     return { version: project.version }
   }
 })
@@ -106,12 +132,28 @@ export const nodeMove = defineAction({
   }
 })
 
+export const nodeMoveMany = defineAction({
+  name: 'node_move_many',
+  description: 'Run several node_move moves in order as one undo step (all or nothing), e.g. to reorder a selection. Each index is the one the node will have right after its own move.',
+  input: z.object({
+    ...Target,
+    moves: z.array(z.object({ nodeId: IdSchema, parentId: IdSchema, index: z.number().int().nonnegative() })).min(1)
+  }),
+  run: async ({ projectId, pageId, moves }, ctx) => {
+    const project = await ctx.services.mutate(ctx, projectId, moves.length > 1 ? `Move ${moves.length}` : 'Move', moves.map(move => ({ op: 'move' as const, pageId, ...move })))
+    return { version: project.version }
+  }
+})
+
 export const nodeDelete = defineAction({
   name: 'node_delete',
-  description: 'Delete a node and its children. The page root cannot be deleted.',
-  input: z.object({ ...Target, nodeId: IdSchema }),
-  run: async ({ projectId, pageId, nodeId }, ctx) => {
-    const project = await ctx.services.mutate(ctx, projectId, 'Delete', [{ op: 'remove', pageId, nodeId }])
+  description: 'Delete a node and its children. The page root cannot be deleted. With nodeIds, deletes every node as one undo step (nodes inside another listed node go with it).',
+  input: z.object({ ...Target, ...Nodes }),
+  run: async ({ projectId, pageId, ...nodes }, ctx) => {
+    const ids = nodeIdsOf(nodes)
+    const targets = ids.length > 1 ? outermost(await loadPage(ctx, projectId, pageId), ids, 'deleted').map(n => n.id) : ids
+    const label = targets.length > 1 ? `Delete ${targets.length}` : 'Delete'
+    const project = await ctx.services.mutate(ctx, projectId, label, targets.map(nodeId => ({ op: 'remove' as const, pageId, nodeId })))
     return { version: project.version }
   }
 })
@@ -120,18 +162,26 @@ export const WRAP_TYPES = ['Container', 'Row', 'Column', 'Card', 'Grid'] as cons
 
 export const nodeWrap = defineAction({
   name: 'node_wrap',
-  description: 'Wrap a node in a new container (Container by default) placed where the node was; the node becomes its only child. One undo step. Returns the container id.',
-  input: z.object({ ...Target, nodeId: IdSchema, type: z.enum(WRAP_TYPES).optional().describe('The wrapping container type; defaults to Container') }),
-  run: async ({ projectId, pageId, nodeId, type = 'Container' }, ctx) => {
-    const current = await ctx.services.loadProject(projectId)
-    const page = assertFound(current.pages.find(p => p.id === pageId), `Page "${pageId}" not found`)
-    assertFound(findNode(page.root, nodeId), `Node "${nodeId}" not found`)
-    const location = findParent(page.root, nodeId)
-    if (!location) throw new ActionError('forbidden', 'The page root cannot be wrapped')
+  description: 'Wrap a node in a new container (Container by default) placed where the node was; the node becomes its only child. With nodeIds, wraps several siblings (nodes of one parent) together, like Figma\'s group (Container) or auto layout (Row / Column, Shift+A): the container goes where the first of them was and holds them in the nodeIds order. style sets design tokens on the container, e.g. { "gap": "6" }. One undo step. Returns the container id.',
+  input: z.object({
+    ...Target,
+    ...Nodes,
+    type: z.enum(WRAP_TYPES).optional().describe('The wrapping container type; defaults to Container'),
+    style: StyleSchema.optional().describe('Design tokens added to the container default style, e.g. { "gap": "6" }')
+  }),
+  run: async ({ projectId, pageId, type = 'Container', style, ...nodes }, ctx) => {
+    const ids = nodeIdsOf(nodes)
+    const page = await loadPage(ctx, projectId, pageId)
+    for (const id of ids) assertFound(findNode(page.root, id), `Node "${id}" not found`)
+    const locations = ids.map(id => findParent(page.root, id))
+    if (locations.some(location => !location)) throw new ActionError('forbidden', 'The page root cannot be wrapped')
+    const parent = locations[0]!.parent
+    if (locations.some(location => location!.parent !== parent)) throw new ActionError('invalid', 'Only siblings (nodes of one parent) can be wrapped together')
     const wrapper = createNode(type)
+    wrapper.style = { ...wrapper.style, ...style }
     const project = await ctx.services.mutate(ctx, projectId, `Wrap in ${type}`, [
-      { op: 'insert', pageId, parentId: location.parent.id, index: location.index, node: wrapper },
-      { op: 'move', pageId, nodeId, parentId: wrapper.id, index: 0 }
+      { op: 'insert', pageId, parentId: parent.id, index: Math.min(...locations.map(location => location!.index)), node: wrapper },
+      ...ids.map((nodeId, index) => ({ op: 'move' as const, pageId, nodeId, parentId: wrapper.id, index }))
     ])
     return { version: project.version, nodeId: wrapper.id }
   }
@@ -139,18 +189,20 @@ export const nodeWrap = defineAction({
 
 export const nodeDuplicate = defineAction({
   name: 'node_duplicate',
-  description: 'Duplicate a node (with its children) right after itself. Returns the copy id.',
-  input: z.object({ ...Target, nodeId: IdSchema }),
-  run: async ({ projectId, pageId, nodeId }, ctx) => {
-    const current = await ctx.services.loadProject(projectId)
-    const page = assertFound(current.pages.find(p => p.id === pageId), `Page "${pageId}" not found`)
-    const node = assertFound(findNode(page.root, nodeId), `Node "${nodeId}" not found`)
-    const location = findParent(page.root, nodeId)
-    if (!location) throw new ActionError('forbidden', 'The page root cannot be duplicated')
-    const copy = cloneWithNewIds(node)
-    const project = await ctx.services.mutate(ctx, projectId, 'Duplicate', [
-      { op: 'insert', pageId, parentId: location.parent.id, index: location.index + 1, node: copy }
-    ])
-    return { version: project.version, nodeId: copy.id }
+  description: 'Duplicate a node (with its children) right after itself. Returns the copy id. With nodeIds, duplicates every node as one undo step and returns the copy ids in the nodeIds order (nodeId is the first copy).',
+  input: z.object({ ...Target, ...Nodes }),
+  run: async ({ projectId, pageId, ...nodes }, ctx) => {
+    const page = await loadPage(ctx, projectId, pageId)
+    const originals = outermost(page, nodeIdsOf(nodes), 'duplicated')
+    const inserts = originals.map((node) => {
+      const location = findParent(page.root, node.id)!
+      return { op: 'insert' as const, pageId, parentId: location.parent.id, index: location.index + 1, node: cloneWithNewIds(node) }
+    })
+    // From the last sibling up, so an insert never shifts the index of one still to run.
+    const ops = [...inserts].sort((a, b) => b.index - a.index)
+    const label = inserts.length > 1 ? `Duplicate ${inserts.length}` : 'Duplicate'
+    const project = await ctx.services.mutate(ctx, projectId, label, ops)
+    const copies = inserts.map(insert => insert.node.id)
+    return { version: project.version, nodeId: copies[0]!, nodeIds: copies }
   }
 })

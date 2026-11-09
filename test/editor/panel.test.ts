@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { STYLE_TOKENS } from '#shared/design/tokens'
-import { PANEL_SECTIONS, paddingMode, panelFields, panelSection, panelSectionMark, sectionAdd, sectionKeys, sectionPresent, sectionRemove, spacingProvenance } from '#shared/editor/panel'
+import { PANEL_SECTIONS, paddingMode, panelFields, panelSection, panelSectionMark, sectionAdd, sectionKeys, sectionPresent, sectionRemove, sharedStyle, spacingProvenance } from '#shared/editor/panel'
 
 describe('panel sections', () => {
   it('follows Figma UI3, with the margins box after Layout and every design token in exactly one section', () => {
@@ -113,5 +113,26 @@ describe('padding fields', () => {
     expect(spacingProvenance(style, 'p', 'top', 'lg')).toEqual({ state: 'inherited', value: '2', from: undefined })
     expect(spacingProvenance(style, 'p', 'left', 'lg')).toEqual({ state: 'inherited', value: '6', from: 'md' })
     expect(spacingProvenance({}, 'm', 'top', undefined)).toEqual({ state: 'unset' })
+  })
+})
+
+describe('sharedStyle', () => {
+  it('keeps the values every node shares and marks the differing tokens as mixed', () => {
+    const shared = sharedStyle([
+      { 'gap': '3', 'bg': 'primary', 'p': '4', 'md:gap': '6' },
+      { 'gap': '3', 'bg': 'muted', 'md:gap': '6' },
+      { 'gap': '3', 'bg': 'primary', 'p': '4', 'md:gap': '6' }
+    ])
+    expect(shared.style).toEqual({ 'gap': '3', 'md:gap': '6' })
+    // Unset on one node and set on another counts as mixed too.
+    expect(shared.mixed).toEqual(['bg', 'p'])
+  })
+
+  it('names the base token of a mixed breakpoint key', () => {
+    expect(sharedStyle([{ 'md:cols': '3' }, { 'md:cols': '2' }])).toEqual({ style: {}, mixed: ['cols'] })
+  })
+
+  it('is the node style for one node', () => {
+    expect(sharedStyle([{ mt: '4' }])).toEqual({ style: { mt: '4' }, mixed: [] })
   })
 })

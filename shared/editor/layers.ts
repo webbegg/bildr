@@ -53,6 +53,22 @@ export function collapsedAncestors(root: DocNode, collapsed: ReadonlySet<string>
   return pathTo(root, id).slice(0, -1).filter(ancestor => collapsed.has(ancestor))
 }
 
+/**
+ * The `node_move_many` moves that step every node in `ids` one place up (-1)
+ * or down (1) among its siblings, as one block: null when one of them is at
+ * the end already or is the root. Moves run nearest-the-end first, so each
+ * index is still right when its move runs.
+ */
+export function siblingMoves(root: DocNode, ids: readonly string[], delta: -1 | 1): { nodeId: string, parentId: string, index: number }[] | null {
+  const moves: { nodeId: string, parentId: string, index: number }[] = []
+  for (const id of new Set(ids)) {
+    const to = siblingMove(root, id, delta)
+    if (!to) return null
+    moves.push({ nodeId: id, ...to })
+  }
+  return moves.sort((a, b) => (a.index - b.index) * -delta)
+}
+
 /** The `node_move` slot one step up (-1) or down (1) among the node's siblings; null at either end or for the root. */
 export function siblingMove(root: DocNode, id: string, delta: -1 | 1): DropTarget | null {
   const location = findParent(root, id)

@@ -27,9 +27,16 @@ function inFloatingLayer(event: KeyboardEvent): boolean {
   return !!(event.target as HTMLElement | null)?.closest?.('[data-dismissable-layer], [role="dialog"], [role="menu"], [role="listbox"]')
 }
 
+// Enter, Tab and the arrows keep their meaning on a focused control; they navigate from the page or the layers tree.
+function allowsNavigation(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null
+  return !el || el === document.body || el === document.documentElement || !!el.closest?.('[data-layers]')
+}
+
 function onKeyDown(event: KeyboardEvent) {
-  if (isEditable(event.target) || inFloatingLayer(event)) return
-  if (editor.shortcut(event.key, event.metaKey || event.ctrlKey, event.shiftKey)) event.preventDefault()
+  // The layers tree handles its own arrow keys first.
+  if (event.defaultPrevented || isEditable(event.target) || inFloatingLayer(event)) return
+  if (editor.shortcut(event.key, event.metaKey || event.ctrlKey, event.shiftKey, allowsNavigation(event.target))) event.preventDefault()
 }
 
 // The dark editor chrome (main.css) is scoped to this page's document; the canvas iframe keeps the project theme.
@@ -112,10 +119,11 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
       <!-- Hidden, not unmounted, in Data mode so the canvas does not reload. The canvas zooms and pans edge to edge. -->
       <main
         v-show="editor.mode !== 'data'"
-        class="min-w-0 flex-1 bg-muted"
+        class="min-w-0 flex-1 bg-[#1e1e1e]"
+        data-canvas-area
       >
         <EditorNodeMenu class="size-full">
-          <EditorCanvas @key="message => editor.shortcut(message.key, message.meta, message.shift)" />
+          <EditorCanvas @key="message => editor.shortcut(message.key, message.meta, message.shift, true)" />
         </EditorNodeMenu>
       </main>
       <main

@@ -72,6 +72,14 @@ describe('editor preview and commit', () => {
     expect(states.at(-1)).toBeNull()
   })
 
+  it('previews one patch on every selected node, naming the first as the node', () => {
+    const states: (PreviewState | null)[] = []
+    const preview = createStylePreview(state => states.push(state))
+    preview.preview(['a', 'b'], { gap: '6' })
+    preview.preview(['a'], { gap: '4' })
+    expect(states).toEqual([{ nodeId: 'a', nodeIds: ['a', 'b'], style: { gap: '6' } }, { nodeId: 'a', style: { gap: '4' } }])
+  })
+
   it('clears the preview when the commit fails, so the old value comes back', async () => {
     const states: (PreviewState | null)[] = []
     const preview = createStylePreview(state => states.push(state))

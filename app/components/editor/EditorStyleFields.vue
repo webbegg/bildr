@@ -3,7 +3,7 @@ import { getStyleToken, isResponsiveToken, styleClasses, styleKey } from '#share
 import type { StyleToken } from '#shared/design/tokens'
 import { structuralStyle } from '#shared/document/components'
 import type { PanelSection } from '#shared/editor/panel'
-import { PANEL_SECTIONS, paddingMode, panelFields, panelSectionMark, sectionAdd, sectionPresent, sectionRemove, spacingProvenance } from '#shared/editor/panel'
+import { PANEL_SECTIONS, paddingMode, panelFields, panelSectionMark, sectionAdd, sectionKeys, sectionPresent, sectionRemove, spacingProvenance } from '#shared/editor/panel'
 import { previewFocusedOption } from '#shared/editor/preview'
 import type { Side } from '#shared/editor/spacing'
 import { spacingSide, spacingWrite } from '#shared/editor/spacing'
@@ -20,9 +20,13 @@ import { styleProvenance } from '#shared/editor/styleFields'
  *
  * Controls `preview` what a gesture holds and `commit` once; this panel emits
  * the commit as one `update` (one undo step) and passes previews on.
+ * For a multi-selection `styles` holds the shared values and `mixed` the
+ * tokens that differ, whose fields read "Mixed".
  */
 const props = defineProps<{
   styles: Record<string, string>
+  /** Base token keys whose values differ across the selected nodes. */
+  mixed?: string[]
   type: string
   /** The parent's type; a Grid child gets a column span. */
   parentType?: string
@@ -44,6 +48,12 @@ const inherited = (key: string) => {
   const p = provenance(key)
   return p.state === 'inherited' ? p.value : undefined
 }
+// A padding field reads the all-sides and axis tokens too.
+const PADDING_KEYS: Record<string, string[]> = { px: ['p', 'px'], py: ['p', 'py'], pl: ['p', 'px', 'pl'], pr: ['p', 'px', 'pr'], pt: ['p', 'py', 'pt'], pb: ['p', 'py', 'pb'] }
+const isMixed = (key: string) => (PADDING_KEYS[key] ?? [key]).some(k => props.mixed?.includes(k))
+/** A field's placeholder: "Mixed" when the selected nodes differ, else `fallback`. */
+const ph = (key: string, fallback?: string) => (isMixed(key) ? 'Mixed' : fallback)
+
 /** The key a token is written to on the current device. */
 const keyAt = (key: string) => (isResponsiveToken(token(key)) ? styleKey(key, editor.device.breakpoint) : key)
 
@@ -165,6 +175,7 @@ function toggle(section: PanelSection, event: MouseEvent) {
 // Fill, Stroke and Effects: "+" in the header adds a default, "−" on the row removes it.
 const ADDABLE: PanelSection[] = ['Fill', 'Stroke', 'Effects']
 const present = (section: PanelSection) => !ADDABLE.includes(section) || sectionPresent(props.styles, section, editor.deviceId)
+  || sectionKeys(section).some(key => props.mixed?.includes(key))
 function add(section: PanelSection) {
   const patch = sectionAdd(section)
   if (!patch) return
@@ -290,7 +301,7 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
             :token="token(key)"
             :value="own(key)"
             :inherited="inherited(key)"
-            :placeholder="key === 'gap' ? '0' : undefined"
+            :placeholder="ph(key, key === 'gap' ? '0' : undefined)"
             :stepper="key === 'cols'"
             :data-style-row="key"
             @preview="preview(key, $event)"
@@ -317,7 +328,7 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
               :token="token(key)"
               :value="paddingValue(side, 'set')"
               :inherited="paddingValue(side, 'inherited')"
-              placeholder="0"
+              :placeholder="ph(key, '0')"
               :data-style-row="key"
               @preview="emit('preview', $event === null ? null : paddingWrite(side, $event))"
               @commit="emit('update', paddingWrite(side, $event))"
@@ -360,7 +371,7 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
             :token="token(key)"
             :value="own(key)"
             :inherited="inherited(key)"
-            placeholder="auto"
+            :placeholder="ph(key, 'auto')"
             :data-style-row="key"
             @preview="preview(key, $event)"
             @commit="setField(key, $event)"
@@ -416,7 +427,7 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
           :token="token('rounded')"
           :value="own('rounded')"
           :inherited="inherited('rounded')"
-          placeholder="none"
+          :placeholder="ph('rounded', 'none')"
           data-style-row="rounded"
           @preview="preview('rounded', $event)"
           @commit="setField('rounded', $event)"
@@ -436,7 +447,7 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
             :token="token('text')"
             :value="own('text')"
             :inherited="inherited('text')"
-            placeholder="base"
+            :placeholder="ph('text', 'base')"
             data-style-row="text"
             @preview="preview('text', $event)"
             @commit="setField('text', $event)"
@@ -458,7 +469,7 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
             <USelect
               :model-value="own('font')"
               :items="options(token('font'))"
-              :placeholder="inherited('font') ?? 'normal'"
+              :placeholder="ph('font', inherited('font') ?? 'normal')"
               variant="none"
               size="xs"
               :class="SELECT"
@@ -507,6 +518,7 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
           icon="i-lucide-baseline"
           :token="token('color')"
           :value="own('color')"
+          :placeholder="ph('color')"
           :theme="editor.theme"
           data-style-row="color"
           @preview="preview('color', $event)"
@@ -525,6 +537,7 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
           class="flex-1"
           :token="token('bg')"
           :value="own('bg')"
+          :placeholder="ph('bg')"
           :theme="editor.theme"
           @preview="preview('bg', $event)"
           @update="setField('bg', $event)"
@@ -553,6 +566,7 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
           class="min-w-0 flex-1"
           :token="token('borderColor')"
           :value="own('borderColor')"
+          :placeholder="ph('borderColor')"
           :theme="editor.theme"
           data-style-row="borderColor"
           @preview="preview('borderColor', $event)"
@@ -563,7 +577,7 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
           class="w-16 shrink-0"
           :token="token('border')"
           :value="own('border')"
-          placeholder="0"
+          :placeholder="ph('border', '0')"
           data-style-row="border"
           @preview="preview('border', $event)"
           @commit="setField('border', $event)"
@@ -602,7 +616,7 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
           <USelect
             :model-value="own('shadow')"
             :items="options(token('shadow'))"
-            placeholder="none"
+            :placeholder="ph('shadow', 'none')"
             variant="none"
             size="xs"
             :class="SELECT"

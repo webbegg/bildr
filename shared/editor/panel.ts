@@ -105,6 +105,23 @@ export function sectionRemove(style: Record<string, string>, section: PanelSecti
   return Object.fromEntries(Object.keys(style).filter(key => panelSection(key) === section).map(key => [key, null]))
 }
 
+/**
+ * What the panel shows for several selected nodes: the tokens they all share,
+ * and the base keys of the tokens that differ (set on some nodes and unset on
+ * others counts), which the fields show as "Mixed".
+ */
+export function sharedStyle(styles: Record<string, string>[]): { style: Record<string, string>, mixed: string[] } {
+  const keys = new Set(styles.flatMap(style => Object.keys(style)))
+  const style: Record<string, string> = {}
+  const mixed = new Set<string>()
+  for (const key of keys) {
+    const value = styles[0]![key]
+    if (value !== undefined && styles.every(other => other[key] === value)) style[key] = value
+    else mixed.add(baseKey(key) ?? key)
+  }
+  return { style, mixed: [...mixed].sort() }
+}
+
 const rank = (breakpoint: Breakpoint | undefined) => (breakpoint ? BREAKPOINTS.indexOf(breakpoint) + 1 : 0)
 const SIDE_KEYS = SIDES.map(side => sideKey('p', side))
 

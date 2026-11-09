@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createNode, createPage } from '#shared/document/factory'
-import { collapsedAncestors, layerKeyAction, siblingMove, visibleLayers } from '#shared/editor/layers'
+import { collapsedAncestors, layerKeyAction, siblingMove, siblingMoves, visibleLayers } from '#shared/editor/layers'
 
 function fixture() {
   const page = createPage('Home')
@@ -58,5 +58,34 @@ describe('siblingMove', () => {
     expect(siblingMove(root, heading.id, -1)).toBeNull()
     expect(siblingMove(root, b.id, 1)).toBeNull()
     expect(siblingMove(root, root.id, 1)).toBeNull()
+  })
+})
+
+describe('siblingMoves', () => {
+  /** Page > [x, y, z, w, v] as Texts. */
+  function row() {
+    const page = createPage('Home')
+    const nodes = ['x', 'y', 'z', 'w', 'v'].map(() => createNode('Text'))
+    page.root.children.push(...nodes)
+    return { root: page.root, ids: nodes.map(n => n.id) }
+  }
+
+  it('moves each selected node one step, in an order where each move keeps its index meaning', () => {
+    const { root, ids: [x, y, z, w] } = row()
+    expect(siblingMoves(root, [w!, y!], -1)).toEqual([
+      { nodeId: y, parentId: root.id, index: 0 },
+      { nodeId: w, parentId: root.id, index: 2 }
+    ])
+    expect(siblingMoves(root, [x!, z!], 1)).toEqual([
+      { nodeId: z, parentId: root.id, index: 3 },
+      { nodeId: x, parentId: root.id, index: 1 }
+    ])
+  })
+
+  it('refuses the whole move when one node is at the end of its siblings', () => {
+    const { root, ids: [x, y, , , v] } = row()
+    expect(siblingMoves(root, [y!, x!], -1)).toBeNull()
+    expect(siblingMoves(root, [v!], 1)).toBeNull()
+    expect(siblingMoves(root, [root.id], 1)).toBeNull()
   })
 })

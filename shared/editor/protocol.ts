@@ -1,6 +1,7 @@
 import type { DataRecord } from '../data/records'
 import type { Theme } from '../design/theme'
 import type { Page } from '../document/schema'
+import type { NodeBox } from './autoLayout'
 import type { StylePatch } from './preview'
 
 /**
@@ -20,6 +21,15 @@ import type { StylePatch } from './preview'
  * height (`bildr:size`) and forwards the gestures that drive the editor's
  * zoom and pan: wheel at canvas viewport coordinates, pan drags (middle
  * button) as screen-pixel deltas, and the space key held or released.
+ *
+ * Selection is a list (`nodeIds`, Shift+click toggles); `nodeId` is the
+ * primary (last) one, which the active frame labels. A click reports the
+ * deepest element under the pointer and its modifiers; the editor decides
+ * what it selects (drill). `bildr:measure` asks a frame for the on-canvas
+ * boxes of nodes (Shift+A infers an auto layout from them); it answers with
+ * `bildr:rects` and the same `requestId`, in canvas pixels. `bildr:alt` is
+ * the Alt key held in the editor, which shows measurements to the hovered
+ * element in the active frame.
  */
 
 /** What a canvas shows: the page being edited, or the theme's token preview sheet. */
@@ -27,15 +37,18 @@ export type CanvasView = 'page' | 'tokens'
 
 export type EditorToCanvas
   = | { type: 'bildr:render', page: Page, base: string, theme: Theme, view: CanvasView, lists: Record<string, DataRecord[]> }
-    | { type: 'bildr:select', nodeId: string | null }
+    | { type: 'bildr:select', nodeId: string | null, nodeIds: string[] }
     | { type: 'bildr:hover', nodeId: string | null }
     | { type: 'bildr:preview', nodeId: string, style: StylePatch | null }
     | { type: 'bildr:active', active: boolean, zoom: number }
+    | { type: 'bildr:measure', requestId: number, nodeIds: string[] }
+    | { type: 'bildr:alt', down: boolean }
 
 export type CanvasToEditor
   = | { type: 'bildr:ready' }
     | { type: 'bildr:hover', nodeId: string | null }
-    | { type: 'bildr:click', nodeId: string }
+    | { type: 'bildr:click', nodeId: string, shift: boolean, meta: boolean }
+    | { type: 'bildr:rects', requestId: number, rects: NodeBox[] }
     | { type: 'bildr:contextmenu', nodeId: string, x: number, y: number }
     | { type: 'bildr:key', key: string, code: string, meta: boolean, shift: boolean }
     | { type: 'bildr:drop', parentId: string, index: number, payload: string }
