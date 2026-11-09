@@ -61,6 +61,12 @@ export const ProjectSchema = z.object({
 export type Page = z.infer<typeof PageSchema>
 export type Project = z.infer<typeof ProjectSchema>
 
+/** What `/p/:slug` serves: a frozen copy of the project taken at publish time. */
+export interface PublishedSnapshot {
+  project: Project
+  publishedAt: string
+}
+
 /**
  * Structural rules zod cannot express: known component types, children only
  * under containers, and ids unique across `seen`. Returns human-readable

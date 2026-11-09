@@ -1,7 +1,7 @@
 import type { ActionDef } from './define'
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeUpdateProps, nodeUpdateStyle } from './node'
 import { pageAdd, pageDelete, pageRename } from './page'
-import { componentsList, historyGet, historyRedo, historyUndo, projectCreate, projectGet, projectList } from './project'
+import { componentsList, historyGet, historyRedo, historyUndo, projectCreate, projectGet, projectList, projectPublish, projectPublishedInfo } from './project'
 
 /** The static action registry: the one list the UI, HTTP and MCP all expose. */
 export const ACTIONS = [
@@ -20,5 +20,7 @@ export const ACTIONS = [
   nodeDuplicate,
   historyGet,
   historyUndo,
-  historyRedo
+  historyRedo,
+  projectPublish,
+  projectPublishedInfo
 ] as ActionDef[]

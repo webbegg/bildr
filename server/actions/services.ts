@@ -1,6 +1,6 @@
 import { applyOperations } from '#shared/document/operations'
 import type { Operation } from '#shared/document/operations'
-import type { Project } from '#shared/document/schema'
+import type { Project, PublishedSnapshot } from '#shared/document/schema'
 import { createProjectStore } from '../utils/projectStore'
 import type { KeyValueStorage } from '../utils/projectStore'
 import { ActionError } from './define'
@@ -76,6 +76,19 @@ export function createServices(storage: KeyValueStorage) {
       history.undo.push(entry)
       await storage.setItem(`history:${projectId}`, history)
       return { project, label: entry.label }
+    },
+
+    /** Copies the current draft to the published slot, served at `/p/:slug`. */
+    async publish(projectId: string): Promise<PublishedSnapshot> {
+      const snapshot = { project: await loadProject(projectId), publishedAt: new Date().toISOString() }
+      await storage.setItem(`published:${projectId}`, snapshot)
+      return snapshot
+    },
+
+    async getPublished(slug: string): Promise<PublishedSnapshot | undefined> {
+      const project = await projects.getBySlug(slug)
+      if (!project) return undefined
+      return (await storage.getItem<PublishedSnapshot>(`published:${project.id}`)) ?? undefined
     },
 
     async historyState(projectId: string): Promise<{ undo: string | null, redo: string | null }> {

@@ -73,6 +73,28 @@ export const historyRedo = defineAction({
   }
 })
 
+export const projectPublish = defineAction({
+  name: 'project_publish',
+  description: 'Publish the current draft. The published app is served at the returned url (/p/<project-slug>/<page-slug>) and stays unchanged until the next publish.',
+  input: z.object({ projectId: IdSchema }),
+  run: async ({ projectId }, { services }) => {
+    const { project, publishedAt } = await services.publish(projectId)
+    return { url: `/p/${project.slug}`, version: project.version, publishedAt }
+  }
+})
+
+export const projectPublishedInfo = defineAction({
+  name: 'project_published_info',
+  description: 'When and which version of the project was last published (null if never).',
+  input: z.object({ projectId: IdSchema }),
+  readOnly: true,
+  run: async ({ projectId }, { services }) => {
+    const project = await services.loadProject(projectId)
+    const snapshot = await services.getPublished(project.slug)
+    return snapshot ? { url: `/p/${project.slug}`, version: snapshot.project.version, publishedAt: snapshot.publishedAt } : null
+  }
+})
+
 export function assertFound<T>(value: T | undefined, message: string): T {
   if (value === undefined) throw new ActionError('not_found', message)
   return value
