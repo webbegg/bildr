@@ -1,5 +1,5 @@
 import { ProjectSchema } from '#shared/document/schema'
-import type { Project } from '#shared/document/schema'
+import type { Project, ProjectSummary } from '#shared/document/schema'
 
 /** The subset of unstorage's `Storage` the stores use, so tests can pass a fake. */
 export interface KeyValueStorage {
@@ -7,14 +7,6 @@ export interface KeyValueStorage {
   setItem: (key: string, value: unknown) => Promise<void>
   removeItem: (key: string) => Promise<void>
   getKeys: (base?: string) => Promise<string[]>
-}
-
-export interface ProjectSummary {
-  id: string
-  name: string
-  slug: string
-  version: number
-  updatedAt: string
 }
 
 const PREFIX = 'projects:'

@@ -61,6 +61,8 @@ export const ProjectSchema = z.object({
 export type Page = z.infer<typeof PageSchema>
 export type Project = z.infer<typeof ProjectSchema>
 
+export type ProjectSummary = Pick<Project, 'id' | 'name' | 'slug' | 'version' | 'updatedAt'>
+
 /** What `/p/:slug` serves: a frozen copy of the project taken at publish time. */
 export interface PublishedSnapshot {
   project: Project

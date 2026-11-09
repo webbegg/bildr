@@ -1,76 +1,65 @@
+<script setup lang="ts">
+import type { Project, ProjectSummary } from '#shared/document/schema'
+
+const toast = useToast()
+const { data: projects } = useAsyncData('projects', () => callAction<ProjectSummary[]>('project_list'))
+
+const name = ref('')
+const creating = ref(false)
+
+async function create() {
+  if (!name.value.trim()) return
+  creating.value = true
+  try {
+    const project = await callAction<Project>('project_create', { name: name.value.trim() })
+    await navigateTo(`/editor/${project.id}`)
+  } catch (error) {
+    toast.add({ title: 'Could not create the project', description: actionErrorMessage(error), color: 'error' })
+  } finally {
+    creating.value = false
+  }
+}
+</script>
+
 <template>
-  <div>
-    <UPageHero
-      title="Nuxt Starter Template"
-      description="A production-ready starter template powered by Nuxt UI. Build beautiful, accessible, and performant applications in minutes, not hours."
-      :links="[{
-        label: 'Get started',
-        to: 'https://ui.nuxt.com/docs/getting-started/installation/nuxt',
-        target: '_blank',
-        trailingIcon: 'i-lucide-arrow-right',
-        size: 'xl'
-      }, {
-        label: 'Use this template',
-        to: 'https://github.com/nuxt-ui-templates/starter',
-        target: '_blank',
-        icon: 'i-simple-icons-github',
-        size: 'xl',
-        color: 'neutral',
-        variant: 'subtle'
-      }]"
+  <UContainer class="py-10">
+    <UPageHeader
+      title="Projects"
+      description="Build apps visually, or let an agent build them with you."
     />
 
-    <UPageSection
-      id="features"
-      title="Everything you need to build modern Nuxt apps"
-      description="Start with a solid foundation. This template includes all the essentials for building production-ready applications with Nuxt UI's powerful component system."
-      :features="[{
-        icon: 'i-lucide-rocket',
-        title: 'Production-ready from day one',
-        description: 'Pre-configured with TypeScript, ESLint, Tailwind CSS, and all the best practices. Focus on building features, not setting up tooling.'
-      }, {
-        icon: 'i-lucide-palette',
-        title: 'Beautiful by default',
-        description: 'Leveraging Nuxt UI\'s design system with automatic dark mode, consistent spacing, and polished components that look great out of the box.'
-      }, {
-        icon: 'i-lucide-zap',
-        title: 'Lightning fast',
-        description: 'Optimized for performance with SSR/SSG support, automatic code splitting, and edge-ready deployment. Your users will love the speed.'
-      }, {
-        icon: 'i-lucide-blocks',
-        title: '100+ components included',
-        description: 'Access Nuxt UI\'s comprehensive component library. From forms to navigation, everything is accessible, responsive, and customizable.'
-      }, {
-        icon: 'i-lucide-code-2',
-        title: 'Developer experience first',
-        description: 'Auto-imports, hot module replacement, and TypeScript support. Write less boilerplate and ship more features.'
-      }, {
-        icon: 'i-lucide-shield-check',
-        title: 'Built for scale',
-        description: 'Enterprise-ready architecture with proper error handling, SEO optimization, and security best practices built-in.'
-      }]"
-    />
-
-    <UPageSection>
-      <UPageCTA
-        title="Ready to build your next Nuxt app?"
-        description="Join thousands of developers building with Nuxt and Nuxt UI. Get this template and start shipping today."
-        variant="subtle"
-        :links="[{
-          label: 'Start building',
-          to: 'https://ui.nuxt.com/docs/getting-started/installation/nuxt',
-          target: '_blank',
-          trailingIcon: 'i-lucide-arrow-right',
-          color: 'neutral'
-        }, {
-          label: 'View on GitHub',
-          to: 'https://github.com/nuxt-ui-templates/starter',
-          target: '_blank',
-          icon: 'i-simple-icons-github',
-          color: 'neutral',
-          variant: 'outline'
-        }]"
+    <form
+      class="mt-6 flex max-w-md gap-2"
+      @submit.prevent="create"
+    >
+      <UInput
+        v-model="name"
+        placeholder="New project name"
+        class="flex-1"
       />
-    </UPageSection>
-  </div>
+      <UButton
+        type="submit"
+        icon="i-lucide-plus"
+        label="Create"
+        :loading="creating"
+      />
+    </form>
+
+    <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <UPageCard
+        v-for="project in projects"
+        :key="project.id"
+        :title="project.name"
+        :description="`/${project.slug} · v${project.version} · ${new Date(project.updatedAt).toLocaleString()}`"
+        :to="`/editor/${project.id}`"
+        icon="i-lucide-app-window"
+      />
+    </div>
+    <p
+      v-if="projects && !projects.length"
+      class="mt-8 text-sm text-dimmed"
+    >
+      No projects yet.
+    </p>
+  </UContainer>
 </template>
