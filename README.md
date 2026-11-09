@@ -16,6 +16,14 @@ pnpm dev
 - Published apps: `/p/<project-slug>` and `/p/<project-slug>/<page-slug>`. They show the last published version.
 - Data is stored under `.data/`.
 
+## Design system
+
+Every project has its own design system, built on the Tailwind and Nuxt UI theme.
+
+- **Theme** (`theme_get` / `theme_update`): the semantic colors `primary`, `secondary`, `success`, `info`, `warning`, `error` and `neutral`. Each is a Tailwind palette name (such as `indigo`) or a `#rrggbb` hex, with shades generated. The theme also sets the font, the base radius and the spacing density. Edit it in the editor's **Design** mode; the canvas and a token preview update as you edit.
+- **Style tokens:** a node's `style` stores one token per property, for example `{ "mt": "10", "bg": "primary", "rounded": "lg" }`. It renders as Tailwind classes (`mt-10 bg-primary rounded-lg`), in the editor and in the published HTML. The allowed keys and values live in `shared/design/tokens.ts`. `components_list` returns them, and the action schemas list them as enums.
+- Every allowed class is generated when the app is built (`app/assets/css/tokens.css`, produced by `pnpm tokens:css`). The theme is applied as CSS variables, so the same classes follow each project's theme without rebuilding CSS.
+
 ## Action HTTP API
 
 - `GET /api/actions` lists every action with its description and JSON input schema.
@@ -62,12 +70,12 @@ This walkthrough goes from an empty project to a published app that an agent bui
    - Connect your agent with `claude mcp add --transport http bildr http://localhost:3000/mcp`.
    - Give the agent a prompt such as:
 
-     > In the bildr project "Landing", add a page named "Pricing". On the Home page, add a Column with a Heading "Build apps with agents", a Text that describes the product in one sentence, and a Button "See pricing" that links to the pricing page.
+     > In the bildr project "Landing", add a page named "Pricing". On the Home page, add a Column with a Heading "Build apps with agents", a Text that describes the product in one sentence, and a Button "See pricing" that links to the pricing page. Use a violet primary color with a 0.75rem radius, and give the column a soft primary background (`bg: primary-50`), large padding and rounded corners.
 
    - The editor shows each change within about a second, without a reload.
 2. **You tweak it in the editor.** Click the heading on the canvas, change its text in the properties panel on the right, and press Enter or leave the field. Undo and redo work with Ctrl/Cmd+Z and Shift+Ctrl/Cmd+Z.
 3. **Publish.** Click **Publish** in the editor toolbar.
-4. **Open the published app.** Go to `/p/landing`. It shows the published Home page, and the button opens `/p/landing/pricing`. In a WebMCP-enabled Chrome (see above), the page lists `list_pages`, `navigate_to_page` and `get_page_content`.
+4. **Open the published app.** Go to `/p/landing`. It shows the published Home page with the project's theme, the elements carry the design-system classes (for example `bg-primary-50 p-10 rounded-2xl`), and the button opens `/p/landing/pricing`. In a WebMCP-enabled Chrome (see above), the page lists `list_pages`, `navigate_to_page` and `get_page_content`.
 
 ## Checks
 
