@@ -1,21 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createProjectStore } from '../../server/utils/projectStore'
-import type { KeyValueStorage } from '../../server/utils/projectStore'
 import { createProject } from '#shared/document/factory'
-
-function memoryStorage(): KeyValueStorage {
-  const data = new Map<string, unknown>()
-  return {
-    getItem: async key => structuredClone(data.get(key) ?? null) as never,
-    setItem: async (key, value) => {
-      data.set(key, structuredClone(value))
-    },
-    removeItem: async (key) => {
-      data.delete(key)
-    },
-    getKeys: async base => [...data.keys()].filter(k => !base || k.startsWith(base))
-  }
-}
+import { memoryStorage } from '../helpers'
 
 describe('project store', () => {
   it('round-trips projects and lists summaries', async () => {

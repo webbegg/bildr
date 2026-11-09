@@ -75,8 +75,15 @@ export function nodeTreeProblems(node: DocNode, seen: Set<string>, isRoot = fals
       problems.push(`Unknown component type "${n.type}"`)
     }
     if (n.children.length && !isContainerType(n.type)) problems.push(`"${n.type}" cannot have children`)
-    for (const key of Object.keys(n.style)) {
+    const def = getComponent(n.type)
+    for (const [name, value] of Object.entries(n.props)) {
+      const propDef = def?.props.find(p => p.name === name)
+      const problem = propDef ? propValueProblem(propDef, value) : `"${n.type}" has no prop "${name}"`
+      if (problem) problems.push(problem)
+    }
+    for (const [key, value] of Object.entries(n.style)) {
       if (!isStyleKey(key)) problems.push(`Unsupported style property "${key}"`)
+      else if (!StyleValueSchema.safeParse(value).success) problems.push(`Invalid value for "${key}"`)
     }
     n.children.forEach(child => visit(child, false))
   }
