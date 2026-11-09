@@ -1,22 +1,30 @@
 import { describe, expect, it } from 'vitest'
 import { getStyleToken, STYLE_TOKENS } from '#shared/design/tokens'
 import { DEFAULT_THEME } from '#shared/design/theme'
-import { breakpointStyles, colorSwatchRows, DEVICES, setStyleTokens, spacingItems, styleFieldControl, styleFieldGroups } from '#shared/editor/styleFields'
+import { breakpointLabel, breakpointStyles, colorSwatchRows, DEVICES, hasStyleAt, sectionMark, setStyleTokens, spacingItems, STYLE_SECTIONS, styleFieldControl, styleProvenance, styleSection, styleSections } from '#shared/editor/styleFields'
 import { DRAG_MIME, draggedNodeId, nodeDragType, parseDragPayload } from '#shared/editor/dropTarget'
 
 describe('style fields', () => {
-  it('lists every design token once, grouped by its registry group', () => {
-    const groups = styleFieldGroups()
-    expect(groups.map(g => g.group)).toEqual(['Spacing', 'Size', 'Color', 'Typography', 'Border', 'Effects', 'Layout'])
-    expect(groups.flatMap(g => g.fields.map(f => f.key)).sort()).toEqual(STYLE_TOKENS.map(t => t.key).sort())
-    expect(groups.find(g => g.group === 'Spacing')!.fields.map(f => f.key)).toContain('mt')
+  it('lists the sections in Stacki order, with every design token in exactly one', () => {
+    expect(STYLE_SECTIONS).toEqual(['Layout', 'Spacing', 'Size', 'Typography', 'Backgrounds', 'Borders', 'Effects'])
+    const keys = styleSections().flatMap(s => s.fields.map(f => f.key))
+    expect(keys.sort()).toEqual(STYLE_TOKENS.map(t => t.key).sort())
+    expect(styleSections().find(s => s.section === 'Layout')!.fields.map(f => f.key)).toEqual(['items', 'justify', 'self', 'gap', 'cols', 'colSpan'])
   })
 
-  it('counts the set tokens of each group', () => {
-    const groups = styleFieldGroups({ mt: '10', p: '4', bg: 'primary' })
-    expect(groups.find(g => g.group === 'Spacing')!.setCount).toBe(2)
-    expect(groups.find(g => g.group === 'Color')!.setCount).toBe(1)
-    expect(groups.find(g => g.group === 'Size')!.setCount).toBe(0)
+  it('puts each token key, breakpoint-prefixed or not, in its section', () => {
+    expect(styleSection('mt')).toBe('Spacing')
+    expect(styleSection('md:cols')).toBe('Layout')
+    expect(styleSection('gap')).toBe('Layout')
+    expect(styleSection('maxW')).toBe('Size')
+    expect(styleSection('color')).toBe('Typography')
+    expect(styleSection('lg:align')).toBe('Typography')
+    expect(styleSection('bg')).toBe('Backgrounds')
+    expect(styleSection('borderColor')).toBe('Borders')
+    expect(styleSection('rounded')).toBe('Borders')
+    expect(styleSection('shadow')).toBe('Effects')
+    expect(styleSection('bogus')).toBeUndefined()
+    expect(styleSection('xl:mt')).toBeUndefined()
   })
 
   it('uses a select for the five-value alignments, which overflow as segments', () => {
@@ -73,6 +81,54 @@ describe('devices and breakpoints', () => {
       inherited: { cols: { value: '2', from: 'md' }, gap: { value: '4', from: 'sm' } }
     })
     expect(breakpointStyles({ 'cols': '1', 'md:cols': '2' }, 'md').inherited).toEqual({})
+  })
+
+  it('names breakpoints by their device, mobile-first', () => {
+    expect(breakpointLabel(undefined)).toBe('Mobile')
+    expect(breakpointLabel('md')).toBe('Tablet')
+    expect(breakpointLabel('lg')).toBe('Desktop')
+    expect(breakpointLabel('sm')).toBe('sm')
+  })
+})
+
+describe('provenance', () => {
+  const style = { 'mt': '4', 'md:mt': '8', 'cols': '1', 'sm:gap': '2', 'bg': 'primary' }
+
+  it('is set when the device writes the key, with the key a reset clears', () => {
+    expect(styleProvenance(style, 'mt', 'mobile')).toEqual({ state: 'set', key: 'mt', value: '4' })
+    expect(styleProvenance(style, 'mt', 'tablet')).toEqual({ state: 'set', key: 'md:mt', value: '8' })
+  })
+
+  it('is inherited from the nearest smaller breakpoint otherwise', () => {
+    expect(styleProvenance(style, 'mt', 'desktop')).toEqual({ state: 'inherited', value: '8', from: 'md' })
+    expect(styleProvenance(style, 'cols', 'tablet')).toEqual({ state: 'inherited', value: '1', from: undefined })
+    expect(styleProvenance(style, 'gap', 'tablet')).toEqual({ state: 'inherited', value: '2', from: 'sm' })
+  })
+
+  it('is unset when nothing applies at the device', () => {
+    expect(styleProvenance(style, 'p', 'desktop')).toEqual({ state: 'unset' })
+    expect(styleProvenance(style, 'gap', 'mobile')).toEqual({ state: 'unset' })
+  })
+
+  it('treats tokens without breakpoint variants as set on every device', () => {
+    expect(styleProvenance(style, 'bg', 'tablet')).toEqual({ state: 'set', key: 'bg', value: 'primary' })
+    expect(styleProvenance({ 'md:bg': 'primary' }, 'bg', 'tablet')).toEqual({ state: 'unset' })
+  })
+
+  it('marks a section blue when the device sets one of its keys, orange when it only inherits', () => {
+    expect(sectionMark(style, 'Spacing', 'tablet')).toBe('set')
+    expect(sectionMark(style, 'Layout', 'tablet')).toBe('inherited')
+    expect(sectionMark(style, 'Layout', 'mobile')).toBe('set')
+    expect(sectionMark(style, 'Backgrounds', 'desktop')).toBe('set')
+    expect(sectionMark(style, 'Size', 'desktop')).toBeUndefined()
+  })
+
+  it('tells whether a node has overrides at a device breakpoint', () => {
+    expect(hasStyleAt(style, 'mobile')).toBe(true)
+    expect(hasStyleAt(style, 'tablet')).toBe(true)
+    expect(hasStyleAt(style, 'desktop')).toBe(false)
+    expect(hasStyleAt({ 'sm:gap': '2' }, 'mobile')).toBe(false)
+    expect(hasStyleAt({}, 'mobile')).toBe(false)
   })
 })
 

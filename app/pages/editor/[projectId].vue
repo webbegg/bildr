@@ -21,13 +21,47 @@ function isEditable(target: EventTarget | null): boolean {
   return !!el?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]')
 }
 
+// Keys inside a popover or menu are theirs, and Escape closes an open one rather than clearing the selection.
+function inFloatingLayer(event: KeyboardEvent): boolean {
+  if (event.key === 'Escape' && document.querySelector('[data-dismissable-layer]')) return true
+  return !!(event.target as HTMLElement | null)?.closest?.('[data-dismissable-layer], [role="dialog"], [role="menu"], [role="listbox"]')
+}
+
 function onKeyDown(event: KeyboardEvent) {
-  if (isEditable(event.target)) return
+  if (isEditable(event.target) || inFloatingLayer(event)) return
   if (editor.shortcut(event.key, event.metaKey || event.ctrlKey, event.shiftKey)) event.preventDefault()
 }
 
-onMounted(() => window.addEventListener('keydown', onKeyDown))
-onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
+// The dark editor chrome (main.css) is scoped to this page's document; the canvas iframe keeps the project theme.
+onMounted(() => {
+  window.addEventListener('keydown', onKeyDown)
+  document.documentElement.classList.add('bildr-editor')
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', onKeyDown)
+  document.documentElement.classList.remove('bildr-editor')
+})
+
+// The right panel resizes from its left edge, within 280–480px, remembered across reloads.
+const PANEL_KEY = 'bildr:panel-width'
+const clampPanel = (width: number) => Math.min(480, Math.max(280, Math.round(width)))
+const panelWidth = ref(clampPanel(Number(localStorage.getItem(PANEL_KEY)) || 320))
+
+function resizePanel(event: PointerEvent) {
+  const handle = event.currentTarget as HTMLElement
+  const start = { x: event.clientX, width: panelWidth.value }
+  handle.setPointerCapture(event.pointerId)
+  const move = (e: PointerEvent) => {
+    panelWidth.value = clampPanel(start.width + start.x - e.clientX)
+  }
+  const up = () => {
+    handle.removeEventListener('pointermove', move)
+    handle.removeEventListener('pointerup', up)
+    localStorage.setItem(PANEL_KEY, String(panelWidth.value))
+  }
+  handle.addEventListener('pointermove', move)
+  handle.addEventListener('pointerup', up)
+}
 
 useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bildr' }))
 </script>
@@ -102,9 +136,21 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
       </aside>
       <aside
         v-else-if="editor.mode === 'build'"
-        class="w-80 shrink-0 overflow-y-auto border-l border-default"
+        class="relative shrink-0 border-l border-default"
+        :style="{ width: `${panelWidth}px` }"
+        data-right-panel
       >
-        <EditorInspector />
+        <div
+          class="absolute inset-y-0 -left-1 z-20 w-2 cursor-col-resize hover:bg-primary/40"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize panel"
+          data-panel-resize
+          @pointerdown.prevent="resizePanel"
+        />
+        <div class="h-full overflow-y-auto">
+          <EditorInspector />
+        </div>
       </aside>
     </div>
   </div>

@@ -1,22 +1,47 @@
-import { BREAKPOINTS, orderedStyleTokens, parseStyleKey, STYLE_TOKEN_GROUPS, STYLE_TOKENS } from '../design/tokens'
-import type { Breakpoint, StyleToken, StyleTokenGroup } from '../design/tokens'
+import { BREAKPOINTS, getStyleToken, isResponsiveToken, orderedStyleTokens, parseStyleKey, styleKey } from '../design/tokens'
+import type { Breakpoint, StyleToken } from '../design/tokens'
 import { SHADES, spacingBasePx, THEME_COLORS, themeColorValue, themeNeutralColor } from '../design/theme'
 import type { NeutralColorKind, Theme, ThemeColorName } from '../design/theme'
 
-/** How the style panel presents the design tokens: token pickers, grouped. */
+/** How the style panel presents the design tokens: token pickers, in Stacki's sections. */
 
-export interface StyleFieldGroup {
-  group: StyleTokenGroup
-  fields: StyleToken[]
-  /** How many of the group's tokens the node sets. */
-  setCount: number
+export const STYLE_SECTIONS = ['Layout', 'Spacing', 'Size', 'Typography', 'Backgrounds', 'Borders', 'Effects'] as const
+
+export type StyleSection = typeof STYLE_SECTIONS[number]
+
+// Each section's tokens in panel order. Gap sits in Layout, as in Stacki; the
+// colours go to the section of what they paint.
+const SECTION_KEYS: Record<StyleSection, string[]> = {
+  Layout: ['items', 'justify', 'self', 'gap', 'cols', 'colSpan'],
+  Spacing: ['m', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl'],
+  Size: ['w', 'maxW', 'minH'],
+  Typography: ['text', 'font', 'align', 'color'],
+  Backgrounds: ['bg'],
+  Borders: ['border', 'borderColor', 'rounded'],
+  Effects: ['shadow']
 }
 
-export function styleFieldGroups(style: Record<string, string> = {}): StyleFieldGroup[] {
-  return STYLE_TOKEN_GROUPS.map((group) => {
-    const fields = STYLE_TOKENS.filter(t => t.group === group)
-    return { group, fields, setCount: fields.filter(f => style[f.key] !== undefined).length }
-  })
+/** Short row labels for the panel's label column; the others use the token label. */
+const SHORT_LABELS: Record<string, string> = {
+  items: 'Align', justify: 'Justify', self: 'Self', cols: 'Columns', colSpan: 'Span',
+  m: 'Margin', mx: 'Margin X', my: 'Margin Y', p: 'Padding', px: 'Padding X', py: 'Padding Y',
+  mt: 'Margin T', mr: 'Margin R', mb: 'Margin B', ml: 'Margin L', pt: 'Padding T', pr: 'Padding R', pb: 'Padding B', pl: 'Padding L',
+  maxW: 'Max W', minH: 'Min H', text: 'Size', font: 'Weight', align: 'Align', color: 'Color',
+  bg: 'Color', border: 'Width', borderColor: 'Color', rounded: 'Radius'
+}
+
+export function fieldLabel(token: StyleToken): string {
+  return SHORT_LABELS[token.key] ?? token.label
+}
+
+/** The section of a token key, breakpoint-prefixed or not; undefined for unknown keys. */
+export function styleSection(key: string): StyleSection | undefined {
+  const base = parseStyleKey(key)?.token.key
+  return base ? STYLE_SECTIONS.find(s => SECTION_KEYS[s].includes(base)) : undefined
+}
+
+export function styleSections(): { section: StyleSection, fields: StyleToken[] }[] {
+  return STYLE_SECTIONS.map(section => ({ section, fields: SECTION_KEYS[section].map(key => getStyleToken(key)!) }))
 }
 
 export type StyleFieldControl = 'color' | 'spacing' | 'segmented' | 'select'
@@ -95,6 +120,46 @@ export function breakpointStyles(style: Record<string, string>, breakpoint: Brea
   }
   for (const base of Object.keys(own)) Reflect.deleteProperty(inherited, base)
   return { own, inherited }
+}
+
+const deviceBreakpoint = (device: DeviceId) => DEVICES.find(d => d.id === device)!.breakpoint
+
+/** The device a breakpoint edits, e.g. `Tablet` for `md`; `sm` has no device. */
+export function breakpointLabel(breakpoint: Breakpoint | undefined): string {
+  return DEVICES.find(d => d.breakpoint === breakpoint)?.label ?? breakpoint!
+}
+
+/** Where the value of a base token at a device comes from; `key` is what a reset clears. */
+export type Provenance
+  = | { state: 'set', key: string, value: string }
+    | { state: 'inherited', value: string, from: Breakpoint | undefined }
+    | { state: 'unset' }
+
+export function styleProvenance(style: Record<string, string>, base: string, device: DeviceId): Provenance {
+  const token = getStyleToken(base)
+  if (!token) return { state: 'unset' }
+  // Tokens without breakpoint variants apply to every device from the base key.
+  const breakpoint = isResponsiveToken(token) ? deviceBreakpoint(device) : undefined
+  const { own, inherited } = breakpointStyles(style, breakpoint)
+  if (own[base] !== undefined) return { state: 'set', key: styleKey(base, breakpoint), value: own[base] }
+  const from = inherited[base]
+  return from ? { state: 'inherited', ...from } : { state: 'unset' }
+}
+
+/** A collapsed section's dot: `set` if the device sets one of its tokens, else `inherited` if one inherits. */
+export function sectionMark(style: Record<string, string>, section: StyleSection, device: DeviceId): 'set' | 'inherited' | undefined {
+  const states = SECTION_KEYS[section].map(key => styleProvenance(style, key, device).state)
+  if (states.includes('set')) return 'set'
+  return states.includes('inherited') ? 'inherited' : undefined
+}
+
+/** Whether the node writes any token at exactly the device's breakpoint (the base for Mobile). */
+export function hasStyleAt(style: Record<string, string>, device: DeviceId): boolean {
+  const breakpoint = deviceBreakpoint(device)
+  return Object.keys(style).some((key) => {
+    const parsed = parseStyleKey(key)
+    return !!parsed && parsed.breakpoint === breakpoint
+  })
 }
 
 const px = (n: number) => `${Number(n.toFixed(2))}px`

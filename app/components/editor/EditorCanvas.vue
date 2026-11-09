@@ -61,7 +61,7 @@ onBeforeUnmount(() => {
     ref="frame"
     src="/canvas"
     title="Token preview"
-    class="size-full rounded-lg bg-default shadow-sm ring ring-default"
+    class="size-full rounded-lg bg-white shadow-sm ring ring-default"
   />
   <div
     v-else
@@ -73,7 +73,7 @@ onBeforeUnmount(() => {
       src="/canvas"
       title="Canvas"
       :data-device="editor.device.id"
-      class="absolute top-0 left-1/2 origin-top rounded-lg bg-default shadow-sm ring ring-default"
+      class="absolute top-0 left-1/2 origin-top rounded-lg bg-white shadow-sm ring ring-default"
       :style="frameStyle"
     />
   </div>
