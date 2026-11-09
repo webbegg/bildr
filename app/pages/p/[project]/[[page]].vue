@@ -14,6 +14,8 @@ const page = computed(() => {
   return route.params.page ? pages.find(p => p.slug === route.params.page) : pages[0]
 })
 
+useWebMcp(project, page)
+
 useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${project.value.name}` : 'Not found' }))
 </script>
 
