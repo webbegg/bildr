@@ -55,7 +55,7 @@ const Target = { projectId: IdSchema, pageId: IdSchema }
 
 export const nodeInsert = defineAction({
   name: 'node_insert',
-  description: 'Insert a component, optionally with nested children, into a container node (defaults to the page root, at the end). Returns the new node id.',
+  description: 'Insert a component, optionally with nested children, into a container node (defaults to the page root, at the end). Returns the new node id. Inside a List (bound to a collection slug), string props of its children such as text, label, src and to can use bindings like "{{ item.name }}" or "/menu/{{ item.id }}", resolved per record.',
   input: z.object({
     ...Target,
     parentId: IdSchema.optional().describe('Container node id; defaults to the page root'),

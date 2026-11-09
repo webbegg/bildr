@@ -22,6 +22,12 @@ const linkItems = computed(() => [
   { label: 'External URL', value: EXTERNAL }
 ])
 
+// A List's collection, by slug; a slug no collection has (e.g. after a delete) stays listed.
+const collectionItems = computed(() => {
+  const items = [{ label: 'None', value: NONE }, ...(editor.project?.collections.map(c => ({ label: `${c.name} (${c.slug})`, value: c.slug })) ?? [])]
+  return text.value && !items.some(i => i.value === text.value) ? [...items, { label: `${text.value} (missing)`, value: text.value }] : items
+})
+
 function onLinkMode(mode: string) {
   externalChosen.value = mode === EXTERNAL
   if (mode === EXTERNAL) return
@@ -66,6 +72,14 @@ function onLinkMode(mode: string) {
       size="sm"
       class="w-full"
       @update:model-value="emit('update', $event)"
+    />
+    <USelect
+      v-else-if="def.kind === 'collection'"
+      :model-value="text || NONE"
+      :items="collectionItems"
+      size="sm"
+      class="w-full"
+      @update:model-value="emit('update', $event === NONE ? '' : $event)"
     />
     <div
       v-else-if="def.kind === 'link'"

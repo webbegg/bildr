@@ -7,6 +7,7 @@ import { containsNode, findNode, findParent } from '#shared/document/tree'
 import type { DropTarget } from '#shared/editor/dropTarget'
 import { insertTargetForSelection, moveTarget, parseDragPayload } from '#shared/editor/dropTarget'
 import { selectionAfterDelete } from '#shared/editor/selection'
+import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 
@@ -53,6 +54,36 @@ export function createEditor(projectId: string) {
   /** The theme the canvas renders: the draft while previewing, else the project's. */
   const theme = computed(() => themeDraft.value ?? project.value?.theme ?? null)
   const collection = computed(() => project.value?.collections.find(c => c.id === collectionId.value) ?? project.value?.collections[0] ?? null)
+
+  /** Collections the current page's Lists show, and their records by collection id, for the canvas. */
+  const listCollections = computed(() => {
+    const slugs = new Set(page.value ? listNodes(page.value.root).map(node => listQueryOf(node.props).collection) : [])
+    return project.value?.collections.filter(c => slugs.has(c.slug)) ?? []
+  })
+  const listCollectionRecords = shallowRef<Record<string, DataRecord[]>>({})
+  /** What each List on the page shows, by `listKey`; Lists of unknown collections have no entry. */
+  const lists = computed(() => {
+    const out: Record<string, DataRecord[]> = {}
+    for (const node of page.value ? listNodes(page.value.root) : []) {
+      const query = listQueryOf(node.props)
+      const shown = listCollections.value.find(c => c.slug === query.collection)
+      if (shown) out[listKey(query)] = listRecords(shown, listCollectionRecords.value[shown.id] ?? [], query)
+    }
+    return out
+  })
+
+  let listLoad = 0
+  /** Loads the records of every collection a List on the page shows (the first 500 of each). */
+  async function reloadListRecords(): Promise<void> {
+    const load = ++listLoad
+    const entries = await Promise.all(listCollections.value.map(async (c) => {
+      const result = await callAction<{ records: DataRecord[] }>('record_list', { projectId, collection: c.id, limit: 500 })
+      return [c.id, result.records] as const
+    }))
+    if (load === listLoad) listCollectionRecords.value = Object.fromEntries(entries)
+  }
+
+  watch(() => listCollections.value.map(c => c.id).join(), () => void reloadListRecords().catch(() => {}))
 
   async function reload(): Promise<void> {
     const [next, nextHistory] = await Promise.all([
@@ -200,8 +231,8 @@ export function createEditor(projectId: string) {
 
   return reactive({
     projectId, project, pageId, selectedId, hoveredId, history, mode, deviceId, device, themeDraft, page, selected, theme,
-    collectionId, collection, records, recordsTotal,
-    reload, run, runOnPage, reloadRecords, runData, selectPage, insert, drop, remove, duplicate, updateProps, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
+    collectionId, collection, records, recordsTotal, listCollections, lists,
+    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, insert, drop, remove, duplicate, updateProps, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }
 

@@ -7,7 +7,8 @@
 
 export type PropValue = string | number | boolean
 
-export type PropKind = 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'link' | 'image' | 'icon'
+/** `collection`: the slug of one of the project's collections ('' for none). */
+export type PropKind = 'text' | 'textarea' | 'number' | 'boolean' | 'select' | 'link' | 'image' | 'icon' | 'collection'
 
 export interface PropDef {
   name: string
@@ -151,6 +152,23 @@ export const COMPONENTS: ComponentDef[] = [
       { name: 'inputType', label: 'Type', kind: 'select', default: 'text', options: ['text', 'email', 'number', 'password'] }
     ],
     defaultStyle: {}
+  },
+  {
+    type: 'List',
+    label: 'List',
+    icon: 'i-lucide-list',
+    description: 'Repeats its children once per record of a collection. Inside them, text, labels, image sources and links can use {{ item.<field> }} (and {{ item.id }}). Wrap several children in a Row or Card to keep each record together.',
+    container: true,
+    props: [
+      { name: 'collection', label: 'Collection', kind: 'collection', default: '', description: 'The collection slug whose records are listed.' },
+      { name: 'limit', label: 'Limit', kind: 'number', default: 10, description: 'At most this many records (1–100).' },
+      { name: 'sortField', label: 'Sort by', kind: 'text', default: '', description: 'A field key, createdAt or updatedAt. Empty keeps creation order.' },
+      { name: 'sortDir', label: 'Sort direction', kind: 'select', default: 'asc', options: ['asc', 'desc'] },
+      { name: 'filterField', label: 'Filter field', kind: 'text', default: '', description: 'Only records whose field equals the filter value.' },
+      { name: 'filterValue', label: 'Filter value', kind: 'text', default: '' },
+      { name: 'layout', label: 'Layout', kind: 'select', default: 'stack', options: ['stack', 'grid', 'row'], description: 'grid uses the cols token.' }
+    ],
+    defaultStyle: { gap: '3', items: 'start' }
   },
   {
     type: 'Card',

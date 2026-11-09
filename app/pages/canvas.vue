@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DataRecord } from '#shared/data/records'
 import type { Theme } from '#shared/design/theme'
 import type { Page } from '#shared/document/schema'
 import type { CanvasToEditor, CanvasView, EditorToCanvas } from '#shared/editor/protocol'
@@ -14,11 +15,14 @@ import { DRAG_MIME, draggedNodeId, dropPosition, resolveDrop } from '#shared/edi
  * selection outlines, and turns pointer and key gestures into messages.
  * The `tokens` view shows the theme's token preview sheet instead.
  * Outlines use a fixed editor colour, not the project's `primary`.
+ * List repetitions share their template's node ids: a click on any copy
+ * selects the template, while outlines and drops stay on the first copy.
  */
 definePageMeta({ layout: false })
 
 const page = shallowRef<Page | null>(null)
 const base = ref('')
+const lists = shallowRef<Record<string, DataRecord[]>>({})
 const theme = shallowRef<Theme | null>(null)
 useTheme(theme)
 const view = ref<CanvasView>('page')
@@ -39,8 +43,12 @@ function nodeIdAt(target: EventTarget | null): string | null {
   return (target as Element | null)?.closest?.('[data-bildr-id]')?.getAttribute('data-bildr-id') ?? null
 }
 
+function firstCopy(id: string): Element | null {
+  return document.querySelector(`[data-bildr-id="${id}"]:not([data-bildr-copy])`)
+}
+
 function measure(id: string | null): Box | null {
-  const el = id ? document.querySelector(`[data-bildr-id="${id}"]`) : null
+  const el = id ? firstCopy(id) : null
   if (!el) return null
   const rect = el.getBoundingClientRect()
   return { top: rect.top + window.scrollY, left: rect.left + window.scrollX, width: rect.width, height: rect.height, label: el.getAttribute('data-bildr-type') ?? '' }
@@ -59,11 +67,12 @@ function onMessage(event: MessageEvent) {
   if (message.type === 'bildr:render') {
     page.value = message.page
     base.value = message.base
+    lists.value = message.lists
     theme.value = message.theme
     view.value = message.view
   } else if (message.type === 'bildr:select') {
     selectedId.value = message.nodeId
-    if (message.nodeId) document.querySelector(`[data-bildr-id="${message.nodeId}"]`)?.scrollIntoView({ block: 'nearest' })
+    if (message.nodeId) firstCopy(message.nodeId)?.scrollIntoView({ block: 'nearest' })
   } else if (message.type === 'bildr:hover') {
     hoveredId.value = message.nodeId
   }
@@ -107,6 +116,7 @@ function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } 
   const root = page.value?.root
   if (!root || !types.includes(DRAG_MIME)) return null
   const el = event.target as Element | null
+  if (el?.closest?.('[data-bildr-copy]')) return null
   const placeholder = el?.closest?.('[data-bildr-placeholder]')
   const nodeEl = placeholder ?? el?.closest?.('[data-bildr-id]')
   const id = placeholder?.getAttribute('data-bildr-placeholder') ?? nodeEl?.getAttribute('data-bildr-id')
@@ -191,6 +201,7 @@ onBeforeUnmount(() => {
       v-else-if="page"
       :page="page"
       :base="base"
+      :lists="lists"
       editable
       class="min-h-screen"
     />

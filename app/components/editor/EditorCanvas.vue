@@ -27,7 +27,7 @@ function post(message: EditorToCanvas) {
 
 function render() {
   if (!editor.page || !editor.project || !editor.theme) return
-  post({ type: 'bildr:render', page: editor.page, base: `/p/${editor.project.slug}`, theme: editor.theme, view })
+  post({ type: 'bildr:render', page: editor.page, base: `/p/${editor.project.slug}`, theme: editor.theme, view, lists: editor.lists })
   post({ type: 'bildr:select', nodeId: editor.selectedId })
 }
 
@@ -41,7 +41,7 @@ function onMessage(event: MessageEvent) {
   else if (message.type === 'bildr:drop') editor.drop(message.payload, { parentId: message.parentId, index: message.index })
 }
 
-watch(() => [editor.page, editor.theme], render, { deep: true })
+watch(() => [editor.page, editor.theme, editor.lists], render, { deep: true })
 watch(() => editor.selectedId, nodeId => post({ type: 'bildr:select', nodeId }))
 watch(() => editor.hoveredId, nodeId => post({ type: 'bildr:hover', nodeId }))
 

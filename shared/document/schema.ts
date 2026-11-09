@@ -166,6 +166,10 @@ export function propValueProblem(def: PropDef, value: PropValue): string | undef
       return value === '' || (typeof value === 'string' && ICON_NAME.test(value))
         ? undefined
         : `"${def.name}" must be an i-lucide-* icon name, e.g. i-lucide-coffee`
+    case 'collection':
+      return value === '' || (typeof value === 'string' && SlugSchema.safeParse(value).success)
+        ? undefined
+        : `"${def.name}" must be a collection slug, e.g. menu`
     default:
       return typeof value === 'string' ? undefined : `"${def.name}" must be a string`
   }

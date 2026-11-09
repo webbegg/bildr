@@ -42,8 +42,10 @@ export function useProjectSync(editor: Editor): void {
 
   async function onEvent(event: SyncEvent): Promise<void> {
     if (event.kind === 'change' && event.scope === 'data') {
-      // Records changed, not the document: reload them if the Data mode shows them.
+      // Records changed, not the document: reload them if the Data mode shows them,
+      // and the canvas Lists' records whatever tab changed them.
       if (event.source !== TAB_ID && editor.mode === 'data' && event.collectionId === editor.collection?.id) await editor.reloadRecords().catch(() => {})
+      if (editor.listCollections.some(c => c.id === event.collectionId)) await editor.reloadListRecords().catch(() => {})
       return
     }
     if (event.kind === 'change') {
@@ -62,6 +64,7 @@ export function useProjectSync(editor: Editor): void {
       if (isNewer(version)) await refresh()
       // Record changes do not move the version, so the Data mode re-reads them.
       if (editor.mode === 'data') await editor.reloadRecords().catch(() => {})
+      if (editor.listCollections.length) await editor.reloadListRecords().catch(() => {})
     }, POLL_MS)
   }
 

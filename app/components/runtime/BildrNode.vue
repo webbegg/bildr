@@ -2,6 +2,9 @@
 import type { ButtonProps } from '@nuxt/ui'
 import { parseStyleKey, styleClasses } from '#shared/design/tokens'
 import type { DocNode } from '#shared/document/schema'
+import { bindingItem, hasBindings, resolveBindings } from '#shared/runtime/bindings'
+import type { BindingItem } from '#shared/runtime/bindings'
+import { listKey, listQueryOf } from '#shared/runtime/list'
 import { resolveLink } from '#shared/runtime/render'
 
 /**
@@ -9,7 +12,9 @@ import { resolveLink } from '#shared/runtime/render'
  * published app share this component, so what you edit is what ships.
  * Visual styling comes only from the node's design tokens; the template
  * adds structural classes (flex direction, wrapping) and per-type fallbacks
- * that a token of the same key replaces.
+ * that a token of the same key replaces. Inside a List, string props resolve
+ * `{{ item.<field> }}` against the current record; outside one, the canvas
+ * shows bindings as written and published apps render them empty.
  */
 const props = defineProps<{
   node: DocNode
@@ -17,17 +22,28 @@ const props = defineProps<{
   inStack?: boolean
 }>()
 const runtime = useRuntime()
+const scope = useListItem()
 
 const p = computed(() => props.node.props)
-const text = (name: string) => String(p.value[name] ?? '')
+function bind(value: string): string {
+  if (scope?.item) return resolveBindings(value, { item: scope.item })
+  return runtime.editable ? value : resolveBindings(value, {})
+}
+const text = (name: string) => bind(String(p.value[name] ?? ''))
 const link = computed(() => resolveLink(text('to'), runtime.base))
-const attrs = computed(() => ({ 'data-bildr-id': props.node.id, 'data-bildr-type': props.node.type }))
+const attrs = computed(() => ({
+  'data-bildr-id': props.node.id,
+  'data-bildr-type': props.node.type,
+  'data-bildr-copy': scope?.copy ? '' : undefined
+}))
+// A binding the canvas shows as written (or an empty value) is no URL to load.
+const imageSrc = computed(() => (hasBindings(text('src')) ? '' : text('src')))
 const stacked = computed(() => ['Page', 'Container', 'Column'].includes(props.node.type))
 
 // In a stack, block-level nodes fill the width whatever the stack's `items`, so sections
 // and fields keep spanning their parent; text only does so when it sets an alignment.
 // Buttons, links and short text follow the stack's `items`. A `self` token overrides both.
-const BLOCK_TYPES = ['Container', 'Row', 'Column', 'Grid', 'Card', 'Input']
+const BLOCK_TYPES = ['Container', 'Row', 'Column', 'Grid', 'List', 'Card', 'Input']
 const selfFallback = computed((): Record<string, string> => {
   const { type, style } = props.node
   const aligned = Object.keys(style).some(key => parseStyleKey(key)?.token.key === 'align')
@@ -58,6 +74,19 @@ const card = computed(() => {
 })
 const icon = (name: string) => text(name) || undefined
 const CARD_UI = { body: 'p-0 sm:p-0' }
+
+// A List repeats its children per record of its query. In the canvas, an empty or
+// unknown collection shows the children once as a placeholder (bindings as written).
+const LIST_LAYOUTS: Record<string, string> = { stack: 'flex flex-col', grid: 'grid', row: 'flex flex-row flex-wrap' }
+const list = computed(() => {
+  if (props.node.type !== 'List') return null
+  const query = listQueryOf(p.value)
+  const records = query.collection ? runtime.lists[listKey(query)] : undefined
+  const layout = String(p.value.layout ?? '') in LIST_LAYOUTS ? String(p.value.layout) : 'stack'
+  const items: (BindingItem | null)[] = records?.length ? records.map(bindingItem) : runtime.editable ? [null] : []
+  const hint = !query.collection ? 'Choose a collection for this List' : !records ? `No collection "${query.collection}"` : null
+  return { layout, items, hint, placeholder: !records?.length }
+})
 </script>
 
 <template>
@@ -117,10 +146,10 @@ const CARD_UI = { body: 'p-0 sm:p-0' }
   <img
     v-else-if="node.type === 'Image'"
     v-bind="attrs"
-    :src="text('src')"
+    :src="imageSrc || undefined"
     :alt="text('alt')"
     class="block"
-    :class="withFallback({ maxW: 'full' })"
+    :class="[withFallback({ maxW: 'full' }), { 'min-h-24 bg-elevated': !imageSrc }]"
   >
 
   <UButton
@@ -166,6 +195,38 @@ const CARD_UI = { body: 'p-0 sm:p-0' }
     />
   </UFormField>
 
+  <!-- A published List without records renders nothing. -->
+  <div
+    v-else-if="list && (runtime.editable || list.items.length)"
+    v-bind="attrs"
+    :class="[LIST_LAYOUTS[list.layout], tokens]"
+  >
+    <p
+      v-if="runtime.editable && list.hint"
+      class="col-span-full w-full self-stretch rounded-sm border border-dashed border-warning/50 px-2 py-1 text-xs text-warning"
+    >
+      {{ list.hint }}
+    </p>
+    <BildrListItem
+      v-for="(item, i) in list.items"
+      :key="String(item?.id ?? i)"
+      :item="item"
+      :copy="i > 0"
+    >
+      <BildrNode
+        v-for="child in node.children"
+        :key="child.id"
+        :node="child"
+        :in-stack="list.layout === 'stack'"
+        :class="{ 'opacity-60': list.placeholder }"
+      />
+    </BildrListItem>
+    <BildrDropHint
+      v-if="runtime.editable && !node.children.length"
+      :parent-id="node.id"
+    />
+  </div>
+
   <UCard
     v-else-if="node.type === 'Card'"
     v-bind="attrs"
@@ -190,7 +251,7 @@ const CARD_UI = { body: 'p-0 sm:p-0' }
   </UCard>
 
   <div
-    v-else
+    v-else-if="node.type !== 'List'"
     v-bind="attrs"
     class="text-error text-sm"
   >
