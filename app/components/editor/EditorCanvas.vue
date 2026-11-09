@@ -5,6 +5,19 @@ import { isCanvasMessage } from '#shared/editor/protocol'
 const { view = 'page' } = defineProps<{ view?: CanvasView }>()
 const editor = useEditor()
 const frame = useTemplateRef<HTMLIFrameElement>('frame')
+const stage = useTemplateRef<HTMLDivElement>('stage')
+
+// The page view is as wide as the editor's device, so the canvas media queries
+// (`md:`, `lg:`) match it; a device wider than the stage is scaled down to fit.
+const stageSize = reactive({ width: 0, height: 0 })
+const observer = import.meta.client
+  ? new ResizeObserver(([entry]) => Object.assign(stageSize, { width: entry!.contentRect.width, height: entry!.contentRect.height }))
+  : null
+const frameStyle = computed(() => {
+  const width = editor.device.width
+  const scale = stageSize.width ? Math.min(1, stageSize.width / width) : 1
+  return { width: `${width}px`, height: `${stageSize.height / scale}px`, transform: `translateX(-50%) scale(${scale})` }
+})
 const emit = defineEmits<{ key: [message: Extract<CanvasToEditor, { type: 'bildr:key' }>] }>()
 
 function post(message: EditorToCanvas) {
@@ -32,15 +45,36 @@ watch(() => [editor.page, editor.theme], render, { deep: true })
 watch(() => editor.selectedId, nodeId => post({ type: 'bildr:select', nodeId }))
 watch(() => editor.hoveredId, nodeId => post({ type: 'bildr:hover', nodeId }))
 
-onMounted(() => window.addEventListener('message', onMessage))
-onBeforeUnmount(() => window.removeEventListener('message', onMessage))
+onMounted(() => {
+  window.addEventListener('message', onMessage)
+  if (stage.value) observer?.observe(stage.value)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('message', onMessage)
+  observer?.disconnect()
+})
 </script>
 
 <template>
   <iframe
+    v-if="view === 'tokens'"
     ref="frame"
     src="/canvas"
-    :title="view === 'tokens' ? 'Token preview' : 'Canvas'"
+    title="Token preview"
     class="size-full rounded-lg bg-default shadow-sm ring ring-default"
   />
+  <div
+    v-else
+    ref="stage"
+    class="relative size-full overflow-hidden"
+  >
+    <iframe
+      ref="frame"
+      src="/canvas"
+      title="Canvas"
+      :data-device="editor.device.id"
+      class="absolute top-0 left-1/2 origin-top rounded-lg bg-default shadow-sm ring ring-default"
+      :style="frameStyle"
+    />
+  </div>
 </template>

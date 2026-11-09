@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { allTokenClasses, getStyleToken, isStyleTokenKey, STYLE_TOKENS, styleClasses, styleTokenProblem, tokenSafelistCss } from '#shared/design/tokens'
+import { allTokenClasses, BREAKPOINTS, getStyleToken, isResponsiveToken, isStyleTokenKey, parseStyleKey, STYLE_TOKENS, styleClasses, styleKey, styleTokenProblem, tokenSafelistCss } from '#shared/design/tokens'
 
 const TOKENS_CSS = new URL('../../app/assets/css/tokens.css', import.meta.url)
 
@@ -45,6 +45,53 @@ describe('style token registry', () => {
 
   it('ignores tokens that are not in the registry', () => {
     expect(styleClasses({ mt: '13', position: 'fixed', p: '4' })).toBe('p-4')
+  })
+})
+
+describe('responsive style keys', () => {
+  it('parses a breakpoint prefix onto a base token', () => {
+    expect(BREAKPOINTS).toEqual(['sm', 'md', 'lg'])
+    expect(parseStyleKey('cols')).toEqual({ token: getStyleToken('cols'), breakpoint: undefined })
+    expect(parseStyleKey('md:cols')).toEqual({ token: getStyleToken('cols'), breakpoint: 'md' })
+    expect(parseStyleKey('lg:mt')).toEqual({ token: getStyleToken('mt'), breakpoint: 'lg' })
+    expect(parseStyleKey('xl:cols')).toBeUndefined()
+    expect(parseStyleKey('md:padding')).toBeUndefined()
+    expect(parseStyleKey('md:md:cols')).toBeUndefined()
+    expect(styleKey('cols', undefined)).toBe('cols')
+    expect(styleKey('cols', 'md')).toBe('md:cols')
+    expect(isStyleTokenKey('sm:p')).toBe(true)
+    expect(isStyleTokenKey('xl:p')).toBe(false)
+  })
+
+  it('validates a prefixed key against its base token values', () => {
+    expect(styleTokenProblem('md:cols', '3')).toBeUndefined()
+    expect(styleTokenProblem('sm:gap', '4')).toBeUndefined()
+    expect(styleTokenProblem('md:cols', '7')).toBe('"7" is not a value of style token "md:cols"')
+    expect(styleTokenProblem('xl:cols', '3')).toBe('Unknown breakpoint "xl" in style token "xl:cols" (use sm:, md: or lg:)')
+    expect(styleTokenProblem('md:padding', '4')).toBe('Unknown style token "md:padding"')
+  })
+
+  it('limits breakpoint variants to the layout groups', () => {
+    expect(STYLE_TOKENS.filter(isResponsiveToken).map(t => t.group)).not.toContain('Color')
+    expect(isResponsiveToken(getStyleToken('cols')!)).toBe(true)
+    expect(isResponsiveToken(getStyleToken('text')!)).toBe(true)
+    expect(isResponsiveToken(getStyleToken('bg')!)).toBe(false)
+    expect(parseStyleKey('md:bg')).toBeUndefined()
+    expect(styleTokenProblem('md:bg', 'primary')).toBe('Style token "bg" has no breakpoint variants (only Spacing, Size, Typography, Layout tokens do)')
+    expect(styleClasses({ 'bg': 'primary', 'md:bg': 'error' })).toBe('bg-primary')
+    expect(allTokenClasses()).not.toContain('md:bg-primary')
+    expect(tokenSafelistCss()).toContain('@source inline("bg-{primary,')
+  })
+
+  it('maps prefixed keys to variant classes, ordered by base key then base, sm, md, lg', () => {
+    expect(styleClasses({ 'cols': '1', 'md:cols': '3' })).toBe('grid-cols-1 md:grid-cols-3')
+    expect(styleClasses({ 'lg:p': '8', 'md:mt': '4', 'p': '4', 'mt': '2', 'sm:mt': '3' })).toBe('mt-2 sm:mt-3 md:mt-4 p-4 lg:p-8')
+    expect(styleClasses({ 'md:cols': '7', 'xl:cols': '3' })).toBe('')
+  })
+
+  it('generates the variant classes in the safelist', () => {
+    expect(allTokenClasses()).toEqual(expect.arrayContaining(['md:grid-cols-3', 'sm:mt-10', 'lg:col-span-full', 'md:text-2xl', 'lg:self-center']))
+    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:}grid-cols-{1,2,3,4,5,6,12}");')
   })
 })
 

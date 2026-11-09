@@ -115,6 +115,20 @@ describe('applyOperation', () => {
       .toThrow(OperationError)
   })
 
+  it('accepts breakpoint-prefixed style tokens and rejects bad breakpoints or values', () => {
+    const { project, pageId, rootId } = setup()
+    applyOperation(project, { op: 'setStyle', pageId, nodeId: rootId, style: { 'md:gap': '8', 'lg:items': 'center' } })
+    expect(project.pages[0]!.root.style).toMatchObject({ 'md:gap': '8', 'lg:items': 'center' })
+    expect(() => applyOperation(project, { op: 'setStyle', pageId, nodeId: rootId, style: { 'xl:gap': '8' } }))
+      .toThrow('Unknown breakpoint "xl" in style token "xl:gap" (use sm:, md: or lg:)')
+    expect(() => applyOperation(project, { op: 'setStyle', pageId, nodeId: rootId, style: { 'xl:gap': null } }))
+      .toThrow('Unknown breakpoint "xl"')
+    expect(() => applyOperation(project, { op: 'setStyle', pageId, nodeId: rootId, style: { 'md:gap': '7' } }))
+      .toThrow('"7" is not a value of style token "md:gap"')
+    applyOperation(project, { op: 'setStyle', pageId, nodeId: rootId, style: { 'md:gap': null } })
+    expect(project.pages[0]!.root.style['md:gap']).toBeUndefined()
+  })
+
   it('sets style tokens, removing null or empty ones, with an exact inverse', () => {
     const { project, pageId, rootId } = setup()
     const before = structuredClone(project.pages[0]!.root.style)

@@ -149,13 +149,29 @@ describe('action dispatcher', () => {
     expect(card!.children[0]!.style).toEqual({ color: 'error', mt: '10' })
   })
 
+  it('styles nodes with breakpoint-prefixed tokens', async () => {
+    const { bildr, projectId, pageId } = await setup()
+    const { nodeId } = await bildr.call<{ nodeId: string }>('node_insert', {
+      projectId, pageId, type: 'Grid', style: { 'cols': '1', 'md:cols': '3' },
+      children: [{ type: 'Card', style: { 'lg:colSpan': '2' } }]
+    }, ui)
+    await bildr.call('node_update_style', { projectId, pageId, nodeId, style: { 'lg:cols': '4', 'md:gap': '8' } }, ui)
+
+    const [grid] = await rootChildren(bildr, projectId)
+    expect(grid!.style).toEqual({ 'cols': '1', 'gap': '6', 'md:cols': '3', 'lg:cols': '4', 'md:gap': '8' })
+    expect(grid!.children[0]!.style).toMatchObject({ 'lg:colSpan': '2' })
+  })
+
   it('rejects unknown style keys and values with zod issues', async () => {
     const { bildr, projectId, pageId, rootId } = await setup()
     const bad = [
       bildr.call('node_update_style', { projectId, pageId, nodeId: rootId, style: { mt: '13' } }, ui),
       bildr.call('node_update_style', { projectId, pageId, nodeId: rootId, style: { padding: '16px' } }, ui),
       bildr.call('node_insert', { projectId, pageId, type: 'Text', style: { bg: '#f00' } }, ui),
-      bildr.call('node_insert', { projectId, pageId, type: 'Row', children: [{ type: 'Text', style: { mt: '13' } }] }, ui)
+      bildr.call('node_insert', { projectId, pageId, type: 'Row', children: [{ type: 'Text', style: { mt: '13' } }] }, ui),
+      bildr.call('node_update_style', { projectId, pageId, nodeId: rootId, style: { 'xl:gap': '4' } }, ui),
+      bildr.call('node_update_style', { projectId, pageId, nodeId: rootId, style: { 'md:gap': '7' } }, ui),
+      bildr.call('node_insert', { projectId, pageId, type: 'Grid', style: { 'md:cols': '7' } }, ui)
     ]
     for (const call of bad) await expect(call).rejects.toMatchObject({ code: 'invalid_input', issues: expect.arrayContaining([expect.anything()]) })
   })
@@ -169,8 +185,12 @@ describe('action dispatcher', () => {
     expect(updateStyle.additionalProperties).toBe(false)
     expect(updateStyle.properties.mt!.anyOf![0]!.enum).toEqual(['0', '0.5', '1', '1.5', '2', '2.5', '3', '4', '5', '6', '8', '10', '12', '16', '20', '24', '32', 'auto'])
     expect(schema('node_insert').properties.style!.properties.bg!.enum).toContain('primary-500')
+    expect(schema('node_insert').properties.style!.properties['md:cols']!.enum).toEqual(['1', '2', '3', '4', '5', '6', '12'])
+    expect(updateStyle.properties['lg:mt']!.anyOf![0]!.enum).toContain('auto')
+    expect(updateStyle.properties['md:bg']).toBeUndefined()
 
     const { tokens } = await bildr.call<{ tokens: { key: string, group: string, values: string[] }[] }>('components_list', {}, ui)
-    expect(tokens.find(t => t.key === 'mt')).toMatchObject({ group: 'Spacing', values: expect.arrayContaining(['10']) })
+    expect(tokens.find(t => t.key === 'mt')).toMatchObject({ group: 'Spacing', values: expect.arrayContaining(['10']), breakpoints: ['sm', 'md', 'lg'] })
+    expect(tokens.find(t => t.key === 'bg')).toMatchObject({ breakpoints: [] })
   })
 })

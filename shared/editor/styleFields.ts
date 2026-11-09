@@ -1,5 +1,5 @@
-import { STYLE_TOKEN_GROUPS, STYLE_TOKENS } from '../design/tokens'
-import type { StyleToken, StyleTokenGroup } from '../design/tokens'
+import { BREAKPOINTS, orderedStyleTokens, parseStyleKey, STYLE_TOKEN_GROUPS, STYLE_TOKENS } from '../design/tokens'
+import type { Breakpoint, StyleToken, StyleTokenGroup } from '../design/tokens'
 import { SHADES, spacingBasePx, THEME_COLORS, themeColorValue, themeNeutralColor } from '../design/theme'
 import type { NeutralColorKind, Theme, ThemeColorName } from '../design/theme'
 
@@ -21,12 +21,14 @@ export function styleFieldGroups(style: Record<string, string> = {}): StyleField
 
 export type StyleFieldControl = 'color' | 'spacing' | 'segmented' | 'select'
 
-const SEGMENTED_MAX = 5
+// Segments fit the panel for up to four values, or five one- or two-character ones
+// (border widths); `items` and `self` would overflow.
+const fitsSegments = (values: string[]) => values.length <= 4 || (values.length <= 5 && values.every(v => v.length <= 2))
 
 export function styleFieldControl(token: StyleToken): StyleFieldControl {
   if (token.kind === 'color') return 'color'
   if (token.group === 'Spacing') return 'spacing'
-  return token.values.length <= SEGMENTED_MAX ? 'segmented' : 'select'
+  return fitsSegments(token.values) ? 'segmented' : 'select'
 }
 
 export interface SetStyleToken {
@@ -36,11 +38,63 @@ export interface SetStyleToken {
   className: string
 }
 
-/** The node's valid tokens in registry order, with the class each renders. */
+/** The node's valid tokens in class order (breakpoint variants after their base), with the class each renders. */
 export function setStyleTokens(style: Record<string, string>): SetStyleToken[] {
-  return STYLE_TOKENS
-    .filter(t => style[t.key] !== undefined && t.values.includes(style[t.key]!))
-    .map(t => ({ key: t.key, label: t.label, value: style[t.key]!, className: `${t.prefix}-${style[t.key]}` }))
+  return orderedStyleTokens(style).map(({ key, token, breakpoint, value, className }) => ({
+    key,
+    label: breakpoint ? `${token.label} (${breakpoint})` : token.label,
+    value,
+    className
+  }))
+}
+
+export type DeviceId = 'mobile' | 'tablet' | 'desktop'
+
+export interface Device {
+  id: DeviceId
+  label: string
+  /** The canvas width in CSS px; media queries in the canvas follow it. */
+  width: number
+  /** The breakpoint the style panel edits on this device; undefined is the base (mobile-first). */
+  breakpoint: Breakpoint | undefined
+  icon: string
+}
+
+export const DEVICES: Device[] = [
+  { id: 'mobile', label: 'Mobile', width: 390, breakpoint: undefined, icon: 'i-lucide-smartphone' },
+  { id: 'tablet', label: 'Tablet', width: 768, breakpoint: 'md', icon: 'i-lucide-tablet' },
+  { id: 'desktop', label: 'Desktop', width: 1280, breakpoint: 'lg', icon: 'i-lucide-monitor' }
+]
+
+export interface InheritedToken {
+  value: string
+  /** The smaller breakpoint the value comes from; undefined is the base. */
+  from: Breakpoint | undefined
+}
+
+/**
+ * A style seen from one breakpoint, keyed by base token: the tokens set at that
+ * breakpoint, and for the others the value that applies there from the nearest
+ * smaller breakpoint (mobile-first).
+ */
+export function breakpointStyles(style: Record<string, string>, breakpoint: Breakpoint | undefined): { own: Record<string, string>, inherited: Record<string, InheritedToken> } {
+  const rank = (b: Breakpoint | undefined) => (b ? BREAKPOINTS.indexOf(b) + 1 : 0)
+  const own: Record<string, string> = {}
+  const inherited: Record<string, InheritedToken> = {}
+  const best: Record<string, number> = {}
+  for (const [key, value] of Object.entries(style)) {
+    const parsed = parseStyleKey(key)
+    if (!parsed) continue
+    const base = parsed.token.key
+    const at = rank(parsed.breakpoint)
+    if (at === rank(breakpoint)) own[base] = value
+    else if (at < rank(breakpoint) && at >= (best[base] ?? -1)) {
+      best[base] = at
+      inherited[base] = { value, from: parsed.breakpoint }
+    }
+  }
+  for (const base of Object.keys(own)) Reflect.deleteProperty(inherited, base)
+  return { own, inherited }
 }
 
 const px = (n: number) => `${Number(n.toFixed(2))}px`

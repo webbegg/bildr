@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { cloneWithNewIds, createNode } from '#shared/document/factory'
 import { getComponent } from '#shared/document/components'
 import type { PropValue } from '#shared/document/components'
-import { STYLE_TOKENS } from '#shared/design/tokens'
+import { STYLE_TOKENS, styleKey, variantsOf } from '#shared/design/tokens'
 import type { StyleToken } from '#shared/design/tokens'
 import { IdSchema, PropValueSchema } from '#shared/document/schema'
 import type { DocNode } from '#shared/document/schema'
@@ -17,17 +17,22 @@ interface NodeSpec {
   children?: NodeSpec[]
 }
 
-/** One optional key per design token, its value an enum, so the MCP schema lists every allowed value. */
+/**
+ * One optional key per design token and breakpoint (`cols`, `sm:cols`, `md:cols`, `lg:cols`),
+ * its value an enum, so the MCP schema lists every allowed value.
+ */
 // A multi-value literal rather than z.enum, which reorders numeric-looking values ("10" before "0.5").
 function styleTokensSchema(wrap: (values: z.ZodLiteral<string>, token: StyleToken) => z.ZodType) {
-  return z.object(Object.fromEntries(STYLE_TOKENS.map(t => [
-    t.key,
-    wrap(z.literal(t.values), t).optional().describe(`${t.label}: Tailwind class ${t.prefix}-<value>`)
-  ]))).strict()
+  return z.object(Object.fromEntries(STYLE_TOKENS.flatMap(t => variantsOf(t).map(b => [
+    styleKey(t.key, b),
+    wrap(z.literal(t.values), t).optional().describe(b
+      ? `${t.label} from the ${b} breakpoint up: Tailwind class ${b}:${t.prefix}-<value>`
+      : `${t.label}: Tailwind class ${t.prefix}-<value>`)
+  ])))).strict()
 }
 
 const StyleSchema = styleTokensSchema(values => values)
-  .describe('Design tokens, e.g. { "mt": "10", "bg": "primary", "rounded": "lg" } renders class="mt-10 bg-primary rounded-lg". See components_list.tokens') as z.ZodType<Record<string, string>>
+  .describe('Design tokens, e.g. { "mt": "10", "bg": "primary", "rounded": "lg" } renders class="mt-10 bg-primary rounded-lg". Layout tokens (Spacing, Size, Typography, Layout) also take a mobile-first breakpoint prefix sm:, md: or lg:, e.g. { "cols": "1", "md:cols": "3" } renders class="grid-cols-1 md:grid-cols-3". See components_list.tokens') as z.ZodType<Record<string, string>>
 const StyleUpdateSchema = styleTokensSchema(values => values.nullable())
   .describe('Design tokens to set; null removes a token') as z.ZodType<Record<string, string | null>>
 
@@ -83,7 +88,7 @@ export const nodeUpdateProps = defineAction({
 
 export const nodeUpdateStyle = defineAction({
   name: 'node_update_style',
-  description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). A null value removes the token.',
+  description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). Tokens listing breakpoints also take a mobile-first prefix, e.g. { "md:cols": "3" } applies from the md breakpoint up. A null value removes the token.',
   input: z.object({ ...Target, nodeId: IdSchema, style: StyleUpdateSchema }),
   run: async ({ projectId, pageId, nodeId, style }, ctx) => {
     const project = await ctx.services.mutate(ctx, projectId, 'Update style', [{ op: 'setStyle', pageId, nodeId, style }])

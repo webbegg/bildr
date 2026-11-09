@@ -45,6 +45,12 @@ describe('document schema', () => {
 
     text.style = { mt: '10', color: 'error' }
     expect(ProjectSchema.safeParse(project).success).toBe(true)
+
+    text.style = { 'mt': '2', 'md:mt': '10' }
+    expect(ProjectSchema.safeParse(project).success).toBe(true)
+
+    text.style = { 'xl:mt': '10' }
+    expect(ProjectSchema.safeParse(project).success).toBe(false)
   })
 
   it('rejects children under a non-container component', () => {

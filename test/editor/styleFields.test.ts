@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getStyleToken, STYLE_TOKENS } from '#shared/design/tokens'
 import { DEFAULT_THEME } from '#shared/design/theme'
-import { colorSwatchRows, setStyleTokens, spacingItems, styleFieldControl, styleFieldGroups } from '#shared/editor/styleFields'
+import { breakpointStyles, colorSwatchRows, DEVICES, setStyleTokens, spacingItems, styleFieldControl, styleFieldGroups } from '#shared/editor/styleFields'
 import { DRAG_MIME, draggedNodeId, nodeDragType, parseDragPayload } from '#shared/editor/dropTarget'
 
 describe('style fields', () => {
@@ -19,6 +19,11 @@ describe('style fields', () => {
     expect(groups.find(g => g.group === 'Size')!.setCount).toBe(0)
   })
 
+  it('uses a select for the five-value alignments, which overflow as segments', () => {
+    expect(styleFieldControl(getStyleToken('items')!)).toBe('select')
+    expect(styleFieldControl(getStyleToken('self')!)).toBe('select')
+  })
+
   it('picks a control per token: colour swatches, the spacing scale, segments for short lists, else a select', () => {
     expect(styleFieldControl(getStyleToken('bg')!)).toBe('color')
     expect(styleFieldControl(getStyleToken('borderColor')!)).toBe('color')
@@ -28,7 +33,6 @@ describe('style fields', () => {
     expect(styleFieldControl(getStyleToken('border')!)).toBe('segmented')
     expect(styleFieldControl(getStyleToken('rounded')!)).toBe('select')
     expect(styleFieldControl(getStyleToken('font')!)).toBe('select')
-    expect(styleFieldControl(getStyleToken('self')!)).toBe('segmented')
     expect(styleFieldControl(getStyleToken('cols')!)).toBe('select')
     expect(styleFieldControl(getStyleToken('colSpan')!)).toBe('select')
   })
@@ -38,6 +42,37 @@ describe('style fields', () => {
       { key: 'mt', label: 'Margin top', value: '10', className: 'mt-10' },
       { key: 'bg', label: 'Background', value: 'primary-600', className: 'bg-primary-600' }
     ])
+  })
+
+  it('lists breakpoint-prefixed tokens after their base, with variant classes', () => {
+    expect(setStyleTokens({ 'md:cols': '3', 'cols': '1', 'xl:cols': '2' })).toEqual([
+      { key: 'cols', label: 'Grid columns', value: '1', className: 'grid-cols-1' },
+      { key: 'md:cols', label: 'Grid columns (md)', value: '3', className: 'md:grid-cols-3' }
+    ])
+  })
+})
+
+describe('devices and breakpoints', () => {
+  it('offers Mobile, Tablet and Desktop, mobile-first', () => {
+    expect(DEVICES).toEqual([
+      { id: 'mobile', label: 'Mobile', width: 390, breakpoint: undefined, icon: 'i-lucide-smartphone' },
+      { id: 'tablet', label: 'Tablet', width: 768, breakpoint: 'md', icon: 'i-lucide-tablet' },
+      { id: 'desktop', label: 'Desktop', width: 1280, breakpoint: 'lg', icon: 'i-lucide-monitor' }
+    ])
+  })
+
+  it('splits a style into the breakpoint own tokens and those inherited from smaller breakpoints', () => {
+    const style = { 'cols': '1', 'md:cols': '2', 'gap': '6', 'sm:gap': '4', 'lg:p': '8' }
+    expect(breakpointStyles(style, undefined)).toEqual({ own: { cols: '1', gap: '6' }, inherited: {} })
+    expect(breakpointStyles(style, 'md')).toEqual({
+      own: { cols: '2' },
+      inherited: { gap: { value: '4', from: 'sm' } }
+    })
+    expect(breakpointStyles(style, 'lg')).toEqual({
+      own: { p: '8' },
+      inherited: { cols: { value: '2', from: 'md' }, gap: { value: '4', from: 'sm' } }
+    })
+    expect(breakpointStyles({ 'cols': '1', 'md:cols': '2' }, 'md').inherited).toEqual({})
   })
 })
 

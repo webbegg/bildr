@@ -123,7 +123,8 @@ export function applyOperation(project: Project, op: Operation): Operation {
       const node = getNode(page, op.nodeId)
       for (const [key, value] of Object.entries(op.style)) {
         if (value === null || value === '') {
-          if (!isStyleTokenKey(key)) fail('invalid', `Unknown style token "${key}"`)
+          // An unknown key's problem is about the key, whatever the value.
+          if (!isStyleTokenKey(key)) fail('invalid', styleTokenProblem(key, '')!)
         } else {
           const problem = styleTokenProblem(key, value)
           if (problem) fail('invalid', problem)

@@ -3,11 +3,29 @@
  * `{ mt: '10', bg: 'primary' }`, which renders as `class="mt-10 bg-primary"`.
  * This list drives validation, the style panel, the action (and MCP) schemas,
  * and the generated Tailwind safelist (`app/assets/css/tokens.css`).
+ *
+ * A key can carry a breakpoint prefix (mobile-first, as in Tailwind):
+ * `{ cols: '1', 'md:cols': '3' }` renders as `grid-cols-1 md:grid-cols-3`.
  */
+
+export const BREAKPOINTS = ['sm', 'md', 'lg'] as const
+
+export type Breakpoint = typeof BREAKPOINTS[number]
 
 export const STYLE_TOKEN_GROUPS = ['Spacing', 'Size', 'Color', 'Typography', 'Border', 'Effects', 'Layout'] as const
 
 export type StyleTokenGroup = typeof STYLE_TOKEN_GROUPS[number]
+
+/**
+ * The groups whose tokens take breakpoint prefixes: those that change layout.
+ * Colours, borders and shadows stay base-only, which keeps the dev CSS ~95 KB
+ * smaller than generating every variant.
+ */
+export const RESPONSIVE_GROUPS: readonly StyleTokenGroup[] = ['Spacing', 'Size', 'Typography', 'Layout']
+
+export function isResponsiveToken(token: StyleToken): boolean {
+  return RESPONSIVE_GROUPS.includes(token.group)
+}
 
 export interface StyleToken {
   /** The key stored in `node.style`. */
@@ -68,39 +86,80 @@ export const STYLE_TOKENS: StyleToken[] = [
 
 const BY_KEY = new Map(STYLE_TOKENS.map(t => [t.key, t]))
 
+/** Looks up a base token, e.g. `cols`; see `parseStyleKey` for prefixed keys. */
 export function getStyleToken(key: string): StyleToken | undefined {
   return BY_KEY.get(key)
 }
 
-export function isStyleTokenKey(key: string): boolean {
-  return BY_KEY.has(key)
+/** The style key of a token at a breakpoint: `cols` for the base, `md:cols` for `md`. */
+export function styleKey(base: string, breakpoint: Breakpoint | undefined): string {
+  return breakpoint ? `${breakpoint}:${base}` : base
 }
 
-/** Returns a problem message for an unknown key or a value outside its scale. */
+function splitKey(key: string): { breakpoint?: string, base: string } {
+  const at = key.indexOf(':')
+  return at < 0 ? { base: key } : { breakpoint: key.slice(0, at), base: key.slice(at + 1) }
+}
+
+const isBreakpoint = (value: string | undefined): value is Breakpoint => (BREAKPOINTS as readonly string[]).includes(value ?? '')
+
+/** The base token and breakpoint of a style key, or undefined when either is unknown. */
+export function parseStyleKey(key: string): { token: StyleToken, breakpoint: Breakpoint | undefined } | undefined {
+  const { breakpoint, base } = splitKey(key)
+  const token = BY_KEY.get(base)
+  if (!token || (breakpoint !== undefined && !(isBreakpoint(breakpoint) && isResponsiveToken(token)))) return undefined
+  return { token, breakpoint }
+}
+
+export function isStyleTokenKey(key: string): boolean {
+  return parseStyleKey(key) !== undefined
+}
+
+/** Returns a problem message for an unknown key or breakpoint, or a value outside the token's scale. */
 export function styleTokenProblem(key: string, value: string): string | undefined {
-  const token = BY_KEY.get(key)
-  if (!token) return `Unknown style token "${key}"`
+  const { breakpoint } = splitKey(key)
+  if (breakpoint !== undefined && !isBreakpoint(breakpoint)) {
+    return `Unknown breakpoint "${breakpoint}" in style token "${key}" (use sm:, md: or lg:)`
+  }
+  const token = parseStyleKey(key)?.token
+  if (!token) {
+    const base = BY_KEY.get(splitKey(key).base)
+    return base ? `Style token "${base.key}" has no breakpoint variants (only ${RESPONSIVE_GROUPS.join(', ')} tokens do)` : `Unknown style token "${key}"`
+  }
   return token.values.includes(value) ? undefined : `"${value}" is not a value of style token "${key}"`
+}
+
+/** The breakpoints a token can be set at, `undefined` being the base (mobile-first) value. */
+export function variantsOf(token: StyleToken): (Breakpoint | undefined)[] {
+  return isResponsiveToken(token) ? [undefined, ...BREAKPOINTS] : [undefined]
+}
+
+/** A style's valid tokens ordered by base key in registry order, then base, sm, md, lg. */
+export function orderedStyleTokens(style: Record<string, string>): { key: string, token: StyleToken, breakpoint: Breakpoint | undefined, value: string, className: string }[] {
+  return STYLE_TOKENS.flatMap(token => variantsOf(token).flatMap((breakpoint) => {
+    const key = styleKey(token.key, breakpoint)
+    const value = style[key]
+    if (value === undefined || !token.values.includes(value)) return []
+    return [{ key, token, breakpoint, value, className: styleKey(`${token.prefix}-${value}`, breakpoint) }]
+  }))
 }
 
 /** The class list for a style map, in registry order. Invalid tokens are skipped. */
 export function styleClasses(style: Record<string, string>): string {
-  return STYLE_TOKENS
-    .filter(t => style[t.key] !== undefined && t.values.includes(style[t.key]!))
-    .map(t => `${t.prefix}-${style[t.key]}`)
-    .join(' ')
+  return orderedStyleTokens(style).map(t => t.className).join(' ')
 }
 
-/** Every class the registry can produce. */
+/** Every class the registry can produce, breakpoint variants included. */
 export function allTokenClasses(): string[] {
-  return STYLE_TOKENS.flatMap(t => t.values.map(v => `${t.prefix}-${v}`))
+  return STYLE_TOKENS.flatMap(t => variantsOf(t).flatMap(b => t.values.map(v => styleKey(`${t.prefix}-${v}`, b))))
 }
 
 /** The contents of `app/assets/css/tokens.css`: one Tailwind `@source inline` per token. */
 export function tokenSafelistCss(): string {
+  const variants = `{,${BREAKPOINTS.map(b => `${b}:`).join(',')}}`
   const lines = STYLE_TOKENS.map((t) => {
     const values = t.values.length === 1 ? t.values[0] : `{${t.values.join(',')}}`
-    return `@source inline("${t.prefix}-${values}");`
+    return `@source inline("${isResponsiveToken(t) ? variants : ''}${t.prefix}-${values}");`
   })
   return [
     '/* Generated from shared/design/tokens.ts by `pnpm tokens:css`. Do not edit. */',

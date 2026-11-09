@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ButtonProps } from '@nuxt/ui'
-import { styleClasses } from '#shared/design/tokens'
+import { parseStyleKey, styleClasses } from '#shared/design/tokens'
 import type { DocNode } from '#shared/document/schema'
 import { resolveLink } from '#shared/runtime/render'
 
@@ -30,7 +30,8 @@ const stacked = computed(() => ['Page', 'Container', 'Column'].includes(props.no
 const BLOCK_TYPES = ['Container', 'Row', 'Column', 'Grid', 'Card', 'Input']
 const selfFallback = computed((): Record<string, string> => {
   const { type, style } = props.node
-  const fills = BLOCK_TYPES.includes(type) || (['Heading', 'Text'].includes(type) && style.align !== undefined)
+  const aligned = Object.keys(style).some(key => parseStyleKey(key)?.token.key === 'align')
+  const fills = BLOCK_TYPES.includes(type) || (['Heading', 'Text'].includes(type) && aligned)
   return props.inStack && fills ? { self: 'stretch' } : {}
 })
 const withFallback = (fallback: Record<string, string>) => styleClasses({ ...selfFallback.value, ...fallback, ...props.node.style })
@@ -46,10 +47,13 @@ const level = computed(() => (text('level') in HEADING_TOKENS ? text('level') : 
 
 // The card's gap and items lay out its inner stack; every other token styles the card
 // itself. Its padding is a token too (UCard's body padding is zeroed), so `p-8`
-// replaces the default instead of adding to it.
+// replaces the default instead of adding to it. Breakpoint variants follow their base key.
+const STACK_KEYS = ['gap', 'items']
 const card = computed(() => {
-  const { gap, items, ...rest } = props.node.style
-  const stack = Object.fromEntries(Object.entries({ gap, items }).filter(([, v]) => v !== undefined)) as Record<string, string>
+  const entries = Object.entries(props.node.style)
+  const inStack = ([key]: [string, string]) => STACK_KEYS.includes(parseStyleKey(key)?.token.key ?? '')
+  const stack = Object.fromEntries(entries.filter(inStack))
+  const rest = Object.fromEntries(entries.filter(entry => !inStack(entry)))
   return { root: styleClasses({ ...selfFallback.value, p: '6', ...rest }), stack: styleClasses(stack) }
 })
 const icon = (name: string) => text(name) || undefined

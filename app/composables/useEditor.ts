@@ -6,6 +6,8 @@ import { containsNode, findNode, findParent } from '#shared/document/tree'
 import type { DropTarget } from '#shared/editor/dropTarget'
 import { insertTargetForSelection, moveTarget, parseDragPayload } from '#shared/editor/dropTarget'
 import { selectionAfterDelete } from '#shared/editor/selection'
+import type { DeviceId } from '#shared/editor/styleFields'
+import { DEVICES } from '#shared/editor/styleFields'
 
 /** Identifies this editor tab on change events, so it can skip its own echoes. */
 export const TAB_ID = import.meta.client ? crypto.randomUUID() : 'server'
@@ -35,6 +37,9 @@ export function createEditor(projectId: string) {
   const history = ref<{ undo: string | null, redo: string | null }>({ undo: null, redo: null })
   /** Build edits the page; Design edits the project theme. */
   const mode = ref<'build' | 'design'>('build')
+  /** The canvas width, and the breakpoint the style panel edits (Mobile is the base, mobile-first). */
+  const deviceId = ref<DeviceId>('mobile')
+  const device = computed(() => DEVICES.find(d => d.id === deviceId.value)!)
   /** An uncommitted theme previewed in the canvas, e.g. while a colour picker drags. */
   const themeDraft = shallowRef<Theme | null>(null)
 
@@ -155,7 +160,7 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, selectedId, hoveredId, history, mode, themeDraft, page, selected, theme,
+    projectId, project, pageId, selectedId, hoveredId, history, mode, deviceId, device, themeDraft, page, selected, theme,
     reload, run, runOnPage, selectPage, insert, drop, remove, duplicate, updateProps, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }

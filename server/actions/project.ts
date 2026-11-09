@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { STYLE_TOKENS } from '#shared/design/tokens'
+import { STYLE_TOKENS, variantsOf } from '#shared/design/tokens'
 import { COMPONENTS } from '#shared/document/components'
 import { createProject } from '#shared/document/factory'
 import { IdSchema } from '#shared/document/schema'
@@ -37,12 +37,18 @@ export const projectGet = defineAction({
 
 export const componentsList = defineAction({
   name: 'components_list',
-  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and default style; plus the design tokens a node style can use (key, label, group, allowed values).',
+  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and default style; plus the design tokens a node style can use (key, label, group, allowed values, and the breakpoints whose prefix it takes, e.g. md:cols).',
   input: z.object({}),
   readOnly: true,
   run: async () => ({
     components: COMPONENTS,
-    tokens: STYLE_TOKENS.map(({ key, label, group, values }) => ({ key, label, group, values }))
+    tokens: STYLE_TOKENS.map(token => ({
+      key: token.key,
+      label: token.label,
+      group: token.group,
+      values: token.values,
+      breakpoints: variantsOf(token).filter(b => b !== undefined)
+    }))
   })
 })
 

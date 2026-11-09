@@ -1,5 +1,9 @@
 <script setup lang="ts">
+import type { DeviceId } from '#shared/editor/styleFields'
+import { DEVICES } from '#shared/editor/styleFields'
+
 const editor = useEditor()
+const devices = DEVICES.map(d => ({ value: d.id, label: `${d.label} · ${d.width}px`, icon: d.icon }))
 const toast = useToast()
 const publishing = ref(false)
 
@@ -43,6 +47,16 @@ async function publish() {
       class="ms-4 w-40"
       @update:model-value="editor.mode = $event as 'build' | 'design'"
     />
+
+    <UTooltip :text="`${editor.device.label} · ${editor.device.width}px; styles edit ${editor.device.breakpoint ? `${editor.device.breakpoint}:` : 'the base'}`">
+      <EditorSegmented
+        :items="devices"
+        :model-value="editor.deviceId"
+        class="ms-2 w-28"
+        data-device-toggle
+        @update:model-value="editor.deviceId = $event as DeviceId"
+      />
+    </UTooltip>
 
     <div class="ms-auto flex items-center gap-2">
       <UTooltip
