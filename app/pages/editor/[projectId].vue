@@ -29,9 +29,9 @@ function allowsNavigation(target: EventTarget | null): boolean {
 }
 
 function onKeyDown(event: KeyboardEvent) {
-  // Cmd/Ctrl+P (preview, instead of printing) and Cmd/Ctrl+F (sidebar search) work from fields too.
+  // Cmd/Ctrl+P (preview, instead of printing), Cmd/Ctrl+F (sidebar search) and Cmd/Ctrl+K (quick actions) work from fields too.
   const meta = event.metaKey || event.ctrlKey
-  if (meta && !event.shiftKey && !event.altKey && ['p', 'f'].includes(event.key.toLowerCase())) {
+  if (meta && !event.shiftKey && !event.altKey && ['p', 'f', 'k'].includes(event.key.toLowerCase())) {
     if (editor.shortcut(event.key, true, false)) event.preventDefault()
     return
   }
@@ -84,6 +84,7 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
     class="flex h-screen flex-col"
   >
     <EditorToolbar />
+    <EditorQuickActions />
     <div class="flex min-h-0 flex-1">
       <aside
         v-if="editor.mode === 'data'"

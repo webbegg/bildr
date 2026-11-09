@@ -85,6 +85,11 @@ function zoomCommand(command: ZoomCommand) {
   else zoomTo(stepZoom(viewport.value.zoom, command === 'in' ? 1 : -1))
 }
 
+// Zooms asked for elsewhere, e.g. from the quick actions.
+watch(() => editor.zoomRequest, (request) => {
+  if (request && view === 'page') zoomCommand(request.command)
+})
+
 function panBy(dx: number, dy: number) {
   autoFit = false
   viewport.value = { ...viewport.value, x: viewport.value.x + dx, y: viewport.value.y + dy }

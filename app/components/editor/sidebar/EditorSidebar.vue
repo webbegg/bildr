@@ -4,12 +4,12 @@
  * switcher with a "+" that opens the Insert panel (also `I`), and a search
  * that filters the panel showing (Cmd/Ctrl+F focuses it; Escape clears it,
  * then leaves it). A canvas selection made while Pages shows reveals it in
- * Layers.
+ * Layers. The panel lives on the editor, so quick actions can open Assets.
  */
-type Panel = 'pages' | 'layers' | 'assets'
+import type { SidebarPanel } from '#shared/editor/commands'
 
 const editor = useEditor()
-const panel = ref<Panel>('pages')
+const panel = toRef(editor, 'sidebarPanel')
 const query = ref('')
 const search = useTemplateRef<{ inputRef?: HTMLInputElement }>('search')
 
@@ -49,7 +49,7 @@ function onSearchKeyDown(event: KeyboardEvent) {
         class="flex-1"
         dense
         data-sidebar-switcher
-        @update:model-value="panel = $event as Panel"
+        @update:model-value="panel = $event as SidebarPanel"
       />
       <UPopover
         v-model:open="editor.insertOpen"

@@ -7,6 +7,7 @@ import { isFlexType } from '#shared/document/components'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
 import type { NodeBox } from '#shared/editor/autoLayout'
 import { inferAutoLayout, nearestSpacingToken } from '#shared/editor/autoLayout'
+import type { SidebarPanel } from '#shared/editor/commands'
 import { collapsedAncestors, siblingMove, siblingMoves } from '#shared/editor/layers'
 import type { DropTarget } from '#shared/editor/dropTarget'
 import { insertTargetForSelection, moveTarget, parseDragPayload } from '#shared/editor/dropTarget'
@@ -17,6 +18,7 @@ import { createStylePreview } from '#shared/editor/preview'
 import type { SelectionStep } from '#shared/editor/selection'
 import { drillTarget, navigateSelection, selectAllSiblings, selectionAfterDelete, siblingParent, toggleSelection, topLevelSelection } from '#shared/editor/selection'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
+import type { ZoomCommand } from '#shared/editor/viewport'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 
@@ -72,6 +74,12 @@ export function createEditor(projectId: string) {
   const insertOpen = ref(false)
   /** Bumped by Cmd/Ctrl+F; the sidebar focuses its search on each bump. */
   const searchRequest = ref(0)
+  /** The Canvas view's sidebar panel: Pages, Layers or Assets. */
+  const sidebarPanel = ref<SidebarPanel>('pages')
+  /** The `⌘K` quick actions palette. */
+  const quickOpen = ref(false)
+  /** The last zoom asked for outside the canvas (quick actions); the canvas applies each new one. */
+  const zoomRequest = shallowRef<{ command: ZoomCommand } | null>(null)
   /** The canvas width, and the breakpoint the style panel edits (Mobile is the base, mobile-first). */
   const deviceId = ref<DeviceId>('mobile')
   const device = computed(() => DEVICES.find(d => d.id === deviceId.value)!)
@@ -217,6 +225,24 @@ export function createEditor(projectId: string) {
 
   function openPreview(): void {
     window.open(previewUrl.value, '_blank')
+  }
+
+  /** Publishes the draft, refreshes the top bar's published info and toasts the live URL. */
+  async function publish(): Promise<void> {
+    const result = await run<{ url: string, version: number }>('project_publish')
+    if (!result) return
+    await refreshNuxtData(`published-${projectId}`)
+    toast.add({
+      title: 'Published',
+      description: `Version ${result.version} is live at ${result.url}`,
+      color: 'success',
+      icon: 'i-lucide-rocket',
+      actions: [{ label: 'Open', to: result.url, target: '_blank', color: 'neutral', variant: 'outline' }]
+    })
+  }
+
+  function requestZoom(command: ZoomCommand): void {
+    zoomRequest.value = { command }
   }
 
   /** Picks a canvas tool: Move, Hand, or an insert tool to arm. */
@@ -451,13 +477,18 @@ export function createEditor(projectId: string) {
    * Escape disarms an insert tool, else clears the selection (Figma would
    * select the parent; Shift+Enter does). Bare letters pick the canvas tools
    * (V Move, H Hand, and the insert tools); `I` opens the Insert panel, as in
-   * Framer, rather than arming Image. Cmd/Ctrl+P opens the draft preview and
-   * Cmd/Ctrl+F the sidebar search. Callers skip keys typed into fields.
+   * Framer, rather than arming Image. Cmd/Ctrl+P opens the draft preview,
+   * Cmd/Ctrl+F the sidebar search and Cmd/Ctrl+K the quick actions (in any
+   * view). Callers skip keys typed into fields.
    */
   function shortcut(key: string, meta: boolean, shift: boolean, nav = false): boolean {
     const lower = key.toLowerCase()
     if (meta && !shift && lower === 'p') {
       openPreview()
+      return true
+    }
+    if (meta && !shift && lower === 'k') {
+      quickOpen.value = !quickOpen.value
       return true
     }
     // The Canvas view's shortcuts would act on a page the Data and Settings views do not show.
@@ -484,9 +515,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, previewUrl, deviceId, device, themeDraft, stylePreview, page, selected, selectedNodes, theme,
+    projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, themeDraft, stylePreview, page, selected, selectedNodes, theme,
     collectionId, collection, records, recordsTotal, recordsError, listCollections, lists,
-    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, requestZoom, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }

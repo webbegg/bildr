@@ -1,0 +1,214 @@
+import { describe, expect, it, vi } from 'vitest'
+import { createNode, createPage } from '#shared/document/factory'
+import type { CommandContext, CommandEditor } from '#shared/editor/commands'
+import { editorCommands, matchScore, pushRecent, searchCommands, SHORTCUTS } from '#shared/editor/commands'
+import { INSERT_TOOLS } from '#shared/editor/insertTools'
+
+const cmd = (id: string, group: 'insert' | 'actions' | 'goto' | 'help', label: string, keywords: string[] = []) =>
+  ({ id, group, label, keywords, enabled: () => true, run: () => {} })
+
+describe('matchScore', () => {
+  it('ranks a label prefix over a word start over a subsequence, ignoring case', () => {
+    expect(matchScore(cmd('a', 'actions', 'Wrap in Container'), 'wra')).toBe(3)
+    expect(matchScore(cmd('a', 'actions', 'Wrap in Container'), 'cont')).toBe(2)
+    expect(matchScore(cmd('a', 'actions', 'Wrap in Container'), 'wic')).toBe(1)
+    expect(matchScore(cmd('a', 'actions', 'Wrap in Container'), 'xyz')).toBe(0)
+  })
+
+  it('counts a keyword prefix as a word start', () => {
+    expect(matchScore(cmd('a', 'actions', 'Delete', ['remove']), 'rem')).toBe(2)
+  })
+
+  it('matches everything for an empty query', () => {
+    expect(matchScore(cmd('a', 'actions', 'Delete'), '  ')).toBe(1)
+  })
+})
+
+describe('searchCommands', () => {
+  const commands = [
+    cmd('insert:Card', 'insert', 'Card'),
+    cmd('insert:Button', 'insert', 'Button'),
+    cmd('action:dark', 'actions', 'Toggle dark preview'),
+    cmd('view:data', 'goto', 'Data view'),
+    cmd('help:shortcuts', 'help', 'Keyboard shortcuts')
+  ]
+
+  it('orders the groups by their best match, and the commands within a group by score', () => {
+    const sections = searchCommands(commands, 'da', [])
+    expect(sections.map(s => s.group)).toEqual(['goto', 'actions'])
+    expect(sections[0]!.commands.map(c => c.id)).toEqual(['view:data'])
+  })
+
+  it('drops the commands that do not match', () => {
+    // "but" would also be in order in "keyBoard shortcUTs"; "butt" is not.
+    expect(searchCommands(commands, 'butt', []).flatMap(s => s.commands.map(c => c.id))).toEqual(['insert:Button'])
+  })
+
+  it('shows the recent commands first for an empty query, then every group in its fixed order', () => {
+    const sections = searchCommands(commands, '', ['help:shortcuts', 'insert:Button', 'gone'])
+    expect(sections.map(s => s.group)).toEqual(['recent', 'insert', 'actions', 'goto', 'help'])
+    expect(sections[0]!.commands.map(c => c.id)).toEqual(['help:shortcuts', 'insert:Button'])
+  })
+})
+
+describe('SHORTCUTS', () => {
+  const combos = SHORTCUTS.flatMap(s => s.keys.map(keys => keys.join('+')))
+
+  it('lists every editor shortcut once', () => {
+    expect([...combos].sort()).toEqual([
+      'a', 'alt', 'b', 'c', 'delete', 'enter', 'f', 'h', 'i', 'meta+d', 'meta+f', 'meta+g', 'meta+k', 'meta+p', 'meta+shift+z', 'meta+z',
+      'r', 'shift+0', 'shift+1', 'shift+a', 'shift+enter', 'shift+tab', 'space', 't', 'tab', 'v'
+    ])
+  })
+
+  it('gives each canvas tool the letters that arm it', () => {
+    for (const tool of INSERT_TOOLS.filter(t => t.keys.length)) {
+      expect(SHORTCUTS.find(s => s.id === `tool:${tool.id}`)?.keys).toEqual(tool.keys.map(key => [key.toLowerCase()]))
+    }
+  })
+})
+
+describe('editorCommands', () => {
+  function fixture(state: Partial<CommandEditor> = {}) {
+    const home = createPage('Home')
+    const pricing = createPage('Pricing')
+    const card = createNode('Card')
+    const text = createNode('Text')
+    const button = createNode('Button')
+    card.children.push(button)
+    home.root.children.push(card, text)
+    const editor: CommandEditor = {
+      mode: 'build',
+      selectedIds: [],
+      selectedId: null,
+      page: home,
+      project: { pages: [home, pricing], collections: [{ id: 'c1', name: 'Menu', slug: 'menu' }] },
+      history: { undo: null, redo: null },
+      deepSelect: true,
+      previewDark: false,
+      sidebarPanel: 'pages',
+      collectionId: null,
+      insert: vi.fn(),
+      group: vi.fn(),
+      autoLayout: vi.fn(),
+      duplicate: vi.fn(),
+      remove: vi.fn(),
+      navigate: vi.fn(),
+      undo: vi.fn(),
+      redo: vi.fn(),
+      publish: vi.fn(),
+      openPreview: vi.fn(),
+      requestZoom: vi.fn(),
+      setPreviewDark: vi.fn(),
+      setDeepSelect: vi.fn(),
+      selectPage: vi.fn(),
+      ...state
+    }
+    const ctx: CommandContext = { editor, openShortcuts: vi.fn() }
+    const get = (id: string) => editorCommands(ctx).find(c => c.id === id)!
+    return { ctx, editor, get, home, pricing, card, text, button }
+  }
+
+  it('offers every palette component to insert, on the Canvas only', () => {
+    const { ctx, editor, get } = fixture()
+    expect(editorCommands(ctx).filter(c => c.group === 'insert').map(c => c.label)).toContain('Button')
+    get('insert:Button').run(ctx)
+    expect(editor.insert).toHaveBeenCalledWith('Button')
+    expect(fixture({ mode: 'data' }).get('insert:Button').enabled(fixture({ mode: 'data' }).ctx)).toBe(false)
+  })
+
+  it('disables the selection actions with no selection, or only the page root', () => {
+    const { ctx, get, home } = fixture()
+    for (const id of ['delete', 'duplicate', 'wrap', 'auto-layout', 'select-parent']) expect(get(id).enabled(ctx), id).toBe(false)
+    ctx.editor.selectedIds = [home.root.id]
+    ctx.editor.selectedId = home.root.id
+    for (const id of ['delete', 'duplicate', 'wrap', 'auto-layout', 'select-parent']) expect(get(id).enabled(ctx), id).toBe(false)
+  })
+
+  it('enables them for a selected element, and runs them through the editor', () => {
+    const { ctx, editor, get, text } = fixture()
+    editor.selectedIds = [text.id]
+    editor.selectedId = text.id
+    for (const id of ['delete', 'duplicate', 'wrap', 'auto-layout', 'select-parent']) expect(get(id).enabled(ctx), id).toBe(true)
+    get('delete').run(ctx)
+    get('wrap').run(ctx)
+    get('select-parent').run(ctx)
+    expect(editor.remove).toHaveBeenCalled()
+    expect(editor.group).toHaveBeenCalled()
+    expect(editor.navigate).toHaveBeenCalledWith('parent')
+  })
+
+  it('only wraps or lays out siblings', () => {
+    const { ctx, editor, get, text, button } = fixture()
+    editor.selectedIds = [text.id, button.id]
+    expect(get('wrap').enabled(ctx)).toBe(false)
+    expect(get('auto-layout').enabled(ctx)).toBe(false)
+    expect(get('delete').enabled(ctx)).toBe(true)
+  })
+
+  it('enables undo and redo by the history, in any view', () => {
+    const { ctx, get } = fixture({ mode: 'data', history: { undo: 'node_insert', redo: null } })
+    expect(get('undo').enabled(ctx)).toBe(true)
+    expect(get('redo').enabled(ctx)).toBe(false)
+  })
+
+  it('zooms the canvas on the Canvas only', () => {
+    const { ctx, editor, get } = fixture()
+    get('zoom-fit').run(ctx)
+    expect(editor.requestZoom).toHaveBeenCalledWith('fit')
+    expect(get('zoom-100').shortcut).toEqual(['shift', '0'])
+    editor.mode = 'settings'
+    expect(get('zoom-fit').enabled(ctx)).toBe(false)
+  })
+
+  it('toggles the dark preview and Deep select to the other state', () => {
+    const { ctx, editor, get } = fixture({ previewDark: true, deepSelect: false })
+    expect(get('dark-preview').label).toBe('Dark preview off')
+    expect(get('deep-select').label).toBe('Deep select on')
+    get('dark-preview').run(ctx)
+    get('deep-select').run(ctx)
+    expect(editor.setPreviewDark).toHaveBeenCalledWith(false)
+    expect(editor.setDeepSelect).toHaveBeenCalledWith(true)
+  })
+
+  it('goes to another page on the Canvas', () => {
+    const { ctx, editor, get, home, pricing } = fixture({ mode: 'data' })
+    get(`page:${pricing.id}`).run(ctx)
+    expect(editor.mode).toBe('build')
+    expect(editor.selectPage).toHaveBeenCalledWith(pricing.id)
+    expect(get(`page:${home.id}`).enabled(ctx)).toBe(false)
+  })
+
+  it('switches views, except to the one showing', () => {
+    const { ctx, editor, get } = fixture()
+    expect(get('view:build').enabled(ctx)).toBe(false)
+    get('view:data').run(ctx)
+    expect(editor.mode).toBe('data')
+  })
+
+  it('opens Assets › Styles on the Canvas, and a collection in Data', () => {
+    const { ctx, editor, get } = fixture({ mode: 'settings' })
+    get('styles').run(ctx)
+    expect([editor.mode, editor.sidebarPanel]).toEqual(['build', 'assets'])
+    get('collection:c1').run(ctx)
+    expect([editor.mode, editor.collectionId]).toEqual(['data', 'c1'])
+  })
+
+  it('opens the shortcuts sheet', () => {
+    const { ctx, get } = fixture()
+    get('help:shortcuts').run(ctx)
+    expect(ctx.openShortcuts).toHaveBeenCalled()
+  })
+
+  it('hints only shortcuts from the registry', () => {
+    const combos = new Set(SHORTCUTS.flatMap(s => s.keys.map(keys => keys.join('+'))))
+    for (const command of editorCommands(fixture().ctx).filter(c => c.shortcut)) expect(combos, command.id).toContain(command.shortcut!.join('+'))
+  })
+})
+
+describe('pushRecent', () => {
+  it('moves the command to the front, without duplicates, keeping at most `max`', () => {
+    expect(pushRecent(['a', 'b', 'c'], 'c', 3)).toEqual(['c', 'a', 'b'])
+    expect(pushRecent(['a', 'b', 'c'], 'd', 3)).toEqual(['d', 'a', 'b'])
+  })
+})
