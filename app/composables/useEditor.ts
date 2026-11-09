@@ -1,6 +1,10 @@
 import type { InjectionKey } from 'vue'
 import type { Project } from '#shared/document/schema'
-import { findNode } from '#shared/document/tree'
+import type { PropValue } from '#shared/document/components'
+import { containsNode, findNode, findParent } from '#shared/document/tree'
+import type { DropTarget } from '#shared/editor/dropTarget'
+import { insertTargetForSelection, moveTarget, parseDragPayload } from '#shared/editor/dropTarget'
+import { selectionAfterDelete } from '#shared/editor/selection'
 
 /** Identifies this editor tab on change events, so it can skip its own echoes. */
 export const TAB_ID = import.meta.client ? crypto.randomUUID() : 'server'
@@ -66,7 +70,75 @@ export function createEditor(projectId: string) {
     hoveredId.value = null
   }
 
-  return reactive({ projectId, project, pageId, selectedId, hoveredId, history, page, selected, reload, run, runOnPage, selectPage })
+  /** Inserts a palette component (at the selection by default) and selects it. */
+  async function insert(type: string, target?: DropTarget): Promise<void> {
+    const at = target ?? insertTargetForSelection(page.value!.root, selectedId.value)
+    const result = await runOnPage<{ nodeId: string }>('node_insert', { type, ...at })
+    if (result) selectedId.value = result.nodeId
+  }
+
+  /** Handles a drop of a raw `application/x-bildr` payload onto a parent slot. */
+  async function drop(payload: string, target: DropTarget): Promise<void> {
+    const data = parseDragPayload(payload)
+    const root = page.value?.root
+    if (!data || !root) return
+    if (data.kind === 'component') return insert(data.type, target)
+    const node = findNode(root, data.id)
+    if (!node || node === root || containsNode(node, target.parentId)) return
+    const to = moveTarget(root, data.id, target)
+    const from = findParent(root, data.id)
+    if (from && from.parent.id === to.parentId && from.index === to.index) return
+    if (await runOnPage('node_move', { nodeId: data.id, ...to })) selectedId.value = data.id
+  }
+
+  /** Deletes the selection (never the page root) and selects a neighbour. */
+  async function remove(): Promise<void> {
+    const id = selectedId.value
+    const root = page.value?.root
+    if (!id || !root || id === root.id) return
+    const next = selectionAfterDelete(root, id)
+    if (await runOnPage('node_delete', { nodeId: id })) selectedId.value = next
+  }
+
+  async function duplicate(): Promise<void> {
+    const id = selectedId.value
+    if (!id || id === page.value?.root.id) return
+    const result = await runOnPage<{ nodeId: string }>('node_duplicate', { nodeId: id })
+    if (result) selectedId.value = result.nodeId
+  }
+
+  async function updateProps(nodeId: string, props: Record<string, PropValue | null>): Promise<void> {
+    await runOnPage('node_update_props', { nodeId, props })
+  }
+
+  async function updateStyle(nodeId: string, style: Record<string, string | null>): Promise<void> {
+    await runOnPage('node_update_style', { nodeId, style })
+  }
+
+  async function undo(): Promise<void> {
+    if (history.value.undo) await run('history_undo')
+  }
+
+  async function redo(): Promise<void> {
+    if (history.value.redo) await run('history_redo')
+  }
+
+  /** Editor shortcuts; returns true when `key` was handled. */
+  function shortcut(key: string, meta: boolean, shift: boolean): boolean {
+    const lower = key.toLowerCase()
+    if (meta && lower === 'z') (shift ? redo : undo)()
+    else if (meta && lower === 'y') redo()
+    else if (meta && lower === 'd') duplicate()
+    else if (!meta && (key === 'Delete' || key === 'Backspace')) remove()
+    else if (key === 'Escape') selectedId.value = null
+    else return false
+    return true
+  }
+
+  return reactive({
+    projectId, project, pageId, selectedId, hoveredId, history, page, selected,
+    reload, run, runOnPage, selectPage, insert, drop, remove, duplicate, updateProps, updateStyle, undo, redo, shortcut
+  })
 }
 
 export type Editor = ReturnType<typeof createEditor>

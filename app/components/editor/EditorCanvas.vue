@@ -24,6 +24,7 @@ function onMessage(event: MessageEvent) {
   else if (message.type === 'bildr:hover') editor.hoveredId = message.nodeId
   else if (message.type === 'bildr:click') editor.selectedId = message.nodeId
   else if (message.type === 'bildr:key') emit('key', message)
+  else if (message.type === 'bildr:drop') editor.drop(message.payload, { parentId: message.parentId, index: message.index })
 }
 
 watch(() => editor.page, render, { deep: true })

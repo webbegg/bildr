@@ -2,6 +2,10 @@
 import type { Page } from '#shared/document/schema'
 import type { CanvasToEditor, EditorToCanvas } from '#shared/editor/protocol'
 import { isCanvasMessage } from '#shared/editor/protocol'
+import { isContainerType } from '#shared/document/components'
+import { findNode, findParent } from '#shared/document/tree'
+import type { DropTarget } from '#shared/editor/dropTarget'
+import { DRAG_MIME, draggedNodeId, dropPosition, resolveDrop } from '#shared/editor/dropTarget'
 
 /**
  * The editor canvas, loaded in an iframe. It renders whatever page the
@@ -17,6 +21,9 @@ const hoveredId = ref<string | null>(null)
 
 interface Box { top: number, left: number, width: number, height: number, label: string }
 const boxes = reactive<{ hover: Box | null, selected: Box | null }>({ hover: null, selected: null })
+
+interface Indicator { top: number, left: number, width: number, height: number, line: boolean }
+const indicator = ref<Indicator | null>(null)
 
 function post(message: CanvasToEditor) {
   window.parent.postMessage(message, window.location.origin)
@@ -86,8 +93,65 @@ function onKeyDown(event: KeyboardEvent) {
   post({ type: 'bildr:key', key: event.key, meta, shift: event.shiftKey })
 }
 
+/** The drop slot under the pointer, plus where to draw it. */
+function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } | null {
+  const types = event.dataTransfer?.types ?? []
+  const root = page.value?.root
+  if (!root || !types.includes(DRAG_MIME)) return null
+  const el = event.target as Element | null
+  const placeholder = el?.closest?.('[data-bildr-placeholder]')
+  const nodeEl = placeholder ?? el?.closest?.('[data-bildr-id]')
+  const id = placeholder?.getAttribute('data-bildr-placeholder') ?? nodeEl?.getAttribute('data-bildr-id')
+  const node = id ? findNode(root, id) : undefined
+  if (!nodeEl || !node) return null
+  const rect = nodeEl.getBoundingClientRect()
+  const horizontal = findParent(root, node.id)?.parent.type === 'Row'
+  const position = placeholder || node === root
+    ? 'inside'
+    : dropPosition(rect, { x: event.clientX, y: event.clientY }, { container: isContainerType(node.type), horizontal })
+  const target = resolveDrop(root, node.id, position, draggedNodeId(types))
+  if (!target) return null
+  const box = { top: rect.top + window.scrollY, left: rect.left + window.scrollX, width: rect.width, height: rect.height }
+  if (position === 'inside') return { target, indicator: { ...box, line: false } }
+  const end = position === 'after'
+  return {
+    target,
+    indicator: horizontal
+      ? { top: box.top, left: box.left + (end ? box.width : 0) - 1, width: 2, height: box.height, line: true }
+      : { top: box.top + (end ? box.height : 0) - 1, left: box.left, width: box.width, height: 2, line: true }
+  }
+}
+
+function onDragOver(event: DragEvent) {
+  const drop = dropAt(event)
+  indicator.value = drop?.indicator ?? null
+  if (!drop) return
+  event.preventDefault()
+  event.dataTransfer!.dropEffect = draggedNodeId(event.dataTransfer!.types) ? 'move' : 'copy'
+}
+
+function onDragLeave(event: DragEvent) {
+  if (!event.relatedTarget) indicator.value = null
+}
+
+function onDrop(event: DragEvent) {
+  const drop = dropAt(event)
+  indicator.value = null
+  if (!drop) return
+  event.preventDefault()
+  post({ type: 'bildr:drop', ...drop.target, payload: event.dataTransfer!.getData(DRAG_MIME) })
+}
+
+function clearIndicator() {
+  indicator.value = null
+}
+
 onMounted(() => {
   window.addEventListener('message', onMessage)
+  document.addEventListener('dragover', onDragOver)
+  document.addEventListener('dragleave', onDragLeave)
+  document.addEventListener('drop', onDrop)
+  document.addEventListener('dragend', clearIndicator)
   document.addEventListener('mousemove', onPointerMove, true)
   document.documentElement.addEventListener('mouseleave', onPointerLeave)
   document.addEventListener('click', onClick, true)
@@ -99,6 +163,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('message', onMessage)
+  document.removeEventListener('dragover', onDragOver)
+  document.removeEventListener('dragleave', onDragLeave)
+  document.removeEventListener('drop', onDrop)
+  document.removeEventListener('dragend', clearIndicator)
   document.removeEventListener('mousemove', onPointerMove, true)
   document.documentElement.removeEventListener('mouseleave', onPointerLeave)
   document.removeEventListener('click', onClick, true)
@@ -130,5 +198,11 @@ onBeforeUnmount(() => {
         class="absolute -top-5 left-0 rounded-t-sm bg-primary px-1.5 text-[10px] leading-5 text-inverted"
       >{{ box.label }}</span>
     </div>
+    <div
+      v-if="indicator"
+      class="pointer-events-none absolute z-50"
+      :class="indicator.line ? 'rounded-full bg-primary' : 'rounded-sm bg-primary/5 outline-2 -outline-offset-2 outline-primary'"
+      :style="{ top: `${indicator.top}px`, left: `${indicator.left}px`, width: `${indicator.width}px`, height: `${indicator.height}px` }"
+    />
   </div>
 </template>

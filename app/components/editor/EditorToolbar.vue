@@ -38,6 +38,34 @@ async function publish() {
     <span class="text-sm text-dimmed">/ {{ editor.page?.name }}</span>
 
     <div class="ms-auto flex items-center gap-2">
+      <UTooltip
+        :text="editor.history.undo ? `Undo ${editor.history.undo}` : 'Nothing to undo'"
+        :kbds="['meta', 'z']"
+      >
+        <UButton
+          icon="i-lucide-undo-2"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          aria-label="Undo"
+          :disabled="!editor.history.undo"
+          @click="editor.undo()"
+        />
+      </UTooltip>
+      <UTooltip
+        :text="editor.history.redo ? `Redo ${editor.history.redo}` : 'Nothing to redo'"
+        :kbds="['meta', 'shift', 'z']"
+      >
+        <UButton
+          icon="i-lucide-redo-2"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          aria-label="Redo"
+          :disabled="!editor.history.redo"
+          @click="editor.redo()"
+        />
+      </UTooltip>
       <slot name="actions" />
       <UButton
         v-if="published"
