@@ -13,7 +13,7 @@ function post(message: EditorToCanvas) {
 
 function render() {
   if (!editor.page || !editor.project) return
-  post({ type: 'bildr:render', page: editor.page, base: `/p/${editor.project.slug}` })
+  post({ type: 'bildr:render', page: editor.page, base: `/p/${editor.project.slug}`, theme: editor.project.theme })
   post({ type: 'bildr:select', nodeId: editor.selectedId })
 }
 
@@ -27,7 +27,7 @@ function onMessage(event: MessageEvent) {
   else if (message.type === 'bildr:drop') editor.drop(message.payload, { parentId: message.parentId, index: message.index })
 }
 
-watch(() => editor.page, render, { deep: true })
+watch(() => [editor.page, editor.project?.theme], render, { deep: true })
 watch(() => editor.selectedId, nodeId => post({ type: 'bildr:select', nodeId }))
 watch(() => editor.hoveredId, nodeId => post({ type: 'bildr:hover', nodeId }))
 

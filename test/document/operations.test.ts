@@ -4,6 +4,7 @@ import { createNode, createPage, createProject } from '#shared/document/factory'
 import { findNode } from '#shared/document/tree'
 import { ProjectSchema } from '#shared/document/schema'
 import type { Project } from '#shared/document/schema'
+import { DEFAULT_THEME } from '#shared/design/theme'
 
 function setup(): { project: Project, pageId: string, rootId: string } {
   const project = createProject('Demo')
@@ -153,6 +154,31 @@ describe('applyOperation', () => {
       { op: 'insert', pageId, parentId: rootId, index: 0, node: createNode('Text') },
       { op: 'remove', pageId, nodeId: 'missing' }
     ])).toThrow(OperationError)
+    expect(project).toEqual(before)
+  })
+
+  it('patches the theme and returns the exact inverse', () => {
+    const { project } = setup()
+    const inverse = applyOperation(project, { op: 'setTheme', theme: { colors: { primary: '#e11d48', neutral: 'zinc' }, radius: '1rem' } })
+
+    expect(project.theme).toEqual({
+      ...DEFAULT_THEME,
+      colors: { ...DEFAULT_THEME.colors, primary: '#e11d48', neutral: 'zinc' },
+      radius: '1rem'
+    })
+    expect(inverse).toEqual({ op: 'setTheme', theme: { colors: { primary: 'green', neutral: 'slate' }, radius: '0.25rem' } })
+    applyOperation(project, inverse)
+    expect(project.theme).toEqual(DEFAULT_THEME)
+  })
+
+  it('rejects an invalid theme patch atomically', () => {
+    const { project, pageId, rootId } = setup()
+    const before = structuredClone(project)
+    expect(() => applyOperations(project, [
+      { op: 'insert', pageId, parentId: rootId, index: 0, node: createNode('Text') },
+      { op: 'setTheme', theme: { colors: { primary: 'indigo' }, font: 'Comic Sans' } }
+    ])).toThrow(OperationError)
+    expect(() => applyOperation(project, { op: 'setTheme', theme: { colors: { primary: '#12345' } } })).toThrow(OperationError)
     expect(project).toEqual(before)
   })
 

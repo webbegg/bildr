@@ -1,3 +1,4 @@
+import { defaultTheme } from '../design/theme'
 import { getComponent, PAGE_ROOT_TYPE } from './components'
 import type { PropValue } from './components'
 import type { DocNode, Page, Project } from './schema'
@@ -45,6 +46,7 @@ export function createProject(name: string): Project {
     slug: slugify(name),
     version: 0,
     pages: [createPage('Home')],
+    theme: defaultTheme(),
     createdAt: now,
     updatedAt: now
   }

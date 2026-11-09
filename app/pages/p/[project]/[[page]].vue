@@ -15,6 +15,7 @@ const page = computed(() => {
 })
 
 useWebMcp(project, page)
+useTheme(() => project.value?.theme)
 
 useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${project.value.name}` : 'Not found' }))
 </script>

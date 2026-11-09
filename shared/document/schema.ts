@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { defaultTheme, ThemeSchema } from '../design/theme'
 import { styleTokenProblem } from '../design/tokens'
 import { getComponent, isContainerType, PAGE_ROOT_TYPE } from './components'
 import type { PropDef, PropValue } from './components'
@@ -43,6 +44,8 @@ export const ProjectSchema = z.object({
   slug: SlugSchema,
   version: z.number().int().nonnegative(),
   pages: z.array(PageSchema).min(1),
+  // Projects saved before themes existed get the default one.
+  theme: ThemeSchema.default(defaultTheme),
   createdAt: z.string(),
   updatedAt: z.string()
 }).superRefine((project, ctx) => {

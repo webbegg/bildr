@@ -1,3 +1,4 @@
+import type { Theme } from '../design/theme'
 import type { Page } from '../document/schema'
 
 /**
@@ -7,7 +8,7 @@ import type { Page } from '../document/schema'
  */
 
 export type EditorToCanvas
-  = | { type: 'bildr:render', page: Page, base: string }
+  = | { type: 'bildr:render', page: Page, base: string, theme: Theme }
     | { type: 'bildr:select', nodeId: string | null }
     | { type: 'bildr:hover', nodeId: string | null }
 

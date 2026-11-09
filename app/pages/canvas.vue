@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { Theme } from '#shared/design/theme'
 import type { Page } from '#shared/document/schema'
 import type { CanvasToEditor, EditorToCanvas } from '#shared/editor/protocol'
 import { isCanvasMessage } from '#shared/editor/protocol'
@@ -16,6 +17,8 @@ definePageMeta({ layout: false })
 
 const page = shallowRef<Page | null>(null)
 const base = ref('')
+const theme = shallowRef<Theme | null>(null)
+useTheme(theme)
 const selectedId = ref<string | null>(null)
 const hoveredId = ref<string | null>(null)
 
@@ -53,6 +56,7 @@ function onMessage(event: MessageEvent) {
   if (message.type === 'bildr:render') {
     page.value = message.page
     base.value = message.base
+    theme.value = message.theme
   } else if (message.type === 'bildr:select') {
     selectedId.value = message.nodeId
     if (message.nodeId) document.querySelector(`[data-bildr-id="${message.nodeId}"]`)?.scrollIntoView({ block: 'nearest' })

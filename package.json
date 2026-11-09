@@ -6,6 +6,7 @@
     "build": "nuxt build",
     "dev": "nuxt dev",
     "preview": "nuxt preview",
+    "palettes": "node --experimental-strip-types scripts/generate-palettes.ts",
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "test": "vitest run",

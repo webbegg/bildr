@@ -4,10 +4,26 @@ import { COMPONENTS, getComponent } from '#shared/document/components'
 import { cloneWithNewIds, createNode, createProject, slugify } from '#shared/document/factory'
 import { findParent, walk } from '#shared/document/tree'
 import { styleTokenProblem } from '#shared/design/tokens'
+import { DEFAULT_THEME } from '#shared/design/theme'
 
 describe('document schema', () => {
   it('accepts a freshly created project', () => {
     expect(ProjectSchema.safeParse(createProject('My App')).success).toBe(true)
+  })
+
+  it('gives new projects the default theme', () => {
+    expect(createProject('My App').theme).toEqual(DEFAULT_THEME)
+  })
+
+  it('fills the default theme for a project saved before themes existed', () => {
+    const { theme: _theme, ...legacy } = createProject('Old')
+    expect(ProjectSchema.parse(legacy).theme).toEqual(DEFAULT_THEME)
+  })
+
+  it('rejects an invalid theme', () => {
+    const project = createProject('My App')
+    project.theme.colors.primary = 'grass'
+    expect(ProjectSchema.safeParse(project).success).toBe(false)
   })
 
   it('rejects a node with an unknown component type', () => {

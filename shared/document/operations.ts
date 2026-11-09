@@ -1,3 +1,5 @@
+import { defaultTheme, ThemePatchSchema } from '../design/theme'
+import type { ThemePatch } from '../design/theme'
 import { isStyleTokenKey, styleTokenProblem } from '../design/tokens'
 import { getComponent, isContainerType } from './components'
 import type { PropValue } from './components'
@@ -19,6 +21,7 @@ export type Operation
     | { op: 'addPage', index: number, page: Page }
     | { op: 'removePage', pageId: string }
     | { op: 'updatePage', pageId: string, name?: string, slug?: string }
+    | { op: 'setTheme', theme: ThemePatch }
 
 export type OperationErrorCode = 'not_found' | 'invalid' | 'forbidden'
 
@@ -163,6 +166,34 @@ export function applyOperation(project: Project, op: Operation): Operation {
         page.slug = op.slug
       }
       return inverse
+    }
+    case 'setTheme': {
+      const parsed = ThemePatchSchema.safeParse(op.theme)
+      if (!parsed.success) fail('invalid', `Invalid theme: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
+      const { colors, font, radius, spacing } = parsed.data
+      const theme = project.theme ?? defaultTheme()
+      const inverse: ThemePatch = {}
+      if (colors) {
+        inverse.colors = {}
+        for (const [name, value] of Object.entries(colors) as [keyof typeof colors, string][]) {
+          inverse.colors[name] = theme.colors[name]
+          theme.colors[name] = value
+        }
+      }
+      if (font !== undefined) {
+        inverse.font = theme.font
+        theme.font = font
+      }
+      if (radius !== undefined) {
+        inverse.radius = theme.radius
+        theme.radius = radius
+      }
+      if (spacing !== undefined) {
+        inverse.spacing = theme.spacing
+        theme.spacing = spacing
+      }
+      project.theme = theme
+      return { op: 'setTheme', theme: inverse }
     }
   }
 }

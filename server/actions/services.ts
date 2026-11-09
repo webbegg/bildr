@@ -1,3 +1,4 @@
+import { defaultTheme } from '#shared/design/theme'
 import { applyOperations } from '#shared/document/operations'
 import type { Operation } from '#shared/document/operations'
 import type { Project, PublishedSnapshot } from '#shared/document/schema'
@@ -19,6 +20,12 @@ interface History {
 
 const UNDO_LIMIT = 100
 
+/** Projects saved before themes existed read as having the default theme. */
+function withTheme(project: Project): Project {
+  project.theme ??= defaultTheme()
+  return project
+}
+
 /**
  * Server-side state the actions share. Undo lives here, not in the editor,
  * so an agent can undo too and every tab sees the same history.
@@ -27,7 +34,9 @@ export function createServices(storage: KeyValueStorage) {
   const projects = createProjectStore(storage)
 
   async function loadProject(projectId: string): Promise<Project> {
-    return await projects.get(projectId) ?? Promise.reject(new ActionError('not_found', `Project "${projectId}" not found`))
+    const project = await projects.get(projectId)
+    if (!project) throw new ActionError('not_found', `Project "${projectId}" not found`)
+    return withTheme(project)
   }
 
   async function loadHistory(projectId: string): Promise<History> {
@@ -88,7 +97,9 @@ export function createServices(storage: KeyValueStorage) {
     async getPublished(slug: string): Promise<PublishedSnapshot | undefined> {
       const project = await projects.getBySlug(slug)
       if (!project) return undefined
-      return (await storage.getItem<PublishedSnapshot>(`published:${project.id}`)) ?? undefined
+      const snapshot = await storage.getItem<PublishedSnapshot>(`published:${project.id}`)
+      if (snapshot) withTheme(snapshot.project)
+      return snapshot ?? undefined
     },
 
     async historyState(projectId: string): Promise<{ undo: string | null, redo: string | null }> {
