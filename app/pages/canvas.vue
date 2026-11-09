@@ -9,7 +9,7 @@ import { findNode, findParent } from '#shared/document/tree'
 import type { DropTarget } from '#shared/editor/dropTarget'
 import type { StylePatch } from '#shared/editor/preview'
 import { previewTree, settlePreviews } from '#shared/editor/preview'
-import { DRAG_MIME, draggedNodeId, dropPosition, resolveDrop } from '#shared/editor/dropTarget'
+import { breakpointAt, DRAG_MIME, draggedNodeId, dropPosition, laysOutInRow, resolveDrop } from '#shared/editor/dropTarget'
 
 /**
  * The editor canvas, loaded in an iframe. It renders whatever page the
@@ -118,6 +118,13 @@ function onMouseDown(event: MouseEvent) {
   event.preventDefault()
 }
 
+/** A right-click opens the editor's node menu; the editor places it over the iframe. */
+function onContextMenu(event: MouseEvent) {
+  event.preventDefault()
+  const id = nodeIdAt(event.target)
+  if (id) post({ type: 'bildr:contextmenu', nodeId: id, x: event.clientX, y: event.clientY })
+}
+
 const SHORTCUT_KEYS = new Set(['Delete', 'Backspace', 'Escape'])
 function onKeyDown(event: KeyboardEvent) {
   const meta = event.metaKey || event.ctrlKey
@@ -139,7 +146,9 @@ function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } 
   const node = id ? findNode(root, id) : undefined
   if (!nodeEl || !node) return null
   const rect = nodeEl.getBoundingClientRect()
-  const horizontal = ['Row', 'Grid'].includes(findParent(root, node.id)?.parent.type ?? '')
+  // The canvas is as wide as the editor's device, so its width gives the breakpoint that applies.
+  const parent = findParent(root, node.id)?.parent
+  const horizontal = !!parent && laysOutInRow(parent, breakpointAt(window.innerWidth))
   const position = placeholder || node === root
     ? 'inside'
     : dropPosition(rect, { x: event.clientX, y: event.clientY }, { container: isContainerType(node.type), horizontal })
@@ -190,6 +199,7 @@ onMounted(() => {
   document.documentElement.addEventListener('mouseleave', onPointerLeave)
   document.addEventListener('click', onClick, true)
   document.addEventListener('mousedown', onMouseDown, true)
+  document.addEventListener('contextmenu', onContextMenu, true)
   document.addEventListener('keydown', onKeyDown)
   frame = requestAnimationFrame(track)
   post({ type: 'bildr:ready' })
@@ -205,6 +215,7 @@ onBeforeUnmount(() => {
   document.documentElement.removeEventListener('mouseleave', onPointerLeave)
   document.removeEventListener('click', onClick, true)
   document.removeEventListener('mousedown', onMouseDown, true)
+  document.removeEventListener('contextmenu', onContextMenu, true)
   document.removeEventListener('keydown', onKeyDown)
   cancelAnimationFrame(frame)
 })

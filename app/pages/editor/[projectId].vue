@@ -114,7 +114,9 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
         v-show="editor.mode !== 'data'"
         class="min-w-0 flex-1 bg-muted p-4"
       >
-        <EditorCanvas @key="message => editor.shortcut(message.key, message.meta, message.shift)" />
+        <EditorNodeMenu class="size-full">
+          <EditorCanvas @key="message => editor.shortcut(message.key, message.meta, message.shift)" />
+        </EditorNodeMenu>
       </main>
       <main
         v-if="editor.mode === 'data'"

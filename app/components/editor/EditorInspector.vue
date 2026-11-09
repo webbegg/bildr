@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { getComponent } from '#shared/document/components'
-import type { PropValue } from '#shared/document/components'
+import type { PropDef, PropValue } from '#shared/document/components'
 import { findParent } from '#shared/document/tree'
+import type { PropGroup } from '#shared/editor/propGroups'
+import { groupedProps, isDefaultProp, PROP_GROUPS } from '#shared/editor/propGroups'
 import { breadcrumb } from '#shared/editor/selection'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES, hasStyleAt } from '#shared/editor/styleFields'
@@ -41,6 +43,22 @@ const device = computed(() => devices.value.find(d => d.value === editor.deviceI
 
 function propValue(name: string, fallback: PropValue): PropValue {
   return node.value?.props[name] ?? fallback
+}
+
+// Settings: the props in Content, Behaviour, Appearance, Advanced sections; Shift-click toggles them all.
+const propGroups = computed(() => groupedProps(propDefs.value))
+const openGroups = ref(new Set<PropGroup>(PROP_GROUPS))
+const changed = (def: PropDef) => !!node.value && !isDefaultProp(def, node.value.props)
+
+function toggleGroup(group: PropGroup, event: MouseEvent) {
+  const open = !openGroups.value.has(group)
+  const targets = event.shiftKey ? PROP_GROUPS : [group]
+  const next = new Set(openGroups.value)
+  for (const target of targets) {
+    if (open) next.add(target)
+    else next.delete(target)
+  }
+  openGroups.value = next
 }
 
 // The canvas never submits forms (clicks select), so a Form is tried out here instead.
@@ -219,11 +237,13 @@ function renamePage(field: 'name' | 'slug', value: string) {
 
       <div
         v-show="tab === 'settings'"
-        class="space-y-3 p-3"
         role="tabpanel"
         data-tab="settings"
       >
-        <template v-if="isRoot && editor.page">
+        <div
+          v-if="isRoot && editor.page"
+          class="space-y-3 border-b border-default p-3"
+        >
           <UFormField
             label="Page name"
             size="xs"
@@ -242,41 +262,52 @@ function renamePage(field: 'name' | 'slug', value: string) {
               @commit="renamePage('slug', $event)"
             />
           </UFormField>
-        </template>
+        </div>
 
-        <EditorPropField
-          v-for="def in propDefs"
-          :key="def.name"
-          :def="def"
-          :value="propValue(def.name, def.default)"
-          @update="editor.updateProps(node.id, { [def.name]: $event })"
-        />
+        <EditorStyleSection
+          v-for="{ group, props: defs } in propGroups"
+          :key="group"
+          :label="group"
+          :open="openGroups.has(group)"
+          :mark="defs.some(changed) ? 'set' : undefined"
+          :data-prop-group="group"
+          @toggle="toggleGroup(group, $event)"
+        >
+          <EditorPropField
+            v-for="def in defs"
+            :key="def.name"
+            :def="def"
+            :value="propValue(def.name, def.default)"
+            :changed="changed(def)"
+            @update="editor.updateProps(node.id, { [def.name]: $event })"
+            @reset="editor.updateProps(node.id, { [def.name]: def.default })"
+          />
+          <div
+            v-if="group === 'Behaviour' && node.type === FORM_TYPE"
+            class="space-y-1.5 pt-1.5"
+          >
+            <UButton
+              label="Test submit"
+              icon="i-lucide-send"
+              color="neutral"
+              variant="outline"
+              size="xs"
+              block
+              :disabled="!formCollection"
+              @click="testSubmit"
+            />
+            <p class="text-[11px] text-dimmed">
+              {{ formCollection ? `Adds a record with sample values to ${formCollection.name}.` : 'Choose an internal collection to test this Form.' }}
+            </p>
+          </div>
+        </EditorStyleSection>
 
         <p
           v-if="!propDefs.length && !isRoot"
-          class="text-xs text-dimmed"
+          class="p-3 text-xs text-dimmed"
         >
-          {{ node.type }} has no settings.
+          This component has no settings.
         </p>
-
-        <div
-          v-if="node.type === FORM_TYPE"
-          class="space-y-1.5"
-        >
-          <UButton
-            label="Test submit"
-            icon="i-lucide-send"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            block
-            :disabled="!formCollection"
-            @click="testSubmit"
-          />
-          <p class="text-xs text-dimmed">
-            {{ formCollection ? `Adds a record with sample values to ${formCollection.name}.` : 'Choose an internal collection to test this Form.' }}
-          </p>
-        </div>
       </div>
     </div>
   </div>

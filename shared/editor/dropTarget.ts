@@ -1,6 +1,8 @@
-import { isContainerType } from '../document/components'
+import { isContainerType, structuralStyle } from '../document/components'
 import type { DocNode } from '../document/schema'
 import { containsNode, findNode, findParent } from '../document/tree'
+import type { Breakpoint } from '../design/tokens'
+import { breakpointStyles } from './styleFields'
 
 /**
  * Pure drag-and-drop geometry shared by the canvas and the layers tree:
@@ -43,6 +45,28 @@ export function nodeDragType(id: string): string {
 
 export function draggedNodeId(types: readonly string[]): string | undefined {
   return types.find(type => type.startsWith(NODE_TYPE_PREFIX))?.slice(NODE_TYPE_PREFIX.length)
+}
+
+/** Tailwind's breakpoint widths in CSS px, smallest first. */
+const BREAKPOINT_WIDTHS: [Breakpoint, number][] = [['sm', 640], ['md', 768], ['lg', 1024]]
+
+/** The largest breakpoint a viewport `width` reaches; undefined below `sm` (the base). */
+export function breakpointAt(width: number): Breakpoint | undefined {
+  return BREAKPOINT_WIDTHS.filter(([, min]) => width >= min).at(-1)?.[0]
+}
+
+/**
+ * Whether `parent` lays its children out side by side at `breakpoint`: a Grid,
+ * a List in its row or grid layout, or a flex container whose effective
+ * `direction` there (its own token or the nearest smaller one, else its
+ * structural direction) is a row.
+ */
+export function laysOutInRow(parent: DocNode, breakpoint: Breakpoint | undefined): boolean {
+  if (parent.type === 'Grid') return true
+  if (parent.type === 'List') return parent.props.layout === 'row' || parent.props.layout === 'grid'
+  const { own, inherited } = breakpointStyles({ ...structuralStyle(parent.type), ...parent.style }, breakpoint)
+  const direction = own.direction ?? inherited.direction?.value
+  return direction === 'row' || direction === 'row-reverse'
 }
 
 /** Share of a container's size, at each edge, that drops beside it rather than inside. */

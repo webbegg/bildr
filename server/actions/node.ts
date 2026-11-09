@@ -116,6 +116,27 @@ export const nodeDelete = defineAction({
   }
 })
 
+export const WRAP_TYPES = ['Container', 'Row', 'Column', 'Card', 'Grid'] as const
+
+export const nodeWrap = defineAction({
+  name: 'node_wrap',
+  description: 'Wrap a node in a new container (Container by default) placed where the node was; the node becomes its only child. One undo step. Returns the container id.',
+  input: z.object({ ...Target, nodeId: IdSchema, type: z.enum(WRAP_TYPES).optional().describe('The wrapping container type; defaults to Container') }),
+  run: async ({ projectId, pageId, nodeId, type = 'Container' }, ctx) => {
+    const current = await ctx.services.loadProject(projectId)
+    const page = assertFound(current.pages.find(p => p.id === pageId), `Page "${pageId}" not found`)
+    assertFound(findNode(page.root, nodeId), `Node "${nodeId}" not found`)
+    const location = findParent(page.root, nodeId)
+    if (!location) throw new ActionError('forbidden', 'The page root cannot be wrapped')
+    const wrapper = createNode(type)
+    const project = await ctx.services.mutate(ctx, projectId, `Wrap in ${type}`, [
+      { op: 'insert', pageId, parentId: location.parent.id, index: location.index, node: wrapper },
+      { op: 'move', pageId, nodeId, parentId: wrapper.id, index: 0 }
+    ])
+    return { version: project.version, nodeId: wrapper.id }
+  }
+})
+
 export const nodeDuplicate = defineAction({
   name: 'node_duplicate',
   description: 'Duplicate a node (with its children) right after itself. Returns the copy id.',

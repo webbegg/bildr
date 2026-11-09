@@ -4,6 +4,7 @@ import type { Theme, ThemePatch } from '#shared/design/theme'
 import type { Project } from '#shared/document/schema'
 import type { PropValue } from '#shared/document/components'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
+import { collapsedAncestors, siblingMove } from '#shared/editor/layers'
 import type { DropTarget } from '#shared/editor/dropTarget'
 import { insertTargetForSelection, moveTarget, parseDragPayload } from '#shared/editor/dropTarget'
 import type { PreviewState, StylePatch } from '#shared/editor/preview'
@@ -38,6 +39,8 @@ export function createEditor(projectId: string) {
   const pageId = ref<string | null>(null)
   const selectedId = ref<string | null>(null)
   const hoveredId = ref<string | null>(null)
+  /** Layers rows whose children are hidden; kept in memory only. */
+  const collapsed = ref(new Set<string>())
   const history = ref<{ undo: string | null, redo: string | null }>({ undo: null, redo: null })
   /** Build edits the page; Design edits the project theme; Data edits collections and records. */
   const mode = ref<'build' | 'design' | 'data'>('build')
@@ -187,21 +190,46 @@ export function createEditor(projectId: string) {
     if (await runOnPage('node_move', { nodeId: data.id, ...to })) selectedId.value = data.id
   }
 
-  /** Deletes the selection (never the page root) and selects a neighbour. */
-  async function remove(): Promise<void> {
-    const id = selectedId.value
+  /** Deletes a node, the selection by default (never the page root); a deleted selection moves to a neighbour. */
+  async function remove(id = selectedId.value): Promise<void> {
     const root = page.value?.root
     if (!id || !root || id === root.id) return
-    const next = selectionAfterDelete(root, id)
+    const node = findNode(root, id)
+    const next = node && selectedId.value && containsNode(node, selectedId.value) ? selectionAfterDelete(root, id) : selectedId.value
     if (await runOnPage('node_delete', { nodeId: id })) selectedId.value = next
   }
 
-  async function duplicate(): Promise<void> {
-    const id = selectedId.value
+  async function duplicate(id = selectedId.value): Promise<void> {
     if (!id || id === page.value?.root.id) return
     const result = await runOnPage<{ nodeId: string }>('node_duplicate', { nodeId: id })
     if (result) selectedId.value = result.nodeId
   }
+
+  /** Wraps a node in a new container (one undo step) and selects the container. */
+  async function wrap(id: string, type?: 'Container' | 'Row' | 'Column' | 'Card' | 'Grid'): Promise<void> {
+    if (id === page.value?.root.id) return
+    const result = await runOnPage<{ nodeId: string }>('node_wrap', { nodeId: id, type })
+    if (result) selectedId.value = result.nodeId
+  }
+
+  /** Moves a node one step up (-1) or down (1) among its siblings. */
+  async function moveBy(id: string, delta: -1 | 1): Promise<void> {
+    const to = page.value ? siblingMove(page.value.root, id, delta) : null
+    if (to && await runOnPage('node_move', { nodeId: id, ...to })) selectedId.value = id
+  }
+
+  function setCollapsed(id: string, value: boolean): void {
+    const next = new Set(collapsed.value)
+    if (value) next.add(id)
+    else next.delete(id)
+    collapsed.value = next
+  }
+
+  // A selection made elsewhere (e.g. a canvas click) opens the collapsed rows hiding it.
+  watch(selectedId, (id) => {
+    const hidden = id && page.value ? collapsedAncestors(page.value.root, collapsed.value, id) : []
+    if (hidden.length) collapsed.value = new Set([...collapsed.value].filter(row => !hidden.includes(row)))
+  })
 
   async function updateProps(nodeId: string, props: Record<string, PropValue | null>): Promise<void> {
     await runOnPage('node_update_props', { nodeId, props })
@@ -257,9 +285,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, selectedId, hoveredId, history, mode, deviceId, device, themeDraft, stylePreview, page, selected, theme,
+    projectId, project, pageId, selectedId, hoveredId, collapsed, history, mode, deviceId, device, themeDraft, stylePreview, page, selected, theme,
     collectionId, collection, records, recordsTotal, recordsError, listCollections, lists,
-    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, insert, drop, remove, duplicate, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
+    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, insert, drop, remove, duplicate, wrap, moveBy, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }
 

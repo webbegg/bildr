@@ -6,7 +6,7 @@ import { ICON_NAME } from '#shared/document/schema'
  * completed to `i-lucide-coffee`; it commits on change like
  * EditorCommitInput, and only names the document accepts (or empty).
  */
-const props = defineProps<{ modelValue: string }>()
+const props = withDefaults(defineProps<{ modelValue: string, size?: 'xs' | 'sm' }>(), { size: 'sm' })
 const emit = defineEmits<{ commit: [value: string] }>()
 
 const draft = ref(props.modelValue)
@@ -31,7 +31,7 @@ function commit() {
   <UInput
     v-model="draft"
     placeholder="i-lucide-coffee"
-    size="sm"
+    :size="size"
     class="w-full"
     :color="valid ? undefined : 'error'"
     :highlight="!valid"

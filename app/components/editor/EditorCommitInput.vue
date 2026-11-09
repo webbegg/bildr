@@ -3,7 +3,7 @@
  * A text field that commits on change (blur or Enter) rather than on every
  * keystroke, so each edit is a single undo step.
  */
-const props = defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string }>()
+const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm' }>(), { size: 'sm' })
 const emit = defineEmits<{ commit: [value: string] }>()
 
 const draft = ref(props.modelValue)
@@ -23,7 +23,7 @@ function commit() {
     :placeholder="placeholder"
     :rows="3"
     autoresize
-    size="sm"
+    :size="size"
     class="w-full"
     @change="commit"
   />
@@ -31,7 +31,7 @@ function commit() {
     v-else
     v-model="draft"
     :placeholder="placeholder"
-    size="sm"
+    :size="size"
     class="w-full"
     @change="commit"
     @keydown.esc="draft = modelValue"

@@ -7,9 +7,10 @@ import { breakpointLabel } from '#shared/editor/styleFields'
  * a blue pill when the current device sets it, an orange pill when it inherits
  * from a smaller breakpoint. Clicking a set pill opens a Reset menu;
  * Alt-clicking it resets at once. Clicking an inherited pill says where the
- * value comes from.
+ * value comes from. The Settings tab reuses it for props, with `resetLabel`
+ * "Reset to default".
  */
-const props = defineProps<{ label: string, title: string, provenance: Provenance, device: string }>()
+const props = withDefaults(defineProps<{ label: string, title: string, provenance: Provenance, device?: string, resetLabel?: string }>(), { device: '', resetLabel: 'Reset' })
 const emit = defineEmits<{ reset: [] }>()
 
 const open = ref(false)
@@ -78,10 +79,10 @@ const PILL = 'max-w-full truncate rounded-sm px-1 py-px text-left text-[11px] le
         <button
           type="button"
           role="menuitem"
-          class="flex w-36 items-center justify-between rounded-sm px-2 py-1 text-xs hover:bg-elevated"
+          class="flex min-w-36 items-center justify-between gap-4 rounded-sm px-2 py-1 text-xs whitespace-nowrap hover:bg-elevated"
           @click="reset"
         >
-          Reset
+          {{ resetLabel }}
           <span class="text-[11px] text-dimmed">⌥ click</span>
         </button>
       </div>

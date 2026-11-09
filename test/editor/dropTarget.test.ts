@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createNode, createPage } from '#shared/document/factory'
-import { dropPosition, insertTargetForSelection, moveTarget, resolveDrop } from '#shared/editor/dropTarget'
+import { breakpointAt, dropPosition, insertTargetForSelection, laysOutInRow, moveTarget, resolveDrop } from '#shared/editor/dropTarget'
 
 function fixture() {
   const page = createPage('Home')
@@ -63,5 +63,39 @@ describe('insertTargetForSelection', () => {
     expect(insertTargetForSelection(root, card.id)).toEqual({ parentId: card.id, index: 2 })
     expect(insertTargetForSelection(root, a.id)).toEqual({ parentId: card.id, index: 1 })
     expect(insertTargetForSelection(root, null)).toEqual({ parentId: root.id, index: 2 })
+  })
+})
+
+describe('laysOutInRow', () => {
+  const node = (type: string, style: Record<string, string> = {}, props: Record<string, string> = {}) => ({ ...createNode(type, props), style })
+
+  it('follows the structural direction of the flex containers', () => {
+    expect(laysOutInRow(node('Row'), undefined)).toBe(true)
+    expect(laysOutInRow(node('Column'), undefined)).toBe(false)
+    expect(laysOutInRow(node('Grid'), 'lg')).toBe(true)
+  })
+
+  it('reads the direction token at the current breakpoint, mobile-first', () => {
+    expect(laysOutInRow(node('Column', { direction: 'row' }), undefined)).toBe(true)
+    expect(laysOutInRow(node('Row', { direction: 'col' }), 'md')).toBe(false)
+    const responsive = node('Column', { 'md:direction': 'row-reverse' })
+    expect(laysOutInRow(responsive, undefined)).toBe(false)
+    expect(laysOutInRow(responsive, 'md')).toBe(true)
+    expect(laysOutInRow(responsive, 'lg')).toBe(true)
+    expect(laysOutInRow(node('Container', { 'md:direction': 'row', 'lg:direction': 'col' }), 'lg')).toBe(false)
+  })
+
+  it('lays a List out in a row for its row and grid layouts', () => {
+    expect(laysOutInRow(node('List', {}, { layout: 'row' }), undefined)).toBe(true)
+    expect(laysOutInRow(node('List'), undefined)).toBe(false)
+  })
+})
+
+describe('breakpointAt', () => {
+  it('maps a canvas width to the largest breakpoint it reaches', () => {
+    expect(breakpointAt(390)).toBeUndefined()
+    expect(breakpointAt(640)).toBe('sm')
+    expect(breakpointAt(768)).toBe('md')
+    expect(breakpointAt(1280)).toBe('lg')
   })
 })

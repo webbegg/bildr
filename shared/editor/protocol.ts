@@ -11,6 +11,7 @@ import type { StylePatch } from './preview'
  * children per record, and copies after the first carry `data-bildr-copy`.
  * `bildr:preview` shows a style patch on a node without saving it (null
  * clears it); a render that already shows the patch clears it too.
+ * `bildr:contextmenu` is a right-click on a node, at canvas viewport coordinates.
  */
 
 /** What a canvas shows: the page being edited, or the theme's token preview sheet. */
@@ -26,6 +27,7 @@ export type CanvasToEditor
   = | { type: 'bildr:ready' }
     | { type: 'bildr:hover', nodeId: string | null }
     | { type: 'bildr:click', nodeId: string }
+    | { type: 'bildr:contextmenu', nodeId: string, x: number, y: number }
     | { type: 'bildr:key', key: string, meta: boolean, shift: boolean }
     | { type: 'bildr:drop', parentId: string, index: number, payload: string }
 

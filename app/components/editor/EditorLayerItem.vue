@@ -3,15 +3,32 @@ import { getComponent, isContainerType } from '#shared/document/components'
 import type { DocNode } from '#shared/document/schema'
 import type { DropPosition } from '#shared/editor/dropTarget'
 import { DRAG_MIME, draggedNodeId, dropPosition, nodeDragType, resolveDrop } from '#shared/editor/dropTarget'
-import { nodeLabel } from '#shared/runtime/render'
 
+/**
+ * A layers row after Stacki's tree: 16px of indent per level, a chevron that
+ * collapses the children, the type icon, the type with its text in italics,
+ * and a drag handle on hover. The whole row drags and takes drops.
+ */
 const props = defineProps<{ node: DocNode, depth: number }>()
 const editor = useEditor()
+const row = useTemplateRef<HTMLElement>('row')
 
 const icon = computed(() => getComponent(props.node.type)?.icon ?? 'i-lucide-file')
-const label = computed(() => (props.depth === 0 ? editor.page?.name ?? 'Page' : nodeLabel(props.node)))
 const isRoot = computed(() => props.depth === 0)
+const name = computed(() => (isRoot.value ? editor.page?.name ?? 'Page' : props.node.type))
+const preview = computed(() => {
+  const text = props.node.props.text ?? props.node.props.label
+  return !isRoot.value && typeof text === 'string' ? text : ''
+})
+const hasChildren = computed(() => props.node.children.length > 0)
+const collapsed = computed(() => editor.collapsed.has(props.node.id))
+const selected = computed(() => editor.selectedId === props.node.id)
 const dropAt = ref<DropPosition | null>(null)
+
+// Keyboard steps and canvas clicks can select a row that is scrolled away.
+watch(selected, (value) => {
+  if (value) nextTick(() => row.value?.scrollIntoView({ block: 'nearest' }))
+})
 
 const DROP_CLASS: Record<DropPosition, string> = {
   before: 'shadow-[inset_0_2px_0_var(--ui-primary)]',
@@ -59,17 +76,23 @@ function onDrop(event: DragEvent) {
 </script>
 
 <template>
-  <div>
-    <button
-      type="button"
+  <div
+    role="none"
+  >
+    <div
+      ref="row"
+      role="treeitem"
+      :aria-selected="selected"
+      :aria-expanded="hasChildren ? !collapsed : undefined"
+      :aria-level="depth + 1"
       :data-layer-id="node.id"
       :draggable="!isRoot"
-      class="flex w-full items-center gap-1.5 truncate py-1 pr-2 text-left text-sm"
+      class="group flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-md pe-1 text-xs whitespace-nowrap"
       :class="[
-        editor.selectedId === node.id ? 'bg-primary/10 text-primary' : editor.hoveredId === node.id ? 'bg-elevated' : 'text-toned',
+        selected ? 'bg-primary/10 text-highlighted' : editor.hoveredId === node.id ? 'bg-elevated text-highlighted' : 'text-toned hover:bg-elevated',
         dropAt && DROP_CLASS[dropAt]
       ]"
-      :style="{ paddingLeft: `${12 + depth * 14}px` }"
+      :style="{ paddingLeft: `${2 + depth * 16}px` }"
       @click="editor.selectedId = node.id"
       @mouseenter="editor.hoveredId = node.id"
       @dragstart="onDragStart"
@@ -78,17 +101,55 @@ function onDrop(event: DragEvent) {
       @drop="onDrop"
       @dragend="dropAt = null"
     >
+      <button
+        v-if="hasChildren"
+        type="button"
+        tabindex="-1"
+        class="flex h-full w-4 shrink-0 items-center justify-center rounded-sm text-dimmed hover:text-highlighted"
+        :aria-label="collapsed ? `Expand ${name}` : `Collapse ${name}`"
+        data-layer-toggle
+        @click.stop="editor.setCollapsed(node.id, !collapsed)"
+      >
+        <UIcon
+          name="i-lucide-chevron-down"
+          class="size-3 transition-transform"
+          :class="{ '-rotate-90': collapsed }"
+        />
+      </button>
+      <span
+        v-else
+        class="w-4 shrink-0"
+      />
       <UIcon
         :name="icon"
         class="size-3.5 shrink-0"
+        :class="selected ? 'text-primary' : 'text-dimmed group-hover:text-muted'"
       />
-      <span class="truncate">{{ label }}</span>
-    </button>
-    <EditorLayerItem
-      v-for="child in node.children"
-      :key="child.id"
-      :node="child"
-      :depth="depth + 1"
-    />
+      <span class="min-w-0 flex-1 truncate">
+        <span class="font-medium">{{ name }}</span>
+        <span
+          v-if="preview"
+          class="ms-1.5 text-dimmed italic"
+        >{{ preview }}</span>
+      </span>
+      <UIcon
+        v-if="!isRoot"
+        name="i-lucide-grip-vertical"
+        class="size-3.5 shrink-0 cursor-grab text-dimmed opacity-0 group-hover:opacity-100"
+        aria-hidden="true"
+        data-layer-handle
+      />
+    </div>
+    <div
+      v-if="hasChildren && !collapsed"
+      role="group"
+    >
+      <EditorLayerItem
+        v-for="child in node.children"
+        :key="child.id"
+        :node="child"
+        :depth="depth + 1"
+      />
+    </div>
   </div>
 </template>

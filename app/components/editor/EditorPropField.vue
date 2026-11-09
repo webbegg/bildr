@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import type { PropDef, PropValue } from '#shared/document/components'
+import type { Provenance } from '#shared/editor/styleFields'
 import { enclosingForm, FORM_TYPE } from '#shared/runtime/form'
 
-const props = defineProps<{ def: PropDef, value: PropValue }>()
-const emit = defineEmits<{ update: [value: PropValue] }>()
+/**
+ * One Settings row: a label pill (accent when the prop differs from the
+ * component default; click for Reset to default, Alt-click resets) and the
+ * control for the prop's kind. Controls carry the prop label as their
+ * accessible name.
+ */
+const props = defineProps<{ def: PropDef, value: PropValue, changed: boolean }>()
+const emit = defineEmits<{ update: [value: PropValue], reset: [] }>()
 const editor = useEditor()
+
+const provenance = computed<Provenance>(() => (props.changed ? { state: 'set', key: props.def.name, value: String(props.value) } : { state: 'unset' }))
+const BOOLEAN_ITEMS = [{ value: 'true', label: 'On' }, { value: 'false', label: 'Off' }]
 
 const NONE = '__none'
 const EXTERNAL = '__external'
@@ -53,82 +63,110 @@ function onLinkMode(mode: string) {
 </script>
 
 <template>
-  <UFormField
-    :label="def.label"
-    :help="def.description"
-    size="sm"
+  <div
+    class="grid min-h-7 grid-cols-[84px_minmax(0,1fr)] items-start gap-2"
+    :data-prop-row="def.name"
   >
-    <EditorCommitInput
-      v-if="def.kind === 'text' || def.kind === 'textarea' || def.kind === 'image'"
-      :model-value="text"
-      :multiline="def.kind === 'textarea'"
-      :placeholder="def.kind === 'image' ? 'https://' : undefined"
-      @commit="emit('update', $event)"
-    />
-    <EditorIconInput
-      v-else-if="def.kind === 'icon'"
-      :model-value="text"
-      @commit="emit('update', $event)"
-    />
-    <UInputNumber
-      v-else-if="def.kind === 'number'"
-      :model-value="Number(value)"
-      size="sm"
-      class="w-full"
-      @update:model-value="$event != null && emit('update', $event)"
-    />
-    <USwitch
-      v-else-if="def.kind === 'boolean'"
-      :model-value="value === true"
-      @update:model-value="emit('update', $event)"
-    />
-    <USelect
-      v-else-if="def.kind === 'select'"
-      :model-value="text"
-      :items="def.options ?? []"
-      size="sm"
-      class="w-full"
-      @update:model-value="emit('update', $event)"
-    />
-    <USelect
-      v-else-if="def.kind === 'collection'"
-      :model-value="text || NONE"
-      :items="collectionItems"
-      size="sm"
-      class="w-full"
-      @update:model-value="emit('update', $event === NONE ? '' : $event)"
-    />
-    <USelect
-      v-else-if="def.kind === 'field' && formCollection"
-      :model-value="text || NONE"
-      :items="fieldItems"
-      size="sm"
-      class="w-full"
-      @update:model-value="emit('update', $event === NONE ? '' : $event)"
-    />
-    <EditorCommitInput
-      v-else-if="def.kind === 'field'"
-      :model-value="text"
-      placeholder="Put this Input in a Form with a collection"
-      @commit="emit('update', $event)"
-    />
     <div
-      v-else-if="def.kind === 'link'"
-      class="space-y-1.5"
+      class="flex h-7 min-w-0 items-center"
+      :data-field-label="def.name"
     >
-      <USelect
-        :model-value="linkMode"
-        :items="linkItems"
-        size="sm"
-        class="w-full"
-        @update:model-value="onLinkMode"
-      />
-      <EditorCommitInput
-        v-if="linkMode === EXTERNAL"
-        :model-value="pageSlugs.includes(text) ? '' : text"
-        placeholder="https://example.com"
-        @commit="emit('update', $event)"
+      <EditorFieldLabel
+        :label="def.label"
+        :title="def.description ?? def.label"
+        :provenance="provenance"
+        reset-label="Reset to default"
+        @reset="emit('reset')"
       />
     </div>
-  </UFormField>
+    <div class="min-w-0">
+      <EditorCommitInput
+        v-if="def.kind === 'text' || def.kind === 'textarea' || def.kind === 'image'"
+        :model-value="text"
+        :multiline="def.kind === 'textarea'"
+        :placeholder="def.kind === 'image' ? 'https://' : undefined"
+        :aria-label="def.label"
+        size="xs"
+        @commit="emit('update', $event)"
+      />
+      <EditorIconInput
+        v-else-if="def.kind === 'icon'"
+        :model-value="text"
+        :aria-label="def.label"
+        size="xs"
+        @commit="emit('update', $event)"
+      />
+      <UInputNumber
+        v-else-if="def.kind === 'number'"
+        :model-value="Number(value)"
+        :aria-label="def.label"
+        size="xs"
+        class="w-full"
+        @update:model-value="$event != null && emit('update', $event)"
+      />
+      <EditorSegmented
+        v-else-if="def.kind === 'boolean'"
+        :model-value="String(value === true)"
+        :items="BOOLEAN_ITEMS"
+        :aria-label="def.label"
+        @update:model-value="emit('update', $event === 'true')"
+      />
+      <USelect
+        v-else-if="def.kind === 'select'"
+        :model-value="text"
+        :items="def.options ?? []"
+        :aria-label="def.label"
+        size="xs"
+        class="w-full"
+        @update:model-value="emit('update', $event)"
+      />
+      <USelect
+        v-else-if="def.kind === 'collection'"
+        :model-value="text || NONE"
+        :items="collectionItems"
+        :aria-label="def.label"
+        size="xs"
+        class="w-full"
+        @update:model-value="emit('update', $event === NONE ? '' : $event)"
+      />
+      <USelect
+        v-else-if="def.kind === 'field' && formCollection"
+        :model-value="text || NONE"
+        :items="fieldItems"
+        :aria-label="def.label"
+        size="xs"
+        class="w-full"
+        @update:model-value="emit('update', $event === NONE ? '' : $event)"
+      />
+      <EditorCommitInput
+        v-else-if="def.kind === 'field'"
+        :model-value="text"
+        placeholder="Put this Input in a Form with a collection"
+        :aria-label="def.label"
+        size="xs"
+        @commit="emit('update', $event)"
+      />
+      <div
+        v-else-if="def.kind === 'link'"
+        class="space-y-1.5"
+      >
+        <USelect
+          :model-value="linkMode"
+          :items="linkItems"
+          :aria-label="def.label"
+          size="xs"
+          class="w-full"
+          @update:model-value="onLinkMode"
+        />
+        <EditorCommitInput
+          v-if="linkMode === EXTERNAL"
+          :model-value="pageSlugs.includes(text) ? '' : text"
+          placeholder="https://example.com"
+          :aria-label="`${def.label} URL`"
+          size="xs"
+          @commit="emit('update', $event)"
+        />
+      </div>
+    </div>
+  </div>
 </template>

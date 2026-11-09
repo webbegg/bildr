@@ -1,7 +1,7 @@
 import { apiSourcePreview, collectionCreate, collectionDelete, collectionUpdate, fieldAdd, fieldRemove, fieldUpdate, publicRecordCreate, recordCreate, recordDelete, recordGet, recordList, recordUpdate } from './data'
 import type { ActionDef } from './define'
 import { editorGetContext, editorNavigate, editorSetContext } from './editor'
-import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeUpdateProps, nodeUpdateStyle } from './node'
+import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
 import { pageAdd, pageDelete, pageRename } from './page'
 import { themeGet, themeUpdate } from './theme'
 import { componentsList, historyGet, historyRedo, historyUndo, projectCreate, projectGet, projectList, projectPublish, projectPublishedInfo } from './project'
@@ -21,6 +21,7 @@ export const ACTIONS = [
   nodeMove,
   nodeDelete,
   nodeDuplicate,
+  nodeWrap,
   themeGet,
   themeUpdate,
   apiSourcePreview,
