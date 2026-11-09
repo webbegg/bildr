@@ -5,6 +5,7 @@ import { ActionError } from './define'
 import type { ActionCaller, ActionContext, ActionDef } from './define'
 import { ACTIONS } from './registry'
 import { createServices } from './services'
+import type { ServicesOptions } from './services'
 
 export interface ChangeEvent {
   projectId: string
@@ -42,8 +43,8 @@ export interface CallOptions {
  * serialize per project, run, then emit change and navigate events. Nothing else may call
  * an action's `run`.
  */
-export function createBildr(storage: KeyValueStorage, actions: ActionDef[] = ACTIONS) {
-  const services = createServices(storage)
+export function createBildr(storage: KeyValueStorage, actions: ActionDef[] = ACTIONS, options: ServicesOptions = {}) {
+  const services = createServices(storage, options)
   const byName = new Map(actions.map(a => [a.name, a]))
   const listeners = new Set<(event: ChangeEvent) => void>()
   const navigateListeners = new Set<(event: NavigateEvent) => void>()

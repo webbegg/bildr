@@ -48,6 +48,8 @@ export function createEditor(projectId: string) {
   const collectionId = ref<string | null>(null)
   const records = shallowRef<DataRecord[]>([])
   const recordsTotal = ref(0)
+  /** Why the shown collection's records could not load, e.g. an API source that failed. */
+  const recordsError = ref('')
 
   const page = computed(() => project.value?.pages.find(p => p.id === pageId.value) ?? project.value?.pages[0] ?? null)
   const selected = computed(() => (page.value && selectedId.value ? findNode(page.value.root, selectedId.value) ?? null : null))
@@ -83,7 +85,8 @@ export function createEditor(projectId: string) {
     if (load === listLoad) listCollectionRecords.value = Object.fromEntries(entries)
   }
 
-  watch(() => listCollections.value.map(c => c.id).join(), () => void reloadListRecords().catch(() => {}))
+  // API collections are mapped on the server, so a new source or mapping needs a reload too.
+  watch(() => JSON.stringify(listCollections.value.map(c => (c.source.type === 'api' ? [c.id, c.source, c.fields] : c.id))), () => void reloadListRecords().catch(() => {}))
 
   async function reload(): Promise<void> {
     const [next, nextHistory] = await Promise.all([
@@ -136,7 +139,13 @@ export function createEditor(projectId: string) {
 
   // A schema change (or another collection) changes how records read.
   watch(() => [mode.value, collection.value] as const, ([current]) => {
-    if (current === 'data') void reloadRecords().catch(() => {})
+    if (current !== 'data') return
+    recordsError.value = ''
+    void reloadRecords().catch((error) => {
+      records.value = []
+      recordsTotal.value = 0
+      recordsError.value = actionErrorMessage(error)
+    })
   })
 
   /** Like `run`, scoped to the current page (for node actions). */
@@ -231,7 +240,7 @@ export function createEditor(projectId: string) {
 
   return reactive({
     projectId, project, pageId, selectedId, hoveredId, history, mode, deviceId, device, themeDraft, page, selected, theme,
-    collectionId, collection, records, recordsTotal, listCollections, lists,
+    collectionId, collection, records, recordsTotal, recordsError, listCollections, lists,
     reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, insert, drop, remove, duplicate, updateProps, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }

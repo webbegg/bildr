@@ -4,8 +4,8 @@ import { isStyleTokenKey, styleTokenProblem } from '../design/tokens'
 import { getComponent, isContainerType } from './components'
 import type { PropValue } from './components'
 import type { z } from 'zod'
-import { CollectionSchema, FieldSchema, FieldTypeSchema, nodeTreeProblems, PageSchema, propValueProblem, SlugSchema } from './schema'
-import type { Collection, DocNode, Field, FieldType, Page, Project } from './schema'
+import { ApiPathSchema, CollectionSchema, FieldSchema, FieldTypeSchema, nodeTreeProblems, PageSchema, propValueProblem, SlugSchema } from './schema'
+import type { Collection, CollectionSource, DocNode, Field, FieldType, Page, Project } from './schema'
 import { containsNode, findNode, findParent, walk } from './tree'
 
 /**
@@ -28,7 +28,8 @@ export type Operation
     | { op: 'updateCollection', collectionId: string, name?: string, slug?: string, publicRead?: boolean, publicCreate?: boolean }
     | { op: 'addField', collectionId: string, index: number, field: Field }
     | { op: 'removeField', collectionId: string, key: string }
-    | { op: 'updateField', collectionId: string, key: string, label?: string, type?: FieldType }
+    | { op: 'updateField', collectionId: string, key: string, label?: string, type?: FieldType, path?: string | null }
+    | { op: 'setSource', collectionId: string, source: CollectionSource, fields: Field[] }
 
 export type OperationErrorCode = 'not_found' | 'invalid' | 'forbidden'
 
@@ -276,6 +277,10 @@ export function applyOperation(project: Project, op: Operation): Operation {
       const field = getField(collection, op.key)
       if (op.type !== undefined && !FieldTypeSchema.safeParse(op.type).success) fail('invalid', `Unknown field type "${op.type}"`)
       if (op.label !== undefined && !op.label.trim()) fail('invalid', 'Field label cannot be empty')
+      if (op.path !== undefined && op.path !== null) {
+        const path = ApiPathSchema.safeParse(op.path)
+        if (!path.success) fail('invalid', `Invalid path "${op.path}": ${issues(path.error)}`)
+      }
       const inverse: Extract<Operation, { op: 'updateField' }> = { op: 'updateField', collectionId: collection.id, key: field.key }
       if (op.label !== undefined) {
         inverse.label = field.label
@@ -285,6 +290,20 @@ export function applyOperation(project: Project, op: Operation): Operation {
         inverse.type = field.type
         field.type = op.type
       }
+      if (op.path !== undefined) {
+        inverse.path = field.path ?? null
+        if (op.path === null) Reflect.deleteProperty(field, 'path')
+        else field.path = op.path
+      }
+      return inverse
+    }
+    case 'setSource': {
+      const collection = getCollection(project, op.collectionId)
+      const parsed = CollectionSchema.safeParse({ ...collection, source: op.source, fields: op.fields })
+      if (!parsed.success) fail('invalid', `Invalid collection: ${issues(parsed.error)}`)
+      const inverse: Operation = { op: 'setSource', collectionId: collection.id, source: collection.source, fields: collection.fields }
+      collection.source = parsed.data.source
+      collection.fields = parsed.data.fields
       return inverse
     }
   }

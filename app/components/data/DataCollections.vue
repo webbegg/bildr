@@ -7,6 +7,7 @@ const editor = useEditor()
 
 const newName = ref('')
 const adding = ref(false)
+const fromApi = ref(false)
 
 async function addCollection() {
   const name = newName.value.trim()
@@ -37,15 +38,36 @@ function menu(collection: Collection): DropdownMenuItem[] {
       <p class="text-xs font-semibold text-muted uppercase">
         Collections
       </p>
-      <UButton
-        icon="i-lucide-plus"
-        size="xs"
-        color="neutral"
-        variant="ghost"
-        aria-label="Add collection"
-        @click="adding = !adding"
-      />
+      <div class="flex items-center gap-0.5">
+        <UButton
+          icon="i-lucide-globe"
+          label="From API"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          data-from-api
+          @click="fromApi = true"
+        />
+        <UButton
+          icon="i-lucide-plus"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          aria-label="Add collection"
+          @click="adding = !adding"
+        />
+      </div>
     </div>
+    <UModal
+      v-model:open="fromApi"
+      title="Collection from an API"
+      description="Paste a JSON endpoint, review the proposed mapping, then save. The records stay live and read-only."
+      :ui="{ content: 'sm:max-w-5xl' }"
+    >
+      <template #body>
+        <DataApiSource @done="fromApi = false" />
+      </template>
+    </UModal>
     <form
       v-if="adding"
       class="px-3 pb-2"
@@ -79,7 +101,7 @@ function menu(collection: Collection): DropdownMenuItem[] {
         @click="editor.collectionId = collection.id"
       >
         <UIcon
-          name="i-lucide-database"
+          :name="collection.source.type === 'api' ? 'i-lucide-globe' : 'i-lucide-database'"
           class="size-3.5 shrink-0"
         />
         <span class="truncate">{{ collection.name }}</span>

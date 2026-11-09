@@ -3,13 +3,14 @@ import type { TableColumn } from '@nuxt/ui'
 import type { DataRecord, RecordValue } from '#shared/data/records'
 import type { Collection } from '#shared/document/schema'
 
-/** The records of the shown collection, with add, edit (in a modal) and delete. Records are not undoable. */
+/** The records of the shown collection, with add, edit (in a modal) and delete; read-only for API collections. Records are not undoable. */
 const editor = useEditor()
 const collection = computed(() => editor.collection as Collection)
+const live = computed(() => collection.value.source.type === 'api')
 
 const columns = computed<TableColumn<DataRecord>[]>(() => [
   ...collection.value.fields.map(field => ({ id: field.key, header: field.label, accessorFn: (r: DataRecord) => r.values[field.key] })),
-  { id: 'actions', header: '' }
+  ...(live.value ? [] : [{ id: 'actions', header: '' }])
 ])
 
 const open = ref(false)
@@ -60,7 +61,21 @@ function display(value: RecordValue): string {
         v-if="editor.recordsTotal > editor.records.length"
         class="text-xs text-dimmed"
       >showing the first {{ editor.records.length }}</span>
+      <UBadge
+        v-if="live"
+        label="Live from API"
+        icon="i-lucide-radio"
+        color="info"
+        variant="subtle"
+        size="sm"
+        data-live-badge
+      />
+      <span
+        v-if="live"
+        class="ms-auto text-xs text-dimmed"
+      >Read-only: records come from the API (cached for 60 s)</span>
       <UButton
+        v-else
         icon="i-lucide-plus"
         label="Add record"
         size="sm"
@@ -70,6 +85,13 @@ function display(value: RecordValue): string {
       />
     </div>
 
+    <UAlert
+      v-if="editor.recordsError"
+      color="error"
+      variant="soft"
+      icon="i-lucide-circle-alert"
+      :description="editor.recordsError"
+    />
     <UTable
       :data="editor.records"
       :columns="columns"

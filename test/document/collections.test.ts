@@ -107,7 +107,55 @@ describe('collection schema operations', () => {
   })
 })
 
+describe('collection sources', () => {
+  const API = { type: 'api' as const, url: 'https://rickandmortyapi.com/api/character', itemsPath: 'results' }
+  const MAPPING = [
+    { key: 'name', label: 'Name', type: 'text' as const, path: 'name' },
+    { key: 'originName', label: 'Origin', type: 'text' as const, path: 'origin.name' }
+  ]
+
+  it('a new collection is internal', () => {
+    expect(createCollection('Menu').source).toEqual({ type: 'internal' })
+  })
+
+  it('setSource replaces the source and fields together, with an exact inverse', () => {
+    const { project, menu } = setup()
+    const before = structuredClone(project.collections[0])
+    const inverse = applyOperation(project, { op: 'setSource', collectionId: menu.id, source: API, fields: MAPPING })
+    expect(project.collections[0]).toMatchObject({ source: API, fields: MAPPING })
+    expect(inverse).toEqual({ op: 'setSource', collectionId: menu.id, source: { type: 'internal' }, fields: before!.fields })
+    applyOperation(project, inverse)
+    expect(project.collections[0]).toEqual(before)
+  })
+
+  it('rejects unsafe URLs, bad paths and duplicate keys in a source', () => {
+    const { project, menu } = setup()
+    const set = (source: unknown, fields: unknown = MAPPING) => () => applyOperation(project, { op: 'setSource', collectionId: menu.id, source: source as never, fields: fields as never })
+    expect(set({ ...API, url: 'file:///etc/passwd' })).toThrow('Only http and https URLs can be fetched')
+    expect(set({ ...API, url: 'https://a:b@example.com/' })).toThrow(OperationError)
+    expect(set({ ...API, itemsPath: 'results..x' })).toThrow(OperationError)
+    expect(set(API, [{ key: 'name', label: 'Name', type: 'text', path: 'origin name' }])).toThrow(OperationError)
+    expect(set(API, [...MAPPING, MAPPING[0]])).toThrow('Field "name" already exists')
+  })
+
+  it('updateField changes an API field\'s path, with an exact inverse', () => {
+    const { project, menu } = setup()
+    applyOperation(project, { op: 'setSource', collectionId: menu.id, source: API, fields: MAPPING })
+    const inverse = applyOperation(project, { op: 'updateField', collectionId: menu.id, key: 'originName', path: 'location.name' })
+    expect(project.collections[0]!.fields[1]!.path).toBe('location.name')
+    applyOperation(project, inverse)
+    expect(project.collections[0]!.fields[1]!.path).toBe('origin.name')
+    expect(() => applyOperation(project, { op: 'updateField', collectionId: menu.id, key: 'name', path: 'a b' })).toThrow(OperationError)
+  })
+})
+
 describe('ProjectSchema collections', () => {
+  it('a collection saved before sources existed parses as internal', () => {
+    const { source: _source, ...legacy } = createCollection('Menu')
+    const parsed = ProjectSchema.parse({ ...createProject('Legacy'), collections: [legacy] })
+    expect(parsed.collections[0]!.source).toEqual({ type: 'internal' })
+  })
+
   it('a project saved before collections existed parses with none', () => {
     const { collections: _collections, ...legacy } = createProject('Legacy')
     expect(ProjectSchema.parse(legacy).collections).toEqual([])

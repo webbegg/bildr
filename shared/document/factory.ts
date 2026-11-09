@@ -1,7 +1,7 @@
 import { defaultTheme } from '../design/theme'
 import { getComponent, PAGE_ROOT_TYPE } from './components'
 import type { PropValue } from './components'
-import type { Collection, DocNode, Field, Page, Project } from './schema'
+import type { Collection, CollectionSource, DocNode, Field, Page, Project } from './schema'
 
 const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz'
 
@@ -59,9 +59,9 @@ export function fieldLabel(key: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1)
 }
 
-/** A private collection; the slug defaults to a slug of the name. */
-export function createCollection(name: string, slug = slugify(name), fields: Field[] = []): Collection {
-  return { id: newId('col'), name: name.trim(), slug, fields, publicRead: false, publicCreate: false }
+/** A private collection, internal unless `source` says otherwise; the slug defaults to a slug of the name. */
+export function createCollection(name: string, slug = slugify(name), fields: Field[] = [], source: CollectionSource = { type: 'internal' }): Collection {
+  return { id: newId('col'), name: name.trim(), slug, fields, source, publicRead: false, publicCreate: false }
 }
 
 /** Deep copy of `node` where it and every descendant get a fresh id. */

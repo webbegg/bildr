@@ -32,7 +32,7 @@ export interface RecordQuery {
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const ISO_DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?(?:Z|[+-]\d{2}:\d{2})$/
 
-function isDate(value: string): boolean {
+export function isDate(value: string): boolean {
   if (ISO_DATE.test(value)) {
     // Rejects dates that roll over, e.g. 2026-02-31.
     return new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value
@@ -62,7 +62,7 @@ const PROBLEMS: Record<FieldType, (key: string) => string> = {
  * fit. Form strings are accepted ("3.5", "true"); null clears a value, and so
  * does an empty string for every type but text.
  */
-function coerce(type: FieldType, raw: unknown): RecordValue | undefined {
+export function coerce(type: FieldType, raw: unknown): RecordValue | undefined {
   if (raw === null) return null
   if (raw === '' && type !== 'text') return null
   switch (type) {

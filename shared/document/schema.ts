@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { API_PATH, API_PATH_HINT, API_PATH_MAX, apiUrlProblem } from '../data/apiSource'
 import { defaultTheme, ThemeSchema } from '../design/theme'
 import { styleTokenProblem } from '../design/tokens'
 import { getComponent, isContainerType, PAGE_ROOT_TYPE } from './components'
@@ -47,11 +48,35 @@ export const FieldKeySchema = z.string()
   .max(64)
   .refine(key => key !== 'id', 'The field key "id" is reserved')
 
+/** A dot path into an API item, e.g. `origin.name`. */
+export const ApiPathSchema = z.string().max(API_PATH_MAX).regex(API_PATH, API_PATH_HINT)
+
 export const FieldSchema = z.object({
   key: FieldKeySchema,
   label: z.string().trim().min(1).max(100),
-  type: FieldTypeSchema
+  type: FieldTypeSchema,
+  // API collections only: where the value is in each item (defaults to the key).
+  path: ApiPathSchema.optional()
 })
+
+export const ApiUrlSchema = z.string().superRefine((url, ctx) => {
+  const problem = apiUrlProblem(url)
+  if (problem) ctx.addIssue({ code: 'custom', message: problem })
+})
+
+/**
+ * Where a collection's records come from: bildr's record store, or a JSON
+ * endpoint read live (read-only; `itemsPath` is the dot path of the items
+ * array, `''` for a root array).
+ */
+export const CollectionSourceSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('internal') }),
+  z.object({
+    type: z.literal('api'),
+    url: ApiUrlSchema,
+    itemsPath: z.union([z.literal(''), ApiPathSchema])
+  })
+])
 
 /**
  * A collection's schema lives in the document (undoable, published); its
@@ -64,6 +89,8 @@ export const CollectionSchema = z.object({
   name: z.string().trim().min(1).max(100),
   slug: SlugSchema,
   fields: z.array(FieldSchema),
+  // Collections saved before API sources existed are internal.
+  source: CollectionSourceSchema.default(() => ({ type: 'internal' as const })),
   publicRead: z.boolean().default(false),
   publicCreate: z.boolean().default(false)
 }).superRefine((collection, ctx) => {
@@ -111,6 +138,7 @@ export type Page = z.infer<typeof PageSchema>
 export type Project = z.infer<typeof ProjectSchema>
 export type Field = z.infer<typeof FieldSchema>
 export type Collection = z.infer<typeof CollectionSchema>
+export type CollectionSource = z.infer<typeof CollectionSourceSchema>
 
 export type ProjectSummary = Pick<Project, 'id' | 'name' | 'slug' | 'version' | 'updatedAt'>
 
