@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseScaleInput, scalePx, scaleValues, SHIFT_STOPS, stepScale, unsetValue } from '#shared/editor/scale'
+import { parseScaleInput, scalePx, scaleStops, scaleValues, SHIFT_STOPS, stepScale, stopIndex, unsetValue } from '#shared/editor/scale'
 import { scrubStops } from '#shared/editor/scrub'
 
 describe('scale stepping', () => {
@@ -75,5 +75,20 @@ describe('scrub stops', () => {
     expect(scrubStops(-13, false)).toBe(-2)
     expect(scrubStops(13, true)).toBe(8)
     expect(Object.is(scrubStops(-2, false), 0)).toBe(true)
+  })
+})
+
+describe('scale sliders', () => {
+  it('snap to the stops a field steps through', () => {
+    expect(scaleStops('opacity')[0]).toBe('0')
+    expect(scaleStops('opacity').at(-1)).toBe('100')
+    expect(scaleStops('md:gap')).toEqual(['0', '0.5', '1', '1.5', '2', '2.5', '3', '4', '5', '6', '8', '10', '12', '16', '20', '24', '32'])
+  })
+
+  it('start an unset value at what it renders as', () => {
+    expect(stopIndex('opacity', undefined)).toBe(scaleStops('opacity').length - 1)
+    expect(stopIndex('gap', undefined)).toBe(0)
+    expect(stopIndex('gap', '4')).toBe(7)
+    expect(stopIndex('gap', 'bogus')).toBe(0)
   })
 })

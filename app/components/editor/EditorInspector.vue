@@ -98,21 +98,21 @@ function renamePage(field: 'name' | 'slug', value: string) {
       class="sticky top-0 z-10 border-b border-default bg-default"
       data-inspector-head
     >
-      <div class="flex h-10 items-center gap-1.5 ps-3 pe-1.5">
+      <div class="flex h-11 items-center gap-1.5 ps-4 pe-2">
         <UIcon
           :name="multi ? 'i-lucide-boxes' : icon(node.type)"
           class="size-3.5 shrink-0 text-muted"
         />
         <p
           v-if="multi"
-          class="min-w-0 flex-1 truncate text-xs font-semibold text-highlighted"
+          class="min-w-0 flex-1 truncate text-[13px] font-semibold text-highlighted"
           :data-selection-count="editor.selectedNodes.length"
         >
           {{ editor.selectedNodes.length }} selected
         </p>
         <p
           v-else
-          class="min-w-0 flex-1 truncate text-xs font-semibold text-highlighted"
+          class="min-w-0 flex-1 truncate text-[13px] font-semibold text-highlighted"
         >
           {{ node.type }} <span class="ms-1 font-mono text-[11px] font-normal text-dimmed">{{ node.id }}</span>
         </p>
@@ -148,7 +148,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
 
       <nav
         v-if="crumbs.length && !multi"
-        class="-mt-1 flex flex-wrap items-center gap-x-0.5 px-3 pb-2 text-[11px]"
+        class="-mt-1 flex flex-wrap items-center gap-x-0.5 px-3.5 pb-2 text-[11px]"
         aria-label="Ancestors"
         data-inspector-breadcrumb
       >
@@ -174,22 +174,16 @@ function renamePage(field: 'name' | 'slug', value: string) {
       </nav>
 
       <div
-        class="relative mx-3 mb-2 grid rounded-md bg-muted p-0.5"
-        :class="multi ? 'grid-cols-1' : 'grid-cols-2'"
+        class="mx-2.5 mb-2 flex gap-1"
         role="tablist"
       >
-        <span
-          class="absolute inset-y-0.5 left-0.5 rounded-[6px] bg-accented transition-transform duration-200"
-          :class="[multi ? 'w-[calc(100%-4px)]' : 'w-[calc(50%-2px)]', { 'translate-x-full': tab === 'settings' }]"
-          aria-hidden="true"
-        />
         <button
           v-for="item in tabs"
           :key="item.value"
           type="button"
           role="tab"
-          class="relative h-6 text-xs font-medium"
-          :class="tab === item.value ? 'text-highlighted' : 'text-muted hover:text-toned'"
+          class="h-7 rounded-md px-2 text-[13px] font-medium"
+          :class="tab === item.value ? 'bg-white/8 text-highlighted' : 'text-muted hover:text-toned'"
           :aria-selected="tab === item.value"
           @click="pickedTab = item.value"
         >
@@ -199,7 +193,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
 
       <p
         v-show="tab === 'style'"
-        class="-mt-1 px-3 pb-2 text-[11px] text-dimmed"
+        class="-mt-1 px-4 pb-2 text-[11px] text-dimmed"
         :data-editing-caption="editor.deviceId"
       >
         Editing {{ editor.device.label }}
@@ -234,30 +228,26 @@ function renamePage(field: 'name' | 'slug', value: string) {
       >
         <div
           v-if="isRoot && editor.page"
-          class="space-y-3 border-b border-default p-3"
+          class="space-y-2 border-b border-default py-3.5 ps-4 pe-3"
         >
-          <UFormField
-            label="Page name"
-            size="xs"
-          >
+          <EditorRow label="Page name">
             <EditorCommitInput
               size="xs"
               variant="soft"
+              aria-label="Page name"
               :model-value="editor.page.name"
               @commit="renamePage('name', $event)"
             />
-          </UFormField>
-          <UFormField
-            label="Slug"
-            size="xs"
-          >
+          </EditorRow>
+          <EditorRow label="Slug">
             <EditorCommitInput
               size="xs"
               variant="soft"
+              aria-label="Slug"
               :model-value="editor.page.slug"
               @commit="renamePage('slug', $event)"
             />
-          </UFormField>
+          </EditorRow>
         </div>
 
         <EditorStyleSection

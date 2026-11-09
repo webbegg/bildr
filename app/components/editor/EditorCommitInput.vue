@@ -2,7 +2,7 @@
 /**
  * A text field that commits on change (blur or Enter) rather than on every
  * keystroke, so each edit is a single undo step. The `soft` variant is the
- * borderless Figma field of the right panel.
+ * right panel's soft borderless Framer field.
  */
 const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft' }>(), { size: 'sm', variant: 'outline' })
 const emit = defineEmits<{ commit: [value: string] }>()
@@ -12,8 +12,8 @@ watch(() => props.modelValue, (value) => {
   draft.value = value
 })
 
-// The soft field is the panel's 24 px Figma field.
-const ui = computed(() => (props.variant === 'soft' ? { base: props.multiline ? 'rounded-[5px] text-[11px]' : 'h-6 rounded-[5px] text-[11px]' } : undefined))
+// The soft field is the panel's 30 px Framer field.
+const ui = computed(() => (props.variant === 'soft' ? { base: props.multiline ? 'rounded-lg bg-elevated text-[13px]' : 'h-[30px] rounded-lg bg-elevated text-[13px]' } : undefined))
 
 function commit() {
   if (draft.value !== props.modelValue) emit('commit', draft.value)

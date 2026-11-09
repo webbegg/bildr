@@ -18,9 +18,12 @@ export function scaleValues(key: string): string[] {
   return parseStyleKey(key)?.token.values ?? []
 }
 
-// A scale with numbers steps through them only (`auto` and `full` are picked, not
-// stepped to); a scale of words steps through all of it.
-function stepValues(key: string): string[] {
+/**
+ * The stops a scrub, an arrow key or a slider moves through: a scale with
+ * numbers steps through them only (`auto` and `full` are picked, not stepped
+ * to); a scale of words steps through all of it.
+ */
+export function scaleStops(key: string): string[] {
   const values = scaleValues(key)
   const numbers = values.filter(isNumber).sort((a, b) => Number(a) - Number(b))
   return numbers.length ? numbers : values
@@ -41,12 +44,17 @@ export function unsetValue(key: string): string | undefined {
  * `0`, any other unset (or unsteppable) value as the first stop.
  */
 export function stepScale(key: string, value: string | undefined, delta: number): string | undefined {
-  const values = stepValues(key)
+  const values = scaleStops(key)
   if (!values.length) return undefined
+  return values[Math.min(values.length - 1, Math.max(0, stopIndex(key, value) + delta))]
+}
+
+/** The stop a value sits at, for a slider: an unset value at its `unsetValue`, else at `0` or the first stop. */
+export function stopIndex(key: string, value: string | undefined): number {
+  const values = scaleStops(key)
   value ??= unsetValue(key)
   const at = value === undefined ? -1 : values.indexOf(value)
-  const from = at >= 0 ? at : Math.max(0, parseStyleKey(key)?.token.group === 'Spacing' ? values.indexOf('0') : 0)
-  return values[Math.min(values.length - 1, Math.max(0, from + delta))]
+  return at >= 0 ? at : Math.max(0, parseStyleKey(key)?.token.group === 'Spacing' ? values.indexOf('0') : 0)
 }
 
 // Tokens whose numbers multiply the theme's `--spacing` (`min-h-32` too).

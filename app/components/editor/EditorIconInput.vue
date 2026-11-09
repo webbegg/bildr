@@ -33,7 +33,7 @@ function commit() {
     placeholder="i-lucide-coffee"
     :size="size"
     :variant="variant"
-    :ui="variant === 'soft' ? { base: 'h-6 rounded-[5px] text-[11px]' } : undefined"
+    :ui="variant === 'soft' ? { base: 'h-[30px] rounded-lg bg-elevated text-[13px]' } : undefined"
     class="w-full"
     :color="valid ? undefined : 'error'"
     :highlight="!valid"

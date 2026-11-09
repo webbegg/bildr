@@ -1,19 +1,14 @@
 <script setup lang="ts">
 /**
- * The Figma field shell for controls that are not scale fields (selects): a
- * borderless 24 px box on a subtle fill, ringed on hover and focus, with the
- * `prefix` slot (a letter or icon) in front. Scale fields draw the same box.
+ * Framer's field shell for controls that are not scale fields (selects,
+ * summaries): a soft borderless 30 px box, 8 px radius, filled a little
+ * lighter than the panel and ringed on hover and focus. Scale fields draw the
+ * same box.
  */
 </script>
 
 <template>
-  <div class="flex h-6 min-w-0 items-center rounded-[5px] bg-elevated ring-inset focus-within:ring-1 focus-within:ring-(color:--editor-selection) hover:ring-1 hover:ring-white/10">
-    <div
-      v-if="$slots.prefix"
-      class="flex h-full shrink-0 items-center"
-    >
-      <slot name="prefix" />
-    </div>
+  <div class="flex h-[30px] min-w-0 items-center rounded-lg bg-elevated text-[13px] ring-inset focus-within:ring-1 focus-within:ring-(color:--editor-selection) hover:ring-1 hover:ring-white/10">
     <slot />
   </div>
 </template>

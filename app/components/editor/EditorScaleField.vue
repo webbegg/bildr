@@ -4,12 +4,13 @@ import { parseScaleInput, scalePx, SHIFT_STOPS, stepScale } from '#shared/editor
 import { scrubStops, startScrub } from '#shared/editor/scrub'
 
 /**
- * A token-scale field (Figma's scrubbable number field, over a scale): shows
- * the value with its px size at the project density. Dragging the field or its
- * `prefix` slot (the letter or icon in front) scrubs through the scale (Shift:
- * four stops per step), Up/Down step, typing a scale value (or a px size on
- * it) commits on Enter or blur and anything else reverts, and the chevron
- * (shown on hover) lists every value.
+ * A token-scale field (Framer's soft number field, over a scale): shows the
+ * value, with its px size at the project density in the tooltip. Dragging
+ * the field, or the row label through the exposed `scrub`, moves through the
+ * scale (Shift: four stops per step), Up/Down step, typing a scale value (or
+ * a px size on it) commits on Enter or blur and anything else reverts, and
+ * the chevron (shown on hover) lists every value. `bare` drops the box and
+ * the list, for a cell of joined side fields.
  *
  * Gestures `preview` the value they hold (null when they end) and `commit`
  * once: on release, Enter, an arrow step or a pick. Escape cancels a scrub,
@@ -24,11 +25,11 @@ const props = defineProps<{
   inherited?: string
   /** Shown when nothing applies. */
   placeholder?: string
-  /** Adds −/+ buttons, for short scales such as grid columns. */
+  /** Adds up/down steppers, for short scales such as radius or grid columns. */
   stepper?: boolean
+  bare?: boolean
 }>()
 const emit = defineEmits<{ preview: [value: string | null], commit: [value: string] }>()
-const slots = defineSlots<{ prefix?: () => unknown }>()
 const editor = useEditor()
 
 const field = ref<HTMLElement | null>(null)
@@ -64,7 +65,7 @@ function step(delta: number) {
   commit(next)
 }
 
-/** Starts a scrub from a press on the field or its label. */
+/** Starts a scrub from a press on the field or its row label. */
 function scrub(event: PointerEvent) {
   if (focused.value || event.button !== 0) return
   event.preventDefault()
@@ -138,28 +139,24 @@ defineExpose({ scrub })
 <template>
   <div
     ref="field"
-    class="group/field flex h-6 min-w-0 items-center rounded-[5px] bg-elevated ring-inset"
-    :class="[focused ? 'cursor-text ring-1 ring-(color:--editor-selection)' : 'cursor-ew-resize hover:ring-1 hover:ring-white/10', slots.prefix ? '' : 'ps-2']"
+    class="group/field flex h-[30px] min-w-0 items-center ring-inset"
+    :class="[
+      bare ? 'justify-center' : 'rounded-lg bg-elevated ps-2.5',
+      focused ? 'cursor-text ring-1 ring-(color:--editor-selection)' : ['cursor-ew-resize', bare ? 'hover:bg-white/4' : 'hover:ring-1 hover:ring-white/10']
+    ]"
+    :title="hint ? `${token.label}: ${hint}` : token.label"
     :data-style-key="token.key"
     :data-scrubbing="draft !== null || undefined"
     v-bind="$attrs"
     @pointerdown="scrub"
   >
-    <div
-      v-if="slots.prefix"
-      class="flex h-full shrink-0 cursor-ew-resize items-center"
-      :data-field-label="token.key"
-      @pointerdown.stop="scrub"
-    >
-      <slot name="prefix" />
-    </div>
     <input
       ref="input"
       :value="focused ? text : shown ?? ''"
       :placeholder="(focused ? current : undefined) ?? placeholder ?? '—'"
       :aria-label="token.label"
-      class="w-0 min-w-0 flex-1 bg-transparent text-[11px] tabular-nums outline-none placeholder:text-dimmed"
-      :class="[focused ? 'cursor-text' : 'pointer-events-none', value !== undefined || draft !== null ? 'text-highlighted' : 'text-toned']"
+      class="w-0 min-w-0 flex-1 bg-transparent text-[13px] tabular-nums outline-none placeholder:text-dimmed"
+      :class="[focused ? 'cursor-text' : 'pointer-events-none', bare ? 'text-center' : '', value !== undefined || draft !== null ? 'text-highlighted' : 'text-toned']"
       spellcheck="false"
       autocomplete="off"
       @input="text = ($event.target as HTMLInputElement).value"
@@ -167,39 +164,39 @@ defineExpose({ scrub })
       @blur="onBlur"
       @keydown="onKeydown"
     >
-    <span
-      v-if="hint"
-      class="ms-1 shrink-0 text-[10px] text-dimmed tabular-nums"
-    >{{ hint }}</span>
-    <template v-if="stepper">
+    <div
+      v-if="stepper"
+      class="me-1 flex h-full w-4 shrink-0 flex-col justify-center"
+    >
       <button
-        v-for="delta in [-1, 1]"
+        v-for="delta in [1, -1]"
         :key="delta"
         type="button"
-        class="grid h-full w-5 shrink-0 place-items-center rounded-sm text-dimmed outline-none hover:text-highlighted focus-visible:bg-elevated focus-visible:text-highlighted"
+        class="grid h-3 w-4 place-items-center rounded-sm text-dimmed outline-none hover:text-highlighted focus-visible:text-highlighted"
         :aria-label="`${delta < 0 ? 'Fewer' : 'More'} ${token.label.toLowerCase()}`"
         @pointerdown.stop
         @click="step(delta)"
       >
         <UIcon
-          :name="delta < 0 ? 'i-lucide-minus' : 'i-lucide-plus'"
+          :name="delta < 0 ? 'i-lucide-chevron-down' : 'i-lucide-chevron-up'"
           class="size-3"
         />
       </button>
-    </template>
+    </div>
     <UPopover
+      v-if="!bare"
       v-model:open="listOpen"
       :content="{ side: 'bottom', align: 'end' }"
     >
       <button
         type="button"
-        class="grid h-full w-5 shrink-0 place-items-center text-dimmed opacity-0 group-focus-within/field:opacity-100 group-hover/field:opacity-100 hover:text-highlighted focus-visible:opacity-100 aria-expanded:opacity-100"
+        class="grid h-full w-6 shrink-0 place-items-center text-dimmed opacity-0 group-focus-within/field:opacity-100 group-hover/field:opacity-100 hover:text-highlighted focus-visible:opacity-100 aria-expanded:opacity-100"
         :aria-label="`${token.label} values`"
         @pointerdown.stop
       >
         <UIcon
           name="i-lucide-chevron-down"
-          class="size-3"
+          class="size-3.5"
         />
       </button>
       <template #content>
@@ -215,8 +212,8 @@ defineExpose({ scrub })
             type="button"
             role="option"
             :aria-selected="option === value"
-            class="flex h-6 w-full items-center justify-between rounded-sm px-2 font-mono text-xs hover:bg-elevated"
-            :class="option === value ? 'text-(color:--editor-info)' : option === current ? 'text-highlighted' : 'text-toned'"
+            class="flex h-7 w-full items-center justify-between rounded-sm px-2 text-[13px] hover:bg-elevated"
+            :class="option === value ? 'text-(color:--editor-selection)' : option === current ? 'text-highlighted' : 'text-toned'"
             @mouseenter="emit('preview', option)"
             @click="pick(option)"
           >

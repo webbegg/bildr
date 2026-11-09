@@ -4,10 +4,10 @@ import type { Provenance } from '#shared/editor/styleFields'
 import { enclosingForm, FORM_TYPE } from '#shared/runtime/form'
 
 /**
- * One Settings row in the Figma field style: a compact caption (blue when the
+ * One Settings row, Framer's label-column look: a grey label (blue when the
  * prop differs from the component default; click for Reset to default,
- * Alt-click resets) and the borderless control for the prop's kind. Controls
- * carry the prop label as their accessible name.
+ * Alt-click resets) and the soft control for the prop's kind. Controls carry
+ * the prop label as their accessible name.
  */
 const props = defineProps<{ def: PropDef, value: PropValue, changed: boolean }>()
 const emit = defineEmits<{ update: [value: PropValue], reset: [] }>()
@@ -61,17 +61,17 @@ function onLinkMode(mode: string) {
   emit('update', mode === NONE ? '' : mode)
 }
 
-// The 24 px Figma field.
-const SELECT_UI = { base: 'h-6 rounded-[5px] text-[11px]', trailingIcon: 'size-3 text-dimmed' }
+// The 30 px Framer field.
+const SELECT_UI = { base: 'h-[30px] rounded-lg bg-elevated text-[13px]', trailingIcon: 'size-3.5 text-dimmed' }
 </script>
 
 <template>
   <div
-    class="grid min-h-6 grid-cols-[80px_minmax(0,1fr)] items-start gap-2"
+    class="grid min-h-[30px] grid-cols-[88px_minmax(0,1fr)] items-start gap-x-2"
     :data-prop-row="def.name"
   >
     <div
-      class="flex h-6 min-w-0 items-center"
+      class="flex h-[30px] min-w-0 items-center"
       :data-field-label="def.name"
     >
       <EditorFieldLabel
@@ -107,7 +107,7 @@ const SELECT_UI = { base: 'h-6 rounded-[5px] text-[11px]', trailingIcon: 'size-3
         :aria-label="def.label"
         size="xs"
         variant="soft"
-        :ui="{ base: 'h-6 rounded-[5px] text-[11px]' }"
+        :ui="{ base: 'h-[30px] rounded-lg bg-elevated text-[13px]' }"
         class="w-full"
         @update:model-value="$event != null && emit('update', $event)"
       />

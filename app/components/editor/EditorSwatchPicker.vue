@@ -6,9 +6,9 @@ import { colorSwatch, colorSwatchRows } from '#shared/editor/styleFields'
 /**
  * Picks a colour token from swatches painted with the project theme (the
  * editor's own document carries the app theme, so colours are computed).
- * A set token reads like a Figma variable: a swatch and the token name in a
- * chip; clicking opens the picker, and the detach button (on hover) clears
- * it. An `icon` goes in front, as a field prefix. Hovering a swatch previews
+ * A set token reads like Framer's fill field: a swatch and the token name;
+ * clicking opens the picker, and the detach button (on hover) clears it. An
+ * `icon` goes in front. Hovering a swatch previews
  * it until the pointer leaves or the picker closes. Without a value it reads
  * `placeholder` ("None" by default; "Mixed" for a multi-selection).
  */
@@ -37,14 +37,14 @@ function pick(value: string) {
 </script>
 
 <template>
-  <div class="group/chip relative flex h-6 min-w-0 items-center rounded-[5px] bg-elevated ring-inset hover:ring-1 hover:ring-white/10 has-aria-expanded:ring-1 has-aria-expanded:ring-(color:--editor-selection)">
+  <div class="group/chip relative flex h-[30px] min-w-0 items-center rounded-lg bg-elevated ring-inset hover:ring-1 hover:ring-white/10 has-aria-expanded:ring-1 has-aria-expanded:ring-(color:--editor-selection)">
     <UPopover
       v-model:open="open"
       :content="{ side: 'left', align: 'start' }"
     >
       <button
         type="button"
-        class="flex h-full min-w-0 flex-1 items-center gap-1.5 ps-1 pe-1 text-left outline-none"
+        class="flex h-full min-w-0 flex-1 items-center gap-2 ps-1 pe-1 text-left outline-none"
         :data-style-key="token.key"
         :aria-label="`${token.label}: ${value ?? 'none'}`"
       >
@@ -53,20 +53,19 @@ function pick(value: string) {
           :name="icon"
           class="mx-1 size-3 shrink-0 text-dimmed"
         />
-        <span
-          v-if="value"
-          class="flex min-w-0 items-center gap-1.5 rounded-[3px] bg-white/8 py-0.5 ps-0.5 pe-1.5 group-hover/chip:bg-white/12"
-          data-variable-chip
-        >
+        <template v-if="value">
           <span
-            class="size-3.5 shrink-0 rounded-[3px] ring-1 ring-white/10 ring-inset"
+            class="size-[22px] shrink-0 rounded-md ring-1 ring-white/10 ring-inset"
             :style="current ? { background: current.color } : undefined"
           />
-          <span class="truncate text-[11px] leading-4 text-highlighted">{{ value }}</span>
-        </span>
+          <span
+            class="truncate text-[13px] text-highlighted"
+            data-variable-chip
+          >{{ value }}</span>
+        </template>
         <template v-else>
-          <span class="ms-0.5 size-3.5 shrink-0 rounded-[3px] bg-[repeating-conic-gradient(var(--ui-bg-accented)_0_25%,transparent_0_50%)] bg-size-[6px_6px] ring-1 ring-white/10 ring-inset" />
-          <span class="truncate text-[11px] text-dimmed">{{ placeholder ?? 'None' }}</span>
+          <span class="size-[22px] shrink-0 rounded-md bg-[repeating-conic-gradient(var(--ui-bg-accented)_0_25%,transparent_0_50%)] bg-size-[8px_8px] ring-1 ring-white/10 ring-inset" />
+          <span class="truncate text-[13px] text-dimmed">{{ placeholder ?? 'None' }}</span>
         </template>
       </button>
       <template #content>

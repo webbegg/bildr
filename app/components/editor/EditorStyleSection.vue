@@ -1,38 +1,30 @@
 <script setup lang="ts">
 /**
- * A collapsible panel section with a Figma UI3 header: the title, then its
- * actions (such as Fill's "+") on the right. Closed, a blue dot says the
- * device overrides a value inside (inherited values get no dot). The parent owns `open`, so Shift-click can toggle every section. An `empty`
- * section (a Fill with no fill) is a header only.
+ * A panel section with Framer's header: a bold white title, and a "+" on the
+ * right while it is closed (it opens it) or a "−" while it is open and
+ * `removable` (it removes the section's values). Clicking the title also
+ * toggles it; the parent owns `open`, so Shift-click can toggle every section.
+ * Closed, a blue dot says the device overrides a value inside.
  */
-defineProps<{ label: string, open: boolean, mark?: 'set', empty?: boolean }>()
-const emit = defineEmits<{ toggle: [event: MouseEvent] }>()
+withDefaults(defineProps<{ label: string, open: boolean, mark?: 'set', removable?: boolean }>(), { mark: undefined, removable: false })
+const emit = defineEmits<{ toggle: [event: MouseEvent], remove: [] }>()
 </script>
 
 <template>
   <section
-    class="group/section border-b border-default"
+    class="border-b border-default"
     :data-style-section="label"
     :data-open="open || undefined"
   >
-    <div class="flex h-9 items-center gap-0.5 pe-2">
+    <div class="flex h-11 items-center gap-1 ps-4 pe-2.5">
       <button
         type="button"
-        class="flex h-full min-w-0 flex-1 items-center gap-1.5 ps-3 text-left"
+        class="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
         :aria-expanded="open"
         :title="`${open ? 'Collapse' : 'Expand'} ${label} (Shift-click: all sections)`"
         @click="emit('toggle', $event)"
       >
-        <span
-          class="text-[11px] font-semibold"
-          :class="empty ? 'text-muted' : 'text-highlighted'"
-        >{{ label }}</span>
-        <UIcon
-          name="i-lucide-chevron-down"
-          class="size-3 shrink-0 text-dimmed transition-transform"
-          :class="open ? 'opacity-0 group-hover/section:opacity-100' : '-rotate-90'"
-          aria-hidden="true"
-        />
+        <span class="text-[13px] font-semibold text-highlighted">{{ label }}</span>
         <span
           v-if="!open && mark"
           class="size-1.5 shrink-0 rounded-full bg-(color:--editor-selection)"
@@ -41,11 +33,23 @@ const emit = defineEmits<{ toggle: [event: MouseEvent] }>()
           :aria-label="`${label} has values on this device`"
         />
       </button>
-      <slot name="actions" />
+      <button
+        v-if="!open || removable"
+        type="button"
+        class="grid size-6 shrink-0 place-items-center rounded-md text-toned hover:bg-white/8 hover:text-highlighted"
+        :aria-label="`${open ? 'Remove' : 'Add'} ${label.toLowerCase()}`"
+        :data-section-action="open ? 'remove' : 'add'"
+        @click="open ? emit('remove') : emit('toggle', $event)"
+      >
+        <UIcon
+          :name="open ? 'i-lucide-minus' : 'i-lucide-plus'"
+          class="size-4"
+        />
+      </button>
     </div>
     <div
-      v-if="open && !empty"
-      class="space-y-2 px-3 pb-3"
+      v-if="open"
+      class="space-y-2 ps-4 pe-3 pb-3.5"
     >
       <slot />
     </div>

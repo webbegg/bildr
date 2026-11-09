@@ -4,8 +4,8 @@
  * with one pill that slides to the current value. An `inherited` value (from
  * a smaller breakpoint) or a `fallback` (what applies by default) gets a dim
  * pill when nothing is set: only overrides are highlighted, as in Framer. With `tooltips`, icon
- * segments show their label in a delayed tooltip; `dense` is the 24 px panel
- * field height.
+ * segments show their label in a delayed tooltip; `dense` is the 30 px panel
+ * field (Framer's soft 8 px box).
  */
 const props = defineProps<{
   items: { value: string, label: string, icon?: string }[]
@@ -26,13 +26,13 @@ const isInherited = (value: string) => props.modelValue === undefined && value =
 <template>
   <div
     class="relative flex min-w-0 p-0.5"
-    :class="dense ? 'h-6 rounded-[5px] bg-elevated' : 'h-7 rounded-md bg-muted'"
+    :class="dense ? 'h-[30px] w-full rounded-lg bg-elevated' : 'h-7 rounded-md bg-muted'"
     role="group"
   >
     <span
       v-if="index >= 0"
       class="absolute inset-y-0.5 left-0.5 transition-transform duration-200"
-      :class="[dense ? 'rounded-[4px]' : 'rounded-[5px]', tone === 'fallback' ? 'bg-white/6' : dense ? 'bg-white/14' : 'bg-accented']"
+      :class="[dense ? 'rounded-md' : 'rounded-[5px]', tone === 'fallback' ? 'bg-white/6' : dense ? 'bg-white/14' : 'bg-accented']"
       :style="{ width: `calc((100% - 4px) / ${items.length})`, transform: `translateX(${index * 100}%)` }"
       aria-hidden="true"
     />
@@ -46,7 +46,7 @@ const isInherited = (value: string) => props.modelValue === undefined && value =
       <button
         type="button"
         class="relative flex min-w-0 flex-1 items-center justify-center rounded-[5px] px-1 transition-colors"
-        :class="[dense ? 'text-[11px]' : 'text-xs', item.value !== shown
+        :class="[dense ? 'text-[13px]' : 'text-xs', item.value !== shown
           ? 'text-muted hover:text-highlighted'
           : tone === 'set' ? 'text-highlighted' : 'text-toned']"
         :aria-label="item.label"
@@ -57,7 +57,7 @@ const isInherited = (value: string) => props.modelValue === undefined && value =
         <UIcon
           v-if="item.icon"
           :name="item.icon"
-          :class="dense ? 'size-3' : 'size-3.5'"
+          :class="dense ? 'size-4' : 'size-3.5'"
           class="shrink-0"
         />
         <span
