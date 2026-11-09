@@ -5,6 +5,7 @@ import { SHIFT_STOPS } from './scale'
  * drag past a small dead zone, every move reports the travel since the press,
  * and the click that ends a drag is swallowed so it does not also open a menu.
  * The callbacks decide what the travel means; nothing is written until `end`.
+ * Escape during a drag cancels it: `cancel` runs instead of `end`.
  */
 
 /** Px of travel before a press counts as a drag rather than a click. */
@@ -30,6 +31,8 @@ export interface ScrubHandlers {
   move: (move: ScrubMove) => void
   /** On release; `dragged` is false for a plain click. */
   end: (dragged: boolean) => void
+  /** On Escape during a drag; the release that follows is ignored. */
+  cancel?: () => void
   /** The resize cursor shown while dragging. */
   cursor?: 'ew-resize' | 'ns-resize'
 }
@@ -43,9 +46,14 @@ export function startScrub(event: PointerEvent, handlers: ScrubHandlers): void {
   const target = event.currentTarget instanceof Element ? event.currentTarget : null
   const { clientX: x, clientY: y, pointerId } = event
   let dragged = false
+  let cancelled = false
 
+  const reset = () => {
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+  }
   const onMove = (e: PointerEvent) => {
-    if (e.pointerId !== pointerId) return
+    if (e.pointerId !== pointerId || cancelled) return
     const dx = e.clientX - x
     const dy = e.clientY - y
     if (!dragged) {
@@ -58,13 +66,22 @@ export function startScrub(event: PointerEvent, handlers: ScrubHandlers): void {
     e.preventDefault()
     handlers.move({ dx, dy, shiftKey: e.shiftKey, altKey: e.altKey })
   }
+  // Escape is the drag's own: it must not also clear the editor selection.
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (e.key !== 'Escape' || !dragged || cancelled) return
+    e.preventDefault()
+    e.stopImmediatePropagation()
+    cancelled = true
+    reset()
+    handlers.cancel?.()
+  }
   const onUp = (e: PointerEvent) => {
     if (e.pointerId !== pointerId) return
     window.removeEventListener('pointermove', onMove)
     window.removeEventListener('pointerup', onUp)
     window.removeEventListener('pointercancel', onUp)
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
+    window.removeEventListener('keydown', onKeyDown, { capture: true })
+    reset()
     if (dragged) {
       // The press that ended a drag must not also count as a click.
       const swallow = (click: MouseEvent) => {
@@ -74,8 +91,9 @@ export function startScrub(event: PointerEvent, handlers: ScrubHandlers): void {
       window.addEventListener('click', swallow, { capture: true, once: true })
       window.setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 0)
     }
-    handlers.end(dragged)
+    if (!cancelled) handlers.end(dragged)
   }
+  window.addEventListener('keydown', onKeyDown, { capture: true })
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
   window.addEventListener('pointercancel', onUp)

@@ -207,12 +207,12 @@ function renamePage(field: 'name' | 'slug', value: string) {
         role="tabpanel"
         data-tab="style"
       >
-        <!-- Previews reach the canvas in T21; until then only commits are applied. -->
         <EditorStyleFields
           :styles="node.style"
           :type="node.type"
           :parent-type="parentType"
           :root="isRoot"
+          @preview="editor.previewStyle(node.id, $event)"
           @update="editor.updateStyle(node.id, $event)"
         />
       </div>

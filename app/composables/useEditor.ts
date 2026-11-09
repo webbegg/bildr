@@ -6,6 +6,8 @@ import type { PropValue } from '#shared/document/components'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
 import type { DropTarget } from '#shared/editor/dropTarget'
 import { insertTargetForSelection, moveTarget, parseDragPayload } from '#shared/editor/dropTarget'
+import type { PreviewState, StylePatch } from '#shared/editor/preview'
+import { createStylePreview } from '#shared/editor/preview'
 import { selectionAfterDelete } from '#shared/editor/selection'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 import type { DeviceId } from '#shared/editor/styleFields'
@@ -44,6 +46,11 @@ export function createEditor(projectId: string) {
   const device = computed(() => DEVICES.find(d => d.id === deviceId.value)!)
   /** An uncommitted theme previewed in the canvas, e.g. while a colour picker drags. */
   const themeDraft = shallowRef<Theme | null>(null)
+  /** An uncommitted style patch the canvas shows on one node, e.g. while a field scrubs. */
+  const stylePreview = shallowRef<PreviewState | null>(null)
+  const styles = createStylePreview((state) => {
+    stylePreview.value = state
+  })
   /** The collection the Data mode shows, and its records (live data, not in the document). */
   const collectionId = ref<string | null>(null)
   const records = shallowRef<DataRecord[]>([])
@@ -200,9 +207,20 @@ export function createEditor(projectId: string) {
     await runOnPage('node_update_props', { nodeId, props })
   }
 
-  async function updateStyle(nodeId: string, style: Record<string, string | null>): Promise<void> {
-    await runOnPage('node_update_style', { nodeId, style })
+  /** Previews a style patch on a canvas node without saving it; null ends the preview. */
+  function previewStyle(nodeId: string, style: StylePatch | null): void {
+    styles.preview(nodeId, style)
   }
+
+  /** Commits a style patch (one undo step); the canvas shows it until the reload has rendered it. */
+  async function updateStyle(nodeId: string, style: StylePatch): Promise<void> {
+    await styles.commit(nodeId, style, () => runOnPage('node_update_style', { nodeId, style }))
+  }
+
+  // A preview belongs to the node being styled.
+  watch([selectedId, () => page.value?.id], () => {
+    if (stylePreview.value) styles.preview(stylePreview.value.nodeId, null)
+  })
 
   /** Previews a theme change in the canvas without committing it. */
   function previewTheme(patch: ThemePatch): void {
@@ -239,9 +257,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, selectedId, hoveredId, history, mode, deviceId, device, themeDraft, page, selected, theme,
+    projectId, project, pageId, selectedId, hoveredId, history, mode, deviceId, device, themeDraft, stylePreview, page, selected, theme,
     collectionId, collection, records, recordsTotal, recordsError, listCollections, lists,
-    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, insert, drop, remove, duplicate, updateProps, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
+    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, insert, drop, remove, duplicate, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }
 

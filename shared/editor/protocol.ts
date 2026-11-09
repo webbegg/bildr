@@ -1,6 +1,7 @@
 import type { DataRecord } from '../data/records'
 import type { Theme } from '../design/theme'
 import type { Page } from '../document/schema'
+import type { StylePatch } from './preview'
 
 /**
  * postMessage protocol between the editor and its canvas iframe (the
@@ -8,6 +9,8 @@ import type { Page } from '../document/schema'
  * the canvas; the canvas reports pointer and keyboard gestures back.
  * `lists` carries each List's records by `listKey`; a List repeats its
  * children per record, and copies after the first carry `data-bildr-copy`.
+ * `bildr:preview` shows a style patch on a node without saving it (null
+ * clears it); a render that already shows the patch clears it too.
  */
 
 /** What a canvas shows: the page being edited, or the theme's token preview sheet. */
@@ -17,6 +20,7 @@ export type EditorToCanvas
   = | { type: 'bildr:render', page: Page, base: string, theme: Theme, view: CanvasView, lists: Record<string, DataRecord[]> }
     | { type: 'bildr:select', nodeId: string | null }
     | { type: 'bildr:hover', nodeId: string | null }
+    | { type: 'bildr:preview', nodeId: string, style: StylePatch | null }
 
 export type CanvasToEditor
   = | { type: 'bildr:ready' }

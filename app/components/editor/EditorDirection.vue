@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
+import { optionValueAt } from '#shared/editor/preview'
 
 /**
  * The flex direction (Stacki's DirectionControl): Row and Column segments with
  * a sliding pill, and a menu with the reverse directions. A reversed value
  * keeps the pill on its axis with the arrow turned around. `fallback` is the
- * component's own direction, shown dim while no token sets one.
+ * component's own direction, shown dim while no token sets one. Hovering a
+ * menu option previews it until the menu closes.
  */
 const props = defineProps<{ value: string | undefined, inherited?: string, fallback?: string }>()
-const emit = defineEmits<{ commit: [value: string] }>()
+const emit = defineEmits<{ commit: [value: string], preview: [value: string | null] }>()
 
 const OPTIONS = [
   { value: 'row', label: 'Row', icon: 'i-lucide-arrow-right' },
@@ -28,6 +30,7 @@ const segments = computed(() => ['row', 'col'].map((base) => {
 
 const menu = computed<DropdownMenuItem[]>(() => OPTIONS.map(o => ({
   label: o.label,
+  value: o.value,
   icon: o.icon,
   type: 'checkbox' as const,
   checked: o.value === shown.value,
@@ -37,6 +40,16 @@ const menu = computed<DropdownMenuItem[]>(() => OPTIONS.map(o => ({
 function pick(value: string) {
   if (value !== props.value) emit('commit', value)
 }
+
+// The menu focuses the item under the pointer or the arrow keys; its content takes no
+// listeners, so focus is followed on the document while the menu is open.
+const onFocusIn = (event: FocusEvent) => emit('preview', optionValueAt(event.target))
+function onOpen(open: boolean) {
+  if (open) return document.addEventListener('focusin', onFocusIn)
+  document.removeEventListener('focusin', onFocusIn)
+  emit('preview', null)
+}
+onBeforeUnmount(() => document.removeEventListener('focusin', onFocusIn))
 </script>
 
 <template>
@@ -58,7 +71,11 @@ function pick(value: string) {
       :items="menu"
       :content="{ align: 'end' }"
       size="xs"
+      @update:open="onOpen"
     >
+      <template #item-label="{ item }">
+        <span :data-option-value="item.value">{{ item.label }}</span>
+      </template>
       <button
         type="button"
         class="grid h-7 w-6 shrink-0 place-items-center rounded-md bg-muted text-dimmed hover:text-highlighted"

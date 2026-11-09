@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { CanvasToEditor, CanvasView, EditorToCanvas } from '#shared/editor/protocol'
 import { isCanvasMessage } from '#shared/editor/protocol'
+import { createThrottle, PREVIEW_INTERVAL } from '#shared/editor/preview'
 
 const { view = 'page' } = defineProps<{ view?: CanvasView }>()
 const editor = useEditor()
@@ -44,6 +45,14 @@ function onMessage(event: MessageEvent) {
 watch(() => [editor.page, editor.theme, editor.lists], render, { deep: true })
 watch(() => editor.selectedId, nodeId => post({ type: 'bildr:select', nodeId }))
 watch(() => editor.hoveredId, nodeId => post({ type: 'bildr:hover', nodeId }))
+
+// Style previews move with a drag, so they are throttled; a clear goes at once and drops any pending one.
+const previews = createThrottle<Extract<EditorToCanvas, { type: 'bildr:preview' }>>(post, PREVIEW_INTERVAL)
+// After the render watcher, so a commit's clear always follows the render that shows the committed value.
+watch(() => editor.stylePreview, (next, prev) => {
+  if (prev && prev.nodeId !== next?.nodeId) previews.flush({ type: 'bildr:preview', nodeId: prev.nodeId, style: null })
+  if (next) previews.push({ type: 'bildr:preview', nodeId: next.nodeId, style: next.style })
+}, { flush: 'post' })
 
 onMounted(() => {
   window.addEventListener('message', onMessage)

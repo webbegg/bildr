@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { getStyleToken } from '#shared/design/tokens'
+import { previewFocusedOption } from '#shared/editor/preview'
 import type { Provenance } from '#shared/editor/styleFields'
 
 /**
@@ -8,6 +9,8 @@ import type { Provenance } from '#shared/editor/styleFields'
  * column it drives `items` and Y `justify`; in a row the other way round.
  * A dot sets both axes (a distributed `justify` such as `between` is kept);
  * a double-click toggles `justify: between`; the arrow keys step an axis.
+ * Hovering a dot or a select option previews it until the pointer leaves the
+ * grid or the select closes.
  */
 type Axis = 'items' | 'justify'
 const props = defineProps<{
@@ -17,7 +20,11 @@ const props = defineProps<{
   direction: string
   device: string
 }>()
-const emit = defineEmits<{ commit: [patch: Partial<Record<Axis, string>>], reset: [key: Axis] }>()
+const emit = defineEmits<{
+  commit: [patch: Partial<Record<Axis, string>>]
+  preview: [patch: Partial<Record<Axis, string>> | null]
+  reset: [key: Axis]
+}>()
 
 const POSITIONS = ['start', 'center', 'end'] as const
 const DISTRIBUTED = ['between', 'around', 'evenly']
@@ -43,11 +50,15 @@ function commit(patch: Partial<Record<Axis, string>>) {
   if (Object.keys(changed).length) emit('commit', changed)
 }
 
-function dotClick(x: number, y: number) {
+function dotPatch(x: number, y: number): Partial<Record<Axis, string>> {
   const patch: Partial<Record<Axis, string>> = { [xAxis.value]: POSITIONS[x], [yAxis.value]: POSITIONS[y] }
   if (DISTRIBUTED.includes(shownJustify.value)) delete patch.justify
-  commit(patch)
+  return patch
 }
+
+const dotClick = (x: number, y: number) => commit(dotPatch(x, y))
+
+const optionPreview = (axis: Axis) => previewFocusedOption(value => emit('preview', value === null ? null : { [axis]: value }))
 
 function dotDoubleClick(x: number, y: number) {
   const position = POSITIONS[column.value ? y : x]!
@@ -90,6 +101,7 @@ const axes = computed(() => [{ name: 'X', axis: xAxis.value }, { name: 'Y', axis
       aria-label="Alignment"
       data-align-grid
       @keydown="onKeydown"
+      @mouseleave="emit('preview', null)"
     >
       <div class="absolute inset-0 grid grid-cols-3 grid-rows-3">
         <template
@@ -104,6 +116,7 @@ const axes = computed(() => [{ name: 'X', axis: xAxis.value }, { name: 'Y', axis
             :aria-label="`Align ${X_NAMES[x]} ${Y_NAMES[y]}`"
             :aria-pressed="isActive(x, y)"
             :title="shownJustify === 'between' ? 'Double-click to align here' : 'Double-click for space between'"
+            @mouseenter="emit('preview', dotPatch(x, y))"
             @click="dotClick(x, y)"
             @dblclick="dotDoubleClick(x, y)"
           >
@@ -149,8 +162,14 @@ const axes = computed(() => [{ name: 'X', axis: xAxis.value }, { name: 'Y', axis
           :ui="{ trailingIcon: 'size-3 text-dimmed' }"
           :aria-label="getStyleToken(axis)!.label"
           :data-style-key="axis"
+          :content="optionPreview(axis)"
           @update:model-value="commit({ [axis]: $event as string })"
-        />
+          @update:open="!$event && emit('preview', null)"
+        >
+          <template #item-label="{ item: option }">
+            <span :data-option-value="option.value">{{ option.label }}</span>
+          </template>
+        </USelect>
       </div>
     </div>
   </div>

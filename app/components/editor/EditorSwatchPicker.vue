@@ -7,6 +7,7 @@ import { colorSwatch, colorSwatchRows } from '#shared/editor/styleFields'
  * Picks a colour token from swatches painted with the project theme (the
  * editor's own document carries the app theme, so colours are computed).
  * The trigger reads like Stacki's VariableConnect: swatch, token name, chevron.
+ * Hovering a swatch previews it until the pointer leaves or the picker closes.
  */
 const props = defineProps<{ token: StyleToken, value: string | undefined, theme: Theme }>()
 const emit = defineEmits<{ update: [value: string], preview: [value: string | null] }>()
@@ -20,6 +21,10 @@ function hover(value: string | null) {
   hovered.value = value
   emit('preview', value)
 }
+
+watch(open, (isOpen) => {
+  if (!isOpen) hover(null)
+})
 
 function pick(value: string) {
   open.value = false

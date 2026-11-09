@@ -7,6 +7,8 @@ import { isCanvasMessage } from '#shared/editor/protocol'
 import { isContainerType } from '#shared/document/components'
 import { findNode, findParent } from '#shared/document/tree'
 import type { DropTarget } from '#shared/editor/dropTarget'
+import type { StylePatch } from '#shared/editor/preview'
+import { previewTree, settlePreviews } from '#shared/editor/preview'
 import { DRAG_MIME, draggedNodeId, dropPosition, resolveDrop } from '#shared/editor/dropTarget'
 
 /**
@@ -17,6 +19,8 @@ import { DRAG_MIME, draggedNodeId, dropPosition, resolveDrop } from '#shared/edi
  * Outlines use a fixed editor colour, not the project's `primary`.
  * List repetitions share their template's node ids: a click on any copy
  * selects the template, while outlines and drops stay on the first copy.
+ * Style previews from the editor render over the page until it clears them
+ * or a render shows their values (committed), so a commit never flickers.
  */
 definePageMeta({ layout: false })
 
@@ -28,6 +32,14 @@ useTheme(theme)
 const view = ref<CanvasView>('page')
 const selectedId = ref<string | null>(null)
 const hoveredId = ref<string | null>(null)
+/** Uncommitted style patches by node id. */
+const previews = shallowRef<Record<string, StylePatch>>({})
+const shownPage = computed(() => {
+  const current = page.value
+  if (!current) return null
+  const root = previewTree(current.root, previews.value)
+  return root === current.root ? current : { ...current, root }
+})
 
 interface Box { top: number, left: number, width: number, height: number, label: string }
 const boxes = reactive<{ hover: Box | null, selected: Box | null }>({ hover: null, selected: null })
@@ -66,6 +78,7 @@ function onMessage(event: MessageEvent) {
   const message = event.data
   if (message.type === 'bildr:render') {
     page.value = message.page
+    if (Object.keys(previews.value).length) previews.value = settlePreviews(previews.value, message.page.root)
     base.value = message.base
     lists.value = message.lists
     theme.value = message.theme
@@ -75,6 +88,9 @@ function onMessage(event: MessageEvent) {
     if (message.nodeId) firstCopy(message.nodeId)?.scrollIntoView({ block: 'nearest' })
   } else if (message.type === 'bildr:hover') {
     hoveredId.value = message.nodeId
+  } else if (message.type === 'bildr:preview') {
+    const { [message.nodeId]: _, ...others } = previews.value
+    previews.value = message.style ? { ...others, [message.nodeId]: message.style } : others
   }
 }
 
@@ -198,8 +214,8 @@ onBeforeUnmount(() => {
   <div class="relative min-h-screen">
     <EditorTokenSheet v-if="view === 'tokens'" />
     <BildrPage
-      v-else-if="page"
-      :page="page"
+      v-else-if="shownPage"
+      :page="shownPage"
       :base="base"
       :lists="lists"
       editable

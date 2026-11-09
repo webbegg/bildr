@@ -2,6 +2,7 @@
 import { getStyleToken, isResponsiveToken, parseStyleKey, styleClasses, styleKey } from '#shared/design/tokens'
 import type { StyleToken } from '#shared/design/tokens'
 import { isContainerType, isFlexType, structuralStyle } from '#shared/document/components'
+import { previewFocusedOption } from '#shared/editor/preview'
 import { spacingSide, spacingWrite } from '#shared/editor/spacing'
 import type { Provenance, StyleSection } from '#shared/editor/styleFields'
 import { fieldLabel, sectionMark, STYLE_SECTIONS, styleProvenance } from '#shared/editor/styleFields'
@@ -56,9 +57,12 @@ function setField(key: string, next: string | null) {
 
 const preview = (key: string, value: string | null) => emit('preview', value === null ? null : { [keyAt(key)]: value })
 
-function commitTokens(patch: Record<string, string>) {
-  emit('update', Object.fromEntries(Object.entries(patch).map(([key, value]) => [keyAt(key), value])))
-}
+const atDevice = (patch: Record<string, string>) => Object.fromEntries(Object.entries(patch).map(([key, value]) => [keyAt(key), value]))
+const commitTokens = (patch: Record<string, string>) => emit('update', atDevice(patch))
+const previewTokens = (patch: Record<string, string> | null) => emit('preview', patch && atDevice(patch))
+
+/** Select content that previews the option under the pointer or keyboard focus (items carry `data-option-value`). */
+const optionPreview = (key: string) => previewFocusedOption(value => preview(key, value))
 
 // Controls show for the node types they apply to, and for any node that sets their tokens.
 const sets = (...keys: string[]) => Object.keys(props.styles).some(key => keys.includes(parseStyleKey(key)?.token.key ?? ''))
@@ -193,6 +197,7 @@ const SELECT_UI = { trailingIcon: 'size-3 text-dimmed' }
             :value="own('direction')"
             :inherited="inherited('direction')"
             :fallback="structuralStyle(type).direction"
+            @preview="preview('direction', $event)"
             @commit="setField('direction', $event)"
           />
         </div>
@@ -215,6 +220,7 @@ const SELECT_UI = { trailingIcon: 'size-3 text-dimmed' }
             :justify="provenance('justify')"
             :direction="direction"
             :device="editor.device.label"
+            @preview="previewTokens"
             @commit="commitTokens"
             @reset="setField($event, null)"
           />
@@ -382,10 +388,15 @@ const SELECT_UI = { trailingIcon: 'size-3 text-dimmed' }
             :ui="SELECT_UI"
             :aria-label="token('font').label"
             data-style-key="font"
+            :content="optionPreview('font')"
             @update:model-value="setField('font', $event)"
+            @update:open="!$event && preview('font', null)"
           >
             <template #item-label="{ item: option }">
-              <span :class="styleClasses({ font: option.value })">{{ option.label }}</span>
+              <span
+                :class="styleClasses({ font: option.value })"
+                :data-option-value="option.value"
+              >{{ option.label }}</span>
             </template>
           </USelect>
         </div>
@@ -526,8 +537,13 @@ const SELECT_UI = { trailingIcon: 'size-3 text-dimmed' }
             :ui="SELECT_UI"
             :aria-label="token('rounded').label"
             data-style-key="rounded"
+            :content="optionPreview('rounded')"
             @update:model-value="setField('rounded', $event)"
+            @update:open="!$event && preview('rounded', null)"
           >
+            <template #item-label="{ item: option }">
+              <span :data-option-value="option.value">{{ option.label }}</span>
+            </template>
             <template #leading>
               <span
                 class="block size-3 border-t-[1.5px] border-l-[1.5px] border-current text-muted"
@@ -567,8 +583,13 @@ const SELECT_UI = { trailingIcon: 'size-3 text-dimmed' }
           :ui="SELECT_UI"
           :aria-label="token('shadow').label"
           data-style-key="shadow"
+          :content="optionPreview('shadow')"
           @update:model-value="setField('shadow', $event)"
+          @update:open="!$event && preview('shadow', null)"
         >
+          <template #item-label="{ item: option }">
+            <span :data-option-value="option.value">{{ option.label }}</span>
+          </template>
           <template #item-leading="{ item: option }">
             <span class="grid size-5 place-items-center rounded-[3px] bg-neutral-300">
               <span

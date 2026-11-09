@@ -15,7 +15,8 @@ import { dragScope, SIDES, sideKey, spacingSide, spacingWrite } from '#shared/ed
  * shorthand is underlined dotted. Clicking a label edits that side in a
  * popover; Alt-clicking it clears the side's own token.
  *
- * Drags `preview` the patch they hold and `commit` it once, on release.
+ * Drags `preview` the patch they hold and `commit` it once, on release;
+ * Escape cancels a drag.
  */
 const props = defineProps<{ styles: Record<string, string>, breakpoint: Breakpoint | undefined }>()
 const emit = defineEmits<{ preview: [patch: Record<string, string | null> | null], commit: [patch: Record<string, string | null>] }>()
@@ -101,6 +102,11 @@ function press(box: SpacingBox, side: Side, event: PointerEvent, label?: HTMLEle
         if (alt) clear(box, side)
         else edit(box, side, label)
       }
+    },
+    cancel() {
+      drag.value = null
+      patch = null
+      emit('preview', null)
     }
   })
 }

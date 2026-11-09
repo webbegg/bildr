@@ -11,7 +11,8 @@ import { scrubStops, startScrub } from '#shared/editor/scrub'
  * anything else reverts, and the chevron lists every value.
  *
  * Gestures `preview` the value they hold (null when they end) and `commit`
- * once: on release, Enter, an arrow step or a pick.
+ * once: on release, Enter, an arrow step or a pick. Escape cancels a scrub,
+ * and hovering a listed value previews it until the list closes.
  */
 defineOptions({ inheritAttrs: false })
 const props = defineProps<{
@@ -86,6 +87,10 @@ function scrub(event: PointerEvent) {
       }
       emit('preview', null)
       if (next !== null && next !== from) commit(next)
+    },
+    cancel() {
+      draft.value = null
+      emit('preview', null)
     }
   })
 }
@@ -115,6 +120,10 @@ function onKeydown(event: KeyboardEvent) {
     input.value?.blur()
   }
 }
+
+watch(listOpen, (open) => {
+  if (!open) emit('preview', null)
+})
 
 function pick(value: string) {
   listOpen.value = false
