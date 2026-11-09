@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEVICES } from '#shared/editor/styleFields'
-import { boundsOf, clampZoom, fitView, frameLabel, frameOrder, layoutFrames, panView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { boundsOf, clampZoom, fitView, frameBar, frameOrder, layoutFrames, panView, previewWindowFeatures, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
 describe('panView', () => {
   it('moves the content with a drag from one screen point to another, at any zoom', () => {
@@ -121,12 +121,34 @@ describe('frameOrder', () => {
   })
 })
 
-describe('frameLabel', () => {
-  it('marks the base (mobile-first) frame as Primary', () => {
-    const [mobile, tablet, desktop] = DEVICES
-    expect(frameLabel(mobile!)).toBe('Mobile · 390 · Primary')
-    expect(frameLabel(tablet!)).toBe('Tablet · 768')
-    expect(frameLabel(desktop!)).toBe('Desktop · 1280')
+describe('frameBar', () => {
+  const [mobile, tablet, desktop] = DEVICES
+
+  it('names the frame and its width, and marks the base (mobile-first) frame as Primary', () => {
+    expect(frameBar(desktop!, 1)).toMatchObject({ name: 'Desktop', size: '1280', primary: false })
+    expect(frameBar(tablet!, 1)).toMatchObject({ name: 'Tablet', size: '768', primary: false })
+    expect(frameBar(mobile!, 1)).toMatchObject({ name: 'Mobile', size: '390', primary: true })
+  })
+
+  it('spans the frame on screen and undoes the zoom, so it keeps its height and font at any zoom', () => {
+    // Inside the zoomed content, a 320 px wide bar scaled by 1/0.25 covers the 1280 px frame, 320 px on screen.
+    expect(frameBar(desktop!, 0.25)).toMatchObject({ width: 320, scale: 4 })
+    expect(frameBar(desktop!, 2)).toMatchObject({ width: 2560, scale: 0.5 })
+  })
+
+  it('drops the Primary note, then the width, then the +, when the bar is narrow on screen', () => {
+    // Mobile at 50% is 195 px, at 33% 128.7 px, at 26% 101.4 px.
+    expect(frameBar(mobile!, 1)).toMatchObject({ showSize: true, showPrimary: true, showAdd: true })
+    expect(frameBar(mobile!, 0.5)).toMatchObject({ showSize: true, showPrimary: false, showAdd: true })
+    expect(frameBar(mobile!, 0.33)).toMatchObject({ showSize: false, showPrimary: false, showAdd: true })
+    expect(frameBar(mobile!, 0.26)).toMatchObject({ showSize: false, showPrimary: false, showAdd: false })
+  })
+})
+
+describe('previewWindowFeatures', () => {
+  it('opens a popup at the frame width, as tall as the screen allows up to 900 px', () => {
+    expect(previewWindowFeatures(1280, 1080)).toBe('popup,width=1280,height=900')
+    expect(previewWindowFeatures(390, 700)).toBe('popup,width=390,height=700')
   })
 })
 

@@ -73,12 +73,48 @@ export function frameOrder<T extends { width: number }>(devices: readonly T[]): 
   return [...devices].sort((a, b) => b.width - a.width)
 }
 
-/** The tooltip on the Primary frame's label. */
+/** The tooltip on the Primary frame's header bar. */
 export const PRIMARY_FRAME_HINT = 'Edits here apply to all sizes unless overridden.'
 
-/** A frame's label, e.g. `Tablet · 768`; the base frame (no breakpoint) is the Primary one. */
-export function frameLabel(device: { label: string, width: number, breakpoint?: string }): string {
-  return `${device.label} · ${device.width}${device.breakpoint ? '' : ' · Primary'}`
+/** A frame header bar's height on screen, at any zoom. */
+export const FRAME_BAR_HEIGHT = 28
+
+export interface FrameBar {
+  name: string
+  size: string
+  /** The base frame (no breakpoint): its edits apply to every size. */
+  primary: boolean
+  /** The bar's width inside the zoomed content: drawn at `scale`, it spans the frame on screen. */
+  width: number
+  /** Undoes the zoom, so the bar keeps its height and font size. */
+  scale: number
+  showSize: boolean
+  showPrimary: boolean
+  showAdd: boolean
+}
+
+/**
+ * A frame's header bar, Framer's `▶ Desktop 1280  +`: as wide as the frame on
+ * screen and a fixed height, so it reads at any zoom. A narrow bar drops the
+ * Primary note, then the width, then the `+`, so the name stays readable.
+ */
+export function frameBar(device: { label: string, width: number, breakpoint?: string }, zoom: number): FrameBar {
+  const width = device.width * zoom
+  return {
+    name: device.label,
+    size: String(device.width),
+    primary: !device.breakpoint,
+    width,
+    scale: 1 / zoom,
+    showSize: width >= 140,
+    showPrimary: width >= 200,
+    showAdd: width >= 120
+  }
+}
+
+/** The `window.open` features of a frame's draft preview: a popup at the frame width, at most 900 px tall. */
+export function previewWindowFeatures(width: number, screenHeight: number): string {
+  return `popup,width=${width},height=${Math.min(900, screenHeight)}`
 }
 
 /** The smallest rectangle holding every rect. */

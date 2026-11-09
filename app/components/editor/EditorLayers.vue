@@ -26,7 +26,7 @@ function onKeyDown(event: KeyboardEvent) {
 
 <template>
   <EditorNodeMenu
-    class="overflow-auto px-1.5 py-2 outline-none"
+    class="overflow-auto px-2 py-2 outline-none"
     role="tree"
     aria-label="Layers"
     tabindex="0"

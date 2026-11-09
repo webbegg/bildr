@@ -9,7 +9,7 @@ import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 import type { Point, Viewport, ZoomCommand } from '#shared/editor/viewport'
 import { isInsertTool, pointerMode } from '#shared/editor/insertTools'
-import { boundsOf, fitView, FRAME_GAP, FRAME_MIN_HEIGHT, frameLabel, frameOrder, layoutFrames, panView, PRIMARY_FRAME_HINT, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, frameOrder, layoutFrames, panView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
 /**
  * The editor canvas. The page view is a Figma-style infinite surface showing
@@ -28,7 +28,8 @@ import { boundsOf, fitView, FRAME_GAP, FRAME_MIN_HEIGHT, frameLabel, frameOrder,
  * setting (on: a click selects the innermost element; off: Figma's drill,
  * where the first click selects a top-level element). The armed insert tool
  * goes to the frames, which report where a click inserts, and so does the
- * light/dark preview.
+ * light/dark preview. Each frame has Framer's header bar (EditorFrameBar):
+ * clicking it activates the frame, ▶ previews the draft in a popup that wide.
  */
 const { view = 'page' } = defineProps<{ view?: CanvasView }>()
 const editor = useEditor()
@@ -60,8 +61,8 @@ const stageSize = reactive({ width: 0, height: 0 })
 const observer = import.meta.client
   ? new ResizeObserver(([entry]) => Object.assign(stageSize, { width: entry!.contentRect.width, height: entry!.contentRect.height }))
   : null
-/** Room around fitted content, in screen px; the frame labels sit in it. */
-const FIT_PADDING = 48
+/** Room around fitted content, in screen px; the frame header bars sit in it. */
+const FIT_PADDING = 48 + FRAME_BAR_HEIGHT
 /** Until the user zooms or pans, the view keeps fitting the frames as they load and grow. */
 let autoFit = true
 
@@ -386,23 +387,14 @@ onBeforeUnmount(() => {
         :data-frame="device.id"
         :data-active="device.id === editor.deviceId || undefined"
       >
-        <!-- Labels and the active outline keep their screen size at any zoom. -->
-        <UTooltip
-          :text="PRIMARY_FRAME_HINT"
-          :disabled="!!device.breakpoint"
-          :content="{ side: 'top' }"
-        >
-          <button
-            type="button"
-            class="absolute bottom-full left-0 origin-bottom-left pb-1.5 text-[11px] whitespace-nowrap"
-            :class="device.id === editor.deviceId ? 'text-(--editor-selection)' : 'text-muted hover:text-default'"
-            :style="{ transform: `scale(${1 / viewport.zoom})` }"
-            data-frame-label
-            @click="activate(device.id)"
-          >
-            {{ frameLabel(device) }}
-          </button>
-        </UTooltip>
+        <!-- The header bar and the active outline keep their screen size at any zoom. -->
+        <EditorFrameBar
+          :device="device"
+          :zoom="viewport.zoom"
+          :active="device.id === editor.deviceId"
+          @activate="activate(device.id)"
+          @preview="editor.openPreview(device.width)"
+        />
         <iframe
           :ref="frameRef(device.id)"
           src="/canvas"

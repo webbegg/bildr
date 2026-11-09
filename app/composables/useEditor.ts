@@ -19,6 +19,7 @@ import type { SelectionStep } from '#shared/editor/selection'
 import { drillTarget, navigateSelection, selectAllSiblings, selectionAfterDelete, siblingParent, toggleSelection, topLevelSelection } from '#shared/editor/selection'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 import type { ZoomCommand } from '#shared/editor/viewport'
+import { previewWindowFeatures } from '#shared/editor/viewport'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 
@@ -223,8 +224,10 @@ export function createEditor(projectId: string) {
   /** The draft preview of the current page: unpublished edits included. */
   const previewUrl = computed(() => `/preview/${projectId}/${page.value?.slug ?? ''}`)
 
-  function openPreview(): void {
-    window.open(previewUrl.value, '_blank')
+  /** Opens the draft preview in a new tab, or with a frame's `width` in a popup that wide. */
+  function openPreview(width?: number): void {
+    if (width) window.open(previewUrl.value, `bildr-preview-${width}`, previewWindowFeatures(width, window.screen.availHeight))
+    else window.open(previewUrl.value, '_blank')
   }
 
   /** Publishes the draft, refreshes the top bar's published info and toasts the live URL. */

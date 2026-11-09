@@ -1,12 +1,19 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Page } from '#shared/document/schema'
-import { filterPages } from '#shared/editor/sidebar'
+import { filterPages, pageRowLabel } from '#shared/editor/sidebar'
 
-/** The Pages panel: the project's pages, filtered by the sidebar search. */
+/**
+ * The Pages panel, Framer's: a "Pages" header with Add page, then a row per
+ * page named by its path (`/pricing`; the home page, the first, is `Home`
+ * with a house icon), filtered by the sidebar search. Double-click renames.
+ */
 const { query = '' } = defineProps<{ query?: string }>()
 const editor = useEditor()
-const pages = computed(() => filterPages(editor.project?.pages ?? [], query))
+const pages = computed(() => {
+  const homeId = editor.project?.pages[0]?.id
+  return filterPages(editor.project?.pages ?? [], query).map(page => ({ page, home: page.id === homeId, ...pageRowLabel(page, page.id === homeId) }))
+})
 
 const newName = ref('')
 const adding = ref(false)
@@ -53,8 +60,8 @@ function menu(page: Page): DropdownMenuItem[] {
 
 <template>
   <div class="overflow-y-auto pb-2">
-    <div class="flex items-center justify-between px-3 pt-3 pb-1">
-      <p class="text-xs font-semibold text-muted uppercase">
+    <div class="flex items-center justify-between ps-3.5 pe-2 pt-2.5 pb-1.5">
+      <p class="text-sm font-semibold text-highlighted">
         Pages
       </p>
       <UButton
@@ -87,9 +94,10 @@ function menu(page: Page): DropdownMenuItem[] {
       No pages match “{{ query }}”.
     </p>
     <div
-      v-for="page in pages"
+      v-for="{ page, home, path, hint } in pages"
       :key="page.id"
-      class="group flex items-center gap-1 px-1.5"
+      class="group relative flex items-center px-2"
+      :data-page-id="page.id"
     >
       <UInput
         v-if="renamingId === page.id"
@@ -104,17 +112,24 @@ function menu(page: Page): DropdownMenuItem[] {
       <button
         v-else
         type="button"
-        class="flex flex-1 items-center gap-2 truncate rounded-md px-1.5 py-1 text-left text-sm"
-        :class="page.id === editor.page?.id ? 'bg-elevated font-medium text-highlighted' : 'text-toned hover:bg-elevated/50'"
+        class="flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-lg ps-3 pe-8 text-left text-sm"
+        :class="page.id === editor.page?.id ? 'bg-white/8 font-medium text-highlighted' : 'text-toned hover:bg-white/4'"
+        :title="page.name"
+        :aria-current="page.id === editor.page?.id ? 'page' : undefined"
+        :data-page-home="home || undefined"
         @click="editor.selectPage(page.id)"
         @dblclick="startRename(page)"
       >
         <UIcon
-          name="i-lucide-file"
-          class="size-3.5 shrink-0"
+          :name="home ? 'i-lucide-house' : 'i-lucide-file'"
+          class="size-4 shrink-0"
+          :class="page.id === editor.page?.id ? 'text-highlighted' : 'text-dimmed'"
         />
-        <span class="truncate">{{ page.name }}</span>
-        <span class="ms-auto truncate text-xs text-dimmed">/{{ page.slug }}</span>
+        <span class="truncate">{{ path }}</span>
+        <span
+          v-if="hint"
+          class="truncate text-xs font-normal text-dimmed"
+        >{{ hint }}</span>
       </button>
       <UDropdownMenu :items="menu(page)">
         <UButton
@@ -123,7 +138,7 @@ function menu(page: Page): DropdownMenuItem[] {
           color="neutral"
           variant="ghost"
           aria-label="Page actions"
-          class="opacity-0 group-hover:opacity-100"
+          class="absolute end-3 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
         />
       </UDropdownMenu>
     </div>

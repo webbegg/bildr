@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createNode, createPage } from '#shared/document/factory'
-import { filterByName, filterLayers, filterPages } from '#shared/editor/sidebar'
+import { filterByName, filterLayers, filterPages, pageRowLabel } from '#shared/editor/sidebar'
 
 describe('filterPages', () => {
   const pages = [createPage('Home'), createPage('About us', 'about'), createPage('Pricing')]
@@ -14,6 +14,23 @@ describe('filterPages', () => {
 
   it('keeps every page for an empty query', () => {
     expect(filterPages(pages, '  ')).toEqual(pages)
+  })
+
+  it('matches the path a page row shows', () => {
+    expect(filterPages(pages, '/pric').map(p => p.slug)).toEqual(['pricing'])
+  })
+})
+
+describe('pageRowLabel', () => {
+  it('names pages by path, like Framer, with Home for the home page', () => {
+    expect(pageRowLabel({ name: 'Pricing', slug: 'pricing' }, false)).toEqual({ path: '/pricing' })
+    expect(pageRowLabel({ name: 'Home', slug: 'home' }, true)).toEqual({ path: 'Home' })
+  })
+
+  it('adds the page name when the path does not say it', () => {
+    expect(pageRowLabel({ name: 'Plans', slug: 'pricing' }, false)).toEqual({ path: '/pricing', hint: 'Plans' })
+    expect(pageRowLabel({ name: 'About us', slug: 'about-us' }, false)).toEqual({ path: '/about-us' })
+    expect(pageRowLabel({ name: 'Landing', slug: 'home' }, true)).toEqual({ path: 'Home', hint: 'Landing' })
   })
 })
 

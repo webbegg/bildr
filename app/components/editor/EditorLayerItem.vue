@@ -6,7 +6,8 @@ import { DRAG_MIME, draggedNodeId, dropPosition, nodeDragType, resolveDrop } fro
 import { hiddenBadge, naturalDisplay, visibilityAt, visibilityToggle } from '#shared/editor/layers'
 
 /**
- * A layers row after Stacki's tree: 16px of indent per level, a chevron that
+ * A layers row after Stacki's tree, at Framer's density (32px rows, 13px
+ * text): 16px of indent per level, a chevron that
  * collapses the children, the type icon, the type with its text in italics,
  * and a drag handle on hover. The whole row drags and takes drops; Shift+click
  * toggles the row in the selection.
@@ -107,12 +108,12 @@ function onDrop(event: DragEvent) {
       :data-layer-id="node.id"
       :data-layer-hidden="hidden ? '' : undefined"
       :draggable="!isRoot"
-      class="group flex h-7 w-full cursor-pointer items-center gap-1.5 rounded-md pe-1 text-xs whitespace-nowrap select-none"
+      class="group flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg pe-1.5 text-[13px] whitespace-nowrap select-none"
       :class="[
-        selected ? 'bg-primary/10 text-highlighted' : editor.hoveredId === node.id ? 'bg-elevated text-highlighted' : 'text-toned hover:bg-elevated',
+        selected ? 'bg-primary/10 text-highlighted' : editor.hoveredId === node.id ? 'bg-white/6 text-highlighted' : 'text-toned hover:bg-white/6',
         dropAt && DROP_CLASS[dropAt]
       ]"
-      :style="{ paddingLeft: `${2 + depth * 16}px` }"
+      :style="{ paddingLeft: `${4 + depth * 16}px` }"
       @click="editor.selectRow(node.id, $event.shiftKey)"
       @mouseenter="editor.hoveredId = node.id"
       @dragstart="onDragStart"
@@ -132,7 +133,7 @@ function onDrop(event: DragEvent) {
       >
         <UIcon
           name="i-lucide-chevron-down"
-          class="size-3 transition-transform"
+          class="size-3.5 transition-transform"
           :class="{ '-rotate-90': collapsed }"
         />
       </button>
@@ -142,7 +143,7 @@ function onDrop(event: DragEvent) {
       />
       <UIcon
         :name="icon"
-        class="size-3.5 shrink-0"
+        class="size-4 shrink-0"
         :class="[selected ? 'text-primary' : 'text-dimmed group-hover:text-muted', { 'opacity-45': hidden }]"
       />
       <span

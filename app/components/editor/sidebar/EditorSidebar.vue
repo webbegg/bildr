@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /**
- * The Canvas view's left sidebar, Framer's: a Pages / Layers / Assets
- * switcher with a "+" that opens the Insert panel (also `I`), and a search
- * that filters the panel showing (Cmd/Ctrl+F focuses it; Escape clears it,
- * then leaves it). A canvas selection made while Pages shows reveals it in
- * Layers. The panel lives on the editor, so quick actions can open Assets.
+ * The Canvas view's left sidebar, Framer's: Pages / Layers / Assets as plain
+ * text tabs (the current one white on a soft pill), and a search that filters
+ * the panel showing (Cmd/Ctrl+F focuses it; Escape clears it, then leaves
+ * it). A canvas selection made while Pages shows reveals it in Layers. The
+ * panel lives on the editor, so quick actions can open Assets.
  */
 import type { SidebarPanel } from '#shared/editor/commands'
 
@@ -42,46 +42,35 @@ function onSearchKeyDown(event: KeyboardEvent) {
     class="flex flex-col"
     data-sidebar
   >
-    <div class="flex items-center gap-1 px-2 pt-2">
-      <EditorSegmented
-        :items="PANELS"
-        :model-value="panel"
-        class="flex-1"
-        dense
-        data-sidebar-switcher
-        @update:model-value="panel = $event as SidebarPanel"
-      />
-      <UPopover
-        v-model:open="editor.insertOpen"
-        :content="{ side: 'right', align: 'start', sideOffset: 8 }"
+    <div
+      class="flex items-center gap-0.5 px-2 pt-2"
+      role="tablist"
+      aria-label="Sidebar"
+      data-sidebar-switcher
+    >
+      <button
+        v-for="item in PANELS"
+        :key="item.value"
+        type="button"
+        role="tab"
+        :aria-selected="panel === item.value"
+        class="h-7 rounded-md px-2.5 text-sm font-medium transition-colors"
+        :class="panel === item.value ? 'bg-white/8 text-highlighted' : 'text-muted hover:text-default'"
+        @click="panel = item.value as SidebarPanel"
       >
-        <UTooltip
-          text="Insert"
-          :kbds="['i']"
-        >
-          <UButton
-            icon="i-lucide-plus"
-            size="xs"
-            color="neutral"
-            variant="ghost"
-            aria-label="Insert"
-            data-insert-button
-          />
-        </UTooltip>
-        <template #content>
-          <EditorPalette @done="editor.insertOpen = false" />
-        </template>
-      </UPopover>
+        {{ item.label }}
+      </button>
     </div>
-    <div class="px-2 py-2">
+    <div class="border-b border-default px-2 py-2">
       <UInput
         ref="search"
         v-model="query"
         icon="i-lucide-search"
-        size="xs"
         :placeholder="placeholder"
         :aria-label="placeholder"
+        variant="soft"
         class="w-full"
+        :ui="{ base: 'h-8 rounded-lg bg-white/5 text-sm' }"
         data-sidebar-search
         @keydown="onSearchKeyDown"
       />

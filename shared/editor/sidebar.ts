@@ -1,3 +1,4 @@
+import { slugify } from '../document/factory'
 import type { DocNode, Page } from '../document/schema'
 
 /**
@@ -15,9 +16,18 @@ export function matches(query: string, ...texts: (string | undefined)[]): boolea
   return !q || texts.some(text => text?.toLowerCase().includes(q))
 }
 
-/** The pages whose name or slug matches. */
+/** The pages whose name or path (`/slug`) matches. */
 export function filterPages<T extends Pick<Page, 'name' | 'slug'>>(pages: readonly T[], query: string): T[] {
-  return pages.filter(page => matches(query, page.name, page.slug))
+  return pages.filter(page => matches(query, page.name, `/${page.slug}`))
+}
+
+/**
+ * A page row's label, Framer's: the path (`/pricing`), or `Home` for the home
+ * page, plus the page name as a `hint` when the path does not say it.
+ */
+export function pageRowLabel(page: Pick<Page, 'name' | 'slug'>, home: boolean): { path: string, hint?: string } {
+  const path = home ? 'Home' : `/${page.slug}`
+  return slugify(page.name) === (home ? 'home' : page.slug) ? { path } : { path, hint: page.name }
 }
 
 /** The assets (theme styles, collections) whose name matches. */

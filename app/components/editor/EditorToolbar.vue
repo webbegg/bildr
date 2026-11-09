@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
+import { MOVE_TOOL } from '#shared/editor/insertTools'
 
 /**
- * The lean top bar, Framer's: back, the project menu and the views (Canvas,
- * Data, Settings) on the left; undo/redo, Preview (Cmd/Ctrl+P, the draft) and
- * Publish on the right. The canvas frames set the breakpoint, so there is no
- * device toggle. The project menu renames the project in place (Rename…
- * swaps the name for an input; Enter or blur saves, Esc cancels), opens the
- * published app, the settings or the project list.
+ * The top bar, Framer's. Left: the "Canvas ▾" view menu (Canvas, Data,
+ * Settings, back to the projects, the published app), named after the
+ * current view, then the insert icons: + opens the Insert panel (`I`),
+ * Frame and Text arm their tools (`F`, `T`). Centre: the project name and
+ * slug with the project menu, which renames in place (Rename… swaps the name
+ * for an input; Enter or blur saves, Esc cancels). Right: undo/redo, Preview
+ * (Cmd/Ctrl+P, the draft) and Publish. The canvas frames set the breakpoint.
  */
 const editor = useEditor()
 const publishing = ref(false)
@@ -15,12 +17,48 @@ const renaming = ref(false)
 const nameDraft = ref('')
 const nameInput = useTemplateRef<{ inputRef?: HTMLInputElement }>('nameInput')
 
-const VIEWS = [{ value: 'build', label: 'Canvas' }, { value: 'data', label: 'Data' }, { value: 'settings', label: 'Settings' }]
+type View = 'build' | 'data' | 'settings'
+const VIEWS: { value: View, label: string, icon: string }[] = [
+  { value: 'build', label: 'Canvas', icon: 'i-lucide-pen-tool' },
+  { value: 'data', label: 'Data', icon: 'i-lucide-database' },
+  { value: 'settings', label: 'Settings', icon: 'i-lucide-settings' }
+]
+const viewLabel = computed(() => VIEWS.find(view => view.value === editor.mode)?.label)
+
+const TOOLS = [
+  { id: 'Container', label: 'Frame', icon: 'i-lucide-frame', kbd: 'f' },
+  { id: 'Text', label: 'Text', icon: 'i-lucide-type', kbd: 't' }
+]
 
 const { data: published } = useAsyncData(
   `published-${editor.projectId}`,
   () => callAction<{ url: string, version: number, publishedAt: string } | null>('project_published_info', { projectId: editor.projectId })
 )
+
+const openPublished = computed<DropdownMenuItem>(() => ({
+  label: published.value ? `Open published app · v${published.value.version}` : 'Not published yet',
+  icon: 'i-lucide-external-link',
+  disabled: !published.value,
+  to: published.value ? `${published.value.url}/${editor.page?.slug ?? ''}` : undefined,
+  target: '_blank'
+}))
+
+const viewMenu = computed<DropdownMenuItem[][]>(() => [
+  VIEWS.map(view => ({
+    label: view.label,
+    icon: view.icon,
+    type: 'checkbox',
+    checked: editor.mode === view.value,
+    onSelect: () => {
+      editor.mode = view.value
+    }
+  })),
+  [{ label: 'Back to projects', icon: 'i-lucide-arrow-left', to: '/' }, openPublished.value]
+])
+
+function toggleTool(id: string) {
+  editor.setTool(editor.tool === id ? MOVE_TOOL : id)
+}
 
 async function startRename() {
   nameDraft.value = editor.project?.name ?? ''
@@ -41,13 +79,7 @@ const projectMenu = computed<DropdownMenuItem[][]>(() => [
     icon: 'i-lucide-pencil',
     onSelect: () => void startRename()
   }],
-  [{
-    label: published.value ? `Open published app · v${published.value.version}` : 'Not published yet',
-    icon: 'i-lucide-external-link',
-    disabled: !published.value,
-    to: published.value ? `${published.value.url}/${editor.page?.slug ?? ''}` : undefined,
-    target: '_blank'
-  }, {
+  [openPublished.value, {
     label: 'Project settings',
     icon: 'i-lucide-settings',
     onSelect: () => {
@@ -68,53 +100,105 @@ async function publish() {
 </script>
 
 <template>
-  <header class="flex h-12 shrink-0 items-center gap-2 border-b border-default px-3">
-    <UButton
-      to="/"
-      icon="i-lucide-arrow-left"
-      color="neutral"
-      variant="ghost"
-      size="sm"
-      aria-label="All projects"
-    />
-    <UInput
-      v-if="renaming"
-      ref="nameInput"
-      v-model="nameDraft"
-      size="sm"
-      class="w-56"
-      :maxlength="100"
-      aria-label="Project name"
-      data-project-rename
-      @keydown.enter="saveRename"
-      @keydown.esc="renaming = false"
-      @blur="saveRename"
-    />
-    <UDropdownMenu
-      v-else
-      :items="projectMenu"
-      :content="{ align: 'start' }"
-    >
-      <UButton
-        :label="editor.project?.name"
-        trailing-icon="i-lucide-chevron-down"
-        color="neutral"
-        variant="ghost"
+  <header class="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-default px-2">
+    <div class="flex min-w-0 items-center gap-1">
+      <UDropdownMenu
+        :items="viewMenu"
+        :content="{ align: 'start' }"
+      >
+        <UButton
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          trailing-icon="i-lucide-chevron-down"
+          class="gap-1.5 bg-white/6 font-semibold hover:bg-white/10"
+          data-view-menu
+        >
+          <UIcon
+            name="i-lucide-blocks"
+            class="size-4 text-highlighted"
+          />
+          {{ viewLabel }}
+        </UButton>
+      </UDropdownMenu>
+      <span class="mx-1 h-4 w-px bg-(--ui-border)" />
+      <UPopover
+        v-model:open="editor.insertOpen"
+        :content="{ side: 'bottom', align: 'start', sideOffset: 8 }"
+      >
+        <UTooltip
+          text="Insert"
+          :kbds="['i']"
+        >
+          <UButton
+            icon="i-lucide-plus"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            aria-label="Insert"
+            :disabled="editor.mode !== 'build'"
+            :class="{ 'bg-white/10 text-highlighted': editor.insertOpen }"
+            data-insert-button
+          />
+        </UTooltip>
+        <template #content>
+          <EditorPalette @done="editor.insertOpen = false" />
+        </template>
+      </UPopover>
+      <UTooltip
+        v-for="tool in TOOLS"
+        :key="tool.id"
+        :text="tool.label"
+        :kbds="[tool.kbd]"
+      >
+        <UButton
+          :icon="tool.icon"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          :aria-label="`${tool.label} tool`"
+          :aria-pressed="editor.tool === tool.id"
+          :disabled="editor.mode !== 'build'"
+          :class="{ 'bg-(--editor-selection)/20 text-[#4cb3ff]': editor.tool === tool.id }"
+          :data-insert-tool="tool.id"
+          @click="toggleTool(tool.id)"
+        />
+      </UTooltip>
+    </div>
+
+    <div class="flex min-w-0 justify-center">
+      <UInput
+        v-if="renaming"
+        ref="nameInput"
+        v-model="nameDraft"
         size="sm"
-        class="max-w-56 font-semibold"
-        data-project-menu
+        class="w-56"
+        :maxlength="100"
+        aria-label="Project name"
+        data-project-rename
+        @keydown.enter="saveRename"
+        @keydown.esc="renaming = false"
+        @blur="saveRename"
       />
-    </UDropdownMenu>
+      <UDropdownMenu
+        v-else
+        :items="projectMenu"
+        :content="{ align: 'center' }"
+      >
+        <UButton
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          class="max-w-96 min-w-0 gap-1.5"
+          data-project-menu
+        >
+          <span class="truncate font-semibold text-highlighted">{{ editor.project?.name }}</span>
+          <span class="shrink-0 font-normal text-dimmed">· /{{ editor.project?.slug }}</span>
+        </UButton>
+      </UDropdownMenu>
+    </div>
 
-    <EditorSegmented
-      :items="VIEWS"
-      :model-value="editor.mode"
-      class="ms-2 w-52"
-      data-mode-toggle
-      @update:model-value="editor.mode = $event as 'build' | 'data' | 'settings'"
-    />
-
-    <div class="ms-auto flex items-center gap-2">
+    <div class="flex items-center justify-end gap-1">
       <UTooltip
         :text="editor.history.undo ? `Undo ${editor.history.undo}` : 'Nothing to undo'"
         :kbds="['meta', 'z']"
@@ -160,9 +244,9 @@ async function publish() {
         />
       </UTooltip>
       <UButton
-        icon="i-lucide-rocket"
         label="Publish"
         size="sm"
+        class="ms-1 px-3"
         :loading="publishing"
         @click="publish"
       />
