@@ -129,6 +129,16 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
       return { project, label: entry.label }
     },
 
+    /**
+     * Renames the project, keeping its slug (and so its published URLs). Project
+     * metadata is not part of the node undo history, so this records no step.
+     */
+    async rename(ctx: ActionContext, projectId: string, name: string): Promise<Project> {
+      const project = await loadProject(projectId)
+      project.name = name
+      return (await commit(ctx, project, [])).project
+    },
+
     /** Copies the current draft to the published slot, served at `/p/:slug`. */
     async publish(projectId: string): Promise<PublishedSnapshot> {
       const snapshot = { project: await loadProject(projectId), publishedAt: new Date().toISOString() }

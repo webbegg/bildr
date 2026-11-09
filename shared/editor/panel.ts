@@ -20,9 +20,9 @@ export type PanelSection = typeof PANEL_SECTIONS[number]
 const PADDING = ['p', 'px', 'py', 'pt', 'pr', 'pb', 'pl']
 const SECTION_KEYS: Record<PanelSection, string[]> = {
   'Auto layout': ['direction', 'items', 'justify', 'gap', 'cols', 'colSpan', ...PADDING],
-  'Layout': ['w', 'minH', 'maxW', 'self', 'display'],
+  'Layout': ['w', 'minH', 'maxW', 'self'],
   'Spacing': ['m', 'mx', 'my', 'mt', 'mr', 'mb', 'ml'],
-  'Appearance': ['opacity', 'overflow', 'rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl'],
+  'Appearance': ['display', 'opacity', 'overflow', 'rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl'],
   'Typography': ['text', 'font', 'align', 'color'],
   'Fill': ['bg'],
   'Stroke': ['border', 'borderT', 'borderR', 'borderB', 'borderL', 'borderColor'],
@@ -110,16 +110,20 @@ export function tokenRemove(style: Record<string, string>, base: string): Record
 }
 
 /** Appearance rows that stay hidden until the section's "+" adds them (Framer's advanced properties). */
-export const OPTIONAL_ROWS = ['opacity', 'overflow'] as const
+export const OPTIONAL_ROWS = ['opacity', 'overflow', 'display'] as const
 
 export type OptionalRow = typeof OPTIONAL_ROWS[number]
 
 /**
  * The optional rows a node shows: those `added` from the "+", plus any whose
  * token the node sets at some breakpoint; `addable` are what the "+" offers.
+ * The Visible row manages `display: hidden` and the node's `natural` display
+ * (see `visibilityToggle`), so only another display value shows Display.
  */
-export function optionalRows(style: Record<string, string>, added: readonly string[]): { shown: OptionalRow[], addable: OptionalRow[] } {
-  const sets = new Set(Object.keys(style).map(baseKey))
+export function optionalRows(style: Record<string, string>, added: readonly string[], natural?: string): { shown: OptionalRow[], addable: OptionalRow[] } {
+  const sets = new Set(Object.entries(style)
+    .filter(([key, value]) => baseKey(key) !== 'display' || (value !== 'hidden' && value !== natural))
+    .map(([key]) => baseKey(key)))
   const shown = OPTIONAL_ROWS.filter(row => added.includes(row) || sets.has(row))
   return { shown, addable: OPTIONAL_ROWS.filter(row => !shown.includes(row)) }
 }

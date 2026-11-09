@@ -27,6 +27,16 @@ export const projectCreate = defineAction({
   }
 })
 
+export const projectRename = defineAction({
+  name: 'project_rename',
+  description: 'Rename a project. Only the name changes: the slug stays, so published URLs (/p/<project-slug>) do not change. Not undoable: project metadata is outside the node undo history (history_undo does not revert it).',
+  input: z.object({ projectId: IdSchema, name: z.string().trim().min(1).max(100).describe('New project name, 1–100 characters after trimming') }),
+  run: async ({ projectId, name }, ctx) => {
+    const project = await ctx.services.rename(ctx, projectId, name)
+    return { name: project.name, slug: project.slug, version: project.version }
+  }
+})
+
 export const projectGet = defineAction({
   name: 'project_get',
   description: 'Get the full project document: pages, each with a root node tree of { id, type, props, style, children }.',

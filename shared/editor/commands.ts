@@ -106,22 +106,44 @@ export function matchScore(command: Pick<Command, 'label' | 'keywords'>, query: 
 export interface CommandSection<C = unknown> {
   group: CommandGroup | 'recent'
   commands: Command<C>[]
+  /** How many commands the empty-query Insert cap hides. */
+  more?: number
+}
+
+/** The Insert commands an empty query shows, after the recently inserted ones. */
+export const COMMON_INSERTS = ['insert:Container', 'insert:Text', 'insert:Button', 'insert:Image', 'insert:Row']
+
+/** The Insert items an empty query shows, so the Actions stay in view. */
+export const INSERT_LIMIT = 5
+
+/** The empty-query Insert group: recently inserted, then the common components, at most `INSERT_LIMIT`. */
+function cappedInserts<C>(inserts: Command<C>[], recent: readonly string[]): Command<C>[] {
+  const order = [...recent.filter(id => id.startsWith('insert:')), ...COMMON_INSERTS]
+  const picked = order.map(id => inserts.find(c => c.id === id)).filter(c => c !== undefined)
+  return [...new Set([...picked, ...inserts])].slice(0, INSERT_LIMIT)
 }
 
 /**
  * The palette's sections for a query. With a query: the matching commands,
  * the groups ordered by their best match and each group by score (ties keep
  * the given order). Empty: the `recent` commands first (by id, most recent
- * first), then every group in `GROUP_ORDER`.
+ * first), then every group in `GROUP_ORDER`, with Insert capped (see
+ * `cappedInserts`) unless `expandInsert`; its `more` counts the hidden ones.
  */
-export function searchCommands<C>(commands: readonly Command<C>[], query: string, recent: readonly string[]): CommandSection<C>[] {
+export function searchCommands<C>(commands: readonly Command<C>[], query: string, recent: readonly string[], options: { expandInsert?: boolean } = {}): CommandSection<C>[] {
   if (!normalize(query)) {
     const byId = new Map(commands.map(c => [c.id, c]))
     const recents = recent.map(id => byId.get(id)).filter(c => c !== undefined)
     const sections: CommandSection<C>[] = recents.length ? [{ group: 'recent', commands: recents }] : []
     for (const group of GROUP_ORDER) {
       const inGroup = commands.filter(c => c.group === group)
-      if (inGroup.length) sections.push({ group, commands: inGroup })
+      if (!inGroup.length) continue
+      if (group !== 'insert' || options.expandInsert || inGroup.length <= INSERT_LIMIT) {
+        sections.push({ group, commands: inGroup })
+        continue
+      }
+      const shown = cappedInserts(inGroup, recent)
+      sections.push({ group, commands: shown, more: inGroup.length - shown.length })
     }
     return sections
   }

@@ -5,21 +5,42 @@ import type { DropdownMenuItem } from '@nuxt/ui'
  * The lean top bar, Framer's: back, the project menu and the views (Canvas,
  * Data, Settings) on the left; undo/redo, Preview (Cmd/Ctrl+P, the draft) and
  * Publish on the right. The canvas frames set the breakpoint, so there is no
- * device toggle. Projects cannot be renamed yet (no `project_rename` action),
- * so the menu only opens the published app or the project list.
+ * device toggle. The project menu renames the project in place (Rename…
+ * swaps the name for an input; Enter or blur saves, Esc cancels), opens the
+ * published app, the settings or the project list.
  */
 const editor = useEditor()
-const toast = useToast()
 const publishing = ref(false)
+const renaming = ref(false)
+const nameDraft = ref('')
+const nameInput = useTemplateRef<{ inputRef?: HTMLInputElement }>('nameInput')
 
 const VIEWS = [{ value: 'build', label: 'Canvas' }, { value: 'data', label: 'Data' }, { value: 'settings', label: 'Settings' }]
 
-const { data: published, refresh } = useAsyncData(
+const { data: published } = useAsyncData(
   `published-${editor.projectId}`,
   () => callAction<{ url: string, version: number, publishedAt: string } | null>('project_published_info', { projectId: editor.projectId })
 )
 
+async function startRename() {
+  nameDraft.value = editor.project?.name ?? ''
+  renaming.value = true
+  await nextTick()
+  nameInput.value?.inputRef?.select()
+}
+
+async function saveRename() {
+  if (!renaming.value) return
+  renaming.value = false
+  await editor.renameProject(nameDraft.value)
+}
+
 const projectMenu = computed<DropdownMenuItem[][]>(() => [
+  [{
+    label: 'Rename…',
+    icon: 'i-lucide-pencil',
+    onSelect: () => void startRename()
+  }],
   [{
     label: published.value ? `Open published app · v${published.value.version}` : 'Not published yet',
     icon: 'i-lucide-external-link',
@@ -38,17 +59,11 @@ const projectMenu = computed<DropdownMenuItem[][]>(() => [
 
 async function publish() {
   publishing.value = true
-  const result = await editor.run<{ url: string, version: number }>('project_publish')
-  publishing.value = false
-  if (!result) return
-  await refresh()
-  toast.add({
-    title: 'Published',
-    description: `Version ${result.version} is live at ${result.url}`,
-    color: 'success',
-    icon: 'i-lucide-rocket',
-    actions: [{ label: 'Open', to: result.url, target: '_blank', color: 'neutral', variant: 'outline' }]
-  })
+  try {
+    await editor.publish()
+  } finally {
+    publishing.value = false
+  }
 }
 </script>
 
@@ -62,7 +77,21 @@ async function publish() {
       size="sm"
       aria-label="All projects"
     />
+    <UInput
+      v-if="renaming"
+      ref="nameInput"
+      v-model="nameDraft"
+      size="sm"
+      class="w-56"
+      :maxlength="100"
+      aria-label="Project name"
+      data-project-rename
+      @keydown.enter="saveRename"
+      @keydown.esc="renaming = false"
+      @blur="saveRename"
+    />
     <UDropdownMenu
+      v-else
       :items="projectMenu"
       :content="{ align: 'start' }"
     >

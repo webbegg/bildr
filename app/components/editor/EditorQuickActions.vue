@@ -10,9 +10,12 @@ import { editorCommands, GROUP_LABELS, pushRecent, searchCommands } from '#share
  * (`searchCommands`) orders the results, not the palette's Fuse, so a label
  * prefix always beats a looser match. Disabled commands stay listed, greyed.
  * Running one closes the palette and remembers it for the empty-query list.
+ * An empty query caps Insert at the common or recently inserted components,
+ * so the Actions stay in view; "More components…" lists the rest.
  */
 const editor = useEditor()
 const query = ref('')
+const expandInsert = ref(false)
 const shortcutsOpen = ref(false)
 
 const RECENT_KEY = 'bildr:recent-commands'
@@ -27,18 +30,31 @@ const ctx: CommandContext = {
 
 const commands = computed(() => editorCommands(ctx))
 
-const groups = computed<CommandPaletteGroup[]>(() => searchCommands(commands.value, query.value, recent.value).map(section => ({
+const groups = computed<CommandPaletteGroup[]>(() => searchCommands(commands.value, query.value, recent.value, { expandInsert: expandInsert.value }).map(section => ({
   id: section.group,
   label: GROUP_LABELS[section.group],
   ignoreFilter: true,
-  items: section.commands.map((command): CommandPaletteItem => ({
-    label: command.label,
-    suffix: command.hint,
-    icon: command.icon,
-    kbds: command.shortcut,
-    disabled: !command.enabled(ctx),
-    onSelect: () => run(command)
-  }))
+  items: [
+    ...section.commands.map((command): CommandPaletteItem => ({
+      label: command.label,
+      suffix: command.hint,
+      icon: command.icon,
+      kbds: command.shortcut,
+      disabled: !command.enabled(ctx),
+      onSelect: () => run(command)
+    })),
+    ...(section.more
+      ? [{
+          label: 'More components…',
+          suffix: `${section.more} more`,
+          icon: 'i-lucide-ellipsis',
+          onSelect: (event: Event) => {
+            event.preventDefault()
+            expandInsert.value = true
+          }
+        }]
+      : [])
+  ]
 })))
 
 function run(command: Command<CommandContext>) {
@@ -51,7 +67,9 @@ function run(command: Command<CommandContext>) {
 
 // Each opening starts from the recent commands.
 watch(() => editor.quickOpen, (open) => {
-  if (open) query.value = ''
+  if (!open) return
+  query.value = ''
+  expandInsert.value = false
 })
 </script>
 

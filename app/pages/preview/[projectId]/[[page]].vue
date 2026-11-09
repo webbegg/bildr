@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DataRecord } from '#shared/data/records'
 import type { Project } from '#shared/document/schema'
+import { formSubmitRequest } from '#shared/editor/formSubmit'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 
 /**
@@ -9,7 +10,8 @@ import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/li
  * theme, so links and layout behave as they will once published. It reads
  * through the editor's actions (`project_get`, `record_list`), so like the
  * editor it is same-origin only. Lists show the collections' records as the
- * canvas does; forms don't submit.
+ * canvas does. The draft has no public endpoint, so Forms add their record
+ * with `record_create` (any collection, not only `publicCreate` ones).
  */
 definePageMeta({ layout: false })
 
@@ -55,6 +57,16 @@ watch(projectId, async (id) => {
   }
 }, { immediate: true })
 
+async function submitForm(collection: string, values: Record<string, string>): Promise<void> {
+  const request = formSubmitRequest({ kind: 'draft', projectId: projectId.value }, collection, values)
+  try {
+    if (request.via === 'action') await callAction(request.name, request.input)
+    else await $fetch(request.url, { method: 'POST', body: request.body })
+  } catch (error) {
+    throw new Error(actionErrorMessage(error), { cause: error })
+  }
+}
+
 useTheme(() => project.value?.theme)
 
 const badgeStyle = {
@@ -72,6 +84,7 @@ useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${p
       :page="page"
       :base="`/preview/${projectId}`"
       :lists="lists"
+      :submit-form="submitForm"
       class="min-h-screen"
     />
     <!-- Editor chrome, so fixed values: the project theme redefines the spacing scale and the neutral palette. -->

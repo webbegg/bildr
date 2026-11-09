@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * The Settings view: the project's name and slug, what is published, and how
- * to connect an agent over MCP. Name and slug are read-only until a
- * `project_rename` action exists. Shares the published info with the top bar
+ * to connect an agent over MCP. The name saves on blur or Enter
+ * (`project_rename`); the slug is read-only, so published URLs never change.
+ * Shares the published info with the top bar
  * (same async data key), so a publish there shows here too.
  */
 const editor = useEditor()
@@ -15,6 +16,12 @@ const { data: published } = useAsyncData(
 
 const mcpCommand = computed(() => `claude mcp add --transport http bildr ${window.location.origin}/mcp`)
 const publishedAt = computed(() => (published.value ? new Date(published.value.publishedAt).toLocaleString() : ''))
+
+// A refused name (blank, or a failed action) puts the saved one back in the field.
+const nameField = ref(0)
+async function rename(name: string) {
+  if (!await editor.renameProject(name)) nameField.value++
+}
 
 async function copyCommand() {
   await navigator.clipboard.writeText(mcpCommand.value)
@@ -39,17 +46,17 @@ async function copyCommand() {
         label="Name"
         size="sm"
       >
-        <UInput
-          :model-value="editor.project?.name"
-          size="sm"
-          class="w-full"
-          readonly
+        <EditorCommitInput
+          :key="nameField"
+          :model-value="editor.project?.name ?? ''"
+          data-settings-name
+          @commit="rename"
         />
       </UFormField>
       <UFormField
         label="Slug"
         size="sm"
-        :help="`Published at /p/${editor.project?.slug}. Renaming a project is not available yet.`"
+        :help="`Published at /p/${editor.project?.slug}. Renaming the project keeps the slug, so published links keep working.`"
       >
         <UInput
           :model-value="editor.project?.slug"

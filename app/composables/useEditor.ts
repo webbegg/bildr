@@ -241,6 +241,13 @@ export function createEditor(projectId: string) {
     })
   }
 
+  /** Renames the project (the slug and published URLs stay); true when renamed. */
+  async function renameProject(name: string): Promise<boolean> {
+    const next = name.trim()
+    if (!next || next === project.value?.name) return false
+    return !!await run('project_rename', { name: next })
+  }
+
   function requestZoom(command: ZoomCommand): void {
     zoomRequest.value = { command }
   }
@@ -517,7 +524,7 @@ export function createEditor(projectId: string) {
   return reactive({
     projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, themeDraft, stylePreview, page, selected, selectedNodes, theme,
     collectionId, collection, records, recordsTotal, recordsError, listCollections, lists,
-    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, requestZoom, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, renameProject, requestZoom, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }

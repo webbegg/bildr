@@ -51,6 +51,33 @@ describe('searchCommands', () => {
   })
 })
 
+describe('the Insert cap for an empty query', () => {
+  const inserts = ['Container', 'Row', 'Column', 'Grid', 'Heading', 'Text', 'Image', 'Button', 'Link', 'Card'].map(type => cmd(`insert:${type}`, 'insert', type, ['component']))
+  const commands = [...inserts, cmd('wrap', 'actions', 'Wrap in Container')]
+  const insertSection = (sections: ReturnType<typeof searchCommands>) => sections.find(s => s.group === 'insert')!
+
+  it('shows the 5 most common components, and counts the rest', () => {
+    const section = insertSection(searchCommands(commands, '', []))
+    expect(section.commands.map(c => c.label)).toEqual(['Container', 'Text', 'Button', 'Image', 'Row'])
+    expect(section.more).toBe(5)
+  })
+
+  it('puts the recently inserted components first', () => {
+    const section = insertSection(searchCommands(commands, '', ['wrap', 'insert:Card', 'insert:Text']))
+    expect(section.commands.map(c => c.label)).toEqual(['Card', 'Text', 'Container', 'Button', 'Image'])
+    expect(section.more).toBe(5)
+  })
+
+  it('lists every component once expanded, or for a typed query', () => {
+    const expanded = insertSection(searchCommands(commands, '', [], { expandInsert: true }))
+    expect(expanded.commands).toHaveLength(10)
+    expect(expanded.more).toBeUndefined()
+    const typed = insertSection(searchCommands(commands, 'comp', []))
+    expect(typed.commands).toHaveLength(10)
+    expect(typed.more).toBeUndefined()
+  })
+})
+
 describe('SHORTCUTS', () => {
   const combos = SHORTCUTS.flatMap(s => s.keys.map(keys => keys.join('+')))
 

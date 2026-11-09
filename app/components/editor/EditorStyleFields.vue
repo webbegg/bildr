@@ -19,7 +19,7 @@ import { styleProvenance } from '#shared/editor/styleFields'
  * base, Tablet `md:`, Desktop `lg:`); a field's prefix, or the dot beside a
  * row, is blue when the device overrides the value (Framer's highlight;
  * inherited values look unset). Appearance has Framer's Visible row, the
- * optional Opacity and Overflow rows its "+" adds, and Radius and Stroke
+ * optional Opacity, Overflow and Display rows its "+" adds, and Radius and Stroke
  * toggle between all sides and per corner or side.
  *
  * Controls `preview` what a gesture holds and `commit` once; this panel emits
@@ -209,11 +209,12 @@ function setVisible(next: string) {
   emit('update', visibilityToggle(props.styles, editor.deviceId, naturalDisplay({ type: props.type, props: {} })))
 }
 
-// Opacity and Overflow show once the "+" adds them, or while the node sets them.
+// Opacity, Overflow and Display show once the "+" adds them, or while the node sets
+// them (Display: a value other than the hidden or natural one Visible writes).
 const added = ref<OptionalRow[]>([])
-const optional = computed(() => optionalRows(props.styles, [...added.value, ...(props.mixed ?? [])]))
-const ROW_LABELS: Record<OptionalRow, string> = { opacity: 'Opacity', overflow: 'Overflow' }
-const addMenu = computed(() => optional.value.addable.map(row => ({
+const optional = computed(() => optionalRows(props.styles, [...added.value, ...(props.mixed ?? [])], naturalDisplay({ type: props.type, props: {} })))
+const ROW_LABELS: Record<OptionalRow, string> = { opacity: 'Opacity', overflow: 'Overflow', display: 'Display' }
+const addMenu = computed(() => optional.value.addable.filter(row => row !== 'display' || fields.value.display).map(row => ({
   label: ROW_LABELS[row],
   onSelect: () => {
     collapsed.value = { ...collapsed.value, Appearance: false }
@@ -484,31 +485,6 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
             @update:model-value="setField('self', $event)"
           />
         </div>
-        <div
-          v-if="fields.display"
-          class="relative"
-          data-style-row="display"
-        >
-          <div
-            :class="DOT"
-            data-field-label="display"
-          >
-            <EditorFieldLabel
-              v-bind="label('display', 'dot')"
-              @reset="setField('display', null)"
-            />
-          </div>
-          <EditorSegmented
-            dense
-            :items="segments('display', {}, DISPLAY_LABELS)"
-            :model-value="own('display')"
-            :inherited="inherited('display')"
-            :fallback="naturalDisplay({ type, props: {} })"
-            aria-label="Display"
-            data-style-key="display"
-            @update:model-value="setField('display', $event)"
-          />
-        </div>
       </template>
 
       <EditorSpacingBox
@@ -547,6 +523,46 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
               @update:model-value="setVisible"
             />
           </div>
+        </div>
+        <div
+          v-if="optional.shown.includes('display')"
+          class="flex items-center gap-1"
+          data-style-row="display"
+        >
+          <div
+            class="relative flex-1"
+          >
+            <div
+              :class="DOT"
+              data-field-label="display"
+            >
+              <EditorFieldLabel
+                v-bind="label('display', 'dot')"
+                @reset="setField('display', null)"
+              />
+            </div>
+            <EditorSegmented
+              dense
+              :items="segments('display', {}, DISPLAY_LABELS)"
+              :model-value="own('display')"
+              :inherited="inherited('display')"
+              :fallback="naturalDisplay({ type, props: {} })"
+              aria-label="Display"
+              data-style-key="display"
+              @update:model-value="setField('display', $event)"
+            />
+          </div>
+          <button
+            type="button"
+            :class="REMOVE"
+            aria-label="Remove display"
+            @click="removeRow('display')"
+          >
+            <UIcon
+              name="i-lucide-minus"
+              class="size-3"
+            />
+          </button>
         </div>
         <div
           v-if="optional.shown.includes('opacity')"

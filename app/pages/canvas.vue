@@ -16,6 +16,7 @@ import { FRAME_MIN_HEIGHT, wheelPixels, zoomShortcut } from '#shared/editor/view
 import type { NodeBox } from '#shared/editor/autoLayout'
 import type { MeasureLine } from '#shared/editor/measure'
 import { measure as measureLines } from '#shared/editor/measure'
+import { labelPlacement } from '#shared/editor/labelPlacement'
 
 /**
  * The editor canvas, loaded in an iframe. It renders whatever page the
@@ -68,6 +69,10 @@ interface Box { id: string, top: number, left: number, width: number, height: nu
 const boxes = reactive<{ hover: Box | null, selected: Box[] }>({ hover: null, selected: [] })
 
 const toRect = (box: Box) => ({ x: box.left, y: box.top, width: box.width, height: box.height })
+
+/** The selection label (20 px on screen, `leading-5`): above the box, or inset inside it at the frame top. */
+const LABEL_PX = 20
+const labelInside = (box: Box) => labelPlacement(box.top, LABEL_PX / zoom.value) === 'inside'
 /** The selection's bounds, measured from, and the hovered element's box, measured to. */
 const measurement = computed(() => {
   const target = boxes.hover
@@ -400,8 +405,10 @@ onBeforeUnmount(() => {
     >
       <span
         v-if="box.id === selectedId && box !== boxes.hover && active"
-        class="absolute bottom-full left-0 origin-bottom-left rounded-t-sm bg-blue-500 px-1.5 text-[10px] leading-5 whitespace-nowrap text-white"
-        :style="{ transform: `scale(${1 / zoom})` }"
+        class="absolute left-0 bg-blue-500 px-1.5 text-[10px] leading-5 whitespace-nowrap text-white"
+        :class="labelInside(box) ? 'top-0 origin-top-left rounded-sm' : 'bottom-full origin-bottom-left rounded-t-sm'"
+        :style="{ transform: labelInside(box) ? `translate(${2 / zoom}px, ${2 / zoom}px) scale(${1 / zoom})` : `scale(${1 / zoom})` }"
+        :data-selection-label="labelInside(box) ? 'inside' : 'above'"
       >{{ box.label }}</span>
     </div>
     <template v-if="measurement">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseScaleInput, scalePx, scaleValues, SHIFT_STOPS, stepScale } from '#shared/editor/scale'
+import { parseScaleInput, scalePx, scaleValues, SHIFT_STOPS, stepScale, unsetValue } from '#shared/editor/scale'
 import { scrubStops } from '#shared/editor/scrub'
 
 describe('scale stepping', () => {
@@ -29,6 +29,15 @@ describe('scale stepping', () => {
     expect(stepScale('text', undefined, 1)).toBe('sm')
     expect(stepScale('text', undefined, -1)).toBe('xs')
     expect(stepScale('cols', undefined, 1)).toBe('2')
+  })
+
+  it('counts an unset value as the token default, so opacity steps from 100', () => {
+    expect(unsetValue('opacity')).toBe('100')
+    expect(unsetValue('text')).toBeUndefined()
+    expect(stepScale('opacity', undefined, 1)).toBe('100')
+    expect(stepScale('opacity', undefined, -1)).toBe('95')
+    expect(stepScale('opacity', undefined, -SHIFT_STOPS)).toBe('75')
+    expect(stepScale('opacity', '50', 1)).toBe('60')
   })
 
   it('steps a word scale through the registry order', () => {

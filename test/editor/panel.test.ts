@@ -18,7 +18,7 @@ describe('panel sections', () => {
     expect(panelSection('w')).toBe('Layout')
     expect(panelSection('lg:maxW')).toBe('Layout')
     expect(panelSection('self')).toBe('Layout')
-    expect(panelSection('md:display')).toBe('Layout')
+    expect(panelSection('md:display')).toBe('Appearance')
     expect(panelSection('mx')).toBe('Spacing')
     expect(panelSection('rounded')).toBe('Appearance')
     expect(panelSection('roundedTl')).toBe('Appearance')
@@ -105,18 +105,26 @@ describe('fill, stroke and effects', () => {
 })
 
 describe('optional Appearance rows', () => {
-  it('are Opacity and Overflow', () => {
-    expect(OPTIONAL_ROWS).toEqual(['opacity', 'overflow'])
+  it('are Opacity, Overflow and Display', () => {
+    expect(OPTIONAL_ROWS).toEqual(['opacity', 'overflow', 'display'])
   })
 
   it('stay hidden until added, and the "+" offers the others', () => {
-    expect(optionalRows({}, [])).toEqual({ shown: [], addable: ['opacity', 'overflow'] })
-    expect(optionalRows({}, ['opacity'])).toEqual({ shown: ['opacity'], addable: ['overflow'] })
+    expect(optionalRows({}, [])).toEqual({ shown: [], addable: ['opacity', 'overflow', 'display'] })
+    expect(optionalRows({}, ['opacity'])).toEqual({ shown: ['opacity'], addable: ['overflow', 'display'] })
+    expect(optionalRows({}, ['display'])).toEqual({ shown: ['display'], addable: ['opacity', 'overflow'] })
   })
 
   it('always show a row whose token the node sets, at any breakpoint', () => {
-    expect(optionalRows({ 'lg:overflow': 'hidden' }, [])).toEqual({ shown: ['overflow'], addable: ['opacity'] })
-    expect(optionalRows({ opacity: '50' }, ['overflow'])).toEqual({ shown: ['opacity', 'overflow'], addable: [] })
+    expect(optionalRows({ 'lg:overflow': 'hidden' }, [])).toEqual({ shown: ['overflow'], addable: ['opacity', 'display'] })
+    expect(optionalRows({ opacity: '50' }, ['overflow'])).toEqual({ shown: ['opacity', 'overflow'], addable: ['display'] })
+  })
+
+  it('show Display only for a display the Visible row does not manage', () => {
+    // Visible writes `hidden`, and the natural display to keep the wider frames as they were.
+    expect(optionalRows({ 'display': 'hidden', 'md:display': 'flex' }, [], 'flex').shown).toEqual([])
+    expect(optionalRows({ 'md:display': 'grid' }, [], 'flex').shown).toEqual(['display'])
+    expect(optionalRows({ display: 'block' }, [], 'flex').shown).toEqual(['display'])
   })
 
   it('are removed by clearing the token at every breakpoint', () => {

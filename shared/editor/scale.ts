@@ -26,14 +26,24 @@ function stepValues(key: string): string[] {
   return numbers.length ? numbers : values
 }
 
+// What an unset token renders as, when that is not the scale's first stop.
+const UNSET_DEFAULTS: Record<string, string> = { opacity: '100' }
+
+/** The value an unset token (breakpoint-prefixed or not) renders as, if the scale has one, e.g. `100` for `opacity`. */
+export function unsetValue(key: string): string | undefined {
+  const base = parseStyleKey(key)?.token.key
+  return base ? UNSET_DEFAULTS[base] : undefined
+}
+
 /**
  * The value `delta` stops from `value`, clamped at both ends of the scale.
- * An unset spacing value counts as `0`, any other unset (or unsteppable) value
- * as the first stop.
+ * An unset value counts as its `unsetValue`; else an unset spacing value as
+ * `0`, any other unset (or unsteppable) value as the first stop.
  */
 export function stepScale(key: string, value: string | undefined, delta: number): string | undefined {
   const values = stepValues(key)
   if (!values.length) return undefined
+  value ??= unsetValue(key)
   const at = value === undefined ? -1 : values.indexOf(value)
   const from = at >= 0 ? at : Math.max(0, parseStyleKey(key)?.token.group === 'Spacing' ? values.indexOf('0') : 0)
   return values[Math.min(values.length - 1, Math.max(0, from + delta))]
