@@ -3,8 +3,9 @@ import type { ThemePatch } from '../design/theme'
 import { isStyleTokenKey, styleTokenProblem } from '../design/tokens'
 import { getComponent, isContainerType } from './components'
 import type { PropValue } from './components'
-import { nodeTreeProblems, PageSchema, propValueProblem, SlugSchema } from './schema'
-import type { DocNode, Page, Project } from './schema'
+import type { z } from 'zod'
+import { CollectionSchema, FieldSchema, FieldTypeSchema, nodeTreeProblems, PageSchema, propValueProblem, SlugSchema } from './schema'
+import type { Collection, DocNode, Field, FieldType, Page, Project } from './schema'
 import { containsNode, findNode, findParent, walk } from './tree'
 
 /**
@@ -22,6 +23,12 @@ export type Operation
     | { op: 'removePage', pageId: string }
     | { op: 'updatePage', pageId: string, name?: string, slug?: string }
     | { op: 'setTheme', theme: ThemePatch }
+    | { op: 'addCollection', index: number, collection: Collection }
+    | { op: 'removeCollection', collectionId: string }
+    | { op: 'updateCollection', collectionId: string, name?: string, slug?: string, publicRead?: boolean, publicCreate?: boolean }
+    | { op: 'addField', collectionId: string, index: number, field: Field }
+    | { op: 'removeField', collectionId: string, key: string }
+    | { op: 'updateField', collectionId: string, key: string, label?: string, type?: FieldType }
 
 export type OperationErrorCode = 'not_found' | 'invalid' | 'forbidden'
 
@@ -68,6 +75,23 @@ function assertNewTree(project: Project, node: DocNode, isRoot = false): void {
 function assertUniqueSlug(project: Project, slug: string, exceptPageId?: string): void {
   if (!SlugSchema.safeParse(slug).success) fail('invalid', `Invalid page slug "${slug}"`)
   if (project.pages.some(p => p.slug === slug && p.id !== exceptPageId)) fail('invalid', `A page with slug "${slug}" already exists`)
+}
+
+function issues(error: z.ZodError): string {
+  return error.issues.map(i => i.message).join('; ')
+}
+
+function getCollection(project: Project, collectionId: string): Collection {
+  return project.collections.find(c => c.id === collectionId) ?? fail('not_found', `Collection "${collectionId}" not found`)
+}
+
+function getField(collection: Collection, key: string): Field {
+  return collection.fields.find(f => f.key === key) ?? fail('not_found', `Field "${key}" not found in "${collection.name}"`)
+}
+
+function assertUniqueCollectionSlug(project: Project, slug: string, exceptId?: string): void {
+  if (!SlugSchema.safeParse(slug).success) fail('invalid', `Invalid collection slug "${slug}"`)
+  if (project.collections.some(c => c.slug === slug && c.id !== exceptId)) fail('invalid', `A collection with slug "${slug}" already exists`)
 }
 
 /** Applies `op` to `project` in place and returns the operation that undoes it. */
@@ -195,6 +219,73 @@ export function applyOperation(project: Project, op: Operation): Operation {
       }
       project.theme = theme
       return { op: 'setTheme', theme: inverse }
+    }
+    case 'addCollection': {
+      const parsed = CollectionSchema.safeParse(op.collection)
+      if (!parsed.success) fail('invalid', `Invalid collection: ${issues(parsed.error)}`)
+      if (project.collections.some(c => c.id === op.collection.id)) fail('invalid', `Duplicate collection id "${op.collection.id}"`)
+      assertUniqueCollectionSlug(project, parsed.data.slug)
+      project.collections.splice(clampIndex(op.index, project.collections.length), 0, parsed.data)
+      return { op: 'removeCollection', collectionId: parsed.data.id }
+    }
+    case 'removeCollection': {
+      const index = project.collections.findIndex(c => c.id === op.collectionId)
+      if (index < 0) fail('not_found', `Collection "${op.collectionId}" not found`)
+      const [collection] = project.collections.splice(index, 1)
+      return { op: 'addCollection', index, collection: collection! }
+    }
+    case 'updateCollection': {
+      const collection = getCollection(project, op.collectionId)
+      if (op.slug !== undefined) assertUniqueCollectionSlug(project, op.slug, collection.id)
+      if (op.name !== undefined && !op.name.trim()) fail('invalid', 'Collection name cannot be empty')
+      const inverse: Extract<Operation, { op: 'updateCollection' }> = { op: 'updateCollection', collectionId: collection.id }
+      if (op.name !== undefined) {
+        inverse.name = collection.name
+        collection.name = op.name.trim()
+      }
+      if (op.slug !== undefined) {
+        inverse.slug = collection.slug
+        collection.slug = op.slug
+      }
+      if (op.publicRead !== undefined) {
+        inverse.publicRead = collection.publicRead
+        collection.publicRead = op.publicRead
+      }
+      if (op.publicCreate !== undefined) {
+        inverse.publicCreate = collection.publicCreate
+        collection.publicCreate = op.publicCreate
+      }
+      return inverse
+    }
+    case 'addField': {
+      const collection = getCollection(project, op.collectionId)
+      const parsed = FieldSchema.safeParse(op.field)
+      if (!parsed.success) fail('invalid', `Invalid field: ${issues(parsed.error)}`)
+      if (collection.fields.some(f => f.key === parsed.data.key)) fail('invalid', `Field "${parsed.data.key}" already exists in "${collection.name}"`)
+      collection.fields.splice(clampIndex(op.index, collection.fields.length), 0, parsed.data)
+      return { op: 'removeField', collectionId: collection.id, key: parsed.data.key }
+    }
+    case 'removeField': {
+      const collection = getCollection(project, op.collectionId)
+      const index = collection.fields.indexOf(getField(collection, op.key))
+      const [field] = collection.fields.splice(index, 1)
+      return { op: 'addField', collectionId: collection.id, index, field: field! }
+    }
+    case 'updateField': {
+      const collection = getCollection(project, op.collectionId)
+      const field = getField(collection, op.key)
+      if (op.type !== undefined && !FieldTypeSchema.safeParse(op.type).success) fail('invalid', `Unknown field type "${op.type}"`)
+      if (op.label !== undefined && !op.label.trim()) fail('invalid', 'Field label cannot be empty')
+      const inverse: Extract<Operation, { op: 'updateField' }> = { op: 'updateField', collectionId: collection.id, key: field.key }
+      if (op.label !== undefined) {
+        inverse.label = field.label
+        field.label = op.label.trim()
+      }
+      if (op.type !== undefined) {
+        inverse.type = field.type
+        field.type = op.type
+      }
+      return inverse
     }
   }
 }

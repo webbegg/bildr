@@ -1,4 +1,5 @@
 import type { InjectionKey } from 'vue'
+import type { DataRecord } from '#shared/data/records'
 import type { Theme, ThemePatch } from '#shared/design/theme'
 import type { Project } from '#shared/document/schema'
 import type { PropValue } from '#shared/document/components'
@@ -35,18 +36,23 @@ export function createEditor(projectId: string) {
   const selectedId = ref<string | null>(null)
   const hoveredId = ref<string | null>(null)
   const history = ref<{ undo: string | null, redo: string | null }>({ undo: null, redo: null })
-  /** Build edits the page; Design edits the project theme. */
-  const mode = ref<'build' | 'design'>('build')
+  /** Build edits the page; Design edits the project theme; Data edits collections and records. */
+  const mode = ref<'build' | 'design' | 'data'>('build')
   /** The canvas width, and the breakpoint the style panel edits (Mobile is the base, mobile-first). */
   const deviceId = ref<DeviceId>('mobile')
   const device = computed(() => DEVICES.find(d => d.id === deviceId.value)!)
   /** An uncommitted theme previewed in the canvas, e.g. while a colour picker drags. */
   const themeDraft = shallowRef<Theme | null>(null)
+  /** The collection the Data mode shows, and its records (live data, not in the document). */
+  const collectionId = ref<string | null>(null)
+  const records = shallowRef<DataRecord[]>([])
+  const recordsTotal = ref(0)
 
   const page = computed(() => project.value?.pages.find(p => p.id === pageId.value) ?? project.value?.pages[0] ?? null)
   const selected = computed(() => (page.value && selectedId.value ? findNode(page.value.root, selectedId.value) ?? null : null))
   /** The theme the canvas renders: the draft while previewing, else the project's. */
   const theme = computed(() => themeDraft.value ?? project.value?.theme ?? null)
+  const collection = computed(() => project.value?.collections.find(c => c.id === collectionId.value) ?? project.value?.collections[0] ?? null)
 
   async function reload(): Promise<void> {
     const [next, nextHistory] = await Promise.all([
@@ -70,6 +76,37 @@ export function createEditor(projectId: string) {
       return undefined
     }
   }
+
+  /** Loads the records of the shown collection (the first 500, creation order). */
+  async function reloadRecords(): Promise<void> {
+    const shown = collection.value
+    if (!shown) {
+      records.value = []
+      recordsTotal.value = 0
+      return
+    }
+    const result = await callAction<{ total: number, records: DataRecord[] }>('record_list', { projectId, collection: shown.id, limit: 500 })
+    if (collection.value?.id !== shown.id) return
+    records.value = result.records
+    recordsTotal.value = result.total
+  }
+
+  /** Runs a record action on the shown collection, then reloads its records (the document is unchanged). */
+  async function runData<T = unknown>(name: string, input: Record<string, unknown> = {}): Promise<T | undefined> {
+    try {
+      const result = await callAction<T>(name, { projectId, collection: collection.value!.id, ...input })
+      await reloadRecords()
+      return result
+    } catch (error) {
+      toast.add({ title: 'Action failed', description: actionErrorMessage(error), color: 'error', icon: 'i-lucide-circle-alert' })
+      return undefined
+    }
+  }
+
+  // A schema change (or another collection) changes how records read.
+  watch(() => [mode.value, collection.value] as const, ([current]) => {
+    if (current === 'data') void reloadRecords().catch(() => {})
+  })
 
   /** Like `run`, scoped to the current page (for node actions). */
   function runOnPage<T = unknown>(name: string, input: Record<string, unknown> = {}): Promise<T | undefined> {
@@ -150,6 +187,8 @@ export function createEditor(projectId: string) {
   /** Editor shortcuts; returns true when `key` was handled. */
   function shortcut(key: string, meta: boolean, shift: boolean): boolean {
     const lower = key.toLowerCase()
+    // Node shortcuts would act on a page the Data mode does not show.
+    if (mode.value === 'data' && !(meta && (lower === 'z' || lower === 'y'))) return false
     if (meta && lower === 'z') (shift ? redo : undo)()
     else if (meta && lower === 'y') redo()
     else if (meta && lower === 'd') duplicate()
@@ -161,7 +200,8 @@ export function createEditor(projectId: string) {
 
   return reactive({
     projectId, project, pageId, selectedId, hoveredId, history, mode, deviceId, device, themeDraft, page, selected, theme,
-    reload, run, runOnPage, selectPage, insert, drop, remove, duplicate, updateProps, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
+    collectionId, collection, records, recordsTotal,
+    reload, run, runOnPage, reloadRecords, runData, selectPage, insert, drop, remove, duplicate, updateProps, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }
 

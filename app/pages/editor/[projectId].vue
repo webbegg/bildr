@@ -50,6 +50,12 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
         <EditorDesignPanel class="min-h-0 flex-1" />
       </aside>
       <aside
+        v-else-if="editor.mode === 'data'"
+        class="flex w-64 shrink-0 flex-col border-r border-default"
+      >
+        <DataCollections class="min-h-0 flex-1" />
+      </aside>
+      <aside
         v-else
         class="flex w-64 shrink-0 flex-col border-r border-default"
       >
@@ -69,8 +75,18 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
           </template>
         </UTabs>
       </aside>
-      <main class="min-w-0 flex-1 bg-muted p-4">
+      <!-- Hidden, not unmounted, in Data mode so the canvas does not reload. -->
+      <main
+        v-show="editor.mode !== 'data'"
+        class="min-w-0 flex-1 bg-muted p-4"
+      >
         <EditorCanvas @key="message => editor.shortcut(message.key, message.meta, message.shift)" />
+      </main>
+      <main
+        v-if="editor.mode === 'data'"
+        class="min-w-0 flex-1 overflow-y-auto bg-muted p-4"
+      >
+        <DataView />
       </main>
       <aside
         v-if="editor.mode === 'design'"
@@ -85,7 +101,7 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
         />
       </aside>
       <aside
-        v-else
+        v-else-if="editor.mode === 'build'"
         class="w-80 shrink-0 overflow-y-auto border-l border-default"
       >
         <EditorInspector />

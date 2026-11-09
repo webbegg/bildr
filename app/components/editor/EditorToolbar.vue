@@ -39,16 +39,20 @@ async function publish() {
       aria-label="All projects"
     />
     <span class="font-semibold">{{ editor.project?.name }}</span>
-    <span class="text-sm text-dimmed">/ {{ editor.page?.name }}</span>
+    <span class="text-sm text-dimmed">/ {{ editor.mode === 'data' ? editor.collection?.name ?? 'Data' : editor.page?.name }}</span>
 
     <EditorSegmented
-      :items="[{ value: 'build', label: 'Build' }, { value: 'design', label: 'Design' }]"
+      :items="[{ value: 'build', label: 'Build' }, { value: 'design', label: 'Design' }, { value: 'data', label: 'Data' }]"
       :model-value="editor.mode"
-      class="ms-4 w-40"
-      @update:model-value="editor.mode = $event as 'build' | 'design'"
+      class="ms-4 w-56"
+      data-mode-toggle
+      @update:model-value="editor.mode = $event as 'build' | 'design' | 'data'"
     />
 
-    <UTooltip :text="`${editor.device.label} · ${editor.device.width}px; styles edit ${editor.device.breakpoint ? `${editor.device.breakpoint}:` : 'the base'}`">
+    <UTooltip
+      v-if="editor.mode !== 'data'"
+      :text="`${editor.device.label} · ${editor.device.width}px; styles edit ${editor.device.breakpoint ? `${editor.device.breakpoint}:` : 'the base'}`"
+    >
       <EditorSegmented
         :items="devices"
         :model-value="editor.deviceId"

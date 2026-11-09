@@ -27,7 +27,7 @@ async function connect() {
 function actionsCalledByUi(): Set<string> {
   const root = fileURLToPath(new URL('../../app', import.meta.url))
   const files = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter(f => /\.(vue|ts)$/.test(f))
-  const pattern = /\b(?:run|runOnPage|callAction)(?:<[^()]*?>)?\(\s*'([a-z_]+)'/g
+  const pattern = /\b(?:run|runOnPage|runData|callAction)(?:<[^()]*?>)?\(\s*'([a-z_]+)'/g
   const names = new Set<string>()
   for (const file of files) {
     for (const match of readFileSync(join(root, file), 'utf8').matchAll(pattern)) names.add(match[1]!)
@@ -59,6 +59,8 @@ describe('MCP parity', () => {
 
     expect(called).toContain('node_insert')
     expect(called).toContain('editor_set_context')
+    expect(called).toContain('record_create')
+    expect(called).toContain('field_add')
     for (const name of called) {
       if (name in UI_ONLY) expect(uiOnly, `${name} should be uiOnly`).toContain(name)
       else expect(tools, `UI action ${name} is missing from MCP`).toContain(name)

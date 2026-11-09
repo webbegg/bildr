@@ -16,6 +16,8 @@ export interface ActionContext {
   services: Services
   /** Records that `projectId` reached `version`; the dispatcher emits it on success. */
   notify: (projectId: string, version: number) => void
+  /** Records that `collectionId`'s records changed; a `scope: 'data'` event, the document version stays `version`. */
+  notifyData: (projectId: string, version: number, collectionId: string) => void
   /** Asks open editors of `projectId` to show a page (and node); emitted on success, never stored. */
   navigate: (projectId: string, pageId: string, nodeId: string | null) => void
 }

@@ -38,6 +38,42 @@ export const PageSchema = z.object({
   root: NodeSchema
 })
 
+export const FIELD_TYPES = ['text', 'number', 'boolean', 'date', 'image'] as const
+export type FieldType = typeof FIELD_TYPES[number]
+
+export const FieldTypeSchema = z.enum(FIELD_TYPES)
+export const FieldKeySchema = z.string()
+  .regex(/^[a-z][a-zA-Z0-9_]*$/, 'Field keys start with a lowercase letter, then letters, digits or _ (e.g. price, servedFrom)')
+  .max(64)
+  .refine(key => key !== 'id', 'The field key "id" is reserved')
+
+export const FieldSchema = z.object({
+  key: FieldKeySchema,
+  label: z.string().trim().min(1).max(100),
+  type: FieldTypeSchema
+})
+
+/**
+ * A collection's schema lives in the document (undoable, published); its
+ * records do not (see `shared/data/records`). Changing a field's type or
+ * removing a field never rewrites records: readers ignore unknown keys and
+ * read stored values that no longer fit the type as null.
+ */
+export const CollectionSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(100),
+  slug: SlugSchema,
+  fields: z.array(FieldSchema),
+  publicRead: z.boolean().default(false),
+  publicCreate: z.boolean().default(false)
+}).superRefine((collection, ctx) => {
+  const keys = new Set<string>()
+  collection.fields.forEach((field, i) => {
+    if (keys.has(field.key)) ctx.addIssue({ code: 'custom', path: ['fields', i, 'key'], message: `Field "${field.key}" already exists in "${collection.name}"` })
+    keys.add(field.key)
+  })
+})
+
 export const ProjectSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(100),
@@ -46,9 +82,19 @@ export const ProjectSchema = z.object({
   pages: z.array(PageSchema).min(1),
   // Projects saved before themes existed get the default one.
   theme: ThemeSchema.default(defaultTheme),
+  // Projects saved before collections existed have none.
+  collections: z.array(CollectionSchema).default(() => []),
   createdAt: z.string(),
   updatedAt: z.string()
 }).superRefine((project, ctx) => {
+  const collectionSlugs = new Set<string>()
+  const collectionIds = new Set<string>()
+  project.collections.forEach((collection, i) => {
+    if (collectionSlugs.has(collection.slug)) ctx.addIssue({ code: 'custom', path: ['collections', i, 'slug'], message: `Duplicate collection slug "${collection.slug}"` })
+    if (collectionIds.has(collection.id)) ctx.addIssue({ code: 'custom', path: ['collections', i, 'id'], message: `Duplicate collection id "${collection.id}"` })
+    collectionSlugs.add(collection.slug)
+    collectionIds.add(collection.id)
+  })
   const slugs = new Set<string>()
   const ids = new Set<string>()
   project.pages.forEach((page, i) => {
@@ -63,6 +109,8 @@ export const ProjectSchema = z.object({
 
 export type Page = z.infer<typeof PageSchema>
 export type Project = z.infer<typeof ProjectSchema>
+export type Field = z.infer<typeof FieldSchema>
+export type Collection = z.infer<typeof CollectionSchema>
 
 export type ProjectSummary = Pick<Project, 'id' | 'name' | 'slug' | 'version' | 'updatedAt'>
 

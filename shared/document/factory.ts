@@ -1,7 +1,7 @@
 import { defaultTheme } from '../design/theme'
 import { getComponent, PAGE_ROOT_TYPE } from './components'
 import type { PropValue } from './components'
-import type { DocNode, Page, Project } from './schema'
+import type { Collection, DocNode, Field, Page, Project } from './schema'
 
 const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz'
 
@@ -47,9 +47,21 @@ export function createProject(name: string): Project {
     version: 0,
     pages: [createPage('Home')],
     theme: defaultTheme(),
+    collections: [],
     createdAt: now,
     updatedAt: now
   }
+}
+
+/** `servedFrom` → `Served from`: the default label of a field key. */
+export function fieldLabel(key: string): string {
+  const words = key.replace(/_/g, ' ').replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase().trim()
+  return words.charAt(0).toUpperCase() + words.slice(1)
+}
+
+/** A private collection; the slug defaults to a slug of the name. */
+export function createCollection(name: string, slug = slugify(name), fields: Field[] = []): Collection {
+  return { id: newId('col'), name: name.trim(), slug, fields, publicRead: false, publicCreate: false }
 }
 
 /** Deep copy of `node` where it and every descendant get a fresh id. */

@@ -3,6 +3,7 @@ import { applyOperations } from '#shared/document/operations'
 import type { Operation } from '#shared/document/operations'
 import type { Project, PublishedSnapshot } from '#shared/document/schema'
 import { createProjectStore } from '../utils/projectStore'
+import { createRecordStore } from '../utils/recordStore'
 import type { KeyValueStorage } from '../utils/projectStore'
 import { ActionError } from './define'
 import type { ActionContext } from './define'
@@ -20,9 +21,10 @@ interface History {
 
 const UNDO_LIMIT = 100
 
-/** Projects saved before themes existed read as having the default theme. */
-function withTheme(project: Project): Project {
+/** Projects saved before themes or collections existed read with the defaults. */
+function withDefaults(project: Project): Project {
   project.theme ??= defaultTheme()
+  project.collections ??= []
   return project
 }
 
@@ -32,11 +34,12 @@ function withTheme(project: Project): Project {
  */
 export function createServices(storage: KeyValueStorage) {
   const projects = createProjectStore(storage)
+  const records = createRecordStore(storage)
 
   async function loadProject(projectId: string): Promise<Project> {
     const project = await projects.get(projectId)
     if (!project) throw new ActionError('not_found', `Project "${projectId}" not found`)
-    return withTheme(project)
+    return withDefaults(project)
   }
 
   async function loadHistory(projectId: string): Promise<History> {
@@ -54,6 +57,7 @@ export function createServices(storage: KeyValueStorage) {
 
   return {
     projects,
+    records,
     storage,
     loadProject,
 
@@ -98,7 +102,7 @@ export function createServices(storage: KeyValueStorage) {
       const project = await projects.getBySlug(slug)
       if (!project) return undefined
       const snapshot = await storage.getItem<PublishedSnapshot>(`published:${project.id}`)
-      if (snapshot) withTheme(snapshot.project)
+      if (snapshot) withDefaults(snapshot.project)
       return snapshot ?? undefined
     },
 

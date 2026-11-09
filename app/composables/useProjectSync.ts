@@ -2,7 +2,7 @@ import type { Editor } from './useEditor'
 import { TAB_ID, callAction } from './useEditor'
 
 type SyncEvent
-  = | { kind: 'change', projectId: string, version: number, source?: string }
+  = | { kind: 'change', projectId: string, version: number, source?: string, scope?: 'data', collectionId?: string }
     | { kind: 'navigate', projectId: string, pageId: string, nodeId: string | null }
 
 const POLL_MS = 1500
@@ -41,6 +41,11 @@ export function useProjectSync(editor: Editor): void {
   }
 
   async function onEvent(event: SyncEvent): Promise<void> {
+    if (event.kind === 'change' && event.scope === 'data') {
+      // Records changed, not the document: reload them if the Data mode shows them.
+      if (event.source !== TAB_ID && editor.mode === 'data' && event.collectionId === editor.collection?.id) await editor.reloadRecords().catch(() => {})
+      return
+    }
     if (event.kind === 'change') {
       if (event.source !== TAB_ID && isNewer(event.version)) await refresh()
       return
@@ -55,6 +60,8 @@ export function useProjectSync(editor: Editor): void {
     poll ??= setInterval(async () => {
       const { version } = await $fetch<{ version: number }>(`/api/projects/${editor.projectId}/version`).catch(() => ({ version: 0 }))
       if (isNewer(version)) await refresh()
+      // Record changes do not move the version, so the Data mode re-reads them.
+      if (editor.mode === 'data') await editor.reloadRecords().catch(() => {})
     }, POLL_MS)
   }
 

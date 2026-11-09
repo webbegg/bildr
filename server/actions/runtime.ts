@@ -11,6 +11,9 @@ export interface ChangeEvent {
   version: number
   action: string
   source?: string
+  /** `data`: only `collectionId`'s records changed; the document (and `version`) did not. */
+  scope?: 'data'
+  collectionId?: string
 }
 
 /** One-shot request for open editors to switch page; not document state. */
@@ -72,6 +75,7 @@ export function createBildr(storage: KeyValueStorage, actions: ActionDef[] = ACT
       source: options.source,
       services,
       notify: (projectId, version) => changes.push({ projectId, version, action: name, source: options.source }),
+      notifyData: (projectId, version, collectionId) => changes.push({ projectId, version, action: name, source: options.source, scope: 'data', collectionId }),
       navigate: (projectId, pageId, nodeId) => navigations.push({ projectId, pageId, nodeId, source: options.source })
     }
 
