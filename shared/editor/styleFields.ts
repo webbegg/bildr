@@ -12,13 +12,13 @@ export type StyleSection = typeof STYLE_SECTIONS[number]
 // Each section's tokens in panel order. Gap sits in Layout, as in Stacki; the
 // colours go to the section of what they paint.
 const SECTION_KEYS: Record<StyleSection, string[]> = {
-  Layout: ['direction', 'items', 'justify', 'self', 'gap', 'cols', 'colSpan', 'display'],
+  Layout: ['direction', 'items', 'justify', 'self', 'gap', 'cols', 'colSpan', 'display', 'overflow'],
   Spacing: ['m', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl'],
   Size: ['w', 'maxW', 'minH'],
   Typography: ['text', 'font', 'align', 'color'],
   Backgrounds: ['bg'],
-  Borders: ['border', 'borderColor', 'rounded'],
-  Effects: ['shadow']
+  Borders: ['border', 'borderT', 'borderR', 'borderB', 'borderL', 'borderColor', 'rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl'],
+  Effects: ['shadow', 'opacity']
 }
 
 /** Short row labels for the panel's label column; the others use the token label. */
@@ -146,11 +146,22 @@ export function styleProvenance(style: Record<string, string>, base: string, dev
   return from ? { state: 'inherited', ...from } : { state: 'unset' }
 }
 
-/** A collapsed section's dot: `set` if the device sets one of its tokens, else `inherited` if one inherits. */
-export function sectionMark(style: Record<string, string>, section: StyleSection, device: DeviceId): 'set' | 'inherited' | undefined {
-  const states = SECTION_KEYS[section].map(key => styleProvenance(style, key, device).state)
-  if (states.includes('set')) return 'set'
-  return states.includes('inherited') ? 'inherited' : undefined
+/**
+ * How a field shows its provenance, the Framer way: only an override (a value
+ * set at the edited breakpoint) is highlighted; inherited values look unset.
+ */
+export function provenanceHighlight(provenance: Provenance): 'override' | undefined {
+  return provenance.state === 'set' ? 'override' : undefined
+}
+
+/** Where an inherited value comes from, for a tooltip, e.g. `From Mobile: 10`. */
+export function provenanceHint(provenance: Provenance): string | undefined {
+  return provenance.state === 'inherited' ? `From ${breakpointLabel(provenance.from)}: ${provenance.value}` : undefined
+}
+
+/** A collapsed section's dot: `set` if the device sets one of its tokens; inheriting gets no dot. */
+export function sectionMark(style: Record<string, string>, section: StyleSection, device: DeviceId): 'set' | undefined {
+  return SECTION_KEYS[section].some(key => styleProvenance(style, key, device).state === 'set') ? 'set' : undefined
 }
 
 /** Whether the node writes any token at exactly the device's breakpoint (the base for Mobile). */

@@ -2,9 +2,9 @@
 import { getStyleToken, isResponsiveToken, styleClasses, styleKey } from '#shared/design/tokens'
 import type { StyleToken } from '#shared/design/tokens'
 import { structuralStyle } from '#shared/document/components'
-import { naturalDisplay } from '#shared/editor/layers'
-import type { PanelSection } from '#shared/editor/panel'
-import { PANEL_SECTIONS, paddingMode, panelFields, panelSectionMark, sectionAdd, sectionKeys, sectionPresent, sectionRemove, spacingProvenance } from '#shared/editor/panel'
+import { naturalDisplay, visibilityAt, visibilityToggle } from '#shared/editor/layers'
+import type { OptionalRow, PanelSection, SplitToken } from '#shared/editor/panel'
+import { joinSplit, optionalRows, PANEL_SECTIONS, paddingMode, panelFields, panelSectionMark, sectionAdd, sectionKeys, sectionPresent, sectionRemove, SPLIT_KEYS, spacingProvenance, splitMode, tokenRemove } from '#shared/editor/panel'
 import { previewFocusedOption } from '#shared/editor/preview'
 import type { Side } from '#shared/editor/spacing'
 import { spacingSide, spacingWrite } from '#shared/editor/spacing'
@@ -17,7 +17,10 @@ import { styleProvenance } from '#shared/editor/styleFields'
  * Effects that a "+" adds and a "−" removes. Colour tokens show as variable
  * chips. Responsive tokens edit the editor device's breakpoint (Mobile is the
  * base, Tablet `md:`, Desktop `lg:`); a field's prefix, or the dot beside a
- * row, is blue when the device sets the value and orange when it inherits.
+ * row, is blue when the device overrides the value (Framer's highlight;
+ * inherited values look unset). Appearance has Framer's Visible row, the
+ * optional Opacity and Overflow rows its "+" adds, and Radius and Stroke
+ * toggle between all sides and per corner or side.
  *
  * Controls `preview` what a gesture holds and `commit` once; this panel emits
  * the commit as one `update` (one undo step) and passes previews on.
@@ -96,7 +99,17 @@ const PREFIX: Record<string, { label?: string, icon?: string }> = {
   text: { icon: 'i-lucide-a-large-small' },
   font: { icon: 'i-lucide-bold' },
   rounded: { icon: 'i-lucide-radius' },
-  border: { icon: 'i-lucide-menu' }
+  roundedTl: { label: 'TL' },
+  roundedTr: { label: 'TR' },
+  roundedBr: { label: 'BR' },
+  roundedBl: { label: 'BL' },
+  border: { icon: 'i-lucide-menu' },
+  borderT: { label: 'T' },
+  borderR: { label: 'R' },
+  borderB: { label: 'B' },
+  borderL: { label: 'L' },
+  opacity: { icon: 'i-lucide-blend' },
+  overflow: { icon: 'i-lucide-scan' }
 }
 const gapIcon = computed(() => (direction.value.startsWith('row') ? 'i-lucide-align-horizontal-space-between' : 'i-lucide-align-vertical-space-between'))
 
@@ -188,6 +201,50 @@ function remove(section: PanelSection) {
   if (Object.keys(patch).length) emit('update', patch)
 }
 
+// Appearance: Visible reads and writes `display` at the device, like the layers eye.
+const visible = computed(() => !visibilityAt(props.styles, editor.deviceId).hidden)
+const VISIBLE_ITEMS = [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]
+function setVisible(next: string) {
+  if ((next === 'yes') === visible.value) return
+  emit('update', visibilityToggle(props.styles, editor.deviceId, naturalDisplay({ type: props.type, props: {} })))
+}
+
+// Opacity and Overflow show once the "+" adds them, or while the node sets them.
+const added = ref<OptionalRow[]>([])
+const optional = computed(() => optionalRows(props.styles, [...added.value, ...(props.mixed ?? [])]))
+const ROW_LABELS: Record<OptionalRow, string> = { opacity: 'Opacity', overflow: 'Overflow' }
+const addMenu = computed(() => optional.value.addable.map(row => ({
+  label: ROW_LABELS[row],
+  onSelect: () => {
+    collapsed.value = { ...collapsed.value, Appearance: false }
+    added.value = [...added.value, row]
+  }
+})))
+function removeRow(row: OptionalRow) {
+  added.value = added.value.filter(other => other !== row)
+  const patch = tokenRemove(props.styles, row)
+  if (Object.keys(patch).length) emit('update', patch)
+}
+const OVERFLOW_LABELS: Record<string, string> = { visible: 'Visible', hidden: 'Hidden', auto: 'Auto', scroll: 'Scroll', clip: 'Clip' }
+
+// Radius and stroke width: all sides, or per corner or side (Framer's split toggle).
+const splitOf = () => ({ rounded: splitMode(props.styles, 'rounded') === 'split', border: splitMode(props.styles, 'border') === 'split' })
+const split = ref(splitOf())
+watch(splitOf, (value) => {
+  split.value = { rounded: split.value.rounded || value.rounded, border: split.value.border || value.border }
+})
+const splitFields = (token: SplitToken): string[] => (split.value[token] ? [...SPLIT_KEYS[token]] : [token])
+/** A corner or side shows the all-sides value until it overrides it. */
+const splitInherited = (token: SplitToken, key: string) => (key === token ? inherited(key) : own(key) === undefined ? own(token) : undefined)
+/** Leaving split mode writes the first corner or side as the all-sides value. */
+function toggleSplit(token: SplitToken) {
+  const next = !split.value[token]
+  split.value = { ...split.value, [token]: next }
+  if (next) return
+  const patch = joinSplit(props.styles, token)
+  if (Object.keys(patch).length) emit('update', patch)
+}
+
 const segments = (key: string, icons: Record<string, string> = {}, labels: Record<string, string> = {}) =>
   token(key).values.map(value => ({ value, label: labels[value] ?? value, icon: icons[value] }))
 const options = (t: StyleToken) => t.values.map(value => ({ value, label: value }))
@@ -242,6 +299,22 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
             @click="toggleCenter"
           />
         </UTooltip>
+        <UDropdownMenu
+          v-else-if="section === 'Appearance' && addMenu.length"
+          :items="addMenu"
+          size="xs"
+          :content="{ align: 'end' }"
+        >
+          <UButton
+            icon="i-lucide-plus"
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            aria-label="Add property"
+            title="More properties"
+            data-appearance-add
+          />
+        </UDropdownMenu>
         <UTooltip
           v-else-if="ADDABLE.includes(section) && !present(section)"
           :text="`Add ${section.toLowerCase()}`"
@@ -446,27 +519,158 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
         @commit="emit('update', $event)"
       />
 
-      <div
-        v-else-if="section === 'Appearance'"
-        class="grid grid-cols-2 gap-2"
-      >
-        <EditorScaleField
-          :token="token('rounded')"
-          :value="own('rounded')"
-          :inherited="inherited('rounded')"
-          :placeholder="ph('rounded', 'none')"
-          data-style-row="rounded"
-          @preview="preview('rounded', $event)"
-          @commit="setField('rounded', $event)"
+      <template v-else-if="section === 'Appearance'">
+        <div
+          v-if="fields.display"
+          class="relative"
+          data-style-row="visible"
         >
-          <template #prefix>
+          <div
+            :class="DOT"
+            data-field-label="visible"
+          >
             <EditorFieldLabel
-              v-bind="label('rounded')"
-              @reset="setField('rounded', null)"
+              v-bind="{ ...label('display', 'dot'), title: 'Visible' }"
+              @reset="setField('display', null)"
             />
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="w-12 shrink-0 text-[11px] text-dimmed">Visible</span>
+            <EditorSegmented
+              class="flex-1"
+              dense
+              :items="VISIBLE_ITEMS"
+              :model-value="provenance('display').state === 'set' ? (visible ? 'yes' : 'no') : undefined"
+              :fallback="visible ? 'yes' : 'no'"
+              aria-label="Visible"
+              data-style-key="visible"
+              @update:model-value="setVisible"
+            />
+          </div>
+        </div>
+        <div
+          v-if="optional.shown.includes('opacity')"
+          class="flex items-center gap-1"
+          data-style-row="opacity"
+        >
+          <EditorScaleField
+            class="flex-1"
+            :token="token('opacity')"
+            :value="own('opacity')"
+            :placeholder="ph('opacity', '100')"
+            @preview="preview('opacity', $event)"
+            @commit="setField('opacity', $event)"
+          >
+            <template #prefix>
+              <EditorFieldLabel
+                v-bind="label('opacity')"
+                @reset="setField('opacity', null)"
+              />
+            </template>
+          </EditorScaleField>
+          <button
+            type="button"
+            :class="REMOVE"
+            aria-label="Remove opacity"
+            @click="removeRow('opacity')"
+          >
+            <UIcon
+              name="i-lucide-minus"
+              class="size-3"
+            />
+          </button>
+        </div>
+        <div
+          v-if="optional.shown.includes('overflow')"
+          class="flex items-center gap-1"
+          data-style-row="overflow"
+        >
+          <EditorField class="flex-1">
+            <template #prefix>
+              <EditorFieldLabel
+                v-bind="label('overflow')"
+                @reset="setField('overflow', null)"
+              />
+            </template>
+            <USelect
+              :model-value="own('overflow')"
+              :items="segments('overflow', {}, OVERFLOW_LABELS)"
+              :placeholder="ph('overflow', OVERFLOW_LABELS[inherited('overflow') ?? 'visible'])"
+              variant="none"
+              size="xs"
+              :class="SELECT"
+              :ui="SELECT_UI"
+              :aria-label="token('overflow').label"
+              data-style-key="overflow"
+              :content="optionPreview('overflow')"
+              @update:model-value="setField('overflow', $event)"
+              @update:open="!$event && preview('overflow', null)"
+            >
+              <template #item-label="{ item: option }">
+                <span :data-option-value="option.value">{{ option.label }}</span>
+              </template>
+            </USelect>
+          </EditorField>
+          <button
+            type="button"
+            :class="REMOVE"
+            aria-label="Remove overflow"
+            @click="removeRow('overflow')"
+          >
+            <UIcon
+              name="i-lucide-minus"
+              class="size-3"
+            />
+          </button>
+        </div>
+        <div
+          class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_24px] gap-x-2 gap-y-1.5"
+          data-style-row="radius"
+          :data-radius-mode="split.rounded ? 'corners' : 'all'"
+        >
+          <template
+            v-for="(key, i) in splitFields('rounded')"
+            :key="key"
+          >
+            <EditorScaleField
+              :class="{ 'col-span-2': !split.rounded }"
+              :token="token(key)"
+              :value="own(key)"
+              :inherited="splitInherited('rounded', key)"
+              :placeholder="ph(key, 'none')"
+              :data-style-row="key"
+              @preview="preview(key, $event)"
+              @commit="setField(key, $event)"
+            >
+              <template #prefix>
+                <EditorFieldLabel
+                  v-bind="label(key)"
+                  @reset="setField(key, null)"
+                />
+              </template>
+            </EditorScaleField>
+            <UTooltip
+              v-if="i === Math.min(1, splitFields('rounded').length - 1)"
+              text="Individual corners"
+              :delay-duration="500"
+            >
+              <button
+                type="button"
+                class="grid size-6 place-items-center rounded-[5px]"
+                :class="split.rounded ? 'bg-white/14 text-highlighted' : 'text-muted hover:bg-white/8 hover:text-highlighted'"
+                aria-label="Individual corners"
+                :aria-pressed="split.rounded"
+                @click="toggleSplit('rounded')"
+              >
+                <UIcon
+                  name="i-lucide-square-dashed"
+                  class="size-3"
+                />
+              </button>
+            </UTooltip>
           </template>
-        </EditorScaleField>
-      </div>
+        </div>
+      </template>
 
       <template v-else-if="section === 'Typography'">
         <div class="grid grid-cols-2 gap-2">
@@ -583,51 +787,95 @@ const REMOVE = 'grid size-6 shrink-0 place-items-center rounded-[5px] text-muted
         </button>
       </div>
 
-      <div
-        v-else-if="section === 'Stroke'"
-        class="flex items-center gap-1"
-        data-style-row="stroke"
-      >
-        <EditorSwatchPicker
-          v-if="editor.theme"
-          class="min-w-0 flex-1"
-          :token="token('borderColor')"
-          :value="own('borderColor')"
-          :placeholder="ph('borderColor')"
-          :theme="editor.theme"
-          data-style-row="borderColor"
-          @preview="preview('borderColor', $event)"
-          @update="setField('borderColor', $event)"
-          @clear="setField('borderColor', null)"
-        />
-        <EditorScaleField
-          class="w-16 shrink-0"
-          :token="token('border')"
-          :value="own('border')"
-          :placeholder="ph('border', '0')"
-          data-style-row="border"
-          @preview="preview('border', $event)"
-          @commit="setField('border', $event)"
+      <template v-else-if="section === 'Stroke'">
+        <div
+          class="flex items-center gap-1"
+          data-style-row="stroke"
         >
-          <template #prefix>
-            <EditorFieldLabel
-              v-bind="label('border')"
-              @reset="setField('border', null)"
-            />
-          </template>
-        </EditorScaleField>
-        <button
-          type="button"
-          :class="REMOVE"
-          aria-label="Remove stroke"
-          @click="remove('Stroke')"
-        >
-          <UIcon
-            name="i-lucide-minus"
-            class="size-3"
+          <EditorSwatchPicker
+            v-if="editor.theme"
+            class="min-w-0 flex-1"
+            :token="token('borderColor')"
+            :value="own('borderColor')"
+            :placeholder="ph('borderColor')"
+            :theme="editor.theme"
+            data-style-row="borderColor"
+            @preview="preview('borderColor', $event)"
+            @update="setField('borderColor', $event)"
+            @clear="setField('borderColor', null)"
           />
-        </button>
-      </div>
+          <EditorScaleField
+            v-if="!split.border"
+            class="w-16 shrink-0"
+            :token="token('border')"
+            :value="own('border')"
+            :placeholder="ph('border', '0')"
+            data-style-row="border"
+            @preview="preview('border', $event)"
+            @commit="setField('border', $event)"
+          >
+            <template #prefix>
+              <EditorFieldLabel
+                v-bind="label('border')"
+                @reset="setField('border', null)"
+              />
+            </template>
+          </EditorScaleField>
+          <UTooltip
+            text="Individual sides"
+            :delay-duration="500"
+          >
+            <button
+              type="button"
+              class="grid size-6 shrink-0 place-items-center rounded-[5px]"
+              :class="split.border ? 'bg-white/14 text-highlighted' : 'text-muted hover:bg-white/8 hover:text-highlighted'"
+              aria-label="Individual sides"
+              :aria-pressed="split.border"
+              @click="toggleSplit('border')"
+            >
+              <UIcon
+                name="i-lucide-square-dashed"
+                class="size-3"
+              />
+            </button>
+          </UTooltip>
+          <button
+            type="button"
+            :class="REMOVE"
+            aria-label="Remove stroke"
+            @click="remove('Stroke')"
+          >
+            <UIcon
+              name="i-lucide-minus"
+              class="size-3"
+            />
+          </button>
+        </div>
+        <div
+          v-if="split.border"
+          class="grid grid-cols-4 gap-1.5"
+          data-style-row="border-sides"
+        >
+          <EditorScaleField
+            v-for="key in SPLIT_KEYS.border"
+            :key="key"
+            :token="token(key)"
+            :value="own(key)"
+            :inherited="splitInherited('border', key)"
+            :placeholder="ph(key, '0')"
+            :data-style-row="key"
+            @preview="preview(key, $event)"
+            @commit="setField(key, $event)"
+          >
+            <template #prefix>
+              <EditorFieldLabel
+                v-bind="label(key)"
+                @reset="setField(key, null)"
+              />
+            </template>
+          </EditorScaleField>
+        </div>
+      </template>
 
       <div
         v-else-if="section === 'Effects'"

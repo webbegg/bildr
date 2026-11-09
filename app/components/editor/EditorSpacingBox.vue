@@ -143,7 +143,8 @@ function editReset() {
 const LABEL = 'z-[2] max-w-full truncate rounded-sm px-1 py-px font-mono text-[11px] leading-4 transition-colors'
 const TONE = {
   set: 'bg-(color:--editor-info)/14 text-(color:--editor-info) hover:bg-(color:--editor-info)/20',
-  inherited: 'bg-(color:--editor-provenance-bg) text-(color:--editor-provenance) hover:bg-[rgba(223,100,12,0.3)]',
+  // Only overrides are highlighted (Framer); an inherited value looks unset.
+  inherited: 'text-dimmed hover:bg-white/8 hover:text-toned',
   unset: 'text-dimmed hover:bg-white/8 hover:text-toned'
 }
 </script>
@@ -250,7 +251,7 @@ const TONE = {
             :disabled="editingOwn === undefined"
             @click="editReset"
           >
-            Reset
+            Reset override
             <span class="text-[11px] text-dimmed">⌥ click</span>
           </button>
         </div>

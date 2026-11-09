@@ -22,10 +22,10 @@ const SECTION_KEYS: Record<PanelSection, string[]> = {
   'Auto layout': ['direction', 'items', 'justify', 'gap', 'cols', 'colSpan', ...PADDING],
   'Layout': ['w', 'minH', 'maxW', 'self', 'display'],
   'Spacing': ['m', 'mx', 'my', 'mt', 'mr', 'mb', 'ml'],
-  'Appearance': ['rounded'],
+  'Appearance': ['opacity', 'overflow', 'rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl'],
   'Typography': ['text', 'font', 'align', 'color'],
   'Fill': ['bg'],
-  'Stroke': ['border', 'borderColor'],
+  'Stroke': ['border', 'borderT', 'borderR', 'borderB', 'borderL', 'borderColor'],
   'Effects': ['shadow']
 }
 
@@ -39,11 +39,12 @@ export function panelSection(key: string): PanelSection | undefined {
   return base ? PANEL_SECTIONS.find(s => SECTION_KEYS[s].includes(base)) : undefined
 }
 
-/** A section's dot: `set` if the device sets one of its tokens, else `inherited` if one inherits. */
-export function panelSectionMark(style: Record<string, string>, section: PanelSection, device: DeviceId): 'set' | 'inherited' | undefined {
-  const states = SECTION_KEYS[section].map(key => styleProvenance(style, key, device).state)
-  if (states.includes('set')) return 'set'
-  return states.includes('inherited') ? 'inherited' : undefined
+const sectionStates = (style: Record<string, string>, section: PanelSection, device: DeviceId) =>
+  SECTION_KEYS[section].map(key => styleProvenance(style, key, device).state)
+
+/** A section's dot, Framer's override highlight: `set` if the device sets one of its tokens; inheriting gets no dot. */
+export function panelSectionMark(style: Record<string, string>, section: PanelSection, device: DeviceId): 'set' | undefined {
+  return sectionStates(style, section, device).includes('set') ? 'set' : undefined
 }
 
 export interface PanelNode {
@@ -100,7 +101,47 @@ export function sectionAdd(section: PanelSection): Record<string, string> | unde
 
 /** Whether one of the section's tokens applies at the device. */
 export function sectionPresent(style: Record<string, string>, section: PanelSection, device: DeviceId): boolean {
-  return panelSectionMark(style, section, device) !== undefined
+  return sectionStates(style, section, device).some(state => state !== 'unset')
+}
+
+/** The patch that clears a token at every breakpoint. */
+export function tokenRemove(style: Record<string, string>, base: string): Record<string, null> {
+  return Object.fromEntries(Object.keys(style).filter(key => baseKey(key) === base).map(key => [key, null]))
+}
+
+/** Appearance rows that stay hidden until the section's "+" adds them (Framer's advanced properties). */
+export const OPTIONAL_ROWS = ['opacity', 'overflow'] as const
+
+export type OptionalRow = typeof OPTIONAL_ROWS[number]
+
+/**
+ * The optional rows a node shows: those `added` from the "+", plus any whose
+ * token the node sets at some breakpoint; `addable` are what the "+" offers.
+ */
+export function optionalRows(style: Record<string, string>, added: readonly string[]): { shown: OptionalRow[], addable: OptionalRow[] } {
+  const sets = new Set(Object.keys(style).map(baseKey))
+  const shown = OPTIONAL_ROWS.filter(row => added.includes(row) || sets.has(row))
+  return { shown, addable: OPTIONAL_ROWS.filter(row => !shown.includes(row)) }
+}
+
+/** The per-corner radius and per-side border width tokens, clockwise from the top (left). */
+export const SPLIT_KEYS = {
+  rounded: ['roundedTl', 'roundedTr', 'roundedBr', 'roundedBl'],
+  border: ['borderT', 'borderR', 'borderB', 'borderL']
+} as const
+
+export type SplitToken = keyof typeof SPLIT_KEYS
+
+/** Framer's all-sides vs split toggle: split once a corner or side token is set. */
+export function splitMode(style: Record<string, string>, token: SplitToken): 'all' | 'split' {
+  return SPLIT_KEYS[token].some(key => style[key] !== undefined) ? 'split' : 'all'
+}
+
+/** Leaving split mode: the first set corner or side becomes the all-sides value, and the others are cleared. */
+export function joinSplit(style: Record<string, string>, token: SplitToken): Record<string, string | null> {
+  const set = SPLIT_KEYS[token].filter(key => style[key] !== undefined)
+  if (!set.length) return {}
+  return { [token]: style[set[0]!]!, ...Object.fromEntries(set.map(key => [key, null])) }
 }
 
 /** The patch a row's "−" sends: every key of the section, at every breakpoint. */

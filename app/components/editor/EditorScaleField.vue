@@ -216,7 +216,7 @@ defineExpose({ scrub })
             role="option"
             :aria-selected="option === value"
             class="flex h-6 w-full items-center justify-between rounded-sm px-2 font-mono text-xs hover:bg-elevated"
-            :class="option === value ? 'text-(color:--editor-info)' : option === current ? 'text-(color:--editor-provenance)' : 'text-toned'"
+            :class="option === value ? 'text-(color:--editor-info)' : option === current ? 'text-highlighted' : 'text-toned'"
             @mouseenter="emit('preview', option)"
             @click="pick(option)"
           >

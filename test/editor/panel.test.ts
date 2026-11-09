@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { STYLE_TOKENS } from '#shared/design/tokens'
-import { PANEL_SECTIONS, paddingMode, panelFields, panelSection, panelSectionMark, sectionAdd, sectionKeys, sectionPresent, sectionRemove, sharedStyle, spacingProvenance } from '#shared/editor/panel'
+import { joinSplit, OPTIONAL_ROWS, optionalRows, PANEL_SECTIONS, paddingMode, panelFields, panelSection, panelSectionMark, sectionAdd, sectionKeys, sectionPresent, sectionRemove, sharedStyle, spacingProvenance, splitMode, tokenRemove } from '#shared/editor/panel'
 
 describe('panel sections', () => {
   it('follows Figma UI3, with the margins box after Layout and every design token in exactly one section', () => {
@@ -21,6 +21,10 @@ describe('panel sections', () => {
     expect(panelSection('md:display')).toBe('Layout')
     expect(panelSection('mx')).toBe('Spacing')
     expect(panelSection('rounded')).toBe('Appearance')
+    expect(panelSection('roundedTl')).toBe('Appearance')
+    expect(panelSection('opacity')).toBe('Appearance')
+    expect(panelSection('md:overflow')).toBe('Appearance')
+    expect(panelSection('borderB')).toBe('Stroke')
     expect(panelSection('color')).toBe('Typography')
     expect(panelSection('bg')).toBe('Fill')
     expect(panelSection('border')).toBe('Stroke')
@@ -29,10 +33,10 @@ describe('panel sections', () => {
     expect(panelSection('bogus')).toBeUndefined()
   })
 
-  it('marks a section blue when the device sets one of its keys, orange when it only inherits', () => {
+  it('marks a section blue only when the device sets one of its keys; inheriting is no mark', () => {
     const style = { 'px': '4', 'md:w': 'full', 'bg': 'primary' }
     expect(panelSectionMark(style, 'Auto layout', 'mobile')).toBe('set')
-    expect(panelSectionMark(style, 'Auto layout', 'tablet')).toBe('inherited')
+    expect(panelSectionMark(style, 'Auto layout', 'tablet')).toBeUndefined()
     expect(panelSectionMark(style, 'Layout', 'tablet')).toBe('set')
     expect(panelSectionMark(style, 'Layout', 'mobile')).toBeUndefined()
     expect(panelSectionMark(style, 'Fill', 'desktop')).toBe('set')
@@ -90,11 +94,49 @@ describe('fill, stroke and effects', () => {
     expect(sectionPresent({ bg: 'muted' }, 'Fill', 'tablet')).toBe(true)
     expect(sectionPresent({ borderColor: 'primary' }, 'Stroke', 'mobile')).toBe(true)
     expect(sectionPresent({ shadow: 'none' }, 'Effects', 'mobile')).toBe(true)
+    // An inherited value still applies, so the section stays present.
+    expect(sectionPresent({ px: '4' }, 'Auto layout', 'tablet')).toBe(true)
   })
 
   it('removes every key of the section, and nothing else', () => {
     expect(sectionRemove({ border: '2', borderColor: 'primary', bg: 'muted' }, 'Stroke')).toEqual({ border: null, borderColor: null })
     expect(sectionRemove({ bg: 'muted' }, 'Effects')).toEqual({})
+  })
+})
+
+describe('optional Appearance rows', () => {
+  it('are Opacity and Overflow', () => {
+    expect(OPTIONAL_ROWS).toEqual(['opacity', 'overflow'])
+  })
+
+  it('stay hidden until added, and the "+" offers the others', () => {
+    expect(optionalRows({}, [])).toEqual({ shown: [], addable: ['opacity', 'overflow'] })
+    expect(optionalRows({}, ['opacity'])).toEqual({ shown: ['opacity'], addable: ['overflow'] })
+  })
+
+  it('always show a row whose token the node sets, at any breakpoint', () => {
+    expect(optionalRows({ 'lg:overflow': 'hidden' }, [])).toEqual({ shown: ['overflow'], addable: ['opacity'] })
+    expect(optionalRows({ opacity: '50' }, ['overflow'])).toEqual({ shown: ['opacity', 'overflow'], addable: [] })
+  })
+
+  it('are removed by clearing the token at every breakpoint', () => {
+    expect(tokenRemove({ 'overflow': 'hidden', 'md:overflow': 'auto', 'opacity': '50' }, 'overflow')).toEqual({ 'overflow': null, 'md:overflow': null })
+    expect(tokenRemove({ opacity: '50' }, 'overflow')).toEqual({})
+  })
+})
+
+describe('radius and border split toggles', () => {
+  it('edits per corner or per side once one of those tokens is set', () => {
+    expect(splitMode({ rounded: 'lg' }, 'rounded')).toBe('all')
+    expect(splitMode({ roundedBr: 'lg' }, 'rounded')).toBe('split')
+    expect(splitMode({ border: '1' }, 'border')).toBe('all')
+    expect(splitMode({ borderB: '2' }, 'border')).toBe('split')
+  })
+
+  it('joins back to one value: the first set corner or side, clearing the others', () => {
+    expect(joinSplit({ rounded: 'md', roundedTr: 'lg', roundedBl: 'sm' }, 'rounded')).toEqual({ rounded: 'lg', roundedTr: null, roundedBl: null })
+    expect(joinSplit({ borderL: '4' }, 'border')).toEqual({ border: '4', borderL: null })
+    expect(joinSplit({ rounded: 'md' }, 'rounded')).toEqual({})
   })
 })
 

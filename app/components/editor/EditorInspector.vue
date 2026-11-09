@@ -6,15 +6,13 @@ import type { PropGroup } from '#shared/editor/propGroups'
 import { groupedProps, isDefaultProp, PROP_GROUPS } from '#shared/editor/propGroups'
 import { breadcrumb } from '#shared/editor/selection'
 import { sharedStyle } from '#shared/editor/panel'
-import type { DeviceId } from '#shared/editor/styleFields'
-import { DEVICES, hasStyleAt } from '#shared/editor/styleFields'
 import { FORM_TYPE, formFields, sampleValues } from '#shared/runtime/form'
 
 /**
  * The right panel: a sticky head with the element's identity, breadcrumb and
  * quick actions, then the Style and Settings tabs (both stay mounted). The
- * Style tab edits the breakpoint of the editor device, which its select and
- * the toolbar's device toggle both change. With several nodes selected the
+ * Style tab edits the breakpoint of the canvas frame picked last, which a
+ * caption names (Framer has one breakpoint control: the frame). With several nodes selected the
  * head reads "N selected" and only the Style tab shows: their shared values,
  * "Mixed" where they differ, and an edit goes to all of them (one undo step).
  */
@@ -45,15 +43,6 @@ const tab = computed<Tab>(() => (multi.value ? 'style' : pickedTab.value ?? (pro
 const tabs = computed<{ value: Tab, label: string }[]>(() => (multi.value
   ? [{ value: 'style', label: 'Style' }]
   : [{ value: 'style', label: 'Style' }, { value: 'settings', label: 'Settings' }]))
-
-const devices = computed(() => DEVICES.map(d => ({
-  value: d.id,
-  label: d.label,
-  hint: d.breakpoint ?? 'base',
-  icon: d.icon,
-  overrides: !!node.value && hasStyleAt(node.value.style, d.id)
-})))
-const device = computed(() => devices.value.find(d => d.value === editor.deviceId)!)
 
 function propValue(name: string, fallback: PropValue): PropValue {
   return node.value?.props[name] ?? fallback
@@ -208,39 +197,13 @@ function renamePage(field: 'name' | 'slug', value: string) {
         </button>
       </div>
 
-      <div
+      <p
         v-show="tab === 'style'"
-        class="flex items-center gap-2 px-3 pb-2"
+        class="-mt-1 px-3 pb-2 text-[11px] text-dimmed"
+        :data-editing-caption="editor.deviceId"
       >
-        <span class="w-16 shrink-0 text-[11px] text-dimmed">Breakpoint</span>
-        <USelect
-          :model-value="editor.deviceId"
-          :items="devices"
-          :icon="device.icon"
-          size="xs"
-          variant="soft"
-          :ui="{ trailingIcon: 'size-3 text-dimmed' }"
-          class="min-w-0 flex-1"
-          aria-label="Breakpoint"
-          data-breakpoint-select
-          @update:model-value="editor.deviceId = $event as DeviceId"
-        >
-          <template #default>
-            <span class="truncate">{{ device.label }} <span class="font-mono text-dimmed">{{ device.hint }}</span></span>
-          </template>
-          <template #item-label="{ item }">
-            {{ item.label }} <span class="font-mono text-dimmed">{{ item.hint }}</span>
-          </template>
-          <template #item-trailing="{ item }">
-            <span
-              v-if="item.overrides"
-              class="size-1.5 rounded-full bg-(color:--editor-selection)"
-              :data-overrides="item.value"
-              :title="`Has styles on ${item.label}`"
-            />
-          </template>
-        </USelect>
-      </div>
+        Editing {{ editor.device.label }}
+      </p>
     </div>
 
     <div

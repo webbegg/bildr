@@ -1,12 +1,11 @@
 <script setup lang="ts">
 /**
  * A collapsible panel section with a Figma UI3 header: the title, then its
- * actions (such as Fill's "+") on the right. Closed, a dot says what is
- * inside: blue when the device sets a value, orange when it only inherits.
- * The parent owns `open`, so Shift-click can toggle every section. An `empty`
+ * actions (such as Fill's "+") on the right. Closed, a blue dot says the
+ * device overrides a value inside (inherited values get no dot). The parent owns `open`, so Shift-click can toggle every section. An `empty`
  * section (a Fill with no fill) is a header only.
  */
-defineProps<{ label: string, open: boolean, mark?: 'set' | 'inherited', empty?: boolean }>()
+defineProps<{ label: string, open: boolean, mark?: 'set', empty?: boolean }>()
 const emit = defineEmits<{ toggle: [event: MouseEvent] }>()
 </script>
 
@@ -36,11 +35,10 @@ const emit = defineEmits<{ toggle: [event: MouseEvent] }>()
         />
         <span
           v-if="!open && mark"
-          class="size-1.5 shrink-0 rounded-full"
-          :class="mark === 'set' ? 'bg-(color:--editor-selection)' : 'bg-(color:--editor-provenance)'"
+          class="size-1.5 shrink-0 rounded-full bg-(color:--editor-selection)"
           :data-section-dot="mark"
           role="img"
-          :aria-label="mark === 'set' ? `${label} has values on this device` : `${label} inherits values from a smaller device`"
+          :aria-label="`${label} has values on this device`"
         />
       </button>
       <slot name="actions" />

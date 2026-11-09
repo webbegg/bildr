@@ -48,6 +48,11 @@ const THEME_COLORS = SEMANTIC.flatMap(c => [...(c === 'neutral' ? [] : [c]), ...
 
 const spacing = (key: string, label: string, values = SPACING): StyleToken => ({ key, label, group: 'Spacing', prefix: key, values })
 
+const BORDER_WIDTHS = ['0', '1', '2', '4', '8']
+const RADII = ['none', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', 'full']
+const border = (key: string, label: string, prefix: string): StyleToken => ({ key, label, group: 'Border', prefix, values: BORDER_WIDTHS })
+const radius = (key: string, label: string, prefix: string): StyleToken => ({ key, label, group: 'Border', prefix, values: RADII })
+
 export const STYLE_TOKENS: StyleToken[] = [
   spacing('m', 'Margin', MARGIN),
   spacing('mx', 'Margin X', MARGIN),
@@ -74,9 +79,18 @@ export const STYLE_TOKENS: StyleToken[] = [
   { key: 'font', label: 'Font weight', group: 'Typography', prefix: 'font', values: ['light', 'normal', 'medium', 'semibold', 'bold', 'extrabold'] },
   { key: 'align', label: 'Text align', group: 'Typography', prefix: 'text', values: ['left', 'center', 'right', 'justify'] },
   // `border-1` rather than a bare `border`: an empty value means "remove the token".
-  { key: 'border', label: 'Border width', group: 'Border', prefix: 'border', values: ['0', '1', '2', '4', '8'] },
-  { key: 'rounded', label: 'Radius', group: 'Border', prefix: 'rounded', values: ['none', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', 'full'] },
+  border('border', 'Border width', 'border'),
+  border('borderT', 'Border top width', 'border-t'),
+  border('borderR', 'Border right width', 'border-r'),
+  border('borderB', 'Border bottom width', 'border-b'),
+  border('borderL', 'Border left width', 'border-l'),
+  radius('rounded', 'Radius', 'rounded'),
+  radius('roundedTl', 'Radius top left', 'rounded-tl'),
+  radius('roundedTr', 'Radius top right', 'rounded-tr'),
+  radius('roundedBr', 'Radius bottom right', 'rounded-br'),
+  radius('roundedBl', 'Radius bottom left', 'rounded-bl'),
   { key: 'shadow', label: 'Shadow', group: 'Effects', prefix: 'shadow', values: ['none', 'xs', 'sm', 'md', 'lg', 'xl', '2xl'] },
+  { key: 'opacity', label: 'Opacity', group: 'Effects', prefix: 'opacity', values: ['0', '5', '10', '20', '25', '30', '40', '50', '60', '70', '75', '80', '90', '95', '100'] },
   { key: 'direction', label: 'Direction', group: 'Layout', prefix: 'flex', values: ['row', 'col', 'row-reverse', 'col-reverse'] },
   { key: 'items', label: 'Align items', group: 'Layout', prefix: 'items', values: ['start', 'center', 'end', 'stretch', 'baseline'] },
   { key: 'justify', label: 'Justify content', group: 'Layout', prefix: 'justify', values: ['start', 'center', 'end', 'between', 'around', 'evenly'] },
@@ -84,7 +98,8 @@ export const STYLE_TOKENS: StyleToken[] = [
   { key: 'cols', label: 'Grid columns', group: 'Layout', prefix: 'grid-cols', values: ['1', '2', '3', '4', '5', '6', '12'] },
   { key: 'colSpan', label: 'Column span', group: 'Layout', prefix: 'col-span', values: ['1', '2', '3', '4', '5', '6', '12', 'full'] },
   // Hide/show per breakpoint: the classes are `hidden`, `md:flex`, ...
-  { key: 'display', label: 'Display', group: 'Layout', prefix: '', values: ['hidden', 'block', 'flex', 'grid'] }
+  { key: 'display', label: 'Display', group: 'Layout', prefix: '', values: ['hidden', 'block', 'flex', 'grid'] },
+  { key: 'overflow', label: 'Overflow', group: 'Layout', prefix: 'overflow', values: ['visible', 'hidden', 'auto', 'scroll', 'clip'] }
 ]
 
 /** The class of a token value: `mt-10`, or `hidden` for a token without a prefix. */

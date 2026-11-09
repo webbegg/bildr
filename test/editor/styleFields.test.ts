@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getStyleToken, STYLE_TOKENS } from '#shared/design/tokens'
 import { DEFAULT_THEME } from '#shared/design/theme'
-import { breakpointLabel, breakpointStyles, colorSwatchRows, DEVICES, hasStyleAt, sectionMark, setStyleTokens, spacingItems, STYLE_SECTIONS, styleFieldControl, styleProvenance, styleSection, styleSections } from '#shared/editor/styleFields'
+import { breakpointLabel, breakpointStyles, colorSwatchRows, DEVICES, hasStyleAt, provenanceHighlight, provenanceHint, sectionMark, setStyleTokens, spacingItems, STYLE_SECTIONS, styleFieldControl, styleProvenance, styleSection, styleSections } from '#shared/editor/styleFields'
 import { DRAG_MIME, draggedNodeId, nodeDragType, parseDragPayload } from '#shared/editor/dropTarget'
 
 describe('style fields', () => {
@@ -9,7 +9,7 @@ describe('style fields', () => {
     expect(STYLE_SECTIONS).toEqual(['Layout', 'Spacing', 'Size', 'Typography', 'Backgrounds', 'Borders', 'Effects'])
     const keys = styleSections().flatMap(s => s.fields.map(f => f.key))
     expect(keys.sort()).toEqual(STYLE_TOKENS.map(t => t.key).sort())
-    expect(styleSections().find(s => s.section === 'Layout')!.fields.map(f => f.key)).toEqual(['direction', 'items', 'justify', 'self', 'gap', 'cols', 'colSpan', 'display'])
+    expect(styleSections().find(s => s.section === 'Layout')!.fields.map(f => f.key)).toEqual(['direction', 'items', 'justify', 'self', 'gap', 'cols', 'colSpan', 'display', 'overflow'])
   })
 
   it('puts each token key, breakpoint-prefixed or not, in its section', () => {
@@ -23,6 +23,10 @@ describe('style fields', () => {
     expect(styleSection('borderColor')).toBe('Borders')
     expect(styleSection('rounded')).toBe('Borders')
     expect(styleSection('shadow')).toBe('Effects')
+    expect(styleSection('opacity')).toBe('Effects')
+    expect(styleSection('md:overflow')).toBe('Layout')
+    expect(styleSection('roundedTl')).toBe('Borders')
+    expect(styleSection('borderB')).toBe('Borders')
     expect(styleSection('bogus')).toBeUndefined()
     expect(styleSection('xl:mt')).toBeUndefined()
   })
@@ -115,9 +119,22 @@ describe('provenance', () => {
     expect(styleProvenance({ 'md:bg': 'primary' }, 'bg', 'tablet')).toEqual({ state: 'unset' })
   })
 
-  it('marks a section blue when the device sets one of its keys, orange when it only inherits', () => {
+  it('highlights only overrides, the values set at the device; inherited ones look unset', () => {
+    expect(provenanceHighlight(styleProvenance(style, 'mt', 'mobile'))).toBe('override')
+    expect(provenanceHighlight(styleProvenance(style, 'mt', 'desktop'))).toBeUndefined()
+    expect(provenanceHighlight(styleProvenance(style, 'p', 'desktop'))).toBeUndefined()
+  })
+
+  it('says where an inherited value comes from, for a tooltip', () => {
+    expect(provenanceHint(styleProvenance({ mt: '10' }, 'mt', 'tablet'))).toBe('From Mobile: 10')
+    expect(provenanceHint(styleProvenance(style, 'mt', 'desktop'))).toBe('From Tablet: 8')
+    expect(provenanceHint(styleProvenance(style, 'mt', 'mobile'))).toBeUndefined()
+    expect(provenanceHint({ state: 'unset' })).toBeUndefined()
+  })
+
+  it('marks a section blue only when the device sets one of its keys', () => {
     expect(sectionMark(style, 'Spacing', 'tablet')).toBe('set')
-    expect(sectionMark(style, 'Layout', 'tablet')).toBe('inherited')
+    expect(sectionMark(style, 'Layout', 'tablet')).toBeUndefined()
     expect(sectionMark(style, 'Layout', 'mobile')).toBe('set')
     expect(sectionMark(style, 'Backgrounds', 'desktop')).toBe('set')
     expect(sectionMark(style, 'Size', 'desktop')).toBeUndefined()

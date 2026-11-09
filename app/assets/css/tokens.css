@@ -24,8 +24,17 @@
 @source inline("{,sm:,md:,lg:}font-{light,normal,medium,semibold,bold,extrabold}");
 @source inline("{,sm:,md:,lg:}text-{left,center,right,justify}");
 @source inline("border-{0,1,2,4,8}");
+@source inline("border-t-{0,1,2,4,8}");
+@source inline("border-r-{0,1,2,4,8}");
+@source inline("border-b-{0,1,2,4,8}");
+@source inline("border-l-{0,1,2,4,8}");
 @source inline("rounded-{none,sm,md,lg,xl,2xl,3xl,full}");
+@source inline("rounded-tl-{none,sm,md,lg,xl,2xl,3xl,full}");
+@source inline("rounded-tr-{none,sm,md,lg,xl,2xl,3xl,full}");
+@source inline("rounded-br-{none,sm,md,lg,xl,2xl,3xl,full}");
+@source inline("rounded-bl-{none,sm,md,lg,xl,2xl,3xl,full}");
 @source inline("shadow-{none,xs,sm,md,lg,xl,2xl}");
+@source inline("opacity-{0,5,10,20,25,30,40,50,60,70,75,80,90,95,100}");
 @source inline("{,sm:,md:,lg:}flex-{row,col,row-reverse,col-reverse}");
 @source inline("{,sm:,md:,lg:}items-{start,center,end,stretch,baseline}");
 @source inline("{,sm:,md:,lg:}justify-{start,center,end,between,around,evenly}");
@@ -33,3 +42,4 @@
 @source inline("{,sm:,md:,lg:}grid-cols-{1,2,3,4,5,6,12}");
 @source inline("{,sm:,md:,lg:}col-span-{1,2,3,4,5,6,12,full}");
 @source inline("{,sm:,md:,lg:}{hidden,block,flex,grid}");
+@source inline("{,sm:,md:,lg:}overflow-{visible,hidden,auto,scroll,clip}");

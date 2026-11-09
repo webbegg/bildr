@@ -16,7 +16,8 @@ describe('style token registry', () => {
     expect(STYLE_TOKENS.map(t => t.key)).toEqual([
       'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl', 'gap',
       'w', 'maxW', 'minH', 'bg', 'color', 'borderColor', 'text', 'font', 'align',
-      'border', 'rounded', 'shadow', 'direction', 'items', 'justify', 'self', 'cols', 'colSpan', 'display'
+      'border', 'borderT', 'borderR', 'borderB', 'borderL', 'rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl',
+      'shadow', 'opacity', 'direction', 'items', 'justify', 'self', 'cols', 'colSpan', 'display', 'overflow'
     ])
     expect(getStyleToken('direction')).toMatchObject({ prefix: 'flex', group: 'Layout', values: ['row', 'col', 'row-reverse', 'col-reverse'] })
     expect(isResponsiveToken(getStyleToken('direction')!)).toBe(true)
@@ -94,6 +95,30 @@ describe('responsive style keys', () => {
   it('generates the variant classes in the safelist', () => {
     expect(allTokenClasses()).toEqual(expect.arrayContaining(['md:grid-cols-3', 'sm:mt-10', 'lg:col-span-full', 'md:text-2xl', 'lg:self-center']))
     expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:}grid-cols-{1,2,3,4,5,6,12}");')
+  })
+})
+
+describe('Framer appearance tokens', () => {
+  it('adds opacity on a 0–100 scale, base-only', () => {
+    expect(getStyleToken('opacity')).toMatchObject({ prefix: 'opacity', group: 'Effects', values: ['0', '5', '10', '20', '25', '30', '40', '50', '60', '70', '75', '80', '90', '95', '100'] })
+    expect(styleClasses({ opacity: '50' })).toBe('opacity-50')
+    expect(styleTokenProblem('md:opacity', '50')).toBe('Style token "opacity" has no breakpoint variants (only Spacing, Size, Typography, Layout tokens do)')
+  })
+
+  it('adds a responsive overflow', () => {
+    expect(getStyleToken('overflow')).toMatchObject({ prefix: 'overflow', group: 'Layout', values: ['visible', 'hidden', 'auto', 'scroll', 'clip'] })
+    expect(styleClasses({ 'overflow': 'hidden', 'md:overflow': 'auto' })).toBe('overflow-hidden md:overflow-auto')
+    expect(allTokenClasses()).toEqual(expect.arrayContaining(['overflow-clip', 'lg:overflow-scroll']))
+  })
+
+  it('adds per-corner radius and per-side border width with the values of the all-sides token', () => {
+    const rounded = getStyleToken('rounded')!.values
+    const border = getStyleToken('border')!.values
+    expect(['roundedTl', 'roundedTr', 'roundedBr', 'roundedBl'].map(k => getStyleToken(k)!.prefix)).toEqual(['rounded-tl', 'rounded-tr', 'rounded-br', 'rounded-bl'])
+    expect(['borderT', 'borderR', 'borderB', 'borderL'].map(k => getStyleToken(k)!.prefix)).toEqual(['border-t', 'border-r', 'border-b', 'border-l'])
+    for (const k of ['roundedTl', 'roundedTr', 'roundedBr', 'roundedBl']) expect(getStyleToken(k)).toMatchObject({ group: 'Border', values: rounded })
+    for (const k of ['borderT', 'borderR', 'borderB', 'borderL']) expect(getStyleToken(k)).toMatchObject({ group: 'Border', values: border })
+    expect(styleClasses({ roundedTl: 'lg', rounded: 'md', borderB: '2' })).toBe('border-b-2 rounded-md rounded-tl-lg')
   })
 })
 
