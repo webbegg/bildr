@@ -49,6 +49,23 @@ describe('redact', () => {
     expect(redact('Could not resolve sk_test_secret123.example.com', ['sk_test_SECRET123'])).toBe('Could not resolve •••.example.com')
     expect(redact('a.b+c', ['.B+'])).toBe('a•••c')
   })
+
+  it('also replaces the punycode host form and the forms a URL normalises to', () => {
+    expect(redact('Could not resolve xn--bcher-kva.example.com', ['Bücher'])).toBe('Could not resolve •••.example.com')
+    expect(redact('GET /a?k=a%27b%20c', ['a\'b c'])).toBe('GET /a?k=•••')
+    expect(redact('GET /a|b%20c', ['a|b c'])).toBe('GET /•••')
+  })
+
+  it('only uses URL forms that cover the whole secret', () => {
+    expect(redact('abcdef is fine', ['abcd/e'])).toBe('abcdef is fine')
+    expect(redact('GET /b', ['a/../b'])).toBe('GET /b')
+  })
+
+  it('replaces secrets shorter than 4 characters only as whole tokens', () => {
+    expect(redact('Could not resolve res.example.com', ['res'])).toBe('Could not resolve •••.example.com')
+    expect(redact('k=ab&ab2=x', ['ab'])).toBe('k=•••&ab2=x')
+    expect(redact('k=abcd', ['abcd'])).toBe('k=•••')
+  })
 })
 
 describe('publicEnv, secretValues and envList', () => {

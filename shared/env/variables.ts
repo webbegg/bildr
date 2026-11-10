@@ -64,22 +64,60 @@ export function resolveEnv(text: string, vars: EnvValues, { onMissing = 'keep' }
   })
 }
 
+/** Secrets shorter than this are redacted only as whole tokens, so they do not mangle the words around them. */
+const REDACT_IN_WORDS_MIN = 4
+const WORD_CHAR = '[\\p{L}\\p{N}_]'
+const WORD_START = new RegExp(`^${WORD_CHAR}`, 'u')
+const WORD_END = new RegExp(`${WORD_CHAR}$`, 'u')
+
 /**
- * Replaces every secret value in `text` (as is and URL-encoded, ignoring
- * case, since URL hosts are lowercased) with •••; longest first, so
- * overlaps are fully covered.
+ * The forms a URL parser turns `secret` into as a host (lowercased,
+ * punycode), a path segment and a query, kept only when the parse covers
+ * the whole secret (no `/`, `?`, `#` and the like cutting it short, no
+ * whitespace the parser strips).
+ */
+function urlForms(secret: string): string[] {
+  if (/[\t\n\r#]/.test(secret) || secret.charCodeAt(secret.length - 1) <= 32) return []
+  const forms: string[] = []
+  const add = (make: () => string) => {
+    try {
+      const form = make()
+      if (form) forms.push(form)
+    } catch {
+      // Not valid in that part of a URL, so it never shows there in that form.
+    }
+  }
+  if (!/[/?@:\\]/.test(secret)) add(() => new URL(`http://${secret}`).hostname)
+  if (!/[/?\\]/.test(secret)) add(() => new URL(`http://x/${secret}`).pathname.slice(1))
+  add(() => new URL(`http://x/?${secret}`).search.slice(1))
+  return forms
+}
+
+/**
+ * Replaces every secret value in `text` (as is, URL-encoded and in the
+ * forms a URL normalises it to, ignoring case, since URL hosts are
+ * lowercased) with •••; longest first, so overlaps are fully covered.
+ * Secrets shorter than 4 characters are replaced only as whole tokens.
  */
 export function redact(text: string, secrets: string[]): string {
-  const forms = new Set<string>()
+  const forms = new Map<string, boolean>()
   for (const secret of secrets) {
     if (!secret) continue
-    forms.add(secret)
-    forms.add(encodeURIComponent(secret))
-    forms.add(encodeURI(secret))
+    const short = secret.length < REDACT_IN_WORDS_MIN
+    for (const form of [secret, encodeURIComponent(secret), encodeURI(secret), ...urlForms(secret)]) {
+      forms.set(form, short && (forms.get(form) ?? true))
+    }
   }
   if (!forms.size) return text
-  const escaped = [...forms].sort((a, b) => b.length - a.length).map(f => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-  return text.replace(new RegExp(escaped.join('|'), 'gi'), REDACTED)
+  const patterns = [...forms].sort(([a], [b]) => b.length - a.length).map(([form, short]) => {
+    const escaped = form.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    if (!short) return escaped
+    // A token boundary, like \b but Unicode-aware, at the ends that are word characters.
+    const before = WORD_START.test(form) ? `(?<!${WORD_CHAR})` : ''
+    const after = WORD_END.test(form) ? `(?!${WORD_CHAR})` : ''
+    return `${before}${escaped}${after}`
+  })
+  return text.replace(new RegExp(patterns.join('|'), 'giu'), REDACTED)
 }
 
 export function publicEnv(vars: EnvVar[]): EnvValues {

@@ -12,9 +12,14 @@ const answeredRequests = new WeakMap<object, number>()
  * (`env_*` actions, not undoable), one row each with its name, value and
  * Secret switch. Public values commit on blur or Enter; secret ones are
  * write-only, so they show masked with Replace. Turning a variable secret is
- * direct; turning a secret public asks for a new value, never revealing it.
+ * direct (with a republish reminder, since the published snapshot still holds
+ * the old public value); turning a secret public asks for a new value, never
+ * revealing it.
  */
 const editor = useEditor()
+const toast = useToast()
+// Settings' published info (same key); null once known to be unpublished.
+const { data: published } = useNuxtData(`published-${editor.projectId}`)
 
 const HELP = 'Use {{ env.NAME }} in texts, links, images, theme colours and API URLs. Secret values are only used on the server for API requests and never reach the browser.'
 const MASK = '••••••••'
@@ -49,9 +54,11 @@ function setValue(name: string, value: string) {
   void editor.runEnv('env_set', { name, value })
 }
 
-function setSecret(name: string, secret: boolean) {
-  if (secret) void editor.runEnv('env_set', { name, secret: true })
-  else startReplace(name, true)
+async function setSecret(name: string, secret: boolean) {
+  if (!secret) return startReplace(name, true)
+  if (await editor.runEnv('env_set', { name, secret: true }) && published.value !== null) {
+    toast.add({ title: `"${name}" is now secret`, description: 'Republish to remove the old value from the published app.', color: 'warning', icon: 'i-lucide-triangle-alert' })
+  }
 }
 
 function remove(name: string) {

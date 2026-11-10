@@ -32,6 +32,7 @@ async function setup() {
   const transport: Transport = async (url, init) => {
     calls.push({ url: url.href, headers: init.headers })
     if (url.hostname === 'down.example.com') throw new Error(`connect ECONNREFUSED ${url.href} (${init.headers?.authorization})`)
+    if (url.pathname === '/to-http') return new Response(null, { status: 302, headers: { location: 'http://api.example.com/character' } })
     if (url.pathname === '/character') return new Response(JSON.stringify({ results: [{ id: 1, name: 'Rick' }] }), { headers: { 'content-type': 'application/json' } })
     return new Response('nope', { status: 404 })
   }
@@ -121,6 +122,44 @@ describe('API sources with env refs', () => {
     await bildr.call('env_set', { projectId, name: 'BASE', value: 'https://blocked.example.com' }, mcp)
     await expect(bildr.call('api_source_preview', { projectId, url: '{{ env.BASE }}/x' }, mcp)).rejects.toMatchObject({ message: expect.stringContaining('Blocked address') })
     expect(calls).toHaveLength(0)
+  })
+
+  it('refuses a secret holding the whole URL when it points somewhere blocked, sending nothing', async () => {
+    const { bildr, projectId, calls } = await setup()
+    for (const value of ['http://127.0.0.1/x', 'file:///etc/passwd', 'http://[::1]/', 'https://blocked.example.com/']) {
+      await bildr.call('env_set', { projectId, name: 'URL', value, secret: true }, mcp)
+      await expect(bildr.call('api_source_preview', { projectId, url: '{{ env.URL }}' }, mcp), value).rejects.toMatchObject({ code: 'invalid' })
+    }
+    expect(calls).toHaveLength(0)
+  })
+
+  it('drops the custom headers when a redirect goes from https to http', async () => {
+    const { bildr, projectId, calls } = await setup()
+    await bildr.call('api_source_preview', { projectId, url: 'https://api.example.com/to-http', headers: SOURCE.headers }, mcp)
+    expect(calls.map(c => c.url)).toEqual(['https://api.example.com/to-http', 'http://api.example.com/character'])
+    expect(calls[0]!.headers?.authorization).toBe(`Bearer ${SECRET}`)
+    expect(calls[1]!.headers).toEqual({ 'accept': 'application/json', 'user-agent': 'bildr' })
+  })
+
+  it('caches each resolved secret separately', async () => {
+    const { bildr, projectId, calls } = await setup()
+    const preview = () => bildr.call('api_source_preview', { projectId, url: 'https://api.example.com/character', headers: [{ name: 'Authorization', value: '{{ env.K }}' }] }, mcp)
+    await bildr.call('env_set', { projectId, name: 'K', value: 'one', secret: true }, mcp)
+    await preview()
+    await bildr.call('env_set', { projectId, name: 'K', value: 'two' }, mcp)
+    await preview()
+    expect(calls.map(c => c.headers?.authorization)).toEqual(['one', 'two'])
+    expect(calls).toHaveLength(2)
+  })
+
+  it('does not echo an oversized secret in the error and keeps the stored variables', async () => {
+    const { bildr, storage, projectId } = await setup()
+    const before = await storage.getItem(`env:${projectId}`)
+    const error = await bildr.call('env_set', { projectId, name: 'API_KEY', value: 'S3CR3T'.repeat(800), secret: true }, mcp).catch((e: unknown) => e as Error & { issues?: unknown })
+    expect(error).toBeInstanceOf(Error)
+    expect(error.message).not.toContain('S3CR3T')
+    expect(JSON.stringify(error.issues ?? [])).not.toContain('S3CR3T')
+    expect(await storage.getItem(`env:${projectId}`)).toEqual(before)
   })
 
   it('refuses a resolved header value with line breaks', async () => {

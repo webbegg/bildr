@@ -63,6 +63,8 @@ Each project has one set of variables, stored outside the project document. They
 - **Secret** variables are write-only. `env_list` returns `{ name, secret: true, set: true }` without the value, and turning a secret public needs a new value. They resolve only on the server, in an API source's URL and headers. Error messages and logs show `•••` instead of their values.
 - An API source that uses an unknown variable fails with an error that names the variable.
 
+**Trust model.** Secrets are write-only for display, not out of reach. Anyone who can edit a project, including agents over `/mcp`, can send a secret to a host of their choosing by referencing it in an API source URL or header. The editor, `/api/actions` and `/mcp` are unauthenticated and meant for local development only. A secret never appears anywhere visitors can see: not in the published snapshot, `/api/published`, public reads or their errors. When you turn a public variable secret, republish, because the last snapshot still holds its old public value.
+
 ### Lists and bindings
 
 A **List** is a container bound to a collection, with the props `collection`, `limit`, `sortField`, `sortDir`, `filterField` and `filterValue`. It renders its children once per record. Any string prop inside it can use `{{ item.<field> }}` bindings, for example a Text `{{ item.name }}`, an Image `src` of `{{ item.image }}`, or a Link `to` of `/menu/{{ item.slug }}`. In the canvas, a List shows the collection's current records, or placeholder rows while it is empty.
