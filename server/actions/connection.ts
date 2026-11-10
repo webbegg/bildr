@@ -1,11 +1,14 @@
 import { z } from 'zod'
 import { detectItems, inferFields, mapItems } from '#shared/data/apiSource'
+import { detectPaging, pageSample } from '#shared/data/paging'
+import type { PageTwo } from '#shared/data/paging'
 import { ENDPOINT_METHODS, readItem, readItems } from '#shared/data/remote'
 import { createConnection } from '#shared/document/factory'
 import type { Operation } from '#shared/document/operations'
 import { ApiHeadersSchema, ApiUrlSchema, EndpointPathSchema, IdSchema, ItemsPathSchema } from '#shared/document/schema'
 import type { Connection, Project } from '#shared/document/schema'
 import { findConnection } from '../utils/remote'
+import { PagingInput } from './data'
 import { ActionError, defineAction } from './define'
 
 /**
@@ -77,7 +80,7 @@ export const connectionDelete = defineAction({
 
 export const endpointTest = defineAction({
   name: 'endpoint_test',
-  description: 'Send one request to a connection endpoint and propose a collection mapping. Read-only: not recorded in the history. Only GET runs by default; any other method can change data on the remote API (it cannot be undone), so it needs confirm: true. Returns the HTTP status and, when the response holds a list, the items path it found (or itemsPath), the first 10 raw items, the proposed fields (key, label, type, path) and the items mapped with them (sample), with the item count; for a single object, the item, the proposed fields and the sample.',
+  description: 'Send one request to a connection endpoint and propose a collection mapping. Read-only: not recorded in the history. Only GET runs by default; any other method can change data on the remote API (it cannot be undone), so it needs confirm: true. Returns the HTTP status and, when the response holds a list, the items path it found (or itemsPath), the first 10 raw items, the proposed fields (key, label, type, path) and the items mapped with them (sample), with the item count, and the paging it detected (null for none; see collection_create); with a paging (detected or given) and GET, pageTwo is page two: { count, sample } or { error }. For a single object, the item, the proposed fields and the sample.',
   input: z.object({
     projectId: IdSchema,
     connectionId: ConnectionRef,
@@ -86,22 +89,36 @@ export const endpointTest = defineAction({
     id: IdSchema.optional().describe('Replaces {id} in the path'),
     itemsPath: ItemsPathSchema.optional().describe('Read the items at this path instead of detecting them'),
     itemPath: ItemsPathSchema.optional().describe('For a single item: where it is in the response'),
-    confirm: z.boolean().optional().describe('Required for any method but GET')
+    confirm: z.boolean().optional().describe('Required for any method but GET'),
+    paging: PagingInput.optional()
   }),
   readOnly: true,
-  run: async ({ projectId, connectionId, method, path, id, itemsPath, itemPath, confirm }, ctx) => {
+  run: async ({ projectId, connectionId, method, path, id, itemsPath, itemPath, confirm, paging: given }, ctx) => {
     if (method !== 'GET' && confirm !== true) {
       throw new ActionError('invalid', `endpoint_test only sends GET unless confirm is true: a ${method} can change data on the remote API, and it cannot be undone`)
     }
     const connection = connectionIn(await ctx.services.loadProject(projectId), connectionId)
-    const { status, json } = await ctx.services.remote.test(projectId, connection, { method, path, id })
+    const first = await ctx.services.remote.test(projectId, connection, { method, path, id, paging: given })
+    const { status, json } = first
     const items = itemsPath === undefined ? undefined : readItems(json, itemsPath)
     if (itemsPath !== undefined && !items) throw new ActionError('invalid', `The API response has no list of items at "${itemsPath}"`)
     const detected = items ? { itemsPath, items } : itemPath === undefined ? detectItems(json) : null
     if (detected) {
       const fields = inferFields(detected.items)
-      const first = detected.items.slice(0, 10)
-      return { status, itemsPath: detected.itemsPath, fields, items: first, sample: mapItems(first, fields), total: detected.items.length }
+      const items = detected.items.slice(0, 10)
+      // Only the query of the path is read, never the resolved URL.
+      const relative = URL.canParse(path, 'https://base.invalid') ? new URL(path, 'https://base.invalid').href : undefined
+      const paging = detectPaging(json, first.headers, relative)
+      const result: Record<string, unknown> = { status, itemsPath: detected.itemsPath, fields, items, sample: mapItems(items, fields), total: detected.items.length, paging }
+      const tested = given ?? paging
+      // Page two is one more GET, so only a GET test reads it.
+      if (tested && method === 'GET') {
+        result.pageTwo = await ctx.services.remote.testPageTwo(projectId, connection, { method, path, id, paging: tested }, first).then(
+          (page): PageTwo => (page ? pageSample(page.json, detected.itemsPath ?? '', fields) : { count: 0, sample: [] }),
+          (error: Error): PageTwo => ({ error: error.message })
+        )
+      }
+      return result
     }
     const item = readItem(json, itemPath)
     const fields = item ? inferFields([item]) : []

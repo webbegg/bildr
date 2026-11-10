@@ -1,10 +1,12 @@
 import { z } from 'zod'
 import { detectItems, inferFields, mapItems } from '#shared/data/apiSource'
+import { detectPaging, PAGING_MAX_PAGES, PAGING_MAX_RECORDS, pageSample, queryPaged } from '#shared/data/paging'
+import type { PageTwo } from '#shared/data/paging'
 import { coerceValues, MAX_RECORD_BYTES, MAX_RECORDS_PER_COLLECTION, queryRecords, readRecord, recordBytes, RECORD_META_FIELDS } from '#shared/data/records'
 import type { DataRecord, RecordValue } from '#shared/data/records'
 import { createCollection, fieldLabel, newId, slugify } from '#shared/document/factory'
 import type { Operation } from '#shared/document/operations'
-import { ApiHeadersSchema, ApiPathSchema, ApiUrlSchema, CollectionSourceSchema, FieldKeySchema, FieldTypeSchema, IdSchema, SlugSchema } from '#shared/document/schema'
+import { ApiHeadersSchema, ApiPathSchema, ApiUrlSchema, CollectionSourceSchema, FieldKeySchema, FieldTypeSchema, IdSchema, PagingSchema, SlugSchema } from '#shared/document/schema'
 import type { Collection, Field, Project } from '#shared/document/schema'
 import { createPublicRecord } from '../utils/publicData'
 import type { PublicWriteResult } from '../utils/publicData'
@@ -33,7 +35,9 @@ const FieldInput = z.object({
 })
 
 const ItemsPathSchema = z.union([z.literal(''), ApiPathSchema]).describe('Dot path of the items array in the response, e.g. results; "" when the response is the array')
-const SourceInput = CollectionSourceSchema.describe('Where records come from: { "type": "internal" } (stored in bildr, the default), { "type": "api", "url", "itemsPath", "headers"? } (read live from a JSON endpoint, read-only; get url, itemsPath and fields from api_source_preview first) or { "type": "connection", "connectionId", "idPath"?, "endpoints": { "list"?, "get"?, "create"?, "update"?, "delete"? } } (read and written through a connection, see connection_create and endpoint_test; each endpoint { method: GET|POST|PUT|PATCH|DELETE, path relative to the base URL with {id} for the record id, itemsPath? (list) or itemPath? }; idPath is where the record id is in an item, default id)')
+export const PAGING_HINT = `paging (optional, on an api source or a list endpoint) says how the API splits its items over requests: { type: "page", param = "page", start = 1, sizeParam?, size? }, { type: "offset", param = "offset", sizeParam = "limit", size }, { type: "cursor", param, cursorPath } (where the next cursor is in the response) or { type: "next", nextPath? } (where the next page URL is, e.g. info.next; the Link header without one); each with an optional totalPath (where the total count is, e.g. info.count). Take it from the paging that api_source_preview or endpoint_test proposes. record_list then reads only the pages it needs, at most ${PAGING_MAX_PAGES} pages and ${PAGING_MAX_RECORDS} items per call; next page URLs must stay on the same origin.`
+const SourceInput = CollectionSourceSchema.describe(`Where records come from: { "type": "internal" } (stored in bildr, the default), { "type": "api", "url", "itemsPath", "headers"?, "paging"? } (read live from a JSON endpoint, read-only; get url, itemsPath, fields and paging from api_source_preview first) or { "type": "connection", "connectionId", "idPath"?, "endpoints": { "list"?, "get"?, "create"?, "update"?, "delete"? } } (read and written through a connection, see connection_create and endpoint_test; each endpoint { method: GET|POST|PUT|PATCH|DELETE, path relative to the base URL with {id} for the record id, itemsPath? and paging? (list) or itemPath? }; idPath is where the record id is in an item, default id). ${PAGING_HINT}`)
+export const PagingInput = PagingSchema.describe('Test this paging instead of the proposed one')
 
 const ENV_HINT = 'The url and header values may use {{ env.NAME }} (see env_list), resolved on the server at each fetch; put API keys in a secret variable, e.g. header Authorization: Bearer {{ env.API_KEY }}, never literally.'
 const HeadersInput = ApiHeadersSchema.describe('Up to 10 request headers { name, value }, e.g. an API key')
@@ -85,22 +89,33 @@ function findRecord(records: DataRecord[], recordId: string, collection: Collect
 
 export const apiSourcePreview = defineAction({
   name: 'api_source_preview',
-  description: `Fetch a JSON API (http(s), GET, with optional headers; private and local addresses are refused) and propose a collection mapping: the items path it detected (results, data, items, records, or the root array), fields (key, label, type, path) inferred from up to 20 items, the first 10 raw items and the same items mapped with the fields (sample), and the item count. ${API_FLOW}`,
+  description: `Fetch a JSON API (http(s), GET, with optional headers; private and local addresses are refused) and propose a collection mapping: the items path it detected (results, data, items, records, or the root array), fields (key, label, type, path) inferred from up to 20 items, the first 10 raw items and the same items mapped with the fields (sample), the item count of this response, and the paging it detected (null for none). With a paging (detected or given), pageTwo is page two: { count, sample } or { error }. ${API_FLOW}`,
   input: z.object({
     projectId: IdSchema,
     url: ApiUrlSchema.describe('The endpoint, e.g. https://rickandmortyapi.com/api/character'),
     headers: HeadersInput.optional(),
-    itemsPath: ItemsPathSchema.optional().describe('Read the items at this path instead of detecting them')
+    itemsPath: ItemsPathSchema.optional().describe('Read the items at this path instead of detecting them'),
+    paging: PagingInput.optional()
   }),
   readOnly: true,
-  run: async ({ projectId, url, headers, itemsPath }, ctx) => {
+  run: async ({ projectId, url, headers, itemsPath, paging: given }, ctx) => {
     await ctx.services.loadProject(projectId)
-    const { json } = await ctx.services.fetchApi(projectId, { url, headers })
+    const first = await ctx.services.fetchApi(projectId, { url, headers })
+    const { json } = first
     const detected = itemsPath === undefined ? detectItems(json) : { itemsPath, items: apiItems(json, itemsPath) }
     if (!detected) throw new ActionError('invalid', 'No list of items found in the API response; pass itemsPath to point at one')
     const fields = inferFields(detected.items)
     const items = detected.items.slice(0, 10)
-    return { itemsPath: detected.itemsPath, fields, items, sample: mapItems(items, fields), total: detected.items.length }
+    const paging = detectPaging(json, first.headers, url)
+    const result: Record<string, unknown> = { itemsPath: detected.itemsPath, fields, items, sample: mapItems(items, fields), total: detected.items.length, paging }
+    const tested = given ?? paging
+    if (tested) {
+      result.pageTwo = await ctx.services.previewPageTwo(projectId, { url, headers }, tested, first).then(
+        (page): PageTwo => (page ? pageSample(page.json, detected.itemsPath, fields) : { count: 0, sample: [] }),
+        (error: Error): PageTwo => ({ error: error.message })
+      )
+    }
+    return result
   }
 })
 
@@ -227,7 +242,7 @@ export const fieldRemove = defineAction({
 
 export const recordList = defineAction({
   name: 'record_list',
-  description: 'List a collection\'s records ({ id, createdAt, updatedAt, values }, one value per field, null when empty) with the total count. Optional: filter by field equality, sort by a field (or createdAt/updatedAt; empty values last), limit and offset. Without a sort, records are in creation order. API collections, and connection collections through their list endpoint, return the fetched page of items (cached 60 s, refreshed after each write) mapped with their fields; the query applies to that page.',
+  description: `List a collection's records ({ id, createdAt, updatedAt, values }, one value per field, null when empty) with the total count. Optional: filter by field equality, sort by a field (or createdAt/updatedAt; empty values last), limit and offset. Without a sort, records are in creation order. API collections, and connection collections through their list endpoint, return the fetched page of items (cached 60 s, refreshed after each write) mapped with their fields; the query applies to that page. With paging, offset and limit select remote items and only the pages holding them are fetched (at most ${PAGING_MAX_PAGES} pages and ${PAGING_MAX_RECORDS} items per call; past that the result is cut); a filter or sort applies to the pages read from the start within those caps. Paged results add hasMore (more items follow), and total is the API's total when the paging has a totalPath, else the number of items known so far.`,
   input: z.object({
     projectId: IdSchema,
     collection: CollectionRef,
@@ -241,10 +256,19 @@ export const recordList = defineAction({
   }),
   readOnly: true,
   run: async ({ projectId, collection: ref, filter, sort, limit, offset }, ctx) => {
-    const { collection, records } = await loadCollection(ctx, projectId, ref)
+    const project = await ctx.services.loadProject(projectId)
+    const collection = findCollection(project, ref)
     if (sort && !collection.fields.some(f => f.key === sort.field) && !(RECORD_META_FIELDS as readonly string[]).includes(sort.field)) {
       throw new ActionError('invalid', `Cannot sort by "${sort.field}": not a field of "${collection.name}"`)
     }
+    if (ctx.services.isPaged(collection)) {
+      const load = async (from: number, count: number) => {
+        const page = await ctx.services.collectionPage(project.id, collection, project.connections, { offset: from, limit: count })
+        return { ...page, records: page.records.map(r => readRecord(collection.fields, r)) }
+      }
+      return queryPaged(load, { filter: filter && checkValues(collection, filter), sort, limit, offset })
+    }
+    const records = await ctx.services.collectionRecords(project.id, collection, project.connections)
     return queryRecords(records.map(r => readRecord(collection.fields, r)), {
       filter: filter && checkValues(collection, filter),
       sort,

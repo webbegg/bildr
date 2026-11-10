@@ -1,4 +1,7 @@
 import { itemsAt, mapItems } from '#shared/data/apiSource'
+import { PAGING_MAX_RECORDS, sourcePaging } from '#shared/data/paging'
+import type { PagedRecords, Paging } from '#shared/data/paging'
+import { remoteId } from '#shared/data/remote'
 import type { DataRecord } from '#shared/data/records'
 import { defaultTheme } from '#shared/design/theme'
 import { applyOperations } from '#shared/document/operations'
@@ -36,6 +39,11 @@ function withDefaults(project: Project): Project {
   project.connections ??= []
   for (const collection of project.collections) collection.source ??= { type: 'internal' }
   return project
+}
+
+interface ApiSourceInput {
+  url: string
+  headers?: ApiHeader[]
 }
 
 export interface ServicesOptions {
@@ -89,7 +97,12 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
    * the full checks in the fetcher; every failure message is redacted, so it
    * never carries a secret value.
    */
-  async function fetchApi(projectId: string, source: { url: string, headers?: ApiHeader[] }): Promise<ApiResponse> {
+  async function fetchApi(projectId: string, source: ApiSourceInput): Promise<ApiResponse> {
+    return withApiSource(projectId, source, ({ url, headers }) => api.fetchJson(url, { headers }))
+  }
+
+  /** Runs `task` with the source's URL and headers resolved, its failure messages redacted. */
+  async function withApiSource<T>(projectId: string, source: ApiSourceInput, task: (resolved: { url: string, headers: Record<string, string> }) => Promise<T>): Promise<T> {
     const vars = await env.list(projectId)
     const values = allEnv(vars)
     const onMissing = (name: string): never => {
@@ -104,11 +117,52 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
       headers[header.name.toLowerCase()] = value
     }
     try {
-      return await api.fetchJson(url, { headers })
+      return await task({ url, headers })
     } catch (error) {
       const message = redact(error instanceof Error ? error.message : String(error), secretValues(vars))
       throw new ActionError(error instanceof ActionError ? error.code : 'invalid', message)
     }
+  }
+
+  /** The origin of an API source's resolved URL, which its next-page URLs must keep. */
+  const originOf = (url: string): string => {
+    try {
+      return new URL(url).origin
+    } catch {
+      throw new ActionError('invalid', 'Invalid URL')
+    }
+  }
+
+  async function collectionPage(projectId: string, collection: Collection, connections: Connection[] | undefined, { offset, limit }: { offset: number, limit: number }): Promise<PagedRecords> {
+    const { source } = collection
+    if (source.type === 'connection' && source.endpoints.list?.paging) {
+      return remote.page(projectId, connections ?? (await loadProject(projectId)).connections, collection, { offset, limit })
+    }
+    if (source.type === 'api' && source.paging) {
+      const paging = source.paging
+      const { items, total, hasMore, fetchedAt } = await withApiSource(projectId, source, ({ url, headers }) =>
+        api.fetchPages(url, { headers, paging, itemsPath: source.itemsPath, origin: originOf(url), offset, limit }))
+      const rows = mapItems(items, collection.fields)
+      const records = rows.map((row, i) => ({ id: remoteId(items[i]) ?? String(offset + i), createdAt: fetchedAt, updatedAt: fetchedAt, values: row.values }))
+      return { records, total, hasMore }
+    }
+    const all = await collectionRecords(projectId, collection, connections)
+    return { records: all.slice(offset, offset + limit), total: all.length, hasMore: false }
+  }
+
+  /**
+   * A collection's records: stored ones, or for an API or connection
+   * collection the fetched items mapped with its fields (for a paged one,
+   * the pages up to the caps). A connection collection reads through
+   * `connections` (the published ones for public reads), the draft's when
+   * left out.
+   */
+  async function collectionRecords(projectId: string, collection: Collection, connections?: Connection[]): Promise<DataRecord[]> {
+    if (collection.source.type === 'internal') return records.list(projectId, collection.id)
+    if (collection.source.type === 'connection') return remote.list(projectId, connections ?? (await loadProject(projectId)).connections, collection)
+    if (collection.source.paging) return (await collectionPage(projectId, collection, connections, { offset: 0, limit: PAGING_MAX_RECORDS })).records
+    const { json, fetchedAt } = await fetchApi(projectId, collection.source)
+    return apiRecords(json, fetchedAt, collection, collection.source.itemsPath)
   }
 
   async function commit(ctx: ActionContext, project: Project, ops: Operation[]): Promise<{ project: Project, inverse: Operation[] }> {
@@ -129,18 +183,24 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
     storage,
     loadProject,
     fetchApi,
+    collectionRecords,
 
     /**
-     * A collection's records: stored ones, or for an API or connection
-     * collection the fetched items mapped with its fields. A connection
-     * collection reads through `connections` (the published ones for public
-     * reads), the draft's when left out.
+     * Records `offset` to `offset + limit - 1` with the total and whether more
+     * follow: a paged API or connection collection reads only the pages it
+     * needs (within the paging caps); any other is read whole and sliced.
      */
-    async collectionRecords(projectId: string, collection: Collection, connections?: Connection[]): Promise<DataRecord[]> {
-      if (collection.source.type === 'internal') return records.list(projectId, collection.id)
-      if (collection.source.type === 'connection') return remote.list(projectId, connections ?? (await loadProject(projectId)).connections, collection)
-      const { json, fetchedAt } = await fetchApi(projectId, collection.source)
-      return apiRecords(json, fetchedAt, collection, collection.source.itemsPath)
+    collectionPage,
+
+    /** Whether a collection's list is paged (see `shared/data/paging`). */
+    isPaged: (collection: Collection): boolean => sourcePaging(collection.source) !== undefined,
+
+    /** Page two of an API source preview whose first page was `first`; null when there is none. Failures are redacted. */
+    async previewPageTwo(projectId: string, source: ApiSourceInput, paging: Paging, first: ApiResponse): Promise<ApiResponse | null> {
+      return withApiSource(projectId, source, async ({ url, headers }) => {
+        const next = api.pageTwoUrl(url, paging, first, originOf(url))
+        return next === null ? null : api.fetchJson(next, { headers })
+      })
     },
 
     /** Applies `ops` atomically, saves, and records one undo step named `label`. */

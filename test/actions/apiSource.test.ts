@@ -111,8 +111,8 @@ describe('API collections', () => {
     expect(dead.records.map(r => r.values.externalId)).toEqual([16, 13])
 
     expect(await bildr.call('record_get', { projectId, collection: 'characters', recordId: '3' }, mcp)).toMatchObject({ values: { name: 'Summer Smith' } })
-    // Preview + three reads within 60 s hit the API once.
-    expect(requests()).toBe(1)
+    // Preview + three reads within 60 s hit the API once; the preview also samples the page two its proposed paging (info.count) points at.
+    expect(requests()).toBe(2)
   })
 
   it('refuses record writes', async () => {

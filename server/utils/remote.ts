@@ -1,4 +1,6 @@
 import { apiUrlProblem } from '#shared/data/apiSource'
+import { pageRequest, PAGING_MAX_RECORDS, withQuery } from '#shared/data/paging'
+import type { PagedRecords, Paging } from '#shared/data/paging'
 import { coerceValues, MAX_RECORD_BYTES, recordBytes } from '#shared/data/records'
 import type { DataRecord, RecordValue } from '#shared/data/records'
 import { bodyFor, buildEndpointUrl, missingEndpointMessage, readItem, readItems, remoteId, remoteRows } from '#shared/data/remote'
@@ -16,7 +18,8 @@ import type { EnvStore } from './envStore'
  * project's variables (secrets included), builds the URL on the base URL's
  * origin (`buildEndpointUrl`) and sends it through the SSRF-guarded fetcher.
  * GET reads share the API sources' 60 s cache; writes are never cached and
- * drop the cached list (and record) of their collection. Every failure
+ * drop the cached list (every page of it) and record of their collection.
+ * A paged list's next URLs must stay on the base URL's origin. Every failure
  * message is redacted, so it never carries a secret value.
  */
 
@@ -34,6 +37,8 @@ export interface EndpointTestInput {
   method: string
   path: string
   id?: string
+  /** A GET then asks for the first page of this paging. */
+  paging?: Paging
 }
 
 function sourceOf(collection: Collection): ConnectionSource {
@@ -149,8 +154,24 @@ export function createRemote(api: ApiFetcher, env: EnvStore) {
     return resolve(projectId, findConnection(connections, sourceOf(collection).connectionId))
   }
 
+  /** Items `offset` to `offset + limit - 1` of a paged list, within the paging caps. */
+  async function page(projectId: string, connections: Connection[], collection: Collection, { offset, limit }: { offset: number, limit: number }): Promise<PagedRecords> {
+    const endpoint = endpointOf(collection, 'list')
+    const paging = endpoint.paging ?? fail(`"${collection.name}" has no paging`)
+    const target = await connectionTarget(projectId, connections, collection)
+    return redacted(target.secrets, async () => {
+      const origin = new URL(target.baseUrl).origin
+      const { items, total, hasMore, fetchedAt } = await api.fetchPages(urlFor(target, endpoint.path), { headers: target.headers, paging, itemsPath: endpoint.itemsPath, origin, offset, limit })
+      const { idPath } = sourceOf(collection)
+      const records = remoteRows(items, collection.fields, idPath).map((row, i) => ({ id: remoteId(items[i], idPath) ?? String(offset + i), createdAt: fetchedAt, updatedAt: fetchedAt, values: row.values }))
+      return { records, total, hasMore }
+    })
+  }
+
+  /** Every item of the list; for a paged one, the pages up to the caps. */
   async function list(projectId: string, connections: Connection[], collection: Collection): Promise<DataRecord[]> {
     const endpoint = endpointOf(collection, 'list')
+    if (endpoint.paging) return (await page(projectId, connections, collection, { offset: 0, limit: PAGING_MAX_RECORDS })).records
     const target = await connectionTarget(projectId, connections, collection)
     return redacted(target.secrets, async () => {
       const { json, fetchedAt } = await read(target, urlFor(target, endpoint.path))
@@ -189,6 +210,7 @@ export function createRemote(api: ApiFetcher, env: EnvStore) {
 
   return {
     list,
+    page,
     get,
 
     async create(projectId: string, connections: Connection[], collection: Collection, values: Record<string, RecordValue>): Promise<DataRecord> {
@@ -216,9 +238,22 @@ export function createRemote(api: ApiFetcher, env: EnvStore) {
     },
 
     /** One request to a connection, uncached, for endpoint_test; the caller decides which methods may run. */
-    async test(projectId: string, connection: Connection, { method, path, id }: EndpointTestInput): Promise<SendResponse> {
+    async test(projectId: string, connection: Connection, { method, path, id, paging }: EndpointTestInput): Promise<SendResponse> {
       const target = await resolve(projectId, connection)
-      return redacted(target.secrets, async () => api.send(urlFor(target, path, id), { method, headers: target.headers }))
+      return redacted(target.secrets, async () => {
+        const url = urlFor(target, path, id)
+        return api.send(paging && method === 'GET' ? withQuery(url, pageRequest(paging, 0)) : url, { method, headers: target.headers })
+      })
+    },
+
+    /** The page after a GET `test` answered `first`, uncached; null when there is none. */
+    async testPageTwo(projectId: string, connection: Connection, { path, id, paging }: EndpointTestInput & { paging: Paging }, first: SendResponse): Promise<SendResponse | null> {
+      const target = await resolve(projectId, connection)
+      return redacted(target.secrets, async () => {
+        const url = withQuery(urlFor(target, path, id), pageRequest(paging, 0))
+        const next = api.pageTwoUrl(url, paging, first, new URL(target.baseUrl).origin)
+        return next === null ? null : api.send(next, { method: 'GET', headers: target.headers })
+      })
     }
   }
 }

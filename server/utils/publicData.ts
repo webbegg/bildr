@@ -1,5 +1,7 @@
 import { coerceValues, MAX_RECORD_BYTES, MAX_RECORDS_PER_COLLECTION, queryRecords, readRecord, recordBytes } from '#shared/data/records'
 import type { DataRecord } from '#shared/data/records'
+import { queryPaged } from '#shared/data/paging'
+import type { PagedRecords } from '#shared/data/paging'
 import { newId } from '#shared/document/factory'
 import type { Collection, PublishedSnapshot } from '#shared/document/schema'
 import { parseListSearch, toRecordQuery } from '#shared/runtime/list'
@@ -87,6 +89,22 @@ export async function createPublicRecord({ snapshot, collectionSlug, body, store
   if (recordBytes(record) > MAX_RECORD_BYTES) return { ok: false, status: 413, message: `A record can be at most ${MAX_RECORD_BYTES / 1024} KB` }
   await store.save(snapshot.project.id, collection.id, [...records, record])
   return { ok: true, record }
+}
+
+/**
+ * `publicRecords` for a paged API or connection collection: `load` reads the
+ * window (or, for a filter or sort, the pages from the start), within the
+ * paging caps, so a limit of up to 100 is filled across remote pages.
+ */
+export async function publicPagedRecords(collection: Collection, load: (offset: number, limit: number) => Promise<PagedRecords>, params: Record<string, unknown>): Promise<PagedRecords | { problem: string }> {
+  const search = parseListSearch(params)
+  if ('problem' in search) return search
+  const query = toRecordQuery(collection, search.query)
+  if ('problem' in query) return query
+  return queryPaged(async (offset, limit) => {
+    const page = await load(offset, limit)
+    return { ...page, records: page.records.map(r => readRecord(collection.fields, r)) }
+  }, query.query)
 }
 
 /** Queries `stored` with the endpoint's search params (see `listSearch`). */

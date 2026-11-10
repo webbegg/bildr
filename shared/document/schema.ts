@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { API_PATH, API_PATH_HINT, API_PATH_MAX, apiUrlProblem } from '../data/apiSource'
+import { PAGE_SIZE_MAX, PAGING_PARAM, PAGING_PARAM_HINT } from '../data/paging'
 import { ENDPOINT_METHODS, endpointPathProblem } from '../data/remote'
 import { defaultTheme, ThemeSchema } from '../design/theme'
 import { styleTokenProblem } from '../design/tokens'
@@ -118,11 +119,33 @@ export const EndpointPathSchema = z.string().superRefine((path, ctx) => {
   if (problem) ctx.addIssue({ code: 'custom', message: problem })
 })
 
+const PagingParamSchema = z.string().max(64).regex(PAGING_PARAM, PAGING_PARAM_HINT)
+const PageSizeSchema = z.number().int().min(1).max(PAGE_SIZE_MAX)
+const PagingTotal = { totalPath: ApiPathSchema.optional() }
+
+/**
+ * How a list splits its items over requests: numbered pages (`start` is the
+ * first page's number), offsets, a cursor read at `cursorPath`, or a full
+ * next-page URL at `nextPath` (the Link header's `rel="next"` without one).
+ * `totalPath` is where the total item count is, when the API gives one.
+ */
+export const PagingSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('page'), param: PagingParamSchema.default('page'), start: z.union([z.literal(0), z.literal(1)]).default(1), sizeParam: PagingParamSchema.optional(), size: PageSizeSchema.optional(), ...PagingTotal }),
+  z.object({ type: z.literal('offset'), param: PagingParamSchema.default('offset'), sizeParam: PagingParamSchema.default('limit'), size: PageSizeSchema, ...PagingTotal }),
+  z.object({ type: z.literal('cursor'), param: PagingParamSchema, cursorPath: ApiPathSchema, ...PagingTotal }),
+  z.object({ type: z.literal('next'), nextPath: ApiPathSchema.optional(), ...PagingTotal })
+]).superRefine((paging, ctx) => {
+  if ('sizeParam' in paging && paging.sizeParam === paging.param) ctx.addIssue({ code: 'custom', path: ['sizeParam'], message: 'The page and size parameters must differ' })
+  if (paging.type === 'page' && paging.sizeParam && !paging.size) ctx.addIssue({ code: 'custom', path: ['size'], message: 'Set the page size sent in the size parameter' })
+})
+
+export type Paging = z.infer<typeof PagingSchema>
+
 const EndpointBase = { method: z.enum(ENDPOINT_METHODS), path: EndpointPathSchema }
 /** Reads are cached and may run from a published app, so they never write. */
 const ReadMethodSchema = z.literal('GET', { error: 'List and Get endpoints use GET' })
-/** `itemsPath`: where the items array is in the response (the root by default). */
-export const ListEndpointSchema = z.object({ ...EndpointBase, method: ReadMethodSchema, itemsPath: ItemsPathSchema.optional() })
+/** `itemsPath`: where the items array is in the response (the root by default); `paging`: one request when left out. */
+export const ListEndpointSchema = z.object({ ...EndpointBase, method: ReadMethodSchema, itemsPath: ItemsPathSchema.optional(), paging: PagingSchema.optional() })
 /** `itemPath`: where the item is in the response (the root by default). */
 export const ItemEndpointSchema = z.object({ ...EndpointBase, itemPath: ItemsPathSchema.optional() })
 export const GetEndpointSchema = ItemEndpointSchema.extend({ method: ReadMethodSchema })
@@ -162,7 +185,8 @@ export const CollectionSourceSchema = z.discriminatedUnion('type', [
     type: z.literal('api'),
     url: ApiUrlSchema,
     itemsPath: z.union([z.literal(''), ApiPathSchema]),
-    headers: ApiHeadersSchema.optional()
+    headers: ApiHeadersSchema.optional(),
+    paging: PagingSchema.optional()
   }),
   z.object({
     type: z.literal('connection'),

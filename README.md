@@ -66,7 +66,26 @@ A **connection collection** has the source `{ type: 'connection', connectionId, 
 - `record_list` uses `list` (cached 60 s like API sources), `record_get` uses `get` (or `list` filtered by id), and `record_create`, `record_update` and `record_delete` use theirs. Create and update send the values as JSON, each at its field's `path` (dot paths nest) or its key. A `PUT` update sends the whole record, read first; other methods send the changed values. Writes are never cached, and each one clears the collection's cached list. A record is at most 10 KB, as in internal collections, for editors, agents and published forms alike (a published form gets `413`).
 - A missing endpoint fails with an error such as "This collection has no Update endpoint". Errors never show secret values (`•••`).
 - Writes go to an external system, so they cannot be undone.
-- Actions: `connection_create` (`{ name, baseUrl, headers? }`), `connection_update`, `connection_delete` (refused while collections use the connection, unless `force: true`, which deletes them too in one undo step), and `endpoint_test` (`{ connectionId, method, path, id?, itemsPath?, itemPath?, confirm? }`). `endpoint_test` is read-only and not in the history. It sends `GET` only, or another method with `confirm: true`, and returns the status, the items, the proposed fields and a mapped sample.
+- Actions: `connection_create` (`{ name, baseUrl, headers? }`), `connection_update`, `connection_delete` (refused while collections use the connection, unless `force: true`, which deletes them too in one undo step), and `endpoint_test` (`{ connectionId, method, path, id?, itemsPath?, itemPath?, confirm?, paging? }`). `endpoint_test` is read-only and not in the history. It sends `GET` only, or another method with `confirm: true`, and returns the status, the items, the proposed fields, a mapped sample and the proposed `paging` (see below).
+
+### Paging
+
+A connection's `list` endpoint and an API source can have an optional `paging`, which says how the API splits its items over requests. Without it, a list is one request, as before.
+
+- `{ type: 'page', param = 'page', start = 1, sizeParam?, size? }`: numbered pages; `start` is the first page's number (0 or 1). With a `sizeParam`, `size` is sent too.
+- `{ type: 'offset', param = 'offset', sizeParam = 'limit', size }`: item offsets, `size` items a page.
+- `{ type: 'cursor', param, cursorPath }`: the next page's cursor is at `cursorPath` in the response and is sent as `param`.
+- `{ type: 'next', nextPath? }`: the next page's URL is at `nextPath` (for example `info.next`), or in the `Link` header's `rel="next"` when there is no `nextPath`.
+
+Each can also have a `totalPath`, where the total item count is (for example `info.count`). Parameter names are query-safe tokens (letters, digits, `_`, `.`, `-`, `~`, and `[...]` as in `page[size]`), `size` is 1 to 500, and the paths follow the items-path rules.
+
+- `record_list` with `offset` and `limit` reads only the pages that hold those items: `page` and `offset` jump straight to them, `cursor` and `next` walk from the first page in order. A filter or sort applies to the pages read from the start.
+- **Caps:** at most 20 pages and 1,000 items per call. Past either, the result is cut (truncated, not refused) and `hasMore` is `true`.
+- Paged results are `{ records, total, hasMore }`. `total` is the API's total when there is a `totalPath`, otherwise the number of items known so far, and `hasMore` says whether more follow. Unpaged lists keep `{ records, total }`.
+- Each page is cached for 60 s like a list, keyed by its URL and headers. A write drops every cached page of its collection.
+- **Next URLs** (from `nextPath` or the `Link` header) are resolved against the URL of the page that gave them, and must stay on the connection's base-URL origin, or for an API source the source URL's origin. Then the SSRF guard runs on them as on any URL. A next URL on another origin (another host, scheme or port, a `//host` URL or a `user@host` trick) stops paging with "The API's next page is on another site", and nothing is sent there. Cursors and page numbers go into the query encoded, so they cannot change the path. A redirect to another origin still drops the headers.
+- `record_get` without a `get` endpoint scans the list pages, within the caps. Public reads fill their `limit` (at most 100) across pages, within the caps.
+- **Detection.** `api_source_preview` and `endpoint_test` (list responses) propose a `paging` from common shapes: `info.next` (with `info.count`), `next`, `links.next`, `meta.next_cursor`, `next_cursor`, `page`/`per_page`/`total`, `skip`/`offset` with `limit`, `meta.total`, and a `Link` header. It is `null` when none is found; the user or agent confirms it. With a paging (the proposed one, or one passed as `paging`), a `GET` test also reads page two once and returns `pageTwo`: `{ count, sample }`, or `{ error }` when it cannot be read.
 
 ### Environment variables
 
@@ -93,7 +112,7 @@ A **List** is a container bound to a collection, with the props `collection`, `l
 
 Published apps read and write data through `/api/public/<project-slug>/<collection-slug>`. They follow the **published** snapshot, so a flag change takes effect when you publish.
 
-- `GET` works only for `publicRead` collections. It returns `{ total, records }` with the declared fields only, at most 100 records per page. Query parameters: `limit`, `offset`, `sort`, `dir` (`asc` or `desc`) and `filter[<field>]=<value>`.
+- `GET` works only for `publicRead` collections. It returns `{ total, records }` (plus `hasMore` for [paged](#paging) collections) with the declared fields only, at most 100 records per page. Query parameters: `limit`, `offset`, `sort`, `dir` (`asc` or `desc`) and `filter[<field>]=<value>`.
 - `POST` with JSON `{ "values": { "<field>": <value> } }` works only for `publicCreate` collections that are internal, or connection collections with a `create` endpoint (the record goes to that endpoint, through the published connection). It answers `201 { id }`. There is no public update or delete, for any collection; other methods (HEAD included) answer `405`.
 - There is no same-origin check, because published apps may be embedded anywhere. **Any website can post to a `publicCreate` collection.** The collection flags and these limits are the only protection:
   - Only declared fields are kept, and each value must fit its field type. Fields are never required.
