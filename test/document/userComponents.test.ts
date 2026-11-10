@@ -133,6 +133,19 @@ describe('component definitions: bindings', () => {
     expectProblem(withComponents([leaf]), 'container')
   })
 
+  it('refuses two slot properties bound to the same node', () => {
+    const def = card()
+    def.properties.push({ id: 'again', name: 'Again', kind: 'slot', bindings: [{ nodeId: 'c-body', prop: 'children' }] })
+    expectProblem(withComponents([def]), 'Slots "Body" and "Again" of "Card" are bound to the same node "c-body"')
+  })
+
+  it('refuses a slot property inside another slot\'s container', () => {
+    const def = card()
+    def.root.children[1]!.children.push(n('c-inner', 'Container'))
+    def.properties.push({ id: 'inner', name: 'Inner', kind: 'slot', bindings: [{ nodeId: 'c-inner', prop: 'children' }] })
+    expectProblem(withComponents([def]), 'Slot "Inner" of "Card" is inside slot "Body"')
+  })
+
   it('rejects a default that does not fit the property', () => {
     const def = card()
     def.properties[0]!.default = 5

@@ -92,6 +92,15 @@ describe('resolvePageWithLayout', () => {
     expect(find(defaults, 'proot/@l-badge')!.props.text).toBe('Default badge')
   })
 
+  it('shows a layout edit of a bound prop on every page without a stored default, and keeps a stored default over it', () => {
+    const layout = main()
+    layout.root.children[1]!.props.text = 'Edited badge'
+    expect(find(resolvePageWithLayout(page({ layoutId: 'main' }), [layout], []), 'proot/@l-badge')!.props.text).toBe('Edited badge')
+    expect(find(resolvePageWithLayout(page({ layoutId: 'main', layoutValues: { badge: 'Own' } }), [layout], []), 'proot/@l-badge')!.props.text).toBe('Own')
+    layout.variables[1]!.default = 'Stored'
+    expect(find(resolvePageWithLayout(page({ layoutId: 'main' }), [layout], []), 'proot/@l-badge')!.props.text).toBe('Stored')
+  })
+
   it('renders a known variable without value empty and keeps unknown refs as written', () => {
     const layout = main()
     layout.root.children[0]!.props.text = '{{ layout.Badge }}|{{ layout.Nope }}|{{ item.name }}'

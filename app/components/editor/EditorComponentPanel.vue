@@ -72,12 +72,11 @@ function addProperty(item: string) {
   }
   const propDef = getComponent(node.type)?.props.find(p => p.name === item)
   if (!propDef) return
-  const value = node.props[item]
+  // No stored default: the node's own value is the default, so editing it reaches every instance.
   editor.run('component_property_add', {
     componentId: def.value.id,
     name: uniqueComponentName(propDef.label, taken),
     kind: propDef.kind,
-    ...(value === undefined ? {} : { default: value }),
     bindings: [{ nodeId: node.id, prop: item }]
   })
 }

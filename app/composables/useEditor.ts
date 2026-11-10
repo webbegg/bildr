@@ -147,7 +147,7 @@ export function createEditor(projectId: string) {
    * applied, or in the layout view the layout's tree, as a page of its own.
    */
   const page = computed<Page | null>(() => {
-    if (component.value) return { id: component.value.id, name: component.value.name, slug: currentPage.value?.slug ?? '', root: applyVariant(component.value.root, variant.value) }
+    if (component.value) return { id: component.value.id, name: component.value.name, slug: currentPage.value?.slug ?? '', root: applyVariant(component.value.root, variant.value, component.value.properties) }
     if (layout.value) return { id: layout.value.id, name: layout.value.name, slug: currentPage.value?.slug ?? '', root: layout.value.root }
     return currentPage.value
   })

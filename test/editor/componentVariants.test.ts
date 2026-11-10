@@ -43,6 +43,23 @@ describe('applyVariant', () => {
     const def = card()
     expect(applyVariant(def.root, null)).toBe(def.root)
   })
+
+  it('resolves bound props in the runtime order: variant override, else stored default, else the node\'s own value', () => {
+    const def = card()
+    def.root.children.push(n('c-sub', 'Text', { text: 'Own sub' }))
+    def.properties = [
+      { id: 'title', name: 'Title', kind: 'text', default: 'Stored', bindings: [{ nodeId: 'c-title', prop: 'text' }] },
+      { id: 'level', name: 'Level', kind: 'select', default: '4', bindings: [{ nodeId: 'c-title', prop: 'level' }] },
+      { id: 'sub', name: 'Sub', kind: 'text', bindings: [{ nodeId: 'c-sub', prop: 'text' }] }
+    ]
+    const variant = applyVariant(def.root, dark, def.properties)
+    expect(variant.children[0]!.props).toEqual({ text: 'Night', level: '4' })
+    expect(variant.children[2]!.props.text).toBe('Own sub')
+    const primary = applyVariant(def.root, null, def.properties)
+    expect(primary.children[0]!.props).toEqual({ text: 'Stored', level: '4' })
+    expect(primary.children[2]!.props.text).toBe('Own sub')
+    expect(def.root.children[0]!.props).toEqual({ text: 'Day', level: '2' })
+  })
 })
 
 describe('overrides of a node', () => {

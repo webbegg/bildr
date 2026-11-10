@@ -54,6 +54,26 @@ describe('resolveInstance', () => {
     expect(find(resolveInstance(instance(), [def])!, 'i1/title')?.props.text).toBe('Own')
   })
 
+  it('applies a variant\'s override of a bound prop over the property default, under the instance value', () => {
+    const def = card()
+    def.variants[0]!.overrides.title!.props = { text: 'Night' }
+    expect(find(resolveInstance(instance({ variant: 'dark' }), [def])!, 'i1/title')?.props.text).toBe('Night')
+    expect(find(resolveInstance(instance({ 'variant': 'dark', 'p-title': 'Own' }), [def])!, 'i1/title')?.props.text).toBe('Own')
+    expect(find(resolveInstance(instance(), [def])!, 'i1/title')?.props.text).toBe('Hi')
+    delete def.properties[0]!.default
+    expect(find(resolveInstance(instance({ variant: 'dark' }), [def])!, 'i1/title')?.props.text).toBe('Night')
+  })
+
+  it('shows a primary edit of a bound prop in every instance without a stored default, and keeps a stored default over it', () => {
+    const def = card()
+    def.root.children[0]!.props.text = 'Edited'
+    expect(find(resolveInstance(instance(), [def])!, 'i1/title')?.props.text).toBe('Hi')
+    delete def.properties[0]!.default
+    expect(find(resolveInstance(instance(), [def])!, 'i1/title')?.props.text).toBe('Edited')
+    expect(find(resolveInstance(instance({ variant: 'dark' }), [def])!, 'i1/title')?.props.text).toBe('Edited')
+    expect(find(resolveInstance(instance({ 'p-title': 'Own' }), [def])!, 'i1/title')?.props.text).toBe('Own')
+  })
+
   it('merges the variant\'s sparse overrides over the primary', () => {
     const title = find(resolveInstance(instance({ variant: 'dark' }), [card()])!, 'i1/title')!
     expect(title.props.level).toBe('3')

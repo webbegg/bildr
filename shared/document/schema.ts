@@ -505,6 +505,11 @@ export function componentProblems(components: ComponentDefinition[]): ComponentP
       if (property.kind === 'slot' && property.bindings.length !== 1) add([...at, 'bindings'], `Slot "${property.name}" must bind exactly one container node`)
       for (const problem of propertyProblems(property, nodes, 'Property')) add([...at, ...problem.path], problem.message)
     })
+    const slots = def.properties.flatMap((property, p) => {
+      const nodeId = property.kind === 'slot' ? property.bindings[0]?.nodeId : undefined
+      return nodeId === undefined ? [] : [{ p, name: property.name, nodeId }]
+    })
+    for (const { index, message } of slotPlacementProblems(slots, nodes, def.name)) add([i, 'properties', slots[index]!.p, 'bindings', 0], message)
 
     const variantIds = new Set<string>()
     def.variants.forEach((variant, v) => {
@@ -577,7 +582,6 @@ export function layoutProblems(layouts: Layout[], components: ComponentDefinitio
 
     if (layout.slots.filter(s => s.id === CHILDREN_SLOT).length !== 1) add([i, 'slots'], `Layout "${layout.name}" must have exactly one children slot`)
     const slotIds = new Set<string>()
-    const slotNodes = new Map<string, LayoutSlot>()
     layout.slots.forEach((slot, s) => {
       const at = [i, 'slots', s]
       if (slotIds.has(slot.id) && slot.id !== CHILDREN_SLOT) add([...at, 'id'], `Duplicate slot id "${slot.id}" in "${layout.name}"`)
@@ -585,15 +589,8 @@ export function layoutProblems(layouts: Layout[], components: ComponentDefinitio
       const node = nodes.get(slot.nodeId)
       if (!node) add([...at, 'nodeId'], `Slot "${slot.name}" is bound to the missing node "${slot.nodeId}"`)
       else if (!isContainerType(node.type) || node.type === INSTANCE_TYPE || node.type === SLOT_FILL_TYPE) add([...at, 'nodeId'], `Slot "${slot.name}" must bind a container node, not "${node.type}"`)
-      // A slot's content replaces its node's children, so a second slot there or below it would never show.
-      const same = slotNodes.get(slot.nodeId)
-      if (same) add([...at, 'nodeId'], `Slots "${same.name}" and "${slot.name}" of "${layout.name}" are bound to the same node "${slot.nodeId}"`)
-      slotNodes.set(slot.nodeId, slot)
     })
-    layout.slots.forEach((slot, s) => {
-      const outer = layout.slots.find(other => other.nodeId !== slot.nodeId && contains(nodes.get(other.nodeId), slot.nodeId))
-      if (outer) add([i, 'slots', s, 'nodeId'], `Slot "${slot.name}" of "${layout.name}" is inside slot "${outer.name}"`)
-    })
+    for (const { index, message } of slotPlacementProblems(layout.slots, nodes, layout.name)) add([i, 'slots', index, 'nodeId'], message)
 
     const variableIds = new Set<string>()
     layout.variables.forEach((variable, v) => {
@@ -606,6 +603,27 @@ export function layoutProblems(layouts: Layout[], components: ComponentDefinitio
       }
       for (const problem of propertyProblems(variable, nodes, 'Variable')) add([...at, ...problem.path], problem.message)
     })
+  })
+  return problems
+}
+
+/**
+ * A slot's content replaces its node's children, so a second slot on that
+ * node or below it would never show. Shared by layout slots and component
+ * slot properties; `index` is the slot's position in `slots`, `owner` the
+ * layout or component name.
+ */
+function slotPlacementProblems(slots: { name: string, nodeId: string }[], nodes: Map<string, DocNode>, owner: string): { index: number, message: string }[] {
+  const problems: { index: number, message: string }[] = []
+  const slotNodes = new Map<string, { name: string }>()
+  slots.forEach((slot, index) => {
+    const same = slotNodes.get(slot.nodeId)
+    if (same) problems.push({ index, message: `Slots "${same.name}" and "${slot.name}" of "${owner}" are bound to the same node "${slot.nodeId}"` })
+    slotNodes.set(slot.nodeId, slot)
+  })
+  slots.forEach((slot, index) => {
+    const outer = slots.find(other => other.nodeId !== slot.nodeId && contains(nodes.get(other.nodeId), slot.nodeId))
+    if (outer) problems.push({ index, message: `Slot "${slot.name}" of "${owner}" is inside slot "${outer.name}"` })
   })
   return problems
 }
