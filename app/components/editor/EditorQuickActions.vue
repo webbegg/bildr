@@ -49,7 +49,7 @@ const ctx: CommandContext = {
 const canCreate = computed(() => {
   const root = editor.page?.root
   const ids = editor.selectedIds.filter(id => id !== root?.id)
-  return !editor.componentId && !!root && ids.length > 0 && !!siblingParent(root, ids)
+  return !editor.componentId && !editor.layoutId && !!root && ids.length > 0 && !!siblingParent(root, ids)
 })
 
 const commands = computed(() => [

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * The Assets panel: Components (see `EditorComponents`) and Styles (the
+ * The Assets panel: Components (see `EditorComponents`), Layouts (see
+ * `EditorLayouts`) and Styles (the
  * project theme, previewed live on the canvas, with an expandable token
  * preview sheet), filtered by the sidebar search.
  * Collections live in the Data view's sidebar.
@@ -15,6 +16,7 @@ const tokensOpen = ref(false)
     data-assets
   >
     <EditorComponents :query="query" />
+    <EditorLayouts :query="query" />
     <section data-assets-styles>
       <p class="mb-2 text-[13px] font-semibold text-highlighted">
         Styles

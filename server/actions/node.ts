@@ -53,18 +53,24 @@ function buildNode(spec: NodeSpec): DocNode {
   return node
 }
 
-/** The tree the node actions edit: a page, or a component definition (whose node ids are its own). */
+/** The tree the node actions edit: a page, a component definition or a layout (whose node ids are their own). */
 const Target = {
   projectId: IdSchema,
-  pageId: IdSchema.optional().describe('The page to edit; or give componentId'),
-  componentId: IdSchema.optional().describe('The component definition to edit, from project_get components; replaces pageId')
+  pageId: IdSchema.optional().describe('The page to edit; or give componentId or layoutId'),
+  componentId: IdSchema.optional().describe('The component definition to edit, from project_get components; replaces pageId'),
+  layoutId: IdSchema.optional().describe('The layout to edit, from project_get layouts; replaces pageId')
 }
-const oneTree = (input: { pageId?: string, componentId?: string }) => (input.pageId === undefined) !== (input.componentId === undefined)
-// Checked even when other fields fail, so a call missing both still hears about pageId.
-const ONE_TREE = { message: 'Give pageId or componentId', path: ['pageId'], when: () => true }
 
-function treeOf(input: { pageId?: string, componentId?: string }): TreeRef {
-  return input.pageId !== undefined ? { pageId: input.pageId } : { componentId: input.componentId! }
+type TreeInput = { pageId?: string, componentId?: string, layoutId?: string }
+
+/** True when exactly one of `pageId`, `componentId` and `layoutId` is given. */
+export const oneTree = (input: TreeInput) => [input.pageId, input.componentId, input.layoutId].filter(id => id !== undefined).length === 1
+// Checked even when other fields fail, so a call missing both still hears about pageId.
+export const ONE_TREE = { message: 'Give pageId, componentId or layoutId', path: ['pageId'], when: () => true }
+
+export function treeOf(input: TreeInput): TreeRef {
+  if (input.pageId !== undefined) return { pageId: input.pageId }
+  return input.componentId !== undefined ? { componentId: input.componentId } : { layoutId: input.layoutId! }
 }
 
 /** The `nodeId` or `nodeIds` fields of the actions that also act on several nodes at once (one undo step). */
@@ -81,7 +87,7 @@ function nodeIdsOf({ nodeId, nodeIds }: { nodeId?: string, nodeIds?: string[] })
 
 interface LoadedTree {
   root: DocNode
-  /** `page root` or `component root`, for messages. */
+  /** `page root`, `component root` or `layout root`, for messages. */
   rootName: string
 }
 
@@ -90,6 +96,10 @@ async function loadTree(ctx: ActionContext, projectId: string, tree: TreeRef): P
   if (tree.componentId !== undefined) {
     const def = assertFound(current.components.find(c => c.id === tree.componentId), `Component "${tree.componentId}" not found`)
     return { root: def.root, rootName: 'component root' }
+  }
+  if (tree.layoutId !== undefined) {
+    const layout = assertFound(current.layouts.find(l => l.id === tree.layoutId), `Layout "${tree.layoutId}" not found`)
+    return { root: layout.root, rootName: 'layout root' }
   }
   const page = assertFound(current.pages.find(p => p.id === tree.pageId), `Page "${tree.pageId}" not found`)
   return { root: page.root, rootName: 'page root' }
@@ -104,7 +114,7 @@ function outermost(tree: LoadedTree, ids: string[], verb: string): DocNode[] {
 
 export const nodeInsert = defineAction({
   name: 'node_insert',
-  description: 'Insert a component, optionally with nested children, into a container node (defaults to the page root, or with componentId the component definition root, at the end). Returns the new node id. Inside a List (bound to a collection slug), string props of its children such as text, label, src and to can use bindings like "{{ item.name }}" or "/menu/{{ item.id }}", resolved per record.',
+  description: 'Insert a component, optionally with nested children, into a container node (defaults to the tree root: the page root, or with componentId the component definition root, or with layoutId the layout root; at the end). Returns the new node id. Inside a List (bound to a collection slug), string props of its children such as text, label, src and to can use bindings like "{{ item.name }}" or "/menu/{{ item.id }}", resolved per record.',
   input: z.object({
     ...Target,
     parentId: IdSchema.optional().describe('Container node id; defaults to the tree root'),
@@ -114,9 +124,9 @@ export const nodeInsert = defineAction({
     style: StyleSchema.optional(),
     children: z.array(NodeSpecSchema).optional()
   }).refine(oneTree, ONE_TREE),
-  run: async ({ projectId, pageId, componentId, parentId, index, ...spec }, ctx) => {
+  run: async ({ projectId, pageId, componentId, layoutId, parentId, index, ...spec }, ctx) => {
     const node = buildNode(spec)
-    const tree = treeOf({ pageId, componentId })
+    const tree = treeOf({ pageId, componentId, layoutId })
     const { root } = await loadTree(ctx, projectId, tree)
     const project = await ctx.services.mutate(ctx, projectId, `Insert ${spec.type}`, [
       { op: 'insert', ...tree, parentId: parentId ?? root.id, index: index ?? Number.MAX_SAFE_INTEGER, node }
@@ -129,8 +139,8 @@ export const nodeUpdateProps = defineAction({
   name: 'node_update_props',
   description: 'Set props of a node. Only props declared by the component are allowed; a null value removes the prop.',
   input: z.object({ ...Target, nodeId: IdSchema, props: z.record(z.string(), PropValueSchema.nullable()) }).refine(oneTree, ONE_TREE),
-  run: async ({ projectId, pageId, componentId, nodeId, props }, ctx) => {
-    const project = await ctx.services.mutate(ctx, projectId, 'Update props', [{ op: 'setProps', ...treeOf({ pageId, componentId }), nodeId, props }])
+  run: async ({ projectId, pageId, componentId, layoutId, nodeId, props }, ctx) => {
+    const project = await ctx.services.mutate(ctx, projectId, 'Update props', [{ op: 'setProps', ...treeOf({ pageId, componentId, layoutId }), nodeId, props }])
     return { version: project.version }
   }
 })
@@ -139,8 +149,8 @@ export const nodeUpdateStyle = defineAction({
   name: 'node_update_style',
   description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). Tokens listing breakpoints also take a mobile-first prefix, e.g. { "md:cols": "3" } applies from the md breakpoint up. A null value removes the token. With nodeIds the same tokens go to every node, as one undo step (all or nothing).',
   input: z.object({ ...Target, ...Nodes, style: StyleUpdateSchema }).refine(oneTree, ONE_TREE),
-  run: async ({ projectId, pageId, componentId, style, ...nodes }, ctx) => {
-    const tree = treeOf({ pageId, componentId })
+  run: async ({ projectId, pageId, componentId, layoutId, style, ...nodes }, ctx) => {
+    const tree = treeOf({ pageId, componentId, layoutId })
     const ops = nodeIdsOf(nodes).map(nodeId => ({ op: 'setStyle' as const, ...tree, nodeId, style }))
     const project = await ctx.services.mutate(ctx, projectId, 'Update style', ops)
     return { version: project.version }
@@ -151,8 +161,8 @@ export const nodeMove = defineAction({
   name: 'node_move',
   description: 'Move a node into a container at the given index (the index the node will have after the move).',
   input: z.object({ ...Target, nodeId: IdSchema, parentId: IdSchema, index: z.number().int().nonnegative() }).refine(oneTree, ONE_TREE),
-  run: async ({ projectId, pageId, componentId, nodeId, parentId, index }, ctx) => {
-    const project = await ctx.services.mutate(ctx, projectId, 'Move', [{ op: 'move', ...treeOf({ pageId, componentId }), nodeId, parentId, index }])
+  run: async ({ projectId, pageId, componentId, layoutId, nodeId, parentId, index }, ctx) => {
+    const project = await ctx.services.mutate(ctx, projectId, 'Move', [{ op: 'move', ...treeOf({ pageId, componentId, layoutId }), nodeId, parentId, index }])
     return { version: project.version }
   }
 })
@@ -164,8 +174,8 @@ export const nodeMoveMany = defineAction({
     ...Target,
     moves: z.array(z.object({ nodeId: IdSchema, parentId: IdSchema, index: z.number().int().nonnegative() })).min(1)
   }).refine(oneTree, ONE_TREE),
-  run: async ({ projectId, pageId, componentId, moves }, ctx) => {
-    const tree = treeOf({ pageId, componentId })
+  run: async ({ projectId, pageId, componentId, layoutId, moves }, ctx) => {
+    const tree = treeOf({ pageId, componentId, layoutId })
     const project = await ctx.services.mutate(ctx, projectId, moves.length > 1 ? `Move ${moves.length}` : 'Move', moves.map(move => ({ op: 'move' as const, ...tree, ...move })))
     return { version: project.version }
   }
@@ -173,11 +183,11 @@ export const nodeMoveMany = defineAction({
 
 export const nodeDelete = defineAction({
   name: 'node_delete',
-  description: 'Delete a node and its children. The page (or component) root cannot be deleted. With nodeIds, deletes every node as one undo step (nodes inside another listed node go with it).',
+  description: 'Delete a node and its children. The page (or component or layout) root cannot be deleted. With nodeIds, deletes every node as one undo step (nodes inside another listed node go with it).',
   input: z.object({ ...Target, ...Nodes }).refine(oneTree, ONE_TREE),
-  run: async ({ projectId, pageId, componentId, ...nodes }, ctx) => {
+  run: async ({ projectId, pageId, componentId, layoutId, ...nodes }, ctx) => {
     const ids = nodeIdsOf(nodes)
-    const tree = treeOf({ pageId, componentId })
+    const tree = treeOf({ pageId, componentId, layoutId })
     const targets = ids.length > 1 ? outermost(await loadTree(ctx, projectId, tree), ids, 'deleted').map(n => n.id) : ids
     const label = targets.length > 1 ? `Delete ${targets.length}` : 'Delete'
     const project = await ctx.services.mutate(ctx, projectId, label, targets.map(nodeId => ({ op: 'remove' as const, ...tree, nodeId })))
@@ -196,9 +206,9 @@ export const nodeWrap = defineAction({
     type: z.enum(WRAP_TYPES).optional().describe('The wrapping container type; defaults to Container'),
     style: StyleSchema.optional().describe('Design tokens added to the container default style, e.g. { "gap": "6" }')
   }).refine(oneTree, ONE_TREE),
-  run: async ({ projectId, pageId, componentId, type = 'Container', style, ...nodes }, ctx) => {
+  run: async ({ projectId, pageId, componentId, layoutId, type = 'Container', style, ...nodes }, ctx) => {
     const ids = nodeIdsOf(nodes)
-    const tree = treeOf({ pageId, componentId })
+    const tree = treeOf({ pageId, componentId, layoutId })
     const { root, rootName } = await loadTree(ctx, projectId, tree)
     for (const id of ids) assertFound(findNode(root, id), `Node "${id}" not found`)
     const locations = ids.map(id => findParent(root, id))
@@ -219,8 +229,8 @@ export const nodeDuplicate = defineAction({
   name: 'node_duplicate',
   description: 'Duplicate a node (with its children) right after itself. Returns the copy id. With nodeIds, duplicates every node as one undo step and returns the copy ids in the nodeIds order (nodeId is the first copy).',
   input: z.object({ ...Target, ...Nodes }).refine(oneTree, ONE_TREE),
-  run: async ({ projectId, pageId, componentId, ...nodes }, ctx) => {
-    const tree = treeOf({ pageId, componentId })
+  run: async ({ projectId, pageId, componentId, layoutId, ...nodes }, ctx) => {
+    const tree = treeOf({ pageId, componentId, layoutId })
     const loaded = await loadTree(ctx, projectId, tree)
     const originals = outermost(loaded, nodeIdsOf(nodes), 'duplicated')
     const inserts = originals.map((node) => {

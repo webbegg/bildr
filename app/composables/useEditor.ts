@@ -60,6 +60,8 @@ export function createEditor(projectId: string) {
   const pageId = ref<string | null>(null)
   /** The component the Canvas edits instead of the page (the component view); null edits the page. */
   const componentId = ref<string | null>(null)
+  /** The layout the Canvas edits instead of the page (the layout view); null edits the page. Never set with `componentId`. */
+  const layoutId = ref<string | null>(null)
   /** In the component view, the variant the Canvas shows and prop/style edits override; null is the primary (the definition itself). */
   const variantId = ref<string | null>(null)
   /** The selection in the order it was made; Shift+click adds and removes nodes. */
@@ -136,17 +138,24 @@ export function createEditor(projectId: string) {
   /** The page the editor is on, also while the component view shows. */
   const currentPage = computed(() => project.value?.pages.find(p => p.id === pageId.value) ?? project.value?.pages[0] ?? null)
   const component = computed(() => project.value?.components.find(c => c.id === componentId.value) ?? null)
+  const layout = computed(() => project.value?.layouts.find(l => l.id === layoutId.value) ?? null)
   const variant = computed(() => activeVariant(component.value, variantId.value))
   /**
    * The tree the Canvas, the layers and the panel edit: the current page, or
    * in the component view the component's definition, as a page of its own
-   * (no layout) whose root is the definition root, with the active variant applied.
+   * (no layout) whose root is the definition root, with the active variant
+   * applied, or in the layout view the layout's tree, as a page of its own.
    */
-  const page = computed<Page | null>(() => (component.value
-    ? { id: component.value.id, name: component.value.name, slug: currentPage.value?.slug ?? '', root: applyVariant(component.value.root, variant.value) }
-    : currentPage.value))
-  /** The `pageId` or `componentId` the node actions take for that tree. */
-  const treeRef = computed(() => (component.value ? { componentId: component.value.id } : { pageId: currentPage.value?.id }))
+  const page = computed<Page | null>(() => {
+    if (component.value) return { id: component.value.id, name: component.value.name, slug: currentPage.value?.slug ?? '', root: applyVariant(component.value.root, variant.value) }
+    if (layout.value) return { id: layout.value.id, name: layout.value.name, slug: currentPage.value?.slug ?? '', root: layout.value.root }
+    return currentPage.value
+  })
+  /** The `pageId`, `componentId` or `layoutId` the node actions take for that tree. */
+  const treeRef = computed(() => {
+    if (component.value) return { componentId: component.value.id }
+    return layout.value ? { layoutId: layout.value.id } : { pageId: currentPage.value?.id }
+  })
   const selected = computed(() => (page.value && selectedId.value ? findNode(page.value.root, selectedId.value) ?? null : null))
   const selectedNodes = computed(() => (page.value ? selectedIds.value.map(id => findNode(page.value!.root, id)).filter(n => n !== undefined) : []))
   /** The theme the canvas renders: the draft while previewing, else the project's. */
@@ -200,6 +209,10 @@ export function createEditor(projectId: string) {
     // A component deleted here or elsewhere leaves its view.
     if (componentId.value && !next.components.some(c => c.id === componentId.value)) {
       componentId.value = null
+      selectedIds.value = []
+    }
+    if (layoutId.value && !next.layouts.some(l => l.id === layoutId.value)) {
+      layoutId.value = null
       selectedIds.value = []
     }
     if (variantId.value && !variant.value) variantId.value = null
@@ -312,10 +325,11 @@ export function createEditor(projectId: string) {
     return run<T>(name, { ...treeRef.value, ...input })
   }
 
-  /** Shows a page; it also leaves the component view. */
+  /** Shows a page; it also leaves the component and layout views. */
   function selectPage(id: string): void {
     pageId.value = id
     componentId.value = null
+    layoutId.value = null
     variantId.value = null
     selectedId.value = null
     hoveredId.value = null
@@ -327,8 +341,33 @@ export function createEditor(projectId: string) {
     mode.value = 'build'
     if (componentId.value !== id) variantId.value = null
     componentId.value = id
+    layoutId.value = null
     selectedId.value = nodeId
     hoveredId.value = null
+  }
+
+  /** Opens a layout in the layout view: the Canvas edits its tree until `exitLayout` (Escape, Done, or a page). */
+  function editLayout(id: string, nodeId: string | null = null): void {
+    if (!project.value?.layouts.some(l => l.id === id)) return
+    mode.value = 'build'
+    componentId.value = null
+    variantId.value = null
+    layoutId.value = id
+    selectedId.value = nodeId
+    hoveredId.value = null
+  }
+
+  function exitLayout(): void {
+    if (!layoutId.value) return
+    layoutId.value = null
+    selectedId.value = null
+    hoveredId.value = null
+  }
+
+  /** Creates a layout (a children slot only) and opens it in the layout view. */
+  async function createLayout(): Promise<void> {
+    const result = await run<{ layoutId: string }>('layout_create', { name: uniqueComponentName('Layout', project.value?.layouts ?? []) })
+    if (result) editLayout(result.layoutId)
   }
 
   function exitComponent(): void {
@@ -347,7 +386,7 @@ export function createEditor(projectId: string) {
 
   /** Turns the selected siblings (in document order) into a component, leaving an instance selected in their place; not in the component view. */
   async function createComponent(): Promise<void> {
-    const ids = componentId.value ? null : siblingSelection('create a component')
+    const ids = componentId.value || layoutId.value ? null : siblingSelection('create a component')
     const root = page.value?.root
     if (!ids || !root) return
     const ordered = [...ids].sort((a, b) => findParent(root, a)!.index - findParent(root, b)!.index)
@@ -699,6 +738,7 @@ export function createEditor(projectId: string) {
     else if (!meta && (key === 'Delete' || key === 'Backspace')) remove()
     else if (key === 'Escape' && tool.value !== MOVE_TOOL) tool.value = MOVE_TOOL
     else if (key === 'Escape' && !selectedIds.value.length && componentId.value) exitComponent()
+    else if (key === 'Escape' && !selectedIds.value.length && layoutId.value) exitLayout()
     else if (key === 'Escape') selectedId.value = null
     else if (armed) tool.value = armed
     else if (nav && !meta && key === 'Enter') return navigate(shift ? 'parent' : 'child')
@@ -710,9 +750,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, componentId, component, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
+    projectId, project, pageId, componentId, component, layoutId, layout, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
-    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, createLayout, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }

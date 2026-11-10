@@ -30,6 +30,21 @@ const COMPONENT_ACTIONS = [
   'instance_set_slot'
 ]
 
+const LAYOUT_ACTIONS = [
+  'layout_create',
+  'layout_rename',
+  'layout_delete',
+  'layout_slot_add',
+  'layout_slot_update',
+  'layout_slot_remove',
+  'layout_variable_add',
+  'layout_variable_update',
+  'layout_variable_remove',
+  'page_set_layout',
+  'page_set_layout_values',
+  'page_set_slot'
+]
+
 async function connect() {
   const bildr = createBildr(memoryStorage())
   const client = new Client({ name: 'parity-test', version: '0.0.0' })
@@ -74,6 +89,35 @@ describe('MCP parity', () => {
       expect(tools, `${name} is missing from MCP`).toContain(name)
       expect(listed, `${name} is missing from /api/actions`).toContain(name)
     }
+  })
+
+  it('exposes the layout actions as tools, over HTTP\'s action list too', async () => {
+    const { bildr, client } = await connect()
+    const tools = new Set((await client.listTools()).tools.map(t => t.name))
+    const listed = new Set(bildr.list().map(a => a.name))
+    for (const name of LAYOUT_ACTIONS) {
+      expect(tools, `${name} is missing from MCP`).toContain(name)
+      expect(listed, `${name} is missing from /api/actions`).toContain(name)
+    }
+  })
+
+  it('runs layout actions through MCP like any other caller', async () => {
+    const { client } = await connect()
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const result = await client.callTool({ name, arguments: args })
+      return { result, data: result.isError ? null : JSON.parse(text(result)) as Record<string, unknown> }
+    }
+    const project = (await call('project_create', { name: 'Agent made' })).data as unknown as Project
+    const projectId = project.id
+    const pageId = project.pages[0]!.id
+    const { layoutId } = (await call('layout_create', { projectId, name: 'Main' })).data as { layoutId: string }
+    expect((await call('node_insert', { projectId, layoutId, type: 'Heading' })).result.isError).toBeFalsy()
+    expect((await call('page_set_layout', { projectId, pageId, layoutId })).result.isError).toBeFalsy()
+    const deleted = await call('layout_delete', { projectId, layoutId })
+    expect(deleted.data).toMatchObject({ detachedPages: [pageId] })
+    const refused = await call('page_set_layout', { projectId, pageId, layoutId })
+    expect(refused.result.isError).toBe(true)
+    expect(text(refused.result)).toContain(`uses the unknown layout "${layoutId}"`)
   })
 
   it('runs a component action through MCP like any other caller', async () => {

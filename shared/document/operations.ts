@@ -4,16 +4,20 @@ import { isStyleTokenKey, styleTokenProblem } from '../design/tokens'
 import { getComponent, INSTANCE_TYPE, isContainerType } from './components'
 import type { PropValue } from './components'
 import { z } from 'zod'
-import { ApiPathSchema, CollectionSchema, componentProblems, ComponentDefinitionSchema, CONNECTIONS_MAX, ConnectionSchema, FieldSchema, FieldTypeSchema, instanceProblems, nodeTreeProblems, PageSchema, PropertyBindingSchema, PropertyDefSchema, propValueProblem, SlugSchema, VariantSchema } from './schema'
-import type { ApiHeader, Collection, CollectionSource, ComponentDefinition, Connection, DocNode, Field, FieldType, Page, Project, PropertyBinding, PropertyDef, Variant } from './schema'
+import { ApiPathSchema, CHILDREN_SLOT, CollectionSchema, componentProblems, ComponentDefinitionSchema, CONNECTIONS_MAX, ConnectionSchema, FieldSchema, FieldTypeSchema, instanceProblems, layoutProblems, LayoutSchema, LayoutSlotSchema, nodeTreeProblems, pageLayoutProblems, PageSchema, PropertyBindingSchema, PropertyDefSchema, propValueProblem, SlugSchema, VariantSchema } from './schema'
+import type { ApiHeader, Collection, CollectionSource, ComponentDefinition, Connection, DocNode, Field, FieldType, Layout, LayoutSlot, Page, Project, PropertyBinding, PropertyDef, Variant } from './schema'
 import { containsNode, findNode, findParent, walk } from './tree'
 import { componentUsages } from './usages'
 
 /**
  * The tree a node operation edits: a page, or (with `componentId`) a
- * component definition, whose node ids are a namespace of their own.
+ * component definition, or (with `layoutId`) a layout; definitions and
+ * layouts have node ids of their own.
  */
-export type TreeRef = { pageId: string, componentId?: undefined } | { componentId: string, pageId?: undefined }
+export type TreeRef
+  = | { pageId: string, componentId?: undefined, layoutId?: undefined }
+    | { componentId: string, pageId?: undefined, layoutId?: undefined }
+    | { layoutId: string, pageId?: undefined, componentId?: undefined }
 
 /**
  * The closed set of document edits. Every action that changes a project
@@ -52,6 +56,20 @@ export type Operation
     | { op: 'updateVariant', componentId: string, variantId: string, name?: string }
     /** Sparse: a null value, or the primary variant's own value, removes that override. */
     | { op: 'setOverride', componentId: string, variantId: string, nodeId: string, props?: Record<string, PropValue | null>, style?: Record<string, string | null> }
+    | { op: 'addLayout', index: number, layout: Layout }
+    /** Refused while pages use the layout; `layout_delete` detaches them first. */
+    | { op: 'removeLayout', layoutId: string }
+    | { op: 'updateLayout', layoutId: string, name?: string }
+    | { op: 'addLayoutSlot', layoutId: string, index: number, slot: LayoutSlot }
+    | { op: 'removeLayoutSlot', layoutId: string, slotId: string }
+    | { op: 'updateLayoutSlot', layoutId: string, slotId: string, name?: string, nodeId?: string }
+    | { op: 'addLayoutVariable', layoutId: string, index: number, variable: PropertyDef }
+    | { op: 'removeLayoutVariable', layoutId: string, variableId: string }
+    | { op: 'updateLayoutVariable', layoutId: string, variableId: string, name?: string, default?: PropValue | null, bindings?: PropertyBinding[] }
+    /** Sets both exactly: a null `layoutId` detaches the page, a missing or null `layoutValues` clears them. */
+    | { op: 'setPageLayout', pageId: string, layoutId: string | null, layoutValues?: Record<string, PropValue> | null }
+    /** Sparse, by variable id: a null value removes the page's value, so the default applies. */
+    | { op: 'setLayoutValues', pageId: string, values: Record<string, PropValue | null> }
 
 export type OperationErrorCode = 'not_found' | 'invalid' | 'forbidden'
 
@@ -72,6 +90,18 @@ function getPage(project: Project, pageId: string): Page {
 
 function getDefinition(project: Project, componentId: string): ComponentDefinition {
   return project.components.find(c => c.id === componentId) ?? fail('not_found', `Component "${componentId}" not found`)
+}
+
+function getLayout(project: Project, layoutId: string): Layout {
+  return project.layouts.find(l => l.id === layoutId) ?? fail('not_found', `Layout "${layoutId}" not found`)
+}
+
+function getSlot(layout: Layout, slotId: string): LayoutSlot {
+  return layout.slots.find(s => s.id === slotId) ?? fail('not_found', `Slot "${slotId}" not found in "${layout.name}"`)
+}
+
+function getVariable(layout: Layout, variableId: string): PropertyDef {
+  return layout.variables.find(v => v.id === variableId) ?? fail('not_found', `Variable "${variableId}" not found in "${layout.name}"`)
 }
 
 interface Tree {
@@ -100,6 +130,10 @@ function getTree(project: Project, ref: TreeRef): Tree {
   if (ref.componentId !== undefined) {
     const def = getDefinition(project, ref.componentId)
     return { ref: { componentId: def.id }, root: def.root, where: `component "${def.name}"`, rootName: 'component root', ids: () => treeIds(def.root), layoutFills: false }
+  }
+  if (ref.layoutId !== undefined) {
+    const layout = getLayout(project, ref.layoutId)
+    return { ref: { layoutId: layout.id }, root: layout.root, where: `layout "${layout.name}"`, rootName: 'layout root', ids: () => treeIds(layout.root), layoutFills: false }
   }
   const page = getPage(project, ref.pageId)
   return { ref: { pageId: page.id }, root: page.root, where: `page "${page.name}"`, rootName: 'page root', ids: () => projectIds(project), layoutFills: usesLayout(project, page) }
@@ -149,13 +183,44 @@ function getVariant(def: ComponentDefinition, variantId: string): Variant {
 function componentDocumentProblems(project: Project): string[] {
   return [
     ...componentProblems(project.components).map(p => p.message),
-    ...project.pages.flatMap(page => instanceProblems(page.root, project.components, usesLayout(project, page)))
+    ...project.pages.flatMap(page => instanceProblems(page.root, project.components, usesLayout(project, page))),
+    ...project.layouts.flatMap(layout => instanceProblems(layout.root, project.components))
   ]
 }
 
 /** Operations that change a component definition, so its instances are checked again afterwards. */
 function editsComponents(op: Operation): boolean {
   return op.op === 'addComponent' || ('componentId' in op && op.componentId !== undefined)
+}
+
+const LAYOUT_OPS = new Set<Operation['op']>(['addLayout', 'removeLayout', 'updateLayout', 'addLayoutSlot', 'removeLayoutSlot', 'updateLayoutSlot', 'addLayoutVariable', 'removeLayoutVariable', 'updateLayoutVariable', 'setPageLayout', 'setLayoutValues'])
+
+/**
+ * Operations after which layouts and their pages are checked again: layout
+ * edits (the tree, slots, variables), a page's layout or values, and nodes
+ * placed at the root of a page that uses a layout (its SlotFills).
+ */
+function editsLayouts(project: Project, op: Operation): boolean {
+  if (LAYOUT_OPS.has(op.op) || ('layoutId' in op && op.layoutId !== undefined)) return true
+  if ((op.op !== 'insert' && op.op !== 'move') || op.pageId === undefined) return false
+  const page = project.pages.find(p => p.id === op.pageId)
+  return !!page && usesLayout(project, page)
+}
+
+/** Layout rules (`layoutProblems`) and each page's use of its layout; only page `pageId`'s when given. */
+function layoutDocumentProblems(project: Project, pageId?: string): string[] {
+  const pages = pageId === undefined ? project.pages : project.pages.filter(p => p.id === pageId)
+  return [
+    ...(pageId === undefined ? layoutProblems(project.layouts, project.components).map(p => p.message) : []),
+    ...pages.flatMap((page) => {
+      const layout = project.layouts.find(l => l.id === page.layoutId)
+      return [...pageLayoutProblems(page, layout).map(p => p.message), ...instanceProblems(page.root, project.components, layout !== undefined)]
+    })
+  ]
+}
+
+function layoutInUseMessage(name: string, pages: Page[]): string {
+  return `"${name}" is used by ${pages.length} page${pages.length === 1 ? '' : 's'}: ${pages.map(p => p.name).join(', ')}. Detach them first`
 }
 
 function componentInUseMessage(name: string, usages: { where: string, nodeId: string }[]): string {
@@ -196,15 +261,20 @@ function assertUniqueCollectionSlug(project: Project, slug: string, exceptId?: s
 /**
  * Applies `op` to `project` in place and returns the operation that undoes
  * it. An edit to a component definition is checked against every instance
- * afterwards and rolled back when they no longer fit.
+ * afterwards, and a layout edit against the layouts and their pages, and
+ * rolled back when they no longer fit.
  */
 export function applyOperation(project: Project, op: Operation): Operation {
-  if (!editsComponents(op)) return apply(project, op)
-  const before = structuredClone(project.components)
+  const components = editsComponents(op)
+  const layouts = editsLayouts(project, op)
+  if (!components && !layouts) return apply(project, op)
+  const before = structuredClone({ components: project.components, layouts: project.layouts, pages: project.pages })
   const inverse = apply(project, op)
-  const problems = componentDocumentProblems(project)
+  // A page's own edits only affect that page's use of its layout.
+  const pageId = 'pageId' in op ? op.pageId : undefined
+  const problems = [...(components ? componentDocumentProblems(project) : []), ...(layouts ? layoutDocumentProblems(project, pageId) : [])]
   if (problems.length) {
-    project.components = before
+    Object.assign(project, before)
     fail('invalid', problems.join('; '))
   }
   return inverse
@@ -581,6 +651,118 @@ function apply(project: Project, op: Operation): Operation {
       if (Object.keys(override).length) variant.overrides[node.id] = override
       else Reflect.deleteProperty(variant.overrides, node.id)
       return inverse
+    }
+    case 'addLayout': {
+      const parsed = LayoutSchema.safeParse(op.layout)
+      if (!parsed.success) fail('invalid', `Invalid layout: ${issues(parsed.error)}`)
+      if (project.layouts.some(l => l.id === parsed.data.id)) fail('invalid', `Duplicate layout id "${parsed.data.id}"`)
+      project.layouts.splice(clampIndex(op.index, project.layouts.length), 0, parsed.data)
+      return { op: 'removeLayout', layoutId: parsed.data.id }
+    }
+    case 'removeLayout': {
+      const layout = getLayout(project, op.layoutId)
+      const pages = project.pages.filter(p => p.layoutId === layout.id)
+      if (pages.length) fail('forbidden', layoutInUseMessage(layout.name, pages))
+      const index = project.layouts.indexOf(layout)
+      project.layouts.splice(index, 1)
+      return { op: 'addLayout', index, layout }
+    }
+    case 'updateLayout': {
+      const layout = getLayout(project, op.layoutId)
+      const inverse: Extract<Operation, { op: 'updateLayout' }> = { op: 'updateLayout', layoutId: layout.id }
+      if (op.name !== undefined) {
+        if (!op.name.trim()) fail('invalid', 'Layout name cannot be empty')
+        inverse.name = layout.name
+        layout.name = op.name.trim()
+      }
+      return inverse
+    }
+    case 'addLayoutSlot': {
+      const layout = getLayout(project, op.layoutId)
+      const parsed = LayoutSlotSchema.safeParse(op.slot)
+      if (!parsed.success) fail('invalid', `Invalid slot: ${issues(parsed.error)}`)
+      layout.slots.splice(clampIndex(op.index, layout.slots.length), 0, parsed.data)
+      return { op: 'removeLayoutSlot', layoutId: layout.id, slotId: parsed.data.id }
+    }
+    case 'removeLayoutSlot': {
+      const layout = getLayout(project, op.layoutId)
+      if (op.slotId === CHILDREN_SLOT) fail('forbidden', 'The children slot cannot be removed: it takes the page content')
+      const index = layout.slots.indexOf(getSlot(layout, op.slotId))
+      const [slot] = layout.slots.splice(index, 1)
+      return { op: 'addLayoutSlot', layoutId: layout.id, index, slot: slot! }
+    }
+    case 'updateLayoutSlot': {
+      const layout = getLayout(project, op.layoutId)
+      const slot = getSlot(layout, op.slotId)
+      const inverse: Extract<Operation, { op: 'updateLayoutSlot' }> = { op: 'updateLayoutSlot', layoutId: layout.id, slotId: slot.id }
+      if (op.name !== undefined && !op.name.trim()) fail('invalid', 'Slot name cannot be empty')
+      if (op.nodeId !== undefined && !findNode(layout.root, op.nodeId)) fail('not_found', `Node "${op.nodeId}" not found on layout "${layout.name}"`)
+      if (op.name !== undefined) {
+        inverse.name = slot.name
+        slot.name = op.name.trim()
+      }
+      if (op.nodeId !== undefined) {
+        inverse.nodeId = slot.nodeId
+        slot.nodeId = op.nodeId
+      }
+      return inverse
+    }
+    case 'addLayoutVariable': {
+      const layout = getLayout(project, op.layoutId)
+      const parsed = PropertyDefSchema.safeParse(op.variable)
+      if (!parsed.success) fail('invalid', `Invalid variable: ${issues(parsed.error)}`)
+      layout.variables.splice(clampIndex(op.index, layout.variables.length), 0, parsed.data)
+      return { op: 'removeLayoutVariable', layoutId: layout.id, variableId: parsed.data.id }
+    }
+    case 'removeLayoutVariable': {
+      const layout = getLayout(project, op.layoutId)
+      const index = layout.variables.indexOf(getVariable(layout, op.variableId))
+      const [variable] = layout.variables.splice(index, 1)
+      return { op: 'addLayoutVariable', layoutId: layout.id, index, variable: variable! }
+    }
+    case 'updateLayoutVariable': {
+      const layout = getLayout(project, op.layoutId)
+      const variable = getVariable(layout, op.variableId)
+      const inverse: Extract<Operation, { op: 'updateLayoutVariable' }> = { op: 'updateLayoutVariable', layoutId: layout.id, variableId: variable.id }
+      if (op.name !== undefined && !op.name.trim()) fail('invalid', 'Variable name cannot be empty')
+      const bindings = op.bindings === undefined ? undefined : z.array(PropertyBindingSchema).safeParse(op.bindings)
+      if (bindings && !bindings.success) fail('invalid', `Invalid bindings: ${issues(bindings.error)}`)
+      if (op.name !== undefined) {
+        inverse.name = variable.name
+        variable.name = op.name.trim()
+      }
+      if (op.default !== undefined) {
+        inverse.default = variable.default ?? null
+        if (op.default === null) Reflect.deleteProperty(variable, 'default')
+        else variable.default = op.default
+      }
+      if (bindings) {
+        inverse.bindings = variable.bindings
+        variable.bindings = bindings.data
+      }
+      return inverse
+    }
+    case 'setPageLayout': {
+      const page = getPage(project, op.pageId)
+      const inverse: Operation = { op: 'setPageLayout', pageId: page.id, layoutId: page.layoutId ?? null, layoutValues: page.layoutValues ?? null }
+      if (op.layoutId === null) Reflect.deleteProperty(page, 'layoutId')
+      else page.layoutId = op.layoutId
+      if (op.layoutValues === undefined || op.layoutValues === null) Reflect.deleteProperty(page, 'layoutValues')
+      else page.layoutValues = structuredClone(op.layoutValues)
+      return inverse
+    }
+    case 'setLayoutValues': {
+      const page = getPage(project, op.pageId)
+      const values = { ...page.layoutValues }
+      const previous: Record<string, PropValue | null> = {}
+      for (const [key, value] of Object.entries(op.values)) {
+        previous[key] = values[key] ?? null
+        if (value === null) Reflect.deleteProperty(values, key)
+        else values[key] = value
+      }
+      if (Object.keys(values).length) page.layoutValues = values
+      else Reflect.deleteProperty(page, 'layoutValues')
+      return { op: 'setLayoutValues', pageId: page.id, values: previous }
     }
   }
 }

@@ -40,6 +40,8 @@ function goToUsage(usage: ComponentUsage) {
   if (usage.pageId !== undefined) {
     editor.selectPage(usage.pageId)
     editor.selectedId = usage.nodeId
+  } else if (usage.layoutId !== undefined) {
+    editor.editLayout(usage.layoutId, usage.nodeId)
   } else {
     editor.editComponent(usage.componentId, usage.nodeId)
   }
@@ -91,7 +93,7 @@ function menu(entry: ComponentEntry): DropdownMenuItem[] {
           color="neutral"
           variant="ghost"
           aria-label="Create component"
-          :disabled="!editor.selectedIds.length || !!editor.componentId"
+          :disabled="!editor.selectedIds.length || !!editor.componentId || !!editor.layoutId"
           @click="editor.createComponent()"
         />
       </UTooltip>
@@ -196,7 +198,7 @@ function menu(entry: ComponentEntry): DropdownMenuItem[] {
         >
           <li
             v-for="usage in entry.usages"
-            :key="`${usage.pageId ?? usage.componentId}:${usage.nodeId}`"
+            :key="`${usage.pageId ?? usage.componentId ?? usage.layoutId}:${usage.nodeId}`"
           >
             <button
               type="button"
@@ -205,7 +207,7 @@ function menu(entry: ComponentEntry): DropdownMenuItem[] {
               @click="goToUsage(usage)"
             >
               <UIcon
-                :name="usage.pageId !== undefined ? 'i-lucide-file' : 'i-lucide-component'"
+                :name="usage.pageId !== undefined ? 'i-lucide-file' : usage.layoutId !== undefined ? 'i-lucide-layout-template' : 'i-lucide-component'"
                 class="size-3 shrink-0"
               />
               <span class="truncate">{{ usage.where }}</span>
