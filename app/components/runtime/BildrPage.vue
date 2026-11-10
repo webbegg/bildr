@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import type { DataRecord } from '#shared/data/records'
-import type { ComponentDefinition, Page } from '#shared/document/schema'
+import type { ComponentDefinition, Layout, Page } from '#shared/document/schema'
 import type { EnvValues } from '#shared/env/variables'
+import { resolvePageWithLayout } from '#shared/runtime/layouts'
+
+/**
+ * A page as it renders: inside its layout when it has one (see
+ * `resolvePageWithLayout`), so the canvas, the preview and published apps
+ * all show the layout around the page content.
+ */
 
 const props = defineProps<{
   page: Page
@@ -13,8 +20,12 @@ const props = defineProps<{
   env?: EnvValues
   /** The project's component definitions, for Instance nodes. */
   components?: ComponentDefinition[]
+  /** The project's layouts, for pages with a `layoutId`. */
+  layouts?: Layout[]
   missingEnv?: RuntimeContext['onMissingEnv']
 }>()
+
+const root = computed(() => resolvePageWithLayout(props.page, props.layouts ?? [], props.components ?? []))
 
 provide(RUNTIME_KEY, reactive({
   base: computed(() => props.base),
@@ -28,5 +39,5 @@ provide(RUNTIME_KEY, reactive({
 </script>
 
 <template>
-  <BildrNode :node="page.root" />
+  <BildrNode :node="root" />
 </template>

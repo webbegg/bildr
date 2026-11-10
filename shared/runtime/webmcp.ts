@@ -2,6 +2,7 @@ import { takesFormRecords } from '../data/collections'
 import { INSTANCE_TYPE } from '../document/components'
 import type { ComponentDefinition, DocNode, Page } from '../document/schema'
 import { resolveInstance } from './instances'
+import { resolvePageWithLayout } from './layouts'
 import { pageOutline } from './render'
 import type { VisitorCollection, VisitorProject } from './visitor'
 
@@ -187,8 +188,10 @@ function tools(host: WebMcpHost): WebMcpTool[] {
       execute: () => {
         const page = host.getCurrentPage()
         if (!page) return text('No page is shown', true)
-        const components = host.getProject()?.components ?? []
-        return text(pageOutline({ ...page, root: asRendered(page.root, components)! }))
+        const project = host.getProject()
+        const components = project?.components ?? []
+        const root = resolvePageWithLayout(page, project?.layouts ?? [], components)
+        return text(pageOutline({ ...page, root: asRendered(root, components)! }))
       }
     },
     ...(project ? dataTools(project, host) : [])
