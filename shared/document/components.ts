@@ -201,7 +201,40 @@ export const COMPONENTS: ComponentDef[] = [
   }
 ]
 
-const BY_TYPE = new Map(COMPONENTS.map(c => [c.type, c]))
+export const INSTANCE_TYPE = 'Instance'
+export const SLOT_FILL_TYPE = 'SlotFill'
+
+/**
+ * Built-in types that exist only to use user-defined components. They are
+ * registered for `getComponent` and `isContainerType` but kept out of
+ * `COMPONENTS`, so the palette and the command list never offer them as
+ * ordinary inserts. Their props are not declared here: an Instance carries
+ * `component`, `variant` and one value per property of its definition, and
+ * a SlotFill carries `slot`. `nodeTreeProblems` leaves them to the instance
+ * checks, which know the project's definitions.
+ */
+const INTERNAL_COMPONENTS: ComponentDef[] = [
+  {
+    type: INSTANCE_TYPE,
+    label: 'Component instance',
+    icon: 'i-lucide-component',
+    description: 'A use of a user-defined component. Its children are SlotFill nodes.',
+    container: true,
+    props: [],
+    defaultStyle: {}
+  },
+  {
+    type: SLOT_FILL_TYPE,
+    label: 'Slot content',
+    icon: 'i-lucide-square-dashed',
+    description: 'The content an Instance puts into one slot of its component.',
+    container: true,
+    props: [],
+    defaultStyle: {}
+  }
+]
+
+const BY_TYPE = new Map([...COMPONENTS, ...INTERNAL_COMPONENTS].map(c => [c.type, c]))
 
 export function getComponent(type: string): ComponentDef | undefined {
   return BY_TYPE.get(type)
