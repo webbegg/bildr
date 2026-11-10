@@ -3,10 +3,10 @@ import { sourcePaging } from '#shared/data/paging'
 import type { DataRecord } from '#shared/data/records'
 import { loadMoreLimit, tableLimit } from '#shared/data/table'
 import type { Theme, ThemePatch } from '#shared/design/theme'
-import type { Project } from '#shared/document/schema'
+import type { Page, Project } from '#shared/document/schema'
 import type { EnvListEntry, EnvValues } from '#shared/env/variables'
 import type { PropValue } from '#shared/document/components'
-import { isFlexType } from '#shared/document/components'
+import { INSTANCE_TYPE, isFlexType } from '#shared/document/components'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
 import type { NodeBox } from '#shared/editor/autoLayout'
 import { inferAutoLayout, nearestSpacingToken } from '#shared/editor/autoLayout'
@@ -20,12 +20,14 @@ import type { PreviewState, StylePatch } from '#shared/editor/preview'
 import { createStylePreview } from '#shared/editor/preview'
 import type { SelectionStep } from '#shared/editor/selection'
 import { drillTarget, navigateSelection, selectAllSiblings, selectionAfterDelete, siblingParent, toggleSelection, topLevelSelection } from '#shared/editor/selection'
+import { resolvePageWithLayout } from '#shared/runtime/layouts'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 import type { ZoomCommand } from '#shared/editor/viewport'
 import { previewWindowFeatures } from '#shared/editor/viewport'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 import { deviceForKey } from '#shared/editor/devices'
+import { insertableComponents, outsideInstance, parseInstancePayload, uniqueComponentName } from './componentEditor'
 
 /** Identifies this editor tab on change events, so it can skip its own echoes. */
 export const TAB_ID = import.meta.client ? crypto.randomUUID() : 'server'
@@ -55,6 +57,8 @@ export function createEditor(projectId: string) {
 
   const project = ref<Project | null>(null)
   const pageId = ref<string | null>(null)
+  /** The component the Canvas edits instead of the page (the component view); null edits the page. */
+  const componentId = ref<string | null>(null)
   /** The selection in the order it was made; Shift+click adds and removes nodes. */
   const selectedIds = ref<string[]>([])
   /** The primary (last selected) node: the one the panel edits alone, and the editor context reports. Setting it selects only it. */
@@ -126,7 +130,19 @@ export function createEditor(projectId: string) {
   const publicEnv = computed(() => listedPublicEnv(env.value))
   let envLoaded = false
 
-  const page = computed(() => project.value?.pages.find(p => p.id === pageId.value) ?? project.value?.pages[0] ?? null)
+  /** The page the editor is on, also while the component view shows. */
+  const currentPage = computed(() => project.value?.pages.find(p => p.id === pageId.value) ?? project.value?.pages[0] ?? null)
+  const component = computed(() => project.value?.components.find(c => c.id === componentId.value) ?? null)
+  /**
+   * The tree the Canvas, the layers and the panel edit: the current page, or
+   * in the component view the component's definition, as a page of its own
+   * (no layout) whose root is the definition root.
+   */
+  const page = computed<Page | null>(() => (component.value
+    ? { id: component.value.id, name: component.value.name, slug: currentPage.value?.slug ?? '', root: component.value.root }
+    : currentPage.value))
+  /** The `pageId` or `componentId` the node actions take for that tree. */
+  const treeRef = computed(() => (component.value ? { componentId: component.value.id } : { pageId: currentPage.value?.id }))
   const selected = computed(() => (page.value && selectedId.value ? findNode(page.value.root, selectedId.value) ?? null : null))
   const selectedNodes = computed(() => (page.value ? selectedIds.value.map(id => findNode(page.value!.root, id)).filter(n => n !== undefined) : []))
   /** The theme the canvas renders: the draft while previewing, else the project's. */
@@ -136,14 +152,14 @@ export function createEditor(projectId: string) {
 
   /** Collections the current page's Lists show, and their records by collection id, for the canvas. */
   const listCollections = computed(() => {
-    const slugs = new Set(page.value ? listNodes(page.value.root, project.value?.components).map(node => listQueryOf(node.props).collection) : [])
+    const slugs = new Set(page.value ? listNodes(resolvePageWithLayout(page.value, project.value?.layouts ?? [], project.value?.components ?? []), project.value?.components).map(node => listQueryOf(node.props).collection) : [])
     return project.value?.collections.filter(c => slugs.has(c.slug)) ?? []
   })
   const listCollectionRecords = shallowRef<Record<string, DataRecord[]>>({})
   /** What each List on the page shows, by `listKey`; Lists of unknown collections have no entry. */
   const lists = computed(() => {
     const out: Record<string, DataRecord[]> = {}
-    for (const node of page.value ? listNodes(page.value.root, project.value?.components) : []) {
+    for (const node of page.value ? listNodes(resolvePageWithLayout(page.value, project.value?.layouts ?? [], project.value?.components ?? []), project.value?.components) : []) {
       const query = listQueryOf(node.props)
       const shown = listCollections.value.find(c => c.slug === query.collection)
       if (shown) out[listKey(query)] = listRecords(shown, listCollectionRecords.value[shown.id] ?? [], query)
@@ -177,6 +193,11 @@ export function createEditor(projectId: string) {
     history.value = nextHistory
     if (!envLoaded) await reloadEnv()
     if (!next.pages.some(p => p.id === pageId.value)) pageId.value = next.pages[0]!.id
+    // A component deleted here or elsewhere leaves its view.
+    if (componentId.value && !next.components.some(c => c.id === componentId.value)) {
+      componentId.value = null
+      selectedIds.value = []
+    }
     if (selectedIds.value.some(id => !findNode(page.value!.root, id))) selectedIds.value = selectedIds.value.filter(id => findNode(page.value!.root, id))
   }
 
@@ -281,15 +302,53 @@ export function createEditor(projectId: string) {
     })
   })
 
-  /** Like `run`, scoped to the current page (for node actions). */
+  /** Like `run`, scoped to the tree being edited (for node actions): the current page, or the component in the component view. */
   function runOnPage<T = unknown>(name: string, input: Record<string, unknown> = {}): Promise<T | undefined> {
-    return run<T>(name, { pageId: page.value!.id, ...input })
+    return run<T>(name, { ...treeRef.value, ...input })
   }
 
+  /** Shows a page; it also leaves the component view. */
   function selectPage(id: string): void {
     pageId.value = id
+    componentId.value = null
     selectedId.value = null
     hoveredId.value = null
+  }
+
+  /** Opens a component in the component view: the Canvas edits its definition until `exitComponent` (Escape, Done, or a page). */
+  function editComponent(id: string, nodeId: string | null = null): void {
+    if (!project.value?.components.some(c => c.id === id)) return
+    mode.value = 'build'
+    componentId.value = id
+    selectedId.value = nodeId
+    hoveredId.value = null
+  }
+
+  function exitComponent(): void {
+    if (!componentId.value) return
+    componentId.value = null
+    selectedId.value = null
+    hoveredId.value = null
+  }
+
+  /** Inserts an instance of a component (at the selection by default) and selects it; a component never goes into itself. */
+  async function insertInstance(id: string, target?: DropTarget): Promise<void> {
+    if (!project.value || !insertableComponents(project.value, componentId.value).some(c => c.id === id)) return
+    await insert(INSTANCE_TYPE, target, { component: id })
+  }
+
+  /** Turns the selected siblings (in document order) into a component, leaving an instance selected in their place; not in the component view. */
+  async function createComponent(): Promise<void> {
+    const ids = componentId.value ? null : siblingSelection('create a component')
+    const root = page.value?.root
+    if (!ids || !root) return
+    const ordered = [...ids].sort((a, b) => findParent(root, a)!.index - findParent(root, b)!.index)
+    const base = ordered.length === 1 ? findNode(root, ordered[0]!)!.type : 'Component'
+    const result = await runOnPage<{ nodeId: string }>('component_create', {
+      ...(ordered.length > 1 ? { nodeIds: ordered } : { nodeId: ordered[0] }),
+      name: uniqueComponentName(base, project.value?.components ?? [])
+    })
+    if (result) selectedId.value = result.nodeId
   }
 
   /** Adds a page and shows it; true when it was added. */
@@ -299,10 +358,11 @@ export function createEditor(projectId: string) {
     return !!result
   }
 
-  /** Inserts a palette component (at the selection by default) and selects it. */
-  async function insert(type: string, target?: DropTarget): Promise<void> {
-    const at = target ?? insertTargetForSelection(page.value!.root, selectedId.value)
-    const result = await runOnPage<{ nodeId: string }>('node_insert', { type, ...at })
+  /** Inserts a palette component (at the selection by default, never inside an instance) and selects it. */
+  async function insert(type: string, target?: DropTarget, props?: Record<string, PropValue>): Promise<void> {
+    const root = page.value!.root
+    const at = outsideInstance(root, target ?? insertTargetForSelection(root, selectedId.value))
+    const result = await runOnPage<{ nodeId: string }>('node_insert', { type, ...at, ...(props ? { props } : {}) })
     if (result) selectedId.value = result.nodeId
   }
 
@@ -367,10 +427,13 @@ export function createEditor(projectId: string) {
 
   /** Handles a drop of a raw `application/x-bildr` payload onto a parent slot. */
   async function drop(payload: string, target: DropTarget): Promise<void> {
+    const instanceOf = parseInstancePayload(payload)
+    if (instanceOf) return insertInstance(instanceOf, target)
     const data = parseDragPayload(payload)
     const root = page.value?.root
     if (!data || !root) return
     if (data.kind === 'component') return insert(data.type, target)
+    target = outsideInstance(root, target)
     const node = findNode(root, data.id)
     if (!node || node === root || containsNode(node, target.parentId)) return
     const to = moveTarget(root, data.id, target)
@@ -608,6 +671,7 @@ export function createEditor(projectId: string) {
     else if (!meta && shift && lower === 'a') autoLayout()
     else if (!meta && (key === 'Delete' || key === 'Backspace')) remove()
     else if (key === 'Escape' && tool.value !== MOVE_TOOL) tool.value = MOVE_TOOL
+    else if (key === 'Escape' && !selectedIds.value.length && componentId.value) exitComponent()
     else if (key === 'Escape') selectedId.value = null
     else if (armed) tool.value = armed
     else if (nav && !meta && key === 'Enter') return navigate(shift ? 'parent' : 'child')
@@ -619,9 +683,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
+    projectId, project, pageId, componentId, component, currentPage, treeRef, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
-    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }

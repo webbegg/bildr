@@ -101,9 +101,10 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
       <!-- Hidden, not unmounted, in the Data and Settings views so the canvas does not reload. The canvas zooms and pans edge to edge. -->
       <main
         v-show="editor.mode === 'build'"
-        class="min-w-0 flex-1 bg-[#1e1e1e]"
+        class="relative min-w-0 flex-1 bg-[#1e1e1e]"
         data-canvas-area
       >
+        <EditorComponentBar />
         <EditorNodeMenu class="size-full">
           <EditorCanvas @key="message => editor.shortcut(message.key, message.meta, message.shift, true)" />
         </EditorNodeMenu>

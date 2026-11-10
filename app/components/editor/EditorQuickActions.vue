@@ -2,6 +2,8 @@
 import type { CommandPaletteGroup, CommandPaletteItem } from '@nuxt/ui'
 import type { Command, CommandContext } from '#shared/editor/commands'
 import { editorCommands, GROUP_LABELS, pushRecent, searchCommands } from '#shared/editor/commands'
+import { siblingParent } from '#shared/editor/selection'
+import { componentCommands } from '~/composables/componentEditor'
 
 /**
  * The `⌘K` quick actions, Framer's Quick Insert: type a component's name and
@@ -11,7 +13,8 @@ import { editorCommands, GROUP_LABELS, pushRecent, searchCommands } from '#share
  * prefix always beats a looser match. Disabled commands stay listed, greyed.
  * Running one closes the palette and remembers it for the empty-query list.
  * An empty query caps Insert at the common or recently inserted components,
- * so the Actions stay in view; "More components…" lists the rest.
+ * so the Actions stay in view; "More components…" lists the rest. The
+ * project's own components join Insert and Go to (`componentCommands`).
  */
 const editor = useEditor()
 const query = ref('')
@@ -42,7 +45,23 @@ const ctx: CommandContext = {
   }
 }
 
-const commands = computed(() => editorCommands(ctx))
+// Create component takes siblings on a page, as component_create does.
+const canCreate = computed(() => {
+  const root = editor.page?.root
+  const ids = editor.selectedIds.filter(id => id !== root?.id)
+  return !editor.componentId && !!root && ids.length > 0 && !!siblingParent(root, ids)
+})
+
+const commands = computed(() => [
+  ...editorCommands(ctx),
+  ...(editor.project
+    ? componentCommands(editor.project, { editingId: editor.componentId, canCreate: canCreate.value }, {
+        insert: id => editor.insertInstance(id),
+        edit: id => editor.editComponent(id),
+        create: () => editor.createComponent()
+      })
+    : [])
+])
 
 const groups = computed<CommandPaletteGroup[]>(() => searchCommands(commands.value, query.value, recent.value, { expandInsert: expandInsert.value }).map(section => ({
   id: section.group,
