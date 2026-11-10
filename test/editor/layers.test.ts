@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createNode, createPage } from '#shared/document/factory'
-import { collapsedAncestors, hiddenBadge, layerKeyAction, naturalDisplay, siblingMove, siblingMoves, visibilityAt, visibilityToggle, visibleLayers } from '#shared/editor/layers'
+import type { ComponentDefinition, DocNode, Layout, Page } from '#shared/document/schema'
+import { findNode } from '#shared/document/tree'
+import { collapsedAncestors, hiddenBadge, layerKeyAction, layerName, naturalDisplay, siblingMove, siblingMoves, visibilityAt, visibilityToggle, visibleLayers } from '#shared/editor/layers'
 
 function fixture() {
   const page = createPage('Home')
@@ -140,5 +142,43 @@ describe('siblingMoves', () => {
     expect(siblingMoves(root, [y!, x!], -1)).toBeNull()
     expect(siblingMoves(root, [v!], 1)).toBeNull()
     expect(siblingMoves(root, [root.id], 1)).toBeNull()
+  })
+})
+
+describe('layerName', () => {
+  const n = (id: string, type: string, props: DocNode['props'] = {}, children: DocNode[] = []): DocNode => ({ id, type, props, style: {}, children })
+  const card: ComponentDefinition = {
+    id: 'card',
+    name: 'Card',
+    root: n('c-root', 'Container', {}, [n('c-body', 'Container')]),
+    properties: [{ id: 'body', name: 'Body', kind: 'slot', bindings: [{ nodeId: 'c-body', prop: 'children' }] }],
+    variants: []
+  }
+  const main: Layout = {
+    id: 'main',
+    name: 'Main',
+    root: n('l-root', 'Page', {}, [n('l-main', 'Container'), n('l-foot', 'Container')]),
+    slots: [{ id: 'children', name: 'Content', nodeId: 'l-main' }, { id: 'footer', name: 'Footer', nodeId: 'l-foot' }],
+    variables: []
+  }
+  const sources = { components: [card], layouts: [main] }
+  const fill = n('fill', 'SlotFill', { slot: 'body' })
+  const instance = n('inst', 'Instance', { component: 'card' }, [fill])
+  const lost = n('lost', 'Instance', { component: 'gone' }, [n('lost-fill', 'SlotFill', { slot: 'body' })])
+  const footer = n('foot', 'SlotFill', { slot: 'footer' })
+  const page: Page = { id: 'home', name: 'Home', slug: 'home', layoutId: 'main', root: n('root', 'Page', {}, [footer, n('odd', 'SlotFill', { slot: 'nope' }), instance, lost, n('text', 'Text')]) }
+
+  it('names an instance by its component and a slot fill by the slot it fills', () => {
+    expect(layerName(page, instance, sources)).toBe('Card')
+    expect(layerName(page, fill, sources)).toBe('Body')
+    expect(layerName(page, footer, sources)).toBe('Footer')
+  })
+
+  it('falls back to the type for other nodes and unknown components or slots', () => {
+    expect(layerName(page, findNode(page.root, 'text')!, sources)).toBe('Text')
+    expect(layerName(page, lost, sources)).toBe('Instance')
+    expect(layerName(page, findNode(page.root, 'lost-fill')!, sources)).toBe('SlotFill')
+    expect(layerName(page, findNode(page.root, 'odd')!, sources)).toBe('SlotFill')
+    expect(layerName({ ...page, layoutId: undefined }, footer, sources)).toBe('SlotFill')
   })
 })

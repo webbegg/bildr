@@ -4,6 +4,7 @@ import type { ComponentDefinition, DocNode, Project } from '#shared/document/sch
 import type { CommandContext } from '#shared/editor/commands'
 import {
   componentCommands,
+  componentDeleteMessage,
   componentFolders,
   insertableComponents,
   instanceDragPayload,
@@ -50,6 +51,14 @@ describe('componentFolders', () => {
     expect(componentFolders(project(), 'ghost').flatMap(f => f.entries.map(e => e.def.id))).toEqual(['cmp_ghost'])
     expect(componentFolders(project(), 'buttons').flatMap(f => f.entries.map(e => e.def.id))).toEqual(['cmp_btn', 'cmp_ghost'])
     expect(componentFolders(project(), 'zzz')).toEqual([])
+  })
+})
+
+describe('componentDeleteMessage', () => {
+  it('lists each place once, counting the instances there', () => {
+    const primary = componentFolders(project(), '')[1]!.entries[0]!
+    expect(componentDeleteMessage(primary.def, primary.usages)).toBe('"Buttons/Primary" is used by 3 instances:\n• page "Home" (2 instances)\n• component "Card"\n\nDelete the component and these instances?')
+    expect(componentDeleteMessage(primary.def, [])).toBe('Delete component "Buttons/Primary"?')
   })
 })
 

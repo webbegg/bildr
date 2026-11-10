@@ -8,7 +8,8 @@ import { hiddenBadge, naturalDisplay, visibilityAt, visibilityToggle } from '#sh
 /**
  * A layers row after Stacki's tree, at Framer's density (32px rows, 13px
  * text): 16px of indent per level, a chevron that
- * collapses the children, the type icon, the type with its text in italics,
+ * collapses the children, the type icon, the name (the type, or an instance's
+ * component and a slot fill's slot) with its text in italics,
  * and a drag handle on hover. The whole row drags and takes drops; Shift+click
  * toggles the row in the selection.
  * As in Figma, Row and Column show auto layout arrows, and hovering shows an
@@ -28,7 +29,7 @@ const icon = computed(() => {
   return getComponent(type)?.icon ?? 'i-lucide-file'
 })
 const isRoot = computed(() => props.depth === 0)
-const name = computed(() => (isRoot.value ? editor.page?.name ?? 'Page' : props.node.type))
+const name = computed(() => (isRoot.value ? editor.page?.name ?? 'Page' : editor.nodeName(props.node)))
 const preview = computed(() => {
   const text = props.node.props.text ?? props.node.props.label
   return !isRoot.value && typeof text === 'string' ? text : ''

@@ -4,7 +4,7 @@ import type { ComponentDefinition } from '#shared/document/schema'
 import type { ComponentUsage } from '#shared/document/usages'
 import { DRAG_MIME } from '#shared/editor/dropTarget'
 import type { ComponentEntry } from '~/composables/componentEditor'
-import { componentFolders, insertableComponents, instanceDragPayload } from '~/composables/componentEditor'
+import { componentDeleteMessage, componentFolders, insertableComponents, instanceDragPayload } from '~/composables/componentEditor'
 
 /**
  * The Assets panel's Components: the project's components by folder (the
@@ -61,11 +61,7 @@ async function commitRename() {
 }
 
 async function remove({ def, usages }: ComponentEntry) {
-  const list = usages.map(u => `• ${u.where}`).join('\n')
-  const message = usages.length
-    ? `"${def.name}" is used by ${usages.length} instance${usages.length === 1 ? '' : 's'}:\n${list}\n\nDelete the component and these instances?`
-    : `Delete component "${def.name}"?`
-  if (!confirm(message)) return
+  if (!confirm(componentDeleteMessage(def, usages))) return
   await editor.run('component_delete', { componentId: def.id, ...(usages.length ? { force: true } : {}) })
 }
 

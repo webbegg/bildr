@@ -3,7 +3,7 @@ import { sourcePaging } from '#shared/data/paging'
 import type { DataRecord } from '#shared/data/records'
 import { loadMoreLimit, tableLimit } from '#shared/data/table'
 import type { Theme, ThemePatch } from '#shared/design/theme'
-import type { Page, Project } from '#shared/document/schema'
+import type { DocNode, Page, Project } from '#shared/document/schema'
 import type { EnvListEntry, EnvValues } from '#shared/env/variables'
 import type { PropValue } from '#shared/document/components'
 import { INSTANCE_TYPE, isFlexType } from '#shared/document/components'
@@ -11,7 +11,7 @@ import { containsNode, findNode, findParent } from '#shared/document/tree'
 import type { NodeBox } from '#shared/editor/autoLayout'
 import { inferAutoLayout, nearestSpacingToken } from '#shared/editor/autoLayout'
 import type { SidebarPanel } from '#shared/editor/commands'
-import { collapsedAncestors, siblingMove, siblingMoves } from '#shared/editor/layers'
+import { collapsedAncestors, layerName, siblingMove, siblingMoves } from '#shared/editor/layers'
 import type { DropTarget } from '#shared/editor/dropTarget'
 import { insertTargetForSelection, moveTarget, parseDragPayload } from '#shared/editor/dropTarget'
 import type { ToolId } from '#shared/editor/insertTools'
@@ -158,6 +158,10 @@ export function createEditor(projectId: string) {
   })
   const selected = computed(() => (page.value && selectedId.value ? findNode(page.value.root, selectedId.value) ?? null : null))
   const selectedNodes = computed(() => (page.value ? selectedIds.value.map(id => findNode(page.value!.root, id)).filter(n => n !== undefined) : []))
+  /** What the layers and the inspector call a node of `page`: an instance its component's name, a slot fill its slot's (see `layerName`). */
+  function nodeName(node: DocNode): string {
+    return page.value && project.value ? layerName(page.value, node, project.value) : node.type
+  }
   /** The theme the canvas renders: the draft while previewing, else the project's. */
   const theme = computed(() => themeDraft.value ?? project.value?.theme ?? null)
   const collection = computed(() => project.value?.collections.find(c => c.id === collectionId.value) ?? project.value?.collections[0] ?? null)
@@ -750,7 +754,7 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, componentId, component, layoutId, layout, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
+    projectId, project, pageId, componentId, component, layoutId, layout, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
     reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, createLayout, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut

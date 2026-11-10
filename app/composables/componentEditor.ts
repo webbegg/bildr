@@ -41,6 +41,15 @@ export function componentFolders(project: Project, query: string): ComponentFold
   return [...folders].filter(([, entries]) => entries.length).map(([name, entries]) => ({ name, entries }))
 }
 
+/** The delete confirmation: one line per place the component is used, counting its instances there. */
+export function componentDeleteMessage(def: ComponentDefinition, usages: ComponentUsage[]): string {
+  if (!usages.length) return `Delete component "${def.name}"?`
+  const counts = new Map<string, number>()
+  for (const usage of usages) counts.set(usage.where, (counts.get(usage.where) ?? 0) + 1)
+  const list = [...counts].map(([where, count]) => `• ${where}${count > 1 ? ` (${count} instances)` : ''}`).join('\n')
+  return `"${def.name}" is used by ${usages.length} instance${usages.length === 1 ? '' : 's'}:\n${list}\n\nDelete the component and these instances?`
+}
+
 /** True when the definition of `componentId` has an Instance of `targetId`, directly or through other components. */
 function usesComponent(project: Project, componentId: string, targetId: string, seen = new Set<string>()): boolean {
   if (seen.has(componentId)) return false

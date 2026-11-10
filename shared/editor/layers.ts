@@ -1,7 +1,7 @@
 import { parseStyleKey, styleKey } from '../design/tokens'
 import type { Breakpoint } from '../design/tokens'
-import { isFlexType } from '../document/components'
-import type { DocNode } from '../document/schema'
+import { INSTANCE_TYPE, isFlexType, SLOT_FILL_TYPE } from '../document/components'
+import type { ComponentDefinition, DocNode, Layout, Page } from '../document/schema'
 import { findNode, findParent, pathTo } from '../document/tree'
 import type { DropTarget } from './dropTarget'
 import { DEVICES, styleProvenance } from './styleFields'
@@ -9,9 +9,29 @@ import type { DeviceId } from './styleFields'
 
 /**
  * The layers tree's pure behaviour: which rows show when some are collapsed,
- * what the arrow keys do, where Move up / Move down send a node, and what the
- * eye toggle reads and writes.
+ * what the arrow keys do, where Move up / Move down send a node, what the
+ * eye toggle reads and writes, and what a node is called.
  */
+
+/**
+ * The name the layers, the canvas label and the inspector give `node` of
+ * `page`: an Instance is named by its component, a SlotFill by the slot it
+ * fills (its Instance's slot property, or for one on the page root the
+ * page layout's slot). Everything else, and an unknown component or slot,
+ * shows its type.
+ */
+export function layerName(page: Page, node: DocNode, sources: { components: readonly ComponentDefinition[], layouts: readonly Layout[] }): string {
+  if (node.type === INSTANCE_TYPE) return sources.components.find(c => c.id === node.props.component)?.name ?? node.type
+  if (node.type !== SLOT_FILL_TYPE) return node.type
+  const parent = findParent(page.root, node.id)?.parent
+  if (parent?.type === INSTANCE_TYPE) {
+    const component = sources.components.find(c => c.id === parent.props.component)
+    return component?.properties.find(p => p.kind === 'slot' && p.id === node.props.slot)?.name ?? node.type
+  }
+  if (parent?.id !== page.root.id) return node.type
+  const layout = sources.layouts.find(l => l.id === page.layoutId)
+  return layout?.slots.find(s => s.id === node.props.slot)?.name ?? node.type
+}
 
 /** Row ids top to bottom; the children of a collapsed row are hidden. */
 export function visibleLayers(root: DocNode, collapsed: ReadonlySet<string>): string[] {
