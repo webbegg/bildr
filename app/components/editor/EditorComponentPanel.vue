@@ -1,18 +1,21 @@
 <script setup lang="ts">
 import type { PropValue } from '#shared/document/components'
 import { getComponent, INSTANCE_TYPE, isContainerType, SLOT_FILL_TYPE } from '#shared/document/components'
-import type { DocNode, PropertyDef } from '#shared/document/schema'
+import type { DocNode, PropertyDef, Variant } from '#shared/document/schema'
+import type { Provenance } from '#shared/editor/styleFields'
 import { findNode } from '#shared/document/tree'
 import { propertyField, uniqueComponentName } from '~/composables/componentEditor'
+import { instanceVariantValue, newVariantName, PRIMARY_VARIANT, variantItems } from '~/composables/componentVariants'
 
 /**
  * The panel's component sections. On an Instance: its component (with Edit
- * component) and a field per property, set per instance (blue when set;
- * reset goes back to the default), plus each slot's "Own content" switch.
- * In the component view: the component name and properties on its root,
- * and on any definition node the properties bound to it, with "+" to turn
- * one of its props, or a container's children (a slot), into a property.
- * Variants are not edited here yet.
+ * component), its variant (blue when not the primary; reset goes back to
+ * it) and a field per property, set per instance (blue when set; reset goes
+ * back to the default), plus each slot's "Own content" switch. In the
+ * component view: the variants (Primary first; click one to show and edit
+ * it, "+" adds one), the component name and properties on its root, and on
+ * any definition node the properties bound to it, with "+" to turn one of
+ * its props, or a container's children (a slot), into a property.
  */
 const { node } = defineProps<{ node: DocNode }>()
 const editor = useEditor()
@@ -28,6 +31,13 @@ const filled = (slot: PropertyDef) => node.children.some(c => c.type === SLOT_FI
 
 function setValue(property: PropertyDef, value: PropValue | null) {
   editor.runOnPage('instance_set_values', { nodeId: node.id, values: { [property.id]: value } })
+}
+
+const variantChoices = computed(() => (instanceOf.value ? variantItems(instanceOf.value) : []))
+const variantSet = computed<Provenance>(() => (node.props.variant ? { state: 'set', key: 'variant', value: String(node.props.variant) } : { state: 'unset' }))
+
+function setVariant(item: string) {
+  editor.runOnPage('instance_set_values', { nodeId: node.id, variant: instanceVariantValue(item) })
 }
 
 function setSlot(slot: PropertyDef, value: boolean) {
@@ -81,6 +91,21 @@ function removeProperty(property: PropertyDef) {
   if (def.value) editor.run('component_property_remove', { componentId: def.value.id, propertyId: property.id })
 }
 
+async function addVariant() {
+  if (!def.value) return
+  const result = await editor.run<{ variantId: string }>('component_variant_add', { componentId: def.value.id, name: newVariantName(def.value) })
+  if (result) editor.selectVariant(result.variantId)
+}
+
+function renameVariant(variant: Variant, name: string) {
+  const next = name.trim()
+  if (def.value && next && next !== variant.name) editor.run('component_variant_rename', { componentId: def.value.id, variantId: variant.id, name: next })
+}
+
+function deleteVariant(variant: Variant) {
+  if (def.value) editor.run('component_variant_delete', { componentId: def.value.id, variantId: variant.id })
+}
+
 function renameComponent(name: string) {
   const next = name.trim()
   if (def.value && next && next !== def.value.name) editor.run('component_rename', { componentId: def.value.id, name: next })
@@ -106,6 +131,24 @@ function renameComponent(name: string) {
           @click="editor.editComponent(instanceOf.id)"
         />
       </div>
+    </EditorRow>
+    <EditorRow
+      v-if="instanceOf?.variants.length"
+      label="Variant"
+      :provenance="variantSet"
+      data-instance-variant
+      @reset="setVariant(PRIMARY_VARIANT)"
+    >
+      <USelect
+        :model-value="String(node.props.variant || PRIMARY_VARIANT)"
+        :items="variantChoices"
+        aria-label="Variant"
+        size="xs"
+        variant="soft"
+        :ui="{ base: 'h-[30px] rounded-lg bg-elevated text-[13px]', trailingIcon: 'size-3.5 text-dimmed' }"
+        class="w-full"
+        @update:model-value="setVariant"
+      />
     </EditorRow>
     <EditorPropField
       v-for="{ property, field } in valueFields"
@@ -137,6 +180,67 @@ function renameComponent(name: string) {
       class="text-[11px] text-dimmed"
     >
       This component has no properties. Add them in the component view.
+    </p>
+  </EditorStyleSection>
+
+  <EditorStyleSection
+    v-if="def"
+    label="Variants"
+    :menu="[{ id: 'add', label: 'New variant', hint: 'Starts like the primary' }]"
+    data-component-variants
+    @add="addVariant"
+  >
+    <div
+      class="flex h-[30px] items-center"
+      data-variant-row="primary"
+    >
+      <button
+        type="button"
+        class="h-full min-w-0 flex-1 truncate rounded-lg px-2 text-start text-[13px]"
+        :class="editor.variant ? 'text-toned hover:bg-white/4' : 'bg-white/8 font-medium text-highlighted'"
+        :aria-pressed="!editor.variant"
+        @click="editor.selectVariant(null)"
+      >
+        Primary
+      </button>
+    </div>
+    <div
+      v-for="variant in def.variants"
+      :key="variant.id"
+      class="flex h-[30px] items-center gap-1"
+      :data-variant-row="variant.id"
+    >
+      <UButton
+        :icon="editor.variant?.id === variant.id ? 'i-lucide-eye' : 'i-lucide-circle'"
+        size="xs"
+        :color="editor.variant?.id === variant.id ? 'primary' : 'neutral'"
+        variant="ghost"
+        :aria-label="`Show and edit ${variant.name}`"
+        :aria-pressed="editor.variant?.id === variant.id"
+        @click="editor.selectVariant(variant.id)"
+      />
+      <EditorCommitInput
+        class="min-w-0 flex-1"
+        size="xs"
+        variant="soft"
+        :aria-label="`${variant.name} variant name`"
+        :model-value="variant.name"
+        @commit="renameVariant(variant, $event)"
+      />
+      <UButton
+        icon="i-lucide-trash-2"
+        size="xs"
+        color="neutral"
+        variant="ghost"
+        :aria-label="`Delete ${variant.name}`"
+        @click="deleteVariant(variant)"
+      />
+    </div>
+    <p
+      v-if="editor.variant"
+      class="text-[11px] text-dimmed"
+    >
+      Prop and style edits now override {{ editor.variant.name }} only.
     </p>
   </EditorStyleSection>
 

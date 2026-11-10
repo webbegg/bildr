@@ -28,6 +28,7 @@ import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 import { deviceForKey } from '#shared/editor/devices'
 import { insertableComponents, outsideInstance, parseInstancePayload, uniqueComponentName } from './componentEditor'
+import { activeVariant, applyVariant } from './componentVariants'
 
 /** Identifies this editor tab on change events, so it can skip its own echoes. */
 export const TAB_ID = import.meta.client ? crypto.randomUUID() : 'server'
@@ -59,6 +60,8 @@ export function createEditor(projectId: string) {
   const pageId = ref<string | null>(null)
   /** The component the Canvas edits instead of the page (the component view); null edits the page. */
   const componentId = ref<string | null>(null)
+  /** In the component view, the variant the Canvas shows and prop/style edits override; null is the primary (the definition itself). */
+  const variantId = ref<string | null>(null)
   /** The selection in the order it was made; Shift+click adds and removes nodes. */
   const selectedIds = ref<string[]>([])
   /** The primary (last selected) node: the one the panel edits alone, and the editor context reports. Setting it selects only it. */
@@ -133,13 +136,14 @@ export function createEditor(projectId: string) {
   /** The page the editor is on, also while the component view shows. */
   const currentPage = computed(() => project.value?.pages.find(p => p.id === pageId.value) ?? project.value?.pages[0] ?? null)
   const component = computed(() => project.value?.components.find(c => c.id === componentId.value) ?? null)
+  const variant = computed(() => activeVariant(component.value, variantId.value))
   /**
    * The tree the Canvas, the layers and the panel edit: the current page, or
    * in the component view the component's definition, as a page of its own
-   * (no layout) whose root is the definition root.
+   * (no layout) whose root is the definition root, with the active variant applied.
    */
   const page = computed<Page | null>(() => (component.value
-    ? { id: component.value.id, name: component.value.name, slug: currentPage.value?.slug ?? '', root: component.value.root }
+    ? { id: component.value.id, name: component.value.name, slug: currentPage.value?.slug ?? '', root: applyVariant(component.value.root, variant.value) }
     : currentPage.value))
   /** The `pageId` or `componentId` the node actions take for that tree. */
   const treeRef = computed(() => (component.value ? { componentId: component.value.id } : { pageId: currentPage.value?.id }))
@@ -198,6 +202,7 @@ export function createEditor(projectId: string) {
       componentId.value = null
       selectedIds.value = []
     }
+    if (variantId.value && !variant.value) variantId.value = null
     if (selectedIds.value.some(id => !findNode(page.value!.root, id))) selectedIds.value = selectedIds.value.filter(id => findNode(page.value!.root, id))
   }
 
@@ -311,6 +316,7 @@ export function createEditor(projectId: string) {
   function selectPage(id: string): void {
     pageId.value = id
     componentId.value = null
+    variantId.value = null
     selectedId.value = null
     hoveredId.value = null
   }
@@ -319,6 +325,7 @@ export function createEditor(projectId: string) {
   function editComponent(id: string, nodeId: string | null = null): void {
     if (!project.value?.components.some(c => c.id === id)) return
     mode.value = 'build'
+    if (componentId.value !== id) variantId.value = null
     componentId.value = id
     selectedId.value = nodeId
     hoveredId.value = null
@@ -327,6 +334,7 @@ export function createEditor(projectId: string) {
   function exitComponent(): void {
     if (!componentId.value) return
     componentId.value = null
+    variantId.value = null
     selectedId.value = null
     hoveredId.value = null
   }
@@ -594,8 +602,20 @@ export function createEditor(projectId: string) {
     if (hidden.length) collapsed.value = new Set([...collapsed.value].filter(row => !hidden.includes(row)))
   })
 
+  /** Shows a variant of the component being edited (null: the primary); prop and style edits then override it. */
+  function selectVariant(id: string | null): void {
+    variantId.value = activeVariant(component.value, id)?.id ?? null
+  }
+
+  /** Overrides props and design tokens of one definition node in the active variant; a null resets (removes) one. */
+  async function setOverride(nodeId: string, patch: { props?: Record<string, PropValue | null>, style?: StylePatch }): Promise<unknown> {
+    if (!component.value || !variant.value) return undefined
+    return run('component_variant_set_override', { componentId: component.value.id, variantId: variant.value.id, nodeId, ...patch })
+  }
+
   async function updateProps(nodeId: string, props: Record<string, PropValue | null>): Promise<void> {
-    await runOnPage('node_update_props', { nodeId, props })
+    if (variant.value) await setOverride(nodeId, { props })
+    else await runOnPage('node_update_props', { nodeId, props })
   }
 
   /** Previews a style patch on a canvas node, or on several, without saving it; null ends the preview. */
@@ -606,6 +626,13 @@ export function createEditor(projectId: string) {
   /** Commits a style patch to a node, or the same patch to several (one undo step); the canvas shows it until the reload has rendered it. */
   async function updateStyle(nodeIds: string | string[], style: StylePatch): Promise<void> {
     const target = typeof nodeIds === 'string' || nodeIds.length === 1 ? { nodeId: typeof nodeIds === 'string' ? nodeIds : nodeIds[0] } : { nodeIds }
+    if (variant.value) {
+      const ids = typeof nodeIds === 'string' ? [nodeIds] : nodeIds
+      await styles.commit(nodeIds, style, async () => {
+        for (const id of ids) await setOverride(id, { style })
+      })
+      return
+    }
     await styles.commit(nodeIds, style, () => runOnPage('node_update_style', { ...target, style }))
   }
 
@@ -683,9 +710,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, componentId, component, currentPage, treeRef, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
+    projectId, project, pageId, componentId, component, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
-    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }

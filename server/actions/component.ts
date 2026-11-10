@@ -200,6 +200,16 @@ export const componentVariantDelete = defineAction({
   }
 })
 
+export const componentVariantRename = defineAction({
+  name: 'component_variant_rename',
+  description: 'Rename a variant of a component. Instances keep using it (they refer to its id).',
+  input: z.object({ projectId: IdSchema, componentId: ComponentRef, variantId: IdSchema, name: NameSchema }),
+  run: async ({ projectId, componentId, variantId, name }, ctx) => {
+    const project = await ctx.services.mutate(ctx, projectId, 'Rename variant', [{ op: 'updateVariant', componentId, variantId, name }])
+    return { version: project.version }
+  }
+})
+
 export const componentVariantSetOverride = defineAction({
   name: 'component_variant_set_override',
   description: 'Override props and design tokens of one definition node in a variant. A variant stores only what differs from the primary: a null value, or the primary\'s own value, resets that override (removes it).',

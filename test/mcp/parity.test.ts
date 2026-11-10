@@ -24,6 +24,7 @@ const COMPONENT_ACTIONS = [
   'component_property_remove',
   'component_variant_add',
   'component_variant_delete',
+  'component_variant_rename',
   'component_variant_set_override',
   'instance_set_values',
   'instance_set_slot'

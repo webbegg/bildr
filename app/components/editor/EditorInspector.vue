@@ -7,6 +7,7 @@ import { groupedProps, isDefaultProp } from '#shared/editor/propGroups'
 import { breadcrumb } from '#shared/editor/selection'
 import { sharedStyle } from '#shared/editor/panel'
 import { FORM_TYPE, formFields, sampleValues } from '#shared/runtime/form'
+import { isOverridden } from '~/composables/componentVariants'
 
 /**
  * The right panel, one scrolling view: a sticky head with the element's
@@ -43,7 +44,9 @@ function propValue(name: string, fallback: PropValue): PropValue {
 
 // The props in Content, Behaviour, Appearance, Advanced sections, above the styles. Props edit one node, so a multi-selection shows styles only.
 const propGroups = computed(() => groupedProps(propDefs.value))
-const changed = (def: PropDef) => !!node.value && !isDefaultProp(def, node.value.props)
+// With a variant shown, blue means overridden in it, and a reset (null) removes the override.
+const changed = (def: PropDef) => !!node.value && (editor.variant ? isOverridden(editor.variant, node.value.id, 'props', def.name) : !isDefaultProp(def, node.value.props))
+const resetValue = (def: PropDef) => (editor.variant ? null : def.default)
 
 // The canvas never submits forms (clicks select), so a Form is tried out here instead.
 const formCollection = computed(() => {
@@ -192,6 +195,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
         </EditorStyleSection>
 
         <EditorComponentPanel :node="node" />
+        <EditorVariantOverrides :node="node" />
 
         <EditorStyleSection
           v-for="{ group, props: defs } in propGroups"
@@ -206,7 +210,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
             :value="propValue(def.name, def.default)"
             :changed="changed(def)"
             @update="editor.updateProps(node.id, { [def.name]: $event })"
-            @reset="editor.updateProps(node.id, { [def.name]: def.default })"
+            @reset="editor.updateProps(node.id, { [def.name]: resetValue(def) })"
           />
           <div
             v-if="group === 'Behaviour' && node.type === FORM_TYPE"

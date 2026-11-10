@@ -110,6 +110,15 @@ describe('component definition operations', () => {
     roundTrip(project, { op: 'removeVariant', componentId: 'card', variantId: 'dark' })
   })
 
+  it('renames a variant, and the inverse restores the old name', () => {
+    const { project } = setup()
+    const after = roundTrip(project, { op: 'updateVariant', componentId: 'card', variantId: 'dark', name: '  Night ' })
+    expect(after.components[0]!.variants[0]).toEqual({ id: 'dark', name: 'Night', overrides: {} })
+    expect(() => applyOperation(project, { op: 'updateVariant', componentId: 'card', variantId: 'dark', name: ' ' })).toThrow('Variant name cannot be empty')
+    expect(() => applyOperation(project, { op: 'updateVariant', componentId: 'card', variantId: 'nope', name: 'x' })).toThrow('Variant "nope" not found')
+    expect(project.components[0]).toEqual(card())
+  })
+
   it('stores only overridden values and drops an override when it is reset', () => {
     const { project } = setup()
     const set = { op: 'setOverride' as const, componentId: 'card', variantId: 'dark', nodeId: 'c-title', props: { text: 'Dark', level: '2' }, style: { color: 'primary' } }
