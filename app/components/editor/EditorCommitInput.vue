@@ -2,9 +2,11 @@
 /**
  * A text field that commits on change (blur or Enter) rather than on every
  * keystroke, so each edit is a single undo step. The `soft` variant is the
- * right panel's soft borderless Framer field.
+ * right panel's soft borderless Framer field. `variables` adds the Insert
+ * variable button (`secrets` where they resolve: API URLs and headers);
+ * an insert commits at once.
  */
-const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft' }>(), { size: 'sm', variant: 'outline' })
+const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft', variables?: 'public' | 'secrets' }>(), { size: 'sm', variant: 'outline', variables: undefined })
 const emit = defineEmits<{ commit: [value: string] }>()
 
 const draft = ref(props.modelValue)
@@ -17,6 +19,11 @@ const ui = computed(() => (props.variant === 'soft' ? { base: props.multiline ? 
 
 function commit() {
   if (draft.value !== props.modelValue) emit('commit', draft.value)
+}
+
+function insert(text: string) {
+  draft.value = text
+  commit()
 }
 </script>
 
@@ -32,7 +39,17 @@ function commit() {
     :ui="ui"
     class="w-full"
     @change="commit"
-  />
+  >
+    <template
+      v-if="variables"
+      #trailing
+    >
+      <EditorVariablePicker
+        :secrets="variables === 'secrets'"
+        @insert="insert"
+      />
+    </template>
+  </UTextarea>
   <UInput
     v-else
     v-model="draft"
@@ -43,5 +60,15 @@ function commit() {
     class="w-full"
     @change="commit"
     @keydown.esc="draft = modelValue"
-  />
+  >
+    <template
+      v-if="variables"
+      #trailing
+    >
+      <EditorVariablePicker
+        :secrets="variables === 'secrets'"
+        @insert="insert"
+      />
+    </template>
+  </UInput>
 </template>

@@ -158,7 +158,14 @@ async function test(op: EndpointOperation) {
         @update:model-value="drafts[op] = String($event)"
         @change="commitPath(op)"
         @keydown.esc="resetDraft(op)"
-      />
+      >
+        <template #trailing>
+          <EditorVariablePicker
+            secrets
+            @insert="drafts[op] = $event; commitPath(op)"
+          />
+        </template>
+      </UInput>
       <UTooltip :text="methodOf(op) === 'GET' ? 'Test' : `Test (sends a real ${methodOf(op)})`">
         <UButton
           icon="i-lucide-play"

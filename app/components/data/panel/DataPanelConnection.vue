@@ -102,6 +102,7 @@ onMounted(async () => {
             :model-value="connection.baseUrl"
             aria-label="Base URL"
             placeholder="https://api.example.com/v1"
+            variables="secrets"
             size="xs"
             variant="soft"
             @commit="update({ baseUrl: $event.trim() })"
@@ -148,7 +149,14 @@ onMounted(async () => {
           class="min-w-0 flex-1"
           data-header-value
           @change="saveHeaders"
-        />
+        >
+          <template #trailing>
+            <EditorVariablePicker
+              secrets
+              @insert="header.value = $event; saveHeaders()"
+            />
+          </template>
+        </UInput>
         <button
           type="button"
           class="grid size-6 shrink-0 place-items-center rounded-md text-dimmed hover:bg-white/8 hover:text-highlighted"
