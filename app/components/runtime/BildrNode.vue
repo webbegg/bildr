@@ -6,6 +6,7 @@ import type { DocNode } from '#shared/document/schema'
 import { hasEnvRefs } from '#shared/env/variables'
 import { bindingItem, hasBindings } from '#shared/runtime/bindings'
 import type { BindingItem } from '#shared/runtime/bindings'
+import { isDefinitionNodeId, pageNodeId, resolveInstance } from '#shared/runtime/instances'
 import { listKey, listQueryOf } from '#shared/runtime/list'
 import { resolveLink } from '#shared/runtime/render'
 
@@ -23,6 +24,11 @@ import { resolveLink } from '#shared/runtime/render'
  * shows bindings as written and published apps render them empty.
  * `{{ env.NAME }}` resolves anywhere from the runtime's public variables
  * (see `bindValue`).
+ * An Instance renders the tree `resolveInstance` makes from its component
+ * definition. Nodes that come from the definition carry the instance's id
+ * (`data-bildr-id`), so the canvas selects, hovers and drops on the instance
+ * as a whole; slot content keeps its own ids and stays editable. A missing
+ * component shows a hint in the canvas and nothing when published.
  * A Form is a `<form>` (see BildrForm); its Inputs are named by their field,
  * and a Button's action links, submits the enclosing form, or shows a toast.
  */
@@ -38,13 +44,17 @@ const toast = useToast()
 const p = computed(() => props.node.props)
 const text = (name: string) => bindValue(String(p.value[name] ?? ''), runtime, scope?.item)
 const link = computed(() => resolveLink(text('to'), runtime.base))
+const fromDefinition = computed(() => isDefinitionNodeId(props.node.id))
 const attrs = computed(() => ({
-  'data-bildr-id': props.node.id,
-  'data-bildr-type': props.node.type,
+  'data-bildr-id': pageNodeId(props.node.id),
+  'data-bildr-type': fromDefinition.value ? 'Instance' : props.node.type,
   'data-bildr-copy': scope?.copy ? '' : undefined
 }))
 // A binding the canvas shows as written (or an empty value) is no URL to load.
 const imageSrc = computed(() => (hasBindings(text('src')) || hasEnvRefs(text('src')) ? '' : text('src')))
+const instance = computed(() => (props.node.type === 'Instance' ? resolveInstance(props.node, runtime.components ?? []) : null))
+// Containers of a definition take no drops: the instance is the page node.
+const dropParent = computed(() => runtime.editable && !fromDefinition.value && !props.node.children.length)
 const stacked = computed(() => ['Page', 'Container', 'Column'].includes(props.node.type))
 
 // In a stack, block-level nodes fill the width whatever the stack's `items`, so sections
@@ -106,8 +116,23 @@ const list = computed(() => {
 </script>
 
 <template>
+  <template v-if="node.type === 'Instance'">
+    <BildrNode
+      v-if="instance"
+      :node="instance"
+      :in-stack="inStack"
+    />
+    <div
+      v-else-if="runtime.editable"
+      v-bind="attrs"
+      class="text-error text-sm"
+    >
+      Missing component
+    </div>
+  </template>
+
   <div
-    v-if="stacked || node.type === 'Row'"
+    v-else-if="stacked || node.type === 'Row'"
     v-bind="attrs"
     :class="[display('flex'), { 'min-h-full': node.type === 'Page' }, tokens]"
   >
@@ -118,7 +143,7 @@ const list = computed(() => {
       :in-stack="stacked"
     />
     <BildrDropHint
-      v-if="runtime.editable && !node.children.length"
+      v-if="dropParent"
       :parent-id="node.id"
     />
   </div>
@@ -134,7 +159,7 @@ const list = computed(() => {
       :node="child"
     />
     <BildrDropHint
-      v-if="runtime.editable && !node.children.length"
+      v-if="dropParent"
       :parent-id="node.id"
     />
   </div>
@@ -238,7 +263,7 @@ const list = computed(() => {
       />
     </BildrListItem>
     <BildrDropHint
-      v-if="runtime.editable && !node.children.length"
+      v-if="dropParent"
       :parent-id="node.id"
     />
   </div>
@@ -256,7 +281,7 @@ const list = computed(() => {
       in-stack
     />
     <BildrDropHint
-      v-if="runtime.editable && !node.children.length"
+      v-if="dropParent"
       :parent-id="node.id"
     />
   </BildrForm>
@@ -278,7 +303,7 @@ const list = computed(() => {
         in-stack
       />
       <BildrDropHint
-        v-if="runtime.editable && !node.children.length"
+        v-if="dropParent"
         :parent-id="node.id"
       />
     </div>

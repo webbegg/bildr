@@ -70,3 +70,19 @@ describe('sampleValues', () => {
     expect(sampleValues(fields, new Date('2026-11-09T15:00:00Z'), ['guests', 'unknown'])).toEqual({ guests: 1 })
   })
 })
+
+describe('formFields with components', () => {
+  it('includes the Inputs of instances inside the Form', () => {
+    const input = { ...createNode('Input', { field: 'email' }), id: 'in' }
+    const def = {
+      id: 'fld',
+      name: 'Field',
+      root: { ...createNode('Container'), id: 'root', children: [input] },
+      properties: [{ id: 'p-f', name: 'Field', kind: 'field' as const, bindings: [{ nodeId: 'in', prop: 'field' }] }],
+      variants: []
+    }
+    const form = { ...createNode('Form'), id: 'form', children: [{ ...createNode('Instance', { 'component': 'fld', 'p-f': 'message' }), id: 'i1' }] }
+    expect(formFields(form, [def])).toEqual(['message'])
+    expect(formFields(form)).toEqual([])
+  })
+})

@@ -1,11 +1,13 @@
 import type { DataRecord, RecordValue } from '../data/records'
+import type { PropValue } from '../document/components'
 import type { EnvValues } from '../env/variables'
 
 /**
  * `{{ item.<field> }}` bindings in string props, resolved per record inside
  * a List, and `{{ env.NAME }}` project variables (public ones only in the
- * browser). Any other `{{ … }}` stays literal so a typo shows up on the
- * page instead of vanishing.
+ * browser), and `{{ prop.NAME }}`, the properties of the component being
+ * rendered (by property name, which may contain spaces). Any other `{{ … }}`
+ * stays literal so a typo shows up on the page instead of vanishing.
  */
 
 /** A record as bindings see it: its values plus `id`, `createdAt` and `updatedAt`. */
@@ -18,10 +20,23 @@ export interface BindingScope {
   env?: EnvValues
   /** A name missing from `env`: kept as written (the editor, the default) or rendered empty (published apps). */
   onMissingEnv?: 'keep' | 'empty'
+  /** The component properties by name; without them (or for a name missing from them) prop refs stay as written. */
+  prop?: Record<string, PropValue>
 }
 
 const BINDING = /\{\{\s*item\.([A-Za-z_]\w*)\s*\}\}/g
-const ANY_BINDING = /\{\{\s*(item|env)\.([A-Za-z_]\w*)\s*\}\}/g
+const ANY_BINDING = /\{\{\s*(?:(item|env)\.([A-Za-z_]\w*)|prop\.([^{}]+?))\s*\}\}/g
+const PROP_BINDING = /\{\{\s*prop\.([^{}]+?)\s*\}\}/g
+
+function propRef(ref: string, name: string, prop: BindingScope['prop']): string {
+  return prop && Object.hasOwn(prop, name) ? String(prop[name]) : ref
+}
+
+/** Resolves only `{{ prop.NAME }}` refs, leaving item and env refs for the render-time pass. */
+export function resolvePropRefs(value: string, prop: Record<string, PropValue>): string {
+  if (!value.includes('{{')) return value
+  return value.replace(PROP_BINDING, (ref, name: string) => propRef(ref, name, prop))
+}
 
 export function hasBindings(value: string): boolean {
   return new RegExp(BINDING.source).test(value)
@@ -34,7 +49,8 @@ export function hasBindings(value: string): boolean {
  */
 export function resolveBindings(value: string, scope: BindingScope): string {
   if (!value.includes('{{')) return value
-  return value.replace(ANY_BINDING, (ref, kind: string, key: string) => {
+  return value.replace(ANY_BINDING, (ref, kind: string | undefined, key: string, propName: string | undefined) => {
+    if (propName !== undefined) return propRef(ref, propName, scope.prop)
     if (kind === 'env') {
       const env = scope.env
       if (!env) return ref

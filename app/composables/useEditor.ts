@@ -136,14 +136,14 @@ export function createEditor(projectId: string) {
 
   /** Collections the current page's Lists show, and their records by collection id, for the canvas. */
   const listCollections = computed(() => {
-    const slugs = new Set(page.value ? listNodes(page.value.root).map(node => listQueryOf(node.props).collection) : [])
+    const slugs = new Set(page.value ? listNodes(page.value.root, project.value?.components).map(node => listQueryOf(node.props).collection) : [])
     return project.value?.collections.filter(c => slugs.has(c.slug)) ?? []
   })
   const listCollectionRecords = shallowRef<Record<string, DataRecord[]>>({})
   /** What each List on the page shows, by `listKey`; Lists of unknown collections have no entry. */
   const lists = computed(() => {
     const out: Record<string, DataRecord[]> = {}
-    for (const node of page.value ? listNodes(page.value.root) : []) {
+    for (const node of page.value ? listNodes(page.value.root, project.value?.components) : []) {
       const query = listQueryOf(node.props)
       const shown = listCollections.value.find(c => c.slug === query.collection)
       if (shown) out[listKey(query)] = listRecords(shown, listCollectionRecords.value[shown.id] ?? [], query)

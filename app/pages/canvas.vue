@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DataRecord } from '#shared/data/records'
 import type { Theme } from '#shared/design/theme'
-import type { Page } from '#shared/document/schema'
+import type { ComponentDefinition, Page } from '#shared/document/schema'
 import type { EnvValues } from '#shared/env/variables'
 import type { CanvasToEditor, CanvasView, EditorToCanvas } from '#shared/editor/protocol'
 import { isCanvasMessage } from '#shared/editor/protocol'
@@ -37,6 +37,8 @@ import { labelPlacement } from '#shared/editor/labelPlacement'
  * With an insert tool armed the cursor is a crosshair, the pointer shows the
  * insert slot with the drop indicator, and a click reports that slot.
  * The editor's light/dark preview sets this document's colour mode class.
+ * Component instances render from the `components` the editor sends; their
+ * parts report the instance's id, so a click anywhere in one selects it.
  * `{{ env.NAME }}` resolves from the public variables the editor sends; a
  * missing one shows as written.
  * The frame grows with its content, so `screen` heights (100vh) would grow
@@ -47,6 +49,7 @@ definePageMeta({ layout: false })
 
 const page = shallowRef<Page | null>(null)
 const base = ref('')
+const components = shallowRef<ComponentDefinition[]>([])
 const lists = shallowRef<Record<string, DataRecord[]>>({})
 const theme = shallowRef<Theme | null>(null)
 const env = shallowRef<EnvValues>({})
@@ -151,6 +154,7 @@ function onMessage(event: MessageEvent) {
     if (Object.keys(previews.value).length) previews.value = settlePreviews(previews.value, message.page.root)
     base.value = message.base
     lists.value = message.lists
+    components.value = message.components ?? []
     env.value = message.env ?? {}
     theme.value = message.theme
     view.value = message.view
@@ -416,6 +420,7 @@ onBeforeUnmount(() => {
       :page="shownPage"
       :base="base"
       :lists="lists"
+      :components="components"
       :env="env"
       missing-env="keep"
       editable

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bindingItem, hasBindings, resolveBindings } from '#shared/runtime/bindings'
+import { bindingItem, hasBindings, resolveBindings, resolvePropRefs } from '#shared/runtime/bindings'
 
 const item = { id: 'rec_1', name: 'Flat white', price: 3.5, vegan: true, photo: '/img/fw.jpg', notes: null }
 
@@ -69,5 +69,36 @@ describe('bindingItem', () => {
   it('flattens a record into the binding scope with id and timestamps', () => {
     expect(bindingItem({ id: 'rec_1', createdAt: 'c', updatedAt: 'u', values: { name: 'Tea' } }))
       .toEqual({ id: 'rec_1', createdAt: 'c', updatedAt: 'u', name: 'Tea' })
+  })
+})
+
+describe('prop bindings', () => {
+  const prop = { 'Title': 'Hello', 'Count': 3, 'Button label': 'Go' }
+
+  it('replaces {{ prop.NAME }} with the property value', () => {
+    expect(resolveBindings('{{ prop.Title }} x{{prop.Count}}', { prop })).toBe('Hello x3')
+  })
+
+  it('accepts property names with spaces', () => {
+    expect(resolveBindings('{{ prop.Button label }}', { prop })).toBe('Go')
+  })
+
+  it('keeps unknown names, and every prop ref without a prop scope, as written', () => {
+    expect(resolveBindings('{{ prop.Nope }}', { prop })).toBe('{{ prop.Nope }}')
+    expect(resolveBindings('{{ prop.Title }}', { item })).toBe('{{ prop.Title }}')
+  })
+
+  it('resolves item, env and prop refs together without touching item/env behaviour', () => {
+    expect(resolveBindings('{{ item.name }}/{{ env.A }}/{{ prop.Title }}', { item, env: { A: 'a' }, prop })).toBe('Flat white/a/Hello')
+  })
+
+  it('never resolves a value twice', () => {
+    expect(resolveBindings('{{ prop.Title }}', { prop: { Title: '{{ prop.Count }}', Count: 1 } })).toBe('{{ prop.Count }}')
+  })
+})
+
+describe('resolvePropRefs', () => {
+  it('resolves only prop refs, leaving item and env refs for later', () => {
+    expect(resolvePropRefs('{{ prop.Title }} {{ item.name }} {{ env.A }} {{ prop.Nope }}', { Title: 'T' })).toBe('T {{ item.name }} {{ env.A }} {{ prop.Nope }}')
   })
 })

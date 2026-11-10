@@ -29,7 +29,7 @@ const lists = shallowRef<Record<string, DataRecord[]>>({})
 // Collections the snapshot does not mark publicRead would only answer 404, so they are not asked.
 const queries = computed(() => {
   const readable = new Set(project.value?.collections.filter(c => c.publicRead).map(c => c.slug))
-  const all = page.value ? listNodes(page.value.root).map(node => listQueryOf(node.props)).filter(q => readable.has(q.collection)) : []
+  const all = page.value ? listNodes(page.value.root, project.value?.components).map(node => listQueryOf(node.props)).filter(q => readable.has(q.collection)) : []
   return [...new Map(all.map(q => [listKey(q), q])).values()]
 })
 watch(queries, async (current) => {
@@ -62,6 +62,7 @@ useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${p
     :page="page"
     :base="`/p/${projectSlug}`"
     :lists="lists"
+    :components="project?.components"
     :submit-form="submitForm"
     :env="env"
     missing-env="empty"

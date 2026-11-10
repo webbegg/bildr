@@ -1,5 +1,6 @@
 import type { InjectionKey } from 'vue'
 import type { DataRecord } from '#shared/data/records'
+import type { ComponentDefinition } from '#shared/document/schema'
 import type { EnvValues } from '#shared/env/variables'
 import { resolveEnv } from '#shared/env/variables'
 import type { BindingItem } from '#shared/runtime/bindings'
@@ -22,6 +23,8 @@ export interface RuntimeContext {
   submitForm?: (collection: string, values: Record<string, string>) => Promise<void>
   /** Public variables for `{{ env.NAME }}`; without them env refs stay as written. */
   env?: EnvValues
+  /** The project's component definitions, which Instance nodes render from. */
+  components?: ComponentDefinition[]
   /** A missing variable: kept as written (the canvas and the draft preview) or rendered empty (published apps). */
   onMissingEnv?: 'keep' | 'empty'
 }

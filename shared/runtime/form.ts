@@ -1,6 +1,7 @@
 import type { RecordValue } from '../data/records'
-import type { DocNode, Field, FieldType } from '../document/schema'
-import { findNode, pathTo, walk } from '../document/tree'
+import type { ComponentDefinition, DocNode, Field, FieldType } from '../document/schema'
+import { findNode, pathTo } from '../document/tree'
+import { walkResolved } from './instances'
 
 /**
  * Forms: a Form node adds a record to its collection; each Input inside it
@@ -19,10 +20,10 @@ export function formValues(entries: Iterable<[string, unknown]>): Record<string,
   return values
 }
 
-/** The fields the Inputs inside `form` fill, in document order, once each. */
-export function formFields(form: DocNode): string[] {
+/** The fields the Inputs inside `form` fill (those of component instances too), in document order, once each. */
+export function formFields(form: DocNode, components: ComponentDefinition[] = []): string[] {
   const fields = new Set<string>()
-  walk(form, (node) => {
+  walkResolved(form, components, (node) => {
     if (node.type === 'Input' && typeof node.props.field === 'string' && node.props.field) fields.add(node.props.field)
   })
   return [...fields]
