@@ -35,12 +35,12 @@ async function copyCommand() {
     class="mx-auto max-w-xl space-y-8 px-6 py-10"
     data-settings
   >
-    <h1 class="text-base font-semibold text-highlighted">
+    <h1 class="text-base font-[550] text-highlighted">
       Project settings
     </h1>
 
     <section class="space-y-2">
-      <h2 class="text-[13px] font-semibold text-highlighted">
+      <h2 class="text-[12px] font-[550] text-highlighted">
         General
       </h2>
       <EditorFormRow label="Name">
@@ -64,12 +64,12 @@ async function copyCommand() {
     </section>
 
     <section class="space-y-2">
-      <h2 class="text-[13px] font-semibold text-highlighted">
+      <h2 class="text-[12px] font-[550] text-highlighted">
         Publishing
       </h2>
       <div
         v-if="published"
-        class="flex items-center gap-2 text-[13px]"
+        class="flex items-center gap-2 text-[12px]"
         data-settings-published
       >
         <UIcon
@@ -89,7 +89,7 @@ async function copyCommand() {
       </div>
       <p
         v-else
-        class="text-[13px] text-muted"
+        class="text-[12px] text-muted"
       >
         Not published yet. Publish from the top bar to serve the app at /p/{{ editor.project?.slug }}.
       </p>
@@ -98,10 +98,10 @@ async function copyCommand() {
     <EditorVariables />
 
     <section class="space-y-2">
-      <h2 class="text-[13px] font-semibold text-highlighted">
+      <h2 class="text-[12px] font-[550] text-highlighted">
         Connect an agent (MCP)
       </h2>
-      <p class="text-[13px] text-muted">
+      <p class="text-[12px] text-muted">
         Every editor action is an MCP tool. Connect Claude Code to this editor:
       </p>
       <div :class="`${FIELD_MONO} flex items-center gap-2 ps-2.5 pe-0.5`">
@@ -123,10 +123,10 @@ async function copyCommand() {
     </section>
 
     <section class="space-y-2">
-      <h2 class="text-[13px] font-semibold text-highlighted">
+      <h2 class="text-[12px] font-[550] text-highlighted">
         WebMCP
       </h2>
-      <p class="text-[13px] text-muted">
+      <p class="text-[12px] text-muted">
         Published apps register WebMCP tools for agents in the visitor's browser: list_pages, navigate_to_page and get_page_content, plus list_records and submit_form for public collections. Browsers without WebMCP ignore them.
       </p>
     </section>

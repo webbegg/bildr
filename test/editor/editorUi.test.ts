@@ -43,7 +43,7 @@ describe('mergeUi', () => {
 
 describe('the shared classes', () => {
   it('are the panel soft field', () => {
-    expect(FIELD).toBe('h-[30px] rounded-lg bg-elevated text-[13px]')
+    expect(FIELD).toBe('h-[30px] rounded-lg bg-elevated text-[12px]')
     expect(FIELD_MONO).toBe('h-[30px] rounded-lg bg-elevated font-mono text-[12px]')
     expect(INPUT_UI.base).toContain(FIELD)
     expect(SELECT_UI.base).toContain(FIELD)
@@ -51,8 +51,8 @@ describe('the shared classes', () => {
 
   it('give selects the menu popover', () => {
     expect(SELECT_UI.content).toContain(MENU_UI.content)
-    expect(SELECT_UI.item).toContain('px-2.5 py-1.5 text-[13px]')
-    expect(MENU_UI.item).toContain('px-2.5 py-1.5 text-[13px]')
+    expect(SELECT_UI.item).toContain('px-2.5 py-1.5 text-[12px]')
+    expect(MENU_UI.item).toContain('px-2.5 py-1.5 text-[12px]')
   })
 
   it('scope the dark chrome on the modal itself', () => {

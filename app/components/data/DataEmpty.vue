@@ -25,10 +25,10 @@ async function newCollection() {
           class="size-6 text-toned"
         />
       </div>
-      <h2 class="text-base font-semibold text-highlighted">
+      <h2 class="text-base font-[550] text-highlighted">
         Add your first collection
       </h2>
-      <p class="mt-1.5 text-sm text-muted">
+      <p class="mt-1.5 text-[12px] text-muted">
         Collections hold your app's data, like a menu or contact messages. Agents can use them too.
       </p>
       <div class="mt-5 flex items-center gap-2">

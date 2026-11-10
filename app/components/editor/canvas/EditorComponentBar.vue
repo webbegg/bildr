@@ -19,7 +19,7 @@ const usages = computed(() => (editor.project && editor.component ? componentUsa
     class="pointer-events-none absolute inset-x-0 top-3 z-10 flex justify-center"
   >
     <div
-      class="pointer-events-auto flex items-center gap-2 rounded-xl bg-violet-500/15 py-1 ps-3 pe-1 text-[13px] text-highlighted ring-1 ring-violet-400/40 backdrop-blur"
+      class="pointer-events-auto flex items-center gap-2 rounded-xl bg-violet-500/15 py-1 ps-3 pe-1 text-[12px] text-highlighted ring-1 ring-violet-400/40 backdrop-blur"
       role="status"
       data-component-view
     >
@@ -27,7 +27,7 @@ const usages = computed(() => (editor.project && editor.component ? componentUsa
         name="i-lucide-component"
         class="size-4 text-violet-400"
       />
-      <span>Editing <strong class="font-semibold">{{ editor.component.name }}</strong></span>
+      <span>Editing <strong class="font-[550]">{{ editor.component.name }}</strong></span>
       <span class="text-xs text-muted">{{ usages }} instance{{ usages === 1 ? '' : 's' }}</span>
       <USelect
         v-if="editor.component.variants.length"

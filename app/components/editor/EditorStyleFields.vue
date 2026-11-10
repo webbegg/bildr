@@ -228,7 +228,7 @@ const SELECT_ROWS: Partial<Record<RowId, { labels: Record<string, string>, unset
 }
 
 // A select in a field shell.
-const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[13px]'
+const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
 </script>
 
 <template>

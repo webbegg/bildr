@@ -59,12 +59,12 @@ function addField() {
 
 <template>
   <section>
-    <h3 class="mb-2 flex items-baseline gap-2 text-[13px] font-semibold text-highlighted">
+    <h3 class="mb-2 flex items-baseline gap-2 text-[12px] font-[550] text-highlighted">
       Mapping
       <span class="text-[12px] font-normal text-dimmed">{{ included }} of {{ rows.length }} fields included</span>
     </h3>
     <table
-      class="w-full table-fixed border-separate border-spacing-y-1 text-[13px]"
+      class="w-full table-fixed border-separate border-spacing-y-1 text-[12px]"
       data-api-mapping
     >
       <colgroup>

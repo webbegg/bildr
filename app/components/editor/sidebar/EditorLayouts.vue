@@ -47,7 +47,7 @@ function menu(entry: LayoutEntry): DropdownMenuItem[] {
 <template>
   <section data-assets-layouts>
     <div class="mb-1 flex items-center justify-between">
-      <p class="text-xs font-semibold text-muted uppercase">
+      <p class="text-xs font-[550] text-muted uppercase">
         Layouts
       </p>
       <UTooltip text="New layout">
@@ -93,7 +93,7 @@ function menu(entry: LayoutEntry): DropdownMenuItem[] {
       <template v-else>
         <button
           type="button"
-          class="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg ps-1.5 pe-8 text-left text-sm"
+          class="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg ps-1.5 pe-8 text-left text-[12px]"
           :class="entry.layout.id === editor.layoutId ? 'bg-white/8 font-medium text-highlighted' : 'text-toned hover:bg-white/4'"
           :title="`${entry.layout.name}: used by ${entry.pages.map(p => p.name).join(', ') || 'no pages'}`"
           :aria-current="entry.layout.id === editor.layoutId ? 'true' : undefined"

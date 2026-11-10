@@ -6,6 +6,8 @@
  * pill when nothing is set: only overrides are highlighted, as in Framer. With `tooltips`, icon
  * segments show their label in a delayed tooltip; `dense` (the default) is the
  * kit's 30 px field (FIELD in editorUi.ts), `:dense="false"` a 28 px inset track.
+ * The pill and segments are `rounded-md` (6 px), concentric inside the 8 px
+ * track's 2 px inset.
  */
 const props = withDefaults(defineProps<{
   items: { value: string, label: string, icon?: string }[]
@@ -26,13 +28,13 @@ const isInherited = (value: string) => props.modelValue === undefined && value =
 <template>
   <div
     class="relative flex min-w-0 p-0.5"
-    :class="dense ? `${FIELD} w-full` : 'h-7 rounded-md bg-muted'"
+    :class="dense ? `${FIELD} w-full` : 'h-7 rounded-lg bg-muted'"
     role="group"
   >
     <span
       v-if="index >= 0"
       class="absolute inset-y-0.5 left-0.5 transition-transform duration-200"
-      :class="[dense ? 'rounded-md' : 'rounded-[5px]', tone === 'fallback' ? 'bg-white/6' : dense ? 'bg-white/14' : 'bg-accented']"
+      :class="['rounded-md', tone === 'fallback' ? 'bg-white/6' : dense ? 'bg-white/14' : 'bg-accented']"
       :style="{ width: `calc((100% - 4px) / ${items.length})`, transform: `translateX(${index * 100}%)` }"
       aria-hidden="true"
     />
@@ -45,8 +47,8 @@ const isInherited = (value: string) => props.modelValue === undefined && value =
     >
       <button
         type="button"
-        class="relative flex min-w-0 flex-1 items-center justify-center rounded-[5px] px-1 transition-colors"
-        :class="[dense ? 'text-[13px]' : 'text-xs', item.value !== shown
+        class="relative flex min-w-0 flex-1 items-center justify-center rounded-md px-1 transition-colors"
+        :class="[FOCUS_RING, dense ? 'text-[12px]' : 'text-xs', item.value !== shown
           ? 'text-muted hover:text-highlighted'
           : tone === 'set' ? 'text-highlighted' : 'text-toned']"
         :aria-label="item.label"

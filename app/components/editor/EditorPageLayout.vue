@@ -48,7 +48,7 @@ function setSlot(slot: LayoutSlot, filled: boolean) {
           aria-label="Page layout"
           size="xs"
           variant="soft"
-          :ui="{ base: 'h-[30px] rounded-lg bg-elevated text-[13px]', trailingIcon: 'size-3.5 text-dimmed' }"
+          :ui="{ base: 'h-[30px] rounded-lg bg-elevated text-[12px]', trailingIcon: 'size-3.5 text-dimmed' }"
           class="min-w-0 flex-1"
           @update:model-value="setLayout"
         />

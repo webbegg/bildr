@@ -83,7 +83,7 @@ const menu = computed<DropdownMenuItem[][]>(() => [
       <span class="min-w-0 flex-1">
         <span class="flex items-center gap-1">
           <span
-            class="truncate text-[13px] font-medium text-highlighted"
+            class="truncate text-[12px] font-medium text-highlighted"
             data-theme-name
           >{{ entry.name }}</span>
           <UIcon

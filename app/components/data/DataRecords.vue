@@ -218,7 +218,7 @@ function sortIcon(key: string) {
 
 <template>
   <section
-    class="flex size-full flex-col text-sm"
+    class="flex size-full flex-col text-[12px]"
     data-records
   >
     <DataTableToolbar
@@ -258,8 +258,8 @@ function sortIcon(key: string) {
       @keydown="onKey"
     >
       <table class="w-full border-separate border-spacing-0">
-        <thead class="sticky top-0 z-10 bg-[#1e1e1e]">
-          <tr class="h-10 text-left text-[13px] text-dimmed">
+        <thead class="sticky top-0 z-10 bg-(--editor-canvas)">
+          <tr class="h-10 text-left text-[12px] text-dimmed">
             <th class="w-10 border-b border-white/6 pl-4">
               <DataTableCheck
                 v-if="caps.delete && rows.length"

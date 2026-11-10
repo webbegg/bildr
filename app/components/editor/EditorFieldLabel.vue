@@ -47,7 +47,7 @@ function reset() {
   emit('reset')
 }
 
-const SHAPE = 'max-w-full truncate rounded-sm text-left text-[13px] leading-5'
+const SHAPE = 'max-w-full truncate rounded-sm text-left text-[12px] leading-5'
 </script>
 
 <template>
@@ -76,7 +76,7 @@ const SHAPE = 'max-w-full truncate rounded-sm text-left text-[13px] leading-5'
         <button
           type="button"
           role="menuitem"
-          class="flex min-w-36 items-center justify-between gap-4 rounded-sm px-2 py-1 text-xs whitespace-nowrap hover:bg-elevated"
+          class="flex min-w-36 items-center justify-between gap-4 rounded-lg px-2 py-1 text-xs whitespace-nowrap hover:bg-elevated"
           @click="reset"
         >
           {{ resetLabel }}

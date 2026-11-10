@@ -14,7 +14,7 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
     :label="label"
     :disabled="disabled"
     size="sm"
-    :ui="{ root: 'items-center', wrapper: 'ms-2', label: 'text-[13px] font-normal text-default' }"
+    :ui="{ root: 'items-center', wrapper: 'ms-2', label: 'text-[12px] font-[450] text-default' }"
     @update:model-value="emit('update:modelValue', $event)"
   />
 </template>

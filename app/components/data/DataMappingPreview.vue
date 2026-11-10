@@ -12,7 +12,7 @@ function display(value: RecordValue): string {
 
 <template>
   <section>
-    <h3 class="mb-2 flex items-baseline gap-2 text-[13px] font-semibold text-highlighted">
+    <h3 class="mb-2 flex items-baseline gap-2 text-[12px] font-[550] text-highlighted">
       Preview
       <span class="text-[12px] font-normal text-dimmed">first {{ rows.length }} mapped rows</span>
     </h3>

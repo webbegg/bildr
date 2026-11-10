@@ -12,7 +12,7 @@ const open = defineModel<boolean>('open', { default: false })
     :ui="{ content: 'sm:max-w-[560px]' }"
   >
     <ul
-      class="divide-y divide-white/8 text-[13px]"
+      class="divide-y divide-white/8 text-[12px]"
       data-shortcuts-sheet
     >
       <li

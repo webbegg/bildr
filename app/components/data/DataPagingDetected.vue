@@ -30,7 +30,7 @@ const summary = computed(() => {
     :error="pageTwo && !pageTwoText(pageTwo).ok ? pageTwoText(pageTwo).text : undefined"
   >
     <p
-      class="min-w-0 flex-1 truncate text-[13px]"
+      class="min-w-0 flex-1 truncate text-[12px]"
       :class="paging && use ? 'text-toned' : 'text-dimmed'"
       data-paging-detected
     >

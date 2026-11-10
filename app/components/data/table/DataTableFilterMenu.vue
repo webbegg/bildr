@@ -55,7 +55,7 @@ function add() {
     </UTooltip>
     <template #content>
       <form
-        class="flex w-60 flex-col gap-2 p-3 text-[13px]"
+        class="flex w-60 flex-col gap-2 p-3 text-[12px]"
         data-filter-form
         @submit.prevent="add"
       >

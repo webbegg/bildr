@@ -79,7 +79,7 @@ function menu(entry: ComponentEntry): DropdownMenuItem[] {
 <template>
   <section data-assets-components>
     <div class="mb-1 flex items-center justify-between">
-      <p class="text-xs font-semibold text-muted uppercase">
+      <p class="text-xs font-[550] text-muted uppercase">
         Components
       </p>
       <UTooltip text="Create component from the selection">
@@ -157,7 +157,7 @@ function menu(entry: ComponentEntry): DropdownMenuItem[] {
             <button
               type="button"
               draggable="true"
-              class="flex h-8 min-w-0 flex-1 cursor-grab items-center gap-2 rounded-lg ps-1.5 pe-8 text-left text-sm active:cursor-grabbing"
+              class="flex h-8 min-w-0 flex-1 cursor-grab items-center gap-2 rounded-lg ps-1.5 pe-8 text-left text-[12px] active:cursor-grabbing"
               :class="entry.def.id === editor.componentId ? 'bg-white/8 font-medium text-highlighted' : 'text-toned hover:bg-white/4'"
               :title="`${entry.def.name}: click to edit, drag to insert`"
               :aria-current="entry.def.id === editor.componentId ? 'true' : undefined"

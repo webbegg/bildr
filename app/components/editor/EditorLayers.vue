@@ -6,7 +6,8 @@ import { filterLayers } from '#shared/editor/sidebar'
  * The layers tree. While it has focus, ArrowUp/ArrowDown step through the
  * visible rows, ArrowLeft collapses a row or goes to its parent, and
  * ArrowRight expands it. Right-click opens the node menu. A sidebar search
- * shows only the matching rows and their ancestors, expanded.
+ * shows only the matching rows and their ancestors, expanded. The rows
+ * aren't tab stops (the tree is), so the focus ring is the tree's.
  */
 const { query = '' } = defineProps<{ query?: string }>()
 const editor = useEditor()
@@ -26,7 +27,7 @@ function onKeyDown(event: KeyboardEvent) {
 
 <template>
   <EditorNodeMenu
-    class="overflow-auto px-2 py-2 outline-none"
+    class="overflow-auto rounded-lg px-2 py-2 outline-none ring-inset focus-visible:ring-1 focus-visible:ring-(color:--editor-selection)"
     role="tree"
     aria-label="Layers"
     tabindex="0"

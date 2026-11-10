@@ -119,7 +119,7 @@ function renameComponent(name: string) {
   >
     <EditorRow label="Component">
       <div class="flex h-[30px] min-w-0 items-center gap-1">
-        <span class="min-w-0 flex-1 truncate text-[13px] text-highlighted">{{ instanceOf?.name ?? 'Missing component' }}</span>
+        <span class="min-w-0 flex-1 truncate text-[12px] text-highlighted">{{ instanceOf?.name ?? 'Missing component' }}</span>
         <UButton
           v-if="instanceOf"
           label="Edit"
@@ -144,7 +144,7 @@ function renameComponent(name: string) {
         aria-label="Variant"
         size="xs"
         variant="soft"
-        :ui="{ base: 'h-[30px] rounded-lg bg-elevated text-[13px]', trailingIcon: 'size-3.5 text-dimmed' }"
+        :ui="{ base: 'h-[30px] rounded-lg bg-elevated text-[12px]', trailingIcon: 'size-3.5 text-dimmed' }"
         class="w-full"
         @update:model-value="setVariant"
       />
@@ -196,7 +196,7 @@ function renameComponent(name: string) {
     >
       <button
         type="button"
-        class="h-full min-w-0 flex-1 truncate rounded-lg px-2 text-start text-[13px]"
+        class="h-full min-w-0 flex-1 truncate rounded-lg px-2 text-start text-[12px]"
         :class="editor.variant ? 'text-toned hover:bg-white/4' : 'bg-white/8 font-medium text-highlighted'"
         :aria-pressed="!editor.variant"
         @click="editor.selectVariant(null)"

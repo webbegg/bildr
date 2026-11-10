@@ -23,7 +23,7 @@ const showDesign = computed(() => !query.trim() || 'design system styles theme'.
     >
       <button
         type="button"
-        class="flex h-8 w-full items-center gap-2 rounded-lg ps-1.5 pe-2 text-left text-sm text-toned hover:bg-white/4"
+        class="flex h-8 w-full items-center gap-2 rounded-lg ps-1.5 pe-2 text-left text-[12px] text-toned hover:bg-white/4"
         data-assets-design-system
         @click="editor.mode = 'design'"
       >

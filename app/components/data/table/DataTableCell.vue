@@ -82,7 +82,7 @@ function onKey(event: KeyboardEvent) {
     :inputmode="field.type === 'number' ? 'decimal' : undefined"
     :placeholder="field.type === 'image' ? 'https://… or /image.png' : undefined"
     size="1"
-    class="h-full w-full min-w-0 bg-transparent text-sm text-highlighted outline-none [color-scheme:dark] placeholder:text-dimmed"
+    class="h-full w-full min-w-0 bg-transparent text-[12px] text-highlighted outline-none [color-scheme:dark] placeholder:text-dimmed"
     data-cell-input
     @keydown="onKey"
     @blur="finish()"

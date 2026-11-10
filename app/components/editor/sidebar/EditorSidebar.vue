@@ -53,8 +53,8 @@ function onSearchKeyDown(event: KeyboardEvent) {
         type="button"
         role="tab"
         :aria-selected="panel === item.value"
-        class="h-7 rounded-md px-2.5 text-sm font-medium transition-colors"
-        :class="panel === item.value ? 'bg-white/8 text-highlighted' : 'text-muted hover:text-default'"
+        class="h-7 rounded-lg px-2.5 text-[12px] font-[550] transition-colors"
+        :class="[FOCUS_RING, panel === item.value ? 'bg-white/8 text-highlighted' : 'text-muted hover:text-default']"
         @click="panel = item.value as SidebarPanel"
       >
         {{ item.label }}

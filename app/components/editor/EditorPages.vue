@@ -66,7 +66,7 @@ function menu(page: Page): DropdownMenuItem[] {
 <template>
   <div class="overflow-y-auto pb-2">
     <div class="flex items-center justify-between ps-3.5 pe-2 pt-2.5 pb-1.5">
-      <p class="text-sm font-semibold text-highlighted">
+      <p class="text-[12px] font-[550] text-highlighted">
         Pages
       </p>
       <EditorButton
@@ -115,8 +115,8 @@ function menu(page: Page): DropdownMenuItem[] {
       <button
         v-else
         type="button"
-        class="flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-lg ps-3 pe-8 text-left text-sm"
-        :class="page.id === editor.page?.id ? 'bg-white/8 font-medium text-highlighted' : 'text-toned hover:bg-white/4'"
+        class="flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-lg ps-3 pe-8 text-left text-[12px]"
+        :class="page.id === editor.page?.id ? 'bg-white/8 font-[550] text-highlighted' : 'text-toned hover:bg-white/4'"
         :title="page.name"
         :aria-current="page.id === editor.page?.id ? 'page' : undefined"
         :data-page-home="home || undefined"

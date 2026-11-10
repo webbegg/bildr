@@ -59,13 +59,13 @@ function pick(value: string) {
             :style="current ? { background: current.color } : undefined"
           />
           <span
-            class="truncate text-[13px] text-highlighted"
+            class="truncate text-[12px] text-highlighted"
             data-variable-chip
           >{{ value }}</span>
         </template>
         <template v-else>
           <span class="size-[22px] shrink-0 rounded-md bg-[repeating-conic-gradient(var(--ui-bg-accented)_0_25%,transparent_0_50%)] bg-size-[8px_8px] ring-1 ring-white/10 ring-inset" />
-          <span class="truncate text-[13px] text-dimmed">{{ placeholder ?? 'None' }}</span>
+          <span class="truncate text-[12px] text-dimmed">{{ placeholder ?? 'None' }}</span>
         </template>
       </button>
       <template #content>

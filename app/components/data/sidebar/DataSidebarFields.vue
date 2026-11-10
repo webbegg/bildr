@@ -131,7 +131,7 @@ const editingMapping = ref(false)
   >
     <p
       v-if="!collection"
-      class="px-3.5 pt-3 text-sm text-dimmed"
+      class="px-3.5 pt-3 text-[12px] text-dimmed"
     >
       No collection yet.
     </p>
@@ -143,7 +143,7 @@ const editingMapping = ref(false)
           class="size-4 shrink-0 text-dimmed"
         />
         <p
-          class="min-w-0 flex-1 truncate text-sm font-semibold text-highlighted"
+          class="min-w-0 flex-1 truncate text-[12px] font-[550] text-highlighted"
           data-fields-title
         >
           {{ collection.name }}
@@ -158,7 +158,7 @@ const editingMapping = ref(false)
           v-for="field in collection.fields"
           :key="field.key"
           :class="ROW"
-          class="ps-2.5 text-sm text-toned"
+          class="ps-2.5 text-[12px] text-toned"
           :title="`${field.key} ← ${field.path ?? field.key}`"
           :data-field="field.key"
         >
@@ -254,7 +254,7 @@ const editingMapping = ref(false)
           />
           <button
             type="button"
-            class="grid size-6 shrink-0 place-items-center rounded-md text-dimmed opacity-0 group-hover/field:opacity-100 group-focus-within/field:opacity-100 hover:bg-white/8 hover:text-highlighted focus-visible:opacity-100"
+            class="grid size-6 shrink-0 place-items-center rounded-lg text-dimmed opacity-0 group-hover/field:opacity-100 group-focus-within/field:opacity-100 hover:bg-white/8 hover:text-highlighted focus-visible:opacity-100"
             :aria-label="`Remove ${field.key}`"
             :title="`Remove ${field.label}`"
             data-row-remove
@@ -317,7 +317,7 @@ const editingMapping = ref(false)
         <button
           v-else
           type="button"
-          class="flex h-9 w-full items-center gap-1.5 rounded-lg ps-6 text-left text-[13px] text-muted hover:bg-white/4 hover:text-toned"
+          class="flex h-9 w-full items-center gap-1.5 rounded-lg ps-6 text-left text-[12px] text-muted hover:bg-white/4 hover:text-toned"
           aria-label="Add field"
           @click="openAdd"
         >

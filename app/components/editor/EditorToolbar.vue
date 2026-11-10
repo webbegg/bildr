@@ -107,7 +107,7 @@ async function publish() {
         <EditorButton
           variant="ghost"
           trailing-icon="i-lucide-chevron-down"
-          class="bg-white/6 font-semibold text-highlighted hover:bg-white/10 aria-expanded:bg-white/10"
+          class="bg-white/6 font-[550] text-highlighted hover:bg-white/10 aria-expanded:bg-white/10"
           data-view-menu
         >
           <UIcon
@@ -151,7 +151,7 @@ async function publish() {
           :aria-label="`${tool.label} tool`"
           :aria-pressed="editor.tool === tool.id"
           :disabled="editor.mode !== 'build'"
-          :class="{ 'bg-(--editor-selection)/20 text-[#4cb3ff]': editor.tool === tool.id }"
+          :class="{ 'bg-(--editor-selection)/20 text-(--editor-selection)': editor.tool === tool.id }"
           :data-insert-tool="tool.id"
           @click="toggleTool(tool.id)"
         />
@@ -181,8 +181,8 @@ async function publish() {
           class="max-w-96 min-w-0"
           data-project-menu
         >
-          <span class="truncate font-semibold text-highlighted">{{ editor.project?.name }}</span>
-          <span class="shrink-0 font-normal text-dimmed">· /{{ editor.project?.slug }}</span>
+          <span class="truncate font-[550] text-highlighted">{{ editor.project?.name }}</span>
+          <span class="shrink-0 font-[450] text-dimmed">· /{{ editor.project?.slug }}</span>
         </EditorButton>
       </EditorMenu>
     </div>

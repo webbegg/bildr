@@ -40,7 +40,7 @@ async function addPage() {
       <EditorMenu :items="items">
         <button
           type="button"
-          class="flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 text-left text-sm text-highlighted hover:bg-white/4"
+          class="flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 text-left text-[12px] text-highlighted hover:bg-white/4"
           aria-label="Switch page"
         >
           <UIcon

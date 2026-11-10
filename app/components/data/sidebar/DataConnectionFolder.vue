@@ -68,7 +68,7 @@ const menu = computed<DropdownMenuItem[]>(() => [
       />
       <div
         v-else
-        class="flex h-9 min-w-0 flex-1 items-center rounded-lg ps-1 pe-3 text-sm"
+        class="flex h-9 min-w-0 flex-1 items-center rounded-lg ps-1 pe-3 text-[12px]"
         :class="shown ? 'bg-white/8 font-medium text-highlighted' : 'text-toned hover:bg-white/4'"
       >
         <button
@@ -127,7 +127,7 @@ const menu = computed<DropdownMenuItem[]>(() => [
       <div class="px-2">
         <button
           type="button"
-          class="flex h-9 w-full items-center gap-2.5 rounded-lg ps-13 text-left text-sm text-muted hover:bg-white/4 hover:text-toned"
+          class="flex h-9 w-full items-center gap-2.5 rounded-lg ps-13 text-left text-[12px] text-muted hover:bg-white/4 hover:text-toned"
           :aria-label="`Add a collection to ${connection.name}`"
           data-connection-add-collection
           @click="emit('add')"

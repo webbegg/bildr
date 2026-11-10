@@ -33,7 +33,7 @@ const items = computed<DropdownMenuItem[]>(() => props.menu.map(item => ({
     :data-style-section="label"
   >
     <div class="flex h-11 items-center gap-0.5 ps-4 pe-2.5">
-      <h3 class="min-w-0 flex-1 truncate text-[13px] font-semibold text-highlighted">
+      <h3 class="min-w-0 flex-1 truncate text-[12px] font-[550] text-highlighted">
         {{ label }}
       </h3>
       <UTooltip

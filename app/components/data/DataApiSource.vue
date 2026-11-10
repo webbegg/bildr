@@ -169,7 +169,7 @@ watch(open, (isOpen) => {
             label="API URL"
             help="A public JSON endpoint (GET, no auth)"
           >
-            <span class="flex h-[30px] shrink-0 items-center rounded-lg bg-elevated px-2.5 font-mono text-[11px] font-semibold text-toned">GET</span>
+            <span class="flex h-[30px] shrink-0 items-center rounded-lg bg-elevated px-2.5 font-mono text-[11px] font-[550] text-toned">GET</span>
             <EditorInput
               v-model="url"
               mono
@@ -195,7 +195,7 @@ watch(open, (isOpen) => {
           v-if="total !== null"
           label="Response"
         >
-          <p class="text-[13px] text-muted">
+          <p class="text-[12px] text-muted">
             {{ total }} items in the response. Changing the items path and fetching proposes new fields.
           </p>
         </EditorFormRow>
