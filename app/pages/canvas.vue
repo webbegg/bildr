@@ -13,7 +13,7 @@ import { insertTargetAt, toolForKey } from '#shared/editor/insertTools'
 import type { StylePatch } from '#shared/editor/preview'
 import { previewTree, settlePreviews } from '#shared/editor/preview'
 import { breakpointAt, DRAG_MIME, draggedNodeId, dropPosition, laysOutInRow, resolveDrop } from '#shared/editor/dropTarget'
-import { FRAME_MIN_HEIGHT, wheelPixels, zoomShortcut } from '#shared/editor/viewport'
+import { FRAME_MIN_HEIGHT, viewportUnitRules, wheelPixels, zoomShortcut } from '#shared/editor/viewport'
 import type { NodeBox } from '#shared/editor/autoLayout'
 import type { MeasureLine } from '#shared/editor/measure'
 import { measure as measureLines } from '#shared/editor/measure'
@@ -39,6 +39,9 @@ import { labelPlacement } from '#shared/editor/labelPlacement'
  * The editor's light/dark preview sets this document's colour mode class.
  * `{{ env.NAME }}` resolves from the public variables the editor sends; a
  * missing one shows as written.
+ * The frame grows with its content, so `screen` heights (100vh) would grow
+ * with it: in the page view they resolve to the device's nominal viewport
+ * height from `bildr:active` instead.
  */
 definePageMeta({ layout: false })
 
@@ -59,6 +62,21 @@ const alt = ref(false)
 const active = ref(true)
 /** The editor's zoom; outlines and the selection label are scaled back to keep their screen size. */
 const zoom = ref(1)
+/** The device's nominal viewport height, which `screen` heights resolve to in the page view. */
+const viewportHeight = ref(FRAME_MIN_HEIGHT)
+const VIEWPORT_VAR = '--canvas-vh'
+
+/** Writes the `screen` overrides for this frame's breakpoint (its width is the device's, fixed). */
+function applyViewportRules() {
+  let style = document.getElementById('bildr-canvas-viewport')
+  if (!style) {
+    style = document.createElement('style')
+    style.id = 'bildr-canvas-viewport'
+    document.head.appendChild(style)
+  }
+  const css = viewportUnitRules(breakpointAt(window.innerWidth), '[data-canvas-viewport]', VIEWPORT_VAR).join('\n')
+  if (style.textContent !== css) style.textContent = css
+}
 const root = useTemplateRef<HTMLDivElement>('root')
 /** Uncommitted style patches by node id. */
 const previews = shallowRef<Record<string, StylePatch>>({})
@@ -153,6 +171,8 @@ function onMessage(event: MessageEvent) {
   } else if (message.type === 'bildr:active') {
     active.value = message.active
     zoom.value = message.zoom
+    viewportHeight.value = message.viewportHeight
+    applyViewportRules()
   } else if (message.type === 'bildr:hover') {
     hoveredId.value = message.nodeId
   } else if (message.type === 'bildr:preview') {
@@ -387,7 +407,8 @@ onBeforeUnmount(() => {
     class="relative"
     :class="{ 'min-h-screen': view === 'tokens', 'cursor-crosshair! **:cursor-crosshair!': tool && view === 'page' }"
     :data-armed-tool="tool ?? undefined"
-    :style="view === 'page' ? { minHeight: `${FRAME_MIN_HEIGHT}px` } : undefined"
+    :data-canvas-viewport="view === 'page' || undefined"
+    :style="view === 'page' ? { minHeight: `${FRAME_MIN_HEIGHT}px`, [VIEWPORT_VAR]: `${viewportHeight}px` } : undefined"
   >
     <EditorTokenSheet v-if="view === 'tokens'" />
     <BildrPage

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEVICES } from '#shared/editor/styleFields'
-import { boundsOf, clampZoom, fitView, frameBar, frameOrder, layoutFrames, panView, previewWindowFeatures, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { activeMessage, boundsOf, clampZoom, fitView, FRAME_MIN_HEIGHT, frameBar, frameOrder, layoutFrames, panView, previewWindowFeatures, stepZoom, viewportHeight, viewportUnitRules, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
 describe('panView', () => {
   it('moves the content with a drag from one screen point to another, at any zoom', () => {
@@ -166,5 +166,43 @@ describe('fitView', () => {
   it('accounts for the content origin and clamps the zoom', () => {
     // 10×10 at (100, 100) would fit at 2000%; at 400% it shows 40×40, centred at 80, so the origin sits at 80 - 400.
     expect(fitView({ x: 100, y: 100, width: 10, height: 10 }, { width: 200, height: 200 }, 0)).toEqual({ x: -320, y: -320, zoom: 4 })
+  })
+})
+
+describe('viewportHeight', () => {
+  it('gives each device a nominal screen height', () => {
+    expect(viewportHeight('desktop')).toBe(800)
+    expect(viewportHeight('tablet')).toBe(1024)
+    expect(viewportHeight('mobile')).toBe(844)
+  })
+
+  it('falls back to the frame minimum for other frames', () => {
+    expect(viewportHeight('watch')).toBe(FRAME_MIN_HEIGHT)
+  })
+})
+
+describe('activeMessage', () => {
+  it('tells a frame whether it is active, the zoom and its viewport height', () => {
+    expect(activeMessage('tablet', 'desktop', 0.5)).toEqual({ type: 'bildr:active', active: false, zoom: 0.5, viewportHeight: 1024 })
+    expect(activeMessage('mobile', 'mobile', 1)).toEqual({ type: 'bildr:active', active: true, zoom: 1, viewportHeight: 844 })
+  })
+})
+
+describe('viewportUnitRules', () => {
+  it('maps the base screen sizes to the variable below sm', () => {
+    expect(viewportUnitRules(undefined, '[data-v]', '--vh')).toEqual([
+      '[data-v] .h-screen { height: var(--vh) }',
+      '[data-v] .min-h-screen { min-height: var(--vh) }',
+      '[data-v] .max-h-screen { max-height: var(--vh) }'
+    ])
+  })
+
+  it('lets a larger active breakpoint win, as Tailwind orders its variants', () => {
+    const rules = viewportUnitRules('md', '[data-v]', '--vh')
+    expect(rules).toContain('[data-v] .h-screen:not([class*="sm:h-"]):not([class*="md:h-"]) { height: var(--vh) }')
+    expect(rules).toContain('[data-v] .sm\\:h-screen:not([class*="md:h-"]) { height: var(--vh) }')
+    expect(rules).toContain('[data-v] .md\\:min-h-screen { min-height: var(--vh) }')
+    expect(rules).toHaveLength(9)
+    expect(rules.some(rule => rule.includes('lg'))).toBe(false)
   })
 })
