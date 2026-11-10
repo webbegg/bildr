@@ -5,8 +5,8 @@ import { ENDPOINT_METHODS, endpointPathProblem } from '../data/remote'
 import { defaultTheme, ThemeSchema } from '../design/theme'
 import { styleTokenProblem } from '../design/tokens'
 import { ENV_NAME, ENV_NAME_HINT, ENV_REF, envRefs } from '../env/variables'
-import { getComponent, isContainerType, PAGE_ROOT_TYPE } from './components'
-import type { PropDef, PropValue } from './components'
+import { getComponent, INSTANCE_TYPE, isContainerType, PAGE_ROOT_TYPE, SLOT_FILL_TYPE } from './components'
+import type { PropDef, PropKind, PropValue } from './components'
 
 /**
  * The bildr app document: Project → Page[] → Node tree. It is the single
@@ -40,6 +40,42 @@ export const PageSchema = z.object({
   name: z.string().min(1).max(100),
   slug: SlugSchema,
   root: NodeSchema
+})
+
+export const PROPERTY_KINDS = ['text', 'textarea', 'number', 'boolean', 'select', 'link', 'image', 'icon', 'collection', 'field', 'slot'] as const satisfies readonly (PropKind | 'slot')[]
+export const PropertyKindSchema = z.enum(PROPERTY_KINDS)
+
+/** Instance prop keys that are not property ids. */
+export const RESERVED_INSTANCE_KEYS = ['component', 'variant'] as const
+
+/** Which node prop a property drives. A slot property binds the node (`prop` is `children`). */
+export const PropertyBindingSchema = z.object({ nodeId: IdSchema, prop: z.string().min(1).max(64) })
+
+export const PropertyDefSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(100),
+  kind: PropertyKindSchema,
+  default: PropValueSchema.optional(),
+  bindings: z.array(PropertyBindingSchema).default(() => [])
+})
+
+/** Sparse overrides per node id: absence means the value of the primary variant. */
+export const VariantSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(100),
+  overrides: z.record(IdSchema, z.object({
+    props: z.record(z.string(), PropValueSchema).optional(),
+    style: z.record(z.string(), z.string()).optional()
+  }))
+})
+
+/** The primary variant is the `root` tree itself; `variants` holds the others. */
+export const ComponentDefinitionSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(100),
+  root: NodeSchema,
+  properties: z.array(PropertyDefSchema).default(() => []),
+  variants: z.array(VariantSchema).default(() => [])
 })
 
 export const FIELD_TYPES = ['text', 'number', 'boolean', 'date', 'image'] as const
@@ -250,9 +286,14 @@ export const ProjectSchema = z.object({
   collections: z.array(CollectionSchema).default(() => []),
   // Projects saved before connections existed have none.
   connections: z.array(ConnectionSchema).max(CONNECTIONS_MAX).default(() => []),
+  // Projects saved before components existed have none.
+  components: z.array(ComponentDefinitionSchema).default(() => []),
   createdAt: z.string(),
   updatedAt: z.string()
 }).superRefine((project, ctx) => {
+  for (const { path, message } of componentProblems(project.components)) {
+    ctx.addIssue({ code: 'custom', path: ['components', ...path], message })
+  }
   const connectionIds = new Set<string>()
   project.connections.forEach((connection, i) => {
     if (connectionIds.has(connection.id)) ctx.addIssue({ code: 'custom', path: ['connections', i, 'id'], message: `Duplicate connection id "${connection.id}"` })
@@ -277,12 +318,16 @@ export const ProjectSchema = z.object({
     if (slugs.has(page.slug)) ctx.addIssue({ code: 'custom', path: ['pages', i, 'slug'], message: `Duplicate page slug "${page.slug}"` })
     slugs.add(page.slug)
     if (page.root.type !== PAGE_ROOT_TYPE) ctx.addIssue({ code: 'custom', path: ['pages', i, 'root'], message: 'Page root must be a Page node' })
-    for (const problem of nodeTreeProblems(page.root, ids, true)) {
+    for (const problem of [...nodeTreeProblems(page.root, ids, true), ...instanceProblems(page.root, project.components)]) {
       ctx.addIssue({ code: 'custom', path: ['pages', i, 'root'], message: problem })
     }
   })
 })
 
+export type PropertyDef = z.infer<typeof PropertyDefSchema>
+export type PropertyBinding = z.infer<typeof PropertyBindingSchema>
+export type Variant = z.infer<typeof VariantSchema>
+export type ComponentDefinition = z.infer<typeof ComponentDefinitionSchema>
 export type Page = z.infer<typeof PageSchema>
 export type Project = z.infer<typeof ProjectSchema>
 export type Field = z.infer<typeof FieldSchema>
@@ -318,7 +363,9 @@ export function nodeTreeProblems(node: DocNode, seen: Set<string>, isRoot = fals
     }
     if (n.children.length && !isContainerType(n.type)) problems.push(`"${n.type}" cannot have children`)
     const def = getComponent(n.type)
-    for (const [name, value] of Object.entries(n.props)) {
+    // Instance and SlotFill props depend on the project's definitions: see instanceProblems.
+    const dynamicProps = n.type === INSTANCE_TYPE || n.type === SLOT_FILL_TYPE
+    for (const [name, value] of dynamicProps ? [] : Object.entries(n.props)) {
       const propDef = def?.props.find(p => p.name === name)
       const problem = propDef ? propValueProblem(propDef, value) : `"${n.type}" has no prop "${name}"`
       if (problem) problems.push(problem)
@@ -359,4 +406,172 @@ export function propValueProblem(def: PropDef, value: PropValue): string | undef
     default:
       return typeof value === 'string' ? undefined : `"${def.name}" must be a string`
   }
+}
+
+/** A located problem inside the `components` list. */
+interface ComponentProblem { path: (string | number)[], message: string }
+
+function nodeIndex(root: DocNode): Map<string, DocNode> {
+  const nodes = new Map<string, DocNode>()
+  const visit = (node: DocNode) => {
+    nodes.set(node.id, node)
+    node.children.forEach(visit)
+  }
+  visit(root)
+  return nodes
+}
+
+/**
+ * The problem with a value for a property, judged against every prop it is
+ * bound to (so a `select` property inherits the options of its targets).
+ * An unbound property only has its kind to go by; `select` then accepts any
+ * string. Slot properties take no value.
+ */
+function propertyValueProblem(property: PropertyDef, value: PropValue, nodes: Map<string, DocNode>): string | undefined {
+  if (property.kind === 'slot') return `"${property.id}" is a slot and takes no value`
+  const bound = property.bindings.flatMap((binding) => {
+    const node = nodes.get(binding.nodeId)
+    const propDef = node && getComponent(node.type)?.props.find(p => p.name === binding.prop)
+    return propDef ? [propDef] : []
+  })
+  if (!bound.length) return propValueProblem({ name: property.id, label: property.name, kind: property.kind === 'select' ? 'text' : property.kind, default: '' }, value)
+  for (const propDef of bound) {
+    const problem = propValueProblem({ ...propDef, name: property.id }, value)
+    if (problem) return problem
+  }
+}
+
+/** Structural rules for the `components` list; node rules come from `nodeTreeProblems`. */
+export function componentProblems(components: ComponentDefinition[]): ComponentProblem[] {
+  const problems: ComponentProblem[] = []
+  const add = (path: (string | number)[], message: string) => problems.push({ path, message })
+  const ids = new Set<string>()
+  components.forEach((def, i) => {
+    if (ids.has(def.id)) add([i, 'id'], `Duplicate component id "${def.id}"`)
+    ids.add(def.id)
+    for (const message of [...nodeTreeProblems(def.root, new Set()), ...instanceProblems(def.root, components)]) add([i, 'root'], message)
+    const nodes = nodeIndex(def.root)
+
+    const propertyIds = new Set<string>()
+    def.properties.forEach((property, p) => {
+      const at = [i, 'properties', p]
+      if (propertyIds.has(property.id)) add([...at, 'id'], `Duplicate property id "${property.id}" in "${def.name}"`)
+      propertyIds.add(property.id)
+      if ((RESERVED_INSTANCE_KEYS as readonly string[]).includes(property.id)) add([...at, 'id'], `Property id "${property.id}" is reserved`)
+      if (property.default !== undefined) {
+        const message = propertyValueProblem(property, property.default, nodes)
+        if (message) add([...at, 'default'], message)
+      }
+      if (property.kind === 'slot' && property.bindings.length !== 1) add([...at, 'bindings'], `Slot "${property.name}" must bind exactly one container node`)
+      property.bindings.forEach((binding, b) => {
+        const node = nodes.get(binding.nodeId)
+        if (!node) return add([...at, 'bindings', b], `Property "${property.name}" is bound to the missing node "${binding.nodeId}"`)
+        if (property.kind === 'slot') {
+          if (!isContainerType(node.type) || node.type === INSTANCE_TYPE) add([...at, 'bindings', b], `Slot "${property.name}" must bind a container node, not "${node.type}"`)
+          return
+        }
+        const propDef = getComponent(node.type)?.props.find(p => p.name === binding.prop)
+        if (!propDef) add([...at, 'bindings', b], `"${node.type}" has no prop "${binding.prop}"`)
+        else if (propDef.kind !== property.kind) add([...at, 'bindings', b], `Property "${property.name}" (kind ${property.kind}) cannot drive "${binding.prop}" (kind ${propDef.kind})`)
+      })
+    })
+
+    const variantIds = new Set<string>()
+    def.variants.forEach((variant, v) => {
+      if (variantIds.has(variant.id)) add([i, 'variants', v, 'id'], `Duplicate variant id "${variant.id}" in "${def.name}"`)
+      variantIds.add(variant.id)
+      for (const [nodeId, override] of Object.entries(variant.overrides)) {
+        const at = [i, 'variants', v, 'overrides', nodeId]
+        const node = nodes.get(nodeId)
+        if (!node) {
+          add(at, `Variant "${variant.name}" overrides the missing node "${nodeId}"`)
+          continue
+        }
+        const defn = getComponent(node.type)
+        for (const [name, value] of Object.entries(override.props ?? {})) {
+          const propDef = defn?.props.find(p => p.name === name)
+          const message = propDef ? propValueProblem(propDef, value) : `"${node.type}" has no prop "${name}"`
+          if (message) add([...at, 'props', name], message)
+        }
+        for (const [key, value] of Object.entries(override.style ?? {})) {
+          const message = styleTokenProblem(key, value)
+          if (message) add([...at, 'style', key], message)
+        }
+      }
+    })
+  })
+  for (const [i, def] of components.entries()) {
+    if (reachesItself(def, components)) add([i, 'root'], `Component "${def.name}" contains itself (cycle)`)
+  }
+  return problems
+}
+
+function usedComponentIds(root: DocNode): string[] {
+  const used: string[] = []
+  const visit = (node: DocNode) => {
+    if (node.type === INSTANCE_TYPE && typeof node.props.component === 'string') used.push(node.props.component)
+    node.children.forEach(visit)
+  }
+  visit(root)
+  return used
+}
+
+/** Whether `start` contains an instance of itself, directly or through other definitions. */
+function reachesItself(start: ComponentDefinition, components: ComponentDefinition[]): boolean {
+  const byId = new Map(components.map(c => [c.id, c]))
+  const visited = new Set<string>()
+  const stack = usedComponentIds(start.root)
+  while (stack.length) {
+    const id = stack.pop()!
+    if (id === start.id) return true
+    if (visited.has(id)) continue
+    visited.add(id)
+    const next = byId.get(id)
+    if (next) stack.push(...usedComponentIds(next.root))
+  }
+  return false
+}
+
+/**
+ * Rules for Instance and SlotFill nodes, which need the project's
+ * definitions: the referenced component and variant exist, values fit the
+ * property kinds, children are SlotFills for distinct existing slots.
+ */
+export function instanceProblems(root: DocNode, components: ComponentDefinition[]): string[] {
+  const problems: string[] = []
+  const byId = new Map(components.map(c => [c.id, c]))
+  const visit = (node: DocNode, parent?: DocNode) => {
+    if (node.type === SLOT_FILL_TYPE && parent?.type !== INSTANCE_TYPE) problems.push(`SlotFill "${node.id}" must be directly under an Instance`)
+    if (node.type === INSTANCE_TYPE) problems.push(...instanceNodeProblems(node, byId))
+    node.children.forEach(child => visit(child, node))
+  }
+  visit(root)
+  return problems
+}
+
+function instanceNodeProblems(node: DocNode, byId: Map<string, ComponentDefinition>): string[] {
+  const problems: string[] = []
+  const def = byId.get(String(node.props.component))
+  if (!def) return [`Instance "${node.id}" uses the unknown component "${String(node.props.component)}"`]
+  const variant = node.props.variant
+  if (variant !== undefined && variant !== '' && !def.variants.some(v => v.id === variant)) problems.push(`Instance "${node.id}" uses the unknown variant "${String(variant)}"`)
+  const nodes = nodeIndex(def.root)
+  for (const [key, value] of Object.entries(node.props)) {
+    if ((RESERVED_INSTANCE_KEYS as readonly string[]).includes(key)) continue
+    const property = def.properties.find(p => p.id === key && p.kind !== 'slot')
+    const problem = property ? propertyValueProblem(property, value, nodes) : `"${def.name}" has no property "${key}"`
+    if (problem) problems.push(`Instance "${node.id}": ${problem}`)
+  }
+  const filled = new Set<string>()
+  for (const child of node.children) {
+    if (child.type !== SLOT_FILL_TYPE) {
+      problems.push(`Instance "${node.id}" can only contain SlotFill nodes, not "${child.type}"`)
+      continue
+    }
+    const slot = String(child.props.slot)
+    if (!def.properties.some(p => p.id === slot && p.kind === 'slot')) problems.push(`"${def.name}" has no slot "${slot}"`)
+    else if (filled.has(slot)) problems.push(`Slot "${slot}" of Instance "${node.id}" is filled more than once`)
+    filled.add(slot)
+  }
+  return problems
 }

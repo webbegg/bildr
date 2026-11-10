@@ -49,6 +49,7 @@ export function createProject(name: string): Project {
     theme: defaultTheme(),
     collections: [],
     connections: [],
+    components: [],
     createdAt: now,
     updatedAt: now
   }
