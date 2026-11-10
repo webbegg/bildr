@@ -81,6 +81,12 @@ interface Tree {
   rootName: string
   /** The ids a new node must not reuse. */
   ids: () => Set<string>
+  /** The root's SlotFill children fill its page's layout slots. */
+  layoutFills: boolean
+}
+
+function usesLayout(project: Project, page: Page): boolean {
+  return page.layoutId !== undefined && project.layouts.some(l => l.id === page.layoutId)
 }
 
 function treeIds(root: DocNode): Set<string> {
@@ -92,10 +98,10 @@ function treeIds(root: DocNode): Set<string> {
 function getTree(project: Project, ref: TreeRef): Tree {
   if (ref.componentId !== undefined) {
     const def = getDefinition(project, ref.componentId)
-    return { ref: { componentId: def.id }, root: def.root, where: `component "${def.name}"`, rootName: 'component root', ids: () => treeIds(def.root) }
+    return { ref: { componentId: def.id }, root: def.root, where: `component "${def.name}"`, rootName: 'component root', ids: () => treeIds(def.root), layoutFills: false }
   }
   const page = getPage(project, ref.pageId)
-  return { ref: { pageId: page.id }, root: page.root, where: `page "${page.name}"`, rootName: 'page root', ids: () => projectIds(project) }
+  return { ref: { pageId: page.id }, root: page.root, where: `page "${page.name}"`, rootName: 'page root', ids: () => projectIds(project), layoutFills: usesLayout(project, page) }
 }
 
 function getNode(tree: Tree, nodeId: string): DocNode {
@@ -118,10 +124,15 @@ function projectIds(project: Project): Set<string> {
   return ids
 }
 
-/** `parent` is where `node` goes: an Instance parent is checked with it, since it decides which SlotFills fit. */
-function assertNewTree(project: Project, node: DocNode, isRoot = false, ids = projectIds(project), parent?: DocNode): void {
-  const placed = parent?.type === INSTANCE_TYPE ? { ...parent, children: [...parent.children, node] } : node
-  const problems = [...nodeTreeProblems(node, ids, isRoot), ...instanceProblems(placed, project.components)]
+/**
+ * `parent` is where `node` goes: an Instance parent is checked with it, since it decides which SlotFills fit,
+ * and so is a page root whose SlotFills fill layout slots (`layoutFills`). For a new page root, `layoutFills`
+ * says whether its page uses a layout.
+ */
+function assertNewTree(project: Project, node: DocNode, isRoot = false, ids = projectIds(project), parent?: DocNode, layoutFills = false): void {
+  const withParent = parent !== undefined && (parent.type === INSTANCE_TYPE || layoutFills)
+  const placed = withParent ? { ...parent, children: [...parent.children, node] } : node
+  const problems = [...nodeTreeProblems(node, ids, isRoot), ...instanceProblems(placed, project.components, layoutFills)]
   if (problems.length) fail('invalid', problems.join('; '))
 }
 
@@ -137,7 +148,7 @@ function getVariant(def: ComponentDefinition, variantId: string): Variant {
 function componentDocumentProblems(project: Project): string[] {
   return [
     ...componentProblems(project.components).map(p => p.message),
-    ...project.pages.flatMap(page => instanceProblems(page.root, project.components))
+    ...project.pages.flatMap(page => instanceProblems(page.root, project.components, usesLayout(project, page)))
   ]
 }
 
@@ -203,7 +214,7 @@ function apply(project: Project, op: Operation): Operation {
     case 'insert': {
       const tree = getTree(project, op)
       const parent = getContainer(tree, op.parentId)
-      assertNewTree(project, op.node, false, tree.ids(), parent)
+      assertNewTree(project, op.node, false, tree.ids(), parent, tree.layoutFills && parent === tree.root)
       parent.children.splice(clampIndex(op.index, parent.children.length), 0, structuredClone(op.node))
       return { op: 'remove', ...tree.ref, nodeId: op.node.id }
     }
@@ -280,7 +291,7 @@ function apply(project: Project, op: Operation): Operation {
       if (!PageSchema.safeParse(op.page).success) fail('invalid', 'Invalid page')
       assertUniqueSlug(project, op.page.slug)
       if (project.pages.some(p => p.id === op.page.id)) fail('invalid', `Duplicate page id "${op.page.id}"`)
-      assertNewTree(project, op.page.root, true)
+      assertNewTree(project, op.page.root, true, undefined, undefined, usesLayout(project, op.page))
       project.pages.splice(clampIndex(op.index, project.pages.length), 0, structuredClone(op.page))
       return { op: 'removePage', pageId: op.page.id }
     }
