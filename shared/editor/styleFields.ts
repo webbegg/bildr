@@ -14,7 +14,7 @@ export type StyleSection = typeof STYLE_SECTIONS[number]
 const SECTION_KEYS: Record<StyleSection, string[]> = {
   Layout: ['direction', 'flexWrap', 'items', 'justify', 'self', 'gap', 'cols', 'colSpan', 'display', 'overflow'],
   Spacing: ['m', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl'],
-  Size: ['w', 'minW', 'maxW', 'minH', 'maxH'],
+  Size: ['w', 'h', 'minW', 'maxW', 'minH', 'maxH'],
   Typography: ['text', 'font', 'align', 'tracking', 'leading', 'textTransform', 'color'],
   Backgrounds: ['bg'],
   Borders: ['border', 'borderT', 'borderR', 'borderB', 'borderL', 'borderColor', 'rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl'],

@@ -3,9 +3,8 @@ import { sizeMode, sizeModes, sizeModeValue } from '#shared/editor/sizeModes'
 
 describe('size modes', () => {
   it('offers the modes each size token can express', () => {
-    // Height (`minH`) has no `fit`, so Fit clears it.
     expect(sizeModes('w')).toEqual(['fixed', 'fit', 'fill', 'relative'])
-    expect(sizeModes('minH')).toEqual(['fixed', 'fit', 'fill', 'relative'])
+    expect(sizeModes('h')).toEqual(['fixed', 'fit', 'fill', 'relative'])
   })
 
   it('reads the mode from the token value', () => {
@@ -17,12 +16,12 @@ describe('size modes', () => {
     expect(sizeMode('w', '0')).toBe('fixed')
     expect(sizeMode('w', 'auto')).toBeUndefined()
     expect(sizeMode('w', undefined)).toBeUndefined()
-    expect(sizeMode('minH', '32')).toBe('fixed')
-    expect(sizeMode('minH', '0')).toBe('fixed')
-    expect(sizeMode('minH', 'full')).toBe('fill')
-    expect(sizeMode('minH', 'screen')).toBe('relative')
-    // An unset minimum height is the content's height.
-    expect(sizeMode('minH', undefined)).toBe('fit')
+    expect(sizeMode('h', '64')).toBe('fixed')
+    expect(sizeMode('h', 'fit')).toBe('fit')
+    expect(sizeMode('h', 'full')).toBe('fill')
+    expect(sizeMode('h', 'screen')).toBe('relative')
+    expect(sizeMode('h', 'auto')).toBeUndefined()
+    expect(sizeMode('h', undefined)).toBeUndefined()
   })
 
   it('writes the token of a mode, keeping a value that fits it', () => {
@@ -34,16 +33,16 @@ describe('size modes', () => {
     expect(sizeModeValue('w', 'fixed', 'full')).toBe('64')
     expect(sizeModeValue('w', 'fixed', '32')).toBe('32')
     expect(sizeModeValue('w', 'fill', '32')).toBe('full')
-    expect(sizeModeValue('minH', 'fixed', undefined)).toBe('32')
-    expect(sizeModeValue('minH', 'fixed', '64')).toBe('64')
-    expect(sizeModeValue('minH', 'fill', '64')).toBe('full')
-    expect(sizeModeValue('minH', 'relative', undefined)).toBe('screen')
-    expect(sizeModeValue('minH', 'fit', '64')).toBeNull()
+    expect(sizeModeValue('h', 'fixed', undefined)).toBe('64')
+    expect(sizeModeValue('h', 'fixed', '32')).toBe('32')
+    expect(sizeModeValue('h', 'fit', '64')).toBe('fit')
+    expect(sizeModeValue('h', 'fill', '64')).toBe('full')
+    expect(sizeModeValue('h', 'relative', undefined)).toBe('screen')
   })
 
   it('round-trips: the mode of the written token is the mode picked', () => {
-    for (const key of ['w', 'minH'] as const) {
-      for (const mode of sizeModes(key)) expect(sizeMode(key, sizeModeValue(key, mode, undefined) ?? undefined)).toBe(mode)
+    for (const key of ['w', 'h'] as const) {
+      for (const mode of sizeModes(key)) expect(sizeMode(key, sizeModeValue(key, mode, undefined))).toBe(mode)
     }
   })
 })

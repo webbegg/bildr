@@ -15,7 +15,7 @@ describe('style token registry', () => {
   it('covers the S9 properties', () => {
     expect(STYLE_TOKENS.map(t => t.key)).toEqual([
       'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl', 'gap',
-      'w', 'minW', 'maxW', 'minH', 'maxH', 'bg', 'color', 'borderColor', 'text', 'font', 'align', 'tracking', 'leading', 'textTransform',
+      'w', 'h', 'minW', 'maxW', 'minH', 'maxH', 'bg', 'color', 'borderColor', 'text', 'font', 'align', 'tracking', 'leading', 'textTransform',
       'border', 'borderT', 'borderR', 'borderB', 'borderL', 'rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl',
       'shadow', 'opacity', 'direction', 'flexWrap', 'items', 'justify', 'self', 'cols', 'colSpan', 'display', 'overflow'
     ])
@@ -25,6 +25,8 @@ describe('style token registry', () => {
     expect(getStyleToken('cols')).toMatchObject({ prefix: 'grid-cols', group: 'Layout', values: ['1', '2', '3', '4', '5', '6', '12'] })
     expect(getStyleToken('colSpan')).toMatchObject({ prefix: 'col-span', group: 'Layout', values: ['1', '2', '3', '4', '5', '6', '12', 'full'] })
     expect(getStyleToken('maxW')).toMatchObject({ prefix: 'max-w', group: 'Size' })
+    expect(getStyleToken('h')).toMatchObject({ prefix: 'h', group: 'Size', values: ['auto', 'full', 'screen', 'fit', '0', '4', '8', '12', '16', '20', '24', '32', '40', '48', '56', '64', '72', '80', '96'] })
+    expect(isResponsiveToken(getStyleToken('h')!)).toBe(true)
     expect(getStyleToken('bg')).toMatchObject({ kind: 'color', group: 'Color' })
     expect(getStyleToken('mt')!.values).toEqual(expect.arrayContaining(['0', '0.5', '10', 'auto']))
     expect(getStyleToken('bg')!.values).toEqual(expect.arrayContaining(['primary', 'primary-500', 'neutral-950', 'elevated']))

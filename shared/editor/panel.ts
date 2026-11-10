@@ -34,18 +34,15 @@ interface RowDef {
   kind: 'core' | 'slot' | 'menu'
   /** What adding it writes (base keys); empty only reveals the control. */
   add?: Record<string, string>
-  /** A menu item a core row already edits: listed, but disabled. */
-  covered?: boolean
 }
 
 const ROWS = {
   width: { section: 'Size', kind: 'core', keys: ['w'] },
-  // Height is the minimum height (`minH`, see `sizeModes`), which covers Min Height.
-  height: { section: 'Size', kind: 'core', keys: ['minH'] },
+  height: { section: 'Size', kind: 'core', keys: ['h'] },
   maxWidth: { section: 'Size', kind: 'menu', keys: ['maxW'], add: { maxW: 'full' } },
   minWidth: { section: 'Size', kind: 'menu', keys: ['minW'], add: { minW: '0' } },
   maxHeight: { section: 'Size', kind: 'menu', keys: ['maxH'], add: { maxH: 'full' } },
-  minHeight: { section: 'Size', kind: 'menu', keys: [], covered: true },
+  minHeight: { section: 'Size', kind: 'menu', keys: ['minH'], add: { minH: '0' } },
   // Type writes `display`, which Styles owns; it shows the Grid or Stack rows.
   type: { section: 'Layout', kind: 'core', keys: [] },
   direction: { section: 'Layout', kind: 'core', keys: ['direction'] },
@@ -148,8 +145,6 @@ export interface PanelRow {
 
 export interface PanelMenuItem {
   id: RowId
-  /** Listed for Framer's parity, but a core row already edits it. */
-  disabled: boolean
 }
 
 export interface PanelSectionRows {
@@ -222,15 +217,14 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
   const kind = (row: RowId) => (row === 'padding' && !container ? 'menu' : def(row).kind)
   const valued = (row: RowId) => (row === 'display' ? setsDisplay : sets(...rowKeys(row)))
   const has = (row: RowId) => added.includes(row) || rowKeys(row).some(key => mixed.includes(key)) || valued(row)
-  const shown = (row: RowId) => applies[row] && (kind(row) !== 'menu' || (!(def(row) as RowDef).covered && has(row)))
+  const shown = (row: RowId) => applies[row] && (kind(row) !== 'menu' || has(row))
   const removable = (row: RowId) => kind(row) !== 'core' && (rowProvenance(node.style, row, device).state === 'set' || (added.includes(row) && !valued(row)))
   const inSection = (section: PanelSection) => ROW_IDS.filter(row => def(row).section === section)
 
   return PANEL_SECTIONS.map(section => ({
     section,
     rows: inSection(section).filter(shown).map(id => ({ id, slot: kind(id) === 'slot' && !has(id), removable: removable(id) })),
-    menu: inSection(section).filter(row => applies[row] && kind(row) === 'menu' && !shown(row))
-      .map(id => ({ id, disabled: !!(def(id) as RowDef).covered })),
+    menu: inSection(section).filter(row => applies[row] && kind(row) === 'menu' && !shown(row)).map(id => ({ id })),
     reset: section === 'Layout' && (container || !!layout)
   }))
 }

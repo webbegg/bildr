@@ -5,8 +5,8 @@ import { joinSplit, layoutReset, layoutType, layoutTypeWrite, PANEL_SECTIONS, pa
 
 /** The rows of each rendered section as `id`, `id+` for an "Add…" slot, or `id−` for a row with a remove button. */
 const view = (sections: PanelSectionRows[]) => Object.fromEntries(sections.map(s => [s.section, s.rows.map(r => `${r.id}${r.slot ? '+' : r.removable ? '−' : ''}`)]))
-/** The header "+" menu of each rendered section, `id!` for an item offered disabled. */
-const menus = (sections: PanelSectionRows[]) => Object.fromEntries(sections.map(s => [s.section, s.menu.map(m => `${m.id}${m.disabled ? '!' : ''}`)]))
+/** The header "+" menu of each rendered section. */
+const menus = (sections: PanelSectionRows[]) => Object.fromEntries(sections.map(s => [s.section, s.menu.map(m => m.id)]))
 const rows = (node: PanelNode, device: 'mobile' | 'tablet' | 'desktop' = 'mobile', added: string[] = [], mixed: string[] = []) =>
   panelRows(node, { device, added: added as never[], mixed })
 
@@ -21,6 +21,7 @@ describe('panel sections', () => {
     expect(panelSection('w')).toBe('Size')
     expect(panelSection('lg:maxW')).toBe('Size')
     expect(panelSection('minH')).toBe('Size')
+    expect(panelSection('md:h')).toBe('Size')
     expect(panelSection('md:minW')).toBe('Size')
     expect(panelSection('maxH')).toBe('Size')
     expect(panelSection('gap')).toBe('Layout')
@@ -57,8 +58,7 @@ describe('panel rows', () => {
 
   it('offers each group\'s optional properties in its header "+" menu', () => {
     expect(menus(rows(column))).toEqual({
-      // Height is the minimum height, so Min Height is listed but already covered.
-      Size: ['maxWidth', 'minWidth', 'maxHeight', 'minHeight!'],
+      Size: ['maxWidth', 'minWidth', 'maxHeight', 'minHeight'],
       Layout: ['margin', 'self', 'overflow'],
       Styles: ['corners', 'display'],
       Typography: ['letterSpacing', 'lineHeight', 'transform']
@@ -74,7 +74,7 @@ describe('panel rows', () => {
       Styles: ['visible', 'opacity', 'fill−', 'border+', 'shadows+', 'radius', 'corners−'],
       Typography: ['fontSize', 'fontWeight', 'textAlign', 'textColor', 'letterSpacing−']
     })
-    expect(menus(sections).Size).toEqual(['minWidth', 'maxHeight', 'minHeight!'])
+    expect(menus(sections).Size).toEqual(['minWidth', 'maxHeight', 'minHeight'])
     expect(menus(sections).Layout).toEqual(['self', 'overflow'])
     expect(menus(sections).Typography).toEqual(['lineHeight', 'transform'])
   })
@@ -85,6 +85,15 @@ describe('panel rows', () => {
     expect(tablet.Layout).toContain('margin−')
     expect(tablet.Typography).toEqual(['fontSize', 'fontWeight', 'textAlign', 'textColor', 'lineHeight', 'transform−'])
     expect(view(rows({ ...column, style }, 'mobile')).Layout).toContain('margin')
+  })
+
+  it('shows a set minimum height as a Min Height row, not as the Height value', () => {
+    const style = { minH: '32' }
+    const sections = rows({ ...column, style })
+    expect(view(sections).Size).toEqual(['width', 'height', 'minHeight−'])
+    expect(menus(sections).Size).toEqual(['maxWidth', 'minWidth', 'maxHeight'])
+    expect(rowProvenance(style, 'height', 'mobile')).toEqual({ state: 'unset' })
+    expect(rowProvenance(style, 'minHeight', 'mobile')).toEqual({ state: 'set', key: 'minH', value: '32' })
   })
 
   it('shows a mixed optional row', () => {
@@ -146,6 +155,7 @@ describe('row writes', () => {
     expect(rowAdd('maxWidth')).toEqual({ maxW: 'full' })
     expect(rowAdd('minWidth')).toEqual({ minW: '0' })
     expect(rowAdd('maxHeight')).toEqual({ maxH: 'full' })
+    expect(rowAdd('minHeight')).toEqual({ minH: '0' })
     expect(rowAdd('margin')).toEqual({ m: '0' })
     expect(rowAdd('padding')).toEqual({ p: '2' })
     expect(rowAdd('self')).toEqual({ self: 'center' })

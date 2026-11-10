@@ -26,8 +26,8 @@ import { styleProvenance } from '#shared/editor/styleFields'
  *
  * Token mappings: Type Stack/Grid is the `display` token (see
  * `layoutTypeWrite`), Distribute is `justify`, Align is `items`, Wrap is
- * `flexWrap` (over a Row's `wrap` prop), Height is `minH` with Framer's size
- * modes (see `sizeModes`), Padding and Margin write `p`/`m` or their sides
+ * `flexWrap` (over a Row's `wrap` prop), Width and Height are `w` and `h` with
+ * Framer's size modes (see `sizeModes`), Padding and Margin write `p`/`m` or their sides
  * (see `boxWrite`).
  *
  * Controls `preview` what a gesture holds and `commit` once; this panel emits
@@ -139,23 +139,13 @@ const MENU_LABELS: Partial<Record<RowId, string>> = {
   display: 'Display', corners: 'Individual corners',
   letterSpacing: 'Letter spacing', lineHeight: 'Line height', transform: 'Transform'
 }
-const menuItems = (menu: PanelMenuItem[]) => menu.map(item => ({
-  id: item.id,
-  label: MENU_LABELS[item.id] ?? LABELS[item.id],
-  disabled: item.disabled,
-  hint: item.disabled ? 'Height sets it' : undefined
-}))
+const menuItems = (menu: PanelMenuItem[]) => menu.map(item => ({ id: item.id, label: MENU_LABELS[item.id] ?? LABELS[item.id] }))
 const ADD_ICONS: Partial<Record<RowId, string>> = { fill: 'i-lucide-paint-bucket', border: 'i-lucide-square', shadows: 'i-lucide-copy' }
-const SIZE_LIMITS: Partial<Record<RowId, string>> = { maxWidth: 'maxW', minWidth: 'minW', maxHeight: 'maxH' }
+const SIZE_LIMITS: Partial<Record<RowId, string>> = { maxWidth: 'maxW', minWidth: 'minW', maxHeight: 'maxH', minHeight: 'minH' }
 
-// Size: Fixed / Fit / Fill / Relative over `w` and `minH`.
+// Size: Fixed / Fit / Fill / Relative over `w` and `h`.
 const modeItems = (key: SizeKey) => sizeModes(key).map(mode => ({ value: mode, label: SIZE_MODE_LABELS[mode] }))
-function setMode(key: SizeKey, mode: SizeMode) {
-  const next = sizeModeValue(key, mode, current(key))
-  // Fit clears the minimum height; over an inherited one it writes 0.
-  if (next === null) return own(key) !== undefined ? setField(key, null) : inherited(key) !== undefined && setField(key, '0')
-  setField(key, next)
-}
+const setMode = (key: SizeKey, mode: SizeMode) => setField(key, sizeModeValue(key, mode, current(key)))
 
 // Layout: Type, Direction, Distribute and Align.
 const layout = computed(() => layoutType(props.type, props.styles, editor.deviceId))
@@ -269,28 +259,28 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
           v-else-if="row.id === 'width' || row.id === 'height'"
           v-bind="rowLabel(row.id)"
           :label="LABELS[row.id]"
-          :token="token(row.id === 'width' ? 'w' : 'minH')"
-          :value="own(row.id === 'width' ? 'w' : 'minH')"
-          :inherited="inherited(row.id === 'width' ? 'w' : 'minH')"
-          :placeholder="ph(row.id === 'width' ? 'w' : 'minH', 'auto')"
-          :data-style-row="row.id === 'width' ? 'w' : 'minH'"
-          @preview="preview(row.id === 'width' ? 'w' : 'minH', $event)"
-          @commit="setField(row.id === 'width' ? 'w' : 'minH', $event)"
+          :token="token(row.id === 'width' ? 'w' : 'h')"
+          :value="own(row.id === 'width' ? 'w' : 'h')"
+          :inherited="inherited(row.id === 'width' ? 'w' : 'h')"
+          :placeholder="ph(row.id === 'width' ? 'w' : 'h', 'auto')"
+          :data-style-row="row.id === 'width' ? 'w' : 'h'"
+          @preview="preview(row.id === 'width' ? 'w' : 'h', $event)"
+          @commit="setField(row.id === 'width' ? 'w' : 'h', $event)"
           @reset="resetRow(row.id)"
         >
           <template #after>
             <EditorField class="w-[100px] shrink-0">
               <USelect
-                :model-value="sizeMode(row.id === 'width' ? 'w' : 'minH', current(row.id === 'width' ? 'w' : 'minH'))"
-                :items="modeItems(row.id === 'width' ? 'w' : 'minH')"
+                :model-value="sizeMode(row.id === 'width' ? 'w' : 'h', current(row.id === 'width' ? 'w' : 'h'))"
+                :items="modeItems(row.id === 'width' ? 'w' : 'h')"
                 placeholder="Auto"
                 variant="none"
                 size="sm"
                 :class="SELECT"
                 :ui="SELECT_UI"
                 :aria-label="`${LABELS[row.id]} mode`"
-                :data-size-mode="row.id === 'width' ? 'w' : 'minH'"
-                @update:model-value="setMode(row.id === 'width' ? 'w' : 'minH', $event as SizeMode)"
+                :data-size-mode="row.id === 'width' ? 'w' : 'h'"
+                @update:model-value="setMode(row.id === 'width' ? 'w' : 'h', $event as SizeMode)"
               />
             </EditorField>
           </template>
@@ -303,7 +293,7 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
           :token="token(SIZE_LIMITS[row.id]!)"
           :value="own(SIZE_LIMITS[row.id]!)"
           :inherited="inherited(SIZE_LIMITS[row.id]!)"
-          :placeholder="ph(SIZE_LIMITS[row.id]!, row.id === 'minWidth' ? 'auto' : 'none')"
+          :placeholder="ph(SIZE_LIMITS[row.id]!, row.id.startsWith('min') ? 'auto' : 'none')"
           :data-style-row="SIZE_LIMITS[row.id]"
           @preview="preview(SIZE_LIMITS[row.id]!, $event)"
           @commit="setField(SIZE_LIMITS[row.id]!, $event)"
