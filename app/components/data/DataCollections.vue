@@ -67,6 +67,15 @@ function cancelConnection() {
   connectionName.value = ''
 }
 
+const connectionForm = useTemplateRef<HTMLFormElement>('connectionForm')
+
+/** The menu hands focus back to its `+` on close, which blurred (and so cancelled) the new connection's name; give it to the name instead. */
+function syncedMenuClosed(event: Event) {
+  if (!addingConnection.value) return
+  event.preventDefault()
+  connectionForm.value?.querySelector('input')?.focus()
+}
+
 watch(() => editor.importRequest, (request) => {
   if (request > (answeredImports.get(editor) ?? 0)) fromApi.value = true
   answeredImports.set(editor, request)
@@ -194,7 +203,7 @@ watch(() => editor.recordsTotal, (total) => {
           </p>
           <UDropdownMenu
             :items="syncedMenu"
-            :content="{ align: 'end' }"
+            :content="{ align: 'end', onCloseAutoFocus: syncedMenuClosed }"
           >
             <UButton
               icon="i-lucide-plus"
@@ -219,6 +228,7 @@ watch(() => editor.recordsTotal, (total) => {
         />
         <form
           v-if="addingConnection"
+          ref="connectionForm"
           class="px-2"
           data-new-connection
           @submit.prevent="addConnection"
