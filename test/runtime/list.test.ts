@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { DataRecord } from '#shared/data/records'
+import type { DocNode } from '#shared/document/schema'
 import { createCollection, createNode, createPage } from '#shared/document/factory'
 import { listKey, listNodes, listQueryOf, listRecords, listSearch, parseListSearch } from '#shared/runtime/list'
 
@@ -84,5 +85,31 @@ describe('listNodes', () => {
     outer.children.push(inner)
     page.root.children.push(createNode('Text'), outer)
     expect(listNodes(page.root).map(n => n.props.collection)).toEqual(['menu', 'extras'])
+  })
+})
+
+describe('listNodes with components', () => {
+  const n = (id: string, type: string, props: Record<string, string | number> = {}, children: DocNode[] = []): DocNode => ({ id, type, props, style: {}, children })
+  const feed = {
+    id: 'feed',
+    name: 'Feed',
+    root: n('f-root', 'Container', {}, [n('f-list', 'List', { collection: 'x' })]),
+    properties: [{ id: 'p-col', name: 'Collection', kind: 'collection' as const, bindings: [{ nodeId: 'f-list', prop: 'collection' }] }],
+    variants: []
+  }
+
+  it('finds Lists inside component instances, with property values applied', () => {
+    const page = n('page', 'Page', {}, [n('i1', 'Instance', { 'component': 'feed', 'p-col': 'menu' })])
+    expect(listNodes(page, [feed]).map(l => [l.id, l.props.collection])).toEqual([['i1/f-list', 'menu']])
+  })
+
+  it('finds Lists placed in slot content and ignores instances without a definition', () => {
+    const slotted = n('i1', 'Instance', { component: 'feed' }, [n('f', 'SlotFill', { slot: 's' }, [n('mine', 'List', { collection: 'menu' })])])
+    expect(listNodes(n('page', 'Page', {}, [slotted]), [feed]).map(l => l.id)).toEqual(['i1/f-list'])
+    expect(listNodes(n('page', 'Page', {}, [n('i2', 'Instance', { component: 'gone' })]), [feed])).toEqual([])
+  })
+
+  it('still lists plain Lists without components', () => {
+    expect(listNodes(n('page', 'Page', {}, [n('l', 'List')])).map(l => l.id)).toEqual(['l'])
   })
 })

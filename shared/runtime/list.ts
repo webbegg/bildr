@@ -1,8 +1,8 @@
 import { coerceValues, queryRecords, readRecord, RECORD_META_FIELDS } from '../data/records'
 import type { DataRecord, RecordQuery } from '../data/records'
 import type { PropValue } from '../document/components'
-import type { Collection, DocNode } from '../document/schema'
-import { walk } from '../document/tree'
+import type { Collection, ComponentDefinition, DocNode } from '../document/schema'
+import { walkResolved } from './instances'
 
 /**
  * The query a List runs, shared by the editor canvas (which queries the
@@ -129,10 +129,10 @@ export function listRecords(collection: Collection, records: DataRecord[], query
   return queryRecords(records.map(r => readRecord(collection.fields, r)), result.query).records
 }
 
-/** Every List under `root`, nested ones included. */
-export function listNodes(root: DocNode): DocNode[] {
+/** Every List under `root`, nested ones included, and those inside component instances (ids `<instance>/<node>`). */
+export function listNodes(root: DocNode, components: ComponentDefinition[] = []): DocNode[] {
   const lists: DocNode[] = []
-  walk(root, (node) => {
+  walkResolved(root, components, (node) => {
     if (node.type === LIST_TYPE) lists.push(node)
   })
   return lists

@@ -32,12 +32,12 @@ const page = computed(() => {
 /** Records of each collection a List on the page shows, by collection id (the first 500, as in the canvas). */
 const collectionRecords = shallowRef<Record<string, DataRecord[]>>({})
 const listCollections = computed(() => {
-  const slugs = new Set(page.value ? listNodes(page.value.root).map(node => listQueryOf(node.props).collection) : [])
+  const slugs = new Set(page.value ? listNodes(page.value.root, project.value?.components).map(node => listQueryOf(node.props).collection) : [])
   return project.value?.collections.filter(c => slugs.has(c.slug)) ?? []
 })
 const lists = computed(() => {
   const out: Record<string, DataRecord[]> = {}
-  for (const node of page.value ? listNodes(page.value.root) : []) {
+  for (const node of page.value ? listNodes(page.value.root, project.value?.components) : []) {
     const query = listQueryOf(node.props)
     const shown = listCollections.value.find(c => c.slug === query.collection)
     if (shown) out[listKey(query)] = listRecords(shown, collectionRecords.value[shown.id] ?? [], query)
@@ -93,6 +93,7 @@ useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${p
       :page="page"
       :base="`/preview/${projectId}`"
       :lists="lists"
+      :components="project.components"
       :submit-form="submitForm"
       :env="env"
       missing-env="keep"
