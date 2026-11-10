@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { HAND_TOOL, INSERT_TOOLS, MOVE_TOOL, toolHint } from '#shared/editor/insertTools'
+import { DEVICE_ORDER, deviceHint, deviceShortcut } from '#shared/editor/devices'
 
 /**
  * The canvas's floating bar, Framer-style, centred at the bottom: Move (V)
- * and Hand (H) tools, the canvas light/dark preview and the zoom menu. The
- * insert tools have no buttons; their letters arm them, and the bar then
- * shows a hint chip.
+ * and Hand (H) tools, the device switch (Desktop ⌥1, Tablet ⌥2, Mobile ⌥3:
+ * the frame being edited, panned into view), the canvas light/dark preview
+ * and the zoom menu. The insert tools have no buttons; their letters arm
+ * them, and the bar then shows a hint chip.
  */
 const { zoom, zoomItems } = defineProps<{ zoom: number, zoomItems: DropdownMenuItem[][] }>()
 const editor = useEditor()
@@ -53,6 +55,36 @@ const hint = computed(() => toolHint(editor.tool))
         />
       </button>
     </UTooltip>
+    <span
+      class="mx-1 h-5 w-px bg-white/10"
+      aria-hidden="true"
+    />
+    <UTooltip
+      v-for="device in DEVICE_ORDER"
+      :key="device.id"
+      :text="deviceHint(device)"
+      :kbds="deviceShortcut(device.id)"
+      :content="{ side: 'top' }"
+    >
+      <button
+        type="button"
+        class="grid size-8 place-items-center rounded-lg"
+        :class="editor.deviceId === device.id ? 'bg-white/10 text-white' : 'hover:bg-white/5 hover:text-white'"
+        :aria-label="device.label"
+        :aria-pressed="editor.deviceId === device.id"
+        :data-device-switch="device.id"
+        @click="editor.setDevice(device.id)"
+      >
+        <UIcon
+          :name="device.icon"
+          class="size-4"
+        />
+      </button>
+    </UTooltip>
+    <span
+      class="mx-1 h-5 w-px bg-white/10"
+      aria-hidden="true"
+    />
     <UTooltip
       :text="editor.previewDark ? 'Preview light' : 'Preview dark'"
       :content="{ side: 'top' }"

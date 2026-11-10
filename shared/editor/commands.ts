@@ -6,8 +6,10 @@
  */
 import { COMPONENTS } from '../document/components'
 import type { DocNode } from '../document/schema'
+import { DEVICE_ORDER, deviceHint, deviceShortcut } from './devices'
 import type { SelectionStep } from './selection'
 import { siblingParent, topLevelSelection } from './selection'
+import type { DeviceId } from './styleFields'
 
 export type CommandGroup = 'insert' | 'actions' | 'goto' | 'help'
 
@@ -71,6 +73,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: 'redo', label: 'Redo', keys: [['meta', 'shift', 'z']] },
   { id: 'zoom-100', label: 'Zoom to 100%', keys: [['shift', '0']] },
   { id: 'zoom-fit', label: 'Zoom to fit', keys: [['shift', '1']] },
+  ...DEVICE_ORDER.map(device => ({ id: `device:${device.id}`, label: `Edit ${deviceHint(device)}`, keys: [deviceShortcut(device.id)] })),
   { id: 'pan', label: 'Hold to pan', keys: [['space']] },
   { id: 'measure', label: 'Hold over an element to measure', keys: [['alt']] }
 ]
@@ -175,6 +178,8 @@ export interface CommandEditor {
   previewDark: boolean
   sidebarPanel: SidebarPanel
   collectionId: string | null
+  /** The device frame being edited. */
+  deviceId: DeviceId
   insert: (type: string) => unknown
   group: () => unknown
   autoLayout: () => unknown
@@ -189,6 +194,7 @@ export interface CommandEditor {
   setPreviewDark: (value: boolean) => unknown
   setDeepSelect: (value: boolean) => unknown
   selectPage: (id: string) => unknown
+  setDevice: (id: DeviceId) => unknown
 }
 
 export interface CommandContext {
@@ -252,6 +258,7 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
     action('zoom-100', 'Zoom to 100%', 'i-lucide-zoom-in', ['reset', 'actual'], onCanvas, ({ editor }) => editor.requestZoom('reset')),
     action('dark-preview', `Dark preview ${editor.previewDark ? 'off' : 'on'}`, editor.previewDark ? 'i-lucide-sun' : 'i-lucide-moon', ['theme', 'toggle', 'light'], always, ({ editor }) => editor.setPreviewDark(!editor.previewDark)),
     action('deep-select', `Deep select ${editor.deepSelect ? 'off' : 'on'}`, 'i-lucide-mouse-pointer-2', ['drill', 'toggle'], always, ({ editor }) => editor.setDeepSelect(!editor.deepSelect)),
+    ...DEVICE_ORDER.map(device => action(`device:${device.id}`, `Edit ${device.label}`, device.icon, ['device', 'breakpoint', 'frame', String(device.width)], c => onCanvas(c) && c.editor.deviceId !== device.id, ({ editor }) => editor.setDevice(device.id))),
     ...(editor.project?.pages ?? []).map((page): EditorCommand => ({
       id: `page:${page.id}`,
       group: 'goto',

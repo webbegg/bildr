@@ -83,7 +83,7 @@ describe('SHORTCUTS', () => {
 
   it('lists every editor shortcut once', () => {
     expect([...combos].sort()).toEqual([
-      'a', 'alt', 'b', 'c', 'delete', 'enter', 'f', 'h', 'i', 'meta+d', 'meta+f', 'meta+g', 'meta+k', 'meta+p', 'meta+shift+z', 'meta+z',
+      'a', 'alt', 'alt+1', 'alt+2', 'alt+3', 'b', 'c', 'delete', 'enter', 'f', 'h', 'i', 'meta+d', 'meta+f', 'meta+g', 'meta+k', 'meta+p', 'meta+shift+z', 'meta+z',
       'r', 'shift+0', 'shift+1', 'shift+a', 'shift+enter', 'shift+tab', 'space', 't', 'tab', 'v'
     ])
   })
@@ -115,6 +115,8 @@ describe('editorCommands', () => {
       previewDark: false,
       sidebarPanel: 'pages',
       collectionId: null,
+      deviceId: 'mobile',
+      setDevice: vi.fn(),
       insert: vi.fn(),
       group: vi.fn(),
       autoLayout: vi.fn(),
@@ -219,6 +221,21 @@ describe('editorCommands', () => {
     expect([editor.mode, editor.sidebarPanel]).toEqual(['build', 'assets'])
     get('collection:c1').run(ctx)
     expect([editor.mode, editor.collectionId]).toEqual(['data', 'c1'])
+  })
+
+  it('edits another device frame, with Alt + 1–3, on the Canvas only', () => {
+    const { ctx, editor, get } = fixture()
+    expect(['device:desktop', 'device:tablet', 'device:mobile'].map(id => [get(id).label, get(id).shortcut?.join('+')])).toEqual([
+      ['Edit Desktop', 'alt+1'],
+      ['Edit Tablet', 'alt+2'],
+      ['Edit Mobile', 'alt+3']
+    ])
+    expect(get('device:mobile').enabled(ctx)).toBe(false)
+    expect(get('device:tablet').enabled(ctx)).toBe(true)
+    get('device:tablet').run(ctx)
+    expect(editor.setDevice).toHaveBeenCalledWith('tablet')
+    editor.mode = 'data'
+    expect(get('device:tablet').enabled(ctx)).toBe(false)
   })
 
   it('opens the shortcuts sheet', () => {

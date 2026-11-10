@@ -22,6 +22,7 @@ import type { ZoomCommand } from '#shared/editor/viewport'
 import { previewWindowFeatures } from '#shared/editor/viewport'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
+import { deviceForKey } from '#shared/editor/devices'
 
 /** Identifies this editor tab on change events, so it can skip its own echoes. */
 export const TAB_ID = import.meta.client ? crypto.randomUUID() : 'server'
@@ -84,6 +85,8 @@ export function createEditor(projectId: string) {
   /** The canvas width, and the breakpoint the style panel edits (Mobile is the base, mobile-first). */
   const deviceId = ref<DeviceId>('mobile')
   const device = computed(() => DEVICES.find(d => d.id === deviceId.value)!)
+  /** The last device frame asked to be shown (the floating bar's switch, ⌥1–3, ⌘K); the canvas pans each new one into view. */
+  const frameRequest = shallowRef<{ deviceId: DeviceId } | null>(null)
   /** An uncommitted theme previewed in the canvas, e.g. while a colour picker drags. */
   const themeDraft = shallowRef<Theme | null>(null)
   /** An uncommitted style patch the canvas shows on one node, e.g. while a field scrubs. */
@@ -253,6 +256,12 @@ export function createEditor(projectId: string) {
 
   function requestZoom(command: ZoomCommand): void {
     zoomRequest.value = { command }
+  }
+
+  /** Edits another device: its frame becomes the active one and the canvas pans to it; the selection stays. */
+  function setDevice(id: DeviceId): void {
+    deviceId.value = id
+    frameRequest.value = { deviceId: id }
   }
 
   /** Picks a canvas tool: Move, Hand, or an insert tool to arm. */
@@ -489,9 +498,10 @@ export function createEditor(projectId: string) {
    * (V Move, H Hand, and the insert tools); `I` opens the Insert panel, as in
    * Framer, rather than arming Image. Cmd/Ctrl+P opens the draft preview,
    * Cmd/Ctrl+F the sidebar search and Cmd/Ctrl+K the quick actions (in any
-   * view). Callers skip keys typed into fields.
+   * view). Alt/Option + 1–3 edits Desktop, Tablet or Mobile, matched on the
+   * physical `code`. Callers skip keys typed into fields.
    */
-  function shortcut(key: string, meta: boolean, shift: boolean, nav = false): boolean {
+  function shortcut(key: string, meta: boolean, shift: boolean, nav = false, { code = '', alt = false }: { code?: string, alt?: boolean } = {}): boolean {
     const lower = key.toLowerCase()
     if (meta && !shift && lower === 'p') {
       openPreview()
@@ -504,7 +514,9 @@ export function createEditor(projectId: string) {
     // The Canvas view's shortcuts would act on a page the Data and Settings views do not show.
     if (mode.value !== 'build' && !(meta && (lower === 'z' || lower === 'y'))) return false
     const armed = toolForKey({ key, meta, shift })
-    if (meta && !shift && lower === 'f') searchRequest.value++
+    const deviceKey = deviceForKey({ code, alt, meta, shift })
+    if (deviceKey) setDevice(deviceKey)
+    else if (meta && !shift && lower === 'f') searchRequest.value++
     else if (!meta && !shift && lower === 'i') insertOpen.value = true
     else if (meta && lower === 'z') (shift ? redo : undo)()
     else if (meta && lower === 'y') redo()
@@ -525,9 +537,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, themeDraft, stylePreview, page, selected, selectedNodes, theme,
+    projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
     collectionId, collection, records, recordsTotal, recordsError, listCollections, lists,
-    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, renameProject, requestZoom, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }

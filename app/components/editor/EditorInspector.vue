@@ -11,10 +11,11 @@ import { FORM_TYPE, formFields, sampleValues } from '#shared/runtime/form'
  * The right panel, one scrolling view: a sticky head with the element's
  * identity, breadcrumb and quick actions, then the component's prop sections
  * (Content, Behaviour, Appearance, Advanced), then its style sections. The
- * styles edit the breakpoint of the canvas frame picked last, which a caption
- * names (Framer has one breakpoint control: the frame). With several nodes
- * selected the head reads "N selected" and only the styles show: their shared
- * values, "Mixed" where they differ, and an edit goes to all of them (one undo step).
+ * styles edit the breakpoint of the canvas frame picked last (or the floating
+ * bar's device switch), which a caption names, in the override blue off the
+ * Primary Mobile. With several nodes selected the head reads "N selected" and
+ * only the styles show: their shared values, "Mixed" where they differ, and an
+ * edit goes to all of them (one undo step).
  */
 const editor = useEditor()
 const toast = useToast()
@@ -153,7 +154,8 @@ function renamePage(field: 'name' | 'slug', value: string) {
       </nav>
 
       <p
-        class="-mt-1 px-4 pb-2 text-[11px] text-dimmed"
+        class="-mt-1 px-4 pb-2 text-[11px]"
+        :class="editor.device.breakpoint ? 'text-(color:--editor-selection)' : 'text-dimmed'"
         :data-editing-caption="editor.deviceId"
       >
         Editing {{ editor.device.label }}

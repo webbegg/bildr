@@ -37,7 +37,7 @@ function onKeyDown(event: KeyboardEvent) {
   }
   // The layers tree handles its own arrow keys first.
   if (event.defaultPrevented || isEditable(event.target) || inFloatingLayer(event)) return
-  if (editor.shortcut(event.key, event.metaKey || event.ctrlKey, event.shiftKey, allowsNavigation(event.target))) event.preventDefault()
+  if (editor.shortcut(event.key, event.metaKey || event.ctrlKey, event.shiftKey, allowsNavigation(event.target), { code: event.code, alt: event.altKey })) event.preventDefault()
 }
 
 // The dark editor chrome (main.css) is scoped to this page's document; the canvas iframe keeps the project theme.

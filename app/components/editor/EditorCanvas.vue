@@ -9,6 +9,7 @@ import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 import type { Point, Viewport, ZoomCommand } from '#shared/editor/viewport'
 import { isInsertTool, pointerMode } from '#shared/editor/insertTools'
+import { revealFrame } from '#shared/editor/devices'
 import { boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, frameOrder, layoutFrames, panView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
 /**
@@ -90,6 +91,14 @@ function zoomCommand(command: ZoomCommand) {
 watch(() => editor.zoomRequest, (request) => {
   if (request && view === 'page') zoomCommand(request.command)
 })
+
+// A device picked on the floating bar, with ⌥1–3 or ⌘K: pan its frame into view at the same zoom (a single frame refits instead).
+watch(() => editor.frameRequest, (request) => {
+  const rect = request && view === 'page' && !singleFrame.value ? layout.value.find(f => f.device.id === request.deviceId)?.rect : undefined
+  if (!rect || !stageSize.width) return
+  autoFit = false
+  viewport.value = revealFrame(viewport.value, rect, stageSize, FIT_PADDING)
+}, { flush: 'post' })
 
 function panBy(dx: number, dy: number) {
   autoFit = false
