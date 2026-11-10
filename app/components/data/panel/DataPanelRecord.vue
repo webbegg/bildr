@@ -1,15 +1,56 @@
 <script setup lang="ts">
 import { collectionCaps } from '#shared/data/collections'
+import { createLatestGuard, openRecordView } from '#shared/data/openRecord'
 import type { DataRecord, RecordValue } from '#shared/data/records'
 import type { Collection } from '#shared/document/schema'
 
-/** The record panel: one row per field, each commit one `record_update`; delete and close in the head. Editable and deletable as the collection's capabilities allow. */
+/**
+ * The record panel: one row per field, each commit one `record_update`; delete and close in the head. Editable and deletable as the collection's capabilities allow.
+ * Connection collections fetch the open record with `record_get` (their Get endpoint); the list row shows until it arrives, and stays if the fetch fails.
+ */
 const props = defineProps<{ collection: Collection, record: DataRecord }>()
 const editor = useEditor()
 const caps = computed(() => collectionCaps(props.collection))
 
-function commit(key: string, value: RecordValue) {
-  editor.runData('record_update', { recordId: props.record.id, values: { [key]: value } })
+const fetched = shallowRef<DataRecord | null>(null)
+const loading = ref(false)
+const error = ref('')
+const guard = createLatestGuard()
+const shown = computed(() => openRecordView(props.record, fetched.value))
+
+async function load() {
+  if (props.collection.source.type !== 'connection') return
+  const token = guard.start()
+  loading.value = true
+  try {
+    const result = await callAction<DataRecord>('record_get', { projectId: editor.projectId, collection: props.collection.id, recordId: props.record.id })
+    if (!guard.isLatest(token)) return
+    fetched.value = result
+    error.value = ''
+  } catch (failure) {
+    if (!guard.isLatest(token)) return
+    fetched.value = null
+    error.value = actionErrorMessage(failure)
+  } finally {
+    if (guard.isLatest(token)) loading.value = false
+  }
+}
+
+// Another record, or the row reloaded after an edit (here, in the table or by an agent).
+watch(() => [props.record.id, JSON.stringify(props.record)] as const, ([id], previous) => {
+  if (id !== previous?.[0]) {
+    fetched.value = null
+    error.value = ''
+  }
+  void load()
+}, { immediate: true })
+
+async function commit(key: string, value: RecordValue) {
+  const id = props.record.id
+  const result = await editor.runData<DataRecord>('record_update', { recordId: id, values: { [key]: value } })
+  if (!result || props.record.id !== id) return
+  fetched.value = result
+  void load()
 }
 
 async function remove() {
@@ -22,12 +63,20 @@ async function remove() {
   <div
     data-record-panel
     :data-record-id="record.id"
+    :data-record-loading="loading || undefined"
   >
     <DataPanelHead
       icon="i-lucide-file-text"
       title="Record"
       :detail="record.id"
     >
+      <UIcon
+        v-if="loading"
+        name="i-lucide-loader-circle"
+        class="me-1 size-3.5 shrink-0 animate-spin text-dimmed"
+        aria-label="Loading record"
+        data-record-spinner
+      />
       <UTooltip
         v-if="caps.delete"
         text="Delete record"
@@ -55,6 +104,14 @@ async function remove() {
       </UTooltip>
     </DataPanelHead>
 
+    <p
+      v-if="error"
+      class="mx-4 mt-3 text-xs text-dimmed"
+      data-record-error
+    >
+      Could not load the latest record: {{ error }}
+    </p>
+
     <EditorStyleSection label="Fields">
       <EditorRow
         v-for="field in collection.fields"
@@ -66,7 +123,7 @@ async function remove() {
       >
         <DataPanelValue
           :field="field"
-          :model-value="record.values[field.key] ?? null"
+          :model-value="shown.values[field.key] ?? null"
           :readonly="!caps.update"
           @commit="commit(field.key, $event)"
         />
