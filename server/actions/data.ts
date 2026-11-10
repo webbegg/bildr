@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { detectItems, inferFields, mapItems } from '#shared/data/apiSource'
-import { detectPaging, PAGING_MAX_PAGES, PAGING_MAX_RECORDS, pageSample, queryPaged } from '#shared/data/paging'
+import { detectPaging, PAGING_MAX_PAGES, PAGING_MAX_RECORDS, pageSample, queryPaged, totalFrom } from '#shared/data/paging'
 import type { PageTwo } from '#shared/data/paging'
 import { coerceValues, MAX_RECORD_BYTES, MAX_RECORDS_PER_COLLECTION, queryRecords, readRecord, recordBytes, RECORD_META_FIELDS } from '#shared/data/records'
 import type { DataRecord, RecordValue } from '#shared/data/records'
@@ -89,7 +89,7 @@ function findRecord(records: DataRecord[], recordId: string, collection: Collect
 
 export const apiSourcePreview = defineAction({
   name: 'api_source_preview',
-  description: `Fetch a JSON API (http(s), GET, with optional headers; private and local addresses are refused) and propose a collection mapping: the items path it detected (results, data, items, records, or the root array), fields (key, label, type, path) inferred from up to 20 items, the first 10 raw items and the same items mapped with the fields (sample), the item count of this response, and the paging it detected (null for none). With a paging (detected or given), pageTwo is page two: { count, sample } or { error }. ${API_FLOW}`,
+  description: `Fetch a JSON API (http(s), GET, with optional headers; private and local addresses are refused) and propose a collection mapping: the items path it detected (results, data, items, records, or the root array), fields (key, label, type, path) inferred from up to 20 items, the first 10 raw items and the same items mapped with the fields (sample), the item count of this response, and the paging it detected (null for none). With a paging (detected or given), page one is fetched with it, pageTwo is page two: { count, sample } or { error }, and pagingTotal is the API's total item count when the paging has a totalPath. ${API_FLOW}`,
   input: z.object({
     projectId: IdSchema,
     url: ApiUrlSchema.describe('The endpoint, e.g. https://rickandmortyapi.com/api/character'),
@@ -100,7 +100,7 @@ export const apiSourcePreview = defineAction({
   readOnly: true,
   run: async ({ projectId, url, headers, itemsPath, paging: given }, ctx) => {
     await ctx.services.loadProject(projectId)
-    const first = await ctx.services.fetchApi(projectId, { url, headers })
+    const first = await ctx.services.fetchApi(projectId, { url, headers }, given)
     const { json } = first
     const detected = itemsPath === undefined ? detectItems(json) : { itemsPath, items: apiItems(json, itemsPath) }
     if (!detected) throw new ActionError('invalid', 'No list of items found in the API response; pass itemsPath to point at one')
@@ -109,6 +109,8 @@ export const apiSourcePreview = defineAction({
     const paging = detectPaging(json, first.headers, url)
     const result: Record<string, unknown> = { itemsPath: detected.itemsPath, fields, items, sample: mapItems(items, fields), total: detected.items.length, paging }
     const tested = given ?? paging
+    const pagingTotal = tested ? totalFrom(tested, json) : undefined
+    if (pagingTotal !== undefined) result.pagingTotal = pagingTotal
     if (tested) {
       result.pageTwo = await ctx.services.previewPageTwo(projectId, { url, headers }, tested, first).then(
         (page): PageTwo => (page ? pageSample(page.json, detected.itemsPath, fields) : { count: 0, sample: [] }),

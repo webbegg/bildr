@@ -1,4 +1,4 @@
-import { nextFrom, nextPageUrl, pageRequest, pagesFor, PAGING_MAX_PAGES, PAGING_MAX_RECORDS, totalFrom, withQuery } from '#shared/data/paging'
+import { NEXT_OFF_SITE, nextFrom, nextPageUrl, pageRequest, pagesFor, PAGING_MAX_PAGES, PAGING_MAX_RECORDS, totalFrom, withQuery } from '#shared/data/paging'
 import type { Paging } from '#shared/data/paging'
 import { readItems } from '#shared/data/remote'
 import { ActionError } from '../actions/define'
@@ -14,7 +14,27 @@ import type { Resolver, Transport } from './urlGuard'
  * Writes of connection collections (`send`) take the same guard and limits
  * and are never cached. Paged lists (`fetchPages`) cache each page the same
  * way, grouped under their first URL, so invalidating it drops every page.
+ * The group also remembers, for as long, where each page of a cursor or next
+ * list is, so a later window resumes there instead of at page one. A GET
+ * answered 429 with a Retry-After of at most 5 s waits and retries once.
  */
+
+/** At most this many pages and page positions are kept per paged list; the oldest go first. */
+const GROUP_MAX = 100
+
+const RETRY_MAX_MS = 5000
+
+/** The wait a Retry-After header asks for, in ms: seconds or an HTTP date; undefined when there is none. */
+function retryAfter(header: string | null, now: number): number | undefined {
+  const value = header?.trim() ?? ''
+  if (/^\d+$/.test(value)) return Number(value) * 1000
+  const date = Date.parse(value)
+  return Number.isNaN(date) ? undefined : Math.max(date - now, 0)
+}
+
+function rateLimited(wait: number | undefined): string {
+  return `The API is rate limiting requests; try again ${wait === undefined ? 'later' : `in ${Math.ceil(wait / 1000)} s`}`
+}
 
 export interface ApiFetcherOptions {
   resolve?: Resolver
@@ -24,6 +44,8 @@ export interface ApiFetcherOptions {
   ttlMs?: number
   maxEntries?: number
   now?: () => number
+  /** Waits before a retry after HTTP 429; tests pass a fake. */
+  sleep?: (ms: number) => Promise<void>
 }
 
 export interface ApiResponse {
@@ -81,6 +103,7 @@ function size(bytes: number): string {
 
 export function createApiFetcher(options: ApiFetcherOptions = {}) {
   const { resolve, transport, timeoutMs = 5000, maxBytes = 1024 * 1024, ttlMs = 60_000, maxEntries = 100, now = Date.now } = options
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>(done => setTimeout(done, ms)))
   const cache = new Map<string, { at: number, response: ApiResponse }>()
   const pending = new Map<string, Promise<ApiResponse>>()
   const fail = (message: string): never => {
@@ -116,7 +139,8 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
   }
 
   /** Reads must answer JSON; writes may answer nothing or something else, read as null. */
-  async function request(url: string, { method = 'GET', headers: customHeaders, body: payload }: Partial<SendOptions> = {}): Promise<SendResponse> {
+  async function request(url: string, options: Partial<SendOptions> = {}, retried = false): Promise<SendResponse> {
+    const { method = 'GET', headers: customHeaders, body: payload } = options
     const signal = AbortSignal.timeout(timeoutMs)
     const write = method !== 'GET'
     const headers: Record<string, string> = { 'accept': 'application/json', 'user-agent': 'bildr' }
@@ -128,6 +152,13 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
       const response = await guardedFetch(url, { resolve, transport, signal, headers, customHeaders, method, body: payload === undefined ? undefined : JSON.stringify(payload) })
       status = response.status
       link = response.headers.get('link')
+      if (response.status === 429) {
+        await response.body?.cancel()
+        const wait = retryAfter(response.headers.get('retry-after'), now())
+        if (write || retried || wait === undefined || wait > RETRY_MAX_MS) fail(rateLimited(wait))
+        await sleep(wait!)
+        return await request(url, options, true)
+      }
       if (!response.ok) {
         await response.body?.cancel()
         fail(`The API answered HTTP ${response.status}`)
@@ -160,8 +191,58 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
     return response
   }
 
-  /** Cache keys of the pages read after the first one, by the first page's key. */
-  const groups = new Map<string, Set<string>>()
+  interface Group {
+    /** Cache keys of the pages read after the first one. */
+    pages: Set<string>
+    /** Pages of a cursor or next list reached so far, by index: the URL and the index of the first item. */
+    positions: Map<number, { url: string, start: number, at: number }>
+  }
+
+  /** By the first page's key. Dropping a group drops its pages, so a write never leaves one stale. */
+  const groups = new Map<string, Group>()
+
+  function dropGroup(key: string): void {
+    for (const page of groups.get(key)?.pages ?? []) cache.delete(page)
+    groups.delete(key)
+  }
+
+  function groupOf(key: string): Group {
+    const group = groups.get(key) ?? { pages: new Set(), positions: new Map() }
+    groups.delete(key)
+    groups.set(key, group)
+    while (groups.size > maxEntries) dropGroup(groups.keys().next().value!)
+    return group
+  }
+
+  function addPage(group: Group, key: string): void {
+    group.pages.delete(key)
+    group.pages.add(key)
+    while (group.pages.size > GROUP_MAX) {
+      const oldest = group.pages.values().next().value!
+      group.pages.delete(oldest)
+      cache.delete(oldest)
+    }
+  }
+
+  function addPosition(group: Group, index: number, url: string, start: number): void {
+    group.positions.delete(index)
+    group.positions.set(index, { url, start, at: now() })
+    while (group.positions.size > GROUP_MAX) group.positions.delete(group.positions.keys().next().value!)
+  }
+
+  /** The last page reached that starts at or before item `offset`, if it is still fresh. */
+  function resumeAt(group: Group, offset: number): { index: number, url: string, start: number } | undefined {
+    let best: { index: number, url: string, start: number } | undefined
+    for (const [index, { url, start, at }] of group.positions) {
+      if (now() - at < ttlMs && start <= offset && index > (best?.index ?? 0)) best = { index, url, start }
+    }
+    return best
+  }
+
+  const fresh = (key: string) => {
+    const hit = cache.get(key)
+    return !!hit && now() - hit.at < ttlMs
+  }
 
   async function fetchJson(url: string, { headers }: FetchJsonOptions = {}, key?: string): Promise<ApiResponse> {
     key ??= await cacheKey(url, headers)
@@ -182,28 +263,32 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
 
   /**
    * Reads the pages that hold items `offset` to `offset + limit - 1`: `page`
-   * and `offset` paging jump to them, `cursor` and `next` walk from the first
-   * page. At most 20 pages and 1,000 items per call; past either the result
-   * is cut and `hasMore` is true. A next URL off `origin` throws.
+   * and `offset` paging jump to them, `cursor` and `next` walk from the last
+   * page reached before the window (the first page when none is known). At
+   * most 20 pages fetched (cached ones are free) and 1,000 items read per
+   * call; past either the result is cut and `hasMore` is true. A next URL off
+   * `origin` throws.
    */
   async function fetchPages(url: string, { headers, paging, itemsPath, origin, offset, limit }: FetchPagesOptions): Promise<PagedItems> {
-    const group = await cacheKey(url, headers)
+    const groupKey = await cacheKey(url, headers)
+    const group = groupOf(groupKey)
     const end = offset + limit
     const items: unknown[] = []
+    let fetched = 0
     let pages = 0
     let read = 0
     let known = 0
     let total: number | undefined
     let fetchedAt = new Date(now()).toISOString()
-    const capped = () => pages >= PAGING_MAX_PAGES || read >= PAGING_MAX_RECORDS
+    /** The page at `pageUrl`, whose first item is item `start`; null past the caps. */
     const page = async (pageUrl: string, start: number) => {
+      if (read >= PAGING_MAX_RECORDS) return null
       const key = await cacheKey(pageUrl, headers)
-      if (key !== group) {
-        const keys = groups.get(group) ?? new Set()
-        groups.delete(group)
-        groups.set(group, keys.add(key))
-        while (groups.size > maxEntries) groups.delete(groups.keys().next().value!)
+      if (!fresh(key)) {
+        if (fetched >= PAGING_MAX_PAGES) return null
+        fetched += 1
       }
+      if (key !== groupKey) addPage(group, key)
       const response = await fetchJson(pageUrl, { headers }, key)
       const list = readItems(response.json, itemsPath) ?? fail(`The API response has no list of items at "${itemsPath ?? ''}"`)
       pages += 1
@@ -222,9 +307,10 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
       let size: number | undefined = paging.size
       let index = size ? pagesFor(offset, limit, size).first : 0
       for (;;) {
-        if (capped()) return result(true)
         const start = index * (size ?? 0)
-        const { list } = await page(withQuery(url, pageRequest(paging, index)), start)
+        const got = await page(withQuery(url, pageRequest(paging, index)), start)
+        if (!got) return result(true)
+        const { list } = got
         size ??= list.length
         const more = list.length > 0 && (total === undefined ? list.length >= size : start + list.length < total)
         if (!more) return result(false)
@@ -233,20 +319,31 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
       }
     }
 
+    const resume = resumeAt(group, offset)
     const seen = new Set<string>()
-    let pageUrl = url
-    let cursor: string | undefined
-    for (let index = 0; ; index++) {
-      if (capped()) return result(true)
+    let pageUrl = resume?.url ?? url
+    known = resume?.start ?? 0
+    for (let index = resume?.index ?? 0; ; index++) {
       seen.add(pageUrl)
-      const { list, response } = await page(pageUrl, known)
+      const got = await page(pageUrl, known)
+      if (!got) return result(true)
+      const { list, response } = got
       const next = nextFrom(paging, response.json, response.headers)
       if (!next || !list.length) return result(false)
+      const following = paging.type === 'cursor' ? withQuery(url, pageRequest(paging, index + 1, next)) : onOrigin(next, pageUrl, origin)
+      if (following !== null && !seen.has(following)) addPosition(group, index + 1, following, known)
       if (known >= end) return result(true)
-      if (paging.type === 'cursor') cursor = next
-      const following = paging.type === 'cursor' ? withQuery(url, pageRequest(paging, index + 1, cursor)) : followNext(next, pageUrl, origin)
+      if (following === null) return fail(NEXT_OFF_SITE)
       if (seen.has(following)) return result(false)
       pageUrl = following
+    }
+  }
+
+  function onOrigin(next: string, pageUrl: string, origin: string): string | null {
+    try {
+      return nextPageUrl(next, pageUrl, origin)
+    } catch {
+      return null
     }
   }
 
@@ -281,8 +378,7 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
     async invalidate(url: string, { headers }: FetchJsonOptions = {}): Promise<void> {
       const key = await cacheKey(url, headers)
       cache.delete(key)
-      for (const page of groups.get(key) ?? []) cache.delete(page)
-      groups.delete(key)
+      dropGroup(key)
     },
 
     /** One request with any method and an optional JSON body; never cached. Failures throw `ActionError('invalid')`. */

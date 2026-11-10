@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { detectItems, inferFields, mapItems } from '#shared/data/apiSource'
-import { detectPaging, pageSample } from '#shared/data/paging'
+import { detectPaging, pageSample, totalFrom } from '#shared/data/paging'
 import type { PageTwo } from '#shared/data/paging'
 import { ENDPOINT_METHODS, readItem, readItems } from '#shared/data/remote'
 import { createConnection } from '#shared/document/factory'
@@ -80,7 +80,7 @@ export const connectionDelete = defineAction({
 
 export const endpointTest = defineAction({
   name: 'endpoint_test',
-  description: 'Send one request to a connection endpoint and propose a collection mapping. Read-only: not recorded in the history. Only GET runs by default; any other method can change data on the remote API (it cannot be undone), so it needs confirm: true. Returns the HTTP status and, when the response holds a list, the items path it found (or itemsPath), the first 10 raw items, the proposed fields (key, label, type, path) and the items mapped with them (sample), with the item count, and the paging it detected (null for none; see collection_create); with a paging (detected or given) and GET, pageTwo is page two: { count, sample } or { error }. For a single object, the item, the proposed fields and the sample.',
+  description: 'Send one request to a connection endpoint and propose a collection mapping. Read-only: not recorded in the history. Only GET runs by default; any other method can change data on the remote API (it cannot be undone), so it needs confirm: true. Returns the HTTP status and, when the response holds a list, the items path it found (or itemsPath), the first 10 raw items, the proposed fields (key, label, type, path) and the items mapped with them (sample), with the item count, and the paging it detected (null for none; see collection_create); with a paging (detected or given) and GET, pageTwo is page two: { count, sample } or { error }; pagingTotal is the API\'s total item count when the paging has a totalPath. For a single object, the item, the proposed fields and the sample.',
   input: z.object({
     projectId: IdSchema,
     connectionId: ConnectionRef,
@@ -111,6 +111,8 @@ export const endpointTest = defineAction({
       const paging = detectPaging(json, first.headers, relative)
       const result: Record<string, unknown> = { status, itemsPath: detected.itemsPath, fields, items, sample: mapItems(items, fields), total: detected.items.length, paging }
       const tested = given ?? paging
+      const pagingTotal = tested ? totalFrom(tested, json) : undefined
+      if (pagingTotal !== undefined) result.pagingTotal = pagingTotal
       // Page two is one more GET, so only a GET test reads it.
       if (tested && method === 'GET') {
         result.pageTwo = await ctx.services.remote.testPageTwo(projectId, connection, { method, path, id, paging: tested }, first).then(

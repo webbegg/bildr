@@ -27,6 +27,7 @@ interface Preview {
   total: number
   paging: Paging | null
   pageTwo?: PageTwo
+  pagingTotal?: number
 }
 
 const source = computed(() => (props.collection?.source.type === 'api' ? props.collection.source : undefined))
@@ -41,6 +42,8 @@ const saving = ref(false)
 const error = ref('')
 const paging = ref<Paging | null>(null)
 const pageTwo = ref<PageTwo | null>(null)
+/** The API's own total (at the paging's `totalPath`), when it has one. */
+const pagingTotal = ref<number | null>(null)
 const usePaging = ref(true)
 /** Whether `paging` was saved or edited, so a fetch keeps it instead of proposing one. */
 const pagingChosen = ref(false)
@@ -51,6 +54,7 @@ function reset() {
   paging.value = source.value?.paging ?? null
   pagingChosen.value = !!source.value?.paging
   pageTwo.value = null
+  pagingTotal.value = null
   usePaging.value = true
   url.value = source.value?.url ?? ''
   itemsPath.value = source.value?.itemsPath ?? ''
@@ -85,6 +89,7 @@ async function fetchPreview() {
     const preview = await callAction<Preview>('api_source_preview', input)
     if (!pagingChosen.value) paging.value = preview.paging
     pageTwo.value = preview.pageTwo ?? null
+    pagingTotal.value = preview.pagingTotal ?? null
     itemsPath.value = preview.itemsPath
     items.value = preview.items
     total.value = preview.total
@@ -224,8 +229,9 @@ watch(open, (isOpen) => {
           v-model:paging="paging"
           v-model:use="usePaging"
           :page-two="pageTwo"
+          :total="pagingTotal"
           :detected="!pagingChosen"
-          @update:paging="pagingChosen = true; pageTwo = null"
+          @update:paging="pagingChosen = true; pageTwo = null; pagingTotal = null"
         />
       </div>
 

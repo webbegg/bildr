@@ -5,7 +5,7 @@ import type { Resolver, Transport } from '../../server/utils/urlGuard'
 const resolve: Resolver = async host => (host === 'internal.example.com' ? [{ address: '10.0.0.1', family: 4 }] : [{ address: '93.184.216.34', family: 4 }])
 const json = (body: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(body), { ...init, headers: { 'content-type': 'application/json; charset=utf-8', ...init.headers } })
 
-function fetcher(respond: Transport, options: { now?: () => number, timeoutMs?: number, maxBytes?: number, maxEntries?: number } = {}) {
+function fetcher(respond: Transport, options: { now?: () => number, sleep?: (ms: number) => Promise<void>, timeoutMs?: number, maxBytes?: number, maxEntries?: number } = {}) {
   const calls: { url: string, headers?: Record<string, string> }[] = []
   const transport: Transport = (url, init) => {
     calls.push({ url: url.href, headers: init.headers })
@@ -127,6 +127,71 @@ describe('createApiFetcher', () => {
     expect(await text.api.send('https://api.example.com/posts/1', { method: 'DELETE' })).toEqual({ status: 200, json: null })
     const failed = fetcher(async () => json({}, { status: 500 }))
     await expect(failed.api.send('https://api.example.com/posts', { method: 'POST', body: {} })).rejects.toMatchObject({ code: 'invalid', message: 'The API answered HTTP 500' })
+  })
+
+  describe('rate limits (HTTP 429)', () => {
+    const NOW = Date.parse('2026-11-10T12:00:00Z')
+    const limited = (retryAfter: string[]) => {
+      const waits: number[] = []
+      const answers = [...retryAfter]
+      const { api, calls } = fetcher(async () => (answers.length ? json({}, { status: 429, headers: { 'retry-after': answers.shift()! } }) : json([1])), {
+        now: () => NOW,
+        sleep: async (ms) => {
+          waits.push(ms)
+        }
+      })
+      return { api, calls, waits }
+    }
+
+    it('a GET waits a short Retry-After in seconds and retries once', async () => {
+      const { api, calls, waits } = limited(['2'])
+      expect((await api.fetchJson('https://api.example.com/x')).json).toEqual([1])
+      expect([waits, calls.length]).toEqual([[2000], 2])
+    })
+
+    it('a GET waits a short Retry-After given as an HTTP date', async () => {
+      const { api, waits } = limited([new Date(NOW + 3000).toUTCString()])
+      await api.fetchJson('https://api.example.com/x')
+      expect(waits).toEqual([3000])
+    })
+
+    it('fails without waiting when the wait is over 5 s, and after one retry', async () => {
+      const long = limited(['30'])
+      await expect(long.api.fetchJson('https://api.example.com/x')).rejects.toMatchObject({ code: 'invalid', message: 'The API is rate limiting requests; try again in 30 s' })
+      expect([long.waits, long.calls.length]).toEqual([[], 1])
+      const twice = limited(['1', '4'])
+      await expect(twice.api.fetchJson('https://api.example.com/x')).rejects.toMatchObject({ message: 'The API is rate limiting requests; try again in 4 s' })
+      expect([twice.waits, twice.calls.length]).toEqual([[1000], 2])
+    })
+
+    it('never retries a write', async () => {
+      const { api, calls, waits } = limited(['1'])
+      await expect(api.send('https://api.example.com/posts', { method: 'POST', body: {} })).rejects.toMatchObject({ message: 'The API is rate limiting requests; try again in 1 s' })
+      expect([waits, calls.length]).toEqual([[], 1])
+    })
+  })
+
+  describe('the page index of paged lists', () => {
+    const paging = { type: 'page', param: 'page', start: 1, sizeParam: 'per_page', size: 1 } as const
+    const pages = (api: ReturnType<typeof fetcher>['api'], path: string, offset: number) => api.fetchPages(`https://api.example.com/${path}`, { paging, origin: 'https://api.example.com', offset, limit: 1 })
+
+    it('keeps at most 100 pages per list, dropping the oldest from the cache', async () => {
+      const { api, calls } = fetcher(async () => json([1]), { maxEntries: 500 })
+      for (let offset = 0; offset <= 100; offset++) await pages(api, 'a', offset)
+      calls.length = 0
+      await pages(api, 'a', 100)
+      await pages(api, 'a', 0)
+      expect(calls.map(c => c.url)).toEqual(['https://api.example.com/a?page=1&per_page=1'])
+    })
+
+    it('a list dropped from the index loses its cached pages, so a write cannot leave them stale', async () => {
+      const { api, calls } = fetcher(async url => (url.pathname === '/a' ? json([1]) : json({}, { status: 500 })), { maxEntries: 2 })
+      await pages(api, 'a', 0)
+      for (const path of ['b', 'c']) await expect(pages(api, path, 0)).rejects.toMatchObject({ code: 'invalid' })
+      calls.length = 0
+      await pages(api, 'a', 0)
+      expect(calls).toHaveLength(1)
+    })
   })
 
   it('does not cache failures', async () => {

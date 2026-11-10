@@ -29,6 +29,7 @@ interface ListTest {
   total?: number
   paging?: Paging | null
   pageTwo?: PageTwo
+  pagingTotal?: number
 }
 
 const source = computed(() => (props.collection?.source.type === 'connection' ? props.collection.source : undefined))
@@ -44,6 +45,8 @@ const saving = ref(false)
 const error = ref('')
 const paging = ref<Paging | null>(null)
 const pageTwo = ref<PageTwo | null>(null)
+/** The API's own total (at the paging's `totalPath`), when it has one. */
+const pagingTotal = ref<number | null>(null)
 const usePaging = ref(true)
 /** Whether `paging` was saved or edited, so a Test keeps it instead of proposing one. */
 const pagingChosen = ref(false)
@@ -55,6 +58,7 @@ function reset() {
   paging.value = list?.paging ?? null
   pagingChosen.value = !!list?.paging
   pageTwo.value = null
+  pagingTotal.value = null
   usePaging.value = true
   name.value = ''
   path.value = list?.path ?? '/'
@@ -94,6 +98,7 @@ async function test() {
     total.value = result.total ?? result.items.length
     if (!pagingChosen.value) paging.value = result.paging ?? null
     pageTwo.value = result.pageTwo ?? null
+    pagingTotal.value = result.pagingTotal ?? null
     const tested = JSON.stringify([path.value.trim(), itemsPath.value])
     if (tested !== mappedFor || !rows.value.length) rows.value = result.fields.map(mappingRow)
     mappedFor = tested
@@ -247,8 +252,9 @@ watch(open, (isOpen) => {
           v-model:paging="paging"
           v-model:use="usePaging"
           :page-two="pageTwo"
+          :total="pagingTotal"
           :detected="!pagingChosen"
-          @update:paging="pagingChosen = true; pageTwo = null"
+          @update:paging="pagingChosen = true; pageTwo = null; pagingTotal = null"
         />
       </div>
 

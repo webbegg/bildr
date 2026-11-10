@@ -202,6 +202,58 @@ describe('caps', () => {
   })
 })
 
+describe('resumable sequential paging', () => {
+  const CURSOR = { path: '/cursor', itemsPath: 'data', paging: { type: 'cursor', param: 'cursor', cursorPath: 'meta.next_cursor' } }
+  const walk = async (ctx: Awaited<ReturnType<typeof setup>>, slug: string) => {
+    for (const [offset, limit] of [[0, 400], [400, 400], [800, 200]]) await ctx.read(slug, { offset, limit })
+    ctx.calls.length = 0
+  }
+
+  for (const [type, list] of [['next', NEXT], ['cursor', CURSOR]] as const) {
+    it(`${type}: a later window starts at the nearest page reached before`, async () => {
+      const ctx = await setup(BIG)
+      await ctx.collection('Long', list)
+      await walk(ctx, 'long')
+      const result = await ctx.read('long', { offset: 1000, limit: 40 })
+      expect(ids(result.records)).toEqual(range(1001, 1040))
+      expect(result.hasMore).toBe(true)
+      expect(ctx.calls).toHaveLength(2)
+      if (type === 'next') expect(ctx.urls()).toEqual(['/next?page=51', '/next?page=52'])
+    })
+  }
+
+  it('with nothing remembered, walks from page 1 and returns what fits in 20 pages', async () => {
+    const ctx = await setup(BIG)
+    await ctx.collection('Long', NEXT)
+    const result = await ctx.read('long', { offset: 1000, limit: 40 })
+    expect([result.records, result.hasMore]).toEqual([[], true])
+    expect(ctx.urls().slice(0, 2)).toEqual(['/next', '/next?page=2'])
+    expect(ctx.calls).toHaveLength(20)
+  })
+
+  it('pages read from the cache do not count toward the 20-page cap', async () => {
+    const ctx = await setup(BIG)
+    await ctx.collection('Long', NEXT)
+    await ctx.read('long', { offset: 0, limit: 400 })
+    ctx.calls.length = 0
+    const result = await ctx.read('long', { offset: 0, limit: 500 })
+    expect(ids(result.records)).toEqual(range(1, 500))
+    expect(ctx.urls()).toEqual(range(21, 25).map(page => `/next?page=${page}`))
+  })
+
+  it('a write forgets the pages reached', async () => {
+    const ctx = await setup(BIG)
+    await ctx.collection('Long', NEXT, { create: { method: 'POST', path: '/next' } })
+    await walk(ctx, 'long')
+    await ctx.bildr.call('record_create', { projectId: ctx.projectId, collection: 'long', values: { name: 'New' } }, mcp)
+    ctx.calls.length = 0
+    const result = await ctx.read('long', { offset: 1000, limit: 40 })
+    expect([result.records, result.hasMore]).toEqual([[], true])
+    expect(ctx.urls()[0]).toBe('/next')
+    expect(ctx.calls).toHaveLength(20)
+  })
+})
+
 describe('cache', () => {
   it('caches every page, and a write drops every page of the collection', async () => {
     const ctx = await setup()
@@ -338,6 +390,27 @@ describe('detection in the test actions', () => {
     expect(result.paging).toEqual({ type: 'next' })
     expect(result.pageTwo.sample[0]!.id).toBe('21')
     expect(ctx.urls()).toEqual(['/link', '/link?page=2'])
+    expect(result).not.toHaveProperty('pagingTotal')
+  })
+
+  it('api_source_preview fetches page one with the given paging, so page two follows it', async () => {
+    const ctx = await setup()
+    const result = await ctx.bildr.call<{ items: { id: number }[], pageTwo: { sample: DataRecord[] } }>('api_source_preview', {
+      projectId: ctx.projectId, url: `${BASE}/pages`, itemsPath: 'data', paging: { type: 'page', sizeParam: 'per_page', size: 5 }
+    }, mcp)
+    expect(result.items.map(item => item.id)).toEqual(range(1, 5))
+    expect(result.pageTwo.sample.map(r => r.id)).toEqual(['6', '7', '8', '9', '10'])
+    expect(ctx.urls()).toEqual(['/pages?page=1&per_page=5', '/pages?page=2&per_page=5'])
+  })
+
+  it('both test actions return the API\'s total when the paging has a totalPath', async () => {
+    const ctx = await setup(BIG)
+    const tested = await ctx.bildr.call<{ total: number, pagingTotal: number }>('endpoint_test', { projectId: ctx.projectId, connectionId: ctx.connection.id, method: 'GET', path: '/next' }, mcp)
+    expect([tested.total, tested.pagingTotal]).toEqual([20, 5000])
+    const preview = await ctx.bildr.call<{ total: number, pagingTotal: number }>('api_source_preview', {
+      projectId: ctx.projectId, url: `${BASE}/pages`, itemsPath: 'data', paging: { type: 'page', sizeParam: 'per_page', size: 10, totalPath: 'total' }
+    }, mcp)
+    expect([preview.total, preview.pagingTotal]).toEqual([10, 5000])
   })
 })
 

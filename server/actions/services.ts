@@ -1,5 +1,5 @@
 import { itemsAt, mapItems } from '#shared/data/apiSource'
-import { PAGING_MAX_RECORDS, sourcePaging } from '#shared/data/paging'
+import { pageRequest, PAGING_MAX_RECORDS, sourcePaging, withQuery } from '#shared/data/paging'
 import type { PagedRecords, Paging } from '#shared/data/paging'
 import { remoteId } from '#shared/data/remote'
 import type { DataRecord } from '#shared/data/records'
@@ -95,10 +95,10 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
    * Fetches an API source with its `{{ env.NAME }}` refs resolved from the
    * project's current variables (public and secret). The resolved URL gets
    * the full checks in the fetcher; every failure message is redacted, so it
-   * never carries a secret value.
+   * never carries a secret value. With `paging`, the first page of it.
    */
-  async function fetchApi(projectId: string, source: ApiSourceInput): Promise<ApiResponse> {
-    return withApiSource(projectId, source, ({ url, headers }) => api.fetchJson(url, { headers }))
+  async function fetchApi(projectId: string, source: ApiSourceInput, paging?: Paging): Promise<ApiResponse> {
+    return withApiSource(projectId, source, ({ url, headers }) => api.fetchJson(paging ? withQuery(url, pageRequest(paging, 0)) : url, { headers }))
   }
 
   /** Runs `task` with the source's URL and headers resolved, its failure messages redacted. */
@@ -198,7 +198,7 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
     /** Page two of an API source preview whose first page was `first`; null when there is none. Failures are redacted. */
     async previewPageTwo(projectId: string, source: ApiSourceInput, paging: Paging, first: ApiResponse): Promise<ApiResponse | null> {
       return withApiSource(projectId, source, async ({ url, headers }) => {
-        const next = api.pageTwoUrl(url, paging, first, originOf(url))
+        const next = api.pageTwoUrl(withQuery(url, pageRequest(paging, 0)), paging, first, originOf(url))
         return next === null ? null : api.fetchJson(next, { headers })
       })
     },

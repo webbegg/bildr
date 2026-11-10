@@ -18,7 +18,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
  * times.
  */
 async function served(page, label, step, done, retry = step) {
-  const limited = () => page.locator('[data-records-error], [data-paging-result], [data-api-error]').filter({ hasText: 'HTTP 429' }).count()
+  const limited = () => page.locator('[data-records-error], [data-paging-result], [data-api-error]').filter({ hasText: /HTTP 429|rate limiting/ }).count()
   await step()
   for (let attempt = 1; ; attempt++) {
     const outcome = await until(async () => ((await done()) ? 'done' : (await limited()) ? 'limited' : null), 30_000)
@@ -52,7 +52,7 @@ await run('paging', async ({ page, errors }) => {
   const testList = () => page.locator('[data-connection-source] [data-endpoint-test="list"]').click()
   await served(page, 'Test', testList, () => detected.isVisible())
   const proposal = (await detected.innerText()).trim()
-  check(proposal === 'Paging detected: Next link (info.next) · total at info.count', `Test proposes "${proposal}"`)
+  check(proposal === 'Paging detected: Next link (info.next) · 826 items', `Test proposes "${proposal}"`)
   const row = page.locator('[data-connection-source] [data-form-row="Paging"]')
   check(/Page 2: 20 items/.test(await row.innerText()), `Test reads page 2 ("${(await row.innerText()).replace(/\s+/g, ' ').trim()}")`)
   check(await page.locator('[data-connection-source] [data-paging-use]').getAttribute('aria-checked') === 'true', 'the paging switch is on by default')
@@ -113,4 +113,4 @@ await run('paging', async ({ page, errors }) => {
   await shot(page, 'paging-panel')
 
   check(errors.length === 0, `no console errors besides the API's 429s${errors.length ? `: ${errors.join(' | ')}` : ''}`)
-}, { ignore: [/HTTP 429/] })
+}, { ignore: [/HTTP 429/, /rate limiting/] })
