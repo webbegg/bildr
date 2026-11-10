@@ -10,7 +10,7 @@ import { DEVICES } from '#shared/editor/styleFields'
 import type { Point, Viewport, ZoomCommand } from '#shared/editor/viewport'
 import { isInsertTool, pointerMode } from '#shared/editor/insertTools'
 import { revealFrame } from '#shared/editor/devices'
-import { boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, frameOrder, layoutFrames, panView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, frameOrder, layoutFrames, panView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
 /**
  * The editor canvas. The page view is a Figma-style infinite surface showing
@@ -261,7 +261,7 @@ function sync(id: DeviceId | null, el: HTMLIFrameElement) {
   post(el, { type: 'bildr:hover', nodeId: editor.hoveredId })
   post(el, toolMessage())
   post(el, { type: 'bildr:dark', dark: editor.previewDark })
-  if (id) post(el, { type: 'bildr:active', active: id === editor.deviceId, zoom: viewport.value.zoom })
+  if (id) post(el, activeMessage(id, editor.deviceId, viewport.value.zoom))
   const preview = editor.stylePreview
   if (preview) for (const nodeId of previewTargets(preview)) post(el, { type: 'bildr:preview', nodeId, style: preview.style })
 }
@@ -330,7 +330,7 @@ watch(() => editor.hoveredId, nodeId => broadcast({ type: 'bildr:hover', nodeId 
 watch(() => editor.tool, () => broadcast(toolMessage()))
 watch(() => editor.previewDark, dark => broadcast({ type: 'bildr:dark', dark }))
 watch([() => editor.deviceId, () => viewport.value.zoom], ([deviceId, zoom]) => {
-  for (const [id, el] of frames) if (id) post(el, { type: 'bildr:active', active: id === deviceId, zoom })
+  for (const [id, el] of frames) if (id) post(el, activeMessage(id, deviceId, zoom))
 })
 
 type PreviewMessage = Extract<EditorToCanvas, { type: 'bildr:preview' }>

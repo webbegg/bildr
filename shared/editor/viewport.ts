@@ -3,6 +3,10 @@
  * content point `p` to the screen point `x + p * zoom` (likewise for y),
  * i.e. the CSS transform `translate(x, y) scale(zoom)` with origin 0 0.
  */
+import type { Breakpoint } from '../design/tokens'
+import { BREAKPOINTS } from '../design/tokens'
+import type { EditorToCanvas } from './protocol'
+import type { DeviceId } from './styleFields'
 
 export interface Viewport { x: number, y: number, zoom: number }
 export interface Point { x: number, y: number }
@@ -11,6 +15,37 @@ export interface Rect extends Point, Size {}
 
 /** A device frame is at least this tall; taller content makes it grow. */
 export const FRAME_MIN_HEIGHT = 800
+/**
+ * Each frame's nominal screen height, like the real device's viewport: the
+ * canvas resolves `screen` heights to it, since a frame as tall as its
+ * content would otherwise grow with them. Other frames get FRAME_MIN_HEIGHT.
+ */
+const VIEWPORT_HEIGHTS: Record<DeviceId, number> = { desktop: 800, tablet: 1024, mobile: 844 }
+
+export function viewportHeight(device: string): number {
+  return VIEWPORT_HEIGHTS[device as DeviceId] ?? FRAME_MIN_HEIGHT
+}
+
+/** The `bildr:active` message for a device's frame. */
+export function activeMessage(device: string, activeDevice: string, zoom: number): EditorToCanvas {
+  return { type: 'bildr:active', active: device === activeDevice, zoom, viewportHeight: viewportHeight(device) }
+}
+
+const SCREEN_SIZES = [['h', 'height'], ['min-h', 'min-height'], ['max-h', 'max-height']] as const
+
+/**
+ * CSS sending the `screen` height tokens inside `scope` to `variable` in a
+ * frame at `breakpoint`. A rule yields to the same property set at a larger
+ * active breakpoint, as Tailwind's later variants do.
+ */
+export function viewportUnitRules(breakpoint: Breakpoint | undefined, scope: string, variable: string): string[] {
+  const levels = [undefined, ...BREAKPOINTS.slice(0, breakpoint ? BREAKPOINTS.indexOf(breakpoint) + 1 : 0)]
+  return levels.flatMap((level, i) => SCREEN_SIZES.map(([prefix, property]) => {
+    const yields = levels.slice(i + 1).map(larger => `:not([class*="${larger}:${prefix}-"])`).join('')
+    return `${scope} .${level ? `${level}\\:` : ''}${prefix}-screen${yields} { ${property}: var(${variable}) }`
+  }))
+}
+
 /** The space between frames side by side, in content pixels. */
 export const FRAME_GAP = 80
 

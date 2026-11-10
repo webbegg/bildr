@@ -18,7 +18,8 @@ import type { StylePatch } from './preview'
  * The editor shows one canvas per device frame and sends every frame the
  * same messages; `bildr:active` tells a frame whether it is the active one
  * (only that frame labels the selection) and the zoom it is shown at (so
- * outlines keep their screen size). Each page-view frame reports its content
+ * outlines keep their screen size), plus its device's nominal viewport height,
+ * which `screen` heights resolve to. Each page-view frame reports its content
  * height (`bildr:size`) and forwards the gestures that drive the editor's
  * zoom and pan: wheel at canvas viewport coordinates, pan drags (middle
  * button) as screen-pixel deltas, and the space key held or released.
@@ -52,7 +53,7 @@ export type EditorToCanvas
     | { type: 'bildr:select', nodeId: string | null, nodeIds: string[] }
     | { type: 'bildr:hover', nodeId: string | null }
     | { type: 'bildr:preview', nodeId: string, style: StylePatch | null }
-    | { type: 'bildr:active', active: boolean, zoom: number }
+    | { type: 'bildr:active', active: boolean, zoom: number, viewportHeight: number }
     | { type: 'bildr:measure', requestId: number, nodeIds: string[] }
     | { type: 'bildr:alt', down: boolean }
     | { type: 'bildr:tool', tool: string | null }
