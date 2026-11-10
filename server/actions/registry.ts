@@ -4,6 +4,7 @@ import { apiSourcePreview, collectionCreate, collectionDelete, collectionUpdate,
 import type { ActionDef } from './define'
 import { editorGetContext, editorNavigate, editorSetContext } from './editor'
 import { envDelete, envList, envSet } from './env'
+import { layoutCreate, layoutDelete, layoutRename, layoutSlotAdd, layoutSlotRemove, layoutSlotUpdate, layoutVariableAdd, layoutVariableRemove, layoutVariableUpdate, pageSetLayout, pageSetLayoutValues, pageSetSlot } from './layout'
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
 import { pageAdd, pageDelete, pageRename } from './page'
 import { themeGet, themeUpdate } from './theme'
@@ -40,6 +41,18 @@ export const ACTIONS = [
   componentVariantSetOverride,
   instanceSetValues,
   instanceSetSlot,
+  layoutCreate,
+  layoutRename,
+  layoutDelete,
+  layoutSlotAdd,
+  layoutSlotUpdate,
+  layoutSlotRemove,
+  layoutVariableAdd,
+  layoutVariableUpdate,
+  layoutVariableRemove,
+  pageSetLayout,
+  pageSetLayoutValues,
+  pageSetSlot,
   themeGet,
   themeUpdate,
   apiSourcePreview,

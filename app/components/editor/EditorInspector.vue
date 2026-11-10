@@ -171,7 +171,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
     >
       <template v-if="!multi">
         <EditorStyleSection
-          v-if="isRoot && editor.page && !editor.component"
+          v-if="isRoot && editor.page && !editor.component && !editor.layout"
           label="Page"
         >
           <EditorRow label="Page name">
@@ -192,9 +192,11 @@ function renamePage(field: 'name' | 'slug', value: string) {
               @commit="renamePage('slug', $event)"
             />
           </EditorRow>
+          <EditorPageLayout />
         </EditorStyleSection>
 
         <EditorComponentPanel :node="node" />
+        <EditorLayoutPanel :node="node" />
         <EditorVariantOverrides :node="node" />
 
         <EditorStyleSection

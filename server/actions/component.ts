@@ -7,6 +7,7 @@ import type { ComponentDefinition, DocNode, Project } from '#shared/document/sch
 import { findNode, findParent } from '#shared/document/tree'
 import { componentInstances, componentUsages } from '#shared/document/usages'
 import { ActionError, defineAction } from './define'
+import { ONE_TREE, oneTree, treeOf } from './node'
 import { assertFound } from './project'
 
 /**
@@ -19,22 +20,18 @@ import { assertFound } from './project'
 const ComponentRef = IdSchema.describe('A component id, from project_get components')
 const NameSchema = z.string().trim().min(1).max(100)
 
-/** The tree that holds an Instance: a page, or a component definition for a nested instance. */
+/** The tree that holds an Instance: a page, a component definition for a nested instance, or a layout. */
 const InstanceTarget = {
   projectId: IdSchema,
-  pageId: IdSchema.optional().describe('The page the instance is on; or give componentId'),
+  pageId: IdSchema.optional().describe('The page the instance is on; or give componentId or layoutId'),
   componentId: IdSchema.optional().describe('The component definition the instance is nested in; replaces pageId'),
+  layoutId: IdSchema.optional().describe('The layout the instance is in; replaces pageId'),
   nodeId: IdSchema.describe('The Instance node')
-}
-const oneTree = (input: { pageId?: string, componentId?: string }) => (input.pageId === undefined) !== (input.componentId === undefined)
-const ONE_TREE = { message: 'Give pageId or componentId', path: ['pageId'] }
-
-function treeOf(input: { pageId?: string, componentId?: string }): TreeRef {
-  return input.pageId !== undefined ? { pageId: input.pageId } : { componentId: input.componentId! }
 }
 
 function treeRoot(project: Project, tree: TreeRef): DocNode {
   if (tree.pageId !== undefined) return assertFound(project.pages.find(p => p.id === tree.pageId), `Page "${tree.pageId}" not found`).root
+  if (tree.layoutId !== undefined) return assertFound(project.layouts.find(l => l.id === tree.layoutId), `Layout "${tree.layoutId}" not found`).root
   return definitionIn(project, tree.componentId).root
 }
 
@@ -93,7 +90,7 @@ export const componentRename = defineAction({
 
 export const componentDelete = defineAction({
   name: 'component_delete',
-  description: 'Delete a component. Refused while instances use it (the error lists them), unless force is true: then its instances are deleted too. One undo step brings everything back. Returns the deleted instance ids.',
+  description: 'Delete a component. Refused while instances use it (the error lists them: on pages, in other components and in layouts), unless force is true: then its instances are deleted too. One undo step brings everything back. Returns the deleted instance ids.',
   input: z.object({
     projectId: IdSchema,
     componentId: ComponentRef,

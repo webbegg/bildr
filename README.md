@@ -131,13 +131,13 @@ A **component** is a reusable piece of a page, stored in the project's `componen
 
 - `component_create { pageId, nodeId | nodeIds, name }` turns a selection into a component. The node becomes the definition (several siblings are wrapped in a Container), and an instance takes its place. `/` in the name makes folders, for example `Cards/Product`. Returns `{ componentId, nodeId }`, where `nodeId` is the instance.
 - `component_rename { componentId, name }`.
-- `component_delete { componentId, force? }` is refused while instances use the component. The error lists them, for example `"Card" is used by 1 instance: page "Home" (n_…)`. With `force: true`, the instances are deleted too and returned as `deletedInstances`.
+- `component_delete { componentId, force? }` is refused while instances use the component, on pages, in other components or in layouts. The error lists them, for example `"Card" is used by 1 instance: page "Home" (n_…)`. With `force: true`, the instances are deleted too and returned as `deletedInstances`.
 - `component_property_add { componentId, name, kind, default?, bindings? }` adds a property and returns its `propertyId`. `kind` is a prop kind (`text`, `number`, `boolean`, `select`, …) or `slot`. Each binding `{ nodeId, prop }` names a definition node prop that the property drives, and the kinds must match. Definition strings can also use `{{ prop.NAME }}`. A slot binds one container with `prop: "children"`; its children are the default content.
 - `component_property_update { componentId, propertyId, name?, default?, bindings? }` (a `default` of `null` removes it) and `component_property_remove` (instance values and slot content for it go too).
 - `component_variant_add { componentId, name }` returns a `variantId`. `component_variant_set_override { componentId, variantId, nodeId, props?, style? }` overrides props and tokens of one definition node. A variant stores only what differs from the primary, so a `null` value, or the primary's own value, removes that override. `component_variant_rename { componentId, variantId, name }`. `component_variant_delete` moves its instances back to the primary.
-- Insert an instance with `node_insert { type: "Instance", props: { component } }`. `instance_set_values { pageId | componentId, nodeId, values?, variant? }` sets property values, keyed by property id, and the variant. Values are checked against the property, and `null` removes one so the default applies.
-- `instance_set_slot { pageId | componentId, nodeId, slot, filled, nodeIds? }` with `filled: true` gives a slot its own content and returns its `fillId`. Add content with `node_insert { parentId: fillId }`, or pass `nodeIds` to move nodes in. With `filled: false`, the default content shows again.
-- To edit a definition, give the node actions (`node_insert`, `node_update_props`, `node_update_style`, `node_move`, `node_move_many`, `node_delete`, `node_duplicate`, `node_wrap`) a `componentId` in place of `pageId`. Exactly one of the two is required.
+- Insert an instance with `node_insert { type: "Instance", props: { component } }`. `instance_set_values { pageId | componentId | layoutId, nodeId, values?, variant? }` sets property values, keyed by property id, and the variant. Values are checked against the property, and `null` removes one so the default applies.
+- `instance_set_slot { pageId | componentId | layoutId, nodeId, slot, filled, nodeIds? }` with `filled: true` gives a slot its own content and returns its `fillId`. Add content with `node_insert { parentId: fillId }`, or pass `nodeIds` to move nodes in. With `filled: false`, the default content shows again.
+- To edit a definition, give the node actions (`node_insert`, `node_update_props`, `node_update_style`, `node_move`, `node_move_many`, `node_delete`, `node_duplicate`, `node_wrap`) a `componentId` in place of `pageId` (or a `layoutId` to edit a layout, see Layouts). Exactly one of them is required.
 - `components_list { projectId }` adds `userComponents`, the project's components with their properties and variants.
 
 Each action is one undo step.
@@ -150,6 +150,31 @@ In the editor:
 - **Component view:** click a component in Assets, use Edit on an instance in the panel, use right-click › Edit component, or use ⌘K › the component name. The canvas, the layers and the panel then edit the definition, and a banner names it. Done, Escape with nothing selected, or picking a page goes back.
 - **Properties:** in the component view, select an element and use "+" on Properties to turn one of its props into a property, or a container's children into a slot. On an instance, the Component section sets each property and turns each slot's own content on or off.
 - **Variants:** in the component view, the Variants section lists Primary and the variants. "+" adds one; rename or delete one in its row. Click a variant, or pick it in the banner, to show it on the canvas. Prop and style edits then override that variant only. Overridden props turn blue, and the variant's overrides section lists them for the selected element. Reset one (or "−" for all) to go back to the primary's value; the override is removed. Click Primary to edit the definition again. Structure edits (insert, move, delete) always change every variant. On an instance, the Variant field picks the variant; reset goes back to Primary.
+
+## Layouts
+
+A **layout** is a page frame shared by pages, stored in the project's `layouts`: `{ id, name, root, slots, variables }`. Its `root` is a `Page` node tree with ids of its own. A page that uses it (`layoutId`) renders inside it, resolved when it renders and never copied into the page.
+
+- **Slots** `{ id, name, nodeId }` each bind one container node of the layout. The `children` slot, exactly one per layout, shows the page content. A named slot shows its node's children by default; a page can give it its own content with a `SlotFill` at the page root. A slot cannot share its node with another slot or sit inside another slot's node.
+- **Variables** have the shape of component properties (`{ id, name, kind, default?, bindings }`, never a slot). Each page sets its values in `layoutValues`, keyed by variable id, and the default applies otherwise. Bindings drive layout node props, and layout strings can use `{{ layout.NAME }}`.
+
+Actions:
+
+- `layout_create { name }` makes a layout with a Page root holding one Container, the `children` slot. Returns `{ layoutId, slotNodeId }`. `layout_rename { layoutId, name }`.
+- `layout_delete { layoutId }` detaches the pages that use it: they keep their content and lose their layout values and their own slot content. Returns `detachedPages`; one undo brings everything back.
+- `layout_slot_add { layoutId, name, nodeId }` returns a `slotId`. `layout_slot_update { layoutId, slotId, name?, nodeId? }`. `layout_slot_remove` removes the pages' content for the slot too; the `children` slot cannot be removed.
+- `layout_variable_add { layoutId, name, kind, default?, bindings? }` returns a `variableId`. `layout_variable_update { layoutId, variableId, name?, default?, bindings? }` (a `default` of `null` removes it). `layout_variable_remove` removes the pages' values for it too.
+- `page_set_layout { pageId, layoutId }` (`null` for none). Changing or removing the layout drops the page's values and own slot content. `page_set_layout_values { pageId, values }` sets values, checked against the variable; `null` removes one.
+- `page_set_slot { pageId, slot, filled, nodeIds? }` with `filled: true` gives a named slot the page's own content and returns its `fillId`. Add content with `node_insert { pageId, parentId: fillId }`, or pass `nodeIds` to move page nodes in. With `filled: false`, the layout's default shows again.
+- Edit the layout tree with the node actions and `layoutId` in place of `pageId`. An edit that leaves a slot or variable bound to a missing node is refused.
+
+Each action is one undo step.
+
+In the editor:
+
+- **Assets › Layouts** lists the layouts with how many pages use each. "+" creates one and opens it. Delete names the pages that will detach and asks first.
+- **Layout view:** click a layout in Assets, or use Edit next to the page's Layout. The canvas, the layers and the panel then edit the layout tree, and a banner names it. Done, Escape with nothing selected, or picking a page goes back. In the panel, "+" on Slots makes the selected container a named slot, and "+" on Variables turns one of the selected element's props into a variable. The layout root lists every slot and variable.
+- **Page settings** (select the page root): Layout picks the page's layout, then a field per variable sets the page's value (reset goes back to the default), and each named slot has an "Own content" switch.
 
 ## Action HTTP API
 

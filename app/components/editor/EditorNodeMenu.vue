@@ -65,7 +65,7 @@ const items = computed<ContextMenuItem[][]>(() => {
     ],
     [
       // Components are made from page content; in the component view, nest one with Insert instead.
-      { label: 'Create component', icon: 'i-lucide-component', disabled: cannotWrap || !!editor.componentId, onSelect: () => editor.createComponent() },
+      { label: 'Create component', icon: 'i-lucide-component', disabled: cannotWrap || !!editor.componentId || !!editor.layoutId, onSelect: () => editor.createComponent() },
       ...(node?.type === INSTANCE_TYPE
         ? [{ label: 'Edit component', icon: 'i-lucide-pencil-ruler', onSelect: () => editor.editComponent(String(node.props.component)) }]
         : [])

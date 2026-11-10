@@ -105,6 +105,7 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
         data-canvas-area
       >
         <EditorComponentBar />
+        <EditorLayoutBar />
         <EditorNodeMenu class="size-full">
           <EditorCanvas @key="message => editor.shortcut(message.key, message.meta, message.shift, true)" />
         </EditorNodeMenu>

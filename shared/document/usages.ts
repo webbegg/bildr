@@ -6,8 +6,8 @@ import type { DocNode, Project } from './schema'
 export type ComponentUsage = TreeRef & { nodeId: string, where: string }
 
 /**
- * Every Instance of component `componentId` on the pages and in the other
- * definitions, in document order, with its node and whether it sits inside
+ * Every Instance of component `componentId` on the pages, in the other
+ * definitions and in the layouts, in document order, with its node and whether it sits inside
  * another instance of the same component (in that one's slot content).
  */
 export function componentInstances(project: Project, componentId: string): (ComponentUsage & { node: DocNode, nested: boolean })[] {
@@ -21,6 +21,7 @@ export function componentInstances(project: Project, componentId: string): (Comp
   for (const def of project.components) {
     if (def.id !== componentId) visit(def.root, { componentId: def.id }, `component "${def.name}"`, false)
   }
+  for (const layout of project.layouts) visit(layout.root, { layoutId: layout.id }, `layout "${layout.name}"`, false)
   return found
 }
 

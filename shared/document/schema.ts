@@ -577,6 +577,7 @@ export function layoutProblems(layouts: Layout[], components: ComponentDefinitio
 
     if (layout.slots.filter(s => s.id === CHILDREN_SLOT).length !== 1) add([i, 'slots'], `Layout "${layout.name}" must have exactly one children slot`)
     const slotIds = new Set<string>()
+    const slotNodes = new Map<string, LayoutSlot>()
     layout.slots.forEach((slot, s) => {
       const at = [i, 'slots', s]
       if (slotIds.has(slot.id) && slot.id !== CHILDREN_SLOT) add([...at, 'id'], `Duplicate slot id "${slot.id}" in "${layout.name}"`)
@@ -584,6 +585,14 @@ export function layoutProblems(layouts: Layout[], components: ComponentDefinitio
       const node = nodes.get(slot.nodeId)
       if (!node) add([...at, 'nodeId'], `Slot "${slot.name}" is bound to the missing node "${slot.nodeId}"`)
       else if (!isContainerType(node.type) || node.type === INSTANCE_TYPE || node.type === SLOT_FILL_TYPE) add([...at, 'nodeId'], `Slot "${slot.name}" must bind a container node, not "${node.type}"`)
+      // A slot's content replaces its node's children, so a second slot there or below it would never show.
+      const same = slotNodes.get(slot.nodeId)
+      if (same) add([...at, 'nodeId'], `Slots "${same.name}" and "${slot.name}" of "${layout.name}" are bound to the same node "${slot.nodeId}"`)
+      slotNodes.set(slot.nodeId, slot)
+    })
+    layout.slots.forEach((slot, s) => {
+      const outer = layout.slots.find(other => other.nodeId !== slot.nodeId && contains(nodes.get(other.nodeId), slot.nodeId))
+      if (outer) add([i, 'slots', s, 'nodeId'], `Slot "${slot.name}" of "${layout.name}" is inside slot "${outer.name}"`)
     })
 
     const variableIds = new Set<string>()
@@ -601,13 +610,18 @@ export function layoutProblems(layouts: Layout[], components: ComponentDefinitio
   return problems
 }
 
+/** Whether `id` is a descendant of `node`. */
+function contains(node: DocNode | undefined, id: string): boolean {
+  return !!node && node.children.some(child => child.id === id || contains(child, id))
+}
+
 /**
  * Rules for a page's use of a layout (`layout` is the one `layoutId` names,
  * if it exists): the layout exists, values fit the variables, and the
  * root's SlotFills fill distinct named slots. Without a layout a page has
  * no values; its SlotFills are refused by `instanceProblems`.
  */
-function pageLayoutProblems(page: Page, layout: Layout | undefined): ComponentProblem[] {
+export function pageLayoutProblems(page: Page, layout: Layout | undefined): ComponentProblem[] {
   const problems: ComponentProblem[] = []
   const values = Object.entries(page.layoutValues ?? {})
   if (page.layoutId === undefined) {
