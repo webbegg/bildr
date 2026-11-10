@@ -2,7 +2,7 @@
 import { takesFormRecords } from '#shared/data/collections'
 import { getComponent } from '#shared/document/components'
 import type { PropDef, PropValue } from '#shared/document/components'
-import { findParent } from '#shared/document/tree'
+import { findNode, findParent } from '#shared/document/tree'
 import { groupedProps, isDefaultProp } from '#shared/editor/propGroups'
 import { breadcrumb } from '#shared/editor/selection'
 import { sharedStyle } from '#shared/editor/panel'
@@ -36,7 +36,11 @@ const propDefs = computed(() => (node.value ? getComponent(node.value.type)?.pro
 const icon = (type: string) => getComponent(type)?.icon ?? 'i-lucide-file'
 const parentType = computed(() => (node.value && editor.page ? findParent(editor.page.root, node.value.id)?.parent.type : undefined))
 const crumbs = computed(() => (node.value && editor.page ? breadcrumb(editor.page.root, node.value.id) : []))
-const crumbLabel = (crumb: { id: string, type: string }) => (crumb.id === editor.page?.root.id ? editor.page.name : crumb.type)
+const crumbLabel = (crumb: { id: string, type: string }) => {
+  if (crumb.id === editor.page?.root.id) return editor.page.name
+  const ancestor = editor.page ? findNode(editor.page.root, crumb.id) : undefined
+  return ancestor ? editor.nodeName(ancestor) : crumb.type
+}
 
 function propValue(name: string, fallback: PropValue): PropValue {
   return node.value?.props[name] ?? fallback
@@ -99,7 +103,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
           v-else
           class="min-w-0 flex-1 truncate text-[13px] font-semibold text-highlighted"
         >
-          {{ node.type }} <span class="ms-1 font-mono text-[11px] font-normal text-dimmed">{{ node.id }}</span>
+          {{ editor.nodeName(node) }} <span class="ms-1 font-mono text-[11px] font-normal text-dimmed">{{ node.id }}</span>
         </p>
         <template v-if="!isRoot">
           <UTooltip
@@ -153,7 +157,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
             class="size-3 text-dimmed"
           />
         </template>
-        <span class="px-1 text-toned">{{ node.type }}</span>
+        <span class="px-1 text-toned">{{ editor.nodeName(node) }}</span>
       </nav>
 
       <p

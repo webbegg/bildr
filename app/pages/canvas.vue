@@ -16,6 +16,7 @@ import { breakpointAt, DRAG_MIME, draggedNodeId, dropPosition, laysOutInRow, res
 import { FRAME_MIN_HEIGHT, viewportUnitRules, wheelPixels, zoomShortcut } from '#shared/editor/viewport'
 import type { NodeBox } from '#shared/editor/autoLayout'
 import type { MeasureLine } from '#shared/editor/measure'
+import { layerName } from '#shared/editor/layers'
 import { measure as measureLines } from '#shared/editor/measure'
 import { labelPlacement } from '#shared/editor/labelPlacement'
 
@@ -39,6 +40,7 @@ import { labelPlacement } from '#shared/editor/labelPlacement'
  * The editor's light/dark preview sets this document's colour mode class.
  * Component instances render from the `components` the editor sends; their
  * parts report the instance's id, so a click anywhere in one selects it.
+ * Labels name nodes as the layers do (`layerName`); layout parts read Layout.
  * `{{ env.NAME }}` resolves from the public variables the editor sends; a
  * missing one shows as written.
  * The frame grows with its content, so `screen` heights (100vh) would grow
@@ -132,7 +134,12 @@ function measure(id: string | null): Box | null {
   const el = id ? firstCopy(id) : null
   if (!el) return null
   const rect = el.getBoundingClientRect()
-  return { id: id!, top: rect.top + window.scrollY, left: rect.left + window.scrollX, width: rect.width, height: rect.height, label: el.getAttribute('data-bildr-type') ?? '' }
+  return { id: id!, top: rect.top + window.scrollY, left: rect.left + window.scrollX, width: rect.width, height: rect.height, label: boxLabel(id!, el.getAttribute('data-bildr-type') ?? '') }
+}
+
+function boxLabel(id: string, type: string): string {
+  const node = type === 'Layout' || !page.value ? undefined : findNode(page.value.root, id)
+  return node ? layerName(page.value!, node, { components: components.value, layouts: layouts.value }) : type
 }
 
 /** The boxes of `ids` in canvas pixels, for the editor's auto layout; hidden or missing nodes have none. */

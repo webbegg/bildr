@@ -100,6 +100,7 @@ function renameLayout(name: string) {
     <EditorStyleSection
       v-if="isRoot || canBeSlot || shownSlots.length"
       label="Slots"
+      add-label="Add slot"
       :menu="slotItems"
       data-layout-slots
       @add="addSlot"
@@ -130,6 +131,7 @@ function renameLayout(name: string) {
 
     <EditorStyleSection
       label="Variables"
+      add-label="Add variable"
       :menu="variableItems"
       data-layout-variables
       @add="addVariable"

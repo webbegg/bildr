@@ -186,6 +186,7 @@ function renameComponent(name: string) {
   <EditorStyleSection
     v-if="def"
     label="Variants"
+    add-label="Add variant"
     :menu="[{ id: 'add', label: 'New variant', hint: 'Starts like the primary' }]"
     data-component-variants
     @add="addVariant"
@@ -247,6 +248,7 @@ function renameComponent(name: string) {
   <EditorStyleSection
     v-if="def"
     :label="isDefRoot ? 'Component properties' : 'Properties'"
+    add-label="Add property"
     :menu="addItems"
     data-component-properties
     @add="addProperty"

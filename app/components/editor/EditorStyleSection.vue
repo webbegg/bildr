@@ -5,7 +5,8 @@ import type { DropdownMenuItem } from '@nuxt/ui'
  * A panel section with Framer's header: a bold white title that never
  * collapses, and on the right an optional "−" (`removeLabel` is its tooltip,
  * e.g. Reset layout) and a "+" opening a small menu of the group's optional
- * properties (`menu`), which emits `add` with the picked item's id.
+ * properties (`menu`), which emits `add` with the picked item's id. The "+"
+ * is named `addLabel`, by default "Add <label> property".
  */
 export interface SectionMenuItem {
   id: string
@@ -15,7 +16,7 @@ export interface SectionMenuItem {
   hint?: string
 }
 
-const props = withDefaults(defineProps<{ label: string, menu?: SectionMenuItem[], removeLabel?: string }>(), { menu: () => [], removeLabel: undefined })
+const props = withDefaults(defineProps<{ label: string, menu?: SectionMenuItem[], removeLabel?: string, addLabel?: string }>(), { menu: () => [], removeLabel: undefined, addLabel: undefined })
 const emit = defineEmits<{ add: [id: string], remove: [] }>()
 
 const items = computed<DropdownMenuItem[]>(() => props.menu.map(item => ({
@@ -61,7 +62,7 @@ const items = computed<DropdownMenuItem[]>(() => props.menu.map(item => ({
         <button
           type="button"
           :class="ACTION"
-          :aria-label="`Add ${label.toLowerCase()} property`"
+          :aria-label="addLabel ?? `Add ${label.toLowerCase()} property`"
           data-section-action="add"
         >
           <UIcon
