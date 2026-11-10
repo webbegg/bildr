@@ -1,15 +1,15 @@
 import { INSTANCE_TYPE, SLOT_FILL_TYPE } from '../document/components'
 import type { PropValue } from '../document/components'
-import type { ComponentDefinition, DocNode } from '../document/schema'
+import type { ComponentDefinition, DocNode, PropertyDef } from '../document/schema'
 import { resolvePropRefs } from './bindings'
 
 /**
  * Resolves a component Instance into the tree it renders, at render time
  * and never stored in the document. Starting from the definition's root
  * (the primary variant), it applies the selected variant's sparse overrides,
- * resolves `{{ prop.NAME }}` in the definition's strings, writes the
- * instance's property values (else the property default) to their bound
- * props, and puts slot fills in place of the bound container's children.
+ * resolves `{{ prop.NAME }}` in the definition's strings, sets bound props
+ * (see `applySetters`), and puts slot fills in place of the bound
+ * container's children.
  *
  * Nodes that come from the definition get the id `<instanceId>/<nodeId>`
  * (nested instances compose the prefix), which stays unique per page and
@@ -40,6 +40,34 @@ export function isDefinitionNodeId(id: string): boolean {
 
 type Definitions = Map<string, ComponentDefinition>
 
+/** Per node id, the props that non-slot properties drive: the instance's own value (if set) and the stored default (if any). */
+export type PropertySetters = Map<string, { prop: string, value?: PropValue, fallback?: PropValue }[]>
+
+export function propertySetters(properties: PropertyDef[], values: Record<string, PropValue | undefined>): PropertySetters {
+  const setters: PropertySetters = new Map()
+  for (const property of properties) {
+    if (property.kind === 'slot') continue
+    const entry = { value: values[property.id], fallback: property.default }
+    if (entry.value === undefined && entry.fallback === undefined) continue
+    for (const { nodeId, prop } of property.bindings) setters.set(nodeId, [...(setters.get(nodeId) ?? []), { prop, ...entry }])
+  }
+  return setters
+}
+
+/**
+ * Sets the bound props of one node in `props` (its own props with the
+ * variant's `overridden` props merged in). A bound prop is the instance's
+ * (or page's) own value, else the variant's override, else the stored
+ * default, else the node's own value, so editing the definition reaches
+ * every instance that does not set the prop itself.
+ */
+export function applySetters(props: Record<string, PropValue>, setters: PropertySetters, nodeId: string, overridden?: Record<string, PropValue>): void {
+  for (const { prop, value, fallback } of setters.get(nodeId) ?? []) {
+    if (value !== undefined) props[prop] = value
+    else if (fallback !== undefined && overridden?.[prop] === undefined) props[prop] = fallback
+  }
+}
+
 export function resolveInstance(instance: DocNode, components: ComponentDefinition[]): DocNode | null {
   return expand(instance, new Map(components.map(c => [c.id, c])), [])
 }
@@ -50,9 +78,8 @@ function expand(instance: DocNode, definitions: Definitions, stack: string[]): D
   const variantId = instance.props.variant
   const variant = typeof variantId === 'string' && variantId ? def.variants.find(v => v.id === variantId) : undefined
 
-  const values = new Map<string, PropValue>()
   const refs: Record<string, PropValue> = {}
-  const setters = new Map<string, { prop: string, value: PropValue }[]>()
+  const setters = propertySetters(def.properties, instance.props)
   const fills = new Map<string, DocNode[]>()
   for (const property of def.properties) {
     if (property.kind === 'slot') {
@@ -61,11 +88,7 @@ function expand(instance: DocNode, definitions: Definitions, stack: string[]): D
       if (fill && target) fills.set(target, fill.children)
       continue
     }
-    const value = instance.props[property.id] ?? property.default
-    refs[property.name] = value ?? ''
-    if (value === undefined) continue
-    values.set(property.id, value)
-    for (const { nodeId, prop } of property.bindings) setters.set(nodeId, [...(setters.get(nodeId) ?? []), { prop, value }])
+    refs[property.name] = instance.props[property.id] ?? property.default ?? ''
   }
 
   const next = [...stack, def.id]
@@ -75,7 +98,7 @@ function expand(instance: DocNode, definitions: Definitions, stack: string[]): D
     for (const [key, value] of Object.entries(props)) {
       if (typeof value === 'string') props[key] = resolvePropRefs(value, refs)
     }
-    for (const { prop, value } of setters.get(node.id) ?? []) props[prop] = value
+    applySetters(props, setters, node.id, override?.props)
     const children = fills.get(node.id) ?? node.children.map(build).filter(child => child !== null)
     const built: DocNode = {
       id: `${instance.id}${INSTANCE_ID_SEPARATOR}${node.id}`,

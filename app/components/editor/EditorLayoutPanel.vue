@@ -54,12 +54,11 @@ function removeSlot(slot: LayoutSlot) {
 function addVariable(item: string) {
   const propDef = getComponent(node.type)?.props.find(p => p.name === item)
   if (!layout.value || !propDef) return
-  const value = node.props[item]
+  // No stored default: the node's own value is the default, so editing it reaches every page.
   editor.run('layout_variable_add', {
     layoutId: layout.value.id,
     name: uniqueComponentName(propDef.label, layout.value.variables),
     kind: propDef.kind,
-    ...(value === undefined ? {} : { default: value }),
     bindings: [{ nodeId: node.id, prop: item }]
   })
 }

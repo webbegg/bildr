@@ -3,14 +3,15 @@ import type { PropValue } from '../document/components'
 import { CHILDREN_SLOT } from '../document/schema'
 import type { ComponentDefinition, DocNode, Layout, Page } from '../document/schema'
 import { resolveLayoutRefs } from './bindings'
-import { INSTANCE_ID_SEPARATOR, resolveInstance } from './instances'
+import { applySetters, INSTANCE_ID_SEPARATOR, propertySetters, resolveInstance } from './instances'
 
 /**
  * Resolves a page into the tree it renders with its layout, at render time
  * and never stored in the document. A page without `layoutId` renders its
  * own root, unchanged. Otherwise the layout's tree renders with
  * `{{ layout.NAME }}` resolved and bound props set from the page's
- * `layoutValues` (else the variable default), the page root's children (bar
+ * `layoutValues` (else the stored variable default, else the layout node's
+ * own value; see `applySetters`), the page root's children (bar
  * SlotFills) in place of the `children` slot node's children, and each
  * SlotFill of the root in place of its named slot's default content.
  *
@@ -37,13 +38,9 @@ export function resolvePageWithLayout(page: Page, layouts: Layout[], components:
   if (!layout) return { ...page.root, children: content }
 
   const refs: Record<string, PropValue> = {}
-  const setters = new Map<string, { prop: string, value: PropValue }[]>()
+  const setters = propertySetters(layout.variables, page.layoutValues ?? {})
   for (const variable of layout.variables) {
-    if (variable.kind === 'slot') continue
-    const value = page.layoutValues?.[variable.id] ?? variable.default
-    refs[variable.name] = value ?? ''
-    if (value === undefined) continue
-    for (const { nodeId, prop } of variable.bindings) setters.set(nodeId, [...(setters.get(nodeId) ?? []), { prop, value }])
+    if (variable.kind !== 'slot') refs[variable.name] = page.layoutValues?.[variable.id] ?? variable.default ?? ''
   }
 
   // Slot node id → the page node that takes its place and the children it shows.
@@ -62,7 +59,7 @@ export function resolvePageWithLayout(page: Page, layouts: Layout[], components:
     for (const [key, value] of Object.entries(props)) {
       if (typeof value === 'string') props[key] = resolveLayoutRefs(value, refs)
     }
-    for (const { prop, value } of setters.get(node.id) ?? []) props[prop] = value
+    applySetters(props, setters, node.id)
     const place = places.get(node.id)
     const built: DocNode = {
       id: place?.id ?? `${page.root.id}${INSTANCE_ID_SEPARATOR}${LAYOUT_ID_MARKER}${node.id}`,
