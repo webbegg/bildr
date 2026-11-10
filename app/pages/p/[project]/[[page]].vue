@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DataRecord } from '#shared/data/records'
+import { resolvePageWithLayout } from '#shared/runtime/layouts'
 import { listKey, listNodes, listQueryOf, listSearch } from '#shared/runtime/list'
 import type { VisitorSnapshot } from '#shared/runtime/visitor'
 
@@ -29,7 +30,7 @@ const lists = shallowRef<Record<string, DataRecord[]>>({})
 // Collections the snapshot does not mark publicRead would only answer 404, so they are not asked.
 const queries = computed(() => {
   const readable = new Set(project.value?.collections.filter(c => c.publicRead).map(c => c.slug))
-  const all = page.value ? listNodes(page.value.root, project.value?.components).map(node => listQueryOf(node.props)).filter(q => readable.has(q.collection)) : []
+  const all = page.value ? listNodes(resolvePageWithLayout(page.value, project.value?.layouts ?? [], project.value?.components ?? []), project.value?.components).map(node => listQueryOf(node.props)).filter(q => readable.has(q.collection)) : []
   return [...new Map(all.map(q => [listKey(q), q])).values()]
 })
 watch(queries, async (current) => {
@@ -63,6 +64,7 @@ useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${p
     :base="`/p/${projectSlug}`"
     :lists="lists"
     :components="project?.components"
+    :layouts="project?.layouts"
     :submit-form="submitForm"
     :env="env"
     missing-env="empty"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { DataRecord } from '#shared/data/records'
 import type { Theme } from '#shared/design/theme'
-import type { ComponentDefinition, Page } from '#shared/document/schema'
+import type { ComponentDefinition, Layout, Page } from '#shared/document/schema'
 import type { EnvValues } from '#shared/env/variables'
 import type { CanvasToEditor, CanvasView, EditorToCanvas } from '#shared/editor/protocol'
 import { isCanvasMessage } from '#shared/editor/protocol'
@@ -50,6 +50,7 @@ definePageMeta({ layout: false })
 const page = shallowRef<Page | null>(null)
 const base = ref('')
 const components = shallowRef<ComponentDefinition[]>([])
+const layouts = shallowRef<Layout[]>([])
 const lists = shallowRef<Record<string, DataRecord[]>>({})
 const theme = shallowRef<Theme | null>(null)
 const env = shallowRef<EnvValues>({})
@@ -155,6 +156,7 @@ function onMessage(event: MessageEvent) {
     base.value = message.base
     lists.value = message.lists
     components.value = message.components ?? []
+    layouts.value = message.layouts ?? []
     env.value = message.env ?? {}
     theme.value = message.theme
     view.value = message.view
@@ -421,6 +423,7 @@ onBeforeUnmount(() => {
       :base="base"
       :lists="lists"
       :components="components"
+      :layouts="layouts"
       :env="env"
       missing-env="keep"
       editable

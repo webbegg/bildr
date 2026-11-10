@@ -6,7 +6,9 @@ import type { EnvValues } from '../env/variables'
  * `{{ item.<field> }}` bindings in string props, resolved per record inside
  * a List, and `{{ env.NAME }}` project variables (public ones only in the
  * browser), and `{{ prop.NAME }}`, the properties of the component being
- * rendered (by property name, which may contain spaces). Any other `{{ … }}`
+ * rendered (by property name, which may contain spaces). `{{ layout.NAME }}`,
+ * the variables of a page's layout, resolve in the layout's tree when the
+ * page is resolved (`resolveLayoutRefs`), not here. Any other `{{ … }}`
  * stays literal so a typo shows up on the page instead of vanishing.
  */
 
@@ -27,6 +29,7 @@ export interface BindingScope {
 const BINDING = /\{\{\s*item\.([A-Za-z_]\w*)\s*\}\}/g
 const ANY_BINDING = /\{\{\s*(?:(item|env)\.([A-Za-z_]\w*)|prop\.([^{}]+?))\s*\}\}/g
 const PROP_BINDING = /\{\{\s*prop\.([^{}]+?)\s*\}\}/g
+const LAYOUT_BINDING = /\{\{\s*layout\.([^{}]+?)\s*\}\}/g
 
 function propRef(ref: string, name: string, prop: BindingScope['prop']): string {
   return prop && Object.hasOwn(prop, name) ? String(prop[name]) : ref
@@ -36,6 +39,12 @@ function propRef(ref: string, name: string, prop: BindingScope['prop']): string 
 export function resolvePropRefs(value: string, prop: Record<string, PropValue>): string {
   if (!value.includes('{{')) return value
   return value.replace(PROP_BINDING, (ref, name: string) => propRef(ref, name, prop))
+}
+
+/** Resolves only `{{ layout.NAME }}` refs (by variable name); names missing from `layout` stay as written. */
+export function resolveLayoutRefs(value: string, layout: Record<string, PropValue>): string {
+  if (!value.includes('{{')) return value
+  return value.replace(LAYOUT_BINDING, (ref, name: string) => propRef(ref, name, layout))
 }
 
 export function hasBindings(value: string): boolean {

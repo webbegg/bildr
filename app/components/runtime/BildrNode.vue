@@ -7,6 +7,7 @@ import { hasEnvRefs } from '#shared/env/variables'
 import { bindingItem, hasBindings } from '#shared/runtime/bindings'
 import type { BindingItem } from '#shared/runtime/bindings'
 import { isDefinitionNodeId, pageNodeId, resolveInstance } from '#shared/runtime/instances'
+import { isLayoutNodeId } from '#shared/runtime/layouts'
 import { listKey, listQueryOf } from '#shared/runtime/list'
 import { resolveLink } from '#shared/runtime/render'
 
@@ -29,6 +30,8 @@ import { resolveLink } from '#shared/runtime/render'
  * (`data-bildr-id`), so the canvas selects, hovers and drops on the instance
  * as a whole; slot content keeps its own ids and stays editable. A missing
  * component shows a hint in the canvas and nothing when published.
+ * Layout nodes (see `resolvePageWithLayout`) map to the page root the same
+ * way and are labelled Layout.
  * A Form is a `<form>` (see BildrForm); its Inputs are named by their field,
  * and a Button's action links, submits the enclosing form, or shows a toast.
  */
@@ -47,7 +50,7 @@ const link = computed(() => resolveLink(text('to'), runtime.base))
 const fromDefinition = computed(() => isDefinitionNodeId(props.node.id))
 const attrs = computed(() => ({
   'data-bildr-id': pageNodeId(props.node.id),
-  'data-bildr-type': fromDefinition.value ? 'Instance' : props.node.type,
+  'data-bildr-type': isLayoutNodeId(props.node.id) ? 'Layout' : fromDefinition.value ? 'Instance' : props.node.type,
   'data-bildr-copy': scope?.copy ? '' : undefined
 }))
 // A binding the canvas shows as written (or an empty value) is no URL to load.

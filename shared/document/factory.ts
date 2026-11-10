@@ -50,6 +50,7 @@ export function createProject(name: string): Project {
     collections: [],
     connections: [],
     components: [],
+    layouts: [],
     createdAt: now,
     updatedAt: now
   }

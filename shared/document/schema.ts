@@ -35,11 +35,20 @@ export const NodeSchema: z.ZodType<DocNode> = z.lazy(() => z.object({
   children: z.array(NodeSchema)
 }))
 
+/**
+ * A page may use a layout (`layoutId`): the layout's tree renders around the
+ * page, its root's children (bar SlotFills) fill the layout's `children`
+ * slot, and SlotFill children of the root fill its named slots.
+ * `layoutValues` holds the page's value per layout variable id.
+ */
 export const PageSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(100),
   slug: SlugSchema,
-  root: NodeSchema
+  root: NodeSchema,
+  // Pages saved before layouts existed have none.
+  layoutId: IdSchema.optional(),
+  layoutValues: z.record(IdSchema, PropValueSchema).optional()
 })
 
 export const PROPERTY_KINDS = ['text', 'textarea', 'number', 'boolean', 'select', 'link', 'image', 'icon', 'collection', 'field', 'slot'] as const satisfies readonly (PropKind | 'slot')[]
@@ -76,6 +85,30 @@ export const ComponentDefinitionSchema = z.object({
   root: NodeSchema,
   properties: z.array(PropertyDefSchema).default(() => []),
   variants: z.array(VariantSchema).default(() => [])
+})
+
+/** The id of the layout slot that takes the page's content. */
+export const CHILDREN_SLOT = 'children'
+
+/** A layout slot binds one container node of the layout; that node's children are the default content. */
+export const LayoutSlotSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(100),
+  nodeId: IdSchema
+})
+
+/**
+ * A page frame shared by pages: a tree with a `Page` root, exactly one
+ * `children` slot for the page content, optional named slots, and variables
+ * (properties that are not slots) that pages set and the tree reads with
+ * `{{ layout.NAME }}` or through bindings. Node ids are their own namespace.
+ */
+export const LayoutSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(100),
+  root: NodeSchema,
+  slots: z.array(LayoutSlotSchema).default(() => []),
+  variables: z.array(PropertyDefSchema).default(() => [])
 })
 
 export const FIELD_TYPES = ['text', 'number', 'boolean', 'date', 'image'] as const
@@ -288,11 +321,16 @@ export const ProjectSchema = z.object({
   connections: z.array(ConnectionSchema).max(CONNECTIONS_MAX).default(() => []),
   // Projects saved before components existed have none.
   components: z.array(ComponentDefinitionSchema).default(() => []),
+  // Projects saved before layouts existed have none.
+  layouts: z.array(LayoutSchema).default(() => []),
   createdAt: z.string(),
   updatedAt: z.string()
 }).superRefine((project, ctx) => {
   for (const { path, message } of componentProblems(project.components)) {
     ctx.addIssue({ code: 'custom', path: ['components', ...path], message })
+  }
+  for (const { path, message } of layoutProblems(project.layouts, project.components)) {
+    ctx.addIssue({ code: 'custom', path: ['layouts', ...path], message })
   }
   const connectionIds = new Set<string>()
   project.connections.forEach((connection, i) => {
@@ -318,8 +356,12 @@ export const ProjectSchema = z.object({
     if (slugs.has(page.slug)) ctx.addIssue({ code: 'custom', path: ['pages', i, 'slug'], message: `Duplicate page slug "${page.slug}"` })
     slugs.add(page.slug)
     if (page.root.type !== PAGE_ROOT_TYPE) ctx.addIssue({ code: 'custom', path: ['pages', i, 'root'], message: 'Page root must be a Page node' })
-    for (const problem of [...nodeTreeProblems(page.root, ids, true), ...instanceProblems(page.root, project.components)]) {
+    const layout = page.layoutId === undefined ? undefined : project.layouts.find(l => l.id === page.layoutId)
+    for (const problem of [...nodeTreeProblems(page.root, ids, true), ...instanceProblems(page.root, project.components, layout !== undefined)]) {
       ctx.addIssue({ code: 'custom', path: ['pages', i, 'root'], message: problem })
+    }
+    for (const { path, message } of pageLayoutProblems(page, layout)) {
+      ctx.addIssue({ code: 'custom', path: ['pages', i, ...path], message })
     }
   })
 })
@@ -328,6 +370,8 @@ export type PropertyDef = z.infer<typeof PropertyDefSchema>
 export type PropertyBinding = z.infer<typeof PropertyBindingSchema>
 export type Variant = z.infer<typeof VariantSchema>
 export type ComponentDefinition = z.infer<typeof ComponentDefinitionSchema>
+export type LayoutSlot = z.infer<typeof LayoutSlotSchema>
+export type Layout = z.infer<typeof LayoutSchema>
 export type Page = z.infer<typeof PageSchema>
 export type Project = z.infer<typeof ProjectSchema>
 export type Field = z.infer<typeof FieldSchema>
@@ -458,22 +502,8 @@ export function componentProblems(components: ComponentDefinition[]): ComponentP
       if (propertyIds.has(property.id)) add([...at, 'id'], `Duplicate property id "${property.id}" in "${def.name}"`)
       propertyIds.add(property.id)
       if ((RESERVED_INSTANCE_KEYS as readonly string[]).includes(property.id)) add([...at, 'id'], `Property id "${property.id}" is reserved`)
-      if (property.default !== undefined) {
-        const message = propertyValueProblem(property, property.default, nodes)
-        if (message) add([...at, 'default'], message)
-      }
       if (property.kind === 'slot' && property.bindings.length !== 1) add([...at, 'bindings'], `Slot "${property.name}" must bind exactly one container node`)
-      property.bindings.forEach((binding, b) => {
-        const node = nodes.get(binding.nodeId)
-        if (!node) return add([...at, 'bindings', b], `Property "${property.name}" is bound to the missing node "${binding.nodeId}"`)
-        if (property.kind === 'slot') {
-          if (!isContainerType(node.type) || node.type === INSTANCE_TYPE) add([...at, 'bindings', b], `Slot "${property.name}" must bind a container node, not "${node.type}"`)
-          return
-        }
-        const propDef = getComponent(node.type)?.props.find(p => p.name === binding.prop)
-        if (!propDef) add([...at, 'bindings', b], `"${node.type}" has no prop "${binding.prop}"`)
-        else if (propDef.kind !== property.kind) add([...at, 'bindings', b], `Property "${property.name}" (kind ${property.kind}) cannot drive "${binding.prop}" (kind ${propDef.kind})`)
-      })
+      for (const problem of propertyProblems(property, nodes, 'Property')) add([...at, ...problem.path], problem.message)
     })
 
     const variantIds = new Set<string>()
@@ -502,6 +532,104 @@ export function componentProblems(components: ComponentDefinition[]): ComponentP
   })
   for (const [i, def] of components.entries()) {
     if (reachesItself(def, components)) add([i, 'root'], `Component "${def.name}" contains itself (cycle)`)
+  }
+  return problems
+}
+
+/** Default and binding rules shared by component properties and layout variables (`noun` names them in messages). */
+function propertyProblems(property: PropertyDef, nodes: Map<string, DocNode>, noun: 'Property' | 'Variable'): ComponentProblem[] {
+  const problems: ComponentProblem[] = []
+  if (property.default !== undefined) {
+    const message = propertyValueProblem(property, property.default, nodes)
+    if (message) problems.push({ path: ['default'], message })
+  }
+  property.bindings.forEach((binding, b) => {
+    const add = (message: string) => problems.push({ path: ['bindings', b], message })
+    const node = nodes.get(binding.nodeId)
+    if (!node) return add(`${noun} "${property.name}" is bound to the missing node "${binding.nodeId}"`)
+    if (property.kind === 'slot') {
+      if (!isContainerType(node.type) || node.type === INSTANCE_TYPE) add(`Slot "${property.name}" must bind a container node, not "${node.type}"`)
+      return
+    }
+    const propDef = getComponent(node.type)?.props.find(p => p.name === binding.prop)
+    if (!propDef) add(`"${node.type}" has no prop "${binding.prop}"`)
+    else if (propDef.kind !== property.kind) add(`${noun} "${property.name}" (kind ${property.kind}) cannot drive "${binding.prop}" (kind ${propDef.kind})`)
+  })
+  return problems
+}
+
+/**
+ * Structural rules for the `layouts` list: a Page root with valid nodes and
+ * instances, distinct slots bound to container nodes with exactly one
+ * `children` slot, and variables checked like component properties (but
+ * never slots).
+ */
+export function layoutProblems(layouts: Layout[], components: ComponentDefinition[]): ComponentProblem[] {
+  const problems: ComponentProblem[] = []
+  const add = (path: (string | number)[], message: string) => problems.push({ path, message })
+  const ids = new Set<string>()
+  layouts.forEach((layout, i) => {
+    if (ids.has(layout.id)) add([i, 'id'], `Duplicate layout id "${layout.id}"`)
+    ids.add(layout.id)
+    if (layout.root.type !== PAGE_ROOT_TYPE) add([i, 'root'], 'Layout root must be a Page node')
+    for (const message of [...nodeTreeProblems(layout.root, new Set(), true), ...instanceProblems(layout.root, components)]) add([i, 'root'], message)
+    const nodes = nodeIndex(layout.root)
+
+    if (layout.slots.filter(s => s.id === CHILDREN_SLOT).length !== 1) add([i, 'slots'], `Layout "${layout.name}" must have exactly one children slot`)
+    const slotIds = new Set<string>()
+    layout.slots.forEach((slot, s) => {
+      const at = [i, 'slots', s]
+      if (slotIds.has(slot.id) && slot.id !== CHILDREN_SLOT) add([...at, 'id'], `Duplicate slot id "${slot.id}" in "${layout.name}"`)
+      slotIds.add(slot.id)
+      const node = nodes.get(slot.nodeId)
+      if (!node) add([...at, 'nodeId'], `Slot "${slot.name}" is bound to the missing node "${slot.nodeId}"`)
+      else if (!isContainerType(node.type) || node.type === INSTANCE_TYPE || node.type === SLOT_FILL_TYPE) add([...at, 'nodeId'], `Slot "${slot.name}" must bind a container node, not "${node.type}"`)
+    })
+
+    const variableIds = new Set<string>()
+    layout.variables.forEach((variable, v) => {
+      const at = [i, 'variables', v]
+      if (variableIds.has(variable.id)) add([...at, 'id'], `Duplicate variable id "${variable.id}" in "${layout.name}"`)
+      variableIds.add(variable.id)
+      if (variable.kind === 'slot') {
+        add([...at, 'kind'], `Variable "${variable.name}" of layout "${layout.name}" cannot be a slot`)
+        return
+      }
+      for (const problem of propertyProblems(variable, nodes, 'Variable')) add([...at, ...problem.path], problem.message)
+    })
+  })
+  return problems
+}
+
+/**
+ * Rules for a page's use of a layout (`layout` is the one `layoutId` names,
+ * if it exists): the layout exists, values fit the variables, and the
+ * root's SlotFills fill distinct named slots. Without a layout a page has
+ * no values; its SlotFills are refused by `instanceProblems`.
+ */
+function pageLayoutProblems(page: Page, layout: Layout | undefined): ComponentProblem[] {
+  const problems: ComponentProblem[] = []
+  const values = Object.entries(page.layoutValues ?? {})
+  if (page.layoutId === undefined) {
+    if (values.length) problems.push({ path: ['layoutValues'], message: `Page "${page.name}" has layout values but no layout` })
+    return problems
+  }
+  if (!layout) return [{ path: ['layoutId'], message: `Page "${page.name}" uses the unknown layout "${page.layoutId}"` }]
+  const nodes = nodeIndex(layout.root)
+  for (const [key, value] of values) {
+    const variable = layout.variables.find(v => v.id === key && v.kind !== 'slot')
+    const problem = variable ? propertyValueProblem(variable, value, nodes) : `Layout "${layout.name}" has no variable "${key}"`
+    if (problem) problems.push({ path: ['layoutValues', key], message: `Page "${page.name}": ${problem}` })
+  }
+  const filled = new Set<string>()
+  for (const child of page.root.children) {
+    if (child.type !== SLOT_FILL_TYPE) continue
+    const slot = String(child.props.slot)
+    const at = { path: ['root'], message: '' }
+    if (slot === CHILDREN_SLOT) problems.push({ ...at, message: `The children slot of layout "${layout.name}" takes the page content, not a SlotFill` })
+    else if (!layout.slots.some(s => s.id === slot)) problems.push({ ...at, message: `Layout "${layout.name}" has no slot "${slot}"` })
+    else if (filled.has(slot)) problems.push({ ...at, message: `Slot "${slot}" of page "${page.name}" is filled more than once` })
+    filled.add(slot)
   }
   return problems
 }
@@ -536,12 +664,15 @@ function reachesItself(start: ComponentDefinition, components: ComponentDefiniti
  * Rules for Instance and SlotFill nodes, which need the project's
  * definitions: the referenced component and variant exist, values fit the
  * property kinds, children are SlotFills for distinct existing slots.
+ * With `layoutFills`, the root's own SlotFill children are allowed: they
+ * fill its page's layout slots (see `pageLayoutProblems`).
  */
-export function instanceProblems(root: DocNode, components: ComponentDefinition[]): string[] {
+export function instanceProblems(root: DocNode, components: ComponentDefinition[], layoutFills = false): string[] {
   const problems: string[] = []
   const byId = new Map(components.map(c => [c.id, c]))
   const visit = (node: DocNode, parent?: DocNode) => {
-    if (node.type === SLOT_FILL_TYPE && parent?.type !== INSTANCE_TYPE) problems.push(`SlotFill "${node.id}" must be directly under an Instance`)
+    const fillsLayout = layoutFills && parent === root
+    if (node.type === SLOT_FILL_TYPE && parent?.type !== INSTANCE_TYPE && !fillsLayout) problems.push(`SlotFill "${node.id}" must be directly under an Instance`)
     if (node.type === INSTANCE_TYPE) problems.push(...instanceNodeProblems(node, byId))
     node.children.forEach(child => visit(child, node))
   }
