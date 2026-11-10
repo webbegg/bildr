@@ -463,7 +463,7 @@ onBeforeUnmount(() => {
       v-for="box in [...boxes.selected, ...(boxes.hover ? [boxes.hover] : [])]"
       :key="box === boxes.hover ? 'hover' : box.id"
       class="pointer-events-none absolute z-50 outline-solid"
-      :class="box === boxes.hover && measurement ? 'outline-[#f24822]' : 'outline-(--canvas-accent)'"
+      :class="box === boxes.hover ? (measurement ? 'outline-[#f24822]' : 'outline-(--canvas-accent)/50') : 'outline-(--canvas-accent)'"
       :style="{ top: `${box.top}px`, left: `${box.left}px`, width: `${box.width}px`, height: `${box.height}px`, outlineWidth: `${1 / zoom}px`, outlineOffset: `${-1 / zoom}px` }"
       :data-selection-box="box === boxes.hover ? undefined : box.id"
     >

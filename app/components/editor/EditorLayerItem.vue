@@ -58,6 +58,12 @@ const DROP_CLASS: Record<DropPosition, string> = {
   after: 'shadow-[inset_0_-2px_0_var(--ui-primary)]',
   inside: 'ring-2 ring-inset ring-primary'
 }
+/** The same marks on the selected row, whose solid accent fill would hide them. */
+const DROP_CLASS_SELECTED: Record<DropPosition, string> = {
+  before: 'shadow-[inset_0_2px_0_white]',
+  after: 'shadow-[inset_0_-2px_0_white]',
+  inside: 'ring-2 ring-inset ring-white'
+}
 
 function onDragStart(event: DragEvent) {
   if (!event.dataTransfer) return
@@ -118,7 +124,7 @@ function onDrop(event: DragEvent) {
           : inSelection
             ? (editor.hoveredId === node.id ? 'bg-(--editor-selection)/15 text-highlighted' : 'bg-(--editor-selection)/8 text-toned hover:bg-(--editor-selection)/15')
             : editor.hoveredId === node.id ? 'bg-white/6 text-highlighted' : 'text-toned hover:bg-white/6',
-        dropAt && DROP_CLASS[dropAt]
+        dropAt && (selected ? DROP_CLASS_SELECTED : DROP_CLASS)[dropAt]
       ]"
       :style="{ paddingLeft: `${4 + depth * 16}px` }"
       @click="editor.selectRow(node.id, $event.shiftKey)"
@@ -152,11 +158,11 @@ function onDrop(event: DragEvent) {
       <UIcon
         :name="icon"
         class="size-4 shrink-0"
-        :class="[selected ? 'text-white' : 'text-dimmed group-hover:text-muted', { 'opacity-45': hidden }]"
+        :class="[selected ? 'text-white' : 'text-dimmed group-hover:text-muted', { 'opacity-45': hidden && !selected }]"
       />
       <span
         class="min-w-0 flex-1 truncate"
-        :class="{ 'opacity-45': hidden }"
+        :class="{ 'opacity-45': hidden && !selected }"
       >
         <span :class="selected ? 'font-[550]' : 'font-[450]'">{{ name }}</span>
         <span
