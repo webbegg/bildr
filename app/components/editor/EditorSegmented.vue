@@ -4,17 +4,17 @@
  * with one pill that slides to the current value. An `inherited` value (from
  * a smaller breakpoint) or a `fallback` (what applies by default) gets a dim
  * pill when nothing is set: only overrides are highlighted, as in Framer. With `tooltips`, icon
- * segments show their label in a delayed tooltip; `dense` is the 30 px panel
- * field (Framer's soft 8 px box).
+ * segments show their label in a delayed tooltip; `dense` (the default) is the
+ * kit's 30 px field (FIELD in editorUi.ts), `:dense="false"` a 28 px inset track.
  */
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   items: { value: string, label: string, icon?: string }[]
   modelValue: string | undefined
   inherited?: string
   fallback?: string
   tooltips?: boolean
   dense?: boolean
-}>()
+}>(), { inherited: undefined, fallback: undefined, dense: true })
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const shown = computed(() => props.modelValue ?? props.inherited ?? props.fallback)
@@ -26,7 +26,7 @@ const isInherited = (value: string) => props.modelValue === undefined && value =
 <template>
   <div
     class="relative flex min-w-0 p-0.5"
-    :class="dense ? 'h-[30px] w-full rounded-lg bg-elevated' : 'h-7 rounded-md bg-muted'"
+    :class="dense ? `${FIELD} w-full` : 'h-7 rounded-md bg-muted'"
     role="group"
   >
     <span

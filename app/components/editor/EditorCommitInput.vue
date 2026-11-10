@@ -1,12 +1,12 @@
 <script setup lang="ts">
 /**
  * A text field that commits on change (blur or Enter) rather than on every
- * keystroke, so each edit is a single undo step. The `soft` variant is the
- * right panel's soft borderless Framer field. `variables` adds the Insert
- * variable button (`secrets` where they resolve: API URLs and headers);
- * an insert commits at once.
+ * keystroke, so each edit is a single undo step: the kit's soft field
+ * (editorUi.ts), like EditorInput with `commit="change"`. `variables` adds the
+ * Insert variable button (`secrets` where they resolve: API URLs and headers);
+ * an insert commits at once. `variant="outline"` is deprecated.
  */
-const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft', variables?: 'public' | 'secrets' }>(), { size: 'sm', variant: 'outline', variables: undefined })
+const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft', variables?: 'public' | 'secrets' }>(), { size: 'sm', variant: 'soft', variables: undefined })
 const emit = defineEmits<{ commit: [value: string] }>()
 
 const draft = ref(props.modelValue)
@@ -14,8 +14,7 @@ watch(() => props.modelValue, (value) => {
   draft.value = value
 })
 
-// The soft field is the panel's 30 px Framer field.
-const ui = computed(() => (props.variant === 'soft' ? { base: props.multiline ? 'rounded-lg bg-elevated text-[13px]' : 'h-[30px] rounded-lg bg-elevated text-[13px]' } : undefined))
+const ui = computed(() => (props.variant === 'soft' ? props.multiline ? TEXTAREA_UI : INPUT_UI : undefined))
 
 function commit() {
   if (draft.value !== props.modelValue) emit('commit', draft.value)

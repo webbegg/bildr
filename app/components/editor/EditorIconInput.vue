@@ -4,9 +4,10 @@ import { ICON_NAME } from '#shared/document/schema'
 /**
  * An icon name field with a live preview. A bare Lucide name (`coffee`) is
  * completed to `i-lucide-coffee`; it commits on change like
- * EditorCommitInput, and only names the document accepts (or empty).
+ * EditorCommitInput, and only names the document accepts (or empty). The
+ * kit's soft field; `variant="outline"` is deprecated.
  */
-const props = withDefaults(defineProps<{ modelValue: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft' }>(), { size: 'sm', variant: 'outline' })
+const props = withDefaults(defineProps<{ modelValue: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft' }>(), { size: 'sm', variant: 'soft' })
 const emit = defineEmits<{ commit: [value: string] }>()
 
 const draft = ref(props.modelValue)
@@ -19,6 +20,7 @@ const name = computed(() => {
   return value && !value.startsWith('i-') ? `i-lucide-${value}` : value
 })
 const valid = computed(() => name.value === '' || ICON_NAME.test(name.value))
+const ui = computed(() => (props.variant === 'soft' ? valid.value ? INPUT_UI : mergeUi(INPUT_UI, { base: FIELD_INVALID }) : undefined))
 
 function commit() {
   if (!valid.value || name.value === props.modelValue) return
@@ -33,10 +35,11 @@ function commit() {
     placeholder="i-lucide-coffee"
     :size="size"
     :variant="variant"
-    :ui="variant === 'soft' ? { base: 'h-[30px] rounded-lg bg-elevated text-[13px]' } : undefined"
+    :ui="ui"
     class="w-full"
     :color="valid ? undefined : 'error'"
-    :highlight="!valid"
+    :highlight="!valid && variant === 'outline'"
+    :aria-invalid="!valid || undefined"
     @change="commit"
     @keydown.esc="draft = modelValue"
   >

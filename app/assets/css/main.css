@@ -22,9 +22,12 @@
  * The editor chrome: a Stacki-style dark UI (palette from Stacki's tokens.css),
  * mapped onto Nuxt UI's variables so its components pick it up. The editor
  * page puts the class on its <html>; the canvas iframe is its own document and
- * keeps the project theme, as do published apps.
+ * keeps the project theme, as do published apps. `bildr-chrome` scopes the same
+ * chrome to one subtree: the kit's modals and popovers (editorUi.ts) carry it,
+ * so they are dark on pages without the <html> class too.
  */
-html.bildr-editor {
+html.bildr-editor,
+.bildr-chrome {
   color-scheme: dark;
 
   --editor-inset: #000;
@@ -62,5 +65,12 @@ html.bildr-editor {
 
 /* Not on <html>: the rem, and with it the 4px spacing grid, stays 16px based. */
 html.bildr-editor body {
+  font-size: 13px;
+}
+
+/* What <html> and <body> give the editor page, for a subtree elsewhere. */
+.bildr-chrome {
+  color: var(--ui-text);
+  font-family: var(--font-sans);
   font-size: 13px;
 }

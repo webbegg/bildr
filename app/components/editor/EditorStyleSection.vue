@@ -24,8 +24,6 @@ const items = computed<DropdownMenuItem[]>(() => props.menu.map(item => ({
   disabled: item.disabled,
   onSelect: () => emit('add', item.id)
 })))
-const MENU_UI = { content: 'min-w-36 rounded-xl bg-elevated p-1 ring-white/8', item: 'px-2.5 py-1.5 text-[13px]', itemDescription: 'text-[11px]' }
-const ACTION = 'grid size-6 shrink-0 place-items-center rounded-md text-toned hover:bg-white/8 hover:text-highlighted aria-expanded:bg-white/8 aria-expanded:text-highlighted'
 </script>
 
 <template>
