@@ -1,7 +1,7 @@
 import type { PropDef, PropKind, PropValue } from '../document/components'
 
 /**
- * How the Settings tab groups a component's props: what it says (Content),
+ * How the inspector groups a component's props: what it says (Content),
  * what it does (Behaviour), how it looks (Appearance), then the rest
  * (Advanced). A prop's name decides first, then its kind.
  */

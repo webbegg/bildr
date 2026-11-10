@@ -8,12 +8,13 @@ import { sharedStyle } from '#shared/editor/panel'
 import { FORM_TYPE, formFields, sampleValues } from '#shared/runtime/form'
 
 /**
- * The right panel: a sticky head with the element's identity, breadcrumb and
- * quick actions, then the Style and Settings tabs (both stay mounted). The
- * Style tab edits the breakpoint of the canvas frame picked last, which a
- * caption names (Framer has one breakpoint control: the frame). With several nodes selected the
- * head reads "N selected" and only the Style tab shows: their shared values,
- * "Mixed" where they differ, and an edit goes to all of them (one undo step).
+ * The right panel, one scrolling view: a sticky head with the element's
+ * identity, breadcrumb and quick actions, then the component's prop sections
+ * (Content, Behaviour, Appearance, Advanced), then its style sections. The
+ * styles edit the breakpoint of the canvas frame picked last, which a caption
+ * names (Framer has one breakpoint control: the frame). With several nodes
+ * selected the head reads "N selected" and only the styles show: their shared
+ * values, "Mixed" where they differ, and an edit goes to all of them (one undo step).
  */
 const editor = useEditor()
 const toast = useToast()
@@ -21,7 +22,7 @@ const toast = useToast()
 const node = computed(() => editor.selected)
 const multi = computed(() => editor.selectedNodes.length > 1)
 const shared = computed(() => (multi.value ? sharedStyle(editor.selectedNodes.map(n => n.style)) : { style: node.value?.style ?? {}, mixed: [] }))
-/** The type the Style tab shows fields for: the one all selected nodes share, else the primary's. */
+/** The type the style sections show fields for: the one all selected nodes share, else the primary's. */
 const styleType = computed(() => {
   const types = new Set(editor.selectedNodes.map(n => n.type))
   return types.size === 1 ? [...types][0]! : node.value?.type ?? ''
@@ -34,20 +35,11 @@ const parentType = computed(() => (node.value && editor.page ? findParent(editor
 const crumbs = computed(() => (node.value && editor.page ? breadcrumb(editor.page.root, node.value.id) : []))
 const crumbLabel = (crumb: { id: string, type: string }) => (crumb.id === editor.page?.root.id ? editor.page.name : crumb.type)
 
-type Tab = 'style' | 'settings'
-// Until a tab is picked, nodes with a text prop open on Settings, where it is edited.
-const pickedTab = ref<Tab | null>(null)
-// Settings edit one node, so a multi-selection shows Style only.
-const tab = computed<Tab>(() => (multi.value ? 'style' : pickedTab.value ?? (propDefs.value.some(d => d.name === 'text') ? 'settings' : 'style')))
-const tabs = computed<{ value: Tab, label: string }[]>(() => (multi.value
-  ? [{ value: 'style', label: 'Style' }]
-  : [{ value: 'style', label: 'Style' }, { value: 'settings', label: 'Settings' }]))
-
 function propValue(name: string, fallback: PropValue): PropValue {
   return node.value?.props[name] ?? fallback
 }
 
-// Settings: the props in Content, Behaviour, Appearance, Advanced sections (never collapsed, like Framer's).
+// The props in Content, Behaviour, Appearance, Advanced sections, above the styles. Props edit one node, so a multi-selection shows styles only.
 const propGroups = computed(() => groupedProps(propDefs.value))
 const changed = (def: PropDef) => !!node.value && !isDefaultProp(def, node.value.props)
 
@@ -160,26 +152,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
         <span class="px-1 text-toned">{{ node.type }}</span>
       </nav>
 
-      <div
-        class="mx-2.5 mb-2 flex gap-1"
-        role="tablist"
-      >
-        <button
-          v-for="item in tabs"
-          :key="item.value"
-          type="button"
-          role="tab"
-          class="h-7 rounded-md px-2 text-[13px] font-medium"
-          :class="tab === item.value ? 'bg-white/8 text-highlighted' : 'text-muted hover:text-toned'"
-          :aria-selected="tab === item.value"
-          @click="pickedTab = item.value"
-        >
-          {{ item.label }}
-        </button>
-      </div>
-
       <p
-        v-show="tab === 'style'"
         class="-mt-1 px-4 pb-2 text-[11px] text-dimmed"
         :data-editing-caption="editor.deviceId"
       >
@@ -191,31 +164,10 @@ function renamePage(field: 'name' | 'slug', value: string) {
       :key="multi ? editor.selectedIds.join() : node.id"
       class="pb-6"
     >
-      <div
-        v-show="tab === 'style'"
-        role="tabpanel"
-        data-tab="style"
-      >
-        <EditorStyleFields
-          :styles="shared.style"
-          :mixed="shared.mixed"
-          :type="styleType"
-          :parent-type="parentType"
-          :root="isRoot"
-          @preview="editor.previewStyle(styleTargets, $event)"
-          @update="editor.updateStyle(styleTargets, $event)"
-        />
-      </div>
-
-      <div
-        v-if="!multi"
-        v-show="tab === 'settings'"
-        role="tabpanel"
-        data-tab="settings"
-      >
-        <div
+      <template v-if="!multi">
+        <EditorStyleSection
           v-if="isRoot && editor.page"
-          class="space-y-2 border-b border-default py-3.5 ps-4 pe-3"
+          label="Page"
         >
           <EditorRow label="Page name">
             <EditorCommitInput
@@ -235,7 +187,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
               @commit="renamePage('slug', $event)"
             />
           </EditorRow>
-        </div>
+        </EditorStyleSection>
 
         <EditorStyleSection
           v-for="{ group, props: defs } in propGroups"
@@ -271,14 +223,17 @@ function renamePage(field: 'name' | 'slug', value: string) {
             </p>
           </div>
         </EditorStyleSection>
+      </template>
 
-        <p
-          v-if="!propDefs.length && !isRoot"
-          class="p-3 text-xs text-dimmed"
-        >
-          This component has no settings.
-        </p>
-      </div>
+      <EditorStyleFields
+        :styles="shared.style"
+        :mixed="shared.mixed"
+        :type="styleType"
+        :parent-type="parentType"
+        :root="isRoot"
+        @preview="editor.previewStyle(styleTargets, $event)"
+        @update="editor.updateStyle(styleTargets, $event)"
+      />
     </div>
   </div>
 </template>

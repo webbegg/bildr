@@ -4,7 +4,7 @@ import type { Provenance } from '#shared/editor/styleFields'
 import { enclosingForm, FORM_TYPE } from '#shared/runtime/form'
 
 /**
- * One Settings row, Framer's label-column look: a grey label (blue when the
+ * One prop row, Framer's label-column look: a grey label (blue when the
  * prop differs from the component default; click for Reset to default,
  * Alt-click resets) and the soft control for the prop's kind. Controls carry
  * the prop label as their accessible name.
