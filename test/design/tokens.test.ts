@@ -17,7 +17,7 @@ describe('style token registry', () => {
       'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl', 'gap',
       'w', 'maxW', 'minH', 'bg', 'color', 'borderColor', 'text', 'font', 'align',
       'border', 'borderT', 'borderR', 'borderB', 'borderL', 'rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl',
-      'shadow', 'opacity', 'direction', 'items', 'justify', 'self', 'cols', 'colSpan', 'display', 'overflow'
+      'shadow', 'opacity', 'direction', 'flexWrap', 'items', 'justify', 'self', 'cols', 'colSpan', 'display', 'overflow'
     ])
     expect(getStyleToken('direction')).toMatchObject({ prefix: 'flex', group: 'Layout', values: ['row', 'col', 'row-reverse', 'col-reverse'] })
     expect(isResponsiveToken(getStyleToken('direction')!)).toBe(true)
@@ -119,6 +119,23 @@ describe('Framer appearance tokens', () => {
     for (const k of ['roundedTl', 'roundedTr', 'roundedBr', 'roundedBl']) expect(getStyleToken(k)).toMatchObject({ group: 'Border', values: rounded })
     for (const k of ['borderT', 'borderR', 'borderB', 'borderL']) expect(getStyleToken(k)).toMatchObject({ group: 'Border', values: border })
     expect(styleClasses({ roundedTl: 'lg', rounded: 'md', borderB: '2' })).toBe('border-b-2 rounded-md rounded-tl-lg')
+  })
+})
+
+describe('Framer layout and size tokens', () => {
+  it('adds a responsive flex wrap', () => {
+    expect(getStyleToken('flexWrap')).toMatchObject({ prefix: 'flex', group: 'Layout', values: ['wrap', 'nowrap'] })
+    expect(styleClasses({ 'flexWrap': 'wrap', 'md:flexWrap': 'nowrap' })).toBe('flex-wrap md:flex-nowrap')
+    expect(styleTokenProblem('flexWrap', 'reverse')).toBe('"reverse" is not a value of style token "flexWrap"')
+    expect(allTokenClasses()).toEqual(expect.arrayContaining(['flex-nowrap', 'lg:flex-wrap']))
+  })
+
+  it('gives width a numeric spacing scale next to its words', () => {
+    const values = getStyleToken('w')!.values
+    expect(values).toEqual(expect.arrayContaining(['auto', 'full', 'screen', 'fit', '1/2', '3/4']))
+    expect(values.filter(v => /^\d+$/.test(v))).toEqual(['0', '4', '8', '12', '16', '20', '24', '32', '40', '48', '56', '64', '72', '80', '96'])
+    expect(styleClasses({ 'w': '64', 'md:w': 'full' })).toBe('w-64 md:w-full')
+    expect(styleTokenProblem('w', '7')).toBe('"7" is not a value of style token "w"')
   })
 })
 

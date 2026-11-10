@@ -40,6 +40,8 @@ export interface StyleToken {
 
 const SPACING = ['0', '0.5', '1', '1.5', '2', '2.5', '3', '4', '5', '6', '8', '10', '12', '16', '20', '24', '32']
 const MARGIN = [...SPACING, 'auto']
+// Framer's Fixed width: `w-64` is 64 × `--spacing`, like the spacing scale.
+const FIXED_WIDTHS = ['0', '4', '8', '12', '16', '20', '24', '32', '40', '48', '56', '64', '72', '80', '96']
 
 const SHADES = ['50', '100', '200', '300', '400', '500', '600', '700', '800', '900', '950']
 // Nuxt UI defines no bare `neutral` colour utility, only its shades.
@@ -69,7 +71,7 @@ export const STYLE_TOKENS: StyleToken[] = [
   spacing('pb', 'Padding bottom'),
   spacing('pl', 'Padding left'),
   spacing('gap', 'Gap'),
-  { key: 'w', label: 'Width', group: 'Size', prefix: 'w', values: ['auto', 'full', 'screen', 'fit', '1/2', '1/3', '2/3', '1/4', '3/4'] },
+  { key: 'w', label: 'Width', group: 'Size', prefix: 'w', values: ['auto', 'full', 'screen', 'fit', '1/2', '1/3', '2/3', '1/4', '3/4', ...FIXED_WIDTHS] },
   { key: 'maxW', label: 'Max width', group: 'Size', prefix: 'max-w', values: ['xs', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', 'full', 'prose'] },
   { key: 'minH', label: 'Min height', group: 'Size', prefix: 'min-h', values: ['0', 'full', 'screen', '32', '48', '64', '96'] },
   { key: 'bg', label: 'Background', group: 'Color', prefix: 'bg', kind: 'color', values: [...THEME_COLORS, 'default', 'muted', 'elevated', 'accented', 'inverted'] },
@@ -92,6 +94,7 @@ export const STYLE_TOKENS: StyleToken[] = [
   { key: 'shadow', label: 'Shadow', group: 'Effects', prefix: 'shadow', values: ['none', 'xs', 'sm', 'md', 'lg', 'xl', '2xl'] },
   { key: 'opacity', label: 'Opacity', group: 'Effects', prefix: 'opacity', values: ['0', '5', '10', '20', '25', '30', '40', '50', '60', '70', '75', '80', '90', '95', '100'] },
   { key: 'direction', label: 'Direction', group: 'Layout', prefix: 'flex', values: ['row', 'col', 'row-reverse', 'col-reverse'] },
+  { key: 'flexWrap', label: 'Wrap', group: 'Layout', prefix: 'flex', values: ['wrap', 'nowrap'] },
   { key: 'items', label: 'Align items', group: 'Layout', prefix: 'items', values: ['start', 'center', 'end', 'stretch', 'baseline'] },
   { key: 'justify', label: 'Justify content', group: 'Layout', prefix: 'justify', values: ['start', 'center', 'end', 'between', 'around', 'evenly'] },
   { key: 'self', label: 'Align self', group: 'Layout', prefix: 'self', values: ['auto', 'start', 'center', 'end', 'stretch'] },

@@ -9,7 +9,7 @@ describe('style fields', () => {
     expect(STYLE_SECTIONS).toEqual(['Layout', 'Spacing', 'Size', 'Typography', 'Backgrounds', 'Borders', 'Effects'])
     const keys = styleSections().flatMap(s => s.fields.map(f => f.key))
     expect(keys.sort()).toEqual(STYLE_TOKENS.map(t => t.key).sort())
-    expect(styleSections().find(s => s.section === 'Layout')!.fields.map(f => f.key)).toEqual(['direction', 'items', 'justify', 'self', 'gap', 'cols', 'colSpan', 'display', 'overflow'])
+    expect(styleSections().find(s => s.section === 'Layout')!.fields.map(f => f.key)).toEqual(['direction', 'flexWrap', 'items', 'justify', 'self', 'gap', 'cols', 'colSpan', 'display', 'overflow'])
   })
 
   it('puts each token key, breakpoint-prefixed or not, in its section', () => {

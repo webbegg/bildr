@@ -12,8 +12,8 @@ import { resolveLink } from '#shared/runtime/render'
  * Renders one document node and its children. The editor canvas and the
  * published app share this component, so what you edit is what ships.
  * Visual styling comes only from the node's design tokens; the template
- * adds structural classes (wrapping) and per-type fallbacks that a token of
- * the same key replaces, the flex direction among them. A base `display`
+ * adds per-type fallbacks that a token of the same key replaces: the flex
+ * direction, and a Row's `wrap` prop as a `flexWrap` token. A base `display`
  * token replaces the template's display class (`flex`, `grid`, `block`), so
  * `hidden` hides the node and `md:flex` shows it again from md up; the
  * editor canvas hides it too, and the layers keep it selectable.
@@ -59,7 +59,8 @@ const selfFallback = computed((): Record<string, string> => {
   return props.inStack && fills ? { self: 'stretch' } : {}
 })
 const withFallback = (fallback: Record<string, string>) => styleClasses({ ...selfFallback.value, ...fallback, ...props.node.style })
-const tokens = computed(() => withFallback(structuralStyle(props.node.type)))
+const rowWrap = computed((): Record<string, string> => (props.node.type === 'Row' && p.value.wrap ? { flexWrap: 'wrap' } : {}))
+const tokens = computed(() => withFallback({ ...structuralStyle(props.node.type), ...rowWrap.value }))
 const display = (fallback: string) => displayFallback(fallback, props.node.style)
 
 const HEADING_TOKENS: Record<string, Record<string, string>> = {
@@ -73,7 +74,7 @@ const level = computed(() => (text('level') in HEADING_TOKENS ? text('level') : 
 // The card's gap and items lay out its inner stack; every other token styles the card
 // itself. Its padding is a token too (UCard's body padding is zeroed), so `p-8`
 // replaces the default instead of adding to it. Breakpoint variants follow their base key.
-const STACK_KEYS = ['direction', 'gap', 'items', 'justify']
+const STACK_KEYS = ['direction', 'flexWrap', 'gap', 'items', 'justify']
 const card = computed(() => {
   const entries = Object.entries(props.node.style)
   const inStack = ([key]: [string, string]) => STACK_KEYS.includes(parseStyleKey(key)?.token.key ?? '')
@@ -109,7 +110,7 @@ const list = computed(() => {
   <div
     v-if="stacked || node.type === 'Row'"
     v-bind="attrs"
-    :class="[display('flex'), { 'flex-wrap': node.type === 'Row' && p.wrap, 'min-h-full': node.type === 'Page' }, tokens]"
+    :class="[display('flex'), { 'min-h-full': node.type === 'Page' }, tokens]"
   >
     <BildrNode
       v-for="child in node.children"

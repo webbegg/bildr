@@ -12,7 +12,7 @@ export type StyleSection = typeof STYLE_SECTIONS[number]
 // Each section's tokens in panel order. Gap sits in Layout, as in Stacki; the
 // colours go to the section of what they paint.
 const SECTION_KEYS: Record<StyleSection, string[]> = {
-  Layout: ['direction', 'items', 'justify', 'self', 'gap', 'cols', 'colSpan', 'display', 'overflow'],
+  Layout: ['direction', 'flexWrap', 'items', 'justify', 'self', 'gap', 'cols', 'colSpan', 'display', 'overflow'],
   Spacing: ['m', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl'],
   Size: ['w', 'maxW', 'minH'],
   Typography: ['text', 'font', 'align', 'color'],

@@ -20,10 +20,10 @@ import { styleProvenance } from '#shared/editor/styleFields'
  * editor device's breakpoint (Mobile is the base, Tablet `md:`, Desktop `lg:`).
  *
  * Token mappings: Type Stack/Grid is the `display` token (see
- * `layoutTypeWrite`), Distribute is `justify`, Align is `items`, Height is
- * `minH` with Framer's size modes (see `sizeModes`), Padding and Margin write
- * `p`/`m` or their sides (see `boxWrite`). Wrap is left out: there is no
- * flex-wrap token yet.
+ * `layoutTypeWrite`), Distribute is `justify`, Align is `items`, Wrap is
+ * `flexWrap` (over a Row's `wrap` prop), Height is `minH` with Framer's size
+ * modes (see `sizeModes`), Padding and Margin write `p`/`m` or their sides
+ * (see `boxWrite`).
  *
  * Controls `preview` what a gesture holds and `commit` once; this panel emits
  * the commit as one `update` (one undo step) and passes previews on.
@@ -137,7 +137,7 @@ const rowLabel = (row: RowId) => ({ provenance: rowProvenance(props.styles, row,
 
 const LABELS: Record<RowId, string> = {
   width: 'Width', height: 'Height', minMax: 'Min Max', type: 'Type', direction: 'Direction', distribute: 'Distribute',
-  align: 'Align', columns: 'Columns', gap: 'Gap', padding: 'Padding', span: 'Span', margin: 'Margin', self: 'Self',
+  align: 'Align', wrap: 'Wrap', columns: 'Columns', gap: 'Gap', padding: 'Padding', span: 'Span', margin: 'Margin', self: 'Self',
   visible: 'Visible', opacity: 'Opacity', fill: 'Fill', border: 'Border', shadows: 'Shadows', radius: 'Radius',
   overflow: 'Overflow', display: 'Display', fontSize: 'Size', fontWeight: 'Weight', textAlign: 'Align', textColor: 'Color'
 }
@@ -173,6 +173,10 @@ const alignItems = computed(() => {
   const [axis, names] = row ? ['horizontal', ['Top', 'Middle', 'Bottom']] : ['vertical', ['Left', 'Center', 'Right']]
   return (['start', 'center', 'end'] as const).map((value, i) => ({ value, label: names[i]!, icon: `i-lucide-align-${value}-${axis}` }))
 })
+
+// Wrap: without a token, a Row wraps when its `wrap` prop is on; other stacks don't.
+const WRAP_ITEMS = [{ value: 'wrap', label: 'Yes' }, { value: 'nowrap', label: 'No' }]
+const wrapFallback = computed(() => (props.type === 'Row' && editor.selectedNodes.length > 0 && editor.selectedNodes.every(n => n.props.wrap) ? 'wrap' : 'nowrap'))
 
 // Styles: Visible reads and writes `display` at the device, like the layers eye.
 const visible = computed(() => !visibilityAt(props.styles, editor.deviceId).hidden)
@@ -386,6 +390,27 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
             :aria-label="token('items').label"
             data-style-key="items"
             @update:model-value="setField('items', $event)"
+          />
+        </EditorRow>
+
+        <EditorRow
+          v-else-if="row.id === 'wrap'"
+          v-bind="rowLabel(row.id)"
+          :label="LABELS.wrap"
+          :title="token('flexWrap').label"
+          name="flexWrap"
+          data-style-row="flexWrap"
+          @reset="resetRow(row.id)"
+        >
+          <EditorSegmented
+            dense
+            :items="WRAP_ITEMS"
+            :model-value="own('flexWrap')"
+            :inherited="inherited('flexWrap')"
+            :fallback="wrapFallback"
+            aria-label="Wrap"
+            data-style-key="flexWrap"
+            @update:model-value="setField('flexWrap', $event)"
           />
         </EditorRow>
 

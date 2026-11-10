@@ -4,8 +4,7 @@ import { getStyleToken } from '../design/tokens'
  * Framer's size modes over the size tokens: Fixed (a number on the scale),
  * Fit (`fit`), Fill (`full`) and Relative (a fraction, or `screen`). Height is
  * the `minH` token, as bildr has no height token: it has no `fit`, so Fit
- * clears it (an unset minimum height is the content's). Width has no numeric
- * scale, so it has no Fixed mode.
+ * clears it (an unset minimum height is the content's).
  */
 
 export type SizeKey = 'w' | 'minH'
@@ -39,7 +38,7 @@ export function sizeMode(key: SizeKey, value: string | undefined): SizeMode | un
 
 // The value a mode starts at when the current one does not fit it.
 const DEFAULTS: Record<SizeKey, Partial<Record<SizeMode, string>>> = {
-  w: { relative: '1/2' },
+  w: { fixed: '64', relative: '1/2' },
   minH: { fixed: '32', relative: 'screen' }
 }
 

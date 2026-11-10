@@ -23,6 +23,7 @@ describe('panel sections', () => {
     expect(panelSection('md:px')).toBe('Layout')
     expect(panelSection('mx')).toBe('Layout')
     expect(panelSection('cols')).toBe('Layout')
+    expect(panelSection('md:flexWrap')).toBe('Layout')
     expect(panelSection('self')).toBe('Layout')
     expect(panelSection('md:display')).toBe('Styles')
     expect(panelSection('bg')).toBe('Styles')
@@ -48,7 +49,7 @@ describe('panel rows', () => {
     const sections = rows({ type: 'Column', parentType: 'Page', style: { gap: '3', items: 'start' } })
     expect(view(sections)).toEqual({
       Size: ['width', 'height', 'minMax+'],
-      Layout: ['type', 'direction', 'distribute', 'align', 'gap', 'padding', 'margin+', 'self+'],
+      Layout: ['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'margin+', 'self+'],
       Styles: ['visible', 'opacity+', 'fill+', 'border+', 'shadows+', 'radius', 'overflow+', 'display+'],
       Typography: ['fontSize', 'fontWeight', 'textAlign', 'textColor']
     })
@@ -69,14 +70,14 @@ describe('panel rows', () => {
   it('switches a stack to the Grid rows where its display is grid', () => {
     const column = { type: 'Column', style: { 'md:display': 'grid', 'md:cols': '2' } }
     expect(view(rows(column, 'tablet')).Layout).toEqual(['type', 'columns', 'gap', 'padding', 'margin+', 'self+'])
-    expect(view(rows(column, 'mobile')).Layout).toEqual(['type', 'direction', 'distribute', 'align', 'gap', 'padding', 'margin+', 'self+'])
+    expect(view(rows(column, 'mobile')).Layout).toEqual(['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'margin+', 'self+'])
   })
 
   it('gives a leaf optional padding, a Grid child its span, and the page root no margin or visibility', () => {
     expect(view(rows({ type: 'Text', parentType: 'Column', style: {} })).Layout).toEqual(['padding+', 'margin+', 'self+'])
-    expect(view(rows({ type: 'Card', parentType: 'Grid', style: {} })).Layout).toEqual(['direction', 'distribute', 'align', 'gap', 'padding', 'span', 'margin+', 'self+'])
+    expect(view(rows({ type: 'Card', parentType: 'Grid', style: {} })).Layout).toEqual(['direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'span', 'margin+', 'self+'])
     const root = view(rows({ type: 'Page', root: true, style: {} }))
-    expect(root.Layout).toEqual(['type', 'direction', 'distribute', 'align', 'gap', 'padding'])
+    expect(root.Layout).toEqual(['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding'])
     expect(root.Styles).toEqual(['opacity+', 'fill+', 'border+', 'shadows+', 'radius', 'overflow+'])
   })
 

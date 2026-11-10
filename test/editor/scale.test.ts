@@ -43,7 +43,7 @@ describe('scale stepping', () => {
   it('steps a word scale through the registry order', () => {
     expect(stepScale('text', 'base', 1)).toBe('lg')
     expect(stepScale('text', 'base', -2)).toBe('xs')
-    expect(stepScale('w', 'full', 1)).toBe('screen')
+    expect(stepScale('maxW', 'md', 1)).toBe('lg')
   })
 
   it('gives the px of spacing-scale values at the project density', () => {
@@ -51,6 +51,7 @@ describe('scale stepping', () => {
     expect(scalePx('md:gap', '0.5', 'default')).toBe('2px')
     expect(scalePx('p', '4', 'comfortable')).toBe('19.2px')
     expect(scalePx('minH', '32', 'default')).toBe('128px')
+    expect(scalePx('w', '64', 'default')).toBe('256px')
     expect(scalePx('mt', 'auto', 'default')).toBeUndefined()
     expect(scalePx('cols', '3', 'default')).toBeUndefined()
     expect(scalePx('border', '2', 'default')).toBeUndefined()
