@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { API_PATH, API_PATH_HINT, API_PATH_MAX, apiUrlProblem } from '../data/apiSource'
 import { defaultTheme, ThemeSchema } from '../design/theme'
 import { styleTokenProblem } from '../design/tokens'
+import { ENV_NAME, ENV_NAME_HINT, ENV_REF, envRefs } from '../env/variables'
 import { getComponent, isContainerType, PAGE_ROOT_TYPE } from './components'
 import type { PropDef, PropValue } from './components'
 
@@ -59,22 +60,69 @@ export const FieldSchema = z.object({
   path: ApiPathSchema.optional()
 })
 
+/**
+ * A stored API URL may hold `{{ env.NAME }}` refs, resolved on the server at
+ * request time, where the full URL and SSRF checks run on the result. Here,
+ * the URL is checked with each ref as a placeholder when that still parses
+ * (a ref in the path or query), and the ref names must be valid.
+ */
+export function storedApiUrlProblem(url: string): string | undefined {
+  const names = envRefs(url)
+  if (!names.length) return apiUrlProblem(url)
+  const bad = names.find(name => !ENV_NAME.test(name))
+  if (bad) return `"${bad}" is not a variable name: ${ENV_NAME_HINT}`
+  const placeholder = url.replace(ENV_REF, 'x')
+  return URL.canParse(placeholder) ? apiUrlProblem(placeholder) : undefined
+}
+
 export const ApiUrlSchema = z.string().superRefine((url, ctx) => {
-  const problem = apiUrlProblem(url)
+  const problem = storedApiUrlProblem(url)
   if (problem) ctx.addIssue({ code: 'custom', message: problem })
 })
+
+export const API_HEADERS_MAX = 10
+const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/
+/** Headers that belong to the connection, not to the API. */
+const RESERVED_HEADERS = ['host', 'connection', 'content-length', 'transfer-encoding', 'keep-alive', 'upgrade', 'te', 'trailer', 'proxy-authorization', 'proxy-connection']
+
+/** Also checked on the resolved value, since a variable may hold anything. */
+export function headerValueProblem(value: string): string | undefined {
+  return /[\r\n\0]/.test(value) ? 'Header values cannot contain line breaks' : undefined
+}
+
+export const ApiHeaderSchema = z.object({
+  name: z.string().max(100).regex(HEADER_NAME, 'Header names use letters, digits and - (e.g. Authorization)')
+    .refine(name => !RESERVED_HEADERS.includes(name.toLowerCase()), { error: issue => `The header "${issue.input as string}" cannot be set` }),
+  value: z.string().max(4096).superRefine((value, ctx) => {
+    const problem = headerValueProblem(value)
+    if (problem) ctx.addIssue({ code: 'custom', message: problem })
+  })
+})
+
+export const ApiHeadersSchema = z.array(ApiHeaderSchema).max(API_HEADERS_MAX).superRefine((headers, ctx) => {
+  const names = new Set<string>()
+  headers.forEach((header, i) => {
+    const name = header.name.toLowerCase()
+    if (names.has(name)) ctx.addIssue({ code: 'custom', path: [i, 'name'], message: `The header "${header.name}" is set twice` })
+    names.add(name)
+  })
+})
+
+export type ApiHeader = z.infer<typeof ApiHeaderSchema>
 
 /**
  * Where a collection's records come from: bildr's record store, or a JSON
  * endpoint read live (read-only; `itemsPath` is the dot path of the items
- * array, `''` for a root array).
+ * array, `''` for a root array). The URL and `headers` values may use
+ * `{{ env.NAME }}`, public or secret, resolved only on the server.
  */
 export const CollectionSourceSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('internal') }),
   z.object({
     type: z.literal('api'),
     url: ApiUrlSchema,
-    itemsPath: z.union([z.literal(''), ApiPathSchema])
+    itemsPath: z.union([z.literal(''), ApiPathSchema]),
+    headers: ApiHeadersSchema.optional()
   })
 ])
 
@@ -146,6 +194,8 @@ export type ProjectSummary = Pick<Project, 'id' | 'name' | 'slug' | 'version' | 
 export interface PublishedSnapshot {
   project: Project
   publishedAt: string
+  /** The PUBLIC project variables at publish time (secrets never leave the server); missing in older snapshots. */
+  env?: Record<string, string>
 }
 
 /**

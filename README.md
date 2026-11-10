@@ -52,7 +52,16 @@ API collections are **read-only**: record writes are refused, and they cannot ta
 - private, loopback and link-local addresses are refused after DNS resolution (an SSRF guard)
 - a 5 s timeout, a 1 MB response cap, and a 60 s cache
 
-There is no way to send auth headers. Do not put secrets such as API keys in the URL: the URL is stored in the project document, and agents and the editor can read it. (Published apps do not get it; see below.)
+A source can also send up to 10 request **headers** (`{ name, value }`), for example `Authorization`. The URL and the header values may use `{{ env.NAME }}` variables, public or secret (see [Environment variables](#environment-variables)). bildr resolves them on the server at each fetch, then runs the URL and SSRF checks on the resolved URL. Headers are dropped when a redirect leaves the first URL's origin. Do not put secrets such as API keys literally in the URL or a header: the source is stored in the project document, and agents and the editor can read it. Use a secret variable instead, such as `Bearer {{ env.API_KEY }}`. (Published apps get neither the URL nor the headers; see below.)
+
+### Environment variables
+
+Each project has one set of variables, stored outside the project document. They are not in `project_get`, not in the undo history and not in change events, and changing them is not undoable. Names use capital letters, digits and `_` (such as `API_KEY`), values are strings of up to 4 KB, and a project can have at most 100 variables.
+
+- Actions: `env_list`, `env_set` (`{ name, value?, secret? }`, creates or updates) and `env_delete`.
+- **Public** variables resolve wherever a string binds, as `{{ env.NAME }}`: texts, labels, links, image `src`, and theme colours (a variable holding `#rrggbb`; anything else falls back to the default colour). Publishing copies the public variables into the snapshot, so a change shows up on the next publish.
+- **Secret** variables are write-only. `env_list` returns `{ name, secret: true, set: true }` without the value, and turning a secret public needs a new value. They resolve only on the server, in an API source's URL and headers. Error messages and logs show `•••` instead of their values.
+- An API source that uses an unknown variable fails with an error that names the variable.
 
 ### Lists and bindings
 
@@ -77,7 +86,7 @@ Published apps read and write data through `/api/public/<project-slug>/<collecti
   - Each IP address gets 10 writes and 120 reads per minute per project. The counters live in memory, so they reset on restart and are not shared between processes.
   - `X-Forwarded-For` is ignored, because any client can send it. Behind a reverse proxy, all visitors share the proxy's one budget.
 - Errors are generic. The details only go to the server log.
-- `/api/published/<project-slug>`, which the published app loads, leaves out the URL, items path and field paths of API collections. The public `GET` resolves them on the server from the stored snapshot.
+- `/api/published/<project-slug>`, which the published app loads, leaves out the URL, headers, items path and field paths of API collections. The public `GET` resolves them on the server from the stored snapshot and the current variables. Its `env` holds the public variables only.
 
 ## Action HTTP API
 

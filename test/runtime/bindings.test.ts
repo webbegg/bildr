@@ -36,6 +36,22 @@ describe('resolveBindings', () => {
     expect(resolveBindings('{{ name }} and {{ user.name }}', { item })).toBe('{{ name }} and {{ user.name }}')
   })
 
+  it('resolves {{ env.NAME }} from the scope env next to item bindings', () => {
+    const env = { BRAND: 'Bean' }
+    expect(resolveBindings('{{ env.BRAND }} · {{ item.name }}', { item, env })).toBe('Bean · Flat white')
+    expect(resolveBindings('{{env.BRAND}}', { env })).toBe('Bean')
+  })
+
+  it('keeps env refs as written without an env, and unknown names unless asked to render them empty', () => {
+    expect(resolveBindings('{{ env.BRAND }} {{ item.name }}', { item })).toBe('{{ env.BRAND }} Flat white')
+    expect(resolveBindings('[{{ env.NOPE }}]', { env: {} })).toBe('[{{ env.NOPE }}]')
+    expect(resolveBindings('[{{ env.NOPE }}]', { env: {}, onMissingEnv: 'empty' })).toBe('[]')
+  })
+
+  it('does not resolve env refs that come from a record value', () => {
+    expect(resolveBindings('{{ item.note }}', { item: { note: '{{ env.BRAND }}' }, env: { BRAND: 'Bean' } })).toBe('{{ env.BRAND }}')
+  })
+
   it('leaves strings without bindings unchanged', () => {
     expect(resolveBindings('Plain {text}', { item })).toBe('Plain {text}')
   })

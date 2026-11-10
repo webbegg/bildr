@@ -1,4 +1,6 @@
 import { z } from 'zod'
+import { resolveEnv } from '../env/variables'
+import type { EnvValues } from '../env/variables'
 import { PALETTES } from './palettes'
 import type { PaletteName } from './palettes'
 
@@ -52,10 +54,14 @@ export function spacingBasePx(spacing: keyof typeof SPACING_BASE): number {
 // No `i` flag: JSON Schema patterns (the MCP tool schemas) drop regex flags.
 export const HEX_COLOR = /^#[0-9a-fA-F]{6}$/
 
+/** A whole colour taken from a public project variable, e.g. `{{ env.BRAND }}`. */
+export const ENV_COLOR = /^\{\{\s*env\.[A-Z][A-Z0-9_]*\s*\}\}$/
+
 export const ThemeColorSchema = z.union([
   z.enum(PALETTE_NAMES),
-  z.string().regex(HEX_COLOR, 'Use a Tailwind palette name or a #rrggbb hex colour')
-]).describe('A Tailwind palette name (e.g. "indigo") or a #rrggbb hex colour (shades are generated)')
+  z.string().regex(HEX_COLOR, 'Use a Tailwind palette name or a #rrggbb hex colour'),
+  z.string().regex(ENV_COLOR, 'Use a Tailwind palette name, a #rrggbb hex colour or {{ env.NAME }}')
+]).describe('A Tailwind palette name (e.g. "indigo"), a #rrggbb hex colour (shades are generated), or {{ env.NAME }} for a public project variable holding a #rrggbb colour')
 
 const colorShape = Object.fromEntries(THEME_COLORS.map(c => [c, ThemeColorSchema])) as Record<ThemeColorName, typeof ThemeColorSchema>
 
@@ -145,8 +151,25 @@ export function hexShades(hex: string): Record<Shade, string> {
   })) as Record<Shade, string>
 }
 
-function shadeValues(value: string): Record<Shade, string> {
-  if (HEX_COLOR.test(value)) return hexShades(value.toLowerCase())
+/**
+ * The theme with each `{{ env.NAME }}` colour replaced by the variable's
+ * value, or by the default colour when the variable is missing or not a
+ * #rrggbb hex colour.
+ */
+export function resolveThemeColors(theme: Theme, vars: EnvValues): Theme {
+  const colors = { ...theme.colors }
+  for (const name of THEME_COLORS) {
+    if (!ENV_COLOR.test(colors[name])) continue
+    const value = resolveEnv(colors[name], vars, { onMissing: 'empty' })
+    colors[name] = HEX_COLOR.test(value) ? value : DEFAULT_THEME.colors[name]
+  }
+  return { ...theme, colors }
+}
+
+function shadeValues(name: ThemeColorName, raw: string): Record<Shade, string> {
+  if (HEX_COLOR.test(raw)) return hexShades(raw.toLowerCase())
+  // An unresolved `{{ env.NAME }}` (see resolveThemeColors) paints the default.
+  const value = raw in PALETTES ? raw : DEFAULT_THEME.colors[name]
   const palette = PALETTES[value as PaletteName]
   // Like Nuxt UI, prefer the app's own `--color-*` (e.g. the custom green) and fall back to Tailwind's.
   const variable = value === 'neutral' ? 'old-neutral' : value
@@ -154,7 +177,7 @@ function shadeValues(value: string): Record<Shade, string> {
 }
 
 function shadeDeclarations(name: ThemeColorName, value: string): string[] {
-  const shades = shadeValues(value)
+  const shades = shadeValues(name, value)
   return SHADES.map(s => `--ui-color-${name}-${s}: ${shades[s]};`)
 }
 
@@ -163,7 +186,7 @@ function shadeDeclarations(name: ThemeColorName, value: string): string[] {
  * painting swatches in a document that does not carry the project theme.
  */
 export function themeColorValue(theme: Theme, name: ThemeColorName, shade: Shade): string {
-  return shadeValues(theme.colors[name])[shade]
+  return shadeValues(name, theme.colors[name])[shade]
 }
 
 // Nuxt UI's neutral-derived colours (runtime/index.css), redeclared next to the

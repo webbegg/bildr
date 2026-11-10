@@ -1,6 +1,7 @@
 import { apiSourcePreview, collectionCreate, collectionDelete, collectionUpdate, fieldAdd, fieldMove, fieldRemove, fieldUpdate, publicRecordCreate, recordCreate, recordDelete, recordGet, recordList, recordUpdate } from './data'
 import type { ActionDef } from './define'
 import { editorGetContext, editorNavigate, editorSetContext } from './editor'
+import { envDelete, envList, envSet } from './env'
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
 import { pageAdd, pageDelete, pageRename } from './page'
 import { themeGet, themeUpdate } from './theme'
@@ -45,6 +46,9 @@ export const ACTIONS = [
   historyRedo,
   projectPublish,
   projectPublishedInfo,
+  envList,
+  envSet,
+  envDelete,
   editorSetContext,
   editorGetContext,
   editorNavigate

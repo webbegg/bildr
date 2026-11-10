@@ -83,6 +83,21 @@ describe('createApiFetcher', () => {
     await expect(down.api.fetchJson('https://api.example.com/')).rejects.toMatchObject({ code: 'invalid', message: 'Could not reach the API: connect ECONNREFUSED' })
   })
 
+  it('sends custom headers next to its own', async () => {
+    const { api, calls } = fetcher(async () => json([]))
+    await api.fetchJson('https://api.example.com/x', { headers: { authorization: 'Bearer k1' } })
+    expect(calls[0]!.headers).toEqual({ 'accept': 'application/json', 'user-agent': 'bildr', 'authorization': 'Bearer k1' })
+  })
+
+  it('caches per URL and headers', async () => {
+    const { api, calls } = fetcher(async () => json([1]))
+    await api.fetchJson('https://api.example.com/x', { headers: { authorization: 'Bearer k1' } })
+    await api.fetchJson('https://api.example.com/x', { headers: { authorization: 'Bearer k1' } })
+    await api.fetchJson('https://api.example.com/x', { headers: { authorization: 'Bearer k2' } })
+    await api.fetchJson('https://api.example.com/x')
+    expect(calls.map(c => c.headers?.authorization)).toEqual(['Bearer k1', 'Bearer k2', undefined])
+  })
+
   it('does not cache failures', async () => {
     let status = 500
     const { api } = fetcher(async () => json([1], { status }))

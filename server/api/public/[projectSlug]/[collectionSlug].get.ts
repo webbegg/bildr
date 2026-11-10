@@ -8,7 +8,8 @@ import { publicCollection, publicRecords } from '../../../utils/publicData'
  * fetched server-side through the SSRF guard and the 60 s cache. Reads are
  * rate-limited per client and published project (unpublished slugs share
  * one budget); a failed API fetch answers a generic 502 and logs the
- * reason, which may name resolved addresses. HEAD is not served (405).
+ * reason, which may name resolved addresses but never secret variable
+ * values (`fetchApi` redacts them). HEAD is not served (405).
  */
 export default defineEventHandler(async (event) => {
   const projectSlug = getRouterParam(event, 'projectSlug') ?? ''

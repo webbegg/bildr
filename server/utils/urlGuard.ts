@@ -200,13 +200,27 @@ export const pinnedTransport: Transport = async (url, { address, family, signal,
 
 const REDIRECTS = [301, 302, 303, 307, 308]
 
+export interface GuardedFetchOptions {
+  resolve?: Resolver
+  transport?: Transport
+  signal?: AbortSignal
+  /** Sent on every hop. */
+  headers?: Record<string, string>
+  /** A source's own headers (they may carry secrets): sent only until a redirect leaves the first URL's origin. */
+  customHeaders?: Record<string, string>
+}
+
 /** GETs `url`, checking it and every redirect hop (at most 3) with `checkUrl`. */
-export async function guardedFetch(url: string, options: { resolve?: Resolver, transport?: Transport, signal?: AbortSignal, headers?: Record<string, string> } = {}): Promise<Response> {
-  const { resolve, transport = pinnedTransport, signal, headers } = options
+export async function guardedFetch(url: string, options: GuardedFetchOptions = {}): Promise<Response> {
+  const { resolve, transport = pinnedTransport, signal, headers, customHeaders } = options
   let next = url
+  let origin: string | undefined
   for (let hop = 0; ; hop++) {
     const target = await checkUrl(next, resolve)
-    const response = await transport(target.url, { address: target.address, family: target.family, signal, headers })
+    origin ??= target.url.origin
+    if (target.url.origin !== origin) origin = ''
+    const sent = customHeaders && origin ? { ...headers, ...customHeaders } : headers
+    const response = await transport(target.url, { address: target.address, family: target.family, signal, headers: sent })
     const location = response.headers.get('location')
     if (!REDIRECTS.includes(response.status) || !location) return response
     await response.body?.cancel()

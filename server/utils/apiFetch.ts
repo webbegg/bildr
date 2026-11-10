@@ -6,7 +6,8 @@ import type { Resolver, Transport } from './urlGuard'
  * Fetches an API source's JSON for previews, record reads and published
  * apps: through the SSRF guard, GET only, with a timeout, a size cap
  * enforced while streaming, and a short in-memory cache so a page of Lists
- * (or a busy published app) does not hit the API on every read.
+ * (or a busy published app) does not hit the API on every read. The cache
+ * is keyed by a hash of the URL and headers, which may hold resolved secrets.
  */
 
 export interface ApiFetcherOptions {
@@ -22,6 +23,17 @@ export interface ApiFetcherOptions {
 export interface ApiResponse {
   json: unknown
   fetchedAt: string
+}
+
+export interface FetchJsonOptions {
+  /** The source's own headers, already resolved; dropped when a redirect changes origin. */
+  headers?: Record<string, string>
+}
+
+async function cacheKey(url: string, headers: Record<string, string> = {}): Promise<string> {
+  const text = JSON.stringify([url, Object.entries(headers).sort(([a], [b]) => a.localeCompare(b))])
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
 }
 
 function size(bytes: number): string {
@@ -64,11 +76,11 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
     return body
   }
 
-  async function load(url: string): Promise<ApiResponse> {
+  async function load(url: string, customHeaders?: Record<string, string>): Promise<ApiResponse> {
     const signal = AbortSignal.timeout(timeoutMs)
     let body: Uint8Array
     try {
-      const response = await guardedFetch(url, { resolve, transport, signal, headers: { 'accept': 'application/json', 'user-agent': 'bildr' } })
+      const response = await guardedFetch(url, { resolve, transport, signal, headers: { 'accept': 'application/json', 'user-agent': 'bildr' }, customHeaders })
       if (!response.ok) {
         await response.body?.cancel()
         fail(`The API answered HTTP ${response.status}`)
@@ -94,18 +106,19 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
 
   return {
     /** The parsed JSON at `url`, from the cache when fetched less than 60 s ago. Failures throw `ActionError('invalid')` and are not cached. */
-    async fetchJson(url: string): Promise<ApiResponse> {
-      const hit = cache.get(url)
+    async fetchJson(url: string, { headers }: FetchJsonOptions = {}): Promise<ApiResponse> {
+      const key = await cacheKey(url, headers)
+      const hit = cache.get(key)
       if (hit && now() - hit.at < ttlMs) return hit.response
-      cache.delete(url)
+      cache.delete(key)
       // Concurrent reads of one URL (several Lists, many visitors) share a request.
-      let request = pending.get(url)
+      let request = pending.get(key)
       if (!request) {
-        request = load(url).finally(() => pending.delete(url))
-        pending.set(url, request)
+        request = load(url, headers).finally(() => pending.delete(key))
+        pending.set(key, request)
       }
       const response = await request
-      cache.set(url, { at: now(), response })
+      cache.set(key, { at: now(), response })
       while (cache.size > maxEntries) cache.delete(cache.keys().next().value!)
       return response
     }

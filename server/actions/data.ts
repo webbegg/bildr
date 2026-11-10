@@ -4,7 +4,7 @@ import { coerceValues, MAX_RECORD_BYTES, MAX_RECORDS_PER_COLLECTION, queryRecord
 import type { DataRecord, RecordValue } from '#shared/data/records'
 import { createCollection, fieldLabel, newId, slugify } from '#shared/document/factory'
 import type { Operation } from '#shared/document/operations'
-import { ApiPathSchema, ApiUrlSchema, CollectionSourceSchema, FieldKeySchema, FieldTypeSchema, IdSchema, SlugSchema } from '#shared/document/schema'
+import { ApiHeadersSchema, ApiPathSchema, ApiUrlSchema, CollectionSourceSchema, FieldKeySchema, FieldTypeSchema, IdSchema, SlugSchema } from '#shared/document/schema'
 import type { Collection, Field, Project } from '#shared/document/schema'
 import { createPublicRecord } from '../utils/publicData'
 import type { PublicWriteResult } from '../utils/publicData'
@@ -32,9 +32,12 @@ const FieldInput = z.object({
 })
 
 const ItemsPathSchema = z.union([z.literal(''), ApiPathSchema]).describe('Dot path of the items array in the response, e.g. results; "" when the response is the array')
-const SourceInput = CollectionSourceSchema.describe('Where records come from: { "type": "internal" } (stored in bildr, the default) or { "type": "api", "url", "itemsPath" } (read live from a public JSON endpoint, read-only). Get url, itemsPath and fields from api_source_preview first')
+const SourceInput = CollectionSourceSchema.describe('Where records come from: { "type": "internal" } (stored in bildr, the default) or { "type": "api", "url", "itemsPath", "headers"? } (read live from a JSON endpoint, read-only). Get url, itemsPath and fields from api_source_preview first')
 
-const API_FLOW = 'To build a collection from a JSON API: call api_source_preview with the URL, adjust the proposed fields (key, label, type, path), then call collection_create with source { type: "api", url, itemsPath } and the fields.'
+const ENV_HINT = 'The url and header values may use {{ env.NAME }} (see env_list), resolved on the server at each fetch; put API keys in a secret variable, e.g. header Authorization: Bearer {{ env.API_KEY }}, never literally.'
+const HeadersInput = ApiHeadersSchema.describe('Up to 10 request headers { name, value }, e.g. an API key')
+
+const API_FLOW = `To build a collection from a JSON API: call api_source_preview with the URL (and headers), adjust the proposed fields (key, label, type, path), then call collection_create with source { type: "api", url, itemsPath, headers } and the fields. ${ENV_HINT}`
 
 function toField({ key, label, type, path }: z.infer<typeof FieldInput>): Field {
   return path ? { key, label: label ?? fieldLabel(key), type, path } : { key, label: label ?? fieldLabel(key), type }
@@ -74,16 +77,17 @@ function findRecord(records: DataRecord[], recordId: string, collection: Collect
 
 export const apiSourcePreview = defineAction({
   name: 'api_source_preview',
-  description: `Fetch a public JSON API (http(s), GET, no auth; private and local addresses are refused) and propose a collection mapping: the items path it detected (results, data, items, records, or the root array), fields (key, label, type, path) inferred from up to 20 items, the first 10 raw items and the same items mapped with the fields (sample), and the item count. ${API_FLOW}`,
+  description: `Fetch a JSON API (http(s), GET, with optional headers; private and local addresses are refused) and propose a collection mapping: the items path it detected (results, data, items, records, or the root array), fields (key, label, type, path) inferred from up to 20 items, the first 10 raw items and the same items mapped with the fields (sample), and the item count. ${API_FLOW}`,
   input: z.object({
     projectId: IdSchema,
     url: ApiUrlSchema.describe('The endpoint, e.g. https://rickandmortyapi.com/api/character'),
+    headers: HeadersInput.optional(),
     itemsPath: ItemsPathSchema.optional().describe('Read the items at this path instead of detecting them')
   }),
   readOnly: true,
-  run: async ({ projectId, url, itemsPath }, ctx) => {
+  run: async ({ projectId, url, headers, itemsPath }, ctx) => {
     await ctx.services.loadProject(projectId)
-    const { json } = await ctx.services.api.fetchJson(url)
+    const { json } = await ctx.services.fetchApi(projectId, { url, headers })
     const detected = itemsPath === undefined ? detectItems(json) : { itemsPath, items: apiItems(json, itemsPath) }
     if (!detected) throw new ActionError('invalid', 'No list of items found in the API response; pass itemsPath to point at one')
     const fields = inferFields(detected.items)
@@ -113,7 +117,7 @@ export const collectionCreate = defineAction({
 
 export const collectionUpdate = defineAction({
   name: 'collection_update',
-  description: 'Rename a collection, change its slug, or set its flags: publicRead lets published apps list its records, publicCreate lets anonymous visitors of the published app add records (e.g. a contact form with a Form component). With publicCreate, anyone on the internet, including scripts on other websites, can post records to it (rate-limited, declared fields only, no update or delete); API collections never accept them. Flags take effect on the next publish. For API collections, source changes the URL or items path and fields replaces the whole mapping (key, label, type, path; use api_source_preview to see the items). Properties left out keep their value. One undo step.',
+  description: 'Rename a collection, change its slug, or set its flags: publicRead lets published apps list its records, publicCreate lets anonymous visitors of the published app add records (e.g. a contact form with a Form component). With publicCreate, anyone on the internet, including scripts on other websites, can post records to it (rate-limited, declared fields only, no update or delete); API collections never accept them. Flags take effect on the next publish. For API collections, source changes the URL, items path or headers (url and header values may use {{ env.NAME }}) and fields replaces the whole mapping (key, label, type, path; use api_source_preview to see the items). Properties left out keep their value. One undo step.',
   input: z.object({
     projectId: IdSchema,
     collection: CollectionRef,

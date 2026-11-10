@@ -130,6 +130,24 @@ describe('guardedFetch', () => {
     expect(calls.map(c => c.url)).toEqual(['https://api.example.com/a', 'https://api.example.com/b', 'https://api.example.com/c'])
   })
 
+  it('sends custom headers on same-origin hops only, dropping them for good once the origin changes', async () => {
+    const seen: { url: string, headers?: Record<string, string> }[] = []
+    const send: Transport = async (url, init) => {
+      seen.push({ url: url.href, headers: init.headers })
+      if (url.pathname === '/a') return redirect('/b')()
+      if (url.pathname === '/b') return redirect('https://cdn.example.com/c')()
+      if (url.pathname === '/c') return redirect('https://api.example.com/d')()
+      return new Response('[]')
+    }
+    await guardedFetch('https://api.example.com/a', { resolve, transport: send, headers: { accept: 'application/json' }, customHeaders: { authorization: 'Bearer sk_test_SECRET123' } })
+    expect(seen).toEqual([
+      { url: 'https://api.example.com/a', headers: { accept: 'application/json', authorization: 'Bearer sk_test_SECRET123' } },
+      { url: 'https://api.example.com/b', headers: { accept: 'application/json', authorization: 'Bearer sk_test_SECRET123' } },
+      { url: 'https://cdn.example.com/c', headers: { accept: 'application/json' } },
+      { url: 'https://api.example.com/d', headers: { accept: 'application/json' } }
+    ])
+  })
+
   it('stops after 3 redirects', async () => {
     const { send } = transport({
       'https://api.example.com/1': redirect('/2'),
