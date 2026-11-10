@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { componentUsages } from '#shared/document/usages'
+import { PRIMARY_VARIANT, variantItems } from '~/composables/componentVariants'
 
 /**
  * The component view's banner over the canvas: which component is being
- * edited, how many instances the edits reach, and Done (or Escape with
- * nothing selected) to go back to the page.
+ * edited, how many instances the edits reach, which variant shows (and
+ * takes prop and style edits) when it has variants, and Done (or Escape
+ * with nothing selected) to go back to the page.
  */
 const editor = useEditor()
+const variantChoices = computed(() => (editor.component ? variantItems(editor.component) : []))
 const usages = computed(() => (editor.project && editor.component ? componentUsages(editor.project, editor.component.id).length : 0))
 </script>
 
@@ -26,6 +29,17 @@ const usages = computed(() => (editor.project && editor.component ? componentUsa
       />
       <span>Editing <strong class="font-semibold">{{ editor.component.name }}</strong></span>
       <span class="text-xs text-muted">{{ usages }} instance{{ usages === 1 ? '' : 's' }}</span>
+      <USelect
+        v-if="editor.component.variants.length"
+        :model-value="editor.variant?.id ?? PRIMARY_VARIANT"
+        :items="variantChoices"
+        aria-label="Variant to show and edit"
+        size="xs"
+        variant="soft"
+        class="w-32"
+        data-component-view-variant
+        @update:model-value="editor.selectVariant($event === PRIMARY_VARIANT ? null : $event)"
+      />
       <UButton
         label="Done"
         size="xs"

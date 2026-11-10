@@ -49,6 +49,7 @@ export type Operation
     | { op: 'updateProperty', componentId: string, propertyId: string, name?: string, default?: PropValue | null, bindings?: PropertyBinding[] }
     | { op: 'addVariant', componentId: string, index: number, variant: Variant }
     | { op: 'removeVariant', componentId: string, variantId: string }
+    | { op: 'updateVariant', componentId: string, variantId: string, name?: string }
     /** Sparse: a null value, or the primary variant's own value, removes that override. */
     | { op: 'setOverride', componentId: string, variantId: string, nodeId: string, props?: Record<string, PropValue | null>, style?: Record<string, string | null> }
 
@@ -541,6 +542,17 @@ function apply(project: Project, op: Operation): Operation {
       const index = def.variants.indexOf(getVariant(def, op.variantId))
       const [variant] = def.variants.splice(index, 1)
       return { op: 'addVariant', componentId: def.id, index, variant: variant! }
+    }
+    case 'updateVariant': {
+      const def = getDefinition(project, op.componentId)
+      const variant = getVariant(def, op.variantId)
+      const inverse: Extract<Operation, { op: 'updateVariant' }> = { op: 'updateVariant', componentId: def.id, variantId: variant.id }
+      if (op.name !== undefined) {
+        if (!op.name.trim()) fail('invalid', 'Variant name cannot be empty')
+        inverse.name = variant.name
+        variant.name = op.name.trim()
+      }
+      return inverse
     }
     case 'setOverride': {
       const def = getDefinition(project, op.componentId)

@@ -1,4 +1,4 @@
-import { componentCreate, componentDelete, componentPropertyAdd, componentPropertyRemove, componentPropertyUpdate, componentRename, componentVariantAdd, componentVariantDelete, componentVariantSetOverride, instanceSetSlot, instanceSetValues } from './component'
+import { componentCreate, componentDelete, componentPropertyAdd, componentPropertyRemove, componentPropertyUpdate, componentRename, componentVariantAdd, componentVariantDelete, componentVariantRename, componentVariantSetOverride, instanceSetSlot, instanceSetValues } from './component'
 import { connectionCreate, connectionDelete, connectionUpdate, endpointTest } from './connection'
 import { apiSourcePreview, collectionCreate, collectionDelete, collectionUpdate, fieldAdd, fieldMove, fieldRemove, fieldUpdate, publicRecordCreate, recordCreate, recordDelete, recordGet, recordList, recordUpdate } from './data'
 import type { ActionDef } from './define'
@@ -36,6 +36,7 @@ export const ACTIONS = [
   componentPropertyRemove,
   componentVariantAdd,
   componentVariantDelete,
+  componentVariantRename,
   componentVariantSetOverride,
   instanceSetValues,
   instanceSetSlot,

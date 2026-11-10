@@ -228,6 +228,16 @@ describe('component variants', () => {
     expect(project.components[0]!.variants).toEqual([])
     expect(project.pages[0]!.root.children[0]!.props).toEqual({ component: componentId })
   })
+
+  it('renames a variant as one undo step', async () => {
+    const { call, get, componentId } = await createCard()
+    const { variantId } = await call<{ variantId: string }>('component_variant_add', { componentId, name: 'Dark' })
+    await call('component_variant_rename', { componentId, variantId, name: 'Night' })
+    expect((await get()).components[0]!.variants).toEqual([{ id: variantId, name: 'Night', overrides: {} }])
+    await expect(call('component_variant_rename', { componentId, variantId: 'var_nope', name: 'X' })).rejects.toThrow('Variant "var_nope" not found')
+    await call('history_undo', {})
+    expect((await get()).components[0]!.variants[0]!.name).toBe('Dark')
+  })
 })
 
 describe('instances inside a definition', () => {
