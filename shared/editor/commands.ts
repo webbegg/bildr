@@ -273,6 +273,9 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
       editor.mode = 'data'
       editor.importRequest++
     }),
+    action('settings:delete-project', 'Delete project…', 'i-lucide-trash-2', ['remove', 'project', 'settings', 'danger'], c => !!c.editor.project, ({ editor }) => {
+      editor.mode = 'settings'
+    }),
     ...DEVICE_ORDER.map(device => action(`device:${device.id}`, `Edit ${device.label}`, device.icon, ['device', 'breakpoint', 'frame', String(device.width)], c => onCanvas(c) && c.editor.deviceId !== device.id, ({ editor }) => editor.setDevice(device.id))),
     ...(editor.project?.pages ?? []).map((page): EditorCommand => ({
       id: `page:${page.id}`,

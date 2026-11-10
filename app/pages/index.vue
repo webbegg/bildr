@@ -1,8 +1,9 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Project, ProjectSummary } from '#shared/document/schema'
 
 const toast = useToast()
-const { data: projects } = useAsyncData('projects', () => callAction<ProjectSummary[]>('project_list'))
+const { data: projects, refresh } = useAsyncData('projects', () => callAction<ProjectSummary[]>('project_list'))
 
 const name = ref('')
 const creating = ref(false)
@@ -18,6 +19,22 @@ async function create() {
   } finally {
     creating.value = false
   }
+}
+
+// The project whose delete confirm is open; it stays set while the modal closes, so its text does not blank.
+const deleting = ref<ProjectSummary | null>(null)
+const confirmOpen = ref(false)
+
+function menu(project: ProjectSummary): DropdownMenuItem[] {
+  return [{
+    label: 'Delete project…',
+    icon: 'i-lucide-trash-2',
+    color: 'error',
+    onSelect: () => {
+      deleting.value = project
+      confirmOpen.value = true
+    }
+  }]
 }
 </script>
 
@@ -53,7 +70,22 @@ async function create() {
         :description="`/${project.slug} · v${project.version} · ${new Date(project.updatedAt).toLocaleString()}`"
         :to="`/editor/${project.id}`"
         icon="i-lucide-app-window"
-      />
+      >
+        <UDropdownMenu
+          :items="menu(project)"
+          :content="{ align: 'end' }"
+        >
+          <UButton
+            icon="i-lucide-ellipsis"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            :aria-label="`${project.name} options`"
+            class="absolute top-3 right-3 z-10"
+            data-project-menu
+          />
+        </UDropdownMenu>
+      </UPageCard>
     </div>
     <p
       v-if="projects && !projects.length"
@@ -61,5 +93,13 @@ async function create() {
     >
       No projects yet.
     </p>
+
+    <EditorDangerZone
+      v-if="deleting"
+      v-model:open="confirmOpen"
+      :project="deleting"
+      :section="false"
+      @deleted="refresh()"
+    />
   </UContainer>
 </template>

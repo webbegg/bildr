@@ -16,6 +16,11 @@ export function createRecordStore(storage: KeyValueStorage) {
 
     async save(projectId: string, collectionId: string, records: DataRecord[]): Promise<void> {
       await storage.setItem(key(projectId, collectionId), records)
+    },
+
+    /** Removes the records of every collection of the project, including ones whose collection is gone. */
+    async removeAll(projectId: string): Promise<void> {
+      for (const stored of await storage.getKeys(`records:${projectId}:`)) await storage.removeItem(stored)
     }
   }
 }

@@ -37,6 +37,19 @@ export const projectRename = defineAction({
   }
 })
 
+export const projectDelete = defineAction({
+  name: 'project_delete',
+  description: 'Delete a project and everything that belongs to it: its pages, history, collections and their records, environment variables and the published app (/p/<project-slug> stops being served). This cannot be undone. Pass the project slug as `confirm`; any other value is refused.',
+  input: z.object({
+    projectId: IdSchema,
+    confirm: z.string().describe('The project slug, typed to confirm the deletion')
+  }),
+  run: async ({ projectId, confirm }, ctx) => {
+    const project = await ctx.services.deleteProject(ctx, projectId, confirm)
+    return { deleted: true, projectId, slug: project.slug }
+  }
+})
+
 export const projectGet = defineAction({
   name: 'project_get',
   description: 'Get the full project document: pages, each with a root node tree of { id, type, props, style, children }.',

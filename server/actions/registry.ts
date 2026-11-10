@@ -6,7 +6,7 @@ import { envDelete, envList, envSet } from './env'
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
 import { pageAdd, pageDelete, pageRename } from './page'
 import { themeGet, themeUpdate } from './theme'
-import { componentsList, historyGet, historyRedo, historyUndo, projectCreate, projectGet, projectList, projectPublish, projectPublishedInfo, projectRename } from './project'
+import { componentsList, historyGet, historyRedo, historyUndo, projectCreate, projectDelete, projectGet, projectList, projectPublish, projectPublishedInfo, projectRename } from './project'
 
 /** The static action registry: the one list the UI, HTTP and MCP all expose. */
 export const ACTIONS = [
@@ -14,6 +14,7 @@ export const ACTIONS = [
   projectCreate,
   projectGet,
   projectRename,
+  projectDelete,
   componentsList,
   pageAdd,
   pageRename,

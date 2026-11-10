@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
  * The Settings view: the project's name and slug, what is published, its
- * environment variables (EditorVariables), and how to connect an agent over MCP. The name saves on blur or Enter
+ * environment variables (EditorVariables), how to connect an agent over MCP, and the
+ * Danger zone (EditorDangerZone, which deletes the project). The name saves on blur or Enter
  * (`project_rename`); the slug is read-only, so published URLs never change.
  * Shares the published info with the top bar
  * (same async data key), so a publish there shows here too.
@@ -136,5 +137,11 @@ async function copyCommand() {
         Published apps register WebMCP tools for agents in the visitor's browser: list_pages, navigate_to_page and get_page_content, plus list_records and submit_form for public collections. Browsers without WebMCP ignore them.
       </p>
     </section>
+
+    <EditorDangerZone
+      v-if="editor.project"
+      :project="editor.project"
+      @deleted="navigateTo('/')"
+    />
   </div>
 </template>

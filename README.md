@@ -114,6 +114,12 @@ curl -X POST localhost:3000/api/actions/project_create \
   -H 'content-type: application/json' -d '{"name":"Landing"}'
 ```
 
+### Deleting a project
+
+`project_delete { projectId, confirm }` deletes a project and everything stored for it: the document and its history, the records of every collection, the environment variables, the editor context and the published snapshot. **This cannot be undone.** `confirm` must be the project slug, so a misfired call does nothing; any other value is refused with "Type the project slug to confirm". Afterwards `/p/<project-slug>`, `/api/published/<project-slug>` and the public endpoints answer 404.
+
+The published snapshot is deleted first and the document last, so a crash part-way never serves an app whose data is gone, and running the delete again finishes the job. In the UI, delete from the `…` menu on the projects list or from the Danger zone in Settings; both ask you to type the slug.
+
 An open editor picks up changes from any surface within about a second. It receives them over `GET /api/projects/:projectId/events` (SSE), and polls `GET /api/projects/:projectId/version` if the stream fails.
 
 ## Connect an agent (MCP)

@@ -252,6 +252,16 @@ describe('editorCommands', () => {
     expect([editor.mode, editor.variablesRequest]).toEqual(['settings', 1])
   })
 
+  it('opens Settings to delete the project, from any view', () => {
+    const { ctx, editor, get } = fixture({ mode: 'data' })
+    expect(get('settings:delete-project').label).toBe('Delete project…')
+    expect(get('settings:delete-project').enabled(ctx)).toBe(true)
+    expect(searchCommands(editorCommands(ctx), 'delete project', [])[0]!.commands[0]!.id).toBe('settings:delete-project')
+    get('settings:delete-project').run(ctx)
+    expect(editor.mode).toBe('settings')
+    expect(fixture({ project: null }).get('settings:delete-project').enabled(fixture({ project: null }).ctx)).toBe(false)
+  })
+
   it('edits another device frame, with Alt + 1–3, on the Canvas only', () => {
     const { ctx, editor, get } = fixture()
     expect(['device:desktop', 'device:tablet', 'device:mobile'].map(id => [get(id).label, get(id).shortcut?.join('+')])).toEqual([

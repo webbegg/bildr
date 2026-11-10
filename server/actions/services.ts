@@ -198,6 +198,24 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
 
     publishedSnapshot,
 
+    /**
+     * Deletes the project and everything stored for it. The published snapshot
+     * goes first, so a crash part-way never serves an app whose data is gone,
+     * and the document last, so a retry still finds the project and finishes.
+     */
+    async deleteProject(ctx: ActionContext, projectId: string, confirm: string): Promise<Project> {
+      const project = await loadProject(projectId)
+      if (confirm !== project.slug) throw new ActionError('invalid', 'Type the project slug to confirm')
+      await storage.removeItem(`published:${projectId}`)
+      await records.removeAll(projectId)
+      await env.remove(projectId)
+      await storage.removeItem(`history:${projectId}`)
+      await storage.removeItem(`editor-context:${projectId}`)
+      await projects.remove(projectId)
+      ctx.notify(projectId, project.version + 1)
+      return project
+    },
+
     async historyState(projectId: string): Promise<{ undo: string | null, redo: string | null }> {
       const history = await loadHistory(projectId)
       return { undo: history.undo.at(-1)?.label ?? null, redo: history.redo.at(-1)?.label ?? null }

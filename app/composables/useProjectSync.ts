@@ -2,7 +2,7 @@ import type { Editor } from './useEditor'
 import { TAB_ID, callAction } from './useEditor'
 
 type SyncEvent
-  = | { kind: 'change', projectId: string, version: number, source?: string, scope?: 'data', collectionId?: string }
+  = | { kind: 'change', projectId: string, version: number, source?: string, action?: string, scope?: 'data', collectionId?: string }
     | { kind: 'navigate', projectId: string, pageId: string, nodeId: string | null }
 
 const POLL_MS = 1500
@@ -48,6 +48,8 @@ export function useProjectSync(editor: Editor): void {
       if (editor.listCollections.some(c => c.id === event.collectionId)) await editor.reloadListRecords().catch(() => {})
       return
     }
+    // Deleted here or elsewhere: the editor has nothing left to show.
+    if (event.kind === 'change' && event.action === 'project_delete') return void navigateTo('/')
     if (event.kind === 'change') {
       if (event.source === TAB_ID) return
       if (isNewer(event.version)) await refresh()
@@ -63,7 +65,10 @@ export function useProjectSync(editor: Editor): void {
 
   function startPolling(): void {
     poll ??= setInterval(async () => {
-      const { version } = await $fetch<{ version: number }>(`/api/projects/${editor.projectId}/version`).catch(() => ({ version: 0 }))
+      const { version } = await $fetch<{ version: number }>(`/api/projects/${editor.projectId}/version`).catch((error: { statusCode?: number }) => {
+        if (error.statusCode === 404) void navigateTo('/')
+        return { version: 0 }
+      })
       if (isNewer(version)) await refresh()
       // Record changes do not move the version, so the Data mode re-reads them.
       if (editor.mode === 'data') await editor.reloadRecords().catch(() => {})
