@@ -7,10 +7,14 @@ import type { Breakpoint } from '../design/tokens'
 import type { DeviceId, Provenance } from './styleFields'
 
 /**
- * The right panel in Framer's sections, as a row model: each section lists
- * label-column rows, and an optional prop shows as an "Add…" row until it is
- * added (Framer's Border and Shadows), which writes a default token. A section
- * none of whose tokens applies collapses to its title and a "+".
+ * The right panel in Framer's sections, as a row model. Sections never
+ * collapse. Each shows its core rows (where they apply to the node); Fill,
+ * Border and Shadows are inline "Add…" slots; the other optional properties
+ * sit in the header "+" menu until the node has a value for them (at any
+ * breakpoint), and an added one shows a "−" where the edited breakpoint sets
+ * it. Layout on a leaf has no core row: it is a title with a "+" (Padding,
+ * Margin, Align self, Overflow), like Framer's frame without a layout, and no
+ * Reset layout, since each added row has its own "−".
  */
 
 export const PANEL_SECTIONS = ['Size', 'Layout', 'Styles', 'Typography'] as const
@@ -23,39 +27,57 @@ const MARGIN = ['m', 'mx', 'my', 'mt', 'mr', 'mb', 'ml']
 interface RowDef {
   section: PanelSection
   keys: string[]
-  /** What its "Add…" writes; rows without it are always shown. */
+  /**
+   * `core` rows show wherever they apply; a `slot` shows as "Add…" until set;
+   * a `menu` row is offered by the header "+" until it has a value.
+   */
+  kind: 'core' | 'slot' | 'menu'
+  /** What adding it writes (base keys); empty only reveals the control. */
   add?: Record<string, string>
+  /** A menu item a core row already edits: listed, but disabled. */
+  covered?: boolean
 }
 
 const ROWS = {
-  width: { section: 'Size', keys: ['w'] },
-  height: { section: 'Size', keys: ['minH'] },
-  minMax: { section: 'Size', keys: ['maxW'], add: { maxW: 'full' } },
+  width: { section: 'Size', kind: 'core', keys: ['w'] },
+  // Height is the minimum height (`minH`, see `sizeModes`), which covers Min Height.
+  height: { section: 'Size', kind: 'core', keys: ['minH'] },
+  maxWidth: { section: 'Size', kind: 'menu', keys: ['maxW'], add: { maxW: 'full' } },
+  minWidth: { section: 'Size', kind: 'menu', keys: ['minW'], add: { minW: '0' } },
+  maxHeight: { section: 'Size', kind: 'menu', keys: ['maxH'], add: { maxH: 'full' } },
+  minHeight: { section: 'Size', kind: 'menu', keys: [], covered: true },
   // Type writes `display`, which Styles owns; it shows the Grid or Stack rows.
-  type: { section: 'Layout', keys: [] },
-  direction: { section: 'Layout', keys: ['direction'] },
-  distribute: { section: 'Layout', keys: ['justify'] },
-  align: { section: 'Layout', keys: ['items'] },
-  wrap: { section: 'Layout', keys: ['flexWrap'] },
-  columns: { section: 'Layout', keys: ['cols'] },
-  gap: { section: 'Layout', keys: ['gap'] },
-  padding: { section: 'Layout', keys: PADDING, add: { p: '2' } },
-  span: { section: 'Layout', keys: ['colSpan'] },
-  margin: { section: 'Layout', keys: MARGIN, add: { m: '4' } },
-  self: { section: 'Layout', keys: ['self'], add: { self: 'center' } },
-  visible: { section: 'Styles', keys: ['display'] },
-  opacity: { section: 'Styles', keys: ['opacity'], add: { opacity: '100' } },
-  fill: { section: 'Styles', keys: ['bg'], add: { bg: 'neutral-100' } },
-  border: { section: 'Styles', keys: ['border', 'borderT', 'borderR', 'borderB', 'borderL', 'borderColor'], add: { border: '1', borderColor: 'default' } },
-  shadows: { section: 'Styles', keys: ['shadow'], add: { shadow: 'md' } },
-  radius: { section: 'Styles', keys: ['rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl'] },
-  overflow: { section: 'Styles', keys: ['overflow'], add: { overflow: 'hidden' } },
+  type: { section: 'Layout', kind: 'core', keys: [] },
+  direction: { section: 'Layout', kind: 'core', keys: ['direction'] },
+  distribute: { section: 'Layout', kind: 'core', keys: ['justify'] },
+  align: { section: 'Layout', kind: 'core', keys: ['items'] },
+  wrap: { section: 'Layout', kind: 'core', keys: ['flexWrap'] },
+  columns: { section: 'Layout', kind: 'core', keys: ['cols'] },
+  gap: { section: 'Layout', kind: 'core', keys: ['gap'] },
+  // Core on a container, a menu item on a leaf.
+  padding: { section: 'Layout', kind: 'core', keys: PADDING, add: { p: '2' } },
+  span: { section: 'Layout', kind: 'core', keys: ['colSpan'] },
+  margin: { section: 'Layout', kind: 'menu', keys: MARGIN, add: { m: '0' } },
+  self: { section: 'Layout', kind: 'menu', keys: ['self'], add: { self: 'center' } },
+  // Offered here rather than in Styles: it clips the layout's children.
+  overflow: { section: 'Layout', kind: 'menu', keys: ['overflow'], add: { overflow: 'hidden' } },
+  visible: { section: 'Styles', kind: 'core', keys: ['display'] },
+  opacity: { section: 'Styles', kind: 'core', keys: ['opacity'] },
+  fill: { section: 'Styles', kind: 'slot', keys: ['bg'], add: { bg: 'neutral-100' } },
+  border: { section: 'Styles', kind: 'slot', keys: ['border', 'borderT', 'borderR', 'borderB', 'borderL', 'borderColor'], add: { border: '1', borderColor: 'default' } },
+  shadows: { section: 'Styles', kind: 'slot', keys: ['shadow'], add: { shadow: 'md' } },
+  radius: { section: 'Styles', kind: 'core', keys: ['rounded'] },
+  // Individual corners only reveal their fields, which show the radius until set.
+  corners: { section: 'Styles', kind: 'menu', keys: ['roundedTl', 'roundedTr', 'roundedBr', 'roundedBl'], add: {} },
   // Display only reveals its control: Visible and Type manage the usual values.
-  display: { section: 'Styles', keys: ['display'], add: {} },
-  fontSize: { section: 'Typography', keys: ['text'] },
-  fontWeight: { section: 'Typography', keys: ['font'] },
-  textAlign: { section: 'Typography', keys: ['align'] },
-  textColor: { section: 'Typography', keys: ['color'] }
+  display: { section: 'Styles', kind: 'menu', keys: ['display'], add: {} },
+  fontSize: { section: 'Typography', kind: 'core', keys: ['text'] },
+  fontWeight: { section: 'Typography', kind: 'core', keys: ['font'] },
+  textAlign: { section: 'Typography', kind: 'core', keys: ['align'] },
+  textColor: { section: 'Typography', kind: 'core', keys: ['color'] },
+  letterSpacing: { section: 'Typography', kind: 'menu', keys: ['tracking'], add: { tracking: 'normal' } },
+  lineHeight: { section: 'Typography', kind: 'menu', keys: ['leading'], add: { leading: 'normal' } },
+  transform: { section: 'Typography', kind: 'menu', keys: ['textTransform'], add: { textTransform: 'uppercase' } }
 } satisfies Record<string, RowDef>
 
 export type RowId = keyof typeof ROWS
@@ -74,14 +96,6 @@ const baseKey = (key: string) => parseStyleKey(key)?.token.key
 export function panelSection(key: string): PanelSection | undefined {
   const base = baseKey(key)
   return base ? PANEL_SECTIONS.find(s => sectionKeys(s).includes(base)) : undefined
-}
-
-const sectionStates = (style: Record<string, string>, section: PanelSection, device: DeviceId) =>
-  sectionKeys(section).map(key => styleProvenance(style, key, device).state)
-
-/** A section's dot, Framer's override highlight: `set` if the device sets one of its tokens; inheriting gets no dot. */
-export function panelSectionMark(style: Record<string, string>, section: PanelSection, device: DeviceId): 'set' | undefined {
-  return sectionStates(style, section, device).includes('set') ? 'set' : undefined
 }
 
 const breakpointOf = (device: DeviceId) => DEVICES.find(d => d.id === device)!.breakpoint
@@ -126,15 +140,25 @@ export interface PanelNode {
 
 export interface PanelRow {
   id: RowId
-  /** Shown as an "Add…" placeholder until added. */
-  add: boolean
+  /** An unset Fill, Border or Shadows: an "Add…" placeholder. */
+  slot: boolean
+  /** An optional row the edited breakpoint sets (or just added): it shows a "−" ("×" on a slot). */
+  removable: boolean
+}
+
+export interface PanelMenuItem {
+  id: RowId
+  /** Listed for Framer's parity, but a core row already edits it. */
+  disabled: boolean
 }
 
 export interface PanelSectionRows {
   section: PanelSection
   rows: PanelRow[]
-  /** Whether one of the section's tokens applies at the device (or differs across the selection); else it shows its title and "+". */
-  present: boolean
+  /** The header "+" menu: the optional rows that apply and are not shown. */
+  menu: PanelMenuItem[]
+  /** The header "−", Reset layout: on the Layout section of a container. */
+  reset: boolean
 }
 
 export interface PanelView {
@@ -147,7 +171,7 @@ export interface PanelView {
 
 const GRID_TYPES = ['Grid', 'List']
 
-/** The rows of each section for a node, in Framer's order, with "Add…" for the optional rows it does not set. */
+/** The rendered sections for a node, their rows in Framer's order, and their "+" menus. */
 export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] {
   const { device, added = [], mixed = [] } = view
   const sets = (...keys: string[]) => Object.keys(node.style).some(key => keys.includes(baseKey(key) ?? ''))
@@ -159,10 +183,14 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
   const managed = ['hidden', node.natural, ...(typed(node.type) ? ['grid', 'flex'] : [])]
   const setsDisplay = Object.entries(node.style).some(([key, value]) => baseKey(key) === 'display' && !managed.includes(value))
 
-  const shown: Record<RowId, boolean> = {
+  // Whether a row applies to the node; an optional one is then shown or offered.
+  const applies: Record<RowId, boolean> = {
     width: true,
     height: true,
-    minMax: true,
+    maxWidth: true,
+    minWidth: true,
+    maxHeight: true,
+    minHeight: true,
     type: !!layout,
     direction: stack || sets('direction'),
     distribute: stack || sets('justify'),
@@ -174,36 +202,45 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
     span: GRID_TYPES.includes(node.parentType ?? '') || sets('colSpan'),
     margin: !node.root,
     self: !node.root,
+    overflow: true,
     visible: !node.root,
     opacity: true,
     fill: true,
     border: true,
     shadows: true,
     radius: true,
-    overflow: true,
+    corners: true,
     display: !node.root,
     fontSize: true,
     fontWeight: true,
     textAlign: true,
-    textColor: true
+    textColor: true,
+    letterSpacing: true,
+    lineHeight: true,
+    transform: true
   }
-  const optional = (row: RowId) => !!def(row).add && !(row === 'padding' && container)
-  const has = (row: RowId) => added.includes(row) || rowKeys(row).some(key => mixed.includes(key))
-    || (row === 'display' ? setsDisplay : sets(...rowKeys(row)))
+  const kind = (row: RowId) => (row === 'padding' && !container ? 'menu' : def(row).kind)
+  const valued = (row: RowId) => (row === 'display' ? setsDisplay : sets(...rowKeys(row)))
+  const has = (row: RowId) => added.includes(row) || rowKeys(row).some(key => mixed.includes(key)) || valued(row)
+  const shown = (row: RowId) => applies[row] && (kind(row) !== 'menu' || (!(def(row) as RowDef).covered && has(row)))
+  const removable = (row: RowId) => kind(row) !== 'core' && (rowProvenance(node.style, row, device).state === 'set' || (added.includes(row) && !valued(row)))
+  const inSection = (section: PanelSection) => ROW_IDS.filter(row => def(row).section === section)
 
   return PANEL_SECTIONS.map(section => ({
     section,
-    rows: ROW_IDS.filter(row => def(row).section === section && shown[row]).map(id => ({ id, add: optional(id) && !has(id) })),
-    present: sectionStates(node.style, section, device).some(state => state !== 'unset') || sectionKeys(section).some(key => mixed.includes(key))
+    rows: inSection(section).filter(shown).map(id => ({ id, slot: kind(id) === 'slot' && !has(id), removable: removable(id) })),
+    menu: inSection(section).filter(row => applies[row] && kind(row) === 'menu' && !shown(row))
+      .map(id => ({ id, disabled: !!(def(id) as RowDef).covered })),
+    reset: section === 'Layout' && (container || !!layout)
   }))
 }
 
-/** What an "Add…" row writes (base keys; the panel puts responsive ones at the device). */
+/** What adding an optional row writes (base keys; the panel puts responsive ones at the device). */
 export function rowAdd(row: RowId): Record<string, string> {
-  return { ...def(row).add }
+  return { ...(def(row) as RowDef).add }
 }
 
-/** The patch that resets a row on a device: its keys set at exactly that breakpoint. */
+/** The patch that resets a row on a device (Reset override, or its "−"): its keys set at exactly that breakpoint. */
 export function rowReset(style: Record<string, string>, row: RowId, breakpoint: Breakpoint | undefined): Record<string, null> {
   const keys = rowKeys(row)
   return Object.fromEntries(Object.keys(style).filter((key) => {
@@ -218,14 +255,17 @@ export function rowProvenance(style: Record<string, string>, row: RowId, device:
   return all.find(p => p.state === 'set') ?? all.find(p => p.state === 'inherited') ?? { state: 'unset' }
 }
 
-/** The patch a section's "−" sends: every key of the section, at every breakpoint. */
-export function sectionRemove(style: Record<string, string>, section: PanelSection): Record<string, null> {
-  return Object.fromEntries(Object.keys(style).filter(key => panelSection(key) === section).map(key => [key, null]))
-}
-
-/** The patch that clears a token at every breakpoint. */
-export function tokenRemove(style: Record<string, string>, base: string): Record<string, null> {
-  return Object.fromEntries(Object.keys(style).filter(key => baseKey(key) === base).map(key => [key, null]))
+/**
+ * The Layout header's "−", Reset layout: the Layout section's tokens set at
+ * the device's breakpoint, and the Type row's grid or flex display there
+ * (hiding stays the Visible row's).
+ */
+export function layoutReset(style: Record<string, string>, device: DeviceId): Record<string, null> {
+  const set = [...sectionKeys('Layout'), 'display'].flatMap((key) => {
+    const p = styleProvenance(style, key, device)
+    return p.state === 'set' && (key !== 'display' || ['grid', 'flex'].includes(p.value)) ? [p.key] : []
+  })
+  return Object.fromEntries(set.map(key => [key, null]))
 }
 
 /** The per-corner radius and per-side border width tokens, clockwise from the top (left). */

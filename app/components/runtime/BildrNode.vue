@@ -64,8 +64,8 @@ const tokens = computed(() => withFallback({ ...structuralStyle(props.node.type)
 const display = (fallback: string) => displayFallback(fallback, props.node.style)
 
 const HEADING_TOKENS: Record<string, Record<string, string>> = {
-  1: { text: '4xl', font: 'bold' },
-  2: { text: '3xl', font: 'bold' },
+  1: { text: '4xl', font: 'bold', tracking: 'tight' },
+  2: { text: '3xl', font: 'bold', tracking: 'tight' },
   3: { text: '2xl', font: 'semibold' },
   4: { text: 'xl', font: 'semibold' }
 }
@@ -144,7 +144,7 @@ const list = computed(() => {
     :is="`h${level}`"
     v-else-if="node.type === 'Heading'"
     v-bind="attrs"
-    :class="[{ 'tracking-tight': Number(level) <= 2 }, withFallback(HEADING_TOKENS[level]!)]"
+    :class="withFallback(HEADING_TOKENS[level]!)"
   >
     {{ text('text') }}
   </component>

@@ -32,7 +32,7 @@ export interface StyleToken {
   key: string
   label: string
   group: StyleTokenGroup
-  /** Tailwind utility prefix; the class is `${prefix}-${value}`, or just the value when empty (`display`). */
+  /** Tailwind utility prefix; the class is `${prefix}-${value}`, or just the value when empty (`display`, `textTransform`). */
   prefix: string
   values: string[]
   kind?: 'color'
@@ -72,14 +72,20 @@ export const STYLE_TOKENS: StyleToken[] = [
   spacing('pl', 'Padding left'),
   spacing('gap', 'Gap'),
   { key: 'w', label: 'Width', group: 'Size', prefix: 'w', values: ['auto', 'full', 'screen', 'fit', '1/2', '1/3', '2/3', '1/4', '3/4', ...FIXED_WIDTHS] },
+  { key: 'minW', label: 'Min width', group: 'Size', prefix: 'min-w', values: ['0', 'full', 'fit', ...FIXED_WIDTHS.slice(1)] },
   { key: 'maxW', label: 'Max width', group: 'Size', prefix: 'max-w', values: ['xs', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', 'full', 'prose'] },
   { key: 'minH', label: 'Min height', group: 'Size', prefix: 'min-h', values: ['0', 'full', 'screen', '32', '48', '64', '96'] },
+  { key: 'maxH', label: 'Max height', group: 'Size', prefix: 'max-h', values: ['full', 'screen', ...FIXED_WIDTHS] },
   { key: 'bg', label: 'Background', group: 'Color', prefix: 'bg', kind: 'color', values: [...THEME_COLORS, 'default', 'muted', 'elevated', 'accented', 'inverted'] },
   { key: 'color', label: 'Text color', group: 'Color', prefix: 'text', kind: 'color', values: [...THEME_COLORS, 'default', 'highlighted', 'toned', 'muted', 'dimmed', 'inverted'] },
   { key: 'borderColor', label: 'Border color', group: 'Color', prefix: 'border', kind: 'color', values: [...THEME_COLORS, 'default', 'muted', 'accented', 'inverted'] },
   { key: 'text', label: 'Font size', group: 'Typography', prefix: 'text', values: ['xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl'] },
   { key: 'font', label: 'Font weight', group: 'Typography', prefix: 'font', values: ['light', 'normal', 'medium', 'semibold', 'bold', 'extrabold'] },
   { key: 'align', label: 'Text align', group: 'Typography', prefix: 'text', values: ['left', 'center', 'right', 'justify'] },
+  { key: 'tracking', label: 'Letter spacing', group: 'Typography', prefix: 'tracking', values: ['tighter', 'tight', 'normal', 'wide', 'wider', 'widest'] },
+  { key: 'leading', label: 'Line height', group: 'Typography', prefix: 'leading', values: ['none', 'tight', 'snug', 'normal', 'relaxed', 'loose'] },
+  // Prefix-less like `display`: the classes are `uppercase`, `md:normal-case`, ...
+  { key: 'textTransform', label: 'Text transform', group: 'Typography', prefix: '', values: ['uppercase', 'lowercase', 'capitalize', 'normal-case'] },
   // `border-1` rather than a bare `border`: an empty value means "remove the token".
   border('border', 'Border width', 'border'),
   border('borderT', 'Border top width', 'border-t'),

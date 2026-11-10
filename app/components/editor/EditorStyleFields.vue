@@ -2,8 +2,8 @@
 import { getStyleToken, isResponsiveToken, styleClasses, styleKey } from '#shared/design/tokens'
 import { structuralStyle } from '#shared/document/components'
 import { naturalDisplay, visibilityAt, visibilityToggle } from '#shared/editor/layers'
-import type { LayoutType, PanelSection, RowId, SplitToken } from '#shared/editor/panel'
-import { joinSplit, layoutType, layoutTypeWrite, PANEL_SECTIONS, panelRows, panelSectionMark, rowAdd, rowKeys, rowProvenance, rowReset, sectionRemove, SPLIT_KEYS, splitMode } from '#shared/editor/panel'
+import type { LayoutType, PanelMenuItem, RowId, SplitToken } from '#shared/editor/panel'
+import { joinSplit, layoutReset, layoutType, layoutTypeWrite, panelRows, rowAdd, rowKeys, rowProvenance, rowReset, SPLIT_KEYS, splitMode } from '#shared/editor/panel'
 import { previewFocusedOption } from '#shared/editor/preview'
 import type { SizeKey, SizeMode } from '#shared/editor/sizeModes'
 import { SIZE_MODE_LABELS, sizeMode, sizeModes, sizeModeValue } from '#shared/editor/sizeModes'
@@ -14,10 +14,15 @@ import { styleProvenance } from '#shared/editor/styleFields'
  * Design-token controls for a node's style, in Framer's sections (Size,
  * Layout, Styles, Typography) of label-column rows: a grey label on the left
  * (drag it to scrub a number; blue when the device overrides the value, with
- * Reset override) and the control on the right. A section none of whose
- * tokens applies shows its title and a "+"; optional props show as "Add…"
- * rows that add a default token (see `panelRows`). Responsive tokens edit the
- * editor device's breakpoint (Mobile is the base, Tablet `md:`, Desktop `lg:`).
+ * Reset override) and the control on the right. Sections never collapse: each
+ * shows its core rows, Fill/Border/Shadows are "Add…" slots (× removes), and
+ * a header "+" menu adds the other optional properties with a default token
+ * at the edited breakpoint (Display and Individual corners only reveal their
+ * control); hovering an added row shows a "−" that clears it at that
+ * breakpoint (see `panelRows`). On a container the Layout header's "−" is
+ * Reset layout; on a leaf Layout is a title with "+" only.
+ * Responsive tokens edit the editor device's breakpoint (Mobile is the base,
+ * Tablet `md:`, Desktop `lg:`).
  *
  * Token mappings: Type Stack/Grid is the `display` token (see
  * `layoutTypeWrite`), Distribute is `justify`, Align is `items`, Wrap is
@@ -82,70 +87,66 @@ const update = (patch: Record<string, string | null>) => Object.keys(patch).leng
 const optionPreview = (key: string) => previewFocusedOption(value => preview(key, value))
 
 const natural = computed(() => naturalDisplay({ type: props.type, props: {} }))
-/** Optional rows added this session, before (or, for Display, without) a token. */
+/** Optional rows added this session, before (or, for Display and the corners, without) a token. */
 const added = ref<RowId[]>([])
 const sections = computed(() => panelRows(
   { type: props.type, parentType: props.parentType, root: props.root, style: props.styles, natural: natural.value },
   { device: editor.deviceId, added: added.value, mixed: props.mixed }
 ))
 
-// Sections: a present one is open unless collapsed (remembered across nodes and reloads);
-// an empty one shows its title and "+" until opened.
-const COLLAPSED_KEY = 'bildr:panel-collapsed-v2'
-function readCollapsed(): Partial<Record<PanelSection, boolean>> {
-  try {
-    return JSON.parse(localStorage.getItem(COLLAPSED_KEY) ?? '{}')
-  } catch {
-    return {}
-  }
-}
-const collapsed = ref(readCollapsed())
-watch(collapsed, value => localStorage.setItem(COLLAPSED_KEY, JSON.stringify(value)), { deep: true })
-const opened = ref<PanelSection[]>([])
-const present = (section: PanelSection) => sections.value.find(s => s.section === section)!.present
-const isOpen = (section: PanelSection) => (present(section) ? !collapsed.value[section] : opened.value.includes(section))
-
-/** Shift-click applies the header's next state to every section. */
-function toggle(section: PanelSection, event: MouseEvent) {
-  const next = !isOpen(section)
-  for (const target of event.shiftKey ? PANEL_SECTIONS : [section]) {
-    collapsed.value = { ...collapsed.value, [target]: !next }
-    opened.value = next ? [...new Set([...opened.value, target])] : opened.value.filter(s => s !== target)
-  }
-}
-
-/** A section's "−": its values go, at every breakpoint, and it closes back to its title. */
-function removeSection(section: PanelSection) {
-  opened.value = opened.value.filter(s => s !== section)
-  added.value = added.value.filter(row => !sections.value.find(s => s.section === section)!.rows.some(r => r.id === row))
-  update(sectionRemove(props.styles, section))
-}
-
+/** A "+" menu pick or an "Add…" slot: the row's default token at the device, one undo step. */
 function addRow(row: RowId) {
   added.value = [...added.value, row]
   update(atDevice(rowAdd(row)))
 }
 
-/** Reset override on a row: its keys set at this breakpoint; an optional row unset everywhere turns back into "Add…". */
+/** Reset layout: the Layout tokens set at this breakpoint. */
+function resetLayout() {
+  const layoutRows = sections.value.find(s => s.section === 'Layout')?.rows.map(r => r.id) ?? []
+  added.value = added.value.filter(row => !layoutRows.includes(row))
+  update(layoutReset(props.styles, editor.deviceId))
+}
+
+/** Reset override, or an optional row's "−": its keys set at this breakpoint; unset everywhere, it goes back to the menu or "Add…". */
 function resetRow(row: RowId) {
   added.value = added.value.filter(other => other !== row)
   const responsive = isResponsiveToken(token(rowKeys(row)[0]!))
   update(rowReset(props.styles, row, responsive ? breakpoint.value : undefined))
 }
 
-const rowLabel = (row: RowId) => ({ provenance: rowProvenance(props.styles, row, editor.deviceId), device: editor.device.label })
+const shownRows = computed(() => new Map(sections.value.flatMap(s => s.rows).map(row => [row.id, row])))
+/** A row's label state, and the "−" of an added optional row ("×" on Fill, Border and Shadows). */
+const rowLabel = (row: RowId) => ({
+  provenance: rowProvenance(props.styles, row, editor.deviceId),
+  device: editor.device.label,
+  removable: !!shownRows.value.get(row)?.removable,
+  removeIcon: ADD_ICONS[row] ? 'i-lucide-x' : 'i-lucide-minus',
+  onRemove: () => resetRow(row)
+})
 
 const LABELS: Record<RowId, string> = {
-  width: 'Width', height: 'Height', minMax: 'Min Max', type: 'Type', direction: 'Direction', distribute: 'Distribute',
-  align: 'Align', wrap: 'Wrap', columns: 'Columns', gap: 'Gap', padding: 'Padding', span: 'Span', margin: 'Margin', self: 'Self',
-  visible: 'Visible', opacity: 'Opacity', fill: 'Fill', border: 'Border', shadows: 'Shadows', radius: 'Radius',
-  overflow: 'Overflow', display: 'Display', fontSize: 'Size', fontWeight: 'Weight', textAlign: 'Align', textColor: 'Color'
+  width: 'Width', height: 'Height', maxWidth: 'Max W', minWidth: 'Min W', maxHeight: 'Max H', minHeight: 'Min H',
+  type: 'Type', direction: 'Direction', distribute: 'Distribute', align: 'Align', wrap: 'Wrap', columns: 'Columns', gap: 'Gap',
+  padding: 'Padding', span: 'Span', margin: 'Margin', self: 'Self', overflow: 'Overflow',
+  visible: 'Visible', opacity: 'Opacity', fill: 'Fill', border: 'Border', shadows: 'Shadows', radius: 'Radius', corners: 'Corners',
+  display: 'Display', fontSize: 'Size', fontWeight: 'Weight', textAlign: 'Align', textColor: 'Color',
+  letterSpacing: 'Letter', lineHeight: 'Line', transform: 'Transform'
 }
-const ADD_ICONS: Partial<Record<RowId, string>> = {
-  minMax: 'i-lucide-move-horizontal', padding: 'i-lucide-square-dashed', margin: 'i-lucide-square-dashed-bottom',
-  self: 'i-lucide-align-center-vertical', opacity: 'i-lucide-blend', fill: 'i-lucide-paint-bucket', border: 'i-lucide-square',
-  shadows: 'i-lucide-copy', overflow: 'i-lucide-scan', display: 'i-lucide-eye'
+// The "+" menu names, Framer's.
+const MENU_LABELS: Partial<Record<RowId, string>> = {
+  maxWidth: 'Max Width', minWidth: 'Min Width', maxHeight: 'Max Height', minHeight: 'Min Height',
+  padding: 'Padding', margin: 'Margin', self: 'Align self', overflow: 'Overflow',
+  display: 'Display', corners: 'Individual corners',
+  letterSpacing: 'Letter spacing', lineHeight: 'Line height', transform: 'Transform'
 }
+const menuItems = (menu: PanelMenuItem[]) => menu.map(item => ({
+  id: item.id,
+  label: MENU_LABELS[item.id] ?? LABELS[item.id],
+  disabled: item.disabled,
+  hint: item.disabled ? 'Height sets it' : undefined
+}))
+const ADD_ICONS: Partial<Record<RowId, string>> = { fill: 'i-lucide-paint-bucket', border: 'i-lucide-square', shadows: 'i-lucide-copy' }
+const SIZE_LIMITS: Partial<Record<RowId, string>> = { maxWidth: 'maxW', minWidth: 'minW', maxHeight: 'maxH' }
 
 // Size: Fixed / Fit / Fill / Relative over `w` and `minH`.
 const modeItems = (key: SizeKey) => sizeModes(key).map(mode => ({ value: mode, label: SIZE_MODE_LABELS[mode] }))
@@ -186,16 +187,15 @@ function setVisible(next: string) {
   update(visibilityToggle(props.styles, editor.deviceId, layout.value === 'grid' ? 'grid' : natural.value))
 }
 
-// Radius and border width: all sides, or per corner or side (Framer's split toggle).
-const splitOf = () => ({ rounded: splitMode(props.styles, 'rounded') === 'split', border: splitMode(props.styles, 'border') === 'split' })
-const split = ref(splitOf())
-watch(splitOf, (value) => {
-  split.value = { rounded: split.value.rounded || value.rounded, border: split.value.border || value.border }
+// Border width: all sides, or per side (Framer's split toggle); the radius corners are a "+" row.
+const splitBorder = ref(splitMode(props.styles, 'border') === 'split')
+watch(() => splitMode(props.styles, 'border'), (mode) => {
+  splitBorder.value ||= mode === 'split'
 })
-/** Leaving split mode writes the first corner or side as the all-sides value. */
-function setSplit(target: SplitToken, next: boolean) {
-  split.value = { ...split.value, [target]: next }
-  if (!next) update(joinSplit(props.styles, target))
+/** Leaving split mode writes the first side as the all-sides value. */
+function setSplitBorder(next: boolean) {
+  splitBorder.value = next
+  if (!next) update(joinSplit(props.styles, 'border'))
 }
 const SPLIT_LETTERS: Record<SplitToken, string[]> = { rounded: ['TL', 'TR', 'BR', 'BL'], border: ['T', 'R', 'B', 'L'] }
 /** The joined corner or side cells; each shows the all-sides value until it overrides it. */
@@ -223,6 +223,19 @@ const SELF_LABELS: Record<string, string> = { auto: 'Auto', start: 'Start', cent
 const DISPLAY_LABELS: Record<string, string> = { hidden: 'Hidden', block: 'Block', flex: 'Flex', grid: 'Grid' }
 const OVERFLOW_LABELS: Record<string, string> = { visible: 'Visible', hidden: 'Hidden', auto: 'Auto', scroll: 'Scroll', clip: 'Clip' }
 const SHADOW_LABELS: Record<string, string> = { 'none': 'None', 'xs': 'Extra small', 'sm': 'Small', 'md': 'Medium', 'lg': 'Large', 'xl': 'Extra large', '2xl': 'Huge' }
+const TRACKING_LABELS: Record<string, string> = { tighter: 'Tighter', tight: 'Tight', normal: 'Normal', wide: 'Wide', wider: 'Wider', widest: 'Widest' }
+const LEADING_LABELS: Record<string, string> = { none: 'None', tight: 'Tight', snug: 'Snug', normal: 'Normal', relaxed: 'Relaxed', loose: 'Loose' }
+const TRANSFORM_LABELS: Record<string, string> = { 'uppercase': 'Uppercase', 'lowercase': 'Lowercase', 'capitalize': 'Capitalize', 'normal-case': 'None' }
+const TRANSFORM_ICONS: Record<string, string> = { 'uppercase': 'i-lucide-case-upper', 'lowercase': 'i-lucide-case-lower', 'capitalize': 'i-lucide-case-sensitive', 'normal-case': 'i-lucide-minus' }
+
+// Rows edited with a select: their option labels, the unset placeholder, and options shown in their own style.
+const SELECT_ROWS: Partial<Record<RowId, { labels: Record<string, string>, unset: string, styled?: boolean }>> = {
+  shadows: { labels: SHADOW_LABELS, unset: 'None' },
+  overflow: { labels: OVERFLOW_LABELS, unset: 'Visible' },
+  fontWeight: { labels: {}, unset: 'normal', styled: true },
+  letterSpacing: { labels: TRACKING_LABELS, unset: 'Normal', styled: true },
+  lineHeight: { labels: LEADING_LABELS, unset: 'Normal' }
+}
 
 // A select in a field shell.
 const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[13px]'
@@ -232,21 +245,20 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
 <template>
   <div :data-editing-breakpoint="editor.device.breakpoint ?? 'base'">
     <EditorStyleSection
-      v-for="{ section, rows } in sections"
+      v-for="{ section, rows, menu, reset } in sections"
       :key="section"
       :label="section"
-      :open="isOpen(section)"
-      :mark="panelSectionMark(styles, section, editor.deviceId)"
-      removable
-      @toggle="toggle(section, $event)"
-      @remove="removeSection(section)"
+      :menu="menuItems(menu)"
+      :remove-label="reset ? 'Reset layout' : undefined"
+      @add="addRow($event as RowId)"
+      @remove="resetLayout"
     >
       <template
         v-for="row in rows"
         :key="row.id"
       >
         <EditorAddRow
-          v-if="row.add"
+          v-if="row.slot"
           :label="LABELS[row.id]"
           :icon="ADD_ICONS[row.id] ?? 'i-lucide-plus'"
           :name="row.id"
@@ -285,16 +297,16 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
         </EditorScaleRow>
 
         <EditorScaleRow
-          v-else-if="row.id === 'minMax'"
+          v-else-if="SIZE_LIMITS[row.id]"
           v-bind="rowLabel(row.id)"
-          label="Max W"
-          :token="token('maxW')"
-          :value="own('maxW')"
-          :inherited="inherited('maxW')"
-          :placeholder="ph('maxW', 'none')"
-          data-style-row="maxW"
-          @preview="preview('maxW', $event)"
-          @commit="setField('maxW', $event)"
+          :label="LABELS[row.id]"
+          :token="token(SIZE_LIMITS[row.id]!)"
+          :value="own(SIZE_LIMITS[row.id]!)"
+          :inherited="inherited(SIZE_LIMITS[row.id]!)"
+          :placeholder="ph(SIZE_LIMITS[row.id]!, row.id === 'minWidth' ? 'auto' : 'none')"
+          :data-style-row="SIZE_LIMITS[row.id]"
+          @preview="preview(SIZE_LIMITS[row.id]!, $event)"
+          @commit="setField(SIZE_LIMITS[row.id]!, $event)"
           @reset="resetRow(row.id)"
         />
 
@@ -526,7 +538,7 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
           title="Border"
           name="border"
           data-style-row="stroke"
-          :data-border-mode="split.border ? 'sides' : 'all'"
+          :data-border-mode="splitBorder ? 'sides' : 'all'"
           @reset="resetRow(row.id)"
         >
           <EditorSwatchPicker
@@ -553,13 +565,13 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
                 @commit="setField('border', $event)"
               />
               <EditorSplitToggle
-                :model-value="split.border"
+                :model-value="splitBorder"
                 name="sides"
-                @update:model-value="setSplit('border', $event)"
+                @update:model-value="setSplitBorder"
               />
             </div>
             <EditorJoinedFields
-              v-if="split.border"
+              v-if="splitBorder"
               class="mt-2"
               :cells="splitCells('border')"
               data-style-row="border-sides"
@@ -570,7 +582,7 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
         </EditorRow>
 
         <EditorRow
-          v-else-if="row.id === 'shadows' || row.id === 'overflow' || row.id === 'fontWeight'"
+          v-else-if="SELECT_ROWS[row.id]"
           v-bind="rowLabel(row.id)"
           :label="LABELS[row.id]"
           :title="token(rowKeys(row.id)[0]!).label"
@@ -581,8 +593,8 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
           <EditorField class="flex-1">
             <USelect
               :model-value="own(rowKeys(row.id)[0]!)"
-              :items="segments(rowKeys(row.id)[0]!, row.id === 'shadows' ? SHADOW_LABELS : row.id === 'overflow' ? OVERFLOW_LABELS : {})"
-              :placeholder="ph(rowKeys(row.id)[0]!, inherited(rowKeys(row.id)[0]!) ?? (row.id === 'fontWeight' ? 'normal' : row.id === 'overflow' ? 'Visible' : 'None'))"
+              :items="segments(rowKeys(row.id)[0]!, SELECT_ROWS[row.id]!.labels)"
+              :placeholder="ph(rowKeys(row.id)[0]!, inherited(rowKeys(row.id)[0]!) ?? SELECT_ROWS[row.id]!.unset)"
               variant="none"
               size="sm"
               :class="SELECT"
@@ -595,7 +607,7 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
             >
               <template #item-label="{ item: option }">
                 <span
-                  :class="row.id === 'fontWeight' ? styleClasses({ font: option.value }) : undefined"
+                  :class="SELECT_ROWS[row.id]!.styled ? styleClasses({ [rowKeys(row.id)[0]!]: option.value }) : undefined"
                   :data-option-value="option.value"
                 >{{ option.label }}</span>
               </template>
@@ -624,29 +636,27 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
           :placeholder="ph('rounded', 'none')"
           stepper
           data-style-row="radius"
-          :data-radius-mode="split.rounded ? 'corners' : 'all'"
           @preview="preview('rounded', $event)"
           @commit="setField('rounded', $event)"
           @reset="resetRow(row.id)"
+        />
+
+        <EditorRow
+          v-else-if="row.id === 'corners'"
+          v-bind="rowLabel(row.id)"
+          :label="LABELS.corners"
+          title="Individual corners"
+          name="corners"
+          data-style-row="corners"
+          @reset="resetRow(row.id)"
         >
-          <template #after>
-            <EditorSplitToggle
-              :model-value="split.rounded"
-              name="corners"
-              @update:model-value="setSplit('rounded', $event)"
-            />
-          </template>
-          <template
-            v-if="split.rounded"
-            #below
-          >
-            <EditorJoinedFields
-              :cells="splitCells('rounded')"
-              @preview="preview"
-              @commit="setField"
-            />
-          </template>
-        </EditorScaleRow>
+          <EditorJoinedFields
+            class="flex-1"
+            :cells="splitCells('rounded')"
+            @preview="preview"
+            @commit="setField"
+          />
+        </EditorRow>
 
         <EditorRow
           v-else-if="row.id === 'display'"
@@ -701,6 +711,27 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
             aria-label="Text align"
             data-style-key="align"
             @update:model-value="setField('align', $event)"
+          />
+        </EditorRow>
+
+        <EditorRow
+          v-else-if="row.id === 'transform'"
+          v-bind="rowLabel(row.id)"
+          :label="LABELS.transform"
+          :title="token('textTransform').label"
+          name="textTransform"
+          data-style-row="textTransform"
+          @reset="resetRow(row.id)"
+        >
+          <EditorSegmented
+            dense
+            tooltips
+            :items="segments('textTransform', TRANSFORM_LABELS, TRANSFORM_ICONS)"
+            :model-value="own('textTransform')"
+            :inherited="inherited('textTransform')"
+            :aria-label="token('textTransform').label"
+            data-style-key="textTransform"
+            @update:model-value="setField('textTransform', $event)"
           />
         </EditorRow>
       </template>

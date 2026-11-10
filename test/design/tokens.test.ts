@@ -15,7 +15,7 @@ describe('style token registry', () => {
   it('covers the S9 properties', () => {
     expect(STYLE_TOKENS.map(t => t.key)).toEqual([
       'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl', 'gap',
-      'w', 'maxW', 'minH', 'bg', 'color', 'borderColor', 'text', 'font', 'align',
+      'w', 'minW', 'maxW', 'minH', 'maxH', 'bg', 'color', 'borderColor', 'text', 'font', 'align', 'tracking', 'leading', 'textTransform',
       'border', 'borderT', 'borderR', 'borderB', 'borderL', 'rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl',
       'shadow', 'opacity', 'direction', 'flexWrap', 'items', 'justify', 'self', 'cols', 'colSpan', 'display', 'overflow'
     ])
@@ -136,6 +136,28 @@ describe('Framer layout and size tokens', () => {
     expect(values.filter(v => /^\d+$/.test(v))).toEqual(['0', '4', '8', '12', '16', '20', '24', '32', '40', '48', '56', '64', '72', '80', '96'])
     expect(styleClasses({ 'w': '64', 'md:w': 'full' })).toBe('w-64 md:w-full')
     expect(styleTokenProblem('w', '7')).toBe('"7" is not a value of style token "w"')
+  })
+})
+
+describe('Framer + menu tokens', () => {
+  it('adds a responsive min width and max height on the fixed width scale', () => {
+    const numbers = ['0', '4', '8', '12', '16', '20', '24', '32', '40', '48', '56', '64', '72', '80', '96']
+    expect(getStyleToken('minW')).toMatchObject({ prefix: 'min-w', group: 'Size', label: 'Min width' })
+    expect(getStyleToken('minW')!.values).toEqual(['0', 'full', 'fit', ...numbers.slice(1)])
+    expect(getStyleToken('maxH')).toMatchObject({ prefix: 'max-h', group: 'Size', label: 'Max height' })
+    expect(getStyleToken('maxH')!.values).toEqual(['full', 'screen', ...numbers])
+    expect(styleClasses({ 'minW': '64', 'md:maxH': 'screen' })).toBe('min-w-64 md:max-h-screen')
+    expect(allTokenClasses()).toEqual(expect.arrayContaining(['min-w-fit', 'lg:min-w-0', 'max-h-full', 'sm:max-h-96']))
+  })
+
+  it('adds responsive letter spacing, line height and a prefix-less text transform', () => {
+    expect(getStyleToken('tracking')).toMatchObject({ prefix: 'tracking', group: 'Typography', label: 'Letter spacing', values: ['tighter', 'tight', 'normal', 'wide', 'wider', 'widest'] })
+    expect(getStyleToken('leading')).toMatchObject({ prefix: 'leading', group: 'Typography', label: 'Line height', values: ['none', 'tight', 'snug', 'normal', 'relaxed', 'loose'] })
+    expect(getStyleToken('textTransform')).toMatchObject({ prefix: '', group: 'Typography', label: 'Text transform', values: ['uppercase', 'lowercase', 'capitalize', 'normal-case'] })
+    expect(styleClasses({ 'textTransform': 'uppercase', 'leading': 'loose', 'md:tracking': 'wide' })).toBe('md:tracking-wide leading-loose uppercase')
+    expect(styleTokenProblem('md:textTransform', 'capitalize')).toBeUndefined()
+    expect(styleTokenProblem('tracking', '2')).toBe('"2" is not a value of style token "tracking"')
+    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:}{uppercase,lowercase,capitalize,normal-case}");')
   })
 })
 

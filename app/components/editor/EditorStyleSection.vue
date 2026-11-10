@@ -1,56 +1,79 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui'
+
 /**
- * A panel section with Framer's header: a bold white title, and a "+" on the
- * right while it is closed (it opens it) or a "−" while it is open and
- * `removable` (it removes the section's values). Clicking the title also
- * toggles it; the parent owns `open`, so Shift-click can toggle every section.
- * Closed, a blue dot says the device overrides a value inside.
+ * A panel section with Framer's header: a bold white title that never
+ * collapses, and on the right an optional "−" (`removeLabel` is its tooltip,
+ * e.g. Reset layout) and a "+" opening a small menu of the group's optional
+ * properties (`menu`), which emits `add` with the picked item's id.
  */
-withDefaults(defineProps<{ label: string, open: boolean, mark?: 'set', removable?: boolean }>(), { mark: undefined, removable: false })
-const emit = defineEmits<{ toggle: [event: MouseEvent], remove: [] }>()
+export interface SectionMenuItem {
+  id: string
+  label: string
+  disabled?: boolean
+  /** Why a disabled item is disabled. */
+  hint?: string
+}
+
+const props = withDefaults(defineProps<{ label: string, menu?: SectionMenuItem[], removeLabel?: string }>(), { menu: () => [], removeLabel: undefined })
+const emit = defineEmits<{ add: [id: string], remove: [] }>()
+
+const items = computed<DropdownMenuItem[]>(() => props.menu.map(item => ({
+  label: item.label,
+  description: item.hint,
+  disabled: item.disabled,
+  onSelect: () => emit('add', item.id)
+})))
+const MENU_UI = { content: 'min-w-36 rounded-xl bg-elevated p-1 ring-white/8', item: 'px-2.5 py-1.5 text-[13px]', itemDescription: 'text-[11px]' }
+const ACTION = 'grid size-6 shrink-0 place-items-center rounded-md text-toned hover:bg-white/8 hover:text-highlighted aria-expanded:bg-white/8 aria-expanded:text-highlighted'
 </script>
 
 <template>
   <section
     class="border-b border-default"
     :data-style-section="label"
-    :data-open="open || undefined"
   >
-    <div class="flex h-11 items-center gap-1 ps-4 pe-2.5">
-      <button
-        type="button"
-        class="flex h-full min-w-0 flex-1 items-center gap-1.5 text-left"
-        :aria-expanded="open"
-        :title="`${open ? 'Collapse' : 'Expand'} ${label} (Shift-click: all sections)`"
-        @click="emit('toggle', $event)"
+    <div class="flex h-11 items-center gap-0.5 ps-4 pe-2.5">
+      <h3 class="min-w-0 flex-1 truncate text-[13px] font-semibold text-highlighted">
+        {{ label }}
+      </h3>
+      <UTooltip
+        v-if="removeLabel"
+        :text="removeLabel"
       >
-        <span class="text-[13px] font-semibold text-highlighted">{{ label }}</span>
-        <span
-          v-if="!open && mark"
-          class="size-1.5 shrink-0 rounded-full bg-(color:--editor-selection)"
-          :data-section-dot="mark"
-          role="img"
-          :aria-label="`${label} has values on this device`"
-        />
-      </button>
-      <button
-        v-if="!open || removable"
-        type="button"
-        class="grid size-6 shrink-0 place-items-center rounded-md text-toned hover:bg-white/8 hover:text-highlighted"
-        :aria-label="`${open ? 'Remove' : 'Add'} ${label.toLowerCase()}`"
-        :data-section-action="open ? 'remove' : 'add'"
-        @click="open ? emit('remove') : emit('toggle', $event)"
+        <button
+          type="button"
+          :class="ACTION"
+          :aria-label="removeLabel"
+          data-section-action="remove"
+          @click="emit('remove')"
+        >
+          <UIcon
+            name="i-lucide-minus"
+            class="size-4"
+          />
+        </button>
+      </UTooltip>
+      <UDropdownMenu
+        v-if="menu.length"
+        :items="items"
+        :content="{ align: 'end', side: 'bottom', sideOffset: 4 }"
+        :ui="MENU_UI"
       >
-        <UIcon
-          :name="open ? 'i-lucide-minus' : 'i-lucide-plus'"
-          class="size-4"
-        />
-      </button>
+        <button
+          type="button"
+          :class="ACTION"
+          :aria-label="`Add ${label.toLowerCase()} property`"
+          data-section-action="add"
+        >
+          <UIcon
+            name="i-lucide-plus"
+            class="size-4"
+          />
+        </button>
+      </UDropdownMenu>
     </div>
-    <div
-      v-if="open"
-      class="space-y-2 ps-4 pe-3 pb-3.5"
-    >
+    <div class="space-y-2 ps-4 pe-3 pb-3.5 empty:hidden">
       <slot />
     </div>
   </section>

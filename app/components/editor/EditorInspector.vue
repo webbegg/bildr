@@ -2,8 +2,7 @@
 import { getComponent } from '#shared/document/components'
 import type { PropDef, PropValue } from '#shared/document/components'
 import { findParent } from '#shared/document/tree'
-import type { PropGroup } from '#shared/editor/propGroups'
-import { groupedProps, isDefaultProp, PROP_GROUPS } from '#shared/editor/propGroups'
+import { groupedProps, isDefaultProp } from '#shared/editor/propGroups'
 import { breadcrumb } from '#shared/editor/selection'
 import { sharedStyle } from '#shared/editor/panel'
 import { FORM_TYPE, formFields, sampleValues } from '#shared/runtime/form'
@@ -48,21 +47,9 @@ function propValue(name: string, fallback: PropValue): PropValue {
   return node.value?.props[name] ?? fallback
 }
 
-// Settings: the props in Content, Behaviour, Appearance, Advanced sections; Shift-click toggles them all.
+// Settings: the props in Content, Behaviour, Appearance, Advanced sections (never collapsed, like Framer's).
 const propGroups = computed(() => groupedProps(propDefs.value))
-const openGroups = ref(new Set<PropGroup>(PROP_GROUPS))
 const changed = (def: PropDef) => !!node.value && !isDefaultProp(def, node.value.props)
-
-function toggleGroup(group: PropGroup, event: MouseEvent) {
-  const open = !openGroups.value.has(group)
-  const targets = event.shiftKey ? PROP_GROUPS : [group]
-  const next = new Set(openGroups.value)
-  for (const target of targets) {
-    if (open) next.add(target)
-    else next.delete(target)
-  }
-  openGroups.value = next
-}
 
 // The canvas never submits forms (clicks select), so a Form is tried out here instead.
 const formCollection = computed(() => {
@@ -254,10 +241,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
           v-for="{ group, props: defs } in propGroups"
           :key="group"
           :label="group"
-          :open="openGroups.has(group)"
-          :mark="defs.some(changed) ? 'set' : undefined"
           :data-prop-group="group"
-          @toggle="toggleGroup(group, $event)"
         >
           <EditorPropField
             v-for="def in defs"

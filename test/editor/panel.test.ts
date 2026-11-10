@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { STYLE_TOKENS } from '#shared/design/tokens'
 import type { PanelNode, PanelSectionRows } from '#shared/editor/panel'
-import { joinSplit, layoutType, layoutTypeWrite, PANEL_SECTIONS, panelRows, panelSection, panelSectionMark, rowAdd, rowProvenance, rowReset, sectionKeys, sectionRemove, sharedStyle, spacingProvenance, splitMode, tokenRemove } from '#shared/editor/panel'
+import { joinSplit, layoutReset, layoutType, layoutTypeWrite, PANEL_SECTIONS, panelRows, panelSection, rowAdd, rowProvenance, rowReset, sectionKeys, sharedStyle, spacingProvenance, splitMode } from '#shared/editor/panel'
 
-/** The rows of each section as `id`, or `id+` for an "Add…" placeholder. */
-const view = (sections: PanelSectionRows[]) => Object.fromEntries(sections.map(s => [s.section, s.rows.map(r => (r.add ? `${r.id}+` : r.id))]))
+/** The rows of each rendered section as `id`, `id+` for an "Add…" slot, or `id−` for a row with a remove button. */
+const view = (sections: PanelSectionRows[]) => Object.fromEntries(sections.map(s => [s.section, s.rows.map(r => `${r.id}${r.slot ? '+' : r.removable ? '−' : ''}`)]))
+/** The header "+" menu of each rendered section, `id!` for an item offered disabled. */
+const menus = (sections: PanelSectionRows[]) => Object.fromEntries(sections.map(s => [s.section, s.menu.map(m => `${m.id}${m.disabled ? '!' : ''}`)]))
 const rows = (node: PanelNode, device: 'mobile' | 'tablet' | 'desktop' = 'mobile', added: string[] = [], mixed: string[] = []) =>
   panelRows(node, { device, added: added as never[], mixed })
 
@@ -19,81 +21,120 @@ describe('panel sections', () => {
     expect(panelSection('w')).toBe('Size')
     expect(panelSection('lg:maxW')).toBe('Size')
     expect(panelSection('minH')).toBe('Size')
+    expect(panelSection('md:minW')).toBe('Size')
+    expect(panelSection('maxH')).toBe('Size')
     expect(panelSection('gap')).toBe('Layout')
     expect(panelSection('md:px')).toBe('Layout')
     expect(panelSection('mx')).toBe('Layout')
     expect(panelSection('cols')).toBe('Layout')
     expect(panelSection('md:flexWrap')).toBe('Layout')
     expect(panelSection('self')).toBe('Layout')
+    expect(panelSection('overflow')).toBe('Layout')
     expect(panelSection('md:display')).toBe('Styles')
     expect(panelSection('bg')).toBe('Styles')
     expect(panelSection('borderB')).toBe('Styles')
     expect(panelSection('roundedTl')).toBe('Styles')
     expect(panelSection('shadow')).toBe('Styles')
     expect(panelSection('color')).toBe('Typography')
+    expect(panelSection('tracking')).toBe('Typography')
+    expect(panelSection('md:leading')).toBe('Typography')
+    expect(panelSection('textTransform')).toBe('Typography')
     expect(panelSection('bogus')).toBeUndefined()
-  })
-
-  it('marks a section blue only when the device sets one of its keys; inheriting is no mark', () => {
-    const style = { 'px': '4', 'md:w': 'full', 'bg': 'primary' }
-    expect(panelSectionMark(style, 'Layout', 'mobile')).toBe('set')
-    expect(panelSectionMark(style, 'Layout', 'tablet')).toBeUndefined()
-    expect(panelSectionMark(style, 'Size', 'tablet')).toBe('set')
-    expect(panelSectionMark(style, 'Size', 'mobile')).toBeUndefined()
-    expect(panelSectionMark(style, 'Styles', 'desktop')).toBe('set')
   })
 })
 
 describe('panel rows', () => {
-  it('gives a stack its Layout rows, and "Add…" rows for the optional props', () => {
-    const sections = rows({ type: 'Column', parentType: 'Page', style: { gap: '3', items: 'start' } })
-    expect(view(sections)).toEqual({
-      Size: ['width', 'height', 'minMax+'],
-      Layout: ['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'margin+', 'self+'],
-      Styles: ['visible', 'opacity+', 'fill+', 'border+', 'shadows+', 'radius', 'overflow+', 'display+'],
+  const column: PanelNode = { type: 'Column', parentType: 'Page', style: { gap: '3', items: 'start' } }
+
+  it('shows every section\'s core rows, with "Add…" slots for Fill, Border and Shadows', () => {
+    expect(view(rows(column))).toEqual({
+      Size: ['width', 'height'],
+      Layout: ['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding'],
+      Styles: ['visible', 'opacity', 'fill+', 'border+', 'shadows+', 'radius'],
       Typography: ['fontSize', 'fontWeight', 'textAlign', 'textColor']
     })
   })
 
-  it('collapses a section to its title while none of its tokens applies', () => {
-    const sections = rows({ type: 'Column', parentType: 'Page', style: { 'gap': '3', 'md:bg': 'muted' } })
-    expect(sections.map(s => [s.section, s.present])).toEqual([['Size', false], ['Layout', true], ['Styles', false], ['Typography', false]])
-    expect(rows({ type: 'Text', style: {} }, 'mobile', [], ['color']).find(s => s.section === 'Typography')!.present).toBe(true)
-    // Inherited from Mobile still applies on Tablet.
-    expect(rows({ type: 'Text', style: { w: 'full' } }, 'tablet').find(s => s.section === 'Size')!.present).toBe(true)
+  it('offers each group\'s optional properties in its header "+" menu', () => {
+    expect(menus(rows(column))).toEqual({
+      // Height is the minimum height, so Min Height is listed but already covered.
+      Size: ['maxWidth', 'minWidth', 'maxHeight', 'minHeight!'],
+      Layout: ['margin', 'self', 'overflow'],
+      Styles: ['corners', 'display'],
+      Typography: ['letterSpacing', 'lineHeight', 'transform']
+    })
+  })
+
+  it('shows an optional row with a value at any breakpoint, with a "−", and drops it from the menu', () => {
+    const style = { 'lg:maxW': 'full', 'md:m': '2', 'lg:tracking': 'wide', 'roundedTl': 'lg', 'bg': 'muted' }
+    const sections = rows({ ...column, style }, 'desktop')
+    expect(view(sections)).toEqual({
+      Size: ['width', 'height', 'maxWidth−'],
+      Layout: ['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'margin'],
+      Styles: ['visible', 'opacity', 'fill−', 'border+', 'shadows+', 'radius', 'corners−'],
+      Typography: ['fontSize', 'fontWeight', 'textAlign', 'textColor', 'letterSpacing−']
+    })
+    expect(menus(sections).Size).toEqual(['minWidth', 'maxHeight', 'minHeight!'])
+    expect(menus(sections).Layout).toEqual(['self', 'overflow'])
+    expect(menus(sections).Typography).toEqual(['lineHeight', 'transform'])
+  })
+
+  it('offers "−" only where the edited breakpoint sets the row (or it was just added)', () => {
+    const style = { 'md:m': '2', 'leading': 'loose' }
+    const tablet = view(rows({ ...column, style }, 'tablet', ['transform']))
+    expect(tablet.Layout).toContain('margin−')
+    expect(tablet.Typography).toEqual(['fontSize', 'fontWeight', 'textAlign', 'textColor', 'lineHeight', 'transform−'])
+    expect(view(rows({ ...column, style }, 'mobile')).Layout).toContain('margin')
+  })
+
+  it('shows a mixed optional row', () => {
+    expect(view(rows(column, 'mobile', [], ['minW'])).Size).toEqual(['width', 'height', 'minWidth'])
   })
 
   it('gives a Grid columns instead of direction and alignment', () => {
-    expect(view(rows({ type: 'Grid', style: {} })).Layout).toEqual(['type', 'columns', 'gap', 'padding', 'margin+', 'self+'])
+    expect(view(rows({ type: 'Grid', style: {} })).Layout).toEqual(['type', 'columns', 'gap', 'padding'])
   })
 
   it('switches a stack to the Grid rows where its display is grid', () => {
-    const column = { type: 'Column', style: { 'md:display': 'grid', 'md:cols': '2' } }
-    expect(view(rows(column, 'tablet')).Layout).toEqual(['type', 'columns', 'gap', 'padding', 'margin+', 'self+'])
-    expect(view(rows(column, 'mobile')).Layout).toEqual(['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'margin+', 'self+'])
+    const grid = { type: 'Column', style: { 'md:display': 'grid', 'md:cols': '2' } }
+    expect(view(rows(grid, 'tablet')).Layout).toEqual(['type', 'columns', 'gap', 'padding'])
+    expect(view(rows(grid, 'mobile')).Layout).toEqual(['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding'])
   })
 
-  it('gives a leaf optional padding, a Grid child its span, and the page root no margin or visibility', () => {
-    expect(view(rows({ type: 'Text', parentType: 'Column', style: {} })).Layout).toEqual(['padding+', 'margin+', 'self+'])
-    expect(view(rows({ type: 'Card', parentType: 'Grid', style: {} })).Layout).toEqual(['direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'span', 'margin+', 'self+'])
-    const root = view(rows({ type: 'Page', root: true, style: {} }))
-    expect(root.Layout).toEqual(['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding'])
-    expect(root.Styles).toEqual(['opacity+', 'fill+', 'border+', 'shadows+', 'radius', 'overflow+'])
+  it('shows Layout on a leaf as a title with a "+" offering padding, margin, self and overflow', () => {
+    const text: PanelNode = { type: 'Text', parentType: 'Column', style: {} }
+    expect(rows(text).map(s => s.section)).toEqual(['Size', 'Layout', 'Styles', 'Typography'])
+    expect(view(rows(text)).Layout).toEqual([])
+    expect(menus(rows(text)).Layout).toEqual(['padding', 'margin', 'self', 'overflow'])
+    const margin = rows({ ...text, style: { 'lg:mt': '2' } }, 'tablet')
+    expect(view(margin).Layout).toEqual(['margin'])
+    expect(menus(margin).Layout).toEqual(['padding', 'self', 'overflow'])
+    expect(view(rows({ type: 'Button', style: { p: '2' } })).Layout).toEqual(['padding−'])
+    expect(view(rows({ type: 'Button', style: {} }, 'mobile', ['margin'])).Layout).toEqual(['margin−'])
   })
 
-  it('turns an "Add…" row into its control once added, set at any breakpoint, or mixed', () => {
-    const text = { type: 'Text', parentType: 'Column', style: { 'lg:mt': '2', 'border': '1' } }
-    expect(view(rows(text)).Layout).toEqual(['padding+', 'margin', 'self+'])
-    expect(view(rows(text)).Styles).toContain('border')
-    expect(view(rows(text, 'mobile', ['opacity'])).Styles).toContain('opacity')
-    expect(view(rows(text, 'mobile', [], ['shadow'])).Styles).toContain('shadows')
+  it('offers Reset layout on containers only: a leaf removes its layout rows one by one', () => {
+    const reset = (sections: PanelSectionRows[]) => sections.find(s => s.section === 'Layout')?.reset
+    expect(reset(rows(column))).toBe(true)
+    expect(reset(rows({ type: 'Card', style: {} }))).toBe(true)
+    expect(reset(rows({ type: 'Button', style: { p: '2', m: '0' } }))).toBe(false)
+    expect(rows(column).filter(s => s.section !== 'Layout').every(s => !s.reset)).toBe(true)
+  })
+
+  it('gives a Grid child its span, and the page root no margin, self or visibility', () => {
+    expect(view(rows({ type: 'Card', parentType: 'Grid', style: {} })).Layout).toEqual(['direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'span'])
+    const root = rows({ type: 'Page', root: true, style: {} })
+    expect(view(root).Styles).toEqual(['opacity', 'fill+', 'border+', 'shadows+', 'radius'])
+    expect(menus(root).Layout).toEqual(['overflow'])
+    expect(menus(root).Styles).toEqual(['corners'])
   })
 
   it('shows Display only for a display the Visible row and the Type row do not manage', () => {
     const styles = (style: Record<string, string>) => view(rows({ type: 'Column', natural: 'flex', style })).Styles
-    expect(styles({ 'display': 'hidden', 'md:display': 'flex' })).toContain('display+')
-    expect(styles({ 'md:display': 'grid' })).toContain('display+')
-    expect(styles({ display: 'block' })).toContain('display')
+    expect(styles({ 'display': 'hidden', 'md:display': 'flex' })).not.toContain('display')
+    expect(styles({ 'md:display': 'grid' })).not.toContain('display')
+    expect(styles({ display: 'block' })).toContain('display−')
+    expect(view(rows({ type: 'Column', natural: 'flex', style: {} }, 'mobile', ['display'])).Styles).toContain('display−')
   })
 })
 
@@ -102,19 +143,26 @@ describe('row writes', () => {
     expect(rowAdd('border')).toEqual({ border: '1', borderColor: 'default' })
     expect(rowAdd('fill')).toEqual({ bg: 'neutral-100' })
     expect(rowAdd('shadows')).toEqual({ shadow: 'md' })
-    expect(rowAdd('margin')).toEqual({ m: '4' })
+    expect(rowAdd('maxWidth')).toEqual({ maxW: 'full' })
+    expect(rowAdd('minWidth')).toEqual({ minW: '0' })
+    expect(rowAdd('maxHeight')).toEqual({ maxH: 'full' })
+    expect(rowAdd('margin')).toEqual({ m: '0' })
     expect(rowAdd('padding')).toEqual({ p: '2' })
-    expect(rowAdd('opacity')).toEqual({ opacity: '100' })
-    expect(rowAdd('overflow')).toEqual({ overflow: 'hidden' })
-    expect(rowAdd('minMax')).toEqual({ maxW: 'full' })
     expect(rowAdd('self')).toEqual({ self: 'center' })
-    // Display only reveals its control.
+    expect(rowAdd('overflow')).toEqual({ overflow: 'hidden' })
+    expect(rowAdd('letterSpacing')).toEqual({ tracking: 'normal' })
+    expect(rowAdd('lineHeight')).toEqual({ leading: 'normal' })
+    expect(rowAdd('transform')).toEqual({ textTransform: 'uppercase' })
+    // Display and the corners only reveal their controls.
     expect(rowAdd('display')).toEqual({})
+    expect(rowAdd('corners')).toEqual({})
   })
 
-  it('resets the row keys set at the edited breakpoint only', () => {
+  it('resets (or removes) the row keys set at the edited breakpoint only', () => {
     expect(rowReset({ 'm': '4', 'md:mt': '2', 'md:mx': '1', 'md:p': '3' }, 'margin', 'md')).toEqual({ 'md:mt': null, 'md:mx': null })
     expect(rowReset({ border: '2', borderT: '1', borderColor: 'primary', bg: 'muted' }, 'border', undefined)).toEqual({ border: null, borderT: null, borderColor: null })
+    expect(rowReset({ 'maxW': 'full', 'md:maxW': 'lg' }, 'maxWidth', 'md')).toEqual({ 'md:maxW': null })
+    expect(rowReset({ rounded: 'lg', roundedTl: 'sm', roundedBr: 'md' }, 'corners', undefined)).toEqual({ roundedTl: null, roundedBr: null })
   })
 
   it('tells whether a row is overridden on the device, by any of its keys', () => {
@@ -123,13 +171,12 @@ describe('row writes', () => {
     expect(rowProvenance({}, 'margin', 'mobile')).toEqual({ state: 'unset' })
   })
 
-  it('removes a whole section, at every breakpoint', () => {
-    expect(sectionRemove({ 'border': '2', 'borderColor': 'primary', 'bg': 'muted', 'md:p': '4' }, 'Styles')).toEqual({ border: null, borderColor: null, bg: null })
-    expect(sectionRemove({ bg: 'muted' }, 'Size')).toEqual({})
-  })
-
-  it('clears a token at every breakpoint', () => {
-    expect(tokenRemove({ 'overflow': 'hidden', 'md:overflow': 'auto', 'opacity': '50' }, 'overflow')).toEqual({ 'overflow': null, 'md:overflow': null })
+  it('resets the layout: the Layout tokens and the Type display set at the edited breakpoint', () => {
+    const style = { 'gap': '4', 'md:gap': '6', 'md:direction': 'row', 'md:px': '2', 'md:display': 'grid', 'md:cols': '3', 'md:bg': 'x', 'w': 'full' }
+    expect(layoutReset(style, 'tablet')).toEqual({ 'md:gap': null, 'md:direction': null, 'md:px': null, 'md:display': null, 'md:cols': null })
+    // Hiding is the Visible row's, not the layout's.
+    expect(layoutReset({ 'display': 'hidden', 'items': 'center', 'md:items': 'end' }, 'mobile')).toEqual({ items: null })
+    expect(layoutReset({ w: 'full' }, 'mobile')).toEqual({})
   })
 })
 
@@ -161,18 +208,16 @@ describe('layout type', () => {
   })
 })
 
-describe('radius and border split toggles', () => {
-  it('edits per corner or per side once one of those tokens is set', () => {
-    expect(splitMode({ rounded: 'lg' }, 'rounded')).toBe('all')
-    expect(splitMode({ roundedBr: 'lg' }, 'rounded')).toBe('split')
+describe('border split toggle', () => {
+  it('edits per side once one of those tokens is set', () => {
     expect(splitMode({ border: '1' }, 'border')).toBe('all')
     expect(splitMode({ borderB: '2' }, 'border')).toBe('split')
   })
 
-  it('joins back to one value: the first set corner or side, clearing the others', () => {
-    expect(joinSplit({ rounded: 'md', roundedTr: 'lg', roundedBl: 'sm' }, 'rounded')).toEqual({ rounded: 'lg', roundedTr: null, roundedBl: null })
+  it('joins back to one value: the first set side, clearing the others', () => {
+    expect(joinSplit({ border: '1', borderR: '2', borderL: '4' }, 'border')).toEqual({ border: '2', borderR: null, borderL: null })
     expect(joinSplit({ borderL: '4' }, 'border')).toEqual({ border: '4', borderL: null })
-    expect(joinSplit({ rounded: 'md' }, 'rounded')).toEqual({})
+    expect(joinSplit({ border: '1' }, 'border')).toEqual({})
   })
 })
 

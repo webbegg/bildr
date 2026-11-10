@@ -58,9 +58,10 @@ export function stopIndex(key: string, value: string | undefined): number {
 }
 
 // Tokens whose numbers multiply the theme's `--spacing` (`min-h-32` too).
+const SPACING_SIZES = ['w', 'minW', 'minH', 'maxH']
 const usesSpacing = (key: string) => {
   const token = parseStyleKey(key)?.token
-  return token?.group === 'Spacing' || token?.key === 'minH' || token?.key === 'w'
+  return token?.group === 'Spacing' || SPACING_SIZES.includes(token?.key ?? '')
 }
 
 const px = (n: number) => `${Number(n.toFixed(2))}px`

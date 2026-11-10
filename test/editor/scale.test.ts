@@ -52,6 +52,8 @@ describe('scale stepping', () => {
     expect(scalePx('p', '4', 'comfortable')).toBe('19.2px')
     expect(scalePx('minH', '32', 'default')).toBe('128px')
     expect(scalePx('w', '64', 'default')).toBe('256px')
+    expect(scalePx('md:minW', '16', 'default')).toBe('64px')
+    expect(scalePx('maxH', '96', 'default')).toBe('384px')
     expect(scalePx('mt', 'auto', 'default')).toBeUndefined()
     expect(scalePx('cols', '3', 'default')).toBeUndefined()
     expect(scalePx('border', '2', 'default')).toBeUndefined()
