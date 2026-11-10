@@ -14,7 +14,11 @@ watch(() => props.modelValue, (value) => {
   draft.value = value
 })
 
-const ui = computed(() => (props.variant === 'soft' ? props.multiline ? TEXTAREA_UI : INPUT_UI : undefined))
+const ui = computed(() => {
+  if (props.variant !== 'soft') return undefined
+  const base = props.multiline ? TEXTAREA_UI : INPUT_UI
+  return props.variables ? mergeUi(base, VARIABLE_FIELD_UI) : base
+})
 
 function commit() {
   if (draft.value !== props.modelValue) emit('commit', draft.value)

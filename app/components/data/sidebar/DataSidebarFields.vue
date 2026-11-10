@@ -317,15 +317,17 @@ const editingMapping = ref(false)
         <button
           v-else
           type="button"
-          class="flex h-9 w-full items-center gap-2.5 rounded-lg ps-3 text-left text-sm text-muted hover:bg-white/4 hover:text-toned"
+          class="flex h-9 w-full items-center gap-1.5 rounded-lg ps-6 text-left text-[13px] text-muted hover:bg-white/4 hover:text-toned"
           aria-label="Add field"
           @click="openAdd"
         >
-          <UIcon
-            name="i-lucide-plus"
-            class="size-4 shrink-0"
-          />
-          Add…
+          <span class="grid size-7 shrink-0 place-items-center">
+            <UIcon
+              name="i-lucide-plus"
+              class="size-4"
+            />
+          </span>
+          <span class="px-1.5">Add…</span>
         </button>
       </div>
     </template>

@@ -8,7 +8,7 @@ import type { Collection, Connection, ConnectionEndpoints, ConnectionSource, Pag
 
 /**
  * A connection collection's Endpoints section: one row per operation with a
- * verb, a path (checked as typed) and Test; the row's `−` removes it and the
+ * path (checked as typed) holding its verb chip, and Test; the row's `−` removes it and the
  * header `+` adds a missing one with its REST default next to the list path.
  * Then the id path and Edit mapping. Every change is one `collection_update`
  * of the source. Test runs `endpoint_test`; any verb but GET asks first,
@@ -36,6 +36,10 @@ watch(() => props.collection.id, () => {
   results.value = {}
   pagingResult.value = null
 })
+
+/** The verb is a compact chip inside the path field, so the path gets the rest of the row. */
+const PATH_UI = { ...VARIABLE_FIELD_UI, base: 'ps-[50px] pe-8', leading: 'ps-[3px]' }
+const VERB_UI = { base: 'h-6 justify-center rounded-md bg-white/6 px-0.5 text-[10.5px] font-semibold text-toned', trailing: 'hidden', content: 'min-w-24' }
 
 const isRead = (op: EndpointOperation) => op === 'list' || op === 'get'
 const methodOf = (op: EndpointOperation): EndpointMethod => (isRead(op) ? 'GET' : props.source.endpoints[op]?.method ?? 'GET')
@@ -170,31 +174,34 @@ async function test(op: EndpointOperation) {
         :data-endpoint="op"
         @remove="remove(op)"
       >
-        <EditorSelect
-          :model-value="methodOf(op)"
-          :items="ENDPOINT_METHODS"
-          mono
-          :disabled="isRead(op)"
-          :title="isRead(op) ? 'List and Get endpoints use GET' : undefined"
-          :aria-label="`${OPERATION_LABELS[op]} method`"
-          :ui="{ base: 'justify-center px-1 text-[10.5px] font-semibold text-toned', trailing: 'hidden', content: 'min-w-24' }"
-          :content="{ align: 'start' }"
-          class="w-[54px] shrink-0"
-          data-endpoint-method
-          @update:model-value="setMethod(op, $event as EndpointMethod)"
-        />
         <EditorInput
           :model-value="pathOf(op)"
           mono
           :invalid="!!problemOf(op)"
           :aria-label="`${OPERATION_LABELS[op]} path`"
           placeholder="/posts"
+          :ui="PATH_UI"
           class="min-w-0 flex-1"
           :data-endpoint-path="op"
           @update:model-value="drafts[op] = $event"
           @change="commitPath(op)"
           @keydown.esc="resetDraft(op)"
         >
+          <template #leading>
+            <EditorSelect
+              :model-value="methodOf(op)"
+              :items="ENDPOINT_METHODS"
+              mono
+              :disabled="isRead(op)"
+              :title="isRead(op) ? 'List and Get endpoints use GET' : undefined"
+              :aria-label="`${OPERATION_LABELS[op]} method`"
+              :ui="VERB_UI"
+              :content="{ align: 'start' }"
+              class="w-11 shrink-0"
+              data-endpoint-method
+              @update:model-value="setMethod(op, $event as EndpointMethod)"
+            />
+          </template>
           <template #trailing>
             <EditorVariablePicker
               secrets

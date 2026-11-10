@@ -11,8 +11,12 @@ const options = themeOptions()
 const theme = computed(() => editor.project!.theme)
 const fontItems = options.fonts.map(font => ({ label: font === 'system' ? 'System UI' : font, value: font }))
 const radiusItems = options.radii.map(radius => ({ label: `${radius} · ${Number.parseFloat(radius) * 16}px`, value: radius }))
-const spacingItems = options.spacings.map(({ name }) => ({ label: name, value: name }))
+const spacingItems = options.spacings.map(({ name }) => ({ label: `${name[0]!.toUpperCase()}${name.slice(1)} · ${Math.round(spacingBasePx(name) * 10) / 10}px`, value: name }))
 const spacingHint = computed(() => `mt-10 = ${10 * spacingBasePx(theme.value.spacing)}px`)
+const radiusHint = computed(() => {
+  const px = Number.parseFloat(theme.value.radius) * 16
+  return `rounded-sm = ${px}px, rounded-lg = ${2 * px}px`
+})
 
 const colors = computed(() => filterByName(THEME_COLORS.map(name => ({ name })), query).map(c => c.name))
 const fields = computed(() => new Set(filterByName([{ name: 'Font' }, { name: 'Radius' }, { name: 'Spacing density' }], query).map(f => f.name)))
@@ -58,7 +62,7 @@ function update(patch: Partial<Omit<Theme, 'colors'>>) {
         v-if="fields.has('Radius')"
         label="Radius"
         stacked
-        help="rounded-sm equals it; rounded-lg is twice it"
+        :help="radiusHint"
       >
         <EditorSelect
           :model-value="theme.radius"
@@ -73,9 +77,9 @@ function update(patch: Partial<Omit<Theme, 'colors'>>) {
         stacked
         :help="spacingHint"
       >
-        <EditorSegmented
-          :items="spacingItems"
+        <EditorSelect
           :model-value="theme.spacing"
+          :items="spacingItems"
           aria-label="Spacing density"
           @update:model-value="update({ spacing: $event as Theme['spacing'] })"
         />

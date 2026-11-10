@@ -43,7 +43,8 @@ await run('design', async ({ page, context, errors }) => {
   })
   check(theme && emerald, `picking emerald updates the theme and recolours bg-primary (${rose} → ${emerald})`)
 
-  await page.getByRole('button', { name: 'comfortable', exact: true }).click()
+  await page.getByLabel('Spacing density').click()
+  await page.getByRole('option', { name: 'Comfortable · 4.8px', exact: true }).click()
   const comfortable = await until(async () => {
     const t = await themeOf(p.id)
     const padding = await computed(frame, boxSel, 'paddingTop')

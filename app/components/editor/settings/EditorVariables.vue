@@ -99,7 +99,7 @@ async function add() {
 
     <div
       v-if="editor.env.length || adding"
-      class="divide-y divide-default rounded-lg ring ring-default"
+      class="divide-y divide-white/6 rounded-lg bg-white/4"
     >
       <div
         v-for="v in editor.env"

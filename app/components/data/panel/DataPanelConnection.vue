@@ -141,6 +141,7 @@ onMounted(async () => {
           mono
           placeholder="Value"
           :aria-label="`Value of ${header.name || 'the header'}`"
+          :ui="VARIABLE_FIELD_UI"
           class="min-w-0 flex-1"
           data-header-value
           @change="saveHeaders"

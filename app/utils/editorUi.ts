@@ -46,6 +46,8 @@ export const FIELD_SHELL = 'flex h-[30px] min-w-0 items-center rounded-lg bg-ele
 
 export const INPUT_UI = { base: `${FIELD} ${FIELD_RING}` }
 export const INPUT_MONO_UI = { base: `${FIELD_MONO} ${FIELD_RING}` }
+/** Added to a field holding the Insert variable button (a 24 px ACTION) at its end, so the text stops before it. */
+export const VARIABLE_FIELD_UI = { base: 'pe-8', trailing: 'pe-1' }
 export const TEXTAREA_UI = { base: `rounded-lg bg-elevated text-[13px] ${FIELD_RING}` }
 export const TEXTAREA_MONO_UI = { base: `rounded-lg bg-elevated font-mono text-[12px] ${FIELD_RING}` }
 
