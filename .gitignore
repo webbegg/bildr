@@ -19,6 +19,9 @@ logs
 .idea
 .atl
 
+# Browser test screenshots
+e2e/.shots
+
 # Local env files
 .env
 .env.*

@@ -170,6 +170,36 @@ This walkthrough goes from an empty project to a published app that an agent bui
 
    Instead of the Menu collection, you can use an API source: in the Data mode, choose **From API** with <https://rickandmortyapi.com/api/character>, and list `{{ item.name }}` with an Image of `{{ item.image }}`. On `/p/landing`, the List shows one row per record and sending the form stores a message: it appears in the editor's Data mode, and `record_list` returns it. With WebMCP, `list_records { "collection": "menu" }` returns the drinks and `submit_form` stores a message.
 
+## Browser tests
+
+`e2e/` holds a browser regression suite. It drives the editor, the Data and Settings views and published apps in a headless Chromium. It adds no dependency: it loads a `playwright-core` and a Chromium that are already on your machine.
+
+Prerequisites:
+
+- bildr running with `pnpm dev`. The suite never starts or stops the server.
+- A `playwright-core` and a Chromium binary.
+- Internet access: `remote.mjs` and `kit.mjs` call `https://jsonplaceholder.typicode.com`, which fakes writes.
+
+Environment variables:
+
+| Variable | Default |
+| --- | --- |
+| `BILDR_URL` | `http://localhost:3000` |
+| `PLAYWRIGHT_CORE` | `~/.t3/runtime/versions/0.1.6/node_modules/playwright-core/index.mjs` |
+| `CHROMIUM` | `~/.cache/ms-playwright/chromium-1194/chrome-linux/chrome` |
+
+If either binary is missing, the suite stops and names the variable to set.
+
+Run every script with `node e2e/all.mjs` (or `pnpm e2e`). It prints one PASS or FAIL line per check, then the counts per script, and exits 1 on any failure. Each script also runs on its own:
+
+- `node e2e/shell.mjs`: the projects page and the editor shell.
+- `node e2e/design.mjs`: the theme, responsive styles and publishing.
+- `node e2e/data.mjs`: collections, the records table, Lists, Forms and WebMCP.
+- `node e2e/remote.mjs`: variables, a remote connection and its endpoints.
+- `node e2e/kit.mjs`: the editor widget kit on each screen.
+
+Each script creates its own `e2e …` projects and deletes them with `project_delete` when it ends, even when a check fails. Screenshots go to `e2e/.shots/`, which git ignores.
+
 ## Checks
 
 ```bash
