@@ -234,7 +234,7 @@ function broadcast(message: EditorToCanvas) {
 
 function renderMessage(): EditorToCanvas | null {
   if (!editor.page || !editor.project || !editor.theme) return null
-  return { type: 'bildr:render', page: editor.page, base: `/p/${editor.project.slug}`, theme: editor.theme, view, lists: editor.lists }
+  return { type: 'bildr:render', page: editor.page, base: `/p/${editor.project.slug}`, theme: editor.theme, view, lists: editor.lists, env: editor.publicEnv }
 }
 
 function selectMessage(): EditorToCanvas {
@@ -324,7 +324,7 @@ function onMessage(event: MessageEvent) {
   else if (id && message.type === 'bildr:space') spaceHeld.value = message.down
 }
 
-watch(() => [editor.page, editor.theme, editor.lists], render, { deep: true })
+watch(() => [editor.page, editor.theme, editor.lists, editor.publicEnv], render, { deep: true })
 watch(() => editor.selectedIds, () => broadcast(selectMessage()))
 watch(() => editor.hoveredId, nodeId => broadcast({ type: 'bildr:hover', nodeId }))
 watch(() => editor.tool, () => broadcast(toolMessage()))

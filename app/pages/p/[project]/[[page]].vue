@@ -9,6 +9,8 @@ import type { VisitorSnapshot } from '#shared/runtime/visitor'
  * which serves only `publicRead` collections; a failed read renders nothing.
  * Forms post their values to the same endpoint, which takes them only for
  * `publicCreate` collections, and show its (generic) message on failure.
+ * `{{ env.NAME }}` resolves from the snapshot's public variables (copied at
+ * publish); a secret or missing one renders empty.
  */
 definePageMeta({ layout: false })
 
@@ -17,6 +19,7 @@ const projectSlug = computed(() => String(route.params.project))
 const { data, error } = await useFetch<VisitorSnapshot>(() => `/api/published/${projectSlug.value}`)
 
 const project = computed(() => data.value?.project)
+const env = computed(() => data.value?.env ?? {})
 const page = computed(() => {
   const pages = project.value?.pages ?? []
   return route.params.page ? pages.find(p => p.slug === route.params.page) : pages[0]
@@ -48,7 +51,7 @@ async function submitForm(collection: string, values: Record<string, string>): P
 }
 
 useWebMcp(project, page)
-useTheme(() => project.value?.theme)
+useTheme(() => project.value?.theme, env)
 
 useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${project.value.name}` : 'Not found' }))
 </script>
@@ -60,6 +63,8 @@ useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${p
     :base="`/p/${projectSlug}`"
     :lists="lists"
     :submit-form="submitForm"
+    :env="env"
+    missing-env="empty"
     class="min-h-screen"
   />
   <UError

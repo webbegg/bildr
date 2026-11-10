@@ -132,6 +132,7 @@ describe('editorCommands', () => {
       setDeepSelect: vi.fn(),
       selectPage: vi.fn(),
       importRequest: 0,
+      variablesRequest: 0,
       run: vi.fn(async () => ({ collectionId: 'c2' })),
       ...state
     }
@@ -239,6 +240,16 @@ describe('editorCommands', () => {
     get('data:import-api').run(ctx)
     get('data:import-api').run(ctx)
     expect([editor.mode, editor.importRequest]).toEqual(['data', 2])
+  })
+
+  it('opens Settings at the environment variables, from any view', () => {
+    const { ctx, editor, get } = fixture({ mode: 'settings' })
+    expect(get('settings:variables').label).toBe('Environment variables')
+    expect(get('settings:variables').enabled(ctx)).toBe(true)
+    expect(searchCommands(editorCommands(ctx), 'secret', [])[0]!.commands[0]!.id).toBe('settings:variables')
+    editor.mode = 'build'
+    get('settings:variables').run(ctx)
+    expect([editor.mode, editor.variablesRequest]).toEqual(['settings', 1])
   })
 
   it('edits another device frame, with Alt + 1–3, on the Canvas only', () => {

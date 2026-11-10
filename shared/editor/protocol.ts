@@ -1,6 +1,7 @@
 import type { DataRecord } from '../data/records'
 import type { Theme } from '../design/theme'
 import type { Page } from '../document/schema'
+import type { EnvValues } from '../env/variables'
 import type { NodeBox } from './autoLayout'
 import type { StylePatch } from './preview'
 
@@ -35,6 +36,10 @@ import type { StylePatch } from './preview'
  * frames show a crosshair and the insert slot under the pointer, and a click
  * reports that slot as `bildr:insert` instead of selecting.
  *
+ * `bildr:render` carries the public variables (`env`), which the canvas
+ * resolves `{{ env.NAME }}` with in props and theme colours; a missing one
+ * shows as written.
+ *
  * `bildr:dark` previews the project's dark colours: the frame puts `.dark` on
  * its `<html>`, which the theme CSS answers with its dark values.
  */
@@ -43,7 +48,7 @@ import type { StylePatch } from './preview'
 export type CanvasView = 'page' | 'tokens'
 
 export type EditorToCanvas
-  = | { type: 'bildr:render', page: Page, base: string, theme: Theme, view: CanvasView, lists: Record<string, DataRecord[]> }
+  = | { type: 'bildr:render', page: Page, base: string, theme: Theme, view: CanvasView, lists: Record<string, DataRecord[]>, env: EnvValues }
     | { type: 'bildr:select', nodeId: string | null, nodeIds: string[] }
     | { type: 'bildr:hover', nodeId: string | null }
     | { type: 'bildr:preview', nodeId: string, style: StylePatch | null }

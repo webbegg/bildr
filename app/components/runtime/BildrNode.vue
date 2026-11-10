@@ -3,7 +3,8 @@ import type { ButtonProps } from '@nuxt/ui'
 import { displayFallback, parseStyleKey, styleClasses } from '#shared/design/tokens'
 import { structuralStyle } from '#shared/document/components'
 import type { DocNode } from '#shared/document/schema'
-import { bindingItem, hasBindings, resolveBindings } from '#shared/runtime/bindings'
+import { hasEnvRefs } from '#shared/env/variables'
+import { bindingItem, hasBindings } from '#shared/runtime/bindings'
 import type { BindingItem } from '#shared/runtime/bindings'
 import { listKey, listQueryOf } from '#shared/runtime/list'
 import { resolveLink } from '#shared/runtime/render'
@@ -20,6 +21,8 @@ import { resolveLink } from '#shared/runtime/render'
  * Inside a List, string props resolve
  * `{{ item.<field> }}` against the current record; outside one, the canvas
  * shows bindings as written and published apps render them empty.
+ * `{{ env.NAME }}` resolves anywhere from the runtime's public variables
+ * (see `bindValue`).
  * A Form is a `<form>` (see BildrForm); its Inputs are named by their field,
  * and a Button's action links, submits the enclosing form, or shows a toast.
  */
@@ -33,11 +36,7 @@ const scope = useListItem()
 const toast = useToast()
 
 const p = computed(() => props.node.props)
-function bind(value: string): string {
-  if (scope?.item) return resolveBindings(value, { item: scope.item })
-  return runtime.editable ? value : resolveBindings(value, {})
-}
-const text = (name: string) => bind(String(p.value[name] ?? ''))
+const text = (name: string) => bindValue(String(p.value[name] ?? ''), runtime, scope?.item)
 const link = computed(() => resolveLink(text('to'), runtime.base))
 const attrs = computed(() => ({
   'data-bildr-id': props.node.id,
@@ -45,7 +44,7 @@ const attrs = computed(() => ({
   'data-bildr-copy': scope?.copy ? '' : undefined
 }))
 // A binding the canvas shows as written (or an empty value) is no URL to load.
-const imageSrc = computed(() => (hasBindings(text('src')) ? '' : text('src')))
+const imageSrc = computed(() => (hasBindings(text('src')) || hasEnvRefs(text('src')) ? '' : text('src')))
 const stacked = computed(() => ['Page', 'Container', 'Column'].includes(props.node.type))
 
 // In a stack, block-level nodes fill the width whatever the stack's `items`, so sections

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DataRecord } from '#shared/data/records'
 import type { Project } from '#shared/document/schema'
+import type { EnvListEntry, EnvValues } from '#shared/env/variables'
 import { formSubmitRequest } from '#shared/editor/formSubmit'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 
@@ -12,6 +13,8 @@ import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/li
  * editor it is same-origin only. Lists show the collections' records as the
  * canvas does. The draft has no public endpoint, so Forms add their record
  * with `record_create` (any collection, not only `publicCreate` ones).
+ * `{{ env.NAME }}` resolves from the public variables (`env_list`), and a
+ * missing one shows as written, as in the canvas.
  */
 definePageMeta({ layout: false })
 
@@ -19,6 +22,7 @@ const route = useRoute()
 const projectId = computed(() => String(route.params.projectId))
 const project = shallowRef<Project | null>(null)
 const loadError = ref<string | null>(null)
+const env = shallowRef<EnvValues>({})
 
 const page = computed(() => {
   const pages = project.value?.pages ?? []
@@ -51,7 +55,12 @@ watch(listCollections, async (current) => {
 
 watch(projectId, async (id) => {
   try {
-    project.value = await callAction<Project>('project_get', { projectId: id })
+    const [next, listed] = await Promise.all([
+      callAction<Project>('project_get', { projectId: id }),
+      callAction<{ variables: EnvListEntry[] }>('env_list', { projectId: id })
+    ])
+    env.value = listedPublicEnv(listed.variables)
+    project.value = next
   } catch (error) {
     loadError.value = actionErrorMessage(error)
   }
@@ -67,7 +76,7 @@ async function submitForm(collection: string, values: Record<string, string>): P
   }
 }
 
-useTheme(() => project.value?.theme)
+useTheme(() => project.value?.theme, env)
 
 const badgeStyle = {
   position: 'fixed', top: '12px', right: '12px', zIndex: 50, pointerEvents: 'none',
@@ -85,6 +94,8 @@ useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${p
       :base="`/preview/${projectId}`"
       :lists="lists"
       :submit-form="submitForm"
+      :env="env"
+      missing-env="keep"
       class="min-h-screen"
     />
     <!-- Editor chrome, so fixed values: the project theme redefines the spacing scale and the neutral palette. -->

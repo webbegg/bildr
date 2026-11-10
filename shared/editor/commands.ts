@@ -181,6 +181,8 @@ export interface CommandEditor {
   collectionId: string | null
   /** Bumped to ask the Data view for its Import from API dialog. */
   importRequest: number
+  /** Bumped to ask the Settings view to scroll to its Variables section. */
+  variablesRequest: number
   /** The device frame being edited. */
   deviceId: DeviceId
   insert: (type: string) => unknown
@@ -306,6 +308,18 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
       run: ({ editor }) => {
         editor.mode = 'build'
         editor.sidebarPanel = 'assets'
+      }
+    },
+    {
+      id: 'settings:variables',
+      group: 'goto',
+      label: 'Environment variables',
+      icon: 'i-lucide-variable',
+      keywords: ['env', 'secret', 'api key', 'settings'],
+      enabled: always,
+      run: ({ editor }) => {
+        editor.mode = 'settings'
+        editor.variablesRequest++
       }
     },
     ...(editor.project?.collections ?? []).map((collection): EditorCommand => ({

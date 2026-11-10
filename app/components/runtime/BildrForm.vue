@@ -10,10 +10,11 @@ import { resolveLink } from '#shared/runtime/render'
  */
 const props = defineProps<{ node: DocNode }>()
 const runtime = useRuntime()
+const scope = useListItem()
 const toast = useToast()
 const sending = ref(false)
 
-const text = (name: string) => String(props.node.props[name] ?? '')
+const text = (name: string) => bindValue(String(props.node.props[name] ?? ''), runtime, scope?.item)
 
 async function onSubmit(event: Event) {
   const form = event.currentTarget as HTMLFormElement

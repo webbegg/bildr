@@ -2,6 +2,7 @@ import type { InjectionKey } from 'vue'
 import type { DataRecord } from '#shared/data/records'
 import type { Theme, ThemePatch } from '#shared/design/theme'
 import type { Project } from '#shared/document/schema'
+import type { EnvListEntry, EnvValues } from '#shared/env/variables'
 import type { PropValue } from '#shared/document/components'
 import { isFlexType } from '#shared/document/components'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
@@ -30,6 +31,11 @@ export const TAB_ID = import.meta.client ? crypto.randomUUID() : 'server'
 /** Calls an action over HTTP; the editor mutates documents only through this. */
 export function callAction<T = unknown>(name: string, input: Record<string, unknown> = {}): Promise<T> {
   return $fetch<T, string>(`/api/actions/${name}`, { method: 'POST', body: input, headers: { 'x-bildr-source': TAB_ID } }) as Promise<T>
+}
+
+/** The public variables of an `env_list` by name; secrets have no value to show. */
+export function listedPublicEnv(entries: EnvListEntry[]): EnvValues {
+  return Object.fromEntries(entries.flatMap(v => (v.secret ? [] : [[v.name, v.value]])))
 }
 
 export function actionErrorMessage(error: unknown): string {
@@ -104,6 +110,13 @@ export function createEditor(projectId: string) {
   const recordId = ref<string | null>(null)
   /** Bumped by "Import from API" outside the sidebar (the empty state, ⌘K); the sidebar opens its import dialog on each bump. */
   const importRequest = ref(0)
+  /** Bumped by "Environment variables" (⌘K); the Settings view scrolls to its Variables section on each bump. */
+  const variablesRequest = ref(0)
+  /** The project's variables as `env_list` shows them (stored outside the document, so not in `project`). */
+  const env = shallowRef<EnvListEntry[]>([])
+  /** The public variables by name, which the canvas resolves `{{ env.NAME }}` with. */
+  const publicEnv = computed(() => listedPublicEnv(env.value))
+  let envLoaded = false
 
   const page = computed(() => project.value?.pages.find(p => p.id === pageId.value) ?? project.value?.pages[0] ?? null)
   const selected = computed(() => (page.value && selectedId.value ? findNode(page.value.root, selectedId.value) ?? null : null))
@@ -150,8 +163,27 @@ export function createEditor(projectId: string) {
     ])
     project.value = next
     history.value = nextHistory
+    if (!envLoaded) await reloadEnv()
     if (!next.pages.some(p => p.id === pageId.value)) pageId.value = next.pages[0]!.id
     if (selectedIds.value.some(id => !findNode(page.value!.root, id))) selectedIds.value = selectedIds.value.filter(id => findNode(page.value!.root, id))
+  }
+
+  async function reloadEnv(): Promise<void> {
+    const result = await callAction<{ variables: EnvListEntry[] }>('env_list', { projectId })
+    env.value = result.variables
+    envLoaded = true
+  }
+
+  /** Runs an `env_*` action, then reloads the variables (the document is unchanged); failures become a toast and return undefined. */
+  async function runEnv<T = unknown>(name: string, input: Record<string, unknown> = {}): Promise<T | undefined> {
+    try {
+      const result = await callAction<T>(name, { projectId, ...input })
+      await reloadEnv()
+      return result
+    } catch (error) {
+      toast.add({ title: 'Action failed', description: actionErrorMessage(error), color: 'error', icon: 'i-lucide-circle-alert' })
+      return undefined
+    }
   }
 
   /** Runs an action on this project; failures become a toast and return undefined. */
@@ -546,8 +578,8 @@ export function createEditor(projectId: string) {
 
   return reactive({
     projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
-    collectionId, collection, records, recordsTotal, recordsError, recordId, importRequest, listCollections, lists,
-    reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    collectionId, collection, records, recordsTotal, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
+    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * The Settings view: the project's name and slug, what is published, and how
- * to connect an agent over MCP. The name saves on blur or Enter
+ * The Settings view: the project's name and slug, what is published, its
+ * environment variables (EditorVariables), and how to connect an agent over MCP. The name saves on blur or Enter
  * (`project_rename`); the slug is read-only, so published URLs never change.
  * Shares the published info with the top bar
  * (same async data key), so a publish there shows here too.
@@ -99,6 +99,8 @@ async function copyCommand() {
         Not published yet. Publish from the top bar to serve the app at /p/{{ editor.project?.slug }}.
       </p>
     </section>
+
+    <EditorVariables />
 
     <section class="space-y-2">
       <h2 class="text-xs font-semibold text-muted uppercase">

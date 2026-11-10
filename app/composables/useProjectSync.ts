@@ -49,7 +49,10 @@ export function useProjectSync(editor: Editor): void {
       return
     }
     if (event.kind === 'change') {
-      if (event.source !== TAB_ID && isNewer(event.version)) await refresh()
+      if (event.source === TAB_ID) return
+      if (isNewer(event.version)) await refresh()
+      // Variables live outside the document, so their changes (env_*) keep the version.
+      else await editor.reloadEnv().catch(() => {})
       return
     }
     if (!editor.project?.pages.some(p => p.id === event.pageId)) await refresh()

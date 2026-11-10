@@ -2,6 +2,7 @@
 import type { DataRecord } from '#shared/data/records'
 import type { Theme } from '#shared/design/theme'
 import type { Page } from '#shared/document/schema'
+import type { EnvValues } from '#shared/env/variables'
 import type { CanvasToEditor, CanvasView, EditorToCanvas } from '#shared/editor/protocol'
 import { isCanvasMessage } from '#shared/editor/protocol'
 import { isContainerType } from '#shared/document/components'
@@ -36,6 +37,8 @@ import { labelPlacement } from '#shared/editor/labelPlacement'
  * With an insert tool armed the cursor is a crosshair, the pointer shows the
  * insert slot with the drop indicator, and a click reports that slot.
  * The editor's light/dark preview sets this document's colour mode class.
+ * `{{ env.NAME }}` resolves from the public variables the editor sends; a
+ * missing one shows as written.
  */
 definePageMeta({ layout: false })
 
@@ -43,7 +46,8 @@ const page = shallowRef<Page | null>(null)
 const base = ref('')
 const lists = shallowRef<Record<string, DataRecord[]>>({})
 const theme = shallowRef<Theme | null>(null)
-useTheme(theme)
+const env = shallowRef<EnvValues>({})
+useTheme(theme, env)
 const view = ref<CanvasView>('page')
 const selectedId = ref<string | null>(null)
 const selectedIds = ref<string[]>([])
@@ -129,6 +133,7 @@ function onMessage(event: MessageEvent) {
     if (Object.keys(previews.value).length) previews.value = settlePreviews(previews.value, message.page.root)
     base.value = message.base
     lists.value = message.lists
+    env.value = message.env ?? {}
     theme.value = message.theme
     view.value = message.view
   } else if (message.type === 'bildr:select') {
@@ -390,6 +395,8 @@ onBeforeUnmount(() => {
       :page="shownPage"
       :base="base"
       :lists="lists"
+      :env="env"
+      missing-env="keep"
       editable
       :style="{ minHeight: `${FRAME_MIN_HEIGHT}px` }"
     />
