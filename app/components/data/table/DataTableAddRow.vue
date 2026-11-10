@@ -49,16 +49,16 @@ defineExpose({ focus })
 
 <template>
   <tr
-    class="h-10 border-b border-white/5"
+    class="h-11"
     data-add-row
   >
-    <td class="w-10" />
+    <td class="w-10 border-b border-white/5" />
     <td
       v-for="(field, col) in fields"
       ref="cells"
       :key="field.key"
       :data-col="col"
-      class="px-3"
+      class="border-b border-l border-white/5 px-4"
     >
       <button
         v-if="field.type === 'boolean'"
@@ -84,6 +84,7 @@ defineExpose({ focus })
         :placeholder="col === 0 ? 'New item…' : undefined"
         :aria-label="`New item ${field.label}`"
         :readonly="busy"
+        size="1"
         class="h-full w-full min-w-0 bg-transparent text-sm outline-none [color-scheme:dark] placeholder:text-dimmed"
         :class="field.type === 'date' && !drafts[field.key] ? 'text-dimmed' : 'text-highlighted'"
         data-add-input
@@ -91,6 +92,6 @@ defineExpose({ focus })
         @keydown="onKey($event, col)"
       >
     </td>
-    <td class="w-11" />
+    <td class="w-11 border-b border-white/5" />
   </tr>
 </template>

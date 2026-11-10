@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { DataRecord, RecordValue } from '#shared/data/records'
-import { cellInput, moveCell, moveForKey, nextSort, parseCell, searchRecords, selectRows, sortRecords } from '#shared/data/table'
-import type { CellMove, TableCell, TableSort } from '#shared/data/table'
+import { cellInput, moveCell, moveForKey, nextSort, parseCell, selectRows, tableRows } from '#shared/data/table'
+import type { CellMove, TableCell, TableFilter, TableSort } from '#shared/data/table'
 import type { Collection, Field } from '#shared/document/schema'
 
 /**
- * The shown collection's records as a Framer CMS table: search, sortable
- * headers, inline cell editing with keyboard navigation, a quick-add row and
+ * The shown collection's records as a Framer CMS table: search, filters,
+ * sortable headers, inline cell editing with keyboard navigation, a quick-add row and
  * bulk delete. API collections are read-only. Records are not undoable.
  */
 const editor = useEditor()
@@ -18,7 +18,9 @@ const canAdd = computed(() => !live.value && fields.value.length > 0)
 
 const query = ref('')
 const sort = ref<TableSort | null>(null)
-const rows = computed(() => sortRecords(searchRecords(editor.records, fields.value, query.value), fields.value, sort.value))
+const filters = ref<TableFilter[]>([])
+const narrowed = computed(() => query.value.trim() !== '' || filters.value.length > 0)
+const rows = computed(() => tableRows(editor.records, fields.value, { query: query.value, filters: filters.value, sort: sort.value }))
 const size = computed(() => ({ rows: rows.value.length + (canAdd.value ? 1 : 0), cols: fields.value.length }))
 
 const selected = ref<string[]>([])
@@ -33,6 +35,7 @@ const addRow = useTemplateRef<{ focus: (col: number) => void }>('addRow')
 watch(() => collection.value.id, () => {
   query.value = ''
   sort.value = null
+  filters.value = []
   selected.value = []
   anchor.value = null
   active.value = null
@@ -44,10 +47,12 @@ watch(() => editor.records, (records) => {
   selected.value = selected.value.filter(id => ids.has(id))
 })
 
+const WIDTHS: Record<Field['type'], string> = { text: 'min-w-56', number: 'min-w-32', boolean: 'min-w-28', date: 'min-w-36', image: 'min-w-28' }
+
 const items = (n: number) => `${n} ${n === 1 ? 'item' : 'items'}`
 const count = computed(() => {
   if (editor.recordsTotal > editor.records.length) return `showing the first ${editor.records.length} of ${editor.recordsTotal}`
-  return query.value.trim() ? `${rows.value.length} of ${items(editor.recordsTotal)}` : items(editor.recordsTotal)
+  return narrowed.value ? `${rows.value.length} of ${items(editor.recordsTotal)}` : items(editor.recordsTotal)
 })
 
 const allSelected = computed(() => rows.value.length > 0 && rows.value.every(r => selected.value.includes(r.id)))
@@ -188,64 +193,20 @@ function sortIcon(key: string) {
     class="flex size-full flex-col text-sm"
     data-records
   >
-    <header class="flex h-12 shrink-0 items-center gap-3 border-b border-white/5 px-4">
-      <p class="truncate font-medium text-highlighted">
-        {{ collection.name }}
-      </p>
-      <label class="flex h-8 w-64 items-center gap-2 rounded-md px-2 text-muted focus-within:bg-white/5 hover:bg-white/4">
-        <UIcon
-          name="i-lucide-search"
-          class="size-4 shrink-0"
-        />
-        <input
-          v-model="query"
-          type="search"
-          placeholder="Search…"
-          aria-label="Search items"
-          class="min-w-0 flex-1 bg-transparent text-highlighted outline-none placeholder:text-dimmed"
-          data-records-search
-          @keydown.esc="query = ''"
-        >
-      </label>
-      <div class="ms-auto flex items-center gap-2">
-        <UButton
-          v-if="selected.length && !live"
-          :label="`Delete ${selected.length}`"
-          icon="i-lucide-trash-2"
-          color="error"
-          variant="soft"
-          size="xs"
-          data-records-delete
-          @click="removeSelected"
-        />
-        <span
-          class="text-xs text-dimmed tabular-nums"
-          data-records-count
-        >{{ count }}</span>
-        <template v-if="live">
-          <UBadge
-            label="Live from API"
-            icon="i-lucide-radio"
-            color="info"
-            variant="subtle"
-            size="sm"
-            data-live-badge
-          />
-          <UTooltip text="Refresh">
-            <UButton
-              icon="i-lucide-refresh-cw"
-              color="neutral"
-              variant="ghost"
-              size="xs"
-              aria-label="Refresh"
-              :loading="refreshing"
-              data-records-refresh
-              @click="refresh"
-            />
-          </UTooltip>
-        </template>
-      </div>
-    </header>
+    <DataTableToolbar
+      v-model:query="query"
+      v-model:sort="sort"
+      v-model:filters="filters"
+      :fields="fields"
+      :count="count"
+      :can-add="canAdd"
+      :live="live"
+      :refreshing="refreshing"
+      :selected="selected.length"
+      @add="go({ row: rows.length, col: 0 })"
+      @refresh="refresh"
+      @remove="removeSelected"
+    />
 
     <p
       v-if="editor.recordsError"
@@ -266,9 +227,9 @@ function sortIcon(key: string) {
       data-records-table
       @keydown="onKey"
     >
-      <table class="w-full min-w-max border-separate border-spacing-0">
+      <table class="w-full border-separate border-spacing-0">
         <thead class="sticky top-0 z-10 bg-[#1e1e1e]">
-          <tr class="h-10 text-left text-xs text-muted">
+          <tr class="h-10 text-left text-[13px] text-dimmed">
             <th class="w-10 border-b border-white/6 pl-4">
               <DataTableCheck
                 v-if="!live && rows.length"
@@ -281,12 +242,13 @@ function sortIcon(key: string) {
             <th
               v-for="field in fields"
               :key="field.key"
-              class="min-w-44 border-b border-white/6 px-3 font-normal"
+              class="border-b border-white/6 px-4 font-normal"
+              :class="WIDTHS[field.type]"
               :aria-sort="sort?.key === field.key ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'"
             >
               <button
                 type="button"
-                class="-mx-1 flex items-center gap-1 rounded px-1 py-0.5 hover:text-highlighted"
+                class="-mx-1 flex items-center gap-1 rounded px-1 py-0.5 hover:text-toned"
                 :class="{ 'text-highlighted': sort?.key === field.key }"
                 data-records-header
                 @click="sort = nextSort(sort, field.key)"
@@ -306,7 +268,7 @@ function sortIcon(key: string) {
           <tr
             v-for="(record, row) in rows"
             :key="record.id"
-            class="group h-10"
+            class="group h-11"
             :class="editor.recordId === record.id ? 'bg-primary/10' : selected.includes(record.id) ? 'bg-white/4' : 'hover:bg-white/3'"
             :data-record="record.id"
             :data-open="editor.recordId === record.id || undefined"
@@ -322,9 +284,10 @@ function sortIcon(key: string) {
             <td
               v-for="(field, col) in fields"
               :key="field.key"
-              class="max-w-80 border-b border-white/5 px-3"
+              class="border-b border-l border-white/5 px-4"
               :class="[
-                active?.row === row && active?.col === col ? 'shadow-[inset_0_0_0_1px_var(--ui-primary)]' : '',
+                field.type === 'text' ? 'max-w-0' : 'whitespace-nowrap',
+                active?.row === row && active?.col === col ? 'rounded-[4px] shadow-[inset_0_0_0_2px_var(--editor-selection)]' : '',
                 live ? 'cursor-default' : 'cursor-text'
               ]"
               :data-cell="`${row}-${col}`"
@@ -377,6 +340,12 @@ function sortIcon(key: string) {
         class="px-4 py-6 text-xs text-dimmed"
       >
         No items match “{{ query.trim() }}”.
+      </p>
+      <p
+        v-else-if="!rows.length && filters.length"
+        class="px-4 py-6 text-xs text-dimmed"
+      >
+        No items match the filters.
       </p>
       <p
         v-else-if="!rows.length"

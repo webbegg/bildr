@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellInput, moveCell, moveForKey, nextSort, parseCell, searchRecords, selectRows, sortRecords } from '#shared/data/table'
+import { cellInput, filterLabel, filterOps, filterRecords, moveCell, moveForKey, nextSort, parseCell, searchRecords, selectRows, sortRecords, tableRows } from '#shared/data/table'
 import type { DataRecord, RecordValue } from '#shared/data/records'
 import type { Field } from '#shared/document/schema'
 
@@ -32,6 +32,68 @@ describe('searchRecords', () => {
 
   it('an empty query keeps every record', () => {
     expect(ids(searchRecords(records, fields, '  '))).toBe('a,b,c')
+  })
+})
+
+describe('filterOps', () => {
+  it('offers the filters that fit each field type', () => {
+    expect(filterOps('text')).toEqual(['contains'])
+    expect(filterOps('number')).toEqual(['eq', 'gt', 'lt'])
+    expect(filterOps('boolean')).toEqual(['on', 'off'])
+    expect(filterOps('date')).toEqual(['before', 'after'])
+    expect(filterOps('image')).toEqual([])
+  })
+})
+
+describe('filterRecords', () => {
+  it('text contains ignores case', () => {
+    expect(ids(filterRecords(records, fields, [{ key: 'note', op: 'contains', value: 'MILK' }]))).toBe('c')
+  })
+
+  it('numbers compare equal, greater and less; empty values never match', () => {
+    expect(ids(filterRecords(records, fields, [{ key: 'price', op: 'eq', value: '2' }]))).toBe('b')
+    expect(ids(filterRecords(records, fields, [{ key: 'price', op: 'gt', value: '2' }]))).toBe('a')
+    expect(ids(filterRecords(records, fields, [{ key: 'price', op: 'lt', value: '10.5' }]))).toBe('a,b')
+  })
+
+  it('toggles match on, or off including unset', () => {
+    expect(ids(filterRecords(records, fields, [{ key: 'vegan', op: 'on' }]))).toBe('b')
+    expect(ids(filterRecords(records, fields, [{ key: 'vegan', op: 'off' }]))).toBe('a,c')
+  })
+
+  it('dates compare by day, before and after excluding the day itself', () => {
+    expect(ids(filterRecords(records, fields, [{ key: 'servedFrom', op: 'before', value: '2026-03-01' }]))).toBe('c')
+    expect(ids(filterRecords(records, fields, [{ key: 'servedFrom', op: 'after', value: '2026-01-15' }]))).toBe('a')
+  })
+
+  it('combines filters with and', () => {
+    expect(ids(filterRecords(records, fields, [{ key: 'price', op: 'lt', value: '20' }, { key: 'vegan', op: 'off' }]))).toBe('a')
+  })
+
+  it('ignores a filter without a usable value or whose field is gone', () => {
+    expect(ids(filterRecords(records, fields, [{ key: 'price', op: 'gt', value: 'abc' }]))).toBe('a,b,c')
+    expect(ids(filterRecords(records, fields, [{ key: 'note', op: 'contains', value: ' ' }]))).toBe('a,b,c')
+    expect(ids(filterRecords(records, fields, [{ key: 'gone', op: 'on' }]))).toBe('a,b,c')
+  })
+})
+
+describe('filterLabel', () => {
+  it('reads like a chip', () => {
+    expect(filterLabel({ key: 'note', op: 'contains', value: 'milk' }, fields)).toBe('Note contains “milk”')
+    expect(filterLabel({ key: 'price', op: 'gt', value: '2' }, fields)).toBe('Price > 2')
+    expect(filterLabel({ key: 'vegan', op: 'on' }, fields)).toBe('Vegan is on')
+    expect(filterLabel({ key: 'servedFrom', op: 'before', value: '2026-03-01' }, fields)).toBe('Served from before 2026-03-01')
+  })
+})
+
+describe('tableRows', () => {
+  it('filters, then searches, then sorts', () => {
+    const shown = tableRows(records, fields, { query: 'latte', filters: [{ key: 'vegan', op: 'off' }], sort: { key: 'name', direction: 'asc' } })
+    expect(ids(shown)).toBe('c,a')
+  })
+
+  it('with nothing set keeps the loaded records', () => {
+    expect(tableRows(records, fields, { query: '', filters: [], sort: null })).toBe(records)
   })
 })
 

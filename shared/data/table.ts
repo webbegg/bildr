@@ -19,6 +19,84 @@ export function searchRecords(records: DataRecord[], fields: Field[], query: str
   return records.filter(r => keys.some(key => typeof r.values[key] === 'string' && (r.values[key] as string).toLowerCase().includes(needle)))
 }
 
+export type FilterOp = 'contains' | 'eq' | 'gt' | 'lt' | 'on' | 'off' | 'before' | 'after'
+
+export interface TableFilter {
+  key: string
+  op: FilterOp
+  value?: string
+}
+
+const OPS: Record<FieldType, FilterOp[]> = {
+  text: ['contains'],
+  number: ['eq', 'gt', 'lt'],
+  boolean: ['on', 'off'],
+  date: ['before', 'after'],
+  image: []
+}
+
+/** The filters the toolbar offers for a field type. */
+export function filterOps(type: FieldType): FilterOp[] {
+  return OPS[type]
+}
+
+const OP_LABELS: Record<FilterOp, string> = { contains: 'contains', eq: '=', gt: '>', lt: '<', on: 'is on', off: 'is off', before: 'before', after: 'after' }
+
+export function filterLabel(filter: TableFilter, fields: Field[]): string {
+  const label = fields.find(f => f.key === filter.key)?.label ?? filter.key
+  if (filter.op === 'on' || filter.op === 'off') return `${label} ${OP_LABELS[filter.op]}`
+  const value = filter.op === 'contains' ? `“${filter.value ?? ''}”` : filter.value ?? ''
+  return `${label} ${OP_LABELS[filter.op]} ${value}`
+}
+
+/** A record test for one filter, or null when the filter has no usable value. */
+function predicate(filter: TableFilter, type: FieldType): ((value: RecordValue | undefined) => boolean) | null {
+  const raw = (filter.value ?? '').trim()
+  switch (filter.op) {
+    case 'on':
+      return value => value === true
+    case 'off':
+      return value => value !== true
+    case 'contains':
+      return raw ? value => typeof value === 'string' && value.toLowerCase().includes(raw.toLowerCase()) : null
+    case 'eq':
+    case 'gt':
+    case 'lt': {
+      const target = Number(raw)
+      if (!raw || !Number.isFinite(target)) return null
+      return (value) => {
+        if (typeof value !== 'number') return false
+        return filter.op === 'eq' ? value === target : filter.op === 'gt' ? value > target : value < target
+      }
+    }
+    case 'before':
+    case 'after': {
+      if (!raw) return null
+      return (value) => {
+        if (value === null || value === undefined || value === '') return false
+        const day = cellInput(type, value)
+        return filter.op === 'before' ? day < raw : day > raw
+      }
+    }
+  }
+}
+
+/** Records matching every filter; filters without a value or a field are ignored. */
+export function filterRecords(records: DataRecord[], fields: Field[], filters: TableFilter[]): DataRecord[] {
+  const tests = filters.flatMap((filter) => {
+    const field = fields.find(f => f.key === filter.key)
+    const test = field && predicate(filter, field.type)
+    return test ? [{ key: filter.key, test }] : []
+  })
+  if (!tests.length) return records
+  return records.filter(r => tests.every(({ key, test }) => test(r.values[key])))
+}
+
+/** The table's shown rows: filtered, searched, then sorted. */
+export function tableRows(records: DataRecord[], fields: Field[], view: { query: string, filters: TableFilter[], sort: TableSort | null }): DataRecord[] {
+  return sortRecords(searchRecords(filterRecords(records, fields, view.filters), fields, view.query), fields, view.sort)
+}
+
 /** A header click, like Framer's: ascending, then descending, then unsorted. */
 export function nextSort(sort: TableSort | null, key: string): TableSort | null {
   if (sort?.key !== key) return { key, direction: 'asc' }

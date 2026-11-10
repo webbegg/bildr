@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { Collection } from '#shared/document/schema'
+import { useDataSidebarTab } from '../DataCollections.vue'
 
-/** The collection panel: its name, slug and public flags, the API source of a synced collection, and the fields. */
+/** The collection panel: its name, slug and public flags, and the API source of a synced collection. Fields opens the sidebar's Fields tab. */
 const props = defineProps<{ collection: Collection }>()
 const editor = useEditor()
+const sidebarTab = useDataSidebarTab()
 const apiSource = computed(() => (props.collection.source.type === 'api' ? props.collection.source : null))
 const editingMapping = ref(false)
 
@@ -72,6 +74,24 @@ function update(patch: Record<string, unknown>) {
           @update:model-value="update({ publicCreate: $event })"
         />
       </EditorRow>
+      <EditorRow
+        label="Fields"
+        name="fields"
+      >
+        <button
+          type="button"
+          class="flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 text-[13px] text-muted hover:bg-white/4 hover:text-highlighted"
+          title="Edit the fields in the sidebar"
+          data-show-fields
+          @click="sidebarTab = 'fields'"
+        >
+          <span class="truncate">{{ collection.fields.length }} {{ collection.fields.length === 1 ? 'field' : 'fields' }}</span>
+          <UIcon
+            name="i-lucide-arrow-left"
+            class="ms-auto size-3.5 shrink-0"
+          />
+        </button>
+      </EditorRow>
     </EditorStyleSection>
 
     <EditorStyleSection
@@ -122,7 +142,5 @@ function update(patch: Record<string, unknown>) {
         </template>
       </UModal>
     </EditorStyleSection>
-
-    <DataPanelFields :collection="collection" />
   </div>
 </template>

@@ -81,22 +81,20 @@ function onKey(event: KeyboardEvent) {
     :type="field.type === 'date' ? 'date' : 'text'"
     :inputmode="field.type === 'number' ? 'decimal' : undefined"
     :placeholder="field.type === 'image' ? 'https://… or /image.png' : undefined"
+    size="1"
     class="h-full w-full min-w-0 bg-transparent text-sm text-highlighted outline-none [color-scheme:dark] placeholder:text-dimmed"
     data-cell-input
     @keydown="onKey"
     @blur="finish()"
   >
-  <div
+  <img
     v-else-if="field.type === 'image' && !empty"
-    class="flex min-w-0 items-center gap-2"
+    :src="text"
+    :alt="field.label"
+    :title="text"
+    class="block h-6 w-10 rounded-md border border-white/10 bg-white/4 object-cover"
+    data-cell-image
   >
-    <img
-      :src="text"
-      alt=""
-      class="size-6 shrink-0 rounded object-cover ring ring-white/10"
-    >
-    <span class="truncate text-muted">{{ text }}</span>
-  </div>
   <span
     v-else
     class="block truncate"

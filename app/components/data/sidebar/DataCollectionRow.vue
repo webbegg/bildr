@@ -59,7 +59,7 @@ const menu = computed<DropdownMenuItem[]>(() => [
     <button
       v-else
       type="button"
-      class="flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-lg ps-3 pe-3 text-left text-sm"
+      class="flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-lg ps-3 pe-3 text-left text-sm"
       :class="shown ? 'bg-white/8 font-medium text-highlighted' : 'text-toned hover:bg-white/4'"
       :title="collection.name"
       :aria-current="shown ? 'true' : undefined"
