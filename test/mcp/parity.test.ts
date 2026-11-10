@@ -15,6 +15,20 @@ const UI_ONLY: Record<string, string> = {
   editor_set_context: 'the editor reports its own page and selection; agents read it with editor_get_context'
 }
 
+const COMPONENT_ACTIONS = [
+  'component_create',
+  'component_rename',
+  'component_delete',
+  'component_property_add',
+  'component_property_update',
+  'component_property_remove',
+  'component_variant_add',
+  'component_variant_delete',
+  'component_variant_set_override',
+  'instance_set_values',
+  'instance_set_slot'
+]
+
 async function connect() {
   const bildr = createBildr(memoryStorage())
   const client = new Client({ name: 'parity-test', version: '0.0.0' })
@@ -49,6 +63,29 @@ describe('MCP parity', () => {
     expect(get.annotations?.readOnlyHint).toBe(true)
     expect(get.inputSchema).toMatchObject({ type: 'object', required: ['projectId'] })
     expect(tools.find(t => t.name === 'node_insert')!.annotations?.readOnlyHint).toBe(false)
+  })
+
+  it('exposes the component actions as tools, over HTTP\'s action list too', async () => {
+    const { bildr, client } = await connect()
+    const tools = new Set((await client.listTools()).tools.map(t => t.name))
+    const listed = new Set(bildr.list().map(a => a.name))
+    for (const name of COMPONENT_ACTIONS) {
+      expect(tools, `${name} is missing from MCP`).toContain(name)
+      expect(listed, `${name} is missing from /api/actions`).toContain(name)
+    }
+  })
+
+  it('runs a component action through MCP like any other caller', async () => {
+    const { client } = await connect()
+    const project = JSON.parse(text(await client.callTool({ name: 'project_create', arguments: { name: 'Agent made' } }))) as Project
+    const pageId = project.pages[0]!.id
+    const { nodeId } = JSON.parse(text(await client.callTool({ name: 'node_insert', arguments: { projectId: project.id, pageId, type: 'Card' } }))) as { nodeId: string }
+    const created = await client.callTool({ name: 'component_create', arguments: { projectId: project.id, pageId, nodeId, name: 'Card' } })
+    expect(created.isError).toBeFalsy()
+    const { componentId } = JSON.parse(text(created)) as { componentId: string }
+    const refused = await client.callTool({ name: 'component_delete', arguments: { projectId: project.id, componentId } })
+    expect(refused.isError).toBe(true)
+    expect(text(refused)).toContain('forbidden: "Card" is used by 1 instance')
   })
 
   it('exposes every action the UI calls, except the listed UI-only ones', async () => {

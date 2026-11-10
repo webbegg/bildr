@@ -125,6 +125,21 @@ Published apps read and write data through `/api/public/<project-slug>/<collecti
 - Errors are generic. The details only go to the server log.
 - `/api/published/<project-slug>`, which the published app loads, leaves out the connections, and the URL, headers, items path, endpoints, id path and field paths of API and connection collections. The public `GET` resolves them on the server from the stored snapshot and the current variables. Its `env` holds the public variables only.
 
+## Components
+
+A **component** is a reusable piece of a page, stored in the project's `components`. Its definition is a node tree with ids of its own (the primary variant), typed **properties**, and **variants**. An `Instance` node on a page shows the definition, so editing the definition updates every instance. Instances are resolved when they render and never copied into the page.
+
+- `component_create { pageId, nodeId | nodeIds, name }` turns a selection into a component. The node becomes the definition (several siblings are wrapped in a Container), and an instance takes its place. `/` in the name makes folders, for example `Cards/Product`. Returns `{ componentId, nodeId }`, where `nodeId` is the instance.
+- `component_rename { componentId, name }`.
+- `component_delete { componentId, force? }` is refused while instances use the component. The error lists them, for example `"Card" is used by 1 instance: page "Home" (n_…)`. With `force: true`, the instances are deleted too and returned as `deletedInstances`.
+- `component_property_add { componentId, name, kind, default?, bindings? }` adds a property and returns its `propertyId`. `kind` is a prop kind (`text`, `number`, `boolean`, `select`, …) or `slot`. Each binding `{ nodeId, prop }` names a definition node prop that the property drives, and the kinds must match. Definition strings can also use `{{ prop.NAME }}`. A slot binds one container with `prop: "children"`; its children are the default content.
+- `component_property_update { componentId, propertyId, name?, default?, bindings? }` (a `default` of `null` removes it) and `component_property_remove` (instance values and slot content for it go too).
+- `component_variant_add { componentId, name }` returns a `variantId`. `component_variant_set_override { componentId, variantId, nodeId, props?, style? }` overrides props and tokens of one definition node. A variant stores only what differs from the primary, so a `null` value, or the primary's own value, removes that override. `component_variant_delete` moves its instances back to the primary.
+- Insert an instance with `node_insert { type: "Instance", props: { component } }`. `instance_set_values { pageId | componentId, nodeId, values?, variant? }` sets property values, keyed by property id, and the variant. Values are checked against the property, and `null` removes one so the default applies.
+- `instance_set_slot { pageId | componentId, nodeId, slot, filled, nodeIds? }` with `filled: true` gives a slot its own content and returns its `fillId`. Add content with `node_insert { parentId: fillId }`, or pass `nodeIds` to move nodes in. With `filled: false`, the default content shows again.
+
+Each action is one undo step.
+
 ## Action HTTP API
 
 - `GET /api/actions` lists every action with its description and JSON input schema.
@@ -159,9 +174,12 @@ Published apps (`/p/<project-slug>`) register [WebMCP](https://github.com/webmac
 
 - `list_pages` (read-only) lists every page with its `name`, `slug` and `url`.
 - `navigate_to_page` `{ slug }` shows another page. An unknown slug returns an error that lists the valid slugs.
-- `get_page_content` (read-only) returns the current page as a text outline, one line per element, with links shown as `→ target`.
+- `get_page_content` (read-only) returns the current page as a text outline, one line per element, with links shown as `→ target`. Component instances appear as they render (their definition, values and slot content).
+
 - `list_records` (read-only) `{ collection, limit?, filter?, sort? }` lists records of a `publicRead` collection through the public `GET` endpoint. `filter` is an object of field values to match, and `sort` is a field key, prefixed with `-` for descending (for example `"-price"`). The tool description lists the readable collections and their fields. It is registered only when at least one collection is `publicRead`.
 - `submit_form` `{ collection, values }` adds a record to an internal `publicCreate` collection through the public `POST` endpoint, and returns its result (`{ "id": "…" }`) or its generic error. It is registered only when at least one collection qualifies.
+
+WebMCP is for visitors of the published app, so it has no editing tools: the component actions are on HTTP and MCP only.
 
 WebMCP is still a draft, so this support is exploratory. To try it:
 

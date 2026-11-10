@@ -88,6 +88,25 @@ describe('registerWebMcpTools', () => {
     expect((await call('get_page_content')).content[0]!.text).toBe('Page "Pricing" (/pricing)')
   })
 
+  it('get_page_content outlines component instances as they render', async () => {
+    const project = createProject('Shop')
+    project.components = [{
+      id: 'promo',
+      name: 'Promo',
+      root: { id: 'r', type: 'Card', props: {}, style: {}, children: [{ id: 't', type: 'Heading', props: { text: 'Default' }, style: {}, children: [] }] },
+      properties: [{ id: 'title', name: 'Title', kind: 'text', bindings: [{ nodeId: 't', prop: 'text' }] }],
+      variants: []
+    }]
+    project.pages[0]!.root.children.push({ id: 'i1', type: 'Instance', props: { component: 'promo', title: 'Sale' }, style: {}, children: [] })
+    const { modelContext, tools } = fakeModelContext()
+    registerWebMcpTools(modelContext, { getProject: () => project, getCurrentPage: () => project.pages[0], navigate: () => {} })
+    expect((await tools.get('get_page_content')!.execute({})).content[0]!.text).toBe([
+      'Page "Home" (/home)',
+      '  Card',
+      '    Heading: Sale'
+    ].join('\n'))
+  })
+
   it('cleanup unregisters every tool', () => {
     const { tools, cleanup } = setup()
     cleanup()
