@@ -219,6 +219,16 @@ describe('submit_form', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('lists publicCreate connection collections, unless their endpoints are known to lack create', () => {
+    const project = cafe()
+    const posts = createCollection('Posts', 'posts', [{ key: 'title', label: 'Title', type: 'text' }], { type: 'connection', connectionId: 'con_1', endpoints: { list: { method: 'GET', path: '/posts' } } })
+    const visitorPosts = { ...posts, slug: 'visitor-posts', publicCreate: true, source: { type: 'connection' as const } }
+    const withCreate = { ...posts, slug: 'with-create', publicCreate: true, source: { ...posts.source, endpoints: { create: { method: 'POST' as const, path: '/posts' } } } }
+    project.collections.push({ ...posts, publicCreate: true }, visitorPosts as never, withCreate as never)
+    const tool = dataSetup(project, () => json({})).tools.get('submit_form')!
+    expect(tool.inputSchema).toMatchObject({ properties: { collection: { enum: ['messages', 'visitor-posts', 'with-create'] } } })
+  })
+
   it('is not registered when no internal collection is publicCreate', () => {
     const project = cafe()
     project.collections = project.collections.filter(c => c.slug !== 'messages')

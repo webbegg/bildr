@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { collectionCaps } from '#shared/data/collections'
 import type { DataRecord, RecordValue } from '#shared/data/records'
 import { cellInput, moveCell, moveForKey, nextSort, parseCell, selectRows, tableRows } from '#shared/data/table'
 import type { CellMove, TableCell, TableFilter, TableSort } from '#shared/data/table'
@@ -7,14 +8,19 @@ import type { Collection, Field } from '#shared/document/schema'
 /**
  * The shown collection's records as a Framer CMS table: search, filters,
  * sortable headers, inline cell editing with keyboard navigation, a quick-add row and
- * bulk delete. API collections are read-only. Records are not undoable.
+ * bulk delete, each as the collection's capabilities allow (API collections
+ * are read-only; connection ones follow their endpoints). Records are not
+ * undoable.
  */
 const editor = useEditor()
 const toast = useToast()
 const collection = computed(() => editor.collection as Collection)
 const fields = computed(() => collection.value.fields)
-const live = computed(() => collection.value.source.type === 'api')
-const canAdd = computed(() => !live.value && fields.value.length > 0)
+const caps = computed(() => collectionCaps(collection.value))
+const live = computed(() => caps.value.live)
+const readOnly = computed(() => !caps.value.update)
+const canAdd = computed(() => caps.value.create && fields.value.length > 0)
+const badge = computed(() => (collection.value.source.type === 'connection' ? 'Remote' : 'Live from API'))
 
 const query = ref('')
 const sort = ref<TableSort | null>(null)
@@ -89,7 +95,7 @@ async function go(cell: TableCell) {
 function startEdit(cell: TableCell, initial?: string) {
   const record = rows.value[cell.row]
   const field = fields.value[cell.col]
-  if (!record || !field || live.value) return
+  if (!record || !field || readOnly.value) return
   if (field.type === 'boolean') void commit(record, field, record.values[field.key] !== true)
   else editing.value = { id: record.id, key: field.key, initial }
 }
@@ -112,14 +118,14 @@ function cancel() {
 function clickCell(row: number, col: number) {
   active.value = { row, col }
   const field = fields.value[col]!
-  if (live.value || field.type === 'boolean') focusTable()
+  if (readOnly.value || field.type === 'boolean') focusTable()
   else startEdit({ row, col })
 }
 
 function onKey(event: KeyboardEvent) {
   if (editing.value || (event.target as HTMLElement).closest('input')) return
   const meta = event.metaKey || event.ctrlKey || event.altKey
-  if ((event.key === 'Backspace' || event.key === 'Delete') && selected.value.length && !live.value) {
+  if ((event.key === 'Backspace' || event.key === 'Delete') && selected.value.length && caps.value.delete) {
     event.preventDefault()
     void removeSelected()
     return
@@ -200,7 +206,9 @@ function sortIcon(key: string) {
       :fields="fields"
       :count="count"
       :can-add="canAdd"
+      :can-delete="caps.delete"
       :live="live"
+      :badge="badge"
       :refreshing="refreshing"
       :selected="selected.length"
       @add="go({ row: rows.length, col: 0 })"
@@ -232,7 +240,7 @@ function sortIcon(key: string) {
           <tr class="h-10 text-left text-[13px] text-dimmed">
             <th class="w-10 border-b border-white/6 pl-4">
               <DataTableCheck
-                v-if="!live && rows.length"
+                v-if="caps.delete && rows.length"
                 :checked="allSelected"
                 :indeterminate="someSelected"
                 label="Select all"
@@ -275,7 +283,7 @@ function sortIcon(key: string) {
           >
             <td class="w-10 border-b border-white/5 pl-4">
               <DataTableCheck
-                v-if="!live"
+                v-if="caps.delete"
                 :checked="selected.includes(record.id)"
                 :label="`Select item ${row + 1}`"
                 @toggle="toggleRow(record.id, $event)"
@@ -288,7 +296,7 @@ function sortIcon(key: string) {
               :class="[
                 field.type === 'text' ? 'max-w-0' : 'whitespace-nowrap',
                 active?.row === row && active?.col === col ? 'rounded-[4px] shadow-[inset_0_0_0_2px_var(--editor-selection)]' : '',
-                live ? 'cursor-default' : 'cursor-text'
+                readOnly ? 'cursor-default' : 'cursor-text'
               ]"
               :data-cell="`${row}-${col}`"
               :data-active="(active?.row === row && active?.col === col) || undefined"
@@ -299,13 +307,16 @@ function sortIcon(key: string) {
                 :value="record.values[field.key] ?? null"
                 :editing="editing?.id === record.id && editing.key === field.key"
                 :initial="editing?.id === record.id && editing.key === field.key ? editing.initial : undefined"
-                :read-only="live"
+                :read-only="readOnly"
                 @commit="(raw, move) => commit(record, field, raw, move)"
                 @cancel="cancel"
               />
             </td>
             <td class="w-11 border-b border-white/5 pr-3 text-right">
-              <UTooltip text="Open record">
+              <UTooltip
+                v-if="caps.get"
+                text="Open record"
+              >
                 <UButton
                   icon="i-lucide-panel-right-open"
                   color="neutral"

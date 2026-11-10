@@ -122,7 +122,7 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
         <EditorSettings />
       </main>
       <aside
-        v-if="editor.mode === 'data' && editor.collection"
+        v-if="editor.mode === 'data' && (editor.collection || editor.connection)"
         class="shrink-0 overflow-y-auto border-l border-default"
         :style="{ width: `${panelWidth}px` }"
         data-data-panel

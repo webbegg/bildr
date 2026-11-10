@@ -108,6 +108,8 @@ export function createEditor(projectId: string) {
   const recordsError = ref('')
   /** The record the Data view's right panel shows; null shows the collection and its fields. */
   const recordId = ref<string | null>(null)
+  /** The connection the Data view's right panel shows (its folder was clicked); null shows the collection. */
+  const connectionId = ref<string | null>(null)
   /** Bumped by "Import from API" outside the sidebar (the empty state, ⌘K); the sidebar opens its import dialog on each bump. */
   const importRequest = ref(0)
   /** Bumped by "Environment variables" (⌘K); the Settings view scrolls to its Variables section on each bump. */
@@ -124,6 +126,7 @@ export function createEditor(projectId: string) {
   /** The theme the canvas renders: the draft while previewing, else the project's. */
   const theme = computed(() => themeDraft.value ?? project.value?.theme ?? null)
   const collection = computed(() => project.value?.collections.find(c => c.id === collectionId.value) ?? project.value?.collections[0] ?? null)
+  const connection = computed(() => project.value?.connections.find(c => c.id === connectionId.value) ?? null)
 
   /** Collections the current page's Lists show, and their records by collection id, for the canvas. */
   const listCollections = computed(() => {
@@ -153,8 +156,11 @@ export function createEditor(projectId: string) {
     if (load === listLoad) listCollectionRecords.value = Object.fromEntries(entries)
   }
 
-  // API collections are mapped on the server, so a new source or mapping needs a reload too.
-  watch(() => JSON.stringify(listCollections.value.map(c => (c.source.type === 'api' ? [c.id, c.source, c.fields] : c.id))), () => void reloadListRecords().catch(() => {}))
+  // API and connection collections are mapped on the server, so a new source, mapping or connection needs a reload too.
+  watch(() => JSON.stringify([
+    listCollections.value.map(c => (c.source.type === 'internal' ? c.id : [c.id, c.source, c.fields])),
+    listCollections.value.some(c => c.source.type === 'connection') ? project.value?.connections : null
+  ]), () => void reloadListRecords().catch(() => {}))
 
   async function reload(): Promise<void> {
     const [next, nextHistory] = await Promise.all([
@@ -226,6 +232,10 @@ export function createEditor(projectId: string) {
 
   watch(() => collection.value?.id, () => {
     recordId.value = null
+  })
+
+  watch(collectionId, () => {
+    connectionId.value = null
   })
 
   // A schema change (or another collection) changes how records read.
@@ -578,7 +588,7 @@ export function createEditor(projectId: string) {
 
   return reactive({
     projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
-    collectionId, collection, records, recordsTotal, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
+    collectionId, collection, connectionId, connection, records, recordsTotal, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
     reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })

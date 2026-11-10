@@ -7,8 +7,9 @@ import type { Field } from '#shared/document/schema'
 /**
  * The records table's toolbar, Framer CMS's: add, sort, filter and search
  * icons with the active filters as chips, the item count, and a `…` menu.
+ * Live collections (read from an API) show `badge` and Refresh.
  */
-const props = defineProps<{ fields: Field[], count: string, canAdd: boolean, live: boolean, refreshing: boolean, selected: number }>()
+const props = defineProps<{ fields: Field[], count: string, canAdd: boolean, canDelete: boolean, live: boolean, badge: string, refreshing: boolean, selected: number }>()
 const emit = defineEmits<{ add: [], refresh: [], remove: [] }>()
 const query = defineModel<string>('query', { required: true })
 const sort = defineModel<TableSort | null>('sort', { required: true })
@@ -162,7 +163,7 @@ function removeFilter(index: number) {
     >{{ count }}</span>
     <div class="ms-auto flex shrink-0 items-center gap-2">
       <UButton
-        v-if="selected && !live"
+        v-if="selected && canDelete"
         :label="`Delete ${selected}`"
         icon="i-lucide-trash-2"
         color="error"
@@ -173,7 +174,7 @@ function removeFilter(index: number) {
       />
       <template v-if="live">
         <UBadge
-          label="Live from API"
+          :label="badge"
           icon="i-lucide-radio"
           color="info"
           variant="subtle"

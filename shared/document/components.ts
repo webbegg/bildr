@@ -180,10 +180,10 @@ export const COMPONENTS: ComponentDef[] = [
     type: 'Form',
     label: 'Form',
     icon: 'i-lucide-send',
-    description: 'A form that adds a record to an internal collection on submit. Put Inputs inside (each with field set to a collection field) and a Button with action submit. In the published app the collection must be publicCreate; anyone, including other websites, can then post records to it.',
+    description: 'A form that adds a record to a collection on submit: an internal one, or a connection collection with a create endpoint (the record is sent to the remote API). Put Inputs inside (each with field set to a collection field) and a Button with action submit. In the published app the collection must be publicCreate; anyone, including other websites, can then post records to it.',
     container: true,
     props: [
-      { name: 'collection', label: 'Collection', kind: 'collection', default: '', description: 'The internal collection that receives the records.' },
+      { name: 'collection', label: 'Collection', kind: 'collection', default: '', description: 'The collection that receives the records: internal, or a connection collection with a create endpoint.' },
       { name: 'successMessage', label: 'Success message', kind: 'text', default: 'Thanks!', description: 'Toast shown after a successful submit.' },
       { name: 'redirectTo', label: 'Then go to', kind: 'link', default: '', description: 'Optional page slug or URL to open after a successful submit.' },
       { name: 'resetOnSuccess', label: 'Reset on success', kind: 'boolean', default: true }

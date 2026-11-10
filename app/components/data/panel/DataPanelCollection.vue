@@ -2,11 +2,12 @@
 import type { Collection } from '#shared/document/schema'
 import { useDataSidebarTab } from '../DataCollections.vue'
 
-/** The collection panel: its name, slug and public flags, and the API source of a synced collection. Fields opens the sidebar's Fields tab. */
+/** The collection panel: its name, slug and public flags, then the API source of a synced collection or a connection collection's endpoints. Fields opens the sidebar's Fields tab. */
 const props = defineProps<{ collection: Collection }>()
 const editor = useEditor()
 const sidebarTab = useDataSidebarTab()
 const apiSource = computed(() => (props.collection.source.type === 'api' ? props.collection.source : null))
+const connectionSource = computed(() => (props.collection.source.type === 'connection' ? props.collection.source : null))
 const editingMapping = ref(false)
 
 function update(patch: Record<string, unknown>) {
@@ -92,7 +93,32 @@ function update(patch: Record<string, unknown>) {
           />
         </button>
       </EditorRow>
+      <EditorRow
+        v-if="connectionSource"
+        label="Connection"
+        name="connection"
+      >
+        <button
+          type="button"
+          class="flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 text-[13px] text-muted hover:bg-white/4 hover:text-highlighted"
+          title="Show the connection"
+          data-show-connection
+          @click="editor.connectionId = connectionSource.connectionId"
+        >
+          <UIcon
+            name="i-lucide-server"
+            class="size-3.5 shrink-0"
+          />
+          <span class="truncate">{{ editor.project?.connections.find(c => c.id === connectionSource!.connectionId)?.name }}</span>
+        </button>
+      </EditorRow>
     </EditorStyleSection>
+
+    <DataPanelEndpoints
+      v-if="connectionSource"
+      :collection="collection"
+      :source="connectionSource"
+    />
 
     <EditorStyleSection
       v-if="apiSource"

@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import { collectionCaps } from '#shared/data/collections'
 import type { DataRecord, RecordValue } from '#shared/data/records'
 import type { Collection } from '#shared/document/schema'
 
-/** The record panel: one row per field, each commit one `record_update`; delete and close in the head. Read-only for API collections. */
+/** The record panel: one row per field, each commit one `record_update`; delete and close in the head. Editable and deletable as the collection's capabilities allow. */
 const props = defineProps<{ collection: Collection, record: DataRecord }>()
 const editor = useEditor()
-const live = computed(() => props.collection.source.type === 'api')
+const caps = computed(() => collectionCaps(props.collection))
 
 function commit(key: string, value: RecordValue) {
   editor.runData('record_update', { recordId: props.record.id, values: { [key]: value } })
@@ -28,7 +29,7 @@ async function remove() {
       :detail="record.id"
     >
       <UTooltip
-        v-if="!live"
+        v-if="caps.delete"
         text="Delete record"
       >
         <UButton
@@ -66,7 +67,7 @@ async function remove() {
         <DataPanelValue
           :field="field"
           :model-value="record.values[field.key] ?? null"
-          :readonly="live"
+          :readonly="!caps.update"
           @commit="commit(field.key, $event)"
         />
       </EditorRow>

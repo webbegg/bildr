@@ -7,12 +7,17 @@ import type { FieldType } from '#shared/document/schema'
  * The Data sidebar's Fields tab, Framer CMS's: the shown collection's fields,
  * one row each. The label and type edit in place, the grip drags a field to
  * another position (`field_move`), the row "−" removes it and `+ Add…` opens
- * the add form. API collections list their mapping read-only (Edit mapping
- * changes it).
+ * the add form. API and connection collections list their mapping
+ * read-only (Edit mapping changes it).
  */
 const editor = useEditor()
 const collection = computed(() => editor.collection)
 const live = computed(() => collection.value?.source.type === 'api')
+const mapped = computed(() => collection.value?.source.type !== 'internal')
+const connection = computed(() => {
+  const source = collection.value?.source
+  return source?.type === 'connection' ? editor.project?.connections.find(c => c.id === source.connectionId) : undefined
+})
 
 const TYPE_ICONS: Record<FieldType, string> = {
   text: 'i-lucide-type',
@@ -143,7 +148,7 @@ const editingMapping = ref(false)
       </div>
 
       <div
-        v-if="live"
+        v-if="mapped"
         class="px-2"
       >
         <div
@@ -179,7 +184,14 @@ const editingMapping = ref(false)
           :ui="{ content: 'sm:max-w-5xl' }"
         >
           <template #body>
+            <DataConnectionSource
+              v-if="connection"
+              :connection="connection"
+              :collection="collection"
+              @done="editingMapping = false"
+            />
             <DataApiSource
+              v-else-if="live"
               :collection="collection"
               @done="editingMapping = false"
             />

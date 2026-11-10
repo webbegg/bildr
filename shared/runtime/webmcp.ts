@@ -1,3 +1,4 @@
+import { takesFormRecords } from '../data/collections'
 import type { Page } from '../document/schema'
 import { pageOutline } from './render'
 import type { VisitorCollection, VisitorProject } from './visitor'
@@ -109,7 +110,7 @@ function dataTools(project: VisitorProject, host: WebMcpHost): WebMcpTool[] {
       }
     })
   }
-  const writable = project.collections.filter(c => c.publicCreate && c.source.type === 'internal')
+  const writable = project.collections.filter(c => c.publicCreate && takesFormRecords(c))
   if (writable.length) {
     tools.push({
       name: 'submit_form',

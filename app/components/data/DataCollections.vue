@@ -1,5 +1,9 @@
 <script lang="ts">
+import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Ref } from 'vue'
+
+/** A new connection's base URL until it is set in the right panel (connection_create needs one). */
+export const NEW_CONNECTION_URL = 'https://api.example.com'
 
 /** The last Import from API request each editor's sidebar answered, so a request made before it mounts (⌘K from the Canvas) still opens the dialog. */
 const answeredImports = new WeakMap<object, number>()
@@ -19,11 +23,12 @@ export function useDataSidebarTab(): Ref<DataSidebarTab> {
 <script setup lang="ts">
 /**
  * The Data view sidebar, Framer CMS's: Collections / Fields as text tabs.
- * Collections lists **Collections** (stored in bildr) and **Synced** (read
- * live from an API), each a row per collection with its record count, then
- * `+ Add…`: an inline name for a new collection, or the Import from API dialog
- * (also opened by each `editor.importRequest`). Fields edits the shown
- * collection's fields.
+ * Collections lists **Collections** (stored in bildr, then `+ Add…` for an
+ * inline name) and **Synced**: each connection as a folder of its
+ * collections, then the legacy one-URL API collections. The Synced `+` makes
+ * a new connection (an inline name, then the base URL in the right panel) or
+ * opens the Import from URL dialog (also opened by each
+ * `editor.importRequest`). Fields edits the shown collection's fields.
  */
 const editor = useEditor()
 const tab = useDataSidebarTab()
@@ -31,10 +36,36 @@ const TABS = [{ value: 'collections', label: 'Collections' }, { value: 'fields',
 
 const internal = computed(() => editor.project?.collections.filter(c => c.source.type === 'internal') ?? [])
 const synced = computed(() => editor.project?.collections.filter(c => c.source.type === 'api') ?? [])
+const connections = computed(() => editor.project?.connections ?? [])
 
 const newName = ref('')
 const adding = ref(false)
 const fromApi = ref(false)
+const connectionName = ref('')
+const addingConnection = ref(false)
+/** The connection whose `+ Add…` opened the new collection dialog. */
+const addingTo = ref<string | null>(null)
+const addingToConnection = computed(() => connections.value.find(c => c.id === addingTo.value))
+
+const syncedMenu: DropdownMenuItem[] = [
+  { label: 'New connection', icon: 'i-lucide-server', onSelect: () => (addingConnection.value = true) },
+  { label: 'Import from URL', icon: 'i-lucide-globe', slot: 'from-api', onSelect: () => (fromApi.value = true) }
+]
+
+async function addConnection() {
+  const name = connectionName.value.trim()
+  if (!name) return
+  const result = await editor.run<{ connectionId: string }>('connection_create', { name, baseUrl: NEW_CONNECTION_URL })
+  if (result) {
+    editor.connectionId = result.connectionId
+    cancelConnection()
+  }
+}
+
+function cancelConnection() {
+  addingConnection.value = false
+  connectionName.value = ''
+}
 
 watch(() => editor.importRequest, (request) => {
   if (request > (answeredImports.get(editor) ?? 0)) fromApi.value = true
@@ -69,7 +100,7 @@ async function loadCounts() {
   if (load === countLoad) counts.value = Object.fromEntries(entries.flat())
 }
 
-watch(() => JSON.stringify(editor.project?.collections.map(c => (c.source.type === 'api' ? [c.id, c.source] : c.id)) ?? []), () => void loadCounts(), { immediate: true })
+watch(() => JSON.stringify([editor.project?.collections.map(c => (c.source.type === 'internal' ? c.id : [c.id, c.source])), editor.project?.connections]), () => void loadCounts(), { immediate: true })
 
 // The shown collection's count follows its records as they are added or deleted.
 watch(() => editor.recordsTotal, (total) => {
@@ -157,30 +188,64 @@ watch(() => editor.recordsTotal, (total) => {
         class="mt-2"
         data-collections-synced
       >
-        <p class="ps-3.5 pe-2 pt-2 pb-1 text-xs font-medium text-dimmed">
-          Synced
-        </p>
+        <div class="flex items-center ps-3.5 pe-3 pt-1 pb-0.5">
+          <p class="flex-1 text-xs font-medium text-dimmed">
+            Synced
+          </p>
+          <UDropdownMenu
+            :items="syncedMenu"
+            :content="{ align: 'end' }"
+          >
+            <UButton
+              icon="i-lucide-plus"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              aria-label="Add synced data"
+              class="text-dimmed"
+              data-synced-add
+            />
+            <template #from-api-label>
+              <span data-from-api>Import from URL</span>
+            </template>
+          </UDropdownMenu>
+        </div>
+        <DataConnectionFolder
+          v-for="connection in connections"
+          :key="connection.id"
+          :connection="connection"
+          :counts="counts"
+          @add="addingTo = connection.id"
+        />
+        <form
+          v-if="addingConnection"
+          class="px-2"
+          data-new-connection
+          @submit.prevent="addConnection"
+        >
+          <UInput
+            v-model="connectionName"
+            size="sm"
+            placeholder="Connection name"
+            autofocus
+            class="w-full"
+            aria-label="New connection name"
+            @keydown.esc="cancelConnection"
+            @blur="!connectionName.trim() && cancelConnection()"
+          />
+        </form>
         <DataCollectionRow
           v-for="collection in synced"
           :key="collection.id"
           :collection="collection"
           :count="counts[collection.id]"
         />
-        <div class="px-2">
-          <button
-            type="button"
-            class="flex h-9 w-full items-center gap-2.5 rounded-lg ps-3 text-left text-sm text-muted hover:bg-white/4 hover:text-toned"
-            title="Import from API"
-            data-from-api
-            @click="fromApi = true"
-          >
-            <UIcon
-              name="i-lucide-plus"
-              class="size-4 shrink-0"
-            />
-            Add…
-          </button>
-        </div>
+        <p
+          v-if="!connections.length && !synced.length && !addingConnection"
+          class="ps-3.5 pe-3 py-1.5 text-xs text-dimmed"
+        >
+          Connect an API with +.
+        </p>
       </section>
     </div>
 
@@ -192,6 +257,22 @@ watch(() => editor.recordsTotal, (total) => {
     >
       <template #body>
         <DataApiSource @done="fromApi = false" />
+      </template>
+    </UModal>
+
+    <UModal
+      :open="!!addingToConnection"
+      title="New collection"
+      :description="addingToConnection ? `In ${addingToConnection.name}: test the list endpoint, review the proposed fields, then save.` : ''"
+      :ui="{ content: 'sm:max-w-5xl' }"
+      @update:open="!$event && (addingTo = null)"
+    >
+      <template #body>
+        <DataConnectionSource
+          v-if="addingToConnection"
+          :connection="addingToConnection"
+          @done="addingTo = null"
+        />
       </template>
     </UModal>
   </div>

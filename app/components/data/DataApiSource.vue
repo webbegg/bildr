@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { mapItems } from '#shared/data/apiSource'
 import type { ApiField } from '#shared/data/apiSource'
-import type { RecordValue } from '#shared/data/records'
 import { fieldLabel } from '#shared/document/factory'
-import { ApiPathSchema, FIELD_TYPES, FieldKeySchema } from '#shared/document/schema'
-import type { Collection, FieldType } from '#shared/document/schema'
+import type { Collection } from '#shared/document/schema'
+import { mappingFields, mappingProblems, mappingRow } from './DataMappingTable.vue'
+import type { MappingRow } from './DataMappingTable.vue'
 
 /**
  * The "From API" flow: fetch a JSON endpoint, review and edit the proposed
@@ -17,14 +17,6 @@ const emit = defineEmits<{ done: [] }>()
 const editor = useEditor()
 const toast = useToast()
 
-interface Row {
-  include: boolean
-  key: string
-  label: string
-  type: FieldType
-  path: string
-}
-
 interface Preview {
   itemsPath: string
   fields: ApiField[]
@@ -35,23 +27,15 @@ interface Preview {
 const source = props.collection?.source.type === 'api' ? props.collection.source : undefined
 const url = ref(source?.url ?? '')
 const itemsPath = ref(source?.itemsPath ?? '')
-const rows = ref<Row[]>(props.collection?.fields.map(f => toRow(f)) ?? [])
+const rows = ref<MappingRow[]>(props.collection?.fields.map(mappingRow) ?? [])
 const items = shallowRef<unknown[]>([])
 const total = ref<number | null>(null)
 const name = ref('')
 const fetching = ref(false)
 const saving = ref(false)
 const error = ref('')
-const newKey = ref('')
-const newPath = ref('')
 /** The URL and items path the current mapping is for; fetching another proposes new fields. */
 let mappedFor = source ? JSON.stringify([source.url, source.itemsPath]) : ''
-
-const typeItems = FIELD_TYPES.map(type => ({ label: type, value: type }))
-
-function toRow(field: ApiField): Row {
-  return { include: true, key: field.key, label: field.label, type: field.type, path: field.path ?? field.key }
-}
 
 /** `https://rickandmortyapi.com/api/character` → `Character`. */
 function nameFromUrl(value: string): string {
@@ -69,13 +53,14 @@ async function fetchPreview() {
   fetching.value = true
   try {
     const input: Record<string, unknown> = { projectId: editor.projectId, url: url.value.trim() }
+    if (source?.headers) input.headers = source.headers
     if (total.value !== null || props.collection) input.itemsPath = itemsPath.value.trim()
     const preview = await callAction<Preview>('api_source_preview', input)
     itemsPath.value = preview.itemsPath
     items.value = preview.items
     total.value = preview.total
     const fetched = JSON.stringify([url.value.trim(), preview.itemsPath])
-    if (fetched !== mappedFor || !rows.value.length) rows.value = preview.fields.map(toRow)
+    if (fetched !== mappedFor || !rows.value.length) rows.value = preview.fields.map(mappingRow)
     mappedFor = fetched
     if (!name.value) name.value = nameFromUrl(url.value)
   } catch (failure) {
@@ -90,40 +75,15 @@ function onUrlChange() {
   if (!props.collection) total.value = null
 }
 
-const included = computed(() => rows.value.filter(r => r.include))
-
-const problems = computed(() => {
-  const seen = new Set<string>()
-  return rows.value.map((row) => {
-    if (!row.include) return ''
-    const key = FieldKeySchema.safeParse(row.key)
-    if (!key.success) return key.error.issues[0]!.message
-    if (seen.has(row.key)) return `"${row.key}" is used twice`
-    seen.add(row.key)
-    if (!ApiPathSchema.safeParse(row.path).success) return 'Use a dot path such as origin.name'
-    return row.label.trim() ? '' : 'Add a label'
-  })
-})
-
-const fields = computed<ApiField[]>(() => included.value.map(r => ({ key: r.key, label: r.label.trim() || r.key, type: r.type, path: r.path })))
-const valid = computed(() => problems.value.every(p => !p) && included.value.length > 0)
+const problems = computed(() => mappingProblems(rows.value))
+const fields = computed(() => mappingFields(rows.value))
+const valid = computed(() => problems.value.every(p => !p) && fields.value.length > 0)
 const preview = computed(() => (valid.value ? mapItems(items.value, fields.value) : []))
-
-function addField() {
-  const key = newKey.value.trim()
-  if (!key) return
-  rows.value = [...rows.value, { include: true, key, label: fieldLabel(key), type: 'text', path: newPath.value.trim() || key }]
-  newKey.value = ''
-  newPath.value = ''
-}
-
-function display(value: RecordValue): string {
-  return value === null || value === '' ? '—' : String(value)
-}
 
 async function save() {
   saving.value = true
-  const body = { source: { type: 'api', url: url.value.trim(), itemsPath: itemsPath.value.trim() }, fields: fields.value }
+  // Headers set by an agent (api_source_preview, collection_update) stay.
+  const body = { source: { type: 'api', url: url.value.trim(), itemsPath: itemsPath.value.trim(), ...(source?.headers ? { headers: source.headers } : {}) }, fields: fields.value }
   const result = props.collection
     ? await editor.run('collection_update', { collection: props.collection.id, ...body })
     : await editor.run<{ collectionId: string }>('collection_create', { name: name.value.trim(), ...body })
@@ -205,176 +165,15 @@ onMounted(() => {
         </p>
       </div>
 
-      <div>
-        <p class="mb-1 text-sm font-semibold">
-          Mapping
-        </p>
-        <table
-          class="w-full text-sm"
-          data-api-mapping
-        >
-          <thead>
-            <tr class="text-left text-xs text-muted">
-              <th class="w-8 pb-1" />
-              <th class="pb-1 font-medium">
-                Key
-              </th>
-              <th class="pb-1 font-medium">
-                Label
-              </th>
-              <th class="w-32 pb-1 font-medium">
-                Type
-              </th>
-              <th class="pb-1 font-medium">
-                Path
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <template
-              v-for="(row, i) in rows"
-              :key="i"
-            >
-              <tr
-                :data-mapping-row="row.path"
-                :class="{ 'opacity-50': !row.include }"
-              >
-                <td class="py-1">
-                  <UCheckbox
-                    v-model="row.include"
-                    :aria-label="`Include ${row.path}`"
-                    data-include
-                  />
-                </td>
-                <td class="py-1 pe-2">
-                  <UInput
-                    v-model="row.key"
-                    size="sm"
-                    class="w-full font-mono"
-                    data-key
-                  />
-                </td>
-                <td class="py-1 pe-2">
-                  <UInput
-                    v-model="row.label"
-                    size="sm"
-                    class="w-full"
-                    data-label
-                  />
-                </td>
-                <td class="py-1 pe-2">
-                  <USelect
-                    v-model="row.type"
-                    :items="typeItems"
-                    size="sm"
-                    class="w-full"
-                    data-type
-                  />
-                </td>
-                <td class="py-1">
-                  <UInput
-                    v-model="row.path"
-                    size="sm"
-                    class="w-full font-mono"
-                    data-path
-                  />
-                </td>
-              </tr>
-              <tr v-if="problems[i]">
-                <td />
-                <td
-                  colspan="4"
-                  class="pb-1 text-xs text-error"
-                >
-                  {{ problems[i] }}
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
-        <form
-          class="mt-2 flex items-center gap-2"
-          data-api-add-field
-          @submit.prevent="addField"
-        >
-          <UInput
-            v-model="newKey"
-            size="sm"
-            placeholder="New field key, e.g. locationName"
-            class="flex-1"
-          />
-          <UInput
-            v-model="newPath"
-            size="sm"
-            placeholder="Path, e.g. location.name"
-            class="flex-1 font-mono"
-          />
-          <UButton
-            type="submit"
-            icon="i-lucide-plus"
-            label="Add field"
-            size="sm"
-            color="neutral"
-            variant="outline"
-          />
-        </form>
-      </div>
-
-      <div>
-        <p class="mb-1 text-sm font-semibold">
-          Preview
-          <span class="font-normal text-xs text-muted">first {{ preview.length }} mapped rows</span>
-        </p>
-        <div class="max-h-72 overflow-auto rounded-md ring ring-default">
-          <table
-            class="w-full text-xs"
-            data-api-preview
-          >
-            <thead class="sticky top-0 bg-elevated">
-              <tr class="text-left">
-                <th
-                  v-for="field in fields"
-                  :key="field.key"
-                  class="px-2 py-1 font-medium whitespace-nowrap"
-                  :data-preview-column="field.key"
-                >
-                  {{ field.label }}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr
-                v-for="row in preview"
-                :key="row.id"
-                class="border-t border-default"
-              >
-                <td
-                  v-for="field in fields"
-                  :key="field.key"
-                  class="max-w-48 truncate px-2 py-1"
-                >
-                  <img
-                    v-if="field.type === 'image' && row.values[field.key]"
-                    :src="String(row.values[field.key])"
-                    alt=""
-                    class="size-8 rounded object-cover ring ring-default"
-                  >
-                  <span
-                    v-else
-                    :class="{ 'text-dimmed': row.values[field.key] === null }"
-                  >{{ display(row.values[field.key] ?? null) }}</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          <p
-            v-if="!preview.length"
-            class="p-3 text-xs text-dimmed"
-          >
-            {{ valid ? 'No items to preview.' : 'Fix the mapping to see the preview.' }}
-          </p>
-        </div>
-      </div>
+      <DataMappingTable
+        v-model="rows"
+        :problems="problems"
+      />
+      <DataMappingPreview
+        :fields="fields"
+        :rows="preview"
+        :valid="valid"
+      />
 
       <form
         class="flex items-end justify-end gap-2"

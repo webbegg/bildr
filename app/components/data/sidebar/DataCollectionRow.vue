@@ -4,12 +4,13 @@ import type { Collection } from '#shared/document/schema'
 
 /**
  * A Data sidebar row, Framer CMS's: the collection's icon (globe for API
- * ones), name and record count. Click shows it, double-click renames inline,
- * and the hover `…` menu renames or deletes it.
+ * ones), name and record count, `indent`ed inside a connection's folder.
+ * Click shows it, double-click renames inline, and the hover `…` menu
+ * renames or deletes it.
  */
-const { collection, count } = defineProps<{ collection: Collection, count?: number }>()
+const { collection, count, indent = false } = defineProps<{ collection: Collection, count?: number, indent?: boolean }>()
 const editor = useEditor()
-const shown = computed(() => editor.collection?.id === collection.id)
+const shown = computed(() => editor.collection?.id === collection.id && !editor.connectionId)
 const renaming = ref(false)
 const renameValue = ref('')
 
@@ -27,6 +28,7 @@ async function commitRename() {
 
 function show() {
   editor.collectionId = collection.id
+  editor.connectionId = null
   editor.mode = 'data'
 }
 
@@ -59,8 +61,8 @@ const menu = computed<DropdownMenuItem[]>(() => [
     <button
       v-else
       type="button"
-      class="flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-lg ps-3 pe-3 text-left text-sm"
-      :class="shown ? 'bg-white/8 font-medium text-highlighted' : 'text-toned hover:bg-white/4'"
+      class="flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-lg pe-3 text-left text-sm"
+      :class="[shown ? 'bg-white/8 font-medium text-highlighted' : 'text-toned hover:bg-white/4', indent ? 'ps-13' : 'ps-3']"
       :title="collection.name"
       :aria-current="shown ? 'true' : undefined"
       :data-collection="collection.slug"

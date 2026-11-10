@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { PropDef, PropValue } from '#shared/document/components'
 import type { Provenance } from '#shared/editor/styleFields'
+import { takesFormRecords } from '#shared/data/collections'
 import { enclosingForm, FORM_TYPE } from '#shared/runtime/form'
 
 /**
@@ -37,10 +38,10 @@ const linkItems = computed(() => [
 const withMissing = (items: { label: string, value: string }[]) =>
   text.value && !items.some(i => i.value === text.value) ? [...items, { label: `${text.value} (missing)`, value: text.value }] : items
 
-// A List's or Form's collection, by slug; a Form writes records, so it only offers internal ones.
+// A List's or Form's collection, by slug; a Form creates records, so it only offers the ones that take them.
 const collectionItems = computed(() => {
   const forForm = editor.selected?.type === FORM_TYPE
-  const collections = editor.project?.collections.filter(c => !forForm || c.source.type === 'internal') ?? []
+  const collections = editor.project?.collections.filter(c => !forForm || takesFormRecords(c)) ?? []
   return withMissing([{ label: 'None', value: NONE }, ...collections.map(c => ({ label: `${c.name} (${c.slug})`, value: c.slug }))])
 })
 

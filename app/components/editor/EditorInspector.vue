@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { takesFormRecords } from '#shared/data/collections'
 import { getComponent } from '#shared/document/components'
 import type { PropDef, PropValue } from '#shared/document/components'
 import { findParent } from '#shared/document/tree'
@@ -47,13 +48,14 @@ const changed = (def: PropDef) => !!node.value && !isDefaultProp(def, node.value
 // The canvas never submits forms (clicks select), so a Form is tried out here instead.
 const formCollection = computed(() => {
   if (node.value?.type !== FORM_TYPE) return undefined
-  return editor.project?.collections.find(c => c.slug === node.value!.props.collection && c.source.type === 'internal')
+  return editor.project?.collections.find(c => c.slug === node.value!.props.collection && takesFormRecords(c))
 })
 
 async function testSubmit() {
   const form = node.value
   const collection = formCollection.value
   if (!form || !collection) return
+  if (collection.source.type === 'connection' && !confirm(`This sends a real ${collection.source.endpoints.create?.method ?? 'POST'} request to the "${collection.name}" API. It cannot be undone.`)) return
   const mapped = formFields(form)
   const values = sampleValues(collection.fields, new Date(), mapped.length ? mapped : undefined)
   const record = await editor.run<{ id: string }>('record_create', { collection: collection.id, values })
