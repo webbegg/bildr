@@ -35,7 +35,7 @@ Apps can show and collect data. As with everything else, each step is an action,
 - **Records** are live data, stored per collection outside the document. They are not undone and not frozen at publish. Values are checked against the field types.
 - Manage both in the editor's **Data** mode: collections, fields, and a records table where you can add, edit and delete.
 - Actions:
-  - schema: `collection_create`, `collection_update`, `collection_delete`, `field_add`, `field_update`, `field_remove`
+  - schema: `collection_create`, `collection_update`, `collection_delete`, `field_add`, `field_update`, `field_move`, `field_remove`
   - records: `record_list` (filter by field equality, sort, limit, offset), `record_get`, `record_create`, `record_update`, `record_delete`
 
 ### API sources

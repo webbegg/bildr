@@ -186,6 +186,22 @@ export const fieldUpdate = defineAction({
   }
 })
 
+export const fieldMove = defineAction({
+  name: 'field_move',
+  description: 'Move a field to another position in its collection\'s field list (0 is first; the index is where the field ends up). Records are unchanged. Undoable.',
+  input: z.object({
+    projectId: IdSchema,
+    collection: CollectionRef,
+    key: z.string().describe('Key of the field to move'),
+    index: z.number().int().nonnegative().describe('New position, from 0 to the field count minus one')
+  }),
+  run: async ({ projectId, collection: ref, key, index }, ctx) => {
+    const { id } = findCollection(await ctx.services.loadProject(projectId), ref)
+    const project = await ctx.services.mutate(ctx, projectId, 'Move field', [{ op: 'moveField', collectionId: id, key, index }])
+    return { version: project.version, collection: findCollection(project, id) }
+  }
+})
+
 export const fieldRemove = defineAction({
   name: 'field_remove',
   description: 'Remove a field from a collection. Records keep the stored value hidden, so undo restores it. Undoable.',

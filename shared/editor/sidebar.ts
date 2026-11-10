@@ -30,7 +30,7 @@ export function pageRowLabel(page: Pick<Page, 'name' | 'slug'>, home: boolean): 
   return slugify(page.name) === (home ? 'home' : page.slug) ? { path } : { path, hint: page.name }
 }
 
-/** The assets (theme styles, collections) whose name matches. */
+/** The items (e.g. the Assets panel's theme styles) whose name matches. */
 export function filterByName<T extends { name: string }>(items: readonly T[], query: string): T[] {
   return items.filter(item => matches(query, item.name))
 }

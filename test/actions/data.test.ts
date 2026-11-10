@@ -82,6 +82,21 @@ describe('collection actions', () => {
     await expect(bildr.call('field_add', { projectId, collection: 'nope', key: 'x', type: 'text' }, mcp)).rejects.toMatchObject({ code: 'not_found' })
   })
 
+  it('field_move reorders a field as one undo step and validates key and bounds', async () => {
+    const { bildr, projectId, menu, get } = await setup()
+    const moved = await bildr.call<{ version: number, collection: Collection }>('field_move', { projectId, collection: 'menu', key: 'photo', index: 0 }, mcp)
+    expect(moved.collection.fields.map(f => f.key)).toEqual(['photo', 'name', 'price', 'vegan'])
+    expect((await get()).collections[0]!.fields.map(f => f.key)).toEqual(['photo', 'name', 'price', 'vegan'])
+    expect(await bildr.call('history_get', { projectId }, mcp)).toEqual({ undo: 'Move field', redo: null })
+
+    await bildr.call('history_undo', { projectId }, mcp)
+    expect((await get()).collections[0]!.fields).toEqual(menu.fields)
+
+    await expect(bildr.call('field_move', { projectId, collection: menu.id, key: 'nope', index: 0 }, mcp)).rejects.toMatchObject({ code: 'not_found' })
+    await expect(bildr.call('field_move', { projectId, collection: menu.id, key: 'name', index: 4 }, mcp)).rejects.toMatchObject({ code: 'invalid', message: 'Index 4 is out of bounds: "Menu" has 4 fields' })
+    await expect(bildr.call('field_move', { projectId, collection: menu.id, key: 'name', index: -1 }, mcp)).rejects.toMatchObject({ code: 'invalid_input' })
+  })
+
   it('collection_delete removes the schema; undo brings it back with its records', async () => {
     const { bildr, projectId, menu, get } = await setup()
     await bildr.call('record_create', { projectId, collection: 'menu', values: { name: 'Tea' } }, mcp)

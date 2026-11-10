@@ -29,6 +29,7 @@ export type Operation
     | { op: 'addField', collectionId: string, index: number, field: Field }
     | { op: 'removeField', collectionId: string, key: string }
     | { op: 'updateField', collectionId: string, key: string, label?: string, type?: FieldType, path?: string | null }
+    | { op: 'moveField', collectionId: string, key: string, index: number }
     | { op: 'setSource', collectionId: string, source: CollectionSource, fields: Field[] }
 
 export type OperationErrorCode = 'not_found' | 'invalid' | 'forbidden'
@@ -296,6 +297,16 @@ export function applyOperation(project: Project, op: Operation): Operation {
         else field.path = op.path
       }
       return inverse
+    }
+    case 'moveField': {
+      const collection = getCollection(project, op.collectionId)
+      const from = collection.fields.indexOf(getField(collection, op.key))
+      if (!Number.isInteger(op.index) || op.index < 0 || op.index >= collection.fields.length) {
+        fail('invalid', `Index ${op.index} is out of bounds: "${collection.name}" has ${collection.fields.length} fields`)
+      }
+      const [field] = collection.fields.splice(from, 1)
+      collection.fields.splice(op.index, 0, field!)
+      return { op: 'moveField', collectionId: collection.id, key: op.key, index: from }
     }
     case 'setSource': {
       const collection = getCollection(project, op.collectionId)

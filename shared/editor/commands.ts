@@ -4,6 +4,7 @@
  * commands and the shortcuts sheet read. Pure, so the editor passes in a
  * context; every command mutates through the editor's own methods.
  */
+import { uniqueCollectionName } from '../data/collections'
 import { COMPONENTS } from '../document/components'
 import type { DocNode } from '../document/schema'
 import { DEVICE_ORDER, deviceHint, deviceShortcut } from './devices'
@@ -178,6 +179,8 @@ export interface CommandEditor {
   previewDark: boolean
   sidebarPanel: SidebarPanel
   collectionId: string | null
+  /** Bumped to ask the Data view for its Import from API dialog. */
+  importRequest: number
   /** The device frame being edited. */
   deviceId: DeviceId
   insert: (type: string) => unknown
@@ -195,6 +198,7 @@ export interface CommandEditor {
   setDeepSelect: (value: boolean) => unknown
   selectPage: (id: string) => unknown
   setDevice: (id: DeviceId) => unknown
+  run: <T>(name: string, input?: Record<string, unknown>) => Promise<T | undefined>
 }
 
 export interface CommandContext {
@@ -226,8 +230,8 @@ const VIEWS: { id: EditorView, label: string, icon: string }[] = [
 
 /**
  * The quick actions for the editor's current state: insert any palette
- * component, the edit and view actions, go to a page, view, Styles or
- * collection, and the shortcuts sheet. Labels can read the state (e.g.
+ * component, the edit and view actions, create or import a collection, go
+ * to a page, view, Styles or collection, and the shortcuts sheet. Labels can read the state (e.g.
  * "Dark preview on"), so build them again when it changes.
  */
 export function editorCommands(ctx: CommandContext): EditorCommand[] {
@@ -258,6 +262,15 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
     action('zoom-100', 'Zoom to 100%', 'i-lucide-zoom-in', ['reset', 'actual'], onCanvas, ({ editor }) => editor.requestZoom('reset')),
     action('dark-preview', `Dark preview ${editor.previewDark ? 'off' : 'on'}`, editor.previewDark ? 'i-lucide-sun' : 'i-lucide-moon', ['theme', 'toggle', 'light'], always, ({ editor }) => editor.setPreviewDark(!editor.previewDark)),
     action('deep-select', `Deep select ${editor.deepSelect ? 'off' : 'on'}`, 'i-lucide-mouse-pointer-2', ['drill', 'toggle'], always, ({ editor }) => editor.setDeepSelect(!editor.deepSelect)),
+    action('data:new-collection', 'New collection', 'i-lucide-database', ['collection', 'data', 'add', 'cms'], c => !!c.editor.project, async ({ editor }) => {
+      editor.mode = 'data'
+      const result = await editor.run<{ collectionId: string }>('collection_create', { name: uniqueCollectionName('Untitled', editor.project?.collections ?? []) })
+      if (result) editor.collectionId = result.collectionId
+    }),
+    action('data:import-api', 'Import from API', 'i-lucide-globe', ['collection', 'data', 'synced', 'json', 'endpoint'], c => !!c.editor.project, ({ editor }) => {
+      editor.mode = 'data'
+      editor.importRequest++
+    }),
     ...DEVICE_ORDER.map(device => action(`device:${device.id}`, `Edit ${device.label}`, device.icon, ['device', 'breakpoint', 'frame', String(device.width)], c => onCanvas(c) && c.editor.deviceId !== device.id, ({ editor }) => editor.setDevice(device.id))),
     ...(editor.project?.pages ?? []).map((page): EditorCommand => ({
       id: `page:${page.id}`,

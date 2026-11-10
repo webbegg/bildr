@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { applyOperation, applyOperations, OperationError } from '#shared/document/operations'
+import { fieldKey } from '#shared/document/collections'
 import { createCollection, createProject } from '#shared/document/factory'
 import { ProjectSchema } from '#shared/document/schema'
 import type { Collection, Project } from '#shared/document/schema'
@@ -80,6 +81,30 @@ describe('collection schema operations', () => {
     expect(project.collections[0]).toEqual(before)
   })
 
+  it('moves a field to a position with an exact inverse', () => {
+    const { project, menu } = setup()
+    applyOperation(project, { op: 'addField', collectionId: menu.id, index: 2, field: { key: 'vegan', label: 'Vegan', type: 'boolean' } })
+    const before = structuredClone(project.collections[0])
+
+    const back = applyOperation(project, { op: 'moveField', collectionId: menu.id, key: 'vegan', index: 0 })
+    expect(project.collections[0]!.fields.map(f => f.key)).toEqual(['vegan', 'name', 'price'])
+    expect(back).toEqual({ op: 'moveField', collectionId: menu.id, key: 'vegan', index: 2 })
+    applyOperation(project, back)
+    expect(project.collections[0]).toEqual(before)
+
+    applyOperation(project, { op: 'moveField', collectionId: menu.id, key: 'name', index: 2 })
+    expect(project.collections[0]!.fields.map(f => f.key)).toEqual(['price', 'vegan', 'name'])
+  })
+
+  it('rejects moving an unknown field or out of bounds', () => {
+    const { project, menu } = setup()
+    const move = (key: string, index: number) => () => applyOperation(project, { op: 'moveField', collectionId: menu.id, key, index })
+    expect(move('nope', 0)).toThrow(expect.objectContaining({ code: 'not_found' }))
+    expect(move('name', 2)).toThrow('Index 2 is out of bounds: "Menu" has 2 fields')
+    expect(move('name', -1)).toThrow(expect.objectContaining({ code: 'invalid' }))
+    expect(move('name', 0.5)).toThrow(expect.objectContaining({ code: 'invalid' }))
+  })
+
   it('rejects a duplicate field key atomically', () => {
     const { project, menu } = setup()
     const before = structuredClone(project)
@@ -104,6 +129,17 @@ describe('collection schema operations', () => {
     const { project, menu } = setup()
     expect(() => applyOperation(project, { op: 'removeCollection', collectionId: 'col_missing' })).toThrow(expect.objectContaining({ code: 'not_found' }))
     expect(() => applyOperation(project, { op: 'removeField', collectionId: menu.id, key: 'nope' })).toThrow(expect.objectContaining({ code: 'not_found' }))
+  })
+})
+
+describe('fieldKey', () => {
+  it('derives a camelCase key from a label, the inverse of fieldLabel', () => {
+    expect(fieldKey('Served from')).toBe('servedFrom')
+    expect(fieldKey('Price (€)')).toBe('price')
+    expect(fieldKey('Café name')).toBe('cafeName')
+    expect(fieldKey('2nd photo')).toBe('f2ndPhoto')
+    expect(fieldKey('ID')).toBe('idField')
+    expect(fieldKey('  ')).toBe('')
   })
 })
 

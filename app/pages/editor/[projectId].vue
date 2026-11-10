@@ -110,9 +110,10 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
       </main>
       <main
         v-if="editor.mode === 'data'"
-        class="min-w-0 flex-1 overflow-y-auto bg-muted p-4"
+        class="min-w-0 flex-1 overflow-hidden bg-[#1e1e1e]"
+        data-data-area
       >
-        <DataView />
+        <DataView class="size-full" />
       </main>
       <main
         v-if="editor.mode === 'settings'"
@@ -120,6 +121,14 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
       >
         <EditorSettings />
       </main>
+      <aside
+        v-if="editor.mode === 'data' && editor.collection"
+        class="shrink-0 overflow-y-auto border-l border-default"
+        :style="{ width: `${panelWidth}px` }"
+        data-data-panel
+      >
+        <DataPanel />
+      </aside>
       <aside
         v-if="editor.mode === 'build'"
         class="relative shrink-0 border-l border-default"

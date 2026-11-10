@@ -1,4 +1,4 @@
-import { apiSourcePreview, collectionCreate, collectionDelete, collectionUpdate, fieldAdd, fieldRemove, fieldUpdate, publicRecordCreate, recordCreate, recordDelete, recordGet, recordList, recordUpdate } from './data'
+import { apiSourcePreview, collectionCreate, collectionDelete, collectionUpdate, fieldAdd, fieldMove, fieldRemove, fieldUpdate, publicRecordCreate, recordCreate, recordDelete, recordGet, recordList, recordUpdate } from './data'
 import type { ActionDef } from './define'
 import { editorGetContext, editorNavigate, editorSetContext } from './editor'
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
@@ -32,6 +32,7 @@ export const ACTIONS = [
   collectionDelete,
   fieldAdd,
   fieldUpdate,
+  fieldMove,
   fieldRemove,
   recordList,
   recordGet,

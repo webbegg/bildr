@@ -1,20 +1,11 @@
 <script setup lang="ts">
-import { filterByName } from '#shared/editor/sidebar'
-
 /**
  * The Assets panel: Styles (the project theme, previewed live on the canvas,
- * with an expandable token preview sheet) and Collections, each opening the
- * Data view on it. The sidebar search filters both by name.
+ * with an expandable token preview sheet), filtered by the sidebar search.
+ * Collections live in the Data view's sidebar.
  */
 const { query = '' } = defineProps<{ query?: string }>()
-const editor = useEditor()
 const tokensOpen = ref(false)
-const collections = computed(() => filterByName(editor.project?.collections ?? [], query))
-
-function openCollection(id?: string) {
-  if (id) editor.collectionId = id
-  editor.mode = 'data'
-}
 </script>
 
 <template>
@@ -47,43 +38,6 @@ function openCollection(id?: string) {
         class="mt-2"
         style="height: 420px"
       />
-    </section>
-
-    <section data-assets-collections>
-      <div class="mb-1 flex items-center justify-between">
-        <p class="text-xs font-semibold text-muted uppercase">
-          Collections
-        </p>
-        <UButton
-          icon="i-lucide-arrow-up-right"
-          label="Data"
-          size="xs"
-          color="neutral"
-          variant="ghost"
-          @click="openCollection()"
-        />
-      </div>
-      <p
-        v-if="!collections.length"
-        class="py-1 text-xs text-dimmed"
-      >
-        {{ query ? `No collections match “${query}”.` : 'No collections yet. Add one in the Data view.' }}
-      </p>
-      <button
-        v-for="collection in collections"
-        :key="collection.id"
-        type="button"
-        class="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-sm text-toned hover:bg-elevated"
-        :data-asset-collection="collection.slug"
-        @click="openCollection(collection.id)"
-      >
-        <UIcon
-          :name="collection.source.type === 'api' ? 'i-lucide-globe' : 'i-lucide-database'"
-          class="size-3.5 shrink-0"
-        />
-        <span class="truncate">{{ collection.name }}</span>
-        <span class="ms-auto text-xs text-dimmed">{{ collection.fields.length }} {{ collection.fields.length === 1 ? 'field' : 'fields' }}</span>
-      </button>
     </section>
   </div>
 </template>

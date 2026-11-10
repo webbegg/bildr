@@ -131,6 +131,8 @@ describe('editorCommands', () => {
       setPreviewDark: vi.fn(),
       setDeepSelect: vi.fn(),
       selectPage: vi.fn(),
+      importRequest: 0,
+      run: vi.fn(async () => ({ collectionId: 'c2' })),
       ...state
     }
     const ctx: CommandContext = { editor, openShortcuts: vi.fn() }
@@ -221,6 +223,22 @@ describe('editorCommands', () => {
     expect([editor.mode, editor.sidebarPanel]).toEqual(['build', 'assets'])
     get('collection:c1').run(ctx)
     expect([editor.mode, editor.collectionId]).toEqual(['data', 'c1'])
+  })
+
+  it('creates an Untitled collection with a free name, and shows it in Data', async () => {
+    const { ctx, editor, get } = fixture({ project: { pages: [], collections: [{ id: 'c1', name: 'Untitled', slug: 'untitled' }] } })
+    expect(get('data:new-collection').label).toBe('New collection')
+    await get('data:new-collection').run(ctx)
+    expect(editor.run).toHaveBeenCalledWith('collection_create', { name: 'Untitled 2' })
+    expect([editor.mode, editor.collectionId]).toEqual(['data', 'c2'])
+  })
+
+  it('asks the Data view for the Import from API dialog', () => {
+    const { ctx, editor, get } = fixture()
+    expect(get('data:import-api').label).toBe('Import from API')
+    get('data:import-api').run(ctx)
+    get('data:import-api').run(ctx)
+    expect([editor.mode, editor.importRequest]).toEqual(['data', 2])
   })
 
   it('edits another device frame, with Alt + 1–3, on the Canvas only', () => {

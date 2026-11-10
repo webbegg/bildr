@@ -100,6 +100,10 @@ export function createEditor(projectId: string) {
   const recordsTotal = ref(0)
   /** Why the shown collection's records could not load, e.g. an API source that failed. */
   const recordsError = ref('')
+  /** The record the Data view's right panel shows; null shows the collection and its fields. */
+  const recordId = ref<string | null>(null)
+  /** Bumped by "Import from API" outside the sidebar (the empty state, ⌘K); the sidebar opens its import dialog on each bump. */
+  const importRequest = ref(0)
 
   const page = computed(() => project.value?.pages.find(p => p.id === pageId.value) ?? project.value?.pages[0] ?? null)
   const selected = computed(() => (page.value && selectedId.value ? findNode(page.value.root, selectedId.value) ?? null : null))
@@ -187,6 +191,10 @@ export function createEditor(projectId: string) {
       return undefined
     }
   }
+
+  watch(() => collection.value?.id, () => {
+    recordId.value = null
+  })
 
   // A schema change (or another collection) changes how records read.
   watch(() => [mode.value, collection.value] as const, ([current]) => {
@@ -538,7 +546,7 @@ export function createEditor(projectId: string) {
 
   return reactive({
     projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
-    collectionId, collection, records, recordsTotal, recordsError, listCollections, lists,
+    collectionId, collection, records, recordsTotal, recordsError, recordId, importRequest, listCollections, lists,
     reload, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
