@@ -2,10 +2,11 @@ import { z } from 'zod'
 import { cloneWithNewIds, createNode } from '#shared/document/factory'
 import { getComponent } from '#shared/document/components'
 import type { PropValue } from '#shared/document/components'
+import type { TreeRef } from '#shared/document/operations'
 import { STYLE_TOKENS, styleKey, variantsOf } from '#shared/design/tokens'
 import type { StyleToken } from '#shared/design/tokens'
 import { IdSchema, PropValueSchema } from '#shared/document/schema'
-import type { DocNode, Page } from '#shared/document/schema'
+import type { DocNode } from '#shared/document/schema'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
 import { ActionError, defineAction } from './define'
 import type { ActionContext } from './define'
@@ -52,7 +53,19 @@ function buildNode(spec: NodeSpec): DocNode {
   return node
 }
 
-const Target = { projectId: IdSchema, pageId: IdSchema }
+/** The tree the node actions edit: a page, or a component definition (whose node ids are its own). */
+const Target = {
+  projectId: IdSchema,
+  pageId: IdSchema.optional().describe('The page to edit; or give componentId'),
+  componentId: IdSchema.optional().describe('The component definition to edit, from project_get components; replaces pageId')
+}
+const oneTree = (input: { pageId?: string, componentId?: string }) => (input.pageId === undefined) !== (input.componentId === undefined)
+// Checked even when other fields fail, so a call missing both still hears about pageId.
+const ONE_TREE = { message: 'Give pageId or componentId', path: ['pageId'], when: () => true }
+
+function treeOf(input: { pageId?: string, componentId?: string }): TreeRef {
+  return input.pageId !== undefined ? { pageId: input.pageId } : { componentId: input.componentId! }
+}
 
 /** The `nodeId` or `nodeIds` fields of the actions that also act on several nodes at once (one undo step). */
 const Nodes = {
@@ -66,36 +79,47 @@ function nodeIdsOf({ nodeId, nodeIds }: { nodeId?: string, nodeIds?: string[] })
   return [...new Set(ids)]
 }
 
-async function loadPage(ctx: ActionContext, projectId: string, pageId: string): Promise<Page> {
+interface LoadedTree {
+  root: DocNode
+  /** `page root` or `component root`, for messages. */
+  rootName: string
+}
+
+async function loadTree(ctx: ActionContext, projectId: string, tree: TreeRef): Promise<LoadedTree> {
   const current = await ctx.services.loadProject(projectId)
-  return assertFound(current.pages.find(p => p.id === pageId), `Page "${pageId}" not found`)
+  if (tree.componentId !== undefined) {
+    const def = assertFound(current.components.find(c => c.id === tree.componentId), `Component "${tree.componentId}" not found`)
+    return { root: def.root, rootName: 'component root' }
+  }
+  const page = assertFound(current.pages.find(p => p.id === tree.pageId), `Page "${tree.pageId}" not found`)
+  return { root: page.root, rootName: 'page root' }
 }
 
 /** The nodes of `ids` that are not inside another one of them, in `ids` order; refuses missing nodes and the root. */
-function outermost(page: Page, ids: string[], verb: string): DocNode[] {
-  const nodes = ids.map(id => assertFound(findNode(page.root, id), `Node "${id}" not found`))
-  if (nodes.includes(page.root)) throw new ActionError('forbidden', `The page root cannot be ${verb}`)
+function outermost(tree: LoadedTree, ids: string[], verb: string): DocNode[] {
+  const nodes = ids.map(id => assertFound(findNode(tree.root, id), `Node "${id}" not found`))
+  if (nodes.includes(tree.root)) throw new ActionError('forbidden', `The ${tree.rootName} cannot be ${verb}`)
   return nodes.filter(node => !nodes.some(other => other !== node && containsNode(other, node.id)))
 }
 
 export const nodeInsert = defineAction({
   name: 'node_insert',
-  description: 'Insert a component, optionally with nested children, into a container node (defaults to the page root, at the end). Returns the new node id. Inside a List (bound to a collection slug), string props of its children such as text, label, src and to can use bindings like "{{ item.name }}" or "/menu/{{ item.id }}", resolved per record.',
+  description: 'Insert a component, optionally with nested children, into a container node (defaults to the page root, or with componentId the component definition root, at the end). Returns the new node id. Inside a List (bound to a collection slug), string props of its children such as text, label, src and to can use bindings like "{{ item.name }}" or "/menu/{{ item.id }}", resolved per record.',
   input: z.object({
     ...Target,
-    parentId: IdSchema.optional().describe('Container node id; defaults to the page root'),
+    parentId: IdSchema.optional().describe('Container node id; defaults to the tree root'),
     index: z.number().int().nonnegative().optional().describe('Position among the parent children; defaults to the end'),
     type: z.string().describe('Component type, see components_list'),
     props: z.record(z.string(), PropValueSchema).optional(),
     style: StyleSchema.optional(),
     children: z.array(NodeSpecSchema).optional()
-  }),
-  run: async ({ projectId, pageId, parentId, index, ...spec }, ctx) => {
+  }).refine(oneTree, ONE_TREE),
+  run: async ({ projectId, pageId, componentId, parentId, index, ...spec }, ctx) => {
     const node = buildNode(spec)
-    const current = await ctx.services.loadProject(projectId)
-    const page = assertFound(current.pages.find(p => p.id === pageId), `Page "${pageId}" not found`)
+    const tree = treeOf({ pageId, componentId })
+    const { root } = await loadTree(ctx, projectId, tree)
     const project = await ctx.services.mutate(ctx, projectId, `Insert ${spec.type}`, [
-      { op: 'insert', pageId, parentId: parentId ?? page.root.id, index: index ?? Number.MAX_SAFE_INTEGER, node }
+      { op: 'insert', ...tree, parentId: parentId ?? root.id, index: index ?? Number.MAX_SAFE_INTEGER, node }
     ])
     return { version: project.version, nodeId: node.id }
   }
@@ -104,9 +128,9 @@ export const nodeInsert = defineAction({
 export const nodeUpdateProps = defineAction({
   name: 'node_update_props',
   description: 'Set props of a node. Only props declared by the component are allowed; a null value removes the prop.',
-  input: z.object({ ...Target, nodeId: IdSchema, props: z.record(z.string(), PropValueSchema.nullable()) }),
-  run: async ({ projectId, pageId, nodeId, props }, ctx) => {
-    const project = await ctx.services.mutate(ctx, projectId, 'Update props', [{ op: 'setProps', pageId, nodeId, props }])
+  input: z.object({ ...Target, nodeId: IdSchema, props: z.record(z.string(), PropValueSchema.nullable()) }).refine(oneTree, ONE_TREE),
+  run: async ({ projectId, pageId, componentId, nodeId, props }, ctx) => {
+    const project = await ctx.services.mutate(ctx, projectId, 'Update props', [{ op: 'setProps', ...treeOf({ pageId, componentId }), nodeId, props }])
     return { version: project.version }
   }
 })
@@ -114,9 +138,10 @@ export const nodeUpdateProps = defineAction({
 export const nodeUpdateStyle = defineAction({
   name: 'node_update_style',
   description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). Tokens listing breakpoints also take a mobile-first prefix, e.g. { "md:cols": "3" } applies from the md breakpoint up. A null value removes the token. With nodeIds the same tokens go to every node, as one undo step (all or nothing).',
-  input: z.object({ ...Target, ...Nodes, style: StyleUpdateSchema }),
-  run: async ({ projectId, pageId, style, ...nodes }, ctx) => {
-    const ops = nodeIdsOf(nodes).map(nodeId => ({ op: 'setStyle' as const, pageId, nodeId, style }))
+  input: z.object({ ...Target, ...Nodes, style: StyleUpdateSchema }).refine(oneTree, ONE_TREE),
+  run: async ({ projectId, pageId, componentId, style, ...nodes }, ctx) => {
+    const tree = treeOf({ pageId, componentId })
+    const ops = nodeIdsOf(nodes).map(nodeId => ({ op: 'setStyle' as const, ...tree, nodeId, style }))
     const project = await ctx.services.mutate(ctx, projectId, 'Update style', ops)
     return { version: project.version }
   }
@@ -125,9 +150,9 @@ export const nodeUpdateStyle = defineAction({
 export const nodeMove = defineAction({
   name: 'node_move',
   description: 'Move a node into a container at the given index (the index the node will have after the move).',
-  input: z.object({ ...Target, nodeId: IdSchema, parentId: IdSchema, index: z.number().int().nonnegative() }),
-  run: async ({ projectId, pageId, nodeId, parentId, index }, ctx) => {
-    const project = await ctx.services.mutate(ctx, projectId, 'Move', [{ op: 'move', pageId, nodeId, parentId, index }])
+  input: z.object({ ...Target, nodeId: IdSchema, parentId: IdSchema, index: z.number().int().nonnegative() }).refine(oneTree, ONE_TREE),
+  run: async ({ projectId, pageId, componentId, nodeId, parentId, index }, ctx) => {
+    const project = await ctx.services.mutate(ctx, projectId, 'Move', [{ op: 'move', ...treeOf({ pageId, componentId }), nodeId, parentId, index }])
     return { version: project.version }
   }
 })
@@ -138,22 +163,24 @@ export const nodeMoveMany = defineAction({
   input: z.object({
     ...Target,
     moves: z.array(z.object({ nodeId: IdSchema, parentId: IdSchema, index: z.number().int().nonnegative() })).min(1)
-  }),
-  run: async ({ projectId, pageId, moves }, ctx) => {
-    const project = await ctx.services.mutate(ctx, projectId, moves.length > 1 ? `Move ${moves.length}` : 'Move', moves.map(move => ({ op: 'move' as const, pageId, ...move })))
+  }).refine(oneTree, ONE_TREE),
+  run: async ({ projectId, pageId, componentId, moves }, ctx) => {
+    const tree = treeOf({ pageId, componentId })
+    const project = await ctx.services.mutate(ctx, projectId, moves.length > 1 ? `Move ${moves.length}` : 'Move', moves.map(move => ({ op: 'move' as const, ...tree, ...move })))
     return { version: project.version }
   }
 })
 
 export const nodeDelete = defineAction({
   name: 'node_delete',
-  description: 'Delete a node and its children. The page root cannot be deleted. With nodeIds, deletes every node as one undo step (nodes inside another listed node go with it).',
-  input: z.object({ ...Target, ...Nodes }),
-  run: async ({ projectId, pageId, ...nodes }, ctx) => {
+  description: 'Delete a node and its children. The page (or component) root cannot be deleted. With nodeIds, deletes every node as one undo step (nodes inside another listed node go with it).',
+  input: z.object({ ...Target, ...Nodes }).refine(oneTree, ONE_TREE),
+  run: async ({ projectId, pageId, componentId, ...nodes }, ctx) => {
     const ids = nodeIdsOf(nodes)
-    const targets = ids.length > 1 ? outermost(await loadPage(ctx, projectId, pageId), ids, 'deleted').map(n => n.id) : ids
+    const tree = treeOf({ pageId, componentId })
+    const targets = ids.length > 1 ? outermost(await loadTree(ctx, projectId, tree), ids, 'deleted').map(n => n.id) : ids
     const label = targets.length > 1 ? `Delete ${targets.length}` : 'Delete'
-    const project = await ctx.services.mutate(ctx, projectId, label, targets.map(nodeId => ({ op: 'remove' as const, pageId, nodeId })))
+    const project = await ctx.services.mutate(ctx, projectId, label, targets.map(nodeId => ({ op: 'remove' as const, ...tree, nodeId })))
     return { version: project.version }
   }
 })
@@ -168,20 +195,21 @@ export const nodeWrap = defineAction({
     ...Nodes,
     type: z.enum(WRAP_TYPES).optional().describe('The wrapping container type; defaults to Container'),
     style: StyleSchema.optional().describe('Design tokens added to the container default style, e.g. { "gap": "6" }')
-  }),
-  run: async ({ projectId, pageId, type = 'Container', style, ...nodes }, ctx) => {
+  }).refine(oneTree, ONE_TREE),
+  run: async ({ projectId, pageId, componentId, type = 'Container', style, ...nodes }, ctx) => {
     const ids = nodeIdsOf(nodes)
-    const page = await loadPage(ctx, projectId, pageId)
-    for (const id of ids) assertFound(findNode(page.root, id), `Node "${id}" not found`)
-    const locations = ids.map(id => findParent(page.root, id))
-    if (locations.some(location => !location)) throw new ActionError('forbidden', 'The page root cannot be wrapped')
+    const tree = treeOf({ pageId, componentId })
+    const { root, rootName } = await loadTree(ctx, projectId, tree)
+    for (const id of ids) assertFound(findNode(root, id), `Node "${id}" not found`)
+    const locations = ids.map(id => findParent(root, id))
+    if (locations.some(location => !location)) throw new ActionError('forbidden', `The ${rootName} cannot be wrapped`)
     const parent = locations[0]!.parent
     if (locations.some(location => location!.parent !== parent)) throw new ActionError('invalid', 'Only siblings (nodes of one parent) can be wrapped together')
     const wrapper = createNode(type)
     wrapper.style = { ...wrapper.style, ...style }
     const project = await ctx.services.mutate(ctx, projectId, `Wrap in ${type}`, [
-      { op: 'insert', pageId, parentId: parent.id, index: Math.min(...locations.map(location => location!.index)), node: wrapper },
-      ...ids.map((nodeId, index) => ({ op: 'move' as const, pageId, nodeId, parentId: wrapper.id, index }))
+      { op: 'insert', ...tree, parentId: parent.id, index: Math.min(...locations.map(location => location!.index)), node: wrapper },
+      ...ids.map((nodeId, index) => ({ op: 'move' as const, ...tree, nodeId, parentId: wrapper.id, index }))
     ])
     return { version: project.version, nodeId: wrapper.id }
   }
@@ -190,13 +218,14 @@ export const nodeWrap = defineAction({
 export const nodeDuplicate = defineAction({
   name: 'node_duplicate',
   description: 'Duplicate a node (with its children) right after itself. Returns the copy id. With nodeIds, duplicates every node as one undo step and returns the copy ids in the nodeIds order (nodeId is the first copy).',
-  input: z.object({ ...Target, ...Nodes }),
-  run: async ({ projectId, pageId, ...nodes }, ctx) => {
-    const page = await loadPage(ctx, projectId, pageId)
-    const originals = outermost(page, nodeIdsOf(nodes), 'duplicated')
+  input: z.object({ ...Target, ...Nodes }).refine(oneTree, ONE_TREE),
+  run: async ({ projectId, pageId, componentId, ...nodes }, ctx) => {
+    const tree = treeOf({ pageId, componentId })
+    const loaded = await loadTree(ctx, projectId, tree)
+    const originals = outermost(loaded, nodeIdsOf(nodes), 'duplicated')
     const inserts = originals.map((node) => {
-      const location = findParent(page.root, node.id)!
-      return { op: 'insert' as const, pageId, parentId: location.parent.id, index: location.index + 1, node: cloneWithNewIds(node) }
+      const location = findParent(loaded.root, node.id)!
+      return { op: 'insert' as const, ...tree, parentId: location.parent.id, index: location.index + 1, node: cloneWithNewIds(node) }
     })
     // From the last sibling up, so an insert never shifts the index of one still to run.
     const ops = [...inserts].sort((a, b) => b.index - a.index)

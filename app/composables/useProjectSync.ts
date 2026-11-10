@@ -86,7 +86,8 @@ export function useProjectSync(editor: Editor): void {
     }
   })
 
-  watch(() => [editor.page?.id, editor.selectedId] as const, ([pageId, selectedId]) => {
+  // The component view reports the page it was opened from, without its selection (a definition node, not on that page).
+  watch(() => [editor.currentPage?.id, editor.componentId ? null : editor.selectedId] as const, ([pageId, selectedId]) => {
     clearTimeout(contextTimer)
     if (!pageId) return
     contextTimer = setTimeout(() => {

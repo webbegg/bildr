@@ -168,7 +168,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
     >
       <template v-if="!multi">
         <EditorStyleSection
-          v-if="isRoot && editor.page"
+          v-if="isRoot && editor.page && !editor.component"
           label="Page"
         >
           <EditorRow label="Page name">
@@ -190,6 +190,8 @@ function renamePage(field: 'name' | 'slug', value: string) {
             />
           </EditorRow>
         </EditorStyleSection>
+
+        <EditorComponentPanel :node="node" />
 
         <EditorStyleSection
           v-for="{ group, props: defs } in propGroups"

@@ -60,11 +60,21 @@ export const projectGet = defineAction({
 
 export const componentsList = defineAction({
   name: 'components_list',
-  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and default style; plus the design tokens a node style can use (key, label, group, allowed values, and the breakpoints whose prefix it takes, e.g. md:cols).',
-  input: z.object({}),
+  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and default style; plus the design tokens a node style can use (key, label, group, allowed values, and the breakpoints whose prefix it takes, e.g. md:cols). With projectId, also userComponents: the project\'s own components (id, name, properties, variants), inserted as node_insert { type: "Instance", props: { component: id } }.',
+  input: z.object({ projectId: IdSchema.optional().describe('Also list this project\'s own components') }),
   readOnly: true,
-  run: async () => ({
+  run: async ({ projectId }, { services }) => ({
     components: COMPONENTS,
+    ...(projectId === undefined
+      ? {}
+      : {
+          userComponents: (await services.loadProject(projectId)).components.map(c => ({
+            id: c.id,
+            name: c.name,
+            properties: c.properties.map(p => ({ id: p.id, name: p.name, kind: p.kind, ...(p.default === undefined ? {} : { default: p.default }) })),
+            variants: c.variants.map(v => ({ id: v.id, name: v.name }))
+          }))
+        }),
     tokens: STYLE_TOKENS.map(token => ({
       key: token.key,
       label: token.label,

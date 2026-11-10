@@ -137,8 +137,18 @@ A **component** is a reusable piece of a page, stored in the project's `componen
 - `component_variant_add { componentId, name }` returns a `variantId`. `component_variant_set_override { componentId, variantId, nodeId, props?, style? }` overrides props and tokens of one definition node. A variant stores only what differs from the primary, so a `null` value, or the primary's own value, removes that override. `component_variant_delete` moves its instances back to the primary.
 - Insert an instance with `node_insert { type: "Instance", props: { component } }`. `instance_set_values { pageId | componentId, nodeId, values?, variant? }` sets property values, keyed by property id, and the variant. Values are checked against the property, and `null` removes one so the default applies.
 - `instance_set_slot { pageId | componentId, nodeId, slot, filled, nodeIds? }` with `filled: true` gives a slot its own content and returns its `fillId`. Add content with `node_insert { parentId: fillId }`, or pass `nodeIds` to move nodes in. With `filled: false`, the default content shows again.
+- To edit a definition, give the node actions (`node_insert`, `node_update_props`, `node_update_style`, `node_move`, `node_move_many`, `node_delete`, `node_duplicate`, `node_wrap`) a `componentId` in place of `pageId`. Exactly one of the two is required.
+- `components_list { projectId }` adds `userComponents`, the project's components with their properties and variants.
 
 Each action is one undo step.
+
+In the editor:
+
+- **Create:** select elements, then right-click › Create component, or use ⌘K › Create component. The component is named after the element (`Card`, `Card 2`, …). Rename it in Assets.
+- **Assets › Components** lists the components by folder, with how many instances each has. The chevron lists where they are, and each entry jumps there. Drag a row onto the canvas or the layers to insert an instance. Delete names the instances that use the component and asks before deleting them too.
+- **Insert:** the Insert panel (`I`) and ⌘K list the project's components above the built-in ones.
+- **Component view:** click a component in Assets, use Edit on an instance in the panel, use right-click › Edit component, or use ⌘K › the component name. The canvas, the layers and the panel then edit the definition, and a banner names it. Done, Escape with nothing selected, or picking a page goes back.
+- **Properties:** in the component view, select an element and use "+" on Properties to turn one of its props into a property, or a container's children into a slot. On an instance, the Component section sets each property and turns each slot's own content on or off.
 
 ## Action HTTP API
 

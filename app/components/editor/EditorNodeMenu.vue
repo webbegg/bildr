@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ContextMenuItem } from '@nuxt/ui'
+import { INSTANCE_TYPE } from '#shared/document/components'
 import { findNode, findParent } from '#shared/document/tree'
 import { naturalDisplay, siblingMove, visibilityAt, visibilityToggle } from '#shared/editor/layers'
 import { siblingParent } from '#shared/editor/selection'
@@ -61,6 +62,13 @@ const items = computed<ContextMenuItem[][]>(() => {
         children: (['Row', 'Column', 'Card', 'Grid'] as const).map(type => ({ label: type, onSelect: () => editor.wrap(wrapIds, type) }))
       },
       { label: 'Add auto layout', icon: 'i-lucide-layout-panel-left', kbds: ['shift', 'a'], disabled: cannotWrap, onSelect: () => editor.autoLayout() }
+    ],
+    [
+      // Components are made from page content; in the component view, nest one with Insert instead.
+      { label: 'Create component', icon: 'i-lucide-component', disabled: cannotWrap || !!editor.componentId, onSelect: () => editor.createComponent() },
+      ...(node?.type === INSTANCE_TYPE
+        ? [{ label: 'Edit component', icon: 'i-lucide-pencil-ruler', onSelect: () => editor.editComponent(String(node.props.component)) }]
+        : [])
     ],
     [
       {
