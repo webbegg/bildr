@@ -32,18 +32,17 @@ async function newCollection() {
         Collections hold your app's data, like a menu or contact messages. Agents can use them too.
       </p>
       <div class="mt-5 flex items-center gap-2">
-        <UButton
+        <EditorButton
+          variant="primary"
           label="New collection"
           icon="i-lucide-plus"
           :loading="creating"
           data-empty-new
           @click="newCollection"
         />
-        <UButton
+        <EditorButton
           label="Import from API"
           icon="i-lucide-globe"
-          color="neutral"
-          variant="soft"
           data-empty-import
           @click="editor.importRequest++"
         />

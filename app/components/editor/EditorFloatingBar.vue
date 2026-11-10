@@ -15,6 +15,8 @@ const editor = useEditor()
 
 const tools = INSERT_TOOLS.filter(tool => tool.id === MOVE_TOOL || tool.id === HAND_TOOL)
 const hint = computed(() => toolHint(editor.tool))
+/** A pressed toggle, lit like an open menu's trigger. */
+const pressed = (on: boolean) => (on ? 'bg-white/10 text-highlighted' : '')
 </script>
 
 <template>
@@ -40,20 +42,15 @@ const hint = computed(() => toolHint(editor.tool))
       :kbds="tool.keys"
       :content="{ side: 'top' }"
     >
-      <button
-        type="button"
-        class="grid size-8 place-items-center rounded-lg"
-        :class="editor.tool === tool.id ? 'bg-white/10 text-white' : 'hover:bg-white/5 hover:text-white'"
+      <EditorButton
+        variant="ghost"
+        :icon="tool.icon"
+        :class="pressed(editor.tool === tool.id)"
         :aria-label="`${tool.label} tool`"
         :aria-pressed="editor.tool === tool.id"
         :data-tool="tool.id"
         @click="editor.setTool(tool.id)"
-      >
-        <UIcon
-          :name="tool.icon"
-          class="size-4"
-        />
-      </button>
+      />
     </UTooltip>
     <span
       class="mx-1 h-5 w-px bg-white/10"
@@ -66,20 +63,15 @@ const hint = computed(() => toolHint(editor.tool))
       :kbds="deviceShortcut(device.id)"
       :content="{ side: 'top' }"
     >
-      <button
-        type="button"
-        class="grid size-8 place-items-center rounded-lg"
-        :class="editor.deviceId === device.id ? 'bg-white/10 text-white' : 'hover:bg-white/5 hover:text-white'"
+      <EditorButton
+        variant="ghost"
+        :icon="device.icon"
+        :class="pressed(editor.deviceId === device.id)"
         :aria-label="device.label"
         :aria-pressed="editor.deviceId === device.id"
         :data-device-switch="device.id"
         @click="editor.setDevice(device.id)"
-      >
-        <UIcon
-          :name="device.icon"
-          class="size-4"
-        />
-      </button>
+      />
     </UTooltip>
     <span
       class="mx-1 h-5 w-px bg-white/10"
@@ -89,38 +81,30 @@ const hint = computed(() => toolHint(editor.tool))
       :text="editor.previewDark ? 'Preview light' : 'Preview dark'"
       :content="{ side: 'top' }"
     >
-      <button
-        type="button"
-        class="grid size-8 place-items-center rounded-lg"
-        :class="editor.previewDark ? 'bg-white/10 text-white' : 'hover:bg-white/5 hover:text-white'"
+      <EditorButton
+        variant="ghost"
+        :icon="editor.previewDark ? 'i-lucide-sun' : 'i-lucide-moon'"
+        :class="pressed(editor.previewDark)"
         aria-label="Preview theme"
         :aria-pressed="editor.previewDark"
         data-preview-theme
         @click="editor.setPreviewDark(!editor.previewDark)"
-      >
-        <UIcon
-          :name="editor.previewDark ? 'i-lucide-sun' : 'i-lucide-moon'"
-          class="size-4"
-        />
-      </button>
+      />
     </UTooltip>
-    <UDropdownMenu
+    <EditorMenu
       :items="zoomItems"
-      size="sm"
       :content="{ side: 'top', align: 'center', sideOffset: 10 }"
     >
-      <button
-        type="button"
-        class="ml-0.5 flex h-8 items-center gap-1.5 rounded-lg bg-white/5 pr-1.5 pl-2.5 text-xs text-white tabular-nums hover:bg-white/10"
+      <EditorButton
+        variant="ghost"
+        trailing-icon="i-lucide-chevron-down"
+        class="ml-0.5 bg-white/5 pe-1.5 text-highlighted tabular-nums hover:bg-white/10 aria-expanded:bg-white/10"
+        :ui="{ trailingIcon: 'size-3.5 text-dimmed' }"
         aria-label="Zoom"
         data-zoom-menu
       >
         {{ Math.round(zoom * 100) }}%
-        <UIcon
-          name="i-lucide-chevron-down"
-          class="size-3.5 text-white/60"
-        />
-      </button>
-    </UDropdownMenu>
+      </EditorButton>
+    </EditorMenu>
   </div>
 </template>

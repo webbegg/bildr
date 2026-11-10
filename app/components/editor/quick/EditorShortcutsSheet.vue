@@ -6,39 +6,37 @@ const open = defineModel<boolean>('open', { default: false })
 </script>
 
 <template>
-  <UModal
+  <EditorModal
     v-model:open="open"
     title="Keyboard shortcuts"
-    :ui="{ content: 'max-w-[560px]' }"
+    :ui="{ content: 'sm:max-w-[560px]' }"
   >
-    <template #body>
-      <ul
-        class="divide-y divide-default text-sm"
-        data-shortcuts-sheet
+    <ul
+      class="divide-y divide-white/8 text-[13px]"
+      data-shortcuts-sheet
+    >
+      <li
+        v-for="shortcut in SHORTCUTS"
+        :key="shortcut.id"
+        class="flex items-center justify-between gap-4 py-1.5"
       >
-        <li
-          v-for="shortcut in SHORTCUTS"
-          :key="shortcut.id"
-          class="flex items-center justify-between gap-4 py-1.5"
-        >
-          <span class="text-toned">{{ shortcut.label }}</span>
-          <span class="flex shrink-0 items-center gap-1.5 text-xs text-dimmed">
-            <template
-              v-for="(keys, i) in shortcut.keys"
-              :key="i"
-            >
-              <span v-if="i">or</span>
-              <span class="flex gap-0.5">
-                <UKbd
-                  v-for="key in keys"
-                  :key="key"
-                  :value="key"
-                />
-              </span>
-            </template>
-          </span>
-        </li>
-      </ul>
-    </template>
-  </UModal>
+        <span class="text-toned">{{ shortcut.label }}</span>
+        <span class="flex shrink-0 items-center gap-1.5 text-xs text-dimmed">
+          <template
+            v-for="(keys, i) in shortcut.keys"
+            :key="i"
+          >
+            <span v-if="i">or</span>
+            <span class="flex gap-0.5">
+              <UKbd
+                v-for="key in keys"
+                :key="key"
+                :value="key"
+              />
+            </span>
+          </template>
+        </span>
+      </li>
+    </ul>
+  </EditorModal>
 </template>

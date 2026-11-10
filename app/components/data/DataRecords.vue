@@ -317,9 +317,8 @@ function sortIcon(key: string) {
                 v-if="caps.get"
                 text="Open record"
               >
-                <UButton
+                <EditorButton
                   icon="i-lucide-panel-right-open"
-                  color="neutral"
                   variant="ghost"
                   size="xs"
                   aria-label="Open record"

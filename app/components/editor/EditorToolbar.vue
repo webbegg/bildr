@@ -15,7 +15,7 @@ const editor = useEditor()
 const publishing = ref(false)
 const renaming = ref(false)
 const nameDraft = ref('')
-const nameInput = useTemplateRef<{ inputRef?: HTMLInputElement }>('nameInput')
+const nameInput = useTemplateRef<{ select: () => void }>('nameInput')
 
 type View = 'build' | 'data' | 'settings'
 const VIEWS: { value: View, label: string, icon: string }[] = [
@@ -64,7 +64,7 @@ async function startRename() {
   nameDraft.value = editor.project?.name ?? ''
   renaming.value = true
   await nextTick()
-  nameInput.value?.inputRef?.select()
+  nameInput.value?.select()
 }
 
 async function saveRename() {
@@ -102,16 +102,11 @@ async function publish() {
 <template>
   <header class="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-default px-2">
     <div class="flex min-w-0 items-center gap-1">
-      <UDropdownMenu
-        :items="viewMenu"
-        :content="{ align: 'start' }"
-      >
-        <UButton
-          color="neutral"
+      <EditorMenu :items="viewMenu">
+        <EditorButton
           variant="ghost"
-          size="sm"
           trailing-icon="i-lucide-chevron-down"
-          class="gap-1.5 bg-white/6 font-semibold hover:bg-white/10"
+          class="bg-white/6 font-semibold text-highlighted hover:bg-white/10 aria-expanded:bg-white/10"
           data-view-menu
         >
           <UIcon
@@ -119,8 +114,8 @@ async function publish() {
             class="size-4 text-highlighted"
           />
           {{ viewLabel }}
-        </UButton>
-      </UDropdownMenu>
+        </EditorButton>
+      </EditorMenu>
       <span class="mx-1 h-4 w-px bg-(--ui-border)" />
       <UPopover
         v-model:open="editor.insertOpen"
@@ -130,11 +125,9 @@ async function publish() {
           text="Insert"
           :kbds="['i']"
         >
-          <UButton
-            icon="i-lucide-plus"
-            color="neutral"
+          <EditorButton
             variant="ghost"
-            size="sm"
+            icon="i-lucide-plus"
             aria-label="Insert"
             :disabled="editor.mode !== 'build'"
             :class="{ 'bg-white/10 text-highlighted': editor.insertOpen }"
@@ -151,11 +144,9 @@ async function publish() {
         :text="tool.label"
         :kbds="[tool.kbd]"
       >
-        <UButton
-          :icon="tool.icon"
-          color="neutral"
+        <EditorButton
           variant="ghost"
-          size="sm"
+          :icon="tool.icon"
           :aria-label="`${tool.label} tool`"
           :aria-pressed="editor.tool === tool.id"
           :disabled="editor.mode !== 'build'"
@@ -167,11 +158,10 @@ async function publish() {
     </div>
 
     <div class="flex min-w-0 justify-center">
-      <UInput
+      <EditorInput
         v-if="renaming"
         ref="nameInput"
         v-model="nameDraft"
-        size="sm"
         class="w-56"
         :maxlength="100"
         aria-label="Project name"
@@ -180,22 +170,20 @@ async function publish() {
         @keydown.esc="renaming = false"
         @blur="saveRename"
       />
-      <UDropdownMenu
+      <EditorMenu
         v-else
         :items="projectMenu"
         :content="{ align: 'center' }"
       >
-        <UButton
-          color="neutral"
+        <EditorButton
           variant="ghost"
-          size="sm"
-          class="max-w-96 min-w-0 gap-1.5"
+          class="max-w-96 min-w-0"
           data-project-menu
         >
           <span class="truncate font-semibold text-highlighted">{{ editor.project?.name }}</span>
           <span class="shrink-0 font-normal text-dimmed">· /{{ editor.project?.slug }}</span>
-        </UButton>
-      </UDropdownMenu>
+        </EditorButton>
+      </EditorMenu>
     </div>
 
     <div class="flex items-center justify-end gap-1">
@@ -203,11 +191,9 @@ async function publish() {
         :text="editor.history.undo ? `Undo ${editor.history.undo}` : 'Nothing to undo'"
         :kbds="['meta', 'z']"
       >
-        <UButton
-          icon="i-lucide-undo-2"
-          color="neutral"
+        <EditorButton
           variant="ghost"
-          size="sm"
+          icon="i-lucide-undo-2"
           aria-label="Undo"
           :disabled="!editor.history.undo"
           @click="editor.undo()"
@@ -217,11 +203,9 @@ async function publish() {
         :text="editor.history.redo ? `Redo ${editor.history.redo}` : 'Nothing to redo'"
         :kbds="['meta', 'shift', 'z']"
       >
-        <UButton
-          icon="i-lucide-redo-2"
-          color="neutral"
+        <EditorButton
           variant="ghost"
-          size="sm"
+          icon="i-lucide-redo-2"
           aria-label="Redo"
           :disabled="!editor.history.redo"
           @click="editor.redo()"
@@ -232,20 +216,18 @@ async function publish() {
         text="Preview the draft"
         :kbds="['meta', 'p']"
       >
-        <UButton
+        <EditorButton
+          variant="ghost"
           :to="editor.previewUrl"
           target="_blank"
           icon="i-lucide-play"
-          color="neutral"
-          variant="ghost"
-          size="sm"
           aria-label="Preview"
           data-preview
         />
       </UTooltip>
-      <UButton
+      <EditorButton
+        variant="primary"
         label="Publish"
-        size="sm"
         class="ms-1 px-3"
         :loading="publishing"
         @click="publish"

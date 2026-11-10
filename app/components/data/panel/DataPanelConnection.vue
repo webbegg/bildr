@@ -10,7 +10,6 @@ import { NEW_CONNECTION_URL } from '../DataCollections.vue'
  */
 const props = defineProps<{ connection: Connection }>()
 const editor = useEditor()
-const SOFT = 'h-[30px] rounded-lg bg-elevated font-mono text-[12px]'
 
 const HEADER_PRESETS: Record<string, ApiHeader> = {
   authorization: { name: 'Authorization', value: 'Bearer {{ env.API_KEY }}' },
@@ -127,25 +126,21 @@ onMounted(async () => {
         class="group/header flex items-center gap-1.5"
         :data-header-row="header.name || index"
       >
-        <UInput
+        <EditorInput
           v-model="header.name"
+          mono
           placeholder="Name"
           aria-label="Header name"
-          size="xs"
-          variant="soft"
-          :ui="{ base: SOFT }"
           class="w-[42%] shrink-0"
           :autofocus="!header.name"
           data-header-name
           @change="saveHeaders"
         />
-        <UInput
+        <EditorInput
           v-model="header.value"
+          mono
           placeholder="Value"
           :aria-label="`Value of ${header.name || 'the header'}`"
-          size="xs"
-          variant="soft"
-          :ui="{ base: SOFT }"
           class="min-w-0 flex-1"
           data-header-value
           @change="saveHeaders"
@@ -156,10 +151,10 @@ onMounted(async () => {
               @insert="header.value = $event; saveHeaders()"
             />
           </template>
-        </UInput>
+        </EditorInput>
         <button
           type="button"
-          class="grid size-6 shrink-0 place-items-center rounded-md text-dimmed hover:bg-white/8 hover:text-highlighted"
+          :class="ACTION"
           :aria-label="`Remove ${header.name || 'header'}`"
           data-header-remove
           @click="removeHeader(index)"

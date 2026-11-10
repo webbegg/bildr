@@ -29,18 +29,21 @@ const TYPE_ICONS: Record<FieldType, string> = {
 const TYPE_LABELS: Record<FieldType, string> = { text: 'Text', number: 'Number', boolean: 'Toggle', date: 'Date', image: 'Image' }
 const typeItems = FIELD_TYPES.map(type => ({ label: TYPE_LABELS[type], value: type, icon: TYPE_ICONS[type] }))
 const ROW = 'flex h-9 items-center gap-1.5 rounded-lg ps-1 pe-1.5'
-const SOFT = 'h-[30px] rounded-lg bg-elevated text-[13px]'
 
 function updateField(key: string, patch: { label?: string, type?: FieldType }) {
   if (collection.value) return editor.run('field_update', { collection: collection.value.id, key, ...patch })
 }
 
-function commitLabel(key: string, event: Event) {
-  const input = event.target as HTMLInputElement
+// Bumped to remount a label field whose edit was refused, so it shows the label again.
+const labelResets = ref(0)
+// The inline label: transparent in the row until hovered or focused, then the kit's field.
+const LABEL_UI = { base: 'bg-transparent px-1.5 text-toned hover:bg-white/4 focus-visible:bg-elevated focus-visible:text-highlighted' }
+
+function commitLabel(key: string, value: string) {
   const field = collection.value?.fields.find(f => f.key === key)
-  const label = input.value.trim()
-  if (!field || !label) input.value = field?.label ?? ''
-  else if (label !== field.label) updateField(key, { label })
+  const label = value.trim()
+  if (!field || !label || label === field.label) labelResets.value++
+  else updateField(key, { label })
 }
 
 function removeField(key: string) {
@@ -54,7 +57,7 @@ const newLabel = ref('')
 const newKey = ref('')
 const keyEdited = ref(false)
 const newType = ref<FieldType>('text')
-const labelInput = useTemplateRef<{ inputRef: HTMLInputElement }>('labelInput')
+const labelInput = useTemplateRef<{ focus: () => void }>('labelInput')
 
 async function openAdd() {
   newType.value = 'text'
@@ -63,7 +66,7 @@ async function openAdd() {
   keyEdited.value = false
   adding.value = true
   await nextTick()
-  labelInput.value?.inputRef.focus()
+  labelInput.value?.focus()
 }
 
 watch(newLabel, (label) => {
@@ -166,37 +169,29 @@ const editingMapping = ref(false)
           <span class="truncate">{{ field.label }}</span>
           <code class="ms-auto truncate ps-2 text-[11px] text-dimmed">{{ field.path ?? field.key }}</code>
         </div>
-        <UButton
+        <EditorButton
           icon="i-lucide-pencil"
           label="Edit mapping"
-          size="sm"
-          color="neutral"
-          variant="soft"
           block
           class="mt-2"
           data-edit-mapping
           @click="editingMapping = true"
         />
-        <UModal
+        <DataConnectionSource
+          v-if="connection"
           v-model:open="editingMapping"
+          :connection="connection"
+          :collection="collection"
           title="Edit the API mapping"
           :description="collection.name"
-          :ui="{ content: 'sm:max-w-5xl' }"
-        >
-          <template #body>
-            <DataConnectionSource
-              v-if="connection"
-              :connection="connection"
-              :collection="collection"
-              @done="editingMapping = false"
-            />
-            <DataApiSource
-              v-else-if="live"
-              :collection="collection"
-              @done="editingMapping = false"
-            />
-          </template>
-        </UModal>
+        />
+        <DataApiSource
+          v-else-if="live"
+          v-model:open="editingMapping"
+          :collection="collection"
+          title="Edit the API mapping"
+          :description="collection.name"
+        />
       </div>
 
       <div
@@ -234,36 +229,29 @@ const editingMapping = ref(false)
               class="size-3.5"
             />
           </span>
-          <USelect
+          <EditorSelect
             :model-value="field.type"
             :items="typeItems"
-            :icon="TYPE_ICONS[field.type]"
+            compact
             :aria-label="`Type of ${field.key}`"
-            size="xs"
-            variant="ghost"
-            trailing-icon=""
-            :ui="{ base: 'size-7 justify-center rounded-md p-0 text-dimmed hover:bg-white/8 hover:text-highlighted', leading: 'static p-0', leadingIcon: 'size-4', trailing: 'hidden', content: 'min-w-32' }"
-            :content="{ align: 'start' }"
-            class="shrink-0"
+            :ui="{ content: 'min-w-32' }"
             :title="TYPE_LABELS[field.type]"
             data-field-type
             @update:model-value="updateField(field.key, { type: $event as FieldType })"
-          >
-            <template #default>
-              <span class="sr-only">{{ TYPE_LABELS[field.type] }}</span>
-            </template>
-          </USelect>
-          <input
-            :key="field.label"
-            :value="field.label"
+          />
+          <EditorInput
+            :key="`${field.label}:${labelResets}`"
+            :model-value="field.label"
+            commit="change"
             :aria-label="`Label of ${field.key}`"
             :title="`Key: ${field.key}`"
-            class="h-7 min-w-0 flex-1 rounded-md bg-transparent px-1.5 text-sm text-toned outline-none hover:bg-white/4 focus:bg-elevated focus:text-highlighted focus:ring-1 focus:ring-(--editor-selection)"
+            :ui="LABEL_UI"
+            class="min-w-0 flex-1"
             data-field-label-input
-            @change="commitLabel(field.key, $event)"
+            @commit="commitLabel(field.key, $event)"
             @keydown.enter="($event.target as HTMLInputElement).blur()"
-            @keydown.esc="($event.target as HTMLInputElement).value = field.label; ($event.target as HTMLInputElement).blur()"
-          >
+            @keydown.esc="($event.target as HTMLInputElement).blur()"
+          />
           <button
             type="button"
             class="grid size-6 shrink-0 place-items-center rounded-md text-dimmed opacity-0 group-hover/field:opacity-100 group-focus-within/field:opacity-100 hover:bg-white/8 hover:text-highlighted focus-visible:opacity-100"
@@ -286,52 +274,42 @@ const editingMapping = ref(false)
           @submit.prevent="addField"
           @keydown.esc="adding = false"
         >
-          <UInput
+          <EditorInput
             ref="labelInput"
             v-model="newLabel"
             placeholder="Label, e.g. Served from"
             aria-label="New field label"
-            size="xs"
-            variant="soft"
-            :ui="{ base: SOFT }"
-            class="w-full"
             data-new-field-label
           />
-          <UInput
+          <EditorInput
             v-model="newKey"
+            mono
             placeholder="Key, e.g. servedFrom"
             aria-label="New field key"
-            size="xs"
-            variant="soft"
-            :ui="{ base: `${SOFT} font-mono text-[12px]` }"
-            class="w-full"
             data-new-field-key
             @update:model-value="keyEdited = true"
           />
-          <USelect
-            v-model="newType"
+          <EditorSelect
+            :model-value="newType"
             :items="typeItems"
             :icon="TYPE_ICONS[newType]"
             aria-label="New field type"
-            size="xs"
-            variant="soft"
-            :ui="{ base: SOFT, trailingIcon: 'size-3.5 text-dimmed', content: 'min-w-32' }"
-            class="w-full"
+            :ui="{ content: 'min-w-32' }"
             data-new-field-type
+            @update:model-value="newType = $event as FieldType"
           />
           <div class="flex justify-end gap-1.5">
-            <UButton
+            <EditorButton
               label="Cancel"
-              size="xs"
-              color="neutral"
               variant="ghost"
+              size="xs"
               @click="adding = false"
             />
-            <UButton
+            <EditorButton
               type="submit"
               label="Add field"
+              variant="primary"
               size="xs"
-              color="neutral"
               :disabled="!newKey.trim() && !fieldKey(newLabel)"
             />
           </div>

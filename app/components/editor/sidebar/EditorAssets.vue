@@ -14,13 +14,13 @@ const tokensOpen = ref(false)
     data-assets
   >
     <section data-assets-styles>
-      <p class="mb-2 text-xs font-semibold text-muted uppercase">
+      <p class="mb-2 text-[13px] font-semibold text-highlighted">
         Styles
       </p>
       <EditorDesignPanel :query="query" />
       <button
         type="button"
-        class="mt-3 flex w-full items-center gap-1.5 text-xs text-muted hover:text-highlighted"
+        class="mt-3 flex w-full items-center gap-1.5 text-[12px] text-muted hover:text-highlighted"
         :aria-expanded="tokensOpen"
         data-preview-tokens
         @click="tokensOpen = !tokensOpen"

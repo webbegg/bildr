@@ -53,9 +53,8 @@ function update(patch: Record<string, unknown>) {
         title="Published apps can list the records"
         name="publicRead"
       >
-        <USwitch
+        <EditorSwitch
           :model-value="collection.publicRead"
-          size="sm"
           aria-label="Public read"
           data-flag="publicRead"
           @update:model-value="update({ publicRead: $event })"
@@ -67,9 +66,8 @@ function update(patch: Record<string, unknown>) {
         title="Published apps can add records (forms)"
         name="publicCreate"
       >
-        <USwitch
+        <EditorSwitch
           :model-value="collection.publicCreate"
-          size="sm"
           aria-label="Public create"
           data-flag="publicCreate"
           @update:model-value="update({ publicCreate: $event })"
@@ -144,29 +142,19 @@ function update(patch: Record<string, unknown>) {
       >
         <code class="truncate text-xs text-toned">{{ apiSource.itemsPath || '(root)' }}</code>
       </EditorRow>
-      <UButton
+      <EditorButton
         icon="i-lucide-pencil"
         label="Edit mapping"
-        size="sm"
-        color="neutral"
-        variant="soft"
         block
         data-edit-mapping
         @click="editingMapping = true"
       />
-      <UModal
+      <DataApiSource
         v-model:open="editingMapping"
+        :collection="collection"
         title="Edit the API mapping"
         :description="collection.name"
-        :ui="{ content: 'sm:max-w-5xl' }"
-      >
-        <template #body>
-          <DataApiSource
-            :collection="collection"
-            @done="editingMapping = false"
-          />
-        </template>
-      </UModal>
+      />
     </EditorStyleSection>
   </div>
 </template>

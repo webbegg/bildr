@@ -61,7 +61,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
   ]
 })
 
-const MENU_UI = { content: 'min-w-36 max-w-64 rounded-xl bg-elevated p-1 ring-white/8', item: 'px-2.5 py-1.5 text-[13px]', itemDescription: 'truncate text-[11px] text-dimmed' }
+const PICKER_UI = { content: 'max-w-64', itemDescription: 'truncate text-dimmed' }
 </script>
 
 <template>
@@ -69,14 +69,15 @@ const MENU_UI = { content: 'min-w-36 max-w-64 rounded-xl bg-elevated p-1 ring-wh
     ref="anchor"
     class="contents"
   >
-    <UDropdownMenu
+    <EditorMenu
       :items="items"
-      :content="{ align: 'end', side: 'bottom', sideOffset: 4, onCloseAutoFocus: restoreFocus }"
-      :ui="MENU_UI"
+      :content="{ align: 'end' }"
+      :on-close-auto-focus="restoreFocus"
+      :ui="PICKER_UI"
     >
       <button
         type="button"
-        class="grid size-5 shrink-0 place-items-center rounded text-dimmed hover:bg-white/8 hover:text-highlighted aria-expanded:bg-white/8 aria-expanded:text-highlighted"
+        :class="ACTION"
         aria-label="Insert variable"
         data-variable-picker
       >
@@ -88,6 +89,6 @@ const MENU_UI = { content: 'min-w-36 max-w-64 rounded-xl bg-elevated p-1 ring-wh
       <template #secret-trailing>
         <span class="ms-auto text-[11px] text-dimmed">secret</span>
       </template>
-    </UDropdownMenu>
+    </EditorMenu>
   </span>
 </template>

@@ -19,6 +19,7 @@ type NodeMenuEvent = MouseEvent & { bildrNodeId?: string }
 const editor = useEditor()
 const toast = useToast()
 const nodeId = ref<string | null>(null)
+const ui = mergeUi(MENU_UI, { content: 'min-w-48' })
 
 function onContextMenu(event: NodeMenuEvent) {
   const id = event.bildrNodeId ?? (event.target as Element | null)?.closest?.('[data-layer-id]')?.getAttribute('data-layer-id') ?? null
@@ -87,8 +88,7 @@ const items = computed<ContextMenuItem[][]>(() => {
 <template>
   <UContextMenu
     :items="items"
-    size="sm"
-    :ui="{ content: 'min-w-48' }"
+    :ui="ui"
   >
     <div
       v-bind="$attrs"

@@ -36,7 +36,7 @@ export function mappingFields(rows: MappingRow[]): ApiField[] {
   return rows.filter(r => r.include).map(r => ({ key: r.key, label: r.label.trim() || r.key, type: r.type, path: r.path }))
 }
 
-const typeItems = FIELD_TYPES.map(type => ({ label: type, value: type }))
+const typeItems = [...FIELD_TYPES]
 </script>
 
 <script setup lang="ts">
@@ -46,6 +46,7 @@ const rows = defineModel<MappingRow[]>({ required: true })
 
 const newKey = ref('')
 const newPath = ref('')
+const included = computed(() => rows.value.filter(r => r.include).length)
 
 function addField() {
   const key = newKey.value.trim()
@@ -57,27 +58,37 @@ function addField() {
 </script>
 
 <template>
-  <div>
-    <p class="mb-1 text-sm font-semibold">
+  <section>
+    <h3 class="mb-2 flex items-baseline gap-2 text-[13px] font-semibold text-highlighted">
       Mapping
-    </p>
+      <span class="text-[12px] font-normal text-dimmed">{{ included }} of {{ rows.length }} fields included</span>
+    </h3>
     <table
-      class="w-full text-sm"
+      class="w-full table-fixed border-separate border-spacing-y-1 text-[13px]"
       data-api-mapping
     >
+      <colgroup>
+        <col class="w-12">
+        <col class="w-[26%]">
+        <col class="w-[26%]">
+        <col class="w-32">
+        <col>
+      </colgroup>
       <thead>
-        <tr class="text-left text-xs text-muted">
-          <th class="w-8 pb-1" />
-          <th class="pb-1 font-medium">
+        <tr class="text-left text-[12px] text-muted">
+          <th class="font-normal">
+            <span class="sr-only">Include</span>
+          </th>
+          <th class="ps-1 font-normal">
             Key
           </th>
-          <th class="pb-1 font-medium">
+          <th class="ps-1 font-normal">
             Label
           </th>
-          <th class="w-32 pb-1 font-medium">
+          <th class="ps-1 font-normal">
             Type
           </th>
-          <th class="pb-1 font-medium">
+          <th class="ps-1 font-normal">
             Path
           </th>
         </tr>
@@ -89,45 +100,56 @@ function addField() {
         >
           <tr
             :data-mapping-row="row.path"
-            :class="{ 'opacity-50': !row.include }"
           >
-            <td class="py-1">
-              <UCheckbox
+            <td>
+              <EditorSwitch
                 v-model="row.include"
                 :aria-label="`Include ${row.path}`"
                 data-include
               />
             </td>
-            <td class="py-1 pe-2">
-              <UInput
+            <td
+              class="pe-2 transition-opacity"
+              :class="{ 'opacity-40': !row.include }"
+            >
+              <EditorInput
                 v-model="row.key"
-                size="sm"
-                class="w-full font-mono"
+                mono
+                :invalid="!!problems[i]"
+                :aria-label="`Key of ${row.path}`"
                 data-key
               />
             </td>
-            <td class="py-1 pe-2">
-              <UInput
+            <td
+              class="pe-2 transition-opacity"
+              :class="{ 'opacity-40': !row.include }"
+            >
+              <EditorInput
                 v-model="row.label"
-                size="sm"
-                class="w-full"
+                :aria-label="`Label of ${row.path}`"
                 data-label
               />
             </td>
-            <td class="py-1 pe-2">
-              <USelect
-                v-model="row.type"
+            <td
+              class="pe-2 transition-opacity"
+              :class="{ 'opacity-40': !row.include }"
+            >
+              <EditorSelect
+                :model-value="row.type"
                 :items="typeItems"
-                size="sm"
-                class="w-full"
+                :aria-label="`Type of ${row.path}`"
                 data-type
+                @update:model-value="row.type = $event as FieldType"
               />
             </td>
-            <td class="py-1">
-              <UInput
+            <td
+              class="transition-opacity"
+              :class="{ 'opacity-40': !row.include }"
+            >
+              <EditorInput
                 v-model="row.path"
-                size="sm"
-                class="w-full font-mono"
+                mono
+                :aria-label="`Path of ${row.label || row.key}`"
                 data-path
               />
             </td>
@@ -136,7 +158,7 @@ function addField() {
             <td />
             <td
               colspan="4"
-              class="pb-1 text-xs text-error"
+              class="pb-1 text-[12px] leading-4 text-error"
             >
               {{ problems[i] }}
             </td>
@@ -145,30 +167,31 @@ function addField() {
       </tbody>
     </table>
     <form
-      class="mt-2 flex items-center gap-2"
+      class="mt-1 flex items-center gap-2 ps-12"
       data-api-add-field
       @submit.prevent="addField"
     >
-      <UInput
+      <EditorInput
         v-model="newKey"
-        size="sm"
+        mono
         placeholder="New field key, e.g. locationName"
+        aria-label="New field key"
         class="flex-1"
       />
-      <UInput
+      <EditorInput
         v-model="newPath"
-        size="sm"
+        mono
         placeholder="Path, e.g. location.name"
-        class="flex-1 font-mono"
+        aria-label="New field path"
+        class="flex-1"
       />
-      <UButton
+      <EditorButton
         type="submit"
         icon="i-lucide-plus"
         label="Add field"
-        size="sm"
-        color="neutral"
-        variant="outline"
+        :disabled="!newKey.trim()"
+        class="shrink-0"
       />
     </form>
-  </div>
+  </section>
 </template>

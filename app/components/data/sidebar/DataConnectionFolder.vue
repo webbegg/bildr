@@ -56,10 +56,9 @@ const menu = computed<DropdownMenuItem[]>(() => [
 <template>
   <div :data-connection="connection.id">
     <div class="group relative flex items-center px-2">
-      <UInput
+      <EditorInput
         v-if="renaming"
         v-model="renameValue"
-        size="sm"
         autofocus
         class="flex-1"
         aria-label="Rename connection"
@@ -102,20 +101,19 @@ const menu = computed<DropdownMenuItem[]>(() => [
           <span class="truncate">{{ connection.name }}</span>
         </button>
       </div>
-      <UDropdownMenu
+      <EditorMenu
         v-if="!renaming"
         :items="menu"
       >
-        <UButton
+        <EditorButton
           icon="i-lucide-ellipsis"
-          size="xs"
-          color="neutral"
           variant="ghost"
+          size="xs"
           aria-label="Connection actions"
           class="absolute end-3 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
           data-connection-menu
         />
-      </UDropdownMenu>
+      </EditorMenu>
     </div>
 
     <template v-if="open">

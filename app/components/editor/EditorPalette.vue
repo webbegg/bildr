@@ -30,14 +30,13 @@ function insert(type: string) {
     class="w-60 p-1.5"
     data-insert-panel
   >
-    <UInput
+    <EditorInput
       v-model="query"
       icon="i-lucide-search"
-      size="sm"
       placeholder="Search components"
       aria-label="Search components"
       autofocus
-      class="mb-1.5 w-full"
+      class="mb-1.5"
       @keydown.enter.prevent="shown[0] && insert(shown[0].type)"
     />
     <div class="max-h-80 overflow-y-auto">
@@ -52,14 +51,14 @@ function insert(type: string) {
           type="button"
           draggable="true"
           :data-palette-type="component.type"
-          class="flex w-full cursor-grab items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-toned hover:bg-elevated active:cursor-grabbing"
+          class="flex w-full cursor-grab items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-toned hover:bg-white/8 hover:text-highlighted active:cursor-grabbing"
           @dragstart="onDragStart($event, component.type)"
           @dragend="emit('done')"
           @click="insert(component.type)"
         >
           <UIcon
             :name="component.icon"
-            class="size-3.5 shrink-0 text-dimmed"
+            class="size-4 shrink-0 text-dimmed"
           />
           <span class="truncate">{{ component.label }}</span>
         </button>

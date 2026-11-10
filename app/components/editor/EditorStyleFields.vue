@@ -229,7 +229,6 @@ const SELECT_ROWS: Partial<Record<RowId, { labels: Record<string, string>, unset
 
 // A select in a field shell.
 const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[13px]'
-const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dimmed' }
 </script>
 
 <template>
@@ -277,7 +276,7 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
                 variant="none"
                 size="sm"
                 :class="SELECT"
-                :ui="SELECT_UI"
+                :ui="SELECT_BARE_UI"
                 :aria-label="`${LABELS[row.id]} mode`"
                 :data-size-mode="row.id === 'width' ? 'w' : 'h'"
                 @update:model-value="setMode(row.id === 'width' ? 'w' : 'h', $event as SizeMode)"
@@ -360,7 +359,7 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
               variant="none"
               size="sm"
               :class="SELECT"
-              :ui="SELECT_UI"
+              :ui="SELECT_BARE_UI"
               :aria-label="token('justify').label"
               data-style-key="justify"
               :content="optionPreview('justify')"
@@ -588,7 +587,7 @@ const SELECT_UI = { trailingIcon: 'size-3.5 text-dimmed', placeholder: 'text-dim
               variant="none"
               size="sm"
               :class="SELECT"
-              :ui="SELECT_UI"
+              :ui="SELECT_BARE_UI"
               :aria-label="token(rowKeys(row.id)[0]!).label"
               :data-style-key="rowKeys(row.id)[0]"
               :content="optionPreview(rowKeys(row.id)[0]!)"

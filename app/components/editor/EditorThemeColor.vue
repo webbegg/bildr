@@ -56,14 +56,12 @@ function setHex(value: string) {
 </script>
 
 <template>
-  <div class="grid grid-cols-[5rem_1fr_auto] items-center gap-1.5">
-    <span class="text-xs text-toned">{{ label }}</span>
-    <USelect
+  <div class="grid grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-1.5">
+    <span class="truncate text-[13px] text-muted">{{ label }}</span>
+    <EditorSelect
       :model-value="palette"
       :items="paletteItems"
       placeholder="Custom"
-      size="xs"
-      class="w-full"
       :aria-label="`${label} palette`"
       :data-theme-color="name"
       @update:model-value="setPalette($event)"
@@ -80,16 +78,14 @@ function setHex(value: string) {
           :style="{ background: item.color }"
         />
       </template>
-    </USelect>
+    </EditorSelect>
     <UPopover
       :open="open"
       @update:open="onOpen"
     >
-      <UButton
+      <EditorButton
         icon="i-lucide-pipette"
-        color="neutral"
         variant="ghost"
-        size="xs"
         :aria-label="`${label} custom colour`"
       />
       <template #content>

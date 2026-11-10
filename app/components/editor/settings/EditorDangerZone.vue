@@ -13,6 +13,7 @@ const emit = defineEmits<{ deleted: [] }>()
 const open = defineModel<boolean>('open', { default: false })
 const toast = useToast()
 
+const formId = useId()
 const typed = ref('')
 const deleting = ref(false)
 const matches = computed(() => typed.value === props.project.slug)
@@ -43,69 +44,66 @@ async function remove() {
     class="space-y-2"
     data-danger-zone
   >
-    <h2 class="text-xs font-semibold text-error uppercase">
+    <h2 class="text-[13px] font-semibold text-error">
       Danger zone
     </h2>
-    <div class="flex items-center gap-3 rounded-md px-3 py-2 ring ring-error/40">
-      <p class="min-w-0 flex-1 text-sm text-muted">
+    <div class="flex items-center gap-3 rounded-lg py-2 ps-3 pe-2 ring ring-error/40">
+      <p class="min-w-0 flex-1 text-[13px] text-muted">
         Delete the project, its data and the published app. This cannot be undone.
       </p>
-      <UButton
+      <EditorButton
         label="Delete this project"
         icon="i-lucide-trash-2"
-        color="error"
-        variant="soft"
-        size="sm"
+        variant="danger"
         data-delete-project
         @click="open = true"
       />
     </div>
   </section>
 
-  <UModal
+  <EditorModal
     v-model:open="open"
     :title="`Delete ${project.name}?`"
     description="This cannot be undone."
   >
-    <template #body>
-      <form
-        class="space-y-4"
-        data-delete-project-confirm
-        @submit.prevent="remove"
+    <form
+      :id="formId"
+      class="space-y-4"
+      data-delete-project-confirm
+      @submit.prevent="remove"
+    >
+      <p class="text-[13px] text-muted">
+        This deletes the project's pages, its data (collections and records), its environment variables and the published app at /p/{{ project.slug }}.
+      </p>
+      <EditorFormRow
+        :label="`Type ${project.slug} to confirm`"
+        stacked
       >
-        <p class="text-sm text-muted">
-          This deletes the project's pages, its data (collections and records), its environment variables and the published app at /p/{{ project.slug }}.
-        </p>
-        <UFormField
-          :label="`Type ${project.slug} to confirm`"
-          size="sm"
-        >
-          <UInput
-            v-model="typed"
-            :placeholder="project.slug"
-            autocomplete="off"
-            class="w-full"
-            autofocus
-            data-delete-project-slug
-          />
-        </UFormField>
-        <div class="flex justify-end gap-2">
-          <UButton
-            label="Cancel"
-            color="neutral"
-            variant="ghost"
-            @click="open = false"
-          />
-          <UButton
-            type="submit"
-            label="Delete project"
-            color="error"
-            :disabled="!matches"
-            :loading="deleting"
-            data-delete-project-submit
-          />
-        </div>
-      </form>
+        <EditorInput
+          v-model="typed"
+          :placeholder="project.slug"
+          mono
+          autocomplete="off"
+          autofocus
+          data-delete-project-slug
+        />
+      </EditorFormRow>
+    </form>
+    <template #footer>
+      <EditorButton
+        label="Cancel"
+        variant="ghost"
+        @click="open = false"
+      />
+      <EditorButton
+        type="submit"
+        :form="formId"
+        label="Delete project"
+        variant="danger"
+        :disabled="!matches"
+        :loading="deleting"
+        data-delete-project-submit
+      />
     </template>
-  </UModal>
+  </EditorModal>
 </template>

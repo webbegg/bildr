@@ -81,9 +81,8 @@ async function remove() {
         v-if="caps.delete"
         text="Delete record"
       >
-        <UButton
+        <EditorButton
           icon="i-lucide-trash-2"
-          color="neutral"
           variant="ghost"
           size="xs"
           aria-label="Delete record"
@@ -92,9 +91,8 @@ async function remove() {
         />
       </UTooltip>
       <UTooltip text="Close">
-        <UButton
+        <EditorButton
           icon="i-lucide-x"
-          color="neutral"
           variant="ghost"
           size="xs"
           aria-label="Close record"

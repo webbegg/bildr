@@ -11,22 +11,22 @@ function display(value: RecordValue): string {
 </script>
 
 <template>
-  <div>
-    <p class="mb-1 text-sm font-semibold">
+  <section>
+    <h3 class="mb-2 flex items-baseline gap-2 text-[13px] font-semibold text-highlighted">
       Preview
-      <span class="font-normal text-xs text-muted">first {{ rows.length }} mapped rows</span>
-    </p>
-    <div class="max-h-72 overflow-auto rounded-md ring ring-default">
+      <span class="text-[12px] font-normal text-dimmed">first {{ rows.length }} mapped rows</span>
+    </h3>
+    <div class="max-h-72 overflow-auto rounded-lg ring-1 ring-white/8">
       <table
-        class="w-full text-xs"
+        class="w-full text-[12px]"
         data-api-preview
       >
         <thead class="sticky top-0 bg-elevated">
-          <tr class="text-left">
+          <tr class="text-left text-muted">
             <th
               v-for="field in fields"
               :key="field.key"
-              class="px-2 py-1 font-medium whitespace-nowrap"
+              class="h-[30px] px-2.5 font-normal whitespace-nowrap"
               :data-preview-column="field.key"
             >
               {{ field.label }}
@@ -37,18 +37,18 @@ function display(value: RecordValue): string {
           <tr
             v-for="row in rows"
             :key="row.id"
-            class="border-t border-default"
+            class="border-t border-white/6"
           >
             <td
               v-for="field in fields"
               :key="field.key"
-              class="max-w-48 truncate px-2 py-1"
+              class="h-9 max-w-48 truncate px-2.5 text-toned"
             >
               <img
                 v-if="field.type === 'image' && row.values[field.key]"
                 :src="String(row.values[field.key])"
                 alt=""
-                class="size-8 rounded object-cover ring ring-default"
+                class="size-7 rounded-md object-cover ring-1 ring-white/10"
               >
               <span
                 v-else
@@ -60,10 +60,10 @@ function display(value: RecordValue): string {
       </table>
       <p
         v-if="!rows.length"
-        class="p-3 text-xs text-dimmed"
+        class="p-3 text-[12px] text-dimmed"
       >
         {{ valid ? 'No items to preview.' : 'Fix the mapping to see the preview.' }}
       </p>
     </div>
-  </div>
+  </section>
 </template>

@@ -11,7 +11,7 @@ import type { SidebarPanel } from '#shared/editor/commands'
 const editor = useEditor()
 const panel = toRef(editor, 'sidebarPanel')
 const query = ref('')
-const search = useTemplateRef<{ inputRef?: HTMLInputElement }>('search')
+const search = useTemplateRef<{ focus: () => void, select: () => void }>('search')
 
 const PANELS = [{ value: 'pages', label: 'Pages' }, { value: 'layers', label: 'Layers' }, { value: 'assets', label: 'Assets' }]
 const placeholder = computed(() => `Search ${panel.value}`)
@@ -25,9 +25,8 @@ watch(() => editor.selectedIds, (ids) => {
 })
 
 watch(() => editor.searchRequest, () => {
-  const input = search.value?.inputRef
-  input?.focus()
-  input?.select()
+  search.value?.focus()
+  search.value?.select()
 })
 
 function onSearchKeyDown(event: KeyboardEvent) {
@@ -62,15 +61,12 @@ function onSearchKeyDown(event: KeyboardEvent) {
       </button>
     </div>
     <div class="border-b border-default px-2 py-2">
-      <UInput
+      <EditorInput
         ref="search"
         v-model="query"
         icon="i-lucide-search"
         :placeholder="placeholder"
         :aria-label="placeholder"
-        variant="soft"
-        class="w-full"
-        :ui="{ base: 'h-8 rounded-lg bg-white/5 text-sm' }"
         data-sidebar-search
         @keydown="onSearchKeyDown"
       />

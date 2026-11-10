@@ -19,6 +19,8 @@ const field = computed(() => usable.value.find(f => f.key === key.value))
 const ops = computed(() => field.value ? filterOps(field.value.type) : [])
 const needsValue = computed(() => op.value !== 'on' && op.value !== 'off')
 const ready = computed(() => !!field.value && (!needsValue.value || value.value.trim() !== ''))
+const fieldItems = computed(() => usable.value.map(f => ({ label: f.label, value: f.key })))
+const opItems = computed(() => ops.value.map(each => ({ label: OP_NAMES[each], value: each })))
 
 watch(open, (isOpen) => {
   if (!isOpen) return
@@ -35,8 +37,6 @@ function add() {
   emit('add', needsValue.value ? { key: key.value, op: op.value, value: value.value.trim() } : { key: key.value, op: op.value })
   open.value = false
 }
-
-const control = 'h-7 w-full rounded-md bg-elevated px-2 text-[13px] text-highlighted outline-none [color-scheme:dark] focus:ring-1 focus:ring-(--editor-selection)'
 </script>
 
 <template>
@@ -45,11 +45,9 @@ const control = 'h-7 w-full rounded-md bg-elevated px-2 text-[13px] text-highlig
     :content="{ side: 'bottom', align: 'start', sideOffset: 6 }"
   >
     <UTooltip text="Filter">
-      <UButton
+      <EditorButton
         icon="i-lucide-list-filter"
-        color="neutral"
         variant="ghost"
-        size="sm"
         aria-label="Filter"
         :disabled="!usable.length"
         data-records-filter
@@ -61,48 +59,33 @@ const control = 'h-7 w-full rounded-md bg-elevated px-2 text-[13px] text-highlig
         data-filter-form
         @submit.prevent="add"
       >
-        <select
+        <EditorSelect
           v-model="key"
+          :items="fieldItems"
           aria-label="Filter field"
-          :class="control"
           data-filter-field
-        >
-          <option
-            v-for="each in usable"
-            :key="each.key"
-            :value="each.key"
-          >
-            {{ each.label }}
-          </option>
-        </select>
-        <select
-          v-model="op"
+        />
+        <EditorSelect
+          :model-value="op"
+          :items="opItems"
           aria-label="Filter condition"
-          :class="control"
           data-filter-op
-        >
-          <option
-            v-for="each in ops"
-            :key="each"
-            :value="each"
-          >
-            {{ OP_NAMES[each] }}
-          </option>
-        </select>
-        <input
+          @update:model-value="op = $event as FilterOp"
+        />
+        <EditorInput
           v-if="needsValue"
           v-model="value"
           :type="field?.type === 'date' ? 'date' : 'text'"
           :inputmode="field?.type === 'number' ? 'decimal' : undefined"
           placeholder="Value"
           aria-label="Filter value"
-          :class="control"
+          :ui="{ base: '[color-scheme:dark]' }"
           data-filter-value
-        >
-        <UButton
+        />
+        <EditorButton
           type="submit"
+          variant="primary"
           label="Add filter"
-          size="xs"
           block
           :disabled="!ready"
           data-filter-add

@@ -37,10 +37,7 @@ async function addPage() {
     data-page-switcher
   >
     <div class="flex items-center gap-1">
-      <UDropdownMenu
-        :items="items"
-        :content="{ align: 'start' }"
-      >
+      <EditorMenu :items="items">
         <button
           type="button"
           class="flex h-8 min-w-0 flex-1 items-center gap-2.5 rounded-lg px-3 text-left text-sm text-highlighted hover:bg-white/4"
@@ -60,12 +57,11 @@ async function addPage() {
             class="ms-auto size-3 shrink-0 text-dimmed"
           />
         </button>
-      </UDropdownMenu>
-      <UButton
-        icon="i-lucide-plus"
-        size="xs"
-        color="neutral"
+      </EditorMenu>
+      <EditorButton
         variant="ghost"
+        size="xs"
+        icon="i-lucide-plus"
         aria-label="Add page"
         @click="adding = !adding"
       />
@@ -75,12 +71,11 @@ async function addPage() {
       class="px-1.5 pt-1"
       @submit.prevent="addPage"
     >
-      <UInput
+      <EditorInput
         v-model="newName"
-        size="sm"
         placeholder="Page name"
+        aria-label="New page name"
         autofocus
-        class="w-full"
         @keydown.esc="adding = false"
       />
     </form>

@@ -28,7 +28,7 @@ function update(patch: Partial<Omit<Theme, 'colors'>>) {
       v-if="colors.length"
       class="space-y-1.5"
     >
-      <p class="text-xs font-medium text-muted">
+      <p class="text-[12px] text-muted">
         Colours
       </p>
       <EditorThemeColor
@@ -42,45 +42,44 @@ function update(patch: Partial<Omit<Theme, 'colors'>>) {
       v-if="fields.size"
       class="space-y-3"
     >
-      <UFormField
+      <EditorFormRow
         v-if="fields.has('Font')"
         label="Font"
-        size="xs"
+        stacked
       >
-        <USelect
+        <EditorSelect
           :model-value="theme.font"
           :items="fontItems"
-          size="xs"
-          class="w-full"
+          aria-label="Font"
           @update:model-value="update({ font: $event })"
         />
-      </UFormField>
-      <UFormField
+      </EditorFormRow>
+      <EditorFormRow
         v-if="fields.has('Radius')"
         label="Radius"
-        size="xs"
+        stacked
         help="rounded-sm equals it; rounded-lg is twice it"
       >
-        <USelect
+        <EditorSelect
           :model-value="theme.radius"
           :items="radiusItems"
-          size="xs"
-          class="w-full"
+          aria-label="Radius"
           @update:model-value="update({ radius: $event as Theme['radius'] })"
         />
-      </UFormField>
-      <UFormField
+      </EditorFormRow>
+      <EditorFormRow
         v-if="fields.has('Spacing density')"
         label="Spacing density"
-        size="xs"
+        stacked
         :help="spacingHint"
       >
         <EditorSegmented
           :items="spacingItems"
           :model-value="theme.spacing"
+          aria-label="Spacing density"
           @update:model-value="update({ spacing: $event as Theme['spacing'] })"
         />
-      </UFormField>
+      </EditorFormRow>
     </section>
   </div>
 </template>

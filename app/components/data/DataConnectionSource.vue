@@ -8,13 +8,14 @@ import { mappingFields, mappingProblems, mappingRow } from './DataMappingTable.v
 import type { MappingRow } from './DataMappingTable.vue'
 
 /**
- * A collection read through a connection: its list endpoint (GET and a path),
- * a Test that calls `endpoint_test` and proposes fields, the mapping with a
- * preview, then Save. Without `collection` it creates one in `connection`;
- * with it, it saves that collection's list endpoint and mapping.
+ * The dialog for a collection read through a connection: its list endpoint
+ * (GET and a path), a Test that calls `endpoint_test` and proposes fields, the
+ * mapping with a preview, then Save in the footer. Without `collection` it
+ * creates one in `connection`; with it, it saves that collection's list
+ * endpoint and mapping. Each opening starts from the saved state.
  */
-const props = defineProps<{ connection: Connection, collection?: Collection }>()
-const emit = defineEmits<{ done: [] }>()
+const props = defineProps<{ connection: Connection, collection?: Collection, title: string, description?: string }>()
+const open = defineModel<boolean>('open', { default: false })
 const editor = useEditor()
 const toast = useToast()
 
@@ -26,11 +27,11 @@ interface ListTest {
   total?: number
 }
 
-const source = props.collection?.source.type === 'connection' ? props.collection.source : undefined
+const source = computed(() => (props.collection?.source.type === 'connection' ? props.collection.source : undefined))
 const name = ref('')
-const path = ref(source?.endpoints.list?.path ?? '/')
-const itemsPath = ref(source?.endpoints.list?.itemsPath ?? '')
-const rows = ref<MappingRow[]>(props.collection?.fields.map(mappingRow) ?? [])
+const path = ref('/')
+const itemsPath = ref('')
+const rows = ref<MappingRow[]>([])
 const items = shallowRef<unknown[]>([])
 const status = ref<number | null>(null)
 const total = ref<number | null>(null)
@@ -38,7 +39,20 @@ const testing = ref(false)
 const saving = ref(false)
 const error = ref('')
 /** The path and items path the current mapping is for; testing another proposes new fields. */
-let mappedFor = source?.endpoints.list ? JSON.stringify([source.endpoints.list.path, source.endpoints.list.itemsPath ?? '']) : ''
+let mappedFor = ''
+
+function reset() {
+  const list = source.value?.endpoints.list
+  name.value = ''
+  path.value = list?.path ?? '/'
+  itemsPath.value = list?.itemsPath ?? ''
+  rows.value = props.collection?.fields.map(mappingRow) ?? []
+  items.value = []
+  status.value = null
+  total.value = null
+  error.value = ''
+  mappedFor = list ? JSON.stringify([list.path, list.itemsPath ?? '']) : ''
+}
 
 const pathProblem = computed(() => (path.value.trim() ? endpointPathProblem(path.value.trim()) : 'Add a path, e.g. /posts'))
 
@@ -84,12 +98,14 @@ const problems = computed(() => mappingProblems(rows.value))
 const fields = computed(() => mappingFields(rows.value))
 const valid = computed(() => !pathProblem.value && problems.value.every(p => !p) && fields.value.length > 0)
 const preview = computed(() => (valid.value ? mapItems(items.value, fields.value) : []))
+const canSave = computed(() => valid.value && (!!props.collection || !!name.value.trim()))
 
 async function save() {
+  if (!canSave.value) return
   saving.value = true
-  const list = { method: source?.endpoints.list?.method ?? 'GET', path: path.value.trim(), ...(itemsPath.value.trim() ? { itemsPath: itemsPath.value.trim() } : {}) }
-  const next: ConnectionSource = source
-    ? { ...source, endpoints: { ...source.endpoints, list } }
+  const list = { method: source.value?.endpoints.list?.method ?? 'GET', path: path.value.trim(), ...(itemsPath.value.trim() ? { itemsPath: itemsPath.value.trim() } : {}) }
+  const next: ConnectionSource = source.value
+    ? { ...source.value, endpoints: { ...source.value.endpoints, list } }
     : { type: 'connection', connectionId: props.connection.id, endpoints: { list } }
   const body = { source: next, fields: fields.value }
   const result = props.collection
@@ -99,129 +115,140 @@ async function save() {
   if (!result) return
   if (!props.collection) editor.collectionId = (result as { collectionId: string }).collectionId
   toast.add({ title: props.collection ? 'Mapping saved' : 'Collection created', icon: 'i-lucide-check', color: 'success' })
-  emit('done')
+  open.value = false
 }
 
-onMounted(() => {
-  if (props.collection && source?.endpoints.list) void test()
-})
+watch(open, (isOpen) => {
+  if (!isOpen) return
+  reset()
+  if (props.collection && source.value?.endpoints.list) void test()
+}, { immediate: true })
 </script>
 
 <template>
-  <div
-    class="space-y-4"
-    data-connection-source
+  <EditorModal
+    v-model:open="open"
+    :title="title"
+    :description="description"
+    width="xl"
   >
-    <UFormField
-      v-if="!collection"
-      label="Collection name"
-      size="xs"
-      help="Proposed from the path when left empty"
+    <div
+      class="space-y-6"
+      data-connection-source
     >
-      <UInput
-        v-model="name"
-        placeholder="Posts"
-        class="w-full"
-        autofocus
-        data-api-name
-      />
-    </UFormField>
-    <form
-      class="flex items-start gap-2"
-      @submit.prevent="test()"
-    >
-      <UFormField
-        label="List endpoint"
-        size="xs"
-        :help="`Relative to ${connection.baseUrl}`"
-        :error="path.trim() && pathProblem ? pathProblem : undefined"
-        class="flex-1"
-      >
-        <div class="flex items-center gap-2">
-          <span class="flex h-8 shrink-0 items-center rounded-md bg-elevated px-2 font-mono text-xs text-toned">GET</span>
-          <UInput
-            v-model="path"
-            placeholder="/posts"
-            class="w-full font-mono"
-            data-endpoint-path="list"
-            @update:model-value="onPathChange"
+      <div class="max-w-3xl space-y-3">
+        <EditorFormRow
+          v-if="!collection"
+          label="Name"
+          help="Proposed from the path when left empty"
+        >
+          <EditorInput
+            v-model="name"
+            placeholder="Posts"
+            autofocus
+            data-api-name
           />
-        </div>
-      </UFormField>
-      <UButton
-        type="submit"
-        label="Test"
-        icon="i-lucide-play"
-        :loading="testing"
-        :disabled="!!pathProblem"
-        class="mt-5"
-        data-endpoint-test="list"
-      />
-    </form>
-    <p
-      v-if="status !== null"
-      class="text-xs text-muted"
-      data-endpoint-status
-    >
-      <UBadge
-        :label="String(status)"
-        :color="status < 300 ? 'success' : 'error'"
-        variant="subtle"
-        size="sm"
-        class="me-1.5 font-mono"
-      />
-      <template v-if="total !== null">
-        {{ total }} items in the response.
+        </EditorFormRow>
+        <form @submit.prevent="test()">
+          <EditorFormRow
+            label="List endpoint"
+            :help="`Relative to ${connection.baseUrl}`"
+            :error="path.trim() && pathProblem ? pathProblem : undefined"
+          >
+            <span class="flex h-[30px] shrink-0 items-center rounded-lg bg-elevated px-2.5 font-mono text-[11px] font-semibold text-toned">GET</span>
+            <EditorInput
+              v-model="path"
+              mono
+              placeholder="/posts"
+              :invalid="!!path.trim() && !!pathProblem"
+              aria-label="List endpoint path"
+              data-endpoint-path="list"
+              @update:model-value="onPathChange"
+            />
+            <EditorButton
+              type="submit"
+              variant="primary"
+              label="Test"
+              icon="i-lucide-play"
+              :loading="testing"
+              :disabled="!!pathProblem"
+              class="shrink-0"
+              data-endpoint-test="list"
+            />
+          </EditorFormRow>
+        </form>
+        <EditorFormRow
+          v-if="status !== null"
+          label="Response"
+        >
+          <p
+            class="flex items-center gap-2 text-[13px] text-muted"
+            data-endpoint-status
+          >
+            <span
+              class="rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold"
+              :class="status < 300 ? 'bg-success/12 text-success' : 'bg-error/12 text-error'"
+            >{{ status }}</span>
+            <template v-if="total !== null">
+              {{ total }} items in the response
+            </template>
+          </p>
+        </EditorFormRow>
+        <p
+          v-if="error"
+          class="ms-[132px] flex items-start gap-2 rounded-lg bg-error/10 px-3 py-2 text-[12px] leading-4 text-error"
+          role="alert"
+          data-api-error
+        >
+          <UIcon
+            name="i-lucide-circle-alert"
+            class="size-4 shrink-0"
+          />
+          {{ error }}
+        </p>
+        <EditorFormRow
+          v-if="total !== null || collection"
+          label="Items path"
+          help="Where the list is in the response; empty for a root array"
+        >
+          <EditorInput
+            v-model="itemsPath"
+            mono
+            placeholder="data"
+            aria-label="Items path"
+            data-api-items-path
+            @keydown.enter.prevent="test()"
+          />
+        </EditorFormRow>
+      </div>
+
+      <template v-if="total !== null || collection">
+        <DataMappingTable
+          v-model="rows"
+          :problems="problems"
+        />
+        <DataMappingPreview
+          :fields="fields"
+          :rows="preview"
+          :valid="valid"
+        />
       </template>
-    </p>
-    <UAlert
-      v-if="error"
-      color="error"
-      variant="soft"
-      icon="i-lucide-circle-alert"
-      :description="error"
-      data-api-error
-    />
+    </div>
 
-    <template v-if="total !== null || collection">
-      <UFormField
-        label="Items path"
-        size="xs"
-        help="Where the list is in the response; empty for a root array"
-        class="w-64"
-      >
-        <UInput
-          v-model="itemsPath"
-          placeholder="data"
-          class="w-full"
-          data-api-items-path
-          @keydown.enter.prevent="test()"
-        />
-      </UFormField>
-
-      <DataMappingTable
-        v-model="rows"
-        :problems="problems"
+    <template #footer>
+      <EditorButton
+        label="Cancel"
+        @click="open = false"
       />
-      <DataMappingPreview
-        :fields="fields"
-        :rows="preview"
-        :valid="valid"
+      <EditorButton
+        variant="primary"
+        :label="collection ? 'Save mapping' : 'Save collection'"
+        icon="i-lucide-check"
+        :loading="saving"
+        :disabled="!canSave"
+        data-api-save
+        @click="save"
       />
-
-      <form
-        class="flex justify-end"
-        @submit.prevent="save"
-      >
-        <UButton
-          type="submit"
-          :label="collection ? 'Save mapping' : 'Save collection'"
-          icon="i-lucide-check"
-          :loading="saving"
-          :disabled="!valid || (!collection && !name.trim())"
-          data-api-save
-        />
-      </form>
     </template>
-  </div>
+  </EditorModal>
 </template>

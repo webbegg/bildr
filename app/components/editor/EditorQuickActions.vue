@@ -18,6 +18,20 @@ const query = ref('')
 const expandInsert = ref(false)
 const shortcutsOpen = ref(false)
 
+// The kit's dark dialog around a palette laid out like MENU_UI: 13 px rows, white/8 highlight, dim group labels.
+const MODAL = mergeUi(MODAL_UI, { content: 'sm:max-w-[560px]' })
+const PALETTE_UI = {
+  root: 'divide-white/8',
+  input: '[&>input]:h-11 [&>input]:text-[13px]',
+  viewport: 'divide-white/8',
+  group: 'p-1',
+  label: 'px-2.5 pt-2 pb-1 text-[11px] font-medium text-dimmed',
+  item: 'gap-2 px-2.5 py-1.5 text-[13px] data-highlighted:not-data-disabled:before:bg-white/8',
+  itemLeadingIcon: 'size-4',
+  itemLabelSuffix: 'text-[12px]',
+  empty: 'py-6 text-[13px] text-dimmed'
+}
+
 const RECENT_KEY = 'bildr:recent-commands'
 const recent = ref<string[]>(JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'))
 
@@ -78,7 +92,7 @@ watch(() => editor.quickOpen, (open) => {
     v-model:open="editor.quickOpen"
     title="Quick actions"
     description="Insert a component or run an editor action"
-    :ui="{ content: 'max-w-[560px]' }"
+    :ui="MODAL"
   >
     <template #content>
       <UCommandPalette
@@ -86,6 +100,8 @@ watch(() => editor.quickOpen, (open) => {
         :groups="groups"
         :fuse="{ resultLimit: 100 }"
         preserve-group-order
+        size="sm"
+        :ui="PALETTE_UI"
         placeholder="Insert a component or run an action…"
         class="h-[min(28rem,70vh)]"
         data-quick-actions

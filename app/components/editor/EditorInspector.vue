@@ -103,11 +103,10 @@ function renamePage(field: 'name' | 'slug', value: string) {
             text="Duplicate"
             :kbds="['meta', 'd']"
           >
-            <UButton
-              icon="i-lucide-copy"
-              color="neutral"
+            <EditorButton
               variant="ghost"
               size="xs"
+              icon="i-lucide-copy"
               aria-label="Duplicate"
               @click="editor.duplicate()"
             />
@@ -116,11 +115,10 @@ function renamePage(field: 'name' | 'slug', value: string) {
             text="Delete"
             :kbds="['delete']"
           >
-            <UButton
-              icon="i-lucide-trash-2"
-              color="neutral"
+            <EditorButton
               variant="ghost"
               size="xs"
+              icon="i-lucide-trash-2"
               aria-label="Delete"
               @click="editor.remove()"
             />
@@ -212,12 +210,11 @@ function renamePage(field: 'name' | 'slug', value: string) {
             v-if="group === 'Behaviour' && node.type === FORM_TYPE"
             class="space-y-1.5 pt-1.5"
           >
-            <UButton
+            <EditorButton
+              variant="soft"
+              size="xs"
               label="Test submit"
               icon="i-lucide-send"
-              color="neutral"
-              variant="outline"
-              size="xs"
               block
               :disabled="!formCollection"
               @click="testSubmit"

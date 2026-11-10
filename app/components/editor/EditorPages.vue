@@ -42,6 +42,11 @@ async function commitRename() {
   if (page && name && name !== page.name) await editor.run('page_rename', { pageId, name })
 }
 
+// Rename… mounts the field focused; the closing menu must not take the focus back (its blur would commit).
+function keepRenameFocus(event: Event) {
+  if (renamingId.value) event.preventDefault()
+}
+
 function menu(page: Page): DropdownMenuItem[] {
   return [
     { label: 'Rename', icon: 'i-lucide-pencil', onSelect: () => startRename(page) },
@@ -64,11 +69,10 @@ function menu(page: Page): DropdownMenuItem[] {
       <p class="text-sm font-semibold text-highlighted">
         Pages
       </p>
-      <UButton
-        icon="i-lucide-plus"
-        size="xs"
-        color="neutral"
+      <EditorButton
         variant="ghost"
+        size="xs"
+        icon="i-lucide-plus"
         aria-label="Add page"
         @click="adding = !adding"
       />
@@ -78,12 +82,11 @@ function menu(page: Page): DropdownMenuItem[] {
       class="px-3 pb-2"
       @submit.prevent="addPage"
     >
-      <UInput
+      <EditorInput
         v-model="newName"
-        size="sm"
         placeholder="Page name"
+        aria-label="New page name"
         autofocus
-        class="w-full"
         @keydown.esc="adding = false"
       />
     </form>
@@ -99,10 +102,10 @@ function menu(page: Page): DropdownMenuItem[] {
       class="group relative flex items-center px-2"
       :data-page-id="page.id"
     >
-      <UInput
+      <EditorInput
         v-if="renamingId === page.id"
         v-model="renameValue"
-        size="sm"
+        aria-label="Rename page"
         autofocus
         class="flex-1"
         @keydown.enter="commitRename"
@@ -131,16 +134,19 @@ function menu(page: Page): DropdownMenuItem[] {
           class="truncate text-xs font-normal text-dimmed"
         >{{ hint }}</span>
       </button>
-      <UDropdownMenu :items="menu(page)">
-        <UButton
-          icon="i-lucide-ellipsis"
-          size="xs"
-          color="neutral"
+      <EditorMenu
+        :items="menu(page)"
+        :content="{ align: 'end' }"
+        :on-close-auto-focus="keepRenameFocus"
+      >
+        <EditorButton
           variant="ghost"
+          size="xs"
+          icon="i-lucide-ellipsis"
           aria-label="Page actions"
           class="absolute end-3 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
         />
-      </UDropdownMenu>
+      </EditorMenu>
     </div>
   </div>
 </template>

@@ -26,6 +26,11 @@ async function commitRename() {
   if (name && name !== collection.name) await editor.run('collection_update', { collection: collection.id, name })
 }
 
+// Rename mounts the field focused; the closing menu must not take the focus back (its blur would commit).
+function keepRenameFocus(event: Event) {
+  if (renaming.value) event.preventDefault()
+}
+
 function show() {
   editor.collectionId = collection.id
   editor.connectionId = null
@@ -47,10 +52,9 @@ const menu = computed<DropdownMenuItem[]>(() => [
 
 <template>
   <div class="group relative flex items-center px-2">
-    <UInput
+    <EditorInput
       v-if="renaming"
       v-model="renameValue"
-      size="sm"
       autofocus
       class="flex-1"
       aria-label="Rename collection"
@@ -80,18 +84,18 @@ const menu = computed<DropdownMenuItem[]>(() => [
         data-collection-count
       >{{ count ?? '' }}</span>
     </button>
-    <UDropdownMenu
+    <EditorMenu
       v-if="!renaming"
       :items="menu"
+      :on-close-auto-focus="keepRenameFocus"
     >
-      <UButton
+      <EditorButton
         icon="i-lucide-ellipsis"
-        size="xs"
-        color="neutral"
         variant="ghost"
+        size="xs"
         aria-label="Collection actions"
         class="absolute end-3 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
       />
-    </UDropdownMenu>
+    </EditorMenu>
   </div>
 </template>

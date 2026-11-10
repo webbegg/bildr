@@ -87,39 +87,37 @@ async function add() {
 <template>
   <section
     ref="section"
-    class="scroll-mt-6 space-y-3"
+    class="scroll-mt-6 space-y-2"
     data-env-section
   >
-    <h2 class="text-xs font-semibold text-muted uppercase">
+    <h2 class="text-[13px] font-semibold text-highlighted">
       Variables
     </h2>
-    <p class="text-sm text-muted">
+    <p class="text-[13px] text-muted">
       {{ HELP }}
     </p>
 
     <div
       v-if="editor.env.length || adding"
-      class="divide-y divide-default rounded-md ring ring-default"
+      class="divide-y divide-default rounded-lg ring ring-default"
     >
       <div
         v-for="v in editor.env"
         :key="v.name"
-        class="flex items-center gap-2 px-3 py-1.5"
+        class="flex items-center gap-2 py-1.5 ps-3 pe-1.5"
         :data-env-row="v.name"
         :data-env-secret="v.secret || undefined"
       >
         <code
-          class="w-40 shrink-0 truncate font-mono text-xs text-highlighted"
+          class="w-40 shrink-0 truncate font-mono text-[12px] text-highlighted"
           :title="v.name"
         >{{ v.name }}</code>
         <div class="min-w-0 flex-1">
-          <UInput
+          <EditorInput
             v-if="replacing?.name === v.name"
             v-model="replacement"
             :placeholder="replacing.toPublic ? 'New public value' : 'New secret value'"
             :type="replacing.toPublic ? 'text' : 'password'"
-            size="sm"
-            class="w-full"
             autofocus
             data-env-replace-input
             @keydown.enter="saveReplace"
@@ -131,13 +129,12 @@ async function add() {
             class="flex items-center gap-2"
           >
             <span
-              class="flex-1 font-mono text-sm text-muted"
+              class="flex-1 ps-2.5 font-mono text-[13px] text-muted"
               data-env-masked
             >{{ MASK }}</span>
-            <UButton
+            <EditorButton
               label="Replace"
-              color="neutral"
-              variant="outline"
+              variant="soft"
               size="xs"
               data-env-replace
               @click="startReplace(v.name)"
@@ -150,16 +147,14 @@ async function add() {
             @commit="value => setValue(v.name, value)"
           />
         </div>
-        <USwitch
+        <EditorSwitch
           :model-value="v.secret"
           label="Secret"
-          size="sm"
           data-env-secret-switch
           @update:model-value="value => setSecret(v.name, value)"
         />
-        <UButton
+        <EditorButton
           icon="i-lucide-minus"
-          color="neutral"
           variant="ghost"
           size="xs"
           :aria-label="`Delete ${v.name}`"
@@ -175,52 +170,50 @@ async function add() {
         @submit.prevent="add"
       >
         <div class="flex items-center gap-2">
-          <UInput
-            v-model="draft.name"
-            placeholder="NAME"
-            size="sm"
-            class="w-40 shrink-0"
-            :ui="{ base: 'font-mono' }"
-            :color="nameProblem ? 'error' : undefined"
-            :highlight="!!nameProblem"
-            autofocus
-            data-env-new-name
-            @keydown.esc="adding = false"
-          />
-          <UInput
-            v-model="draft.value"
-            placeholder="Value"
-            :type="draft.secret ? 'password' : 'text'"
-            size="sm"
-            class="min-w-0 flex-1"
-            data-env-new-value
-            @keydown.esc="adding = false"
-          />
-          <USwitch
+          <div class="w-40 shrink-0">
+            <EditorInput
+              v-model="draft.name"
+              placeholder="NAME"
+              mono
+              :invalid="!!nameProblem"
+              autofocus
+              data-env-new-name
+              @keydown.esc="adding = false"
+            />
+          </div>
+          <div class="min-w-0 flex-1">
+            <EditorInput
+              v-model="draft.value"
+              placeholder="Value"
+              :type="draft.secret ? 'password' : 'text'"
+              data-env-new-value
+              @keydown.esc="adding = false"
+            />
+          </div>
+          <EditorSwitch
             v-model="draft.secret"
             label="Secret"
-            size="sm"
             data-env-new-secret
           />
         </div>
         <p
           v-if="nameProblem"
-          class="text-xs text-error"
+          class="text-[12px] text-error"
           data-env-name-hint
         >
           {{ nameProblem }}
         </p>
         <div class="flex justify-end gap-2 pt-1">
-          <UButton
+          <EditorButton
             label="Cancel"
-            color="neutral"
             variant="ghost"
             size="xs"
             @click="adding = false"
           />
-          <UButton
+          <EditorButton
             type="submit"
             label="Add"
+            variant="primary"
             size="xs"
             :disabled="!draft.name || !!nameProblem"
             data-env-new-save
@@ -229,13 +222,11 @@ async function add() {
       </form>
     </div>
 
-    <UButton
+    <EditorButton
       v-if="!adding"
       label="Add variable"
       icon="i-lucide-plus"
-      color="neutral"
-      variant="outline"
-      size="sm"
+      variant="soft"
       data-env-add
       @click="startAdd"
     />

@@ -47,6 +47,12 @@ const addingConnection = ref(false)
 const addingTo = ref<string | null>(null)
 const addingToConnection = computed(() => connections.value.find(c => c.id === addingTo.value))
 
+/** The last connection asked for, so the dialog keeps its text while it closes. */
+const dialogConnection = ref(addingToConnection.value)
+watch(addingToConnection, (connection) => {
+  if (connection) dialogConnection.value = connection
+})
+
 const syncedMenu: DropdownMenuItem[] = [
   { label: 'New connection', icon: 'i-lucide-server', onSelect: () => (addingConnection.value = true) },
   { label: 'Import from URL', icon: 'i-lucide-globe', slot: 'from-api', onSelect: () => (fromApi.value = true) }
@@ -67,13 +73,13 @@ function cancelConnection() {
   connectionName.value = ''
 }
 
-const connectionForm = useTemplateRef<HTMLFormElement>('connectionForm')
+const connectionInput = useTemplateRef<{ focus: () => void }>('connectionInput')
 
 /** The menu hands focus back to its `+` on close, which blurred (and so cancelled) the new connection's name; give it to the name instead. */
 function syncedMenuClosed(event: Event) {
   if (!addingConnection.value) return
   event.preventDefault()
-  connectionForm.value?.querySelector('input')?.focus()
+  connectionInput.value?.focus()
 }
 
 watch(() => editor.importRequest, (request) => {
@@ -163,12 +169,10 @@ watch(() => editor.recordsTotal, (total) => {
           class="px-2"
           @submit.prevent="addCollection"
         >
-          <UInput
+          <EditorInput
             v-model="newName"
-            size="sm"
             placeholder="Collection name"
             autofocus
-            class="w-full"
             aria-label="New collection name"
             @keydown.esc="cancelAdd"
             @blur="!newName.trim() && cancelAdd()"
@@ -201,23 +205,22 @@ watch(() => editor.recordsTotal, (total) => {
           <p class="flex-1 text-xs font-medium text-dimmed">
             Synced
           </p>
-          <UDropdownMenu
+          <EditorMenu
             :items="syncedMenu"
-            :content="{ align: 'end', onCloseAutoFocus: syncedMenuClosed }"
+            :content="{ align: 'end' }"
+            :on-close-auto-focus="syncedMenuClosed"
           >
-            <UButton
+            <EditorButton
               icon="i-lucide-plus"
-              size="xs"
-              color="neutral"
               variant="ghost"
+              size="xs"
               aria-label="Add synced data"
-              class="text-dimmed"
               data-synced-add
             />
             <template #from-api-label>
               <span data-from-api>Import from URL</span>
             </template>
-          </UDropdownMenu>
+          </EditorMenu>
         </div>
         <DataConnectionFolder
           v-for="connection in connections"
@@ -228,17 +231,15 @@ watch(() => editor.recordsTotal, (total) => {
         />
         <form
           v-if="addingConnection"
-          ref="connectionForm"
           class="px-2"
           data-new-connection
           @submit.prevent="addConnection"
         >
-          <UInput
+          <EditorInput
+            ref="connectionInput"
             v-model="connectionName"
-            size="sm"
             placeholder="Connection name"
             autofocus
-            class="w-full"
             aria-label="New connection name"
             @keydown.esc="cancelConnection"
             @blur="!connectionName.trim() && cancelConnection()"
@@ -259,31 +260,19 @@ watch(() => editor.recordsTotal, (total) => {
       </section>
     </div>
 
-    <UModal
+    <DataApiSource
       v-model:open="fromApi"
       title="Import from API"
       description="Paste a JSON endpoint, review the proposed mapping, then save. The records stay live and read-only."
-      :ui="{ content: 'sm:max-w-5xl' }"
-    >
-      <template #body>
-        <DataApiSource @done="fromApi = false" />
-      </template>
-    </UModal>
+    />
 
-    <UModal
+    <DataConnectionSource
+      v-if="dialogConnection"
       :open="!!addingToConnection"
+      :connection="dialogConnection"
       title="New collection"
-      :description="addingToConnection ? `In ${addingToConnection.name}: test the list endpoint, review the proposed fields, then save.` : ''"
-      :ui="{ content: 'sm:max-w-5xl' }"
+      :description="`In ${dialogConnection.name}: test the list endpoint, review the proposed fields, then save.`"
       @update:open="!$event && (addingTo = null)"
-    >
-      <template #body>
-        <DataConnectionSource
-          v-if="addingToConnection"
-          :connection="addingToConnection"
-          @done="addingTo = null"
-        />
-      </template>
-    </UModal>
+    />
   </div>
 </template>

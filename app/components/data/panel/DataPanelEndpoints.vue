@@ -14,7 +14,6 @@ import type { Collection, Connection, ConnectionEndpoints, ConnectionSource } fr
  */
 const props = defineProps<{ collection: Collection, source: ConnectionSource }>()
 const editor = useEditor()
-const SOFT = 'h-[30px] rounded-lg bg-elevated font-mono text-[12px]'
 
 const connection = computed<Connection | undefined>(() => editor.project?.connections.find(c => c.id === props.source.connectionId))
 const operations = computed(() => ENDPOINT_OPERATIONS.filter(op => props.source.endpoints[op]))
@@ -129,33 +128,28 @@ async function test(op: EndpointOperation) {
       :data-endpoint="op"
       @remove="remove(op)"
     >
-      <USelect
+      <EditorSelect
         :model-value="methodOf(op)"
-        :items="[...ENDPOINT_METHODS]"
+        :items="ENDPOINT_METHODS"
+        mono
         :disabled="isRead(op)"
         :title="isRead(op) ? 'List and Get endpoints use GET' : undefined"
         :aria-label="`${OPERATION_LABELS[op]} method`"
-        size="xs"
-        variant="soft"
-        trailing-icon=""
-        :ui="{ base: `${SOFT} w-[54px] justify-center px-1 text-[10.5px] font-semibold text-toned`, trailing: 'hidden', content: 'min-w-24' }"
+        :ui="{ base: 'justify-center px-1 text-[10.5px] font-semibold text-toned', trailing: 'hidden', content: 'min-w-24' }"
         :content="{ align: 'start' }"
-        class="shrink-0"
+        class="w-[54px] shrink-0"
         data-endpoint-method
         @update:model-value="setMethod(op, $event as EndpointMethod)"
       />
-      <UInput
+      <EditorInput
         :model-value="pathOf(op)"
+        mono
+        :invalid="!!problemOf(op)"
         :aria-label="`${OPERATION_LABELS[op]} path`"
         placeholder="/posts"
-        size="xs"
-        variant="soft"
-        :ui="{ base: SOFT }"
-        :color="problemOf(op) ? 'error' : undefined"
-        :highlight="!!problemOf(op)"
         class="min-w-0 flex-1"
         :data-endpoint-path="op"
-        @update:model-value="drafts[op] = String($event)"
+        @update:model-value="drafts[op] = $event"
         @change="commitPath(op)"
         @keydown.esc="resetDraft(op)"
       >
@@ -165,13 +159,12 @@ async function test(op: EndpointOperation) {
             @insert="drafts[op] = $event; commitPath(op)"
           />
         </template>
-      </UInput>
+      </EditorInput>
       <UTooltip :text="methodOf(op) === 'GET' ? 'Test' : `Test (sends a real ${methodOf(op)})`">
-        <UButton
+        <EditorButton
           icon="i-lucide-play"
-          size="xs"
-          color="neutral"
           variant="ghost"
+          size="xs"
           :aria-label="`Test ${OPERATION_LABELS[op]}`"
           :loading="testing === op"
           :disabled="!!problemOf(op)"
@@ -222,31 +215,21 @@ async function test(op: EndpointOperation) {
         @commit="setIdPath"
       />
     </EditorRow>
-    <UButton
+    <EditorButton
       icon="i-lucide-pencil"
       label="Edit mapping"
-      size="sm"
-      color="neutral"
-      variant="soft"
       block
       :disabled="!connection"
       data-edit-mapping
       @click="editingMapping = true"
     />
-    <UModal
+    <DataConnectionSource
+      v-if="connection"
       v-model:open="editingMapping"
+      :connection="connection"
+      :collection="collection"
       title="Edit the mapping"
       :description="collection.name"
-      :ui="{ content: 'sm:max-w-5xl' }"
-    >
-      <template #body>
-        <DataConnectionSource
-          v-if="connection"
-          :connection="connection"
-          :collection="collection"
-          @done="editingMapping = false"
-        />
-      </template>
-    </UModal>
+    />
   </EditorStyleSection>
 </template>

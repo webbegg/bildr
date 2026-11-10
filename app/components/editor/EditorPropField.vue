@@ -61,9 +61,6 @@ function onLinkMode(mode: string) {
   if (mode === EXTERNAL) return
   emit('update', mode === NONE ? '' : mode)
 }
-
-// The 30 px Framer field.
-const SELECT_UI = { base: 'h-[30px] rounded-lg bg-elevated text-[13px]', trailingIcon: 'size-3.5 text-dimmed' }
 </script>
 
 <template>
@@ -109,7 +106,7 @@ const SELECT_UI = { base: 'h-[30px] rounded-lg bg-elevated text-[13px]', trailin
         :aria-label="def.label"
         size="xs"
         variant="soft"
-        :ui="{ base: 'h-[30px] rounded-lg bg-elevated text-[13px]' }"
+        :ui="{ base: FIELD }"
         class="w-full"
         @update:model-value="$event != null && emit('update', $event)"
       />

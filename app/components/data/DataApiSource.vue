@@ -7,13 +7,14 @@ import { mappingFields, mappingProblems, mappingRow } from './DataMappingTable.v
 import type { MappingRow } from './DataMappingTable.vue'
 
 /**
- * The "From API" flow: fetch a JSON endpoint, review and edit the proposed
- * mapping with a live preview, then save it as a new collection (or, given
- * `collection`, as that API collection's new mapping). The preview maps the
- * fetched items in the browser with the same `mapItems` the server uses.
+ * The "From API" dialog: fetch a JSON endpoint, review and edit the proposed
+ * mapping with a live preview, then save it (in the footer) as a new
+ * collection or, given `collection`, as that API collection's new mapping.
+ * The preview maps the fetched items in the browser with the same `mapItems`
+ * the server uses. Each opening starts from the saved state.
  */
-const props = defineProps<{ collection?: Collection }>()
-const emit = defineEmits<{ done: [] }>()
+const props = defineProps<{ collection?: Collection, title: string, description?: string }>()
+const open = defineModel<boolean>('open', { default: false })
 const editor = useEditor()
 const toast = useToast()
 
@@ -24,10 +25,10 @@ interface Preview {
   total: number
 }
 
-const source = props.collection?.source.type === 'api' ? props.collection.source : undefined
-const url = ref(source?.url ?? '')
-const itemsPath = ref(source?.itemsPath ?? '')
-const rows = ref<MappingRow[]>(props.collection?.fields.map(mappingRow) ?? [])
+const source = computed(() => (props.collection?.source.type === 'api' ? props.collection.source : undefined))
+const url = ref('')
+const itemsPath = ref('')
+const rows = ref<MappingRow[]>([])
 const items = shallowRef<unknown[]>([])
 const total = ref<number | null>(null)
 const name = ref('')
@@ -35,7 +36,18 @@ const fetching = ref(false)
 const saving = ref(false)
 const error = ref('')
 /** The URL and items path the current mapping is for; fetching another proposes new fields. */
-let mappedFor = source ? JSON.stringify([source.url, source.itemsPath]) : ''
+let mappedFor = ''
+
+function reset() {
+  url.value = source.value?.url ?? ''
+  itemsPath.value = source.value?.itemsPath ?? ''
+  rows.value = props.collection?.fields.map(mappingRow) ?? []
+  items.value = []
+  total.value = null
+  name.value = ''
+  error.value = ''
+  mappedFor = source.value ? JSON.stringify([source.value.url, source.value.itemsPath]) : ''
+}
 
 /** `https://rickandmortyapi.com/api/character` → `Character`. */
 function nameFromUrl(value: string): string {
@@ -49,11 +61,12 @@ function nameFromUrl(value: string): string {
 
 /** Fetches the URL; the proposed fields replace the mapping only for a new URL or items path. */
 async function fetchPreview() {
+  if (!url.value.trim()) return
   error.value = ''
   fetching.value = true
   try {
     const input: Record<string, unknown> = { projectId: editor.projectId, url: url.value.trim() }
-    if (source?.headers) input.headers = source.headers
+    if (source.value?.headers) input.headers = source.value.headers
     if (total.value !== null || props.collection) input.itemsPath = itemsPath.value.trim()
     const preview = await callAction<Preview>('api_source_preview', input)
     itemsPath.value = preview.itemsPath
@@ -79,11 +92,14 @@ const problems = computed(() => mappingProblems(rows.value))
 const fields = computed(() => mappingFields(rows.value))
 const valid = computed(() => problems.value.every(p => !p) && fields.value.length > 0)
 const preview = computed(() => (valid.value ? mapItems(items.value, fields.value) : []))
+const canSave = computed(() => valid.value && (total.value !== null || !!props.collection) && (!!props.collection || !!name.value.trim()))
 
 async function save() {
+  if (!canSave.value) return
   saving.value = true
   // Headers set by an agent (api_source_preview, collection_update) stay.
-  const body = { source: { type: 'api', url: url.value.trim(), itemsPath: itemsPath.value.trim(), ...(source?.headers ? { headers: source.headers } : {}) }, fields: fields.value }
+  const headers = source.value?.headers
+  const body = { source: { type: 'api', url: url.value.trim(), itemsPath: itemsPath.value.trim(), ...(headers ? { headers } : {}) }, fields: fields.value }
   const result = props.collection
     ? await editor.run('collection_update', { collection: props.collection.id, ...body })
     : await editor.run<{ collectionId: string }>('collection_create', { name: name.value.trim(), ...body })
@@ -91,115 +107,129 @@ async function save() {
   if (!result) return
   if (!props.collection) editor.collectionId = (result as { collectionId: string }).collectionId
   toast.add({ title: props.collection ? 'Mapping saved' : 'Collection created', icon: 'i-lucide-check', color: 'success' })
-  emit('done')
+  open.value = false
 }
 
-onMounted(() => {
+watch(open, (isOpen) => {
+  if (!isOpen) return
+  reset()
   if (props.collection) void fetchPreview()
-})
+}, { immediate: true })
 </script>
 
 <template>
-  <div
-    class="space-y-4"
-    data-api-source
+  <EditorModal
+    v-model:open="open"
+    :title="title"
+    :description="description"
+    width="xl"
   >
-    <form
-      class="flex items-end gap-2"
-      @submit.prevent="fetchPreview()"
+    <div
+      class="space-y-6"
+      data-api-source
     >
-      <UFormField
-        label="API URL"
-        size="xs"
-        help="A public JSON endpoint (GET, no auth)"
-        class="flex-1"
-      >
-        <UInput
-          v-model="url"
-          placeholder="https://rickandmortyapi.com/api/character"
-          class="w-full"
-          data-api-url
-          @update:model-value="onUrlChange"
-        />
-      </UFormField>
-      <UButton
-        type="submit"
-        :label="collection || total !== null ? 'Refetch' : 'Fetch'"
-        icon="i-lucide-download"
-        :loading="fetching"
-        :disabled="!url.trim()"
-        data-api-fetch
-        class="mb-5"
-      />
-    </form>
-    <UAlert
-      v-if="error"
-      color="error"
-      variant="soft"
-      icon="i-lucide-circle-alert"
-      :description="error"
-      data-api-error
-    />
-
-    <template v-if="total !== null || collection">
-      <div class="flex items-end gap-3">
-        <UFormField
-          label="Items path"
-          size="xs"
-          help="Where the list is in the response; empty for a root array"
-          class="w-64"
+      <div class="max-w-3xl space-y-3">
+        <EditorFormRow
+          v-if="!collection"
+          label="Name"
+          help="Proposed from the URL when left empty"
         >
-          <UInput
+          <EditorInput
+            v-model="name"
+            placeholder="Characters"
+            data-api-name
+          />
+        </EditorFormRow>
+        <form @submit.prevent="fetchPreview()">
+          <EditorFormRow
+            label="API URL"
+            help="A public JSON endpoint (GET, no auth)"
+          >
+            <span class="flex h-[30px] shrink-0 items-center rounded-lg bg-elevated px-2.5 font-mono text-[11px] font-semibold text-toned">GET</span>
+            <EditorInput
+              v-model="url"
+              mono
+              placeholder="https://rickandmortyapi.com/api/character"
+              aria-label="API URL"
+              autofocus
+              data-api-url
+              @update:model-value="onUrlChange"
+            />
+            <EditorButton
+              type="submit"
+              variant="primary"
+              :label="collection || total !== null ? 'Refetch' : 'Fetch'"
+              icon="i-lucide-download"
+              :loading="fetching"
+              :disabled="!url.trim()"
+              class="shrink-0"
+              data-api-fetch
+            />
+          </EditorFormRow>
+        </form>
+        <EditorFormRow
+          v-if="total !== null"
+          label="Response"
+        >
+          <p class="text-[13px] text-muted">
+            {{ total }} items in the response. Changing the items path and fetching proposes new fields.
+          </p>
+        </EditorFormRow>
+        <p
+          v-if="error"
+          class="ms-[132px] flex items-start gap-2 rounded-lg bg-error/10 px-3 py-2 text-[12px] leading-4 text-error"
+          role="alert"
+          data-api-error
+        >
+          <UIcon
+            name="i-lucide-circle-alert"
+            class="size-4 shrink-0"
+          />
+          {{ error }}
+        </p>
+        <EditorFormRow
+          v-if="total !== null || collection"
+          label="Items path"
+          help="Where the list is in the response; empty for a root array"
+        >
+          <EditorInput
             v-model="itemsPath"
+            mono
             placeholder="results"
-            class="w-full"
+            aria-label="Items path"
             data-api-items-path
             @keydown.enter.prevent="fetchPreview()"
           />
-        </UFormField>
-        <p
-          v-if="total !== null"
-          class="mb-6 text-xs text-muted"
-        >
-          {{ total }} items in the response. Changing the path and fetching proposes new fields.
-        </p>
+        </EditorFormRow>
       </div>
 
-      <DataMappingTable
-        v-model="rows"
-        :problems="problems"
-      />
-      <DataMappingPreview
-        :fields="fields"
-        :rows="preview"
-        :valid="valid"
-      />
-
-      <form
-        class="flex items-end justify-end gap-2"
-        @submit.prevent="save"
-      >
-        <UFormField
-          v-if="!collection"
-          label="Collection name"
-          size="xs"
-          class="flex-1"
-        >
-          <UInput
-            v-model="name"
-            class="w-full"
-            data-api-name
-          />
-        </UFormField>
-        <UButton
-          type="submit"
-          :label="collection ? 'Save mapping' : 'Save collection'"
-          icon="i-lucide-check"
-          :loading="saving"
-          :disabled="!valid || (!collection && !name.trim())"
-          data-api-save
+      <template v-if="total !== null || collection">
+        <DataMappingTable
+          v-model="rows"
+          :problems="problems"
         />
-      </form>
+        <DataMappingPreview
+          :fields="fields"
+          :rows="preview"
+          :valid="valid"
+        />
+      </template>
+    </div>
+
+    <template #footer>
+      <EditorButton
+        label="Cancel"
+        @click="open = false"
+      />
+      <EditorButton
+        variant="primary"
+        :label="collection ? 'Save mapping' : 'Save collection'"
+        icon="i-lucide-check"
+        :loading="saving"
+        :disabled="!canSave"
+        data-api-save
+        @click="save"
+      />
     </template>
-  </div>
+  </EditorModal>
 </template>

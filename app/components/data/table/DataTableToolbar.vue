@@ -71,34 +71,27 @@ function removeFilter(index: number) {
     class="flex h-12 shrink-0 items-center gap-1 border-b border-white/5 px-3"
   >
     <UTooltip text="Add item">
-      <UButton
+      <EditorButton
         icon="i-lucide-plus"
-        color="neutral"
         variant="ghost"
-        size="sm"
         aria-label="Add item"
         :disabled="!canAdd"
         data-records-add
         @click="emit('add')"
       />
     </UTooltip>
-    <UDropdownMenu
-      :items="sortMenu"
-      :content="{ align: 'start' }"
-    >
+    <EditorMenu :items="sortMenu">
       <UTooltip text="Sort">
-        <UButton
+        <EditorButton
           icon="i-lucide-arrow-up-down"
-          color="neutral"
           variant="ghost"
-          size="sm"
           aria-label="Sort"
           :class="{ 'text-highlighted': sort }"
           :disabled="!fields.length"
           data-records-sort
         />
       </UTooltip>
-    </UDropdownMenu>
+    </EditorMenu>
     <DataTableFilterMenu
       :fields="fields"
       @add="filters = [...filters, $event]"
@@ -107,11 +100,9 @@ function removeFilter(index: number) {
       v-if="!searchOpen"
       text="Search"
     >
-      <UButton
+      <EditorButton
         icon="i-lucide-search"
-        color="neutral"
         variant="ghost"
-        size="sm"
         aria-label="Search"
         data-records-search-open
         @click="openSearch"
@@ -119,7 +110,8 @@ function removeFilter(index: number) {
     </UTooltip>
     <label
       v-else
-      class="flex h-8 w-56 items-center gap-2 rounded-md bg-white/5 px-2 text-muted"
+      :class="FIELD_SHELL"
+      class="w-56 gap-2 px-2 text-muted"
     >
       <UIcon
         name="i-lucide-search"
@@ -162,12 +154,11 @@ function removeFilter(index: number) {
       data-records-count
     >{{ count }}</span>
     <div class="ms-auto flex shrink-0 items-center gap-2">
-      <UButton
+      <EditorButton
         v-if="selected && canDelete"
         :label="`Delete ${selected}`"
         icon="i-lucide-trash-2"
-        color="error"
-        variant="soft"
+        variant="danger"
         size="xs"
         data-records-delete
         @click="emit('remove')"
@@ -182,9 +173,8 @@ function removeFilter(index: number) {
           data-live-badge
         />
         <UTooltip text="Refresh">
-          <UButton
+          <EditorButton
             icon="i-lucide-refresh-cw"
-            color="neutral"
             variant="ghost"
             size="xs"
             aria-label="Refresh"
@@ -194,19 +184,17 @@ function removeFilter(index: number) {
           />
         </UTooltip>
       </template>
-      <UDropdownMenu
+      <EditorMenu
         :items="moreMenu"
         :content="{ align: 'end' }"
       >
-        <UButton
+        <EditorButton
           icon="i-lucide-ellipsis"
-          color="neutral"
           variant="ghost"
-          size="sm"
           aria-label="More"
           data-records-more
         />
-      </UDropdownMenu>
+      </EditorMenu>
     </div>
   </header>
 </template>
