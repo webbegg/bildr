@@ -121,3 +121,21 @@ describe('project_delete', () => {
     expect(info!.inputSchema).toMatchObject({ required: ['projectId', 'confirm'] })
   })
 })
+
+describe('project_delete and similar ids', () => {
+  it('leaves projects whose id is a prefix of, or prefixed by, the deleted id untouched', async () => {
+    const { bildr, storage, target } = await setup()
+    const ids = [target.projectId + 'x', target.projectId.slice(0, -1)]
+    for (const id of ids) {
+      for (const key of await storage.getKeys()) {
+        if (!key.split(':').includes(target.projectId)) continue
+        await storage.setItem(key.replace(target.projectId, id), JSON.parse(JSON.stringify(await storage.getItem(key)).replaceAll(target.projectId, id)))
+      }
+    }
+    const snap = async (id: string) => Promise.all((await storage.getKeys()).filter(k => k.split(':').includes(id)).sort().map(async k => [k, await storage.getItem(k)]))
+    const before = await Promise.all(ids.map(snap))
+    expect(before.every(entries => entries.length >= PREFIXES.length)).toBe(true)
+    await bildr.call('project_delete', { projectId: target.projectId, confirm: target.slug }, mcp)
+    expect(await Promise.all(ids.map(snap))).toEqual(before)
+  })
+})
