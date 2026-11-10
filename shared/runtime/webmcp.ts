@@ -1,5 +1,7 @@
 import { takesFormRecords } from '../data/collections'
-import type { Page } from '../document/schema'
+import { INSTANCE_TYPE } from '../document/components'
+import type { ComponentDefinition, DocNode, Page } from '../document/schema'
+import { resolveInstance } from './instances'
 import { pageOutline } from './render'
 import type { VisitorCollection, VisitorProject } from './visitor'
 
@@ -49,6 +51,12 @@ export function getModelContext(doc?: object, nav?: object): ModelContext | unde
 const text = (value: string, isError = false): WebMcpResult => ({ content: [{ type: 'text', text: value }], ...(isError ? { isError } : {}) })
 
 const pageUrl = (project: VisitorProject, page: Page) => `/p/${project.slug}/${page.slug}`
+
+/** `node` as a visitor sees it: each Instance replaced by its resolved tree, unresolvable ones dropped. */
+function asRendered(node: DocNode, components: ComponentDefinition[]): DocNode | null {
+  const resolved = node.type === INSTANCE_TYPE ? resolveInstance(node, components) : node
+  return resolved && { ...resolved, children: resolved.children.map(child => asRendered(child, components)).filter(child => child !== null) }
+}
 
 const describeCollections = (collections: VisitorCollection[]) =>
   collections.map(c => `${c.slug} (${c.fields.map(f => `${f.key}: ${f.type}`).join(', ')})`).join('; ')
@@ -178,7 +186,9 @@ function tools(host: WebMcpHost): WebMcpTool[] {
       annotations: { readOnlyHint: true },
       execute: () => {
         const page = host.getCurrentPage()
-        return page ? text(pageOutline(page)) : text('No page is shown', true)
+        if (!page) return text('No page is shown', true)
+        const components = host.getProject()?.components ?? []
+        return text(pageOutline({ ...page, root: asRendered(page.root, components)! }))
       }
     },
     ...(project ? dataTools(project, host) : [])
