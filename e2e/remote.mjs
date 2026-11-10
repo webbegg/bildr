@@ -76,9 +76,11 @@ await run('remote', async ({ page, context, errors }) => {
   const status = page.locator('[data-endpoint-status]')
   await status.filter({ hasText: '200' }).waitFor({ timeout: 20_000 })
   check(true, `Test answers ${(await status.innerText()).replace(/\s+/g, ' ').trim()}`)
+  check(await page.locator('[data-connection-source] [data-paging-detected]').count() === 0, 'jsonplaceholder /posts proposes no paging')
   await page.locator('[data-api-save]').click()
   const posts = await until(async () => (await action('project_get', { projectId: p.id })).collections.find(c => c.source.type === 'connection'))
   check(posts?.name === 'Posts', `Save collection creates "Posts" (${posts?.fields.map(f => f.key)})`)
+  check(posts && !posts.source.endpoints.list.paging, 'the Posts list endpoint has no paging')
 
   for (const op of ['Create', 'Update', 'Delete']) {
     await page.getByLabel('Add endpoints property').click()

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { defaultEndpoint } from '#shared/data/collections'
+import type { PageTwo } from '#shared/data/paging'
+import { pageTwoText, pagingSummary } from '#shared/data/table'
 import { DEFAULT_ID_PATH, ENDPOINT_METHODS, ENDPOINT_OPERATIONS, endpointPathProblem, OPERATION_LABELS } from '#shared/data/remote'
 import type { EndpointMethod, EndpointOperation } from '#shared/data/remote'
-import type { Collection, Connection, ConnectionEndpoints, ConnectionSource } from '#shared/document/schema'
+import type { Collection, Connection, ConnectionEndpoints, ConnectionSource, Paging } from '#shared/document/schema'
 
 /**
  * A connection collection's Endpoints section: one row per operation with a
@@ -10,7 +12,9 @@ import type { Collection, Connection, ConnectionEndpoints, ConnectionSource } fr
  * header `+` adds a missing one with its REST default next to the list path.
  * Then the id path and Edit mapping. Every change is one `collection_update`
  * of the source. Test runs `endpoint_test`; any verb but GET asks first,
- * naming the record it uses. List and Get always use GET.
+ * naming the record it uses. List and Get always use GET. Under List, the
+ * Paging rows: Test reads page two with the saved paging, Detect saves the
+ * paging `endpoint_test` proposes.
  */
 const props = defineProps<{ collection: Collection, source: ConnectionSource }>()
 const editor = useEditor()
@@ -24,10 +28,13 @@ const drafts = ref<Partial<Record<EndpointOperation, string>>>({})
 const results = ref<Partial<Record<EndpointOperation, { ok: boolean, text: string }>>>({})
 const testing = ref<EndpointOperation | null>(null)
 const editingMapping = ref(false)
+const pagingResult = ref<{ ok: boolean, text: string } | null>(null)
+const pagingBusy = ref<'test' | 'detect' | null>(null)
 
 watch(() => props.collection.id, () => {
   drafts.value = {}
   results.value = {}
+  pagingResult.value = null
 })
 
 const isRead = (op: EndpointOperation) => op === 'list' || op === 'get'
@@ -80,7 +87,40 @@ function setIdPath(value: string) {
   void editor.run('collection_update', { collection: props.collection.id, source: idPath && idPath !== DEFAULT_ID_PATH ? { ...rest, idPath } : rest })
 }
 
-interface TestResult { status: number, total?: number, items?: unknown[], item?: unknown }
+interface TestResult { status: number, total?: number, items?: unknown[], item?: unknown, paging?: Paging | null, pageTwo?: PageTwo }
+
+function savePaging(paging: Paging | null) {
+  const list = props.source.endpoints.list
+  if (!list) return
+  const { paging: _paging, ...rest } = list
+  pagingResult.value = null
+  return saveEndpoints({ ...props.source.endpoints, list: paging ? { ...rest, paging } : rest })
+}
+
+/** Test reads page two with the saved paging; Detect asks without one and saves the proposal. */
+async function testPaging(detect: boolean) {
+  const list = props.source.endpoints.list
+  if (!list || problemOf('list')) return
+  const input: Record<string, unknown> = { projectId: editor.projectId, connectionId: props.source.connectionId, method: 'GET', path: list.path }
+  if (list.itemsPath !== undefined) input.itemsPath = list.itemsPath
+  if (!detect && list.paging) input.paging = list.paging
+  pagingBusy.value = detect ? 'detect' : 'test'
+  pagingResult.value = null
+  try {
+    const result = await callAction<TestResult>('endpoint_test', input)
+    if (detect && !result.paging) {
+      pagingResult.value = { ok: false, text: 'No paging detected' }
+      return
+    }
+    if (detect && result.paging) await savePaging(result.paging)
+    const page = result.pageTwo ? pageTwoText(result.pageTwo) : { ok: false, text: 'Choose a paging type to read page 2' }
+    pagingResult.value = detect && result.paging ? { ok: page.ok, text: `${pagingSummary(result.paging)} · ${page.text}` } : page
+  } catch (error) {
+    pagingResult.value = { ok: false, text: actionErrorMessage(error) }
+  } finally {
+    pagingBusy.value = null
+  }
+}
 
 async function test(op: EndpointOperation) {
   const endpoint = props.source.endpoints[op]
@@ -118,82 +158,126 @@ async function test(op: EndpointOperation) {
     :menu="menu"
     @add="add"
   >
-    <EditorRow
+    <template
       v-for="op in operations"
       :key="op"
-      :label="OPERATION_LABELS[op]"
-      :title="`${OPERATION_LABELS[op]} endpoint`"
-      :name="`endpoint-${op}`"
-      removable
-      :data-endpoint="op"
-      @remove="remove(op)"
     >
-      <EditorSelect
-        :model-value="methodOf(op)"
-        :items="ENDPOINT_METHODS"
-        mono
-        :disabled="isRead(op)"
-        :title="isRead(op) ? 'List and Get endpoints use GET' : undefined"
-        :aria-label="`${OPERATION_LABELS[op]} method`"
-        :ui="{ base: 'justify-center px-1 text-[10.5px] font-semibold text-toned', trailing: 'hidden', content: 'min-w-24' }"
-        :content="{ align: 'start' }"
-        class="w-[54px] shrink-0"
-        data-endpoint-method
-        @update:model-value="setMethod(op, $event as EndpointMethod)"
-      />
-      <EditorInput
-        :model-value="pathOf(op)"
-        mono
-        :invalid="!!problemOf(op)"
-        :aria-label="`${OPERATION_LABELS[op]} path`"
-        placeholder="/posts"
-        class="min-w-0 flex-1"
-        :data-endpoint-path="op"
-        @update:model-value="drafts[op] = $event"
-        @change="commitPath(op)"
-        @keydown.esc="resetDraft(op)"
+      <EditorRow
+        :label="OPERATION_LABELS[op]"
+        :title="`${OPERATION_LABELS[op]} endpoint`"
+        :name="`endpoint-${op}`"
+        removable
+        :data-endpoint="op"
+        @remove="remove(op)"
       >
-        <template #trailing>
-          <EditorVariablePicker
-            secrets
-            @insert="drafts[op] = $event; commitPath(op)"
-          />
-        </template>
-      </EditorInput>
-      <UTooltip :text="methodOf(op) === 'GET' ? 'Test' : `Test (sends a real ${methodOf(op)})`">
-        <EditorButton
-          icon="i-lucide-play"
-          variant="ghost"
-          size="xs"
-          :aria-label="`Test ${OPERATION_LABELS[op]}`"
-          :loading="testing === op"
-          :disabled="!!problemOf(op)"
-          :data-endpoint-test="op"
-          @click="test(op)"
+        <EditorSelect
+          :model-value="methodOf(op)"
+          :items="ENDPOINT_METHODS"
+          mono
+          :disabled="isRead(op)"
+          :title="isRead(op) ? 'List and Get endpoints use GET' : undefined"
+          :aria-label="`${OPERATION_LABELS[op]} method`"
+          :ui="{ base: 'justify-center px-1 text-[10.5px] font-semibold text-toned', trailing: 'hidden', content: 'min-w-24' }"
+          :content="{ align: 'start' }"
+          class="w-[54px] shrink-0"
+          data-endpoint-method
+          @update:model-value="setMethod(op, $event as EndpointMethod)"
         />
-      </UTooltip>
-      <template
-        v-if="problemOf(op) || results[op]"
-        #below
+        <EditorInput
+          :model-value="pathOf(op)"
+          mono
+          :invalid="!!problemOf(op)"
+          :aria-label="`${OPERATION_LABELS[op]} path`"
+          placeholder="/posts"
+          class="min-w-0 flex-1"
+          :data-endpoint-path="op"
+          @update:model-value="drafts[op] = $event"
+          @change="commitPath(op)"
+          @keydown.esc="resetDraft(op)"
+        >
+          <template #trailing>
+            <EditorVariablePicker
+              secrets
+              @insert="drafts[op] = $event; commitPath(op)"
+            />
+          </template>
+        </EditorInput>
+        <UTooltip :text="methodOf(op) === 'GET' ? 'Test' : `Test (sends a real ${methodOf(op)})`">
+          <EditorButton
+            icon="i-lucide-play"
+            variant="ghost"
+            size="xs"
+            :aria-label="`Test ${OPERATION_LABELS[op]}`"
+            :loading="testing === op"
+            :disabled="!!problemOf(op)"
+            :data-endpoint-test="op"
+            @click="test(op)"
+          />
+        </UTooltip>
+        <template
+          v-if="problemOf(op) || results[op]"
+          #below
+        >
+          <p
+            v-if="problemOf(op)"
+            class="text-[11px] leading-4 text-error"
+            data-endpoint-problem
+          >
+            {{ problemOf(op) }}
+          </p>
+          <p
+            v-else-if="results[op]"
+            class="truncate text-[11px] leading-4"
+            :class="results[op]!.ok ? 'text-success' : 'text-error'"
+            :title="results[op]!.text"
+            data-endpoint-result
+          >
+            {{ results[op]!.text }}
+          </p>
+        </template>
+      </EditorRow>
+      <DataPagingFields
+        v-if="op === 'list'"
+        :paging="source.endpoints.list?.paging"
+        @change="savePaging"
       >
+        <template #actions>
+          <UTooltip text="Detect the paging">
+            <EditorButton
+              icon="i-lucide-wand-sparkles"
+              variant="ghost"
+              size="xs"
+              aria-label="Detect the paging"
+              :loading="pagingBusy === 'detect'"
+              :disabled="!!problemOf('list') || pagingBusy !== null"
+              data-paging-detect
+              @click="testPaging(true)"
+            />
+          </UTooltip>
+          <UTooltip text="Test page 2">
+            <EditorButton
+              icon="i-lucide-play"
+              variant="ghost"
+              size="xs"
+              aria-label="Test page 2"
+              :loading="pagingBusy === 'test'"
+              :disabled="!!problemOf('list') || !source.endpoints.list?.paging || pagingBusy !== null"
+              data-paging-test
+              @click="testPaging(false)"
+            />
+          </UTooltip>
+        </template>
         <p
-          v-if="problemOf(op)"
-          class="text-[11px] leading-4 text-error"
-          data-endpoint-problem
+          v-if="pagingResult"
+          class="ms-24 truncate text-[11px] leading-4"
+          :class="pagingResult.ok ? 'text-success' : 'text-error'"
+          :title="pagingResult.text"
+          data-paging-result
         >
-          {{ problemOf(op) }}
+          {{ pagingResult.text }}
         </p>
-        <p
-          v-else-if="results[op]"
-          class="truncate text-[11px] leading-4"
-          :class="results[op]!.ok ? 'text-success' : 'text-error'"
-          :title="results[op]!.text"
-          data-endpoint-result
-        >
-          {{ results[op]!.text }}
-        </p>
-      </template>
-    </EditorRow>
+      </DataPagingFields>
+    </template>
     <p
       v-if="!operations.length"
       class="text-xs text-dimmed"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellInput, filterLabel, filterOps, filterRecords, moveCell, moveForKey, nextSort, parseCell, searchRecords, selectRows, sortRecords, tableRows } from '#shared/data/table'
+import { cellInput, draftPaging, filterLabel, filterOps, filterRecords, loadMoreLimit, moveCell, moveForKey, nextSort, pageTwoText, pagingDraft, pagingSummary, parseCell, recordsCount, retypeDraft, searchRecords, selectRows, sortRecords, tableLimit, tableRows } from '#shared/data/table'
 import type { DataRecord, RecordValue } from '#shared/data/records'
 import type { Field } from '#shared/document/schema'
 
@@ -181,6 +181,93 @@ describe('cellInput', () => {
     expect(cellInput('date', '2026-01-15T08:00:00.000Z')).toBe('2026-01-15')
     expect(cellInput('number', 3.5)).toBe('3.5')
     expect(cellInput('text', null)).toBe('')
+  })
+})
+
+describe('recordsCount', () => {
+  const base = { shown: 40, loaded: 40, total: 40, hasMore: false, totalKnown: true, narrowed: false }
+
+  it('counts every item when all are loaded', () => {
+    expect(recordsCount(base)).toBe('40 items')
+    expect(recordsCount({ ...base, shown: 1, loaded: 1, total: 1 })).toBe('1 item')
+  })
+
+  it('reads "40 of 826 items" when the total is known and more follow', () => {
+    expect(recordsCount({ ...base, total: 826, hasMore: true })).toBe('40 of 826 items')
+    expect(recordsCount({ ...base, loaded: 500, shown: 500, total: 1200 })).toBe('500 of 1200 items')
+  })
+
+  it('reads "40 loaded · more available" when more follow but the total is unknown', () => {
+    expect(recordsCount({ ...base, total: 60, hasMore: true, totalKnown: false })).toBe('40 loaded · more available')
+  })
+
+  it('counts the matches among the loaded items when searching or filtering', () => {
+    expect(recordsCount({ ...base, shown: 3, narrowed: true })).toBe('3 of 40 items')
+    expect(recordsCount({ ...base, shown: 3, total: 826, hasMore: true, narrowed: true })).toBe('3 of 40 loaded')
+  })
+})
+
+describe('tableLimit and loadMoreLimit', () => {
+  it('loads 50 at first for a paged collection and 500 for any other', () => {
+    expect(tableLimit({ type: 'next', nextPath: 'info.next' })).toBe(50)
+    expect(tableLimit(undefined)).toBe(500)
+  })
+
+  it('Load more extends the limit by the page size, or 50, up to 500', () => {
+    expect(loadMoreLimit(50, { type: 'next', nextPath: 'info.next' })).toBe(100)
+    expect(loadMoreLimit(50, { type: 'offset', param: 'offset', sizeParam: 'limit', size: 20 })).toBe(70)
+    expect(loadMoreLimit(50, { type: 'page', param: 'page', start: 1 })).toBe(100)
+    expect(loadMoreLimit(480, { type: 'page', param: 'page', start: 1, sizeParam: 'per_page', size: 30 })).toBe(500)
+  })
+
+  it('has nothing more to load at 500', () => {
+    expect(loadMoreLimit(500, { type: 'next' })).toBeNull()
+    expect(loadMoreLimit(500, undefined)).toBeNull()
+  })
+})
+
+describe('paging drafts', () => {
+  it('a saved paging fills the draft; none gives the None draft', () => {
+    expect(pagingDraft({ type: 'next', nextPath: 'info.next', totalPath: 'info.count' })).toMatchObject({ type: 'next', nextPath: 'info.next', totalPath: 'info.count' })
+    expect(pagingDraft({ type: 'page', param: 'p', start: 0, sizeParam: 'per_page', size: 20 })).toMatchObject({ type: 'page', param: 'p', start: '0', sizeParam: 'per_page', size: '20' })
+    expect(pagingDraft(undefined).type).toBe('none')
+  })
+
+  it('a valid draft gives its paging, with the defaults', () => {
+    expect(draftPaging(pagingDraft({ type: 'next', nextPath: 'info.next', totalPath: 'info.count' }))).toEqual({ paging: { type: 'next', nextPath: 'info.next', totalPath: 'info.count' } })
+    expect(draftPaging(retypeDraft(pagingDraft(undefined), 'page'))).toEqual({ paging: { type: 'page', param: 'page', start: 1 } })
+    expect(draftPaging({ ...retypeDraft(pagingDraft(undefined), 'offset'), size: '20' })).toEqual({ paging: { type: 'offset', param: 'offset', sizeParam: 'limit', size: 20 } })
+    expect(draftPaging({ ...retypeDraft(pagingDraft(undefined), 'next'), nextPath: ' ' })).toEqual({ paging: { type: 'next' } })
+    expect(draftPaging(pagingDraft(undefined))).toEqual({ paging: null })
+  })
+
+  it('names what an incomplete or invalid draft lacks', () => {
+    expect(draftPaging(retypeDraft(pagingDraft(undefined), 'offset'))).toEqual({ problem: 'Set the page size' })
+    expect(draftPaging({ ...retypeDraft(pagingDraft(undefined), 'offset'), size: '900' })).toEqual({ problem: 'Use a page size from 1 to 500' })
+    expect(draftPaging(retypeDraft(pagingDraft(undefined), 'cursor'))).toEqual({ problem: 'Set where the next cursor is in the response' })
+    expect(draftPaging({ ...retypeDraft(pagingDraft(undefined), 'page'), param: 'page number' })).toEqual({ problem: 'Use a query parameter name such as page or per_page' })
+    expect(draftPaging({ ...retypeDraft(pagingDraft(undefined), 'page'), sizeParam: 'per_page' })).toEqual({ problem: 'Set the page size sent in the size parameter' })
+  })
+
+  it('another type keeps the total path and starts from that type\'s defaults', () => {
+    const draft = retypeDraft(pagingDraft({ type: 'next', nextPath: 'info.next', totalPath: 'info.count' }), 'offset')
+    expect(draft).toMatchObject({ type: 'offset', param: 'offset', sizeParam: 'limit', totalPath: 'info.count' })
+  })
+})
+
+describe('pagingSummary and pageTwoText', () => {
+  it('names the paging type, where it reads the next page and the total', () => {
+    expect(pagingSummary({ type: 'next', nextPath: 'info.next', totalPath: 'info.count' })).toBe('Next link (info.next) · total at info.count')
+    expect(pagingSummary({ type: 'next' })).toBe('Next link (Link header)')
+    expect(pagingSummary({ type: 'page', param: 'page', start: 1, sizeParam: 'per_page', size: 20 })).toBe('Page number (page, per_page=20)')
+    expect(pagingSummary({ type: 'offset', param: 'skip', sizeParam: 'limit', size: 30 })).toBe('Offset (skip, limit=30)')
+    expect(pagingSummary({ type: 'cursor', param: 'cursor', cursorPath: 'meta.next_cursor' })).toBe('Cursor (meta.next_cursor)')
+  })
+
+  it('reads page two\'s item count or its error', () => {
+    expect(pageTwoText({ count: 20, sample: [] })).toEqual({ ok: true, text: 'Page 2: 20 items' })
+    expect(pageTwoText({ count: 1, sample: [] })).toEqual({ ok: true, text: 'Page 2: 1 item' })
+    expect(pageTwoText({ error: 'The API\'s next page is on another site' })).toEqual({ ok: false, text: 'The API\'s next page is on another site' })
   })
 })
 

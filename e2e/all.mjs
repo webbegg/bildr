@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPTS = ['shell', 'design', 'data', 'remote', 'kit']
+const SCRIPTS = ['shell', 'design', 'data', 'remote', 'paging', 'kit']
 
 function runScript(name) {
   return new Promise((resolve) => {

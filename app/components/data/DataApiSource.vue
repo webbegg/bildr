@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { mapItems } from '#shared/data/apiSource'
 import type { ApiField } from '#shared/data/apiSource'
+import type { PageTwo } from '#shared/data/paging'
 import { fieldLabel } from '#shared/document/factory'
-import type { Collection } from '#shared/document/schema'
+import type { Collection, Paging } from '#shared/document/schema'
 import { mappingFields, mappingProblems, mappingRow } from './DataMappingTable.vue'
 import type { MappingRow } from './DataMappingTable.vue'
 
@@ -11,7 +12,8 @@ import type { MappingRow } from './DataMappingTable.vue'
  * mapping with a live preview, then save it (in the footer) as a new
  * collection or, given `collection`, as that API collection's new mapping.
  * The preview maps the fetched items in the browser with the same `mapItems`
- * the server uses. Each opening starts from the saved state.
+ * the server uses. A paging the fetch proposes (or the saved one) is saved
+ * with it unless switched off. Each opening starts from the saved state.
  */
 const props = defineProps<{ collection?: Collection, title: string, description?: string }>()
 const open = defineModel<boolean>('open', { default: false })
@@ -23,6 +25,8 @@ interface Preview {
   fields: ApiField[]
   items: unknown[]
   total: number
+  paging: Paging | null
+  pageTwo?: PageTwo
 }
 
 const source = computed(() => (props.collection?.source.type === 'api' ? props.collection.source : undefined))
@@ -35,10 +39,19 @@ const name = ref('')
 const fetching = ref(false)
 const saving = ref(false)
 const error = ref('')
+const paging = ref<Paging | null>(null)
+const pageTwo = ref<PageTwo | null>(null)
+const usePaging = ref(true)
+/** Whether `paging` was saved or edited, so a fetch keeps it instead of proposing one. */
+const pagingChosen = ref(false)
 /** The URL and items path the current mapping is for; fetching another proposes new fields. */
 let mappedFor = ''
 
 function reset() {
+  paging.value = source.value?.paging ?? null
+  pagingChosen.value = !!source.value?.paging
+  pageTwo.value = null
+  usePaging.value = true
   url.value = source.value?.url ?? ''
   itemsPath.value = source.value?.itemsPath ?? ''
   rows.value = props.collection?.fields.map(mappingRow) ?? []
@@ -68,7 +81,10 @@ async function fetchPreview() {
     const input: Record<string, unknown> = { projectId: editor.projectId, url: url.value.trim() }
     if (source.value?.headers) input.headers = source.value.headers
     if (total.value !== null || props.collection) input.itemsPath = itemsPath.value.trim()
+    if (pagingChosen.value && paging.value) input.paging = paging.value
     const preview = await callAction<Preview>('api_source_preview', input)
+    if (!pagingChosen.value) paging.value = preview.paging
+    pageTwo.value = preview.pageTwo ?? null
     itemsPath.value = preview.itemsPath
     items.value = preview.items
     total.value = preview.total
@@ -85,7 +101,9 @@ async function fetchPreview() {
 
 /** A fresh fetch of a new URL detects the items path again. */
 function onUrlChange() {
-  if (!props.collection) total.value = null
+  if (props.collection) return
+  total.value = null
+  pagingChosen.value = false
 }
 
 const problems = computed(() => mappingProblems(rows.value))
@@ -99,7 +117,8 @@ async function save() {
   saving.value = true
   // Headers set by an agent (api_source_preview, collection_update) stay.
   const headers = source.value?.headers
-  const body = { source: { type: 'api', url: url.value.trim(), itemsPath: itemsPath.value.trim(), ...(headers ? { headers } : {}) }, fields: fields.value }
+  const saved = usePaging.value && paging.value ? { paging: paging.value } : {}
+  const body = { source: { type: 'api', url: url.value.trim(), itemsPath: itemsPath.value.trim(), ...(headers ? { headers } : {}), ...saved }, fields: fields.value }
   const result = props.collection
     ? await editor.run('collection_update', { collection: props.collection.id, ...body })
     : await editor.run<{ collectionId: string }>('collection_create', { name: name.value.trim(), ...body })
@@ -201,6 +220,13 @@ watch(open, (isOpen) => {
             @keydown.enter.prevent="fetchPreview()"
           />
         </EditorFormRow>
+        <DataPagingDetected
+          v-model:paging="paging"
+          v-model:use="usePaging"
+          :page-two="pageTwo"
+          :detected="!pagingChosen"
+          @update:paging="pagingChosen = true; pageTwo = null"
+        />
       </div>
 
       <template v-if="total !== null || collection">

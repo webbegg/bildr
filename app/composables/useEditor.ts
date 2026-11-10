@@ -1,5 +1,7 @@
 import type { InjectionKey } from 'vue'
+import { sourcePaging } from '#shared/data/paging'
 import type { DataRecord } from '#shared/data/records'
+import { loadMoreLimit, tableLimit } from '#shared/data/table'
 import type { Theme, ThemePatch } from '#shared/design/theme'
 import type { Project } from '#shared/document/schema'
 import type { EnvListEntry, EnvValues } from '#shared/env/variables'
@@ -104,6 +106,10 @@ export function createEditor(projectId: string) {
   const collectionId = ref<string | null>(null)
   const records = shallowRef<DataRecord[]>([])
   const recordsTotal = ref(0)
+  /** Whether a paged collection has more items past the loaded ones. */
+  const recordsHasMore = ref(false)
+  /** How many records the table loads; null starts from the collection's default (50 when paged, else 500). */
+  const recordsLimit = ref<number | null>(null)
   /** Why the shown collection's records could not load, e.g. an API source that failed. */
   const recordsError = ref('')
   /** The record the Data view's right panel shows; null shows the collection and its fields. */
@@ -204,18 +210,37 @@ export function createEditor(projectId: string) {
     }
   }
 
-  /** Loads the records of the shown collection (the first 500, creation order). */
+  /** Loads the records of the shown collection (the first `recordsLimit`, creation order). */
   async function reloadRecords(): Promise<void> {
     const shown = collection.value
     if (!shown) {
       records.value = []
       recordsTotal.value = 0
+      recordsHasMore.value = false
       return
     }
-    const result = await callAction<{ total: number, records: DataRecord[] }>('record_list', { projectId, collection: shown.id, limit: 500 })
+    const limit = recordsLimit.value ?? tableLimit(sourcePaging(shown.source))
+    const result = await callAction<{ total: number, records: DataRecord[], hasMore?: boolean }>('record_list', { projectId, collection: shown.id, limit })
     if (collection.value?.id !== shown.id) return
     records.value = result.records
     recordsTotal.value = result.total
+    recordsHasMore.value = result.hasMore ?? false
+    recordsLimit.value = limit
+  }
+
+  /** Loads one page more of the shown collection (see `loadMoreLimit`). */
+  async function loadMoreRecords(): Promise<void> {
+    const shown = collection.value
+    const next = shown && recordsLimit.value !== null ? loadMoreLimit(recordsLimit.value, sourcePaging(shown.source)) : null
+    if (next === null) return
+    const previous = recordsLimit.value
+    recordsLimit.value = next
+    try {
+      await reloadRecords()
+    } catch (error) {
+      recordsLimit.value = previous
+      throw error
+    }
   }
 
   /** Runs a record action on the shown collection, then reloads its records (the document is unchanged). */
@@ -232,6 +257,12 @@ export function createEditor(projectId: string) {
 
   watch(() => collection.value?.id, () => {
     recordId.value = null
+    recordsLimit.value = null
+  })
+
+  // Adding or removing a paging starts again from that kind's first load.
+  watch(() => collection.value && !!sourcePaging(collection.value.source), () => {
+    recordsLimit.value = null
   })
 
   watch(collectionId, () => {
@@ -245,6 +276,7 @@ export function createEditor(projectId: string) {
     void reloadRecords().catch((error) => {
       records.value = []
       recordsTotal.value = 0
+      recordsHasMore.value = false
       recordsError.value = actionErrorMessage(error)
     })
   })
@@ -588,8 +620,8 @@ export function createEditor(projectId: string) {
 
   return reactive({
     projectId, project, pageId, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, theme,
-    collectionId, collection, connectionId, connection, records, recordsTotal, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
-    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
+    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }

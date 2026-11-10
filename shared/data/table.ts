@@ -1,9 +1,13 @@
-import type { Field, FieldType } from '../document/schema'
+import { PagingSchema } from '../document/schema'
+import type { Field, FieldType, Paging } from '../document/schema'
+import { PAGE_SIZE_MAX } from './paging'
+import type { PageTwo, PagingType } from './paging'
 import type { DataRecord, RecordValue } from './records'
 
 /**
  * The Data view's records table: search, sort, keyboard moves, selection and
- * cell parsing, as pure functions over the loaded records.
+ * cell parsing, as pure functions over the loaded records; and how much of a
+ * paged list it loads, with the paging editor's drafts.
  */
 
 export interface TableSort {
@@ -167,6 +171,118 @@ export function selectRows(order: string[], selected: string[], id: string, anch
     else next.delete(each)
   }
   return order.filter(each => next.has(each))
+}
+
+/** The first load of a paged collection, and the most the table ever loads. */
+export const TABLE_PAGE = 50
+export const TABLE_LIMIT = 500
+
+const items = (n: number) => `${n} ${n === 1 ? 'item' : 'items'}`
+
+export interface RecordsCount {
+  /** Rows after search and filters. */
+  shown: number
+  loaded: number
+  total: number
+  hasMore: boolean
+  /** Whether `total` is the API's total (internal collections, or a paging with a total path). */
+  totalKnown: boolean
+  narrowed: boolean
+}
+
+/** The toolbar count: "40 of 826 items", "40 loaded · more available", or the matches among the loaded items. */
+export function recordsCount({ shown, loaded, total, hasMore, totalKnown, narrowed }: RecordsCount): string {
+  const more = hasMore || loaded < total
+  if (narrowed) return more ? `${shown} of ${loaded} loaded` : `${shown} of ${items(total)}`
+  if (more && totalKnown) return `${loaded} of ${items(total)}`
+  return more ? `${loaded} loaded · more available` : items(total)
+}
+
+export function tableLimit(paging: Paging | undefined): number {
+  return paging ? TABLE_PAGE : TABLE_LIMIT
+}
+
+/** The limit after Load more: one page more (or 50 when the page size is unknown), at most 500; null at 500. */
+export function loadMoreLimit(limit: number, paging: Paging | undefined): number | null {
+  if (limit >= TABLE_LIMIT) return null
+  const size = paging && 'size' in paging && paging.size ? paging.size : TABLE_PAGE
+  return Math.min(limit + size, TABLE_LIMIT)
+}
+
+export const PAGING_TYPE_LABELS: Record<PagingType, string> = { page: 'Page number', offset: 'Offset', cursor: 'Cursor', next: 'Next link' }
+
+/** "Next link (info.next) · total at info.count". */
+export function pagingSummary(paging: Paging): string {
+  const where = paging.type === 'next'
+    ? paging.nextPath ?? 'Link header'
+    : paging.type === 'cursor'
+      ? paging.cursorPath
+      : paging.sizeParam && paging.size ? `${paging.param}, ${paging.sizeParam}=${paging.size}` : paging.param
+  const total = paging.totalPath ? ` · total at ${paging.totalPath}` : ''
+  return `${PAGING_TYPE_LABELS[paging.type]} (${where})${total}`
+}
+
+export function pageTwoText(page: PageTwo): { ok: boolean, text: string } {
+  return 'error' in page ? { ok: false, text: page.error } : { ok: true, text: `Page 2: ${items(page.count)}` }
+}
+
+/** The paging editor's fields as typed; `none` is no paging. */
+export interface PagingDraft {
+  type: PagingType | 'none'
+  param: string
+  start: string
+  sizeParam: string
+  size: string
+  cursorPath: string
+  nextPath: string
+  totalPath: string
+}
+
+const EMPTY_DRAFT: PagingDraft = { type: 'none', param: '', start: '1', sizeParam: '', size: '', cursorPath: '', nextPath: '', totalPath: '' }
+const DEFAULT_PARAMS: Record<PagingType, [string, string]> = { page: ['page', ''], offset: ['offset', 'limit'], cursor: ['cursor', ''], next: ['', ''] }
+
+export function pagingDraft(paging: Paging | null | undefined): PagingDraft {
+  if (!paging) return { ...EMPTY_DRAFT }
+  return {
+    type: paging.type,
+    param: 'param' in paging ? paging.param : '',
+    start: paging.type === 'page' ? String(paging.start) : '1',
+    sizeParam: 'sizeParam' in paging ? paging.sizeParam ?? '' : '',
+    size: 'size' in paging && paging.size ? String(paging.size) : '',
+    cursorPath: paging.type === 'cursor' ? paging.cursorPath : '',
+    nextPath: paging.type === 'next' ? paging.nextPath ?? '' : '',
+    totalPath: paging.totalPath ?? ''
+  }
+}
+
+/** The draft for another type: that type's default parameters, keeping the size and paths. */
+export function retypeDraft(draft: PagingDraft, type: PagingDraft['type']): PagingDraft {
+  if (type === 'none') return { ...EMPTY_DRAFT }
+  const [param, sizeParam] = DEFAULT_PARAMS[type]
+  return { ...EMPTY_DRAFT, type, param, sizeParam, size: draft.size, cursorPath: draft.cursorPath, nextPath: draft.nextPath, totalPath: draft.totalPath }
+}
+
+/** The paging a draft describes (null for none), or what it lacks. */
+export function draftPaging(draft: PagingDraft): { paging: Paging | null } | { problem: string } {
+  if (draft.type === 'none') return { paging: null }
+  const size = draft.size.trim()
+  if (draft.type === 'offset' && !size) return { problem: 'Set the page size' }
+  if (size && !(/^\d+$/.test(size) && Number(size) >= 1 && Number(size) <= PAGE_SIZE_MAX)) return { problem: `Use a page size from 1 to ${PAGE_SIZE_MAX}` }
+  if (draft.type === 'cursor' && !draft.param.trim()) return { problem: 'Set the cursor parameter' }
+  if (draft.type === 'cursor' && !draft.cursorPath.trim()) return { problem: 'Set where the next cursor is in the response' }
+  const text = (value: string) => value.trim() || undefined
+  const input = Object.fromEntries(Object.entries({
+    type: draft.type,
+    param: text(draft.param),
+    start: Number(draft.start),
+    sizeParam: text(draft.sizeParam),
+    size: size ? Number(size) : undefined,
+    cursorPath: text(draft.cursorPath),
+    nextPath: text(draft.nextPath),
+    totalPath: text(draft.totalPath)
+  }).filter(([, value]) => value !== undefined))
+  const parsed = PagingSchema.safeParse(input)
+  return parsed.success ? { paging: parsed.data } : { problem: parsed.error.issues[0]!.message }
 }
 
 /** What a cell's editor starts with: a date input shows the day of an ISO date-time. */

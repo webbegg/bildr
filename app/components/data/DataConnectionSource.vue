@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { mapItems } from '#shared/data/apiSource'
 import type { ApiField } from '#shared/data/apiSource'
+import type { PageTwo } from '#shared/data/paging'
 import { endpointPathProblem } from '#shared/data/remote'
 import { fieldLabel } from '#shared/document/factory'
-import type { Collection, Connection, ConnectionSource } from '#shared/document/schema'
+import type { Collection, Connection, ConnectionSource, Paging } from '#shared/document/schema'
 import { mappingFields, mappingProblems, mappingRow } from './DataMappingTable.vue'
 import type { MappingRow } from './DataMappingTable.vue'
 
@@ -12,7 +13,8 @@ import type { MappingRow } from './DataMappingTable.vue'
  * (GET and a path), a Test that calls `endpoint_test` and proposes fields, the
  * mapping with a preview, then Save in the footer. Without `collection` it
  * creates one in `connection`; with it, it saves that collection's list
- * endpoint and mapping. Each opening starts from the saved state.
+ * endpoint and mapping. A paging the Test proposes (or the saved one) is
+ * saved with it unless switched off. Each opening starts from the saved state.
  */
 const props = defineProps<{ connection: Connection, collection?: Collection, title: string, description?: string }>()
 const open = defineModel<boolean>('open', { default: false })
@@ -25,6 +27,8 @@ interface ListTest {
   fields: ApiField[]
   items?: unknown[]
   total?: number
+  paging?: Paging | null
+  pageTwo?: PageTwo
 }
 
 const source = computed(() => (props.collection?.source.type === 'connection' ? props.collection.source : undefined))
@@ -38,11 +42,20 @@ const total = ref<number | null>(null)
 const testing = ref(false)
 const saving = ref(false)
 const error = ref('')
+const paging = ref<Paging | null>(null)
+const pageTwo = ref<PageTwo | null>(null)
+const usePaging = ref(true)
+/** Whether `paging` was saved or edited, so a Test keeps it instead of proposing one. */
+const pagingChosen = ref(false)
 /** The path and items path the current mapping is for; testing another proposes new fields. */
 let mappedFor = ''
 
 function reset() {
   const list = source.value?.endpoints.list
+  paging.value = list?.paging ?? null
+  pagingChosen.value = !!list?.paging
+  pageTwo.value = null
+  usePaging.value = true
   name.value = ''
   path.value = list?.path ?? '/'
   itemsPath.value = list?.itemsPath ?? ''
@@ -69,6 +82,7 @@ async function test() {
   try {
     const input: Record<string, unknown> = { projectId: editor.projectId, connectionId: props.connection.id, method: 'GET', path: path.value.trim() }
     if (status.value !== null || props.collection) input.itemsPath = itemsPath.value.trim()
+    if (pagingChosen.value && paging.value) input.paging = paging.value
     const result = await callAction<ListTest>('endpoint_test', input)
     status.value = result.status
     if (!result.items) {
@@ -78,6 +92,8 @@ async function test() {
     itemsPath.value = result.itemsPath ?? ''
     items.value = result.items
     total.value = result.total ?? result.items.length
+    if (!pagingChosen.value) paging.value = result.paging ?? null
+    pageTwo.value = result.pageTwo ?? null
     const tested = JSON.stringify([path.value.trim(), itemsPath.value])
     if (tested !== mappedFor || !rows.value.length) rows.value = result.fields.map(mappingRow)
     mappedFor = tested
@@ -91,7 +107,9 @@ async function test() {
 
 /** Another path detects the items path again. */
 function onPathChange() {
-  if (!props.collection) status.value = null
+  if (props.collection) return
+  status.value = null
+  pagingChosen.value = false
 }
 
 const problems = computed(() => mappingProblems(rows.value))
@@ -103,7 +121,12 @@ const canSave = computed(() => valid.value && (!!props.collection || !!name.valu
 async function save() {
   if (!canSave.value) return
   saving.value = true
-  const list = { method: source.value?.endpoints.list?.method ?? 'GET', path: path.value.trim(), ...(itemsPath.value.trim() ? { itemsPath: itemsPath.value.trim() } : {}) }
+  const list = {
+    method: source.value?.endpoints.list?.method ?? 'GET',
+    path: path.value.trim(),
+    ...(itemsPath.value.trim() ? { itemsPath: itemsPath.value.trim() } : {}),
+    ...(usePaging.value && paging.value ? { paging: paging.value } : {})
+  }
   const next: ConnectionSource = source.value
     ? { ...source.value, endpoints: { ...source.value.endpoints, list } }
     : { type: 'connection', connectionId: props.connection.id, endpoints: { list } }
@@ -220,6 +243,13 @@ watch(open, (isOpen) => {
             @keydown.enter.prevent="test()"
           />
         </EditorFormRow>
+        <DataPagingDetected
+          v-model:paging="paging"
+          v-model:use="usePaging"
+          :page-two="pageTwo"
+          :detected="!pagingChosen"
+          @update:paging="pagingChosen = true; pageTwo = null"
+        />
       </div>
 
       <template v-if="total !== null || collection">

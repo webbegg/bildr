@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { collectionCaps } from '#shared/data/collections'
+import { sourcePaging } from '#shared/data/paging'
 import type { DataRecord, RecordValue } from '#shared/data/records'
-import { cellInput, moveCell, moveForKey, nextSort, parseCell, selectRows, tableRows } from '#shared/data/table'
+import { cellInput, loadMoreLimit, moveCell, moveForKey, nextSort, parseCell, recordsCount, selectRows, tableRows } from '#shared/data/table'
 import type { CellMove, TableCell, TableFilter, TableSort } from '#shared/data/table'
 import type { Collection, Field } from '#shared/document/schema'
 
@@ -9,8 +10,9 @@ import type { Collection, Field } from '#shared/document/schema'
  * The shown collection's records as a Framer CMS table: search, filters,
  * sortable headers, inline cell editing with keyboard navigation, a quick-add row and
  * bulk delete, each as the collection's capabilities allow (API collections
- * are read-only; connection ones follow their endpoints). Records are not
- * undoable.
+ * are read-only; connection ones follow their endpoints). A paged collection
+ * loads 50 first and a Load more row adds a page; search, filters and sort
+ * apply to the loaded items. Records are not undoable.
  */
 const editor = useEditor()
 const toast = useToast()
@@ -34,6 +36,7 @@ const anchor = ref<string | null>(null)
 const active = ref<TableCell | null>(null)
 const editing = ref<{ id: string, key: string, initial?: string } | null>(null)
 const refreshing = ref(false)
+const loadingMore = ref(false)
 
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const addRow = useTemplateRef<{ focus: (col: number) => void }>('addRow')
@@ -56,10 +59,17 @@ watch(() => editor.records, (records) => {
 const WIDTHS: Record<Field['type'], string> = { text: 'min-w-56', number: 'min-w-32', boolean: 'min-w-28', date: 'min-w-36', image: 'min-w-28' }
 
 const items = (n: number) => `${n} ${n === 1 ? 'item' : 'items'}`
-const count = computed(() => {
-  if (editor.recordsTotal > editor.records.length) return `showing the first ${editor.records.length} of ${editor.recordsTotal}`
-  return narrowed.value ? `${rows.value.length} of ${items(editor.recordsTotal)}` : items(editor.recordsTotal)
-})
+const paging = computed(() => sourcePaging(collection.value.source))
+const count = computed(() => recordsCount({
+  shown: rows.value.length,
+  loaded: editor.records.length,
+  total: editor.recordsTotal,
+  hasMore: editor.recordsHasMore,
+  totalKnown: !paging.value || !!paging.value.totalPath,
+  narrowed: narrowed.value
+}))
+const canLoadMore = computed(() => (editor.recordsHasMore || editor.records.length < editor.recordsTotal)
+  && editor.recordsLimit !== null && loadMoreLimit(editor.recordsLimit, paging.value) !== null)
 
 const allSelected = computed(() => rows.value.length > 0 && rows.value.every(r => selected.value.includes(r.id)))
 const someSelected = computed(() => !allSelected.value && rows.value.some(r => selected.value.includes(r.id)))
@@ -185,6 +195,18 @@ async function refresh() {
     editor.recordsError = actionErrorMessage(error)
   } finally {
     refreshing.value = false
+  }
+}
+
+async function loadMore() {
+  loadingMore.value = true
+  editor.recordsError = ''
+  try {
+    await editor.loadMoreRecords()
+  } catch (error) {
+    editor.recordsError = actionErrorMessage(error)
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -364,6 +386,27 @@ function sortIcon(key: string) {
       >
         {{ live ? 'The API returned no items.' : 'No items yet. Type in the row above and press Return.' }}
       </p>
+      <div
+        v-if="fields.length && (canLoadMore || editor.recordsHasMore)"
+        class="flex items-center gap-3 px-4 py-3"
+        data-records-load-more-row
+      >
+        <EditorButton
+          v-if="canLoadMore"
+          icon="i-lucide-chevrons-down"
+          label="Load more"
+          :loading="loadingMore"
+          data-records-load-more
+          @click="loadMore"
+        />
+        <p
+          v-if="editor.recordsHasMore"
+          class="text-xs text-dimmed"
+          data-records-loaded-hint
+        >
+          Search, filters and sort apply to the {{ items(editor.records.length) }} loaded.
+        </p>
+      </div>
     </div>
   </section>
 </template>
