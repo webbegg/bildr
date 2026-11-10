@@ -202,3 +202,30 @@ describe('endpoint_test and undo', () => {
     expect(strip(await bildr.call<Project>('project_get', { projectId }, mcp))).toEqual(strip(after))
   })
 })
+
+describe('legacy List and Get methods (S32.3)', () => {
+  it('an endpoint edit that sends back the stored source of a legacy List still saves', async () => {
+    const ctx = await setup(() => json([]))
+    await ctx.collection('P', { list: { method: 'GET', path: '/posts' }, create: { method: 'POST', path: '/posts' } })
+    const key = `projects:${ctx.projectId}`
+    const stored = (await ctx.storage.getItem<Project>(key))!
+    const legacy = stored.collections[0]!.source
+    if (legacy.type === 'connection') Object.assign(legacy.endpoints.list!, { method: 'POST' })
+    await ctx.storage.setItem(key, stored)
+    const source = (await ctx.bildr.call<Project>('project_get', { projectId: ctx.projectId }, mcp)).collections[0]!.source
+    if (source.type !== 'connection') throw new Error('expected a connection source')
+    expect(source.endpoints.list?.method).toBe('GET')
+    await ctx.bildr.call('collection_update', { projectId: ctx.projectId, collection: 'p', source: { ...source, endpoints: { ...source.endpoints, create: { method: 'POST', path: '/posts2' } } } }, mcp)
+    const saved = (await ctx.bildr.call<Project>('project_get', { projectId: ctx.projectId }, mcp)).collections[0]!.source
+    expect(saved.type === 'connection' && saved.endpoints.list?.method).toBe('GET')
+  })
+})
+
+describe('record limit counts bytes (S32.3, S32.4)', () => {
+  it('multibyte values over 10 KB are refused before any request', async () => {
+    const ctx = await setup(() => json({ id: 1 }))
+    await ctx.collection('P', { create: { method: 'POST', path: '/posts' } }, [{ key: 'title', type: 'text', path: 'a.b.c' }])
+    await expect(ctx.bildr.call('record_create', { projectId: ctx.projectId, collection: 'p', values: { title: '€'.repeat(3500) } }, mcp)).rejects.toThrow('A record can be at most 10 KB')
+    expect(ctx.calls).toHaveLength(0)
+  })
+})

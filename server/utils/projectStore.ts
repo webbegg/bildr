@@ -25,8 +25,12 @@ export function createProjectStore(storage: KeyValueStorage) {
         .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     },
 
+    /** Reads a project normalised like `save` (e.g. legacy List/Get methods read as GET); one that no longer parses is returned as stored. */
     async get(id: string): Promise<Project | undefined> {
-      return (await storage.getItem<Project>(PREFIX + id)) ?? undefined
+      const stored = await storage.getItem<Project>(PREFIX + id)
+      if (!stored) return undefined
+      const parsed = ProjectSchema.safeParse(stored)
+      return parsed.success ? parsed.data : stored
     },
 
     async getBySlug(slug: string): Promise<Project | undefined> {
