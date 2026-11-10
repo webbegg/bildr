@@ -1,3 +1,4 @@
+import { connectionCreate, connectionDelete, connectionUpdate, endpointTest } from './connection'
 import { apiSourcePreview, collectionCreate, collectionDelete, collectionUpdate, fieldAdd, fieldMove, fieldRemove, fieldUpdate, publicRecordCreate, recordCreate, recordDelete, recordGet, recordList, recordUpdate } from './data'
 import type { ActionDef } from './define'
 import { editorGetContext, editorNavigate, editorSetContext } from './editor'
@@ -35,6 +36,10 @@ export const ACTIONS = [
   fieldUpdate,
   fieldMove,
   fieldRemove,
+  connectionCreate,
+  connectionUpdate,
+  connectionDelete,
+  endpointTest,
   recordList,
   recordGet,
   recordCreate,

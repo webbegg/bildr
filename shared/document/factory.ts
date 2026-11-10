@@ -1,7 +1,7 @@
 import { defaultTheme } from '../design/theme'
 import { getComponent, PAGE_ROOT_TYPE } from './components'
 import type { PropValue } from './components'
-import type { Collection, CollectionSource, DocNode, Field, Page, Project } from './schema'
+import type { ApiHeader, Collection, CollectionSource, Connection, DocNode, Field, Page, Project } from './schema'
 
 const ID_ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz'
 
@@ -48,6 +48,7 @@ export function createProject(name: string): Project {
     pages: [createPage('Home')],
     theme: defaultTheme(),
     collections: [],
+    connections: [],
     createdAt: now,
     updatedAt: now
   }
@@ -62,6 +63,10 @@ export function fieldLabel(key: string): string {
 /** A private collection, internal unless `source` says otherwise; the slug defaults to a slug of the name. */
 export function createCollection(name: string, slug = slugify(name), fields: Field[] = [], source: CollectionSource = { type: 'internal' }): Collection {
   return { id: newId('col'), name: name.trim(), slug, fields, source, publicRead: false, publicCreate: false }
+}
+
+export function createConnection(name: string, baseUrl: string, headers: ApiHeader[] = []): Connection {
+  return { id: newId('con'), name: name.trim(), baseUrl, headers }
 }
 
 /** Deep copy of `node` where it and every descendant get a fresh id. */

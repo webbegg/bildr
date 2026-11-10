@@ -8,6 +8,7 @@ import { ApiHeadersSchema, ApiPathSchema, ApiUrlSchema, CollectionSourceSchema, 
 import type { Collection, Field, Project } from '#shared/document/schema'
 import { createPublicRecord } from '../utils/publicData'
 import type { PublicWriteResult } from '../utils/publicData'
+import { findConnection, publicRemoteValues } from '../utils/remote'
 import { ActionError, defineAction } from './define'
 import type { ActionContext } from './define'
 import { apiItems } from './services'
@@ -28,11 +29,11 @@ const FieldInput = z.object({
   key: FieldKeySchema.describe('Record key, e.g. price or servedFrom; unique in the collection; "id" is reserved'),
   label: z.string().trim().min(1).max(100).optional().describe('Shown in the editor; defaults to the key in words'),
   type: FieldTypeSchema.describe(`Value type: ${FIELD_TYPES_HINT}`),
-  path: ApiPathSchema.optional().describe('API collections only: dot path of the value in each item, e.g. origin.name; defaults to the key')
+  path: ApiPathSchema.optional().describe('API and connection collections only: dot path of the value in each item, e.g. origin.name (also where create and update send it); defaults to the key')
 })
 
 const ItemsPathSchema = z.union([z.literal(''), ApiPathSchema]).describe('Dot path of the items array in the response, e.g. results; "" when the response is the array')
-const SourceInput = CollectionSourceSchema.describe('Where records come from: { "type": "internal" } (stored in bildr, the default) or { "type": "api", "url", "itemsPath", "headers"? } (read live from a JSON endpoint, read-only). Get url, itemsPath and fields from api_source_preview first')
+const SourceInput = CollectionSourceSchema.describe('Where records come from: { "type": "internal" } (stored in bildr, the default), { "type": "api", "url", "itemsPath", "headers"? } (read live from a JSON endpoint, read-only; get url, itemsPath and fields from api_source_preview first) or { "type": "connection", "connectionId", "idPath"?, "endpoints": { "list"?, "get"?, "create"?, "update"?, "delete"? } } (read and written through a connection, see connection_create and endpoint_test; each endpoint { method: GET|POST|PUT|PATCH|DELETE, path relative to the base URL with {id} for the record id, itemsPath? (list) or itemPath? }; idPath is where the record id is in an item, default id)')
 
 const ENV_HINT = 'The url and header values may use {{ env.NAME }} (see env_list), resolved on the server at each fetch; put API keys in a secret variable, e.g. header Authorization: Bearer {{ env.API_KEY }}, never literally.'
 const HeadersInput = ApiHeadersSchema.describe('Up to 10 request headers { name, value }, e.g. an API key')
@@ -59,14 +60,21 @@ function checkSize(record: DataRecord): void {
   if (recordBytes(record) > MAX_RECORD_BYTES) throw new ActionError('invalid', `A record can be at most ${MAX_RECORD_BYTES / 1024} KB`)
 }
 
-/** Loads a collection and its records (fetched for API collections); `write` refuses API collections first. */
+/** Loads a collection and its records (fetched for API and connection collections); `write` refuses API collections first. */
 async function loadCollection(ctx: ActionContext, projectId: string, ref: string, write = false) {
   const project = await ctx.services.loadProject(projectId)
   const collection = findCollection(project, ref)
   if (write && collection.source.type === 'api') {
     throw new ActionError('forbidden', `"${collection.name}" is read live from an API, so its records cannot be created, changed or deleted`)
   }
-  return { project, collection, records: await ctx.services.collectionRecords(project.id, collection) }
+  return { project, collection, records: await ctx.services.collectionRecords(project.id, collection, project.connections) }
+}
+
+/** The collection when its records live behind a connection's endpoints, which record actions then go through. */
+async function remoteCollection(ctx: ActionContext, projectId: string, ref: string) {
+  const project = await ctx.services.loadProject(projectId)
+  const collection = findCollection(project, ref)
+  return collection.source.type === 'connection' ? { project, collection } : undefined
 }
 
 function findRecord(records: DataRecord[], recordId: string, collection: Collection): number {
@@ -117,7 +125,7 @@ export const collectionCreate = defineAction({
 
 export const collectionUpdate = defineAction({
   name: 'collection_update',
-  description: 'Rename a collection, change its slug, or set its flags: publicRead lets published apps list its records, publicCreate lets anonymous visitors of the published app add records (e.g. a contact form with a Form component). With publicCreate, anyone on the internet, including scripts on other websites, can post records to it (rate-limited, declared fields only, no update or delete); API collections never accept them. Flags take effect on the next publish. For API collections, source changes the URL, items path or headers (url and header values may use {{ env.NAME }}) and fields replaces the whole mapping (key, label, type, path; use api_source_preview to see the items). Properties left out keep their value. One undo step.',
+  description: 'Rename a collection, change its slug, or set its flags: publicRead lets published apps list its records, publicCreate lets anonymous visitors of the published app add records (e.g. a contact form with a Form component). With publicCreate, anyone on the internet, including scripts on other websites, can post records to it (rate-limited, declared fields only, no update or delete); API collections never accept them, connection collections send them to their create endpoint. Flags take effect on the next publish. For API collections, source changes the URL, items path or headers (url and header values may use {{ env.NAME }}); for connection collections, it changes the endpoints or idPath. fields replaces the whole mapping of either (key, label, type, path; use api_source_preview or endpoint_test to see the items). Properties left out keep their value. One undo step.',
   input: z.object({
     projectId: IdSchema,
     collection: CollectionRef,
@@ -126,7 +134,7 @@ export const collectionUpdate = defineAction({
     publicRead: z.boolean().optional().describe('Published apps may read the records'),
     publicCreate: z.boolean().optional().describe('Anonymous visitors of the published app (and any other website) may create records'),
     source: SourceInput.optional(),
-    fields: z.array(FieldInput).max(100).optional().describe('API collections only: the new mapping, in order')
+    fields: z.array(FieldInput).max(100).optional().describe('API and connection collections only: the new mapping, in order')
   }),
   run: async ({ projectId, collection: ref, source, fields, ...patch }, ctx) => {
     const current = findCollection(await ctx.services.loadProject(projectId), ref)
@@ -134,8 +142,8 @@ export const collectionUpdate = defineAction({
     const ops: Operation[] = [{ op: 'updateCollection', collectionId: id, ...patch }]
     if (source || fields) {
       const nextSource = source ?? current.source
-      if (fields && nextSource.type !== 'api') {
-        throw new ActionError('invalid', 'Only API collections take a fields mapping; change an internal collection\'s fields with field_add, field_update and field_remove')
+      if (fields && nextSource.type === 'internal') {
+        throw new ActionError('invalid', 'Only API and connection collections take a fields mapping; change an internal collection\'s fields with field_add, field_update and field_remove')
       }
       ops.push({ op: 'setSource', collectionId: id, source: nextSource, fields: fields ? fields.map(toField) : current.fields })
     }
@@ -219,7 +227,7 @@ export const fieldRemove = defineAction({
 
 export const recordList = defineAction({
   name: 'record_list',
-  description: 'List a collection\'s records ({ id, createdAt, updatedAt, values }, one value per field, null when empty) with the total count. Optional: filter by field equality, sort by a field (or createdAt/updatedAt; empty values last), limit and offset. Without a sort, records are in creation order. API collections return the fetched page of items (cached 60 s) mapped with their fields; the query applies to that page.',
+  description: 'List a collection\'s records ({ id, createdAt, updatedAt, values }, one value per field, null when empty) with the total count. Optional: filter by field equality, sort by a field (or createdAt/updatedAt; empty values last), limit and offset. Without a sort, records are in creation order. API collections, and connection collections through their list endpoint, return the fetched page of items (cached 60 s, refreshed after each write) mapped with their fields; the query applies to that page.',
   input: z.object({
     projectId: IdSchema,
     collection: CollectionRef,
@@ -248,10 +256,12 @@ export const recordList = defineAction({
 
 export const recordGet = defineAction({
   name: 'record_get',
-  description: 'Get one record of a collection by id.',
+  description: 'Get one record of a collection by id. Connection collections use their get endpoint, or their list endpoint filtered by id.',
   input: z.object({ projectId: IdSchema, collection: CollectionRef, recordId: IdSchema }),
   readOnly: true,
   run: async ({ projectId, collection: ref, recordId }, ctx) => {
+    const remote = await remoteCollection(ctx, projectId, ref)
+    if (remote) return readRecord(remote.collection.fields, await ctx.services.remote.get(remote.project.id, remote.project.connections, remote.collection, recordId))
     const { collection, records } = await loadCollection(ctx, projectId, ref)
     return readRecord(collection.fields, records[findRecord(records, recordId, collection)]!)
   }
@@ -259,9 +269,15 @@ export const recordGet = defineAction({
 
 export const recordCreate = defineAction({
   name: 'record_create',
-  description: `Add a record to a collection. values maps field keys to values checked against the field types (${FIELD_TYPES_HINT}); form strings such as "3.5" or "true" are accepted, fields left out are null. At most ${MAX_RECORD_BYTES / 1024} KB per record and ${MAX_RECORDS_PER_COLLECTION} records per collection. API collections are read-only. Not undoable.`,
+  description: `Add a record to a collection. values maps field keys to values checked against the field types (${FIELD_TYPES_HINT}); form strings such as "3.5" or "true" are accepted, fields left out are null. At most ${MAX_RECORD_BYTES / 1024} KB per record and ${MAX_RECORDS_PER_COLLECTION} records per collection. API collections are read-only. Connection collections send the values to their create endpoint as JSON (each at its field's path) and return the record the API answers; that write goes to an external system. Not undoable.`,
   input: z.object({ projectId: IdSchema, collection: CollectionRef, values: ValuesSchema.describe('Field key → value') }),
   run: async ({ projectId, collection: ref, values }, ctx) => {
+    const remote = await remoteCollection(ctx, projectId, ref)
+    if (remote) {
+      const record = await ctx.services.remote.create(remote.project.id, remote.project.connections, remote.collection, checkValues(remote.collection, values))
+      ctx.notifyData(remote.project.id, remote.project.version, remote.collection.id)
+      return readRecord(remote.collection.fields, record)
+    }
     const { project, collection, records } = await loadCollection(ctx, projectId, ref, true)
     const checked = checkValues(collection, values)
     if (records.length >= MAX_RECORDS_PER_COLLECTION) throw new ActionError('forbidden', `A collection can hold at most ${MAX_RECORDS_PER_COLLECTION} records`)
@@ -281,13 +297,24 @@ export const recordCreate = defineAction({
  */
 export const publicRecordCreate = defineAction({
   name: 'public_record_create',
-  description: 'Add a record to a publicCreate internal collection of the PUBLISHED app, as an anonymous visitor.',
+  description: 'Add a record to a publicCreate internal or connection collection of the PUBLISHED app, as an anonymous visitor.',
   input: z.object({ projectId: IdSchema, collection: z.string().max(64), body: z.unknown() }),
   publicOnly: true,
   run: async ({ projectId, collection: slug, body }, ctx): Promise<PublicWriteResult> => {
     const snapshot = await ctx.services.publishedSnapshot(projectId)
     if (!snapshot) return { ok: false, status: 404, message: 'Collection not found' }
-    const result = await createPublicRecord({ snapshot, collectionSlug: slug, body, store: ctx.services.records })
+    const published = snapshot.project.collections.find(c => c.slug === slug)
+    let result: PublicWriteResult
+    if (published?.publicCreate && published.source.type === 'connection') {
+      // Only the create endpoint: visitors never reach update or delete.
+      if (!published.source.endpoints.create) return { ok: false, status: 403, message: 'This collection does not accept new records' }
+      findConnection(snapshot.project.connections, published.source.connectionId)
+      const checked = publicRemoteValues(published, body)
+      if (!('values' in checked)) return { ok: false, ...checked }
+      result = { ok: true, record: await ctx.services.remote.create(projectId, snapshot.project.connections, published, checked.values) }
+    } else {
+      result = await createPublicRecord({ snapshot, collectionSlug: slug, body, store: ctx.services.records })
+    }
     if (result.ok) {
       const project = await ctx.services.loadProject(projectId)
       ctx.notifyData(projectId, project.version, snapshot.project.collections.find(c => c.slug === slug)!.id)
@@ -298,9 +325,15 @@ export const publicRecordCreate = defineAction({
 
 export const recordUpdate = defineAction({
   name: 'record_update',
-  description: 'Change some values of a record; keys left out keep their value and null clears one. Values are checked against the field types. Not undoable.',
+  description: 'Change some values of a record; keys left out keep their value and null clears one. Values are checked against the field types. Connection collections send them to their update endpoint (a PUT endpoint gets the whole record, read first). Not undoable.',
   input: z.object({ projectId: IdSchema, collection: CollectionRef, recordId: IdSchema, values: ValuesSchema.describe('Field key → new value') }),
   run: async ({ projectId, collection: ref, recordId, values }, ctx) => {
+    const remote = await remoteCollection(ctx, projectId, ref)
+    if (remote) {
+      const record = await ctx.services.remote.update(remote.project.id, remote.project.connections, remote.collection, recordId, checkValues(remote.collection, values))
+      ctx.notifyData(remote.project.id, remote.project.version, remote.collection.id)
+      return readRecord(remote.collection.fields, record)
+    }
     const { project, collection, records } = await loadCollection(ctx, projectId, ref, true)
     const index = findRecord(records, recordId, collection)
     const record: DataRecord = { ...records[index]!, updatedAt: new Date().toISOString() }
@@ -315,9 +348,15 @@ export const recordUpdate = defineAction({
 
 export const recordDelete = defineAction({
   name: 'record_delete',
-  description: 'Delete a record. Not undoable.',
+  description: 'Delete a record. Connection collections call their delete endpoint, on the external system. Not undoable.',
   input: z.object({ projectId: IdSchema, collection: CollectionRef, recordId: IdSchema }),
   run: async ({ projectId, collection: ref, recordId }, ctx) => {
+    const remote = await remoteCollection(ctx, projectId, ref)
+    if (remote) {
+      await ctx.services.remote.remove(remote.project.id, remote.project.connections, remote.collection, recordId)
+      ctx.notifyData(remote.project.id, remote.project.version, remote.collection.id)
+      return { recordId }
+    }
     const { project, collection, records } = await loadCollection(ctx, projectId, ref, true)
     records.splice(findRecord(records, recordId, collection), 1)
     await ctx.services.records.save(project.id, collection.id, records)

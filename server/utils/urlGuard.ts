@@ -20,9 +20,12 @@ export interface TransportInit {
   family: 4 | 6
   signal?: AbortSignal
   headers?: Record<string, string>
+  /** GET when left out. */
+  method?: string
+  body?: string
 }
 
-/** Sends one GET without following redirects. */
+/** Sends one request without following redirects. */
 export type Transport = (url: URL, init: TransportInit) => Promise<Response>
 
 export const MAX_REDIRECTS = 3
@@ -44,7 +47,7 @@ interface HttpModule {
     headers?: Record<string, string>
     signal?: AbortSignal
     lookup: (hostname: string, options: { all?: boolean }, callback: LookupCallback) => void
-  }, onResponse: (response: IncomingMessage) => void) => { on: (event: 'error', listener: (error: Error) => void) => void, end: () => void }
+  }, onResponse: (response: IncomingMessage) => void) => { on: (event: 'error', listener: (error: Error) => void) => void, end: (body?: string) => void }
 }
 interface DnsModule {
   promises: { lookup: (hostname: string, options: { all: true, verbatim: true }) => Promise<{ address: string, family: number }[]> }
@@ -161,15 +164,16 @@ export async function checkUrl(url: string, resolve: Resolver = systemResolver):
   return { url: parsed, address: addresses[0]!.address, family: ipVersion(addresses[0]!.address) as 4 | 6 }
 }
 
-/** A GET over node:http(s) that connects to `init.address` instead of resolving the host again. */
-export const pinnedTransport: Transport = async (url, { address, family, signal, headers }) => {
+/** A request over node:http(s) that connects to `init.address` instead of resolving the host again. */
+export const pinnedTransport: Transport = async (url, { address, family, signal, headers, method = 'GET', body }) => {
+  if (body !== undefined) headers = { ...headers, 'content-length': String(new TextEncoder().encode(body).byteLength) }
   const http = await (url.protocol === 'https:' ? import('node:https' as string) : import('node:http' as string)) as HttpModule
   return new Promise((resolve, reject) => {
     const lookup = (_hostname: string, options: { all?: boolean }, callback: LookupCallback) => {
       if (options?.all) callback(null, [{ address, family }])
       else callback(null, address, family)
     }
-    const request = http.request(url, { method: 'GET', headers, signal, lookup }, (res) => {
+    const request = http.request(url, { method, headers, signal, lookup }, (res) => {
       const status = res.statusCode ?? 502
       const responseHeaders = new Headers()
       for (const [name, value] of Object.entries(res.headers)) {
@@ -194,7 +198,7 @@ export const pinnedTransport: Transport = async (url, { address, family, signal,
       resolve(new Response(body, { status, headers: responseHeaders }))
     })
     request.on('error', reject)
-    request.end()
+    request.end(body)
   })
 }
 
@@ -208,11 +212,15 @@ export interface GuardedFetchOptions {
   headers?: Record<string, string>
   /** A source's own headers (they may carry secrets): sent only until a redirect leaves the first URL's origin. */
   customHeaders?: Record<string, string>
+  /** GET when left out; a 303 (or a 301/302 of a write) continues as a GET without the body, like browsers do. */
+  method?: string
+  body?: string
 }
 
-/** GETs `url`, checking it and every redirect hop (at most 3) with `checkUrl`. */
+/** Requests `url`, checking it and every redirect hop (at most 3) with `checkUrl`. */
 export async function guardedFetch(url: string, options: GuardedFetchOptions = {}): Promise<Response> {
   const { resolve, transport = pinnedTransport, signal, headers, customHeaders } = options
+  let { method = 'GET', body } = options
   let next = url
   let origin: string | undefined
   for (let hop = 0; ; hop++) {
@@ -220,11 +228,15 @@ export async function guardedFetch(url: string, options: GuardedFetchOptions = {
     origin ??= target.url.origin
     if (target.url.origin !== origin) origin = ''
     const sent = customHeaders && origin ? { ...headers, ...customHeaders } : headers
-    const response = await transport(target.url, { address: target.address, family: target.family, signal, headers: sent })
+    const response = await transport(target.url, { address: target.address, family: target.family, signal, headers: sent, method, body })
     const location = response.headers.get('location')
     if (!REDIRECTS.includes(response.status) || !location) return response
     await response.body?.cancel()
     if (hop >= MAX_REDIRECTS) throw new ActionError('invalid', `The API redirected more than ${MAX_REDIRECTS} times`)
+    if (response.status === 303 || ([301, 302].includes(response.status) && method !== 'GET')) {
+      method = 'GET'
+      body = undefined
+    }
     next = new URL(location, target.url).href
   }
 }

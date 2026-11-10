@@ -8,6 +8,8 @@ import type { Resolver, Transport } from './urlGuard'
  * enforced while streaming, and a short in-memory cache so a page of Lists
  * (or a busy published app) does not hit the API on every read. The cache
  * is keyed by a hash of the URL and headers, which may hold resolved secrets.
+ * Writes of connection collections (`send`) take the same guard and limits
+ * and are never cached.
  */
 
 export interface ApiFetcherOptions {
@@ -28,6 +30,18 @@ export interface ApiResponse {
 export interface FetchJsonOptions {
   /** The source's own headers, already resolved; dropped when a redirect changes origin. */
   headers?: Record<string, string>
+}
+
+export interface SendOptions extends FetchJsonOptions {
+  method: string
+  /** Sent as JSON. */
+  body?: unknown
+}
+
+export interface SendResponse {
+  status: number
+  /** null for an empty or non-JSON body. */
+  json: unknown
 }
 
 async function cacheKey(url: string, headers: Record<string, string> = {}): Promise<string> {
@@ -76,17 +90,24 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
     return body
   }
 
-  async function load(url: string, customHeaders?: Record<string, string>): Promise<ApiResponse> {
+  /** Reads must answer JSON; writes may answer nothing or something else, read as null. */
+  async function request(url: string, { method = 'GET', headers: customHeaders, body: payload }: Partial<SendOptions> = {}): Promise<SendResponse> {
     const signal = AbortSignal.timeout(timeoutMs)
+    const write = method !== 'GET'
+    const headers: Record<string, string> = { 'accept': 'application/json', 'user-agent': 'bildr' }
+    if (payload !== undefined) headers['content-type'] = 'application/json'
+    let status: number
     let body: Uint8Array
     try {
-      const response = await guardedFetch(url, { resolve, transport, signal, headers: { 'accept': 'application/json', 'user-agent': 'bildr' }, customHeaders })
+      const response = await guardedFetch(url, { resolve, transport, signal, headers, customHeaders, method, body: payload === undefined ? undefined : JSON.stringify(payload) })
+      status = response.status
       if (!response.ok) {
         await response.body?.cancel()
         fail(`The API answered HTTP ${response.status}`)
       }
       if (!/\bjson\b/i.test(response.headers.get('content-type') ?? '')) {
         await response.body?.cancel()
+        if (write) return { status, json: null }
         fail('The API response is not JSON')
       }
       body = await readBody(response)
@@ -95,12 +116,16 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
       if (signal.aborted) fail(`The API did not answer within ${timeoutMs / 1000} s`)
       fail(`Could not reach the API: ${error instanceof Error ? error.message : String(error)}`)
     }
-    let json: unknown
+    if (write && !body!.byteLength) return { status: status!, json: null }
     try {
-      json = JSON.parse(new TextDecoder().decode(body!))
+      return { status: status!, json: JSON.parse(new TextDecoder().decode(body!)) }
     } catch {
-      fail('The API response is not JSON')
+      return fail('The API response is not JSON')
     }
+  }
+
+  async function load(url: string, headers?: Record<string, string>): Promise<ApiResponse> {
+    const { json } = await request(url, { headers })
     return { json, fetchedAt: new Date(now()).toISOString() }
   }
 
@@ -121,6 +146,16 @@ export function createApiFetcher(options: ApiFetcherOptions = {}) {
       cache.set(key, { at: now(), response })
       while (cache.size > maxEntries) cache.delete(cache.keys().next().value!)
       return response
+    },
+
+    /** Drops the cached response of `url` with `headers`, so the next read fetches again. */
+    async invalidate(url: string, { headers }: FetchJsonOptions = {}): Promise<void> {
+      cache.delete(await cacheKey(url, headers))
+    },
+
+    /** One request with any method and an optional JSON body; never cached. Failures throw `ActionError('invalid')`. */
+    send(url: string, options: SendOptions): Promise<SendResponse> {
+      return request(url, options)
     }
   }
 }

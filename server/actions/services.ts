@@ -4,13 +4,14 @@ import { defaultTheme } from '#shared/design/theme'
 import { applyOperations } from '#shared/document/operations'
 import type { Operation } from '#shared/document/operations'
 import { headerValueProblem } from '#shared/document/schema'
-import type { ApiHeader, Collection, Project, PublishedSnapshot } from '#shared/document/schema'
+import type { ApiHeader, Collection, Connection, Project, PublishedSnapshot } from '#shared/document/schema'
 import { allEnv, publicEnv, redact, resolveEnv, secretValues } from '#shared/env/variables'
 import { createApiFetcher } from '../utils/apiFetch'
 import type { ApiFetcher, ApiResponse } from '../utils/apiFetch'
 import { createEnvStore } from '../utils/envStore'
 import { createProjectStore } from '../utils/projectStore'
 import { createRecordStore } from '../utils/recordStore'
+import { createRemote } from '../utils/remote'
 import type { KeyValueStorage } from '../utils/projectStore'
 import { ActionError } from './define'
 import type { ActionContext } from './define'
@@ -28,10 +29,11 @@ interface History {
 
 const UNDO_LIMIT = 100
 
-/** Projects saved before themes, collections or API sources existed read with the defaults. */
+/** Projects saved before themes, collections, API sources or connections existed read with the defaults. */
 function withDefaults(project: Project): Project {
   project.theme ??= defaultTheme()
   project.collections ??= []
+  project.connections ??= []
   for (const collection of project.collections) collection.source ??= { type: 'internal' }
   return project
 }
@@ -62,6 +64,7 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
   const records = createRecordStore(storage)
   const env = createEnvStore(storage)
   const api = options.api ?? createApiFetcher()
+  const remote = createRemote(api, env)
 
   async function loadProject(projectId: string): Promise<Project> {
     const project = await projects.get(projectId)
@@ -122,13 +125,20 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
     records,
     env,
     api,
+    remote,
     storage,
     loadProject,
     fetchApi,
 
-    /** A collection's records: stored ones, or for an API collection the fetched items mapped with its fields. */
-    async collectionRecords(projectId: string, collection: Collection): Promise<DataRecord[]> {
+    /**
+     * A collection's records: stored ones, or for an API or connection
+     * collection the fetched items mapped with its fields. A connection
+     * collection reads through `connections` (the published ones for public
+     * reads), the draft's when left out.
+     */
+    async collectionRecords(projectId: string, collection: Collection, connections?: Connection[]): Promise<DataRecord[]> {
       if (collection.source.type === 'internal') return records.list(projectId, collection.id)
+      if (collection.source.type === 'connection') return remote.list(projectId, connections ?? (await loadProject(projectId)).connections, collection)
       const { json, fetchedAt } = await fetchApi(projectId, collection.source)
       return apiRecords(json, fetchedAt, collection, collection.source.itemsPath)
     },

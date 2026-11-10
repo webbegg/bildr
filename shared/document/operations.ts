@@ -4,8 +4,8 @@ import { isStyleTokenKey, styleTokenProblem } from '../design/tokens'
 import { getComponent, isContainerType } from './components'
 import type { PropValue } from './components'
 import type { z } from 'zod'
-import { ApiPathSchema, CollectionSchema, FieldSchema, FieldTypeSchema, nodeTreeProblems, PageSchema, propValueProblem, SlugSchema } from './schema'
-import type { Collection, CollectionSource, DocNode, Field, FieldType, Page, Project } from './schema'
+import { ApiPathSchema, CollectionSchema, CONNECTIONS_MAX, ConnectionSchema, FieldSchema, FieldTypeSchema, nodeTreeProblems, PageSchema, propValueProblem, SlugSchema } from './schema'
+import type { ApiHeader, Collection, CollectionSource, Connection, DocNode, Field, FieldType, Page, Project } from './schema'
 import { containsNode, findNode, findParent, walk } from './tree'
 
 /**
@@ -31,6 +31,9 @@ export type Operation
     | { op: 'updateField', collectionId: string, key: string, label?: string, type?: FieldType, path?: string | null }
     | { op: 'moveField', collectionId: string, key: string, index: number }
     | { op: 'setSource', collectionId: string, source: CollectionSource, fields: Field[] }
+    | { op: 'addConnection', index: number, connection: Connection }
+    | { op: 'removeConnection', connectionId: string }
+    | { op: 'updateConnection', connectionId: string, name?: string, baseUrl?: string, headers?: ApiHeader[] }
 
 export type OperationErrorCode = 'not_found' | 'invalid' | 'forbidden'
 
@@ -89,6 +92,14 @@ function getCollection(project: Project, collectionId: string): Collection {
 
 function getField(collection: Collection, key: string): Field {
   return collection.fields.find(f => f.key === key) ?? fail('not_found', `Field "${key}" not found in "${collection.name}"`)
+}
+
+function getConnection(project: Project, connectionId: string): Connection {
+  return project.connections.find(c => c.id === connectionId) ?? fail('not_found', `Connection "${connectionId}" not found`)
+}
+
+function assertSourceConnection(project: Project, source: CollectionSource): void {
+  if (source.type === 'connection') getConnection(project, source.connectionId)
 }
 
 function assertUniqueCollectionSlug(project: Project, slug: string, exceptId?: string): void {
@@ -227,6 +238,7 @@ export function applyOperation(project: Project, op: Operation): Operation {
       if (!parsed.success) fail('invalid', `Invalid collection: ${issues(parsed.error)}`)
       if (project.collections.some(c => c.id === op.collection.id)) fail('invalid', `Duplicate collection id "${op.collection.id}"`)
       assertUniqueCollectionSlug(project, parsed.data.slug)
+      assertSourceConnection(project, parsed.data.source)
       project.collections.splice(clampIndex(op.index, project.collections.length), 0, parsed.data)
       return { op: 'removeCollection', collectionId: parsed.data.id }
     }
@@ -312,9 +324,38 @@ export function applyOperation(project: Project, op: Operation): Operation {
       const collection = getCollection(project, op.collectionId)
       const parsed = CollectionSchema.safeParse({ ...collection, source: op.source, fields: op.fields })
       if (!parsed.success) fail('invalid', `Invalid collection: ${issues(parsed.error)}`)
+      assertSourceConnection(project, parsed.data.source)
       const inverse: Operation = { op: 'setSource', collectionId: collection.id, source: collection.source, fields: collection.fields }
       collection.source = parsed.data.source
       collection.fields = parsed.data.fields
+      return inverse
+    }
+    case 'addConnection': {
+      const parsed = ConnectionSchema.safeParse(op.connection)
+      if (!parsed.success) fail('invalid', `Invalid connection: ${issues(parsed.error)}`)
+      if (project.connections.some(c => c.id === parsed.data.id)) fail('invalid', `Duplicate connection id "${parsed.data.id}"`)
+      if (project.connections.length >= CONNECTIONS_MAX) fail('forbidden', `A project can have at most ${CONNECTIONS_MAX} connections`)
+      project.connections.splice(clampIndex(op.index, project.connections.length), 0, parsed.data)
+      return { op: 'removeConnection', connectionId: parsed.data.id }
+    }
+    case 'removeConnection': {
+      const connection = getConnection(project, op.connectionId)
+      const users = project.collections.filter(c => c.source.type === 'connection' && c.source.connectionId === connection.id)
+      if (users.length) fail('forbidden', `"${connection.name}" is used by ${users.map(c => c.name).join(', ')}; delete those collections first`)
+      const index = project.connections.indexOf(connection)
+      project.connections.splice(index, 1)
+      return { op: 'addConnection', index, connection }
+    }
+    case 'updateConnection': {
+      const connection = getConnection(project, op.connectionId)
+      const patch = Object.fromEntries(Object.entries({ name: op.name, baseUrl: op.baseUrl, headers: op.headers }).filter(([, value]) => value !== undefined))
+      const parsed = ConnectionSchema.safeParse({ ...connection, ...patch })
+      if (!parsed.success) fail('invalid', `Invalid connection: ${issues(parsed.error)}`)
+      const inverse: Extract<Operation, { op: 'updateConnection' }> = { op: 'updateConnection', connectionId: connection.id }
+      if (op.name !== undefined) inverse.name = connection.name
+      if (op.baseUrl !== undefined) inverse.baseUrl = connection.baseUrl
+      if (op.headers !== undefined) inverse.headers = connection.headers
+      Object.assign(connection, parsed.data)
       return inverse
     }
   }

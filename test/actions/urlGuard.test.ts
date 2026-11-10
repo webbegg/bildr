@@ -88,6 +88,25 @@ describe('pinnedTransport', () => {
       server.close()
     }
   })
+
+  it('sends the method and body', async () => {
+    const server = createServer((req, res) => {
+      let body = ''
+      req.on('data', (chunk: Uint8Array) => (body += new TextDecoder().decode(chunk)))
+      req.on('end', () => {
+        res.writeHead(200, { 'content-type': 'application/json' })
+        res.end(JSON.stringify({ method: req.method, body, length: req.headers['content-length'] }))
+      })
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const { port } = server.address() as AddressInfo
+    try {
+      const response = await pinnedTransport(new URL(`http://pinned.invalid:${port}/x`), { address: '127.0.0.1', family: 4, method: 'PATCH', body: '{"a":"é"}' })
+      expect(await response.json()).toEqual({ method: 'PATCH', body: '{"a":"é"}', length: '10' })
+    } finally {
+      server.close()
+    }
+  })
 })
 
 describe('guardedFetch', () => {
@@ -145,6 +164,24 @@ describe('guardedFetch', () => {
       { url: 'https://api.example.com/b', headers: { accept: 'application/json', authorization: 'Bearer sk_test_SECRET123' } },
       { url: 'https://cdn.example.com/c', headers: { accept: 'application/json' } },
       { url: 'https://api.example.com/d', headers: { accept: 'application/json' } }
+    ])
+  })
+
+  it('sends the method and body; a 303 turns into a GET without body, a 307 keeps both', async () => {
+    const seen: { url: string, method?: string, body?: string }[] = []
+    const send: Transport = async (url, init) => {
+      seen.push({ url: url.href, method: init.method, body: init.body })
+      if (url.pathname === '/a') return new Response(null, { status: 303, headers: { location: '/done' } })
+      if (url.pathname === '/b') return new Response(null, { status: 307, headers: { location: '/done' } })
+      return new Response('{}')
+    }
+    await guardedFetch('https://api.example.com/a', { resolve, transport: send, method: 'POST', body: '{}' })
+    await guardedFetch('https://api.example.com/b', { resolve, transport: send, method: 'PUT', body: '{}' })
+    expect(seen).toEqual([
+      { url: 'https://api.example.com/a', method: 'POST', body: '{}' },
+      { url: 'https://api.example.com/done', method: 'GET', body: undefined },
+      { url: 'https://api.example.com/b', method: 'PUT', body: '{}' },
+      { url: 'https://api.example.com/done', method: 'PUT', body: '{}' }
     ])
   })
 

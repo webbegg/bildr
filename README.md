@@ -36,6 +36,7 @@ Apps can show and collect data. As with everything else, each step is an action,
 - Manage both in the editor's **Data** mode: collections, fields, and a records table where you can add, edit and delete.
 - Actions:
   - schema: `collection_create`, `collection_update`, `collection_delete`, `field_add`, `field_update`, `field_move`, `field_remove`
+  - connections: `connection_create`, `connection_update`, `connection_delete`, `endpoint_test` (see [Remote connections](#remote-connections))
   - records: `record_list` (filter by field equality, sort, limit, offset), `record_get`, `record_create`, `record_update`, `record_delete`
 
 ### API sources
@@ -53,6 +54,19 @@ API collections are **read-only**: record writes are refused, and they cannot ta
 - a 5 s timeout, a 1 MB response cap, and a 60 s cache
 
 A source can also send up to 10 request **headers** (`{ name, value }`), for example `Authorization`. The URL and the header values may use `{{ env.NAME }}` variables, public or secret (see [Environment variables](#environment-variables)). bildr resolves them on the server at each fetch, then runs the URL and SSRF checks on the resolved URL. Headers are dropped when a redirect leaves the first URL's origin. Do not put secrets such as API keys literally in the URL or a header: the source is stored in the project document, and agents and the editor can read it. Use a secret variable instead, such as `Bearer {{ env.API_KEY }}`. (Published apps get neither the URL nor the headers; see below.)
+
+### Remote connections
+
+A **connection** is a remote JSON API that collections read and write through: a name, an absolute http(s) base URL and up to 10 headers sent with every request. The base URL and the header values may use `{{ env.NAME }}`, secrets included. Connections are part of the project document, so they are undoable.
+
+A **connection collection** has the source `{ type: 'connection', connectionId, idPath?, endpoints }`. Each endpoint is optional: `list`, `get`, `create`, `update` and `delete`, each `{ method, path }` with `itemsPath` (list) or `itemPath` (the others) saying where the items or the item are in the response. `idPath` says where the record id is in an item (default `id`).
+
+- Methods are `GET`, `POST`, `PUT`, `PATCH` and `DELETE`. Paths are relative to the base URL (such as `/posts/{id}`) and may use `{id}` (the URL-encoded record id) and `{{ env.NAME }}`.
+- **Origin lock.** bildr resolves the variables on the server, then builds the URL on the base URL. A path that is absolute, starts with `//`, contains `\`, `://` or a `.`/`..` segment, or ends up on another origin is refused before any request. So a connection's secrets only ever go to the resolved base URL's origin. The SSRF guard runs on every resolved URL and redirect hop, and a redirect to another origin drops the headers.
+- `record_list` uses `list` (cached 60 s like API sources), `record_get` uses `get` (or `list` filtered by id), and `record_create`, `record_update` and `record_delete` use theirs. Create and update send the values as JSON, each at its field's `path` (dot paths nest) or its key. A `PUT` update sends the whole record, read first; other methods send the changed values. Writes are never cached, and each one clears the collection's cached list.
+- A missing endpoint fails with an error such as "This collection has no Update endpoint". Errors never show secret values (`•••`).
+- Writes go to an external system, so they cannot be undone.
+- Actions: `connection_create` (`{ name, baseUrl, headers? }`), `connection_update`, `connection_delete` (refused while collections use the connection, unless `force: true`, which deletes them too in one undo step), and `endpoint_test` (`{ connectionId, method, path, id?, itemsPath?, itemPath?, confirm? }`). `endpoint_test` is read-only and not in the history. It sends `GET` only, or another method with `confirm: true`, and returns the status, the items, the proposed fields and a mapped sample.
 
 ### Environment variables
 
@@ -80,7 +94,7 @@ A **List** is a container bound to a collection, with the props `collection`, `l
 Published apps read and write data through `/api/public/<project-slug>/<collection-slug>`. They follow the **published** snapshot, so a flag change takes effect when you publish.
 
 - `GET` works only for `publicRead` collections. It returns `{ total, records }` with the declared fields only, at most 100 records per page. Query parameters: `limit`, `offset`, `sort`, `dir` (`asc` or `desc`) and `filter[<field>]=<value>`.
-- `POST` with JSON `{ "values": { "<field>": <value> } }` works only for `publicCreate` collections, and only internal ones. It answers `201 { id }`. There is no public update or delete; other methods (HEAD included) answer `405`.
+- `POST` with JSON `{ "values": { "<field>": <value> } }` works only for `publicCreate` collections that are internal, or connection collections with a `create` endpoint (the record goes to that endpoint, through the published connection). It answers `201 { id }`. There is no public update or delete, for any collection; other methods (HEAD included) answer `405`.
 - There is no same-origin check, because published apps may be embedded anywhere. **Any website can post to a `publicCreate` collection.** The collection flags and these limits are the only protection:
   - Only declared fields are kept, and each value must fit its field type. Fields are never required.
   - A request body can be at most 16 KB (counted while it streams in), and a record at most 10 KB.
@@ -88,7 +102,7 @@ Published apps read and write data through `/api/public/<project-slug>/<collecti
   - Each IP address gets 10 writes and 120 reads per minute per project. The counters live in memory, so they reset on restart and are not shared between processes.
   - `X-Forwarded-For` is ignored, because any client can send it. Behind a reverse proxy, all visitors share the proxy's one budget.
 - Errors are generic. The details only go to the server log.
-- `/api/published/<project-slug>`, which the published app loads, leaves out the URL, headers, items path and field paths of API collections. The public `GET` resolves them on the server from the stored snapshot and the current variables. Its `env` holds the public variables only.
+- `/api/published/<project-slug>`, which the published app loads, leaves out the connections, and the URL, headers, items path, endpoints, id path and field paths of API and connection collections. The public `GET` resolves them on the server from the stored snapshot and the current variables. Its `env` holds the public variables only.
 
 ## Action HTTP API
 

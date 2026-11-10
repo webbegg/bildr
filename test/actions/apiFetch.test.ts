@@ -98,6 +98,37 @@ describe('createApiFetcher', () => {
     expect(calls.map(c => c.headers?.authorization)).toEqual(['Bearer k1', 'Bearer k2', undefined])
   })
 
+  it('forgets a cached URL on invalidate', async () => {
+    const { api, calls } = fetcher(async () => json([1]))
+    const headers = { authorization: 'Bearer k1' }
+    await api.fetchJson('https://api.example.com/x', { headers })
+    await api.invalidate('https://api.example.com/x', { headers })
+    await api.fetchJson('https://api.example.com/x', { headers })
+    expect(calls).toHaveLength(2)
+  })
+
+  it('sends writes with a JSON body, never cached', async () => {
+    const seen: { method?: string, body?: string, headers?: Record<string, string> }[] = []
+    const { api } = fetcher(async (_url, init) => {
+      seen.push({ method: init.method, body: init.body, headers: init.headers })
+      return json({ id: 101 }, { status: 201 })
+    })
+    const write = () => api.send('https://api.example.com/posts', { method: 'POST', headers: { 'x-key': 'k' }, body: { title: 'Hi' } })
+    expect(await write()).toEqual({ status: 201, json: { id: 101 } })
+    await write()
+    expect(seen).toHaveLength(2)
+    expect(seen[0]).toEqual({ method: 'POST', body: '{"title":"Hi"}', headers: { 'accept': 'application/json', 'user-agent': 'bildr', 'content-type': 'application/json', 'x-key': 'k' } })
+  })
+
+  it('reads an empty or non-JSON write response as null and reports HTTP errors', async () => {
+    const empty = fetcher(async () => new Response(null, { status: 204 }))
+    expect(await empty.api.send('https://api.example.com/posts/1', { method: 'DELETE' })).toEqual({ status: 204, json: null })
+    const text = fetcher(async () => new Response('deleted', { headers: { 'content-type': 'text/plain' } }))
+    expect(await text.api.send('https://api.example.com/posts/1', { method: 'DELETE' })).toEqual({ status: 200, json: null })
+    const failed = fetcher(async () => json({}, { status: 500 }))
+    await expect(failed.api.send('https://api.example.com/posts', { method: 'POST', body: {} })).rejects.toMatchObject({ code: 'invalid', message: 'The API answered HTTP 500' })
+  })
+
   it('does not cache failures', async () => {
     let status = 500
     const { api } = fetcher(async () => json([1], { status }))

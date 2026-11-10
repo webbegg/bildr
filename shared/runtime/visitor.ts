@@ -2,11 +2,12 @@ import type { Collection, CollectionSource, Field, Project, PublishedSnapshot } 
 
 /**
  * What visitors of a published app get from `/api/published/:slug`: the
- * snapshot without the source details of API collections (URL, headers,
- * items path, field paths). The published app needs only the fields and the
- * flags; its reads go through the public endpoint, which resolves the URL
- * server-side from the stored snapshot. `env` holds the public variables
- * only (the snapshot never has secrets).
+ * snapshot without the connections (base URLs, headers) and without the
+ * source details of API and connection collections (URL, headers, items
+ * path, endpoints, id path, field paths). The published app needs only the
+ * fields and the flags; its reads and form creates go through the public
+ * endpoint, which resolves them server-side from the stored snapshot. `env`
+ * holds the public variables only (the snapshot never has secrets).
  */
 
 export type VisitorCollection = Omit<Collection, 'source' | 'fields'> & {
@@ -14,7 +15,7 @@ export type VisitorCollection = Omit<Collection, 'source' | 'fields'> & {
   fields: Omit<Field, 'path'>[]
 }
 
-export type VisitorProject = Omit<Project, 'collections'> & { collections: VisitorCollection[] }
+export type VisitorProject = Omit<Project, 'collections' | 'connections'> & { collections: VisitorCollection[] }
 
 export interface VisitorSnapshot {
   project: VisitorProject
@@ -32,8 +33,9 @@ function visitorCollection(collection: Collection): VisitorCollection {
 }
 
 export function visitorSnapshot(snapshot: PublishedSnapshot): VisitorSnapshot {
+  const { connections: _connections, ...project } = snapshot.project
   return {
     ...snapshot,
-    project: { ...snapshot.project, collections: snapshot.project.collections.map(visitorCollection) }
+    project: { ...project, collections: snapshot.project.collections.map(visitorCollection) }
   }
 }

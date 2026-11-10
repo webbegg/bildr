@@ -149,7 +149,7 @@ describe('API collections', () => {
     const { bildr, projectId } = await setup()
     await bildr.call('collection_create', { projectId, name: 'Menu', fields: [{ key: 'name', type: 'text' }] }, mcp)
     await expect(bildr.call('collection_update', { projectId, collection: 'menu', fields: [{ key: 'title', type: 'text' }] }, mcp))
-      .rejects.toMatchObject({ code: 'invalid', message: 'Only API collections take a fields mapping; change an internal collection\'s fields with field_add, field_update and field_remove' })
+      .rejects.toMatchObject({ code: 'invalid', message: 'Only API and connection collections take a fields mapping; change an internal collection\'s fields with field_add, field_update and field_remove' })
   })
 
   it('switches a collection between internal and api with collection_update', async () => {

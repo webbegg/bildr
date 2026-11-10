@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { API_PATH, API_PATH_HINT, API_PATH_MAX, apiUrlProblem } from '../data/apiSource'
+import { ENDPOINT_METHODS, endpointPathProblem } from '../data/remote'
 import { defaultTheme, ThemeSchema } from '../design/theme'
 import { styleTokenProblem } from '../design/tokens'
 import { ENV_NAME, ENV_NAME_HINT, ENV_REF, envRefs } from '../env/variables'
@@ -110,11 +111,47 @@ export const ApiHeadersSchema = z.array(ApiHeaderSchema).max(API_HEADERS_MAX).su
 
 export type ApiHeader = z.infer<typeof ApiHeaderSchema>
 
+export const ItemsPathSchema = z.union([z.literal(''), ApiPathSchema])
+
+export const EndpointPathSchema = z.string().superRefine((path, ctx) => {
+  const problem = endpointPathProblem(path)
+  if (problem) ctx.addIssue({ code: 'custom', message: problem })
+})
+
+const EndpointBase = { method: z.enum(ENDPOINT_METHODS), path: EndpointPathSchema }
+/** `itemsPath`: where the items array is in the response (the root by default). */
+export const ListEndpointSchema = z.object({ ...EndpointBase, itemsPath: ItemsPathSchema.optional() })
+/** `itemPath`: where the item is in the response (the root by default). */
+export const ItemEndpointSchema = z.object({ ...EndpointBase, itemPath: ItemsPathSchema.optional() })
+
+export const ConnectionEndpointsSchema = z.object({
+  list: ListEndpointSchema.optional(),
+  get: ItemEndpointSchema.optional(),
+  create: ItemEndpointSchema.optional(),
+  update: ItemEndpointSchema.optional(),
+  delete: ItemEndpointSchema.optional()
+})
+
 /**
- * Where a collection's records come from: bildr's record store, or a JSON
+ * A remote API that connection collections read and write through: an
+ * absolute http(s) base URL and headers sent with every request, both may
+ * use `{{ env.NAME }}` (secrets included), resolved only on the server.
+ * Requests go only to the resolved base URL's origin.
+ */
+export const ConnectionSchema = z.object({
+  id: IdSchema,
+  name: z.string().trim().min(1).max(100),
+  baseUrl: ApiUrlSchema,
+  headers: ApiHeadersSchema.default(() => [])
+})
+
+/**
+ * Where a collection's records come from: bildr's record store, a JSON
  * endpoint read live (read-only; `itemsPath` is the dot path of the items
- * array, `''` for a root array). The URL and `headers` values may use
- * `{{ env.NAME }}`, public or secret, resolved only on the server.
+ * array, `''` for a root array), or a connection's endpoints, one per
+ * operation (`idPath` is where the record id is in an item, default `id`).
+ * The URL and `headers` values may use `{{ env.NAME }}`, public or secret,
+ * resolved only on the server.
  */
 export const CollectionSourceSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('internal') }),
@@ -123,6 +160,12 @@ export const CollectionSourceSchema = z.discriminatedUnion('type', [
     url: ApiUrlSchema,
     itemsPath: z.union([z.literal(''), ApiPathSchema]),
     headers: ApiHeadersSchema.optional()
+  }),
+  z.object({
+    type: z.literal('connection'),
+    connectionId: IdSchema,
+    idPath: ApiPathSchema.optional(),
+    endpoints: ConnectionEndpointsSchema
   })
 ])
 
@@ -149,6 +192,8 @@ export const CollectionSchema = z.object({
   })
 })
 
+export const CONNECTIONS_MAX = 50
+
 export const ProjectSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(100),
@@ -159,9 +204,21 @@ export const ProjectSchema = z.object({
   theme: ThemeSchema.default(defaultTheme),
   // Projects saved before collections existed have none.
   collections: z.array(CollectionSchema).default(() => []),
+  // Projects saved before connections existed have none.
+  connections: z.array(ConnectionSchema).max(CONNECTIONS_MAX).default(() => []),
   createdAt: z.string(),
   updatedAt: z.string()
 }).superRefine((project, ctx) => {
+  const connectionIds = new Set<string>()
+  project.connections.forEach((connection, i) => {
+    if (connectionIds.has(connection.id)) ctx.addIssue({ code: 'custom', path: ['connections', i, 'id'], message: `Duplicate connection id "${connection.id}"` })
+    connectionIds.add(connection.id)
+  })
+  project.collections.forEach((collection, i) => {
+    if (collection.source.type === 'connection' && !connectionIds.has(collection.source.connectionId)) {
+      ctx.addIssue({ code: 'custom', path: ['collections', i, 'source'], message: `Collection "${collection.name}" uses the missing connection "${collection.source.connectionId}"` })
+    }
+  })
   const collectionSlugs = new Set<string>()
   const collectionIds = new Set<string>()
   project.collections.forEach((collection, i) => {
@@ -187,6 +244,9 @@ export type Project = z.infer<typeof ProjectSchema>
 export type Field = z.infer<typeof FieldSchema>
 export type Collection = z.infer<typeof CollectionSchema>
 export type CollectionSource = z.infer<typeof CollectionSourceSchema>
+export type Connection = z.infer<typeof ConnectionSchema>
+export type ConnectionEndpoints = z.infer<typeof ConnectionEndpointsSchema>
+export type ConnectionSource = Extract<CollectionSource, { type: 'connection' }>
 
 export type ProjectSummary = Pick<Project, 'id' | 'name' | 'slug' | 'version' | 'updatedAt'>
 
