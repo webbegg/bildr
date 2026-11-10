@@ -10,7 +10,7 @@ import { INSTANCE_TYPE, isFlexType } from '#shared/document/components'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
 import type { NodeBox } from '#shared/editor/autoLayout'
 import { inferAutoLayout, nearestSpacingToken } from '#shared/editor/autoLayout'
-import type { SidebarPanel } from '#shared/editor/commands'
+import type { EditorView, SidebarPanel } from '#shared/editor/commands'
 import { collapsedAncestors, layerName, siblingMove, siblingMoves } from '#shared/editor/layers'
 import type { DropTarget } from '#shared/editor/dropTarget'
 import { insertTargetForSelection, moveTarget, parseDragPayload } from '#shared/editor/dropTarget'
@@ -87,8 +87,8 @@ export function createEditor(projectId: string) {
   /** Layers rows whose children are hidden; kept in memory only. */
   const collapsed = ref(new Set<string>())
   const history = ref<{ undo: string | null, redo: string | null }>({ undo: null, redo: null })
-  /** The view, Framer's: Canvas (`build`) edits the pages, Data the collections and records, Settings the project. */
-  const mode = ref<'build' | 'data' | 'settings'>('build')
+  /** The view, Framer's: Canvas (`build`) edits the pages, Data the collections and records, Design the theme and the theme library, Settings the project. */
+  const mode = ref<EditorView>('build')
   /** The Insert panel (`I`, or the sidebar's "+"): components to click or drag in. */
   const insertOpen = ref(false)
   /** Bumped by Cmd/Ctrl+F; the sidebar focuses its search on each bump. */

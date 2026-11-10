@@ -20,7 +20,14 @@ pnpm dev
 
 Every project has its own design system, built on the Tailwind and Nuxt UI theme.
 
-- **Theme** (`theme_get` / `theme_update`): the semantic colors `primary`, `secondary`, `success`, `info`, `warning`, `error` and `neutral`. Each is a Tailwind palette name (such as `indigo`) or a `#rrggbb` hex, with shades generated. The theme also sets the font, the base radius and the spacing density. Edit it in the editor's **Design** mode; the canvas and a token preview update as you edit.
+- **Theme** (`theme_get` / `theme_update`): the semantic colors `primary`, `secondary`, `success`, `info`, `warning`, `error` and `neutral`. Each is a Tailwind palette name (such as `indigo`) or a `#rrggbb` hex, with shades generated. The theme also sets the font, the base radius and the spacing density. Edit it in the editor's **Design** view (the view menu, ⌘K "Design system", or Assets › Design system): the controls on the right, and a live style guide in the centre (palettes, type, buttons, inputs, cards, badges, radius and spacing) rendered like the published app.
+- **Theme library:** themes saved by name and shared by every project, listed in the Design view's left sidebar. Applying one copies it into the project; nothing stays linked. At most 100 themes, with names of 1–64 characters, unique ignoring case. Library changes are not undoable and never change a project.
+  - `theme_library_list`
+  - `theme_library_save` (`{ name, projectId }`): saves that project's current theme
+  - `theme_library_update` (`{ themeId, projectId?, name? }`): replaces the stored theme with the project's, renames it, or both
+  - `theme_library_duplicate` (`{ themeId, name? }`): by default named "<name> copy"
+  - `theme_library_delete` (`{ themeId }`)
+  - `theme_apply` (`{ projectId, themeId }`): copies the theme into the project as one undo step, "Apply theme <name>"
 - **Style tokens:** a node's `style` stores one token per property, for example `{ "mt": "10", "bg": "primary", "rounded": "lg" }`. It renders as Tailwind classes (`mt-10 bg-primary rounded-lg`), in the editor and in the published HTML. The allowed keys and values live in `shared/design/tokens.ts`. `components_list` returns them, and the action schemas list them as enums.
 - **Responsive tokens:** layout tokens (Spacing, Size, Typography, Layout) also take a mobile-first breakpoint prefix `sm:`, `md:` or `lg:`. For example, `{ "cols": "1", "md:cols": "3" }` renders as `grid-cols-1 md:grid-cols-3`. Colours, borders and shadows have no breakpoint variants. In the editor, the device toggle (Mobile 390 / Tablet 768 / Desktop 1280) resizes the canvas, and the style panel edits that device's breakpoint: Mobile edits the base, Tablet `md:` and Desktop `lg:`. The panel also shows the values a device inherits from smaller ones.
 - Every allowed class is generated when the app is built (`app/assets/css/tokens.css`, produced by `pnpm tokens:css`). The theme is applied as CSS variables, so the same classes follow each project's theme without rebuilding CSS.

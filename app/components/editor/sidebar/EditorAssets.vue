@@ -1,13 +1,13 @@
 <script setup lang="ts">
 /**
  * The Assets panel: Components (see `EditorComponents`), Layouts (see
- * `EditorLayouts`) and Styles (the
- * project theme, previewed live on the canvas, with an expandable token
- * preview sheet), filtered by the sidebar search.
- * Collections live in the Data view's sidebar.
+ * `EditorLayouts`) and one Design system row, which opens the Design view
+ * (the theme, its style guide and the theme library); filtered by the
+ * sidebar search. Collections live in the Data view's sidebar.
  */
 const { query = '' } = defineProps<{ query?: string }>()
-const tokensOpen = ref(false)
+const editor = useEditor()
+const showDesign = computed(() => !query.trim() || 'design system styles theme'.includes(query.trim().toLowerCase()))
 </script>
 
 <template>
@@ -17,31 +17,26 @@ const tokensOpen = ref(false)
   >
     <EditorComponents :query="query" />
     <EditorLayouts :query="query" />
-    <section data-assets-styles>
-      <p class="mb-2 text-[13px] font-semibold text-highlighted">
-        Styles
-      </p>
-      <EditorDesignPanel :query="query" />
+    <section
+      v-if="showDesign"
+      data-assets-design
+    >
       <button
         type="button"
-        class="mt-3 flex w-full items-center gap-1.5 text-[12px] text-muted hover:text-highlighted"
-        :aria-expanded="tokensOpen"
-        data-preview-tokens
-        @click="tokensOpen = !tokensOpen"
+        class="flex h-8 w-full items-center gap-2 rounded-lg ps-1.5 pe-2 text-left text-sm text-toned hover:bg-white/4"
+        data-assets-design-system
+        @click="editor.mode = 'design'"
       >
         <UIcon
-          name="i-lucide-chevron-right"
-          class="size-3 transition-transform"
-          :class="{ 'rotate-90': tokensOpen }"
+          name="i-lucide-swatch-book"
+          class="size-4 shrink-0 text-pink-400"
         />
-        Preview tokens
+        <span class="truncate">Design system</span>
+        <UIcon
+          name="i-lucide-arrow-up-right"
+          class="ms-auto size-3.5 shrink-0 text-dimmed"
+        />
       </button>
-      <EditorCanvas
-        v-if="tokensOpen"
-        view="tokens"
-        class="mt-2"
-        style="height: 420px"
-      />
     </section>
   </div>
 </template>

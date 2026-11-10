@@ -7,12 +7,12 @@
  * - CHROMIUM: path to a Chromium binary
  *
  * Every script calls `run(name, body)`: it opens the browser, runs the body,
- * and in a `finally` deletes every project the script created, even when a
- * step throws. `check` prints PASS or FAIL and sets the exit code.
+ * and in a `finally` deletes every project and library theme the script
+ * created, even when a step throws. `check` prints PASS or FAIL and sets the exit code.
  */
 import { existsSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 export const BASE = (process.env.BILDR_URL || 'http://localhost:3000').replace(/\/+$/, '')
@@ -27,6 +27,7 @@ export const TIMEOUT = 10_000
 
 const counts = { pass: 0, fail: 0 }
 const created = []
+const themes = []
 
 // A stray rejected promise is a FAIL, not a crash that would skip the cleanup.
 process.on('unhandledRejection', error => check(false, `unhandled rejection: ${error?.message ?? error}`))
@@ -91,6 +92,22 @@ export async function cleanup() {
   }
 }
 
+/** Registers a library theme (by id) for `themeCleanup`. */
+export function trackTheme(id) {
+  if (!themes.includes(id)) themes.push(id)
+}
+
+/** Deletes every library theme this script registered; missing ones are skipped. */
+export async function themeCleanup() {
+  for (const themeId of themes.splice(0)) {
+    try {
+      await action('theme_library_delete', { themeId })
+    } catch (error) {
+      if (!/→ 404/.test(error.message)) console.log(`themeCleanup: ${error.message}`)
+    }
+  }
+}
+
 /**
  * A Chromium at 1400×850. `errors` collects console errors and page errors
  * from every page of the context; `ignore` patterns skip known noise.
@@ -115,10 +132,11 @@ export async function launch({ ignore = [] } = {}) {
   return { browser, context, page, errors }
 }
 
-/** Saves a full-page screenshot to e2e/.shots/<name>.png. */
+/** Saves a full-page screenshot to e2e/.shots/<name>.png; `name` may hold a folder (`design/view`). */
 export async function shot(page, name) {
-  mkdirSync(SHOTS, { recursive: true })
-  await page.screenshot({ path: join(SHOTS, `${name}.png`) })
+  const path = join(SHOTS, `${name}.png`)
+  mkdirSync(dirname(path), { recursive: true })
+  await page.screenshot({ path })
 }
 
 /** The active canvas frame (the device being edited). */
@@ -173,7 +191,7 @@ export function findNode(node, predicate) {
 
 /**
  * Runs one script: launches the browser, runs `body`, reports errors as a
- * FAIL, and always closes the browser and deletes the created projects.
+ * FAIL, and always closes the browser and deletes the created projects and themes.
  * Ends with a `RESULT <name> pass=<n> fail=<n>` line that all.mjs reads.
  */
 export async function run(name, body, options) {
@@ -187,6 +205,7 @@ export async function run(name, body, options) {
     if (session?.page) await shot(session.page, `${name}-error`).catch(() => {})
   } finally {
     await session?.browser.close().catch(() => {})
+    await themeCleanup()
     await cleanup()
   }
   console.log(`RESULT ${name} pass=${counts.pass} fail=${counts.fail} time=${((Date.now() - started) / 1000).toFixed(1)}s`)

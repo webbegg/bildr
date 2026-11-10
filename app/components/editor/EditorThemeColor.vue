@@ -4,9 +4,9 @@ import type { PaletteName } from '#shared/design/palettes'
 import type { ThemeColorName } from '#shared/design/theme'
 
 /**
- * One semantic colour of the project theme: a Tailwind palette, or a custom
- * hex. Dragging the colour picker previews in the canvas; closing it commits
- * a single `theme_update`.
+ * One semantic colour of the project theme, as a panel row: a Tailwind
+ * palette, or a custom hex. Dragging the colour picker previews live
+ * (`themeDraft`); closing it commits a single `theme_update`.
  */
 const props = defineProps<{ name: ThemeColorName }>()
 const editor = useEditor()
@@ -56,8 +56,10 @@ function setHex(value: string) {
 </script>
 
 <template>
-  <div class="grid grid-cols-[5rem_minmax(0,1fr)_auto] items-center gap-1.5">
-    <span class="truncate text-[13px] text-muted">{{ label }}</span>
+  <EditorRow
+    :label="label"
+    :name="`color-${name}`"
+  >
     <EditorSelect
       :model-value="palette"
       :items="paletteItems"
@@ -104,5 +106,5 @@ function setHex(value: string) {
         </div>
       </template>
     </UPopover>
-  </div>
+  </EditorRow>
 </template>

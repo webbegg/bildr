@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPTS = ['shell', 'design', 'data', 'remote', 'paging', 'kit']
+const SCRIPTS = ['shell', 'design', 'design-system', 'data', 'remote', 'paging', 'kit']
 
 function runScript(name) {
   return new Promise((resolve) => {
@@ -41,9 +41,9 @@ for (const name of SCRIPTS) {
 console.log('\nSummary')
 for (const r of results) {
   const crashed = r.code !== 0 && r.fail === 0 ? ' (exited with an error)' : ''
-  console.log(`  ${r.name.padEnd(8)} ${String(r.pass).padStart(3)} PASS ${String(r.fail).padStart(3)} FAIL  ${r.seconds.toFixed(1)}s${crashed}`)
+  console.log(`  ${r.name.padEnd(13)} ${String(r.pass).padStart(3)} PASS ${String(r.fail).padStart(3)} FAIL  ${r.seconds.toFixed(1)}s${crashed}`)
 }
 const pass = results.reduce((n, r) => n + r.pass, 0)
 const fail = results.reduce((n, r) => n + r.fail, 0)
-console.log(`  ${'total'.padEnd(8)} ${String(pass).padStart(3)} PASS ${String(fail).padStart(3)} FAIL  ${((Date.now() - started) / 1000).toFixed(1)}s`)
+console.log(`  ${'total'.padEnd(13)} ${String(pass).padStart(3)} PASS ${String(fail).padStart(3)} FAIL  ${((Date.now() - started) / 1000).toFixed(1)}s`)
 if (fail || results.some(r => r.code !== 0)) process.exitCode = 1

@@ -41,7 +41,7 @@ await run('polish', async ({ page, errors }) => {
   await page.waitForTimeout(400)
   await snap(page, 'canvas-inspector')
 
-  await page.getByRole('tab', { name: 'Assets' }).click()
+  await toView(page, 'Design')
   await page.locator('[data-theme-color="primary"]').waitFor()
   await snap(page, 'theme')
   const density = page.getByLabel('Spacing density')
@@ -57,6 +57,7 @@ await run('polish', async ({ page, errors }) => {
   }
   await page.getByRole('option', { name: /^Default/ }).click()
   await snap(page, 'theme-density')
+  await toView(page, 'Canvas')
 
   await page.locator('body').press('Control+k')
   await page.locator('[data-quick-actions]').waitFor()

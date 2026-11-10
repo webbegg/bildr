@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
+import type { EditorView } from '#shared/editor/commands'
 import { MOVE_TOOL } from '#shared/editor/insertTools'
 
 /**
  * The top bar, Framer's. Left: the "Canvas ▾" view menu (Canvas, Data,
- * Settings, back to the projects, the published app), named after the
+ * Design, Settings, back to the projects, the published app), named after the
  * current view, then the insert icons: + opens the Insert panel (`I`),
  * Frame and Text arm their tools (`F`, `T`). Centre: the project name and
  * slug with the project menu, which renames in place (Rename… swaps the name
@@ -17,10 +18,10 @@ const renaming = ref(false)
 const nameDraft = ref('')
 const nameInput = useTemplateRef<{ select: () => void }>('nameInput')
 
-type View = 'build' | 'data' | 'settings'
-const VIEWS: { value: View, label: string, icon: string }[] = [
+const VIEWS: { value: EditorView, label: string, icon: string }[] = [
   { value: 'build', label: 'Canvas', icon: 'i-lucide-pen-tool' },
   { value: 'data', label: 'Data', icon: 'i-lucide-database' },
+  { value: 'design', label: 'Design', icon: 'i-lucide-palette' },
   { value: 'settings', label: 'Settings', icon: 'i-lucide-settings' }
 ]
 const viewLabel = computed(() => VIEWS.find(view => view.value === editor.mode)?.label)

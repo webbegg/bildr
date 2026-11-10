@@ -218,10 +218,18 @@ describe('editorCommands', () => {
     expect(editor.mode).toBe('data')
   })
 
-  it('opens Assets › Styles on the Canvas, and a collection in Data', () => {
+  it('opens the Design view as "Design system", from any other view', () => {
     const { ctx, editor, get } = fixture({ mode: 'settings' })
-    get('styles').run(ctx)
-    expect([editor.mode, editor.sidebarPanel]).toEqual(['build', 'assets'])
+    expect(get('design-system').label).toBe('Design system')
+    expect(searchCommands(editorCommands(ctx), 'design sys', [])[0]!.commands[0]!.id).toBe('design-system')
+    get('design-system').run(ctx)
+    expect(editor.mode).toBe('design')
+    expect(get('design-system').enabled(ctx)).toBe(false)
+    expect(get('view:design').label).toBe('Design view')
+  })
+
+  it('opens a collection in Data', () => {
+    const { ctx, editor, get } = fixture({ mode: 'settings' })
     get('collection:c1').run(ctx)
     expect([editor.mode, editor.collectionId]).toEqual(['data', 'c1'])
   })

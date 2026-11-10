@@ -66,10 +66,11 @@ await run('kit', async ({ page, context, errors }) => {
   await soft(page.getByLabel('Project name'), 'New project')
   await page.keyboard.press('Escape')
 
-  // The canvas view: the theme editor, the page rename, ⌘K and the shortcuts sheet.
+  // The Design view's theme editor, then the canvas view: the page rename, ⌘K and the shortcuts sheet.
   await openEditor(page, p.id)
-  await page.getByRole('tab', { name: 'Assets' }).click()
+  await toView(page, 'Design')
   await soft(page.locator('[data-theme-color="primary"]'), 'theme editor')
+  await toView(page, 'Canvas')
 
   await page.getByRole('tab', { name: 'Pages' }).click()
   const about = (await action('project_get', { projectId: p.id })).pages[1]

@@ -93,12 +93,18 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
         <DataCollections class="min-h-0 flex-1" />
       </aside>
       <aside
+        v-else-if="editor.mode === 'design'"
+        class="flex w-64 shrink-0 flex-col border-r border-default"
+      >
+        <DesignLibrary class="min-h-0 flex-1" />
+      </aside>
+      <aside
         v-else-if="editor.mode === 'build'"
         class="flex w-64 shrink-0 flex-col border-r border-default"
       >
         <EditorSidebar class="min-h-0 flex-1" />
       </aside>
-      <!-- Hidden, not unmounted, in the Data and Settings views so the canvas does not reload. The canvas zooms and pans edge to edge. -->
+      <!-- Hidden, not unmounted, in the other views so the canvas does not reload. The canvas zooms and pans edge to edge. -->
       <main
         v-show="editor.mode === 'build'"
         class="relative min-w-0 flex-1 bg-[#1e1e1e]"
@@ -118,6 +124,16 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
         <DataView class="size-full" />
       </main>
       <main
+        v-if="editor.mode === 'design'"
+        class="min-w-0 flex-1 bg-[#1e1e1e] p-4"
+        data-design-area
+      >
+        <EditorCanvas
+          view="tokens"
+          class="size-full"
+        />
+      </main>
+      <main
         v-if="editor.mode === 'settings'"
         class="min-w-0 flex-1 overflow-y-auto"
       >
@@ -130,6 +146,13 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
         data-data-panel
       >
         <DataPanel />
+      </aside>
+      <aside
+        v-if="editor.mode === 'design'"
+        class="shrink-0 overflow-y-auto border-l border-default"
+        :style="{ width: `${panelWidth}px` }"
+      >
+        <EditorDesignPanel />
       </aside>
       <aside
         v-if="editor.mode === 'build'"

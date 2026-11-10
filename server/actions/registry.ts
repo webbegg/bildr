@@ -8,6 +8,7 @@ import { layoutCreate, layoutDelete, layoutRename, layoutSlotAdd, layoutSlotRemo
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
 import { pageAdd, pageDelete, pageRename } from './page'
 import { themeGet, themeUpdate } from './theme'
+import { themeApply, themeLibraryDelete, themeLibraryDuplicate, themeLibraryList, themeLibrarySave, themeLibraryUpdate } from './themeLibrary'
 import { componentsList, historyGet, historyRedo, historyUndo, projectCreate, projectDelete, projectGet, projectList, projectPublish, projectPublishedInfo, projectRename } from './project'
 
 /** The static action registry: the one list the UI, HTTP and MCP all expose. */
@@ -55,6 +56,12 @@ export const ACTIONS = [
   pageSetSlot,
   themeGet,
   themeUpdate,
+  themeLibraryList,
+  themeLibrarySave,
+  themeLibraryUpdate,
+  themeLibraryDuplicate,
+  themeLibraryDelete,
+  themeApply,
   apiSourcePreview,
   collectionCreate,
   collectionUpdate,

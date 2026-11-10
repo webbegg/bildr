@@ -162,7 +162,7 @@ export function searchCommands<C>(commands: readonly Command<C>[], query: string
     .map(({ group, commands: inGroup }) => ({ group, commands: inGroup }))
 }
 
-export type EditorView = 'build' | 'data' | 'settings'
+export type EditorView = 'build' | 'data' | 'design' | 'settings'
 
 /** The Canvas view's sidebar panels. */
 export type SidebarPanel = 'pages' | 'layers' | 'assets'
@@ -227,13 +227,14 @@ function selectsSiblings(ctx: CommandContext): boolean {
 const VIEWS: { id: EditorView, label: string, icon: string }[] = [
   { id: 'build', label: 'Canvas view', icon: 'i-lucide-frame' },
   { id: 'data', label: 'Data view', icon: 'i-lucide-database' },
+  { id: 'design', label: 'Design view', icon: 'i-lucide-palette' },
   { id: 'settings', label: 'Settings view', icon: 'i-lucide-settings' }
 ]
 
 /**
  * The quick actions for the editor's current state: insert any palette
  * component, the edit and view actions, create or import a collection, go
- * to a page, view, Styles or collection, and the shortcuts sheet. Labels can read the state (e.g.
+ * to a page, view, the design system or collection, and the shortcuts sheet. Labels can read the state (e.g.
  * "Dark preview on"), so build them again when it changes.
  */
 export function editorCommands(ctx: CommandContext): EditorCommand[] {
@@ -302,15 +303,14 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
       }
     })),
     {
-      id: 'styles',
+      id: 'design-system',
       group: 'goto',
-      label: 'Assets › Styles',
-      icon: 'i-lucide-palette',
-      keywords: ['styles', 'theme', 'design', 'colors'],
-      enabled: always,
+      label: 'Design system',
+      icon: 'i-lucide-swatch-book',
+      keywords: ['styles', 'theme', 'themes', 'library', 'colors', 'fonts'],
+      enabled: c => c.editor.mode !== 'design',
       run: ({ editor }) => {
-        editor.mode = 'build'
-        editor.sidebarPanel = 'assets'
+        editor.mode = 'design'
       }
     },
     {

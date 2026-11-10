@@ -1,10 +1,10 @@
 /**
  * The design system: the theme colour and spacing density through actions
- * and through Assets › Styles, a responsive style set on Tablet (written as
+ * and through the Design view, a responsive style set on Tablet (written as
  * `md:`), then Publish and `/p/<slug>`, which renders the text with the
  * theme colour.
  */
-import { action, BASE, canvas, check, openEditor, project, run, shot, until } from './lib.mjs'
+import { action, BASE, canvas, check, openEditor, project, run, shot, toView, until } from './lib.mjs'
 
 /** The computed style property of the first element matching `selector` in a frame or page. */
 const computed = (scope, selector, prop) => scope.locator(selector).first().evaluate((el, p) => getComputedStyle(el)[p], prop)
@@ -29,8 +29,8 @@ await run('design', async ({ page, context, errors }) => {
   const compactPadding = await computed(frame, boxSel, 'paddingTop')
   check(compactPadding === '12.8px', `compact density: p-4 = ${compactPadding} (12.8px)`)
 
-  // Through the UI: Assets › Styles.
-  await page.getByRole('tab', { name: 'Assets' }).click()
+  // Through the UI: the Design view (the canvas stays mounted behind it).
+  await toView(page, 'Design')
   await page.locator('[data-theme-color="primary"]').click()
   await page.getByRole('option', { name: 'emerald', exact: true }).click()
   theme = await until(async () => {
@@ -53,6 +53,7 @@ await run('design', async ({ page, context, errors }) => {
   check(comfortable, `Spacing density comfortable: p-4 = ${comfortable} (19.2px)`)
 
   // A responsive style on Tablet.
+  await toView(page, 'Canvas')
   await page.getByRole('button', { name: 'Tablet', exact: true }).click()
   await until(async () => (await page.locator('iframe[title="Canvas"]').getAttribute('data-device')) === 'tablet')
   await canvas(page).locator(`[data-bildr-id="${text.nodeId}"]`).click()

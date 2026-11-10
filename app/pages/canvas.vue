@@ -24,7 +24,7 @@ import { labelPlacement } from '#shared/editor/labelPlacement'
  * The editor canvas, loaded in an iframe. It renders whatever page the
  * editor sends with the same runtime as the published app, draws hover and
  * selection outlines, and turns pointer and key gestures into messages.
- * The `tokens` view shows the theme's token preview sheet instead.
+ * The `tokens` view shows the theme's style guide instead (the Design view).
  * Outlines use a fixed editor colour, not the project's `primary`.
  * List repetitions share their template's node ids: a click on any copy
  * selects the template, while outlines and drops stay on the first copy.
@@ -423,7 +423,10 @@ onBeforeUnmount(() => {
     :data-canvas-viewport="view === 'page' || undefined"
     :style="view === 'page' ? { minHeight: `${FRAME_MIN_HEIGHT}px`, [VIEWPORT_VAR]: `${viewportHeight}px` } : undefined"
   >
-    <EditorTokenSheet v-if="view === 'tokens'" />
+    <EditorTokenSheet
+      v-if="view === 'tokens'"
+      :theme="theme"
+    />
     <BildrPage
       v-else-if="shownPage"
       :page="shownPage"

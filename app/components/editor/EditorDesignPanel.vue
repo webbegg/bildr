@@ -1,10 +1,8 @@
 <script setup lang="ts">
 import { spacingBasePx, THEME_COLORS, themeOptions } from '#shared/design/theme'
 import type { Theme } from '#shared/design/theme'
-import { filterByName } from '#shared/editor/sidebar'
 
-/** Assets › Styles: edits the project theme; the canvas follows live. The sidebar search filters the rows by name. */
-const { query = '' } = defineProps<{ query?: string }>()
+/** The Design view's right panel: the project theme's controls, in the inspector's sections and rows; the style guide follows live. */
 const editor = useEditor()
 const options = themeOptions()
 
@@ -12,14 +10,11 @@ const theme = computed(() => editor.project!.theme)
 const fontItems = options.fonts.map(font => ({ label: font === 'system' ? 'System UI' : font, value: font }))
 const radiusItems = options.radii.map(radius => ({ label: `${radius} · ${Number.parseFloat(radius) * 16}px`, value: radius }))
 const spacingItems = options.spacings.map(({ name }) => ({ label: `${name[0]!.toUpperCase()}${name.slice(1)} · ${Math.round(spacingBasePx(name) * 10) / 10}px`, value: name }))
-const spacingHint = computed(() => `mt-10 = ${10 * spacingBasePx(theme.value.spacing)}px`)
+const spacingHint = computed(() => `mt-10 = ${Math.round(10 * spacingBasePx(theme.value.spacing) * 10) / 10}px`)
 const radiusHint = computed(() => {
   const px = Number.parseFloat(theme.value.radius) * 16
   return `rounded-sm = ${px}px, rounded-lg = ${2 * px}px`
 })
-
-const colors = computed(() => filterByName(THEME_COLORS.map(name => ({ name })), query).map(c => c.name))
-const fields = computed(() => new Set(filterByName([{ name: 'Font' }, { name: 'Radius' }, { name: 'Spacing density' }], query).map(f => f.name)))
 
 function update(patch: Partial<Omit<Theme, 'colors'>>) {
   editor.updateTheme(patch)
@@ -27,63 +22,49 @@ function update(patch: Partial<Omit<Theme, 'colors'>>) {
 </script>
 
 <template>
-  <div class="space-y-4">
-    <section
-      v-if="colors.length"
-      class="space-y-1.5"
-    >
-      <p class="text-[12px] text-muted">
-        Colours
-      </p>
+  <div data-design-panel>
+    <EditorStyleSection label="Colours">
       <EditorThemeColor
-        v-for="name in colors"
+        v-for="name in THEME_COLORS"
         :key="name"
         :name="name"
       />
-    </section>
-
-    <section
-      v-if="fields.size"
-      class="space-y-3"
-    >
-      <EditorFormRow
-        v-if="fields.has('Font')"
-        label="Font"
-        stacked
-      >
+    </EditorStyleSection>
+    <EditorStyleSection label="Typography">
+      <EditorRow label="Font">
         <EditorSelect
           :model-value="theme.font"
           :items="fontItems"
           aria-label="Font"
           @update:model-value="update({ font: $event })"
         />
-      </EditorFormRow>
-      <EditorFormRow
-        v-if="fields.has('Radius')"
-        label="Radius"
-        stacked
-        :help="radiusHint"
-      >
+      </EditorRow>
+    </EditorStyleSection>
+    <EditorStyleSection label="Radius">
+      <EditorRow label="Base">
         <EditorSelect
           :model-value="theme.radius"
           :items="radiusItems"
           aria-label="Radius"
           @update:model-value="update({ radius: $event as Theme['radius'] })"
         />
-      </EditorFormRow>
-      <EditorFormRow
-        v-if="fields.has('Spacing density')"
-        label="Spacing density"
-        stacked
-        :help="spacingHint"
-      >
+      </EditorRow>
+      <p class="ps-24 text-[11px] text-dimmed">
+        {{ radiusHint }}
+      </p>
+    </EditorStyleSection>
+    <EditorStyleSection label="Spacing">
+      <EditorRow label="Density">
         <EditorSelect
           :model-value="theme.spacing"
           :items="spacingItems"
           aria-label="Spacing density"
           @update:model-value="update({ spacing: $event as Theme['spacing'] })"
         />
-      </EditorFormRow>
-    </section>
+      </EditorRow>
+      <p class="ps-24 text-[11px] text-dimmed">
+        {{ spacingHint }}
+      </p>
+    </EditorStyleSection>
   </div>
 </template>
