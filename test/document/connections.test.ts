@@ -47,6 +47,25 @@ describe('connection schema', () => {
     expect(endpoint({ method: 'GET', path: '/{{ env.VERSION }}/posts?key={{ env.KEY }}' })).toBe(true)
   })
 
+  it('refuses List and Get endpoints that do not use GET; the others take any method', () => {
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      for (const op of ['list', 'get']) {
+        const parsed = CollectionSourceSchema.safeParse({ ...SOURCE, endpoints: { [op]: { method, path: '/posts' } } })
+        expect(parsed.error?.issues[0]?.message, `${op} ${method}`).toBe('List and Get endpoints use GET')
+      }
+      for (const op of ['create', 'update', 'delete']) {
+        expect(CollectionSourceSchema.safeParse({ ...SOURCE, endpoints: { [op]: { method, path: '/posts' } } }).success, `${op} ${method}`).toBe(true)
+      }
+    }
+  })
+
+  it('reads List and Get endpoints stored with another method as GET', () => {
+    const project = withConnection()
+    const legacy = { ...SOURCE, endpoints: { list: { method: 'POST', path: '/posts', itemsPath: 'data' }, get: { method: 'PUT', path: '/posts/{id}' }, update: SOURCE.endpoints.update } }
+    project.collections.push({ ...createCollection('Posts', 'posts', [], SOURCE), source: legacy as CollectionSource })
+    expect(ProjectSchema.parse(project).collections[0]!.source).toEqual(SOURCE)
+  })
+
   it('refuses a collection whose connection does not exist', () => {
     const project = createProject('Broken')
     project.collections.push(createCollection('Posts', 'posts', [], SOURCE))

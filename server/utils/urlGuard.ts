@@ -212,7 +212,11 @@ export interface GuardedFetchOptions {
   headers?: Record<string, string>
   /** A source's own headers (they may carry secrets): sent only until a redirect leaves the first URL's origin. */
   customHeaders?: Record<string, string>
-  /** GET when left out; a 303 (or a 301/302 of a write) continues as a GET without the body, like browsers do. */
+  /**
+   * GET when left out; a 303 (or a 301/302 of a write) continues as a GET
+   * without the body, like browsers do. A write that a 307/308 sends to
+   * another origin than the first URL's is refused before it goes there.
+   */
   method?: string
   body?: string
 }
@@ -222,9 +226,11 @@ export async function guardedFetch(url: string, options: GuardedFetchOptions = {
   const { resolve, transport = pinnedTransport, signal, headers, customHeaders } = options
   let { method = 'GET', body } = options
   let next = url
+  let first: string | undefined
   let origin: string | undefined
   for (let hop = 0; ; hop++) {
     const target = await checkUrl(next, resolve)
+    first ??= target.url.origin
     origin ??= target.url.origin
     if (target.url.origin !== origin) origin = ''
     const sent = customHeaders && origin ? { ...headers, ...customHeaders } : headers
@@ -237,6 +243,9 @@ export async function guardedFetch(url: string, options: GuardedFetchOptions = {
       method = 'GET'
       body = undefined
     }
-    next = new URL(location, target.url).href
+    const redirected = new URL(location, target.url)
+    // The message never names the target, which may carry a secret.
+    if (method !== 'GET' && redirected.origin !== first) throw new ActionError('invalid', 'The API redirected a write to another site')
+    next = redirected.href
   }
 }

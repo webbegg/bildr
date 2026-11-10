@@ -1,5 +1,5 @@
 import { apiUrlProblem } from '#shared/data/apiSource'
-import { coerceValues } from '#shared/data/records'
+import { coerceValues, MAX_RECORD_BYTES, recordBytes } from '#shared/data/records'
 import type { DataRecord, RecordValue } from '#shared/data/records'
 import { bodyFor, buildEndpointUrl, missingEndpointMessage, readItem, readItems, remoteId, remoteRows } from '#shared/data/remote'
 import type { EndpointOperation } from '#shared/data/remote'
@@ -57,16 +57,25 @@ export function findConnection(connections: Connection[], connectionId: string):
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
+const TOO_BIG = `A record can be at most ${MAX_RECORD_BYTES / 1024} KB`
+
+/** The record limit of internal collections, measured on the record the values would make. */
+function tooBig(values: Record<string, RecordValue>): boolean {
+  const now = new Date().toISOString()
+  return recordBytes({ id: '', createdAt: now, updatedAt: now, values }) > MAX_RECORD_BYTES
+}
+
 /**
  * The values of a published app's form for a connection collection, with
  * the checks of an internal one: `{ values }` only, declared fields only,
- * each fitting its type. Messages stay generic.
+ * each fitting its type, at most 10 KB. Messages stay generic.
  */
-export function publicRemoteValues(collection: Collection, body: unknown): { values: Record<string, RecordValue> } | { status: 400 | 422, message: string } {
+export function publicRemoteValues(collection: Collection, body: unknown): { values: Record<string, RecordValue> } | { status: 400 | 413 | 422, message: string } {
   if (!isObject(body) || !isObject(body.values)) return { status: 400, message: 'Send JSON { "values": { "<field>": <value> } }' }
   const declared = Object.entries(body.values).filter(([key]) => collection.fields.some(f => f.key === key))
   const checked = coerceValues(collection.fields, Object.fromEntries(declared))
   if ('problems' in checked) return { status: 422, message: checked.problems.join('; ') }
+  if (tooBig(checked.values)) return { status: 413, message: TOO_BIG }
   return { values: checked.values }
 }
 
@@ -110,18 +119,16 @@ export function createRemote(api: ApiFetcher, env: EnvStore) {
     }
   }
 
-  /** A GET endpoint reads through the cache; any other method is sent every time. */
-  async function read(target: Resolved, endpoint: Endpoint, url: string): Promise<{ json: unknown, fetchedAt: string }> {
-    if (endpoint.method === 'GET') return api.fetchJson(url, { headers: target.headers })
-    const { json } = await api.send(url, { method: endpoint.method, headers: target.headers })
-    return { json, fetchedAt: new Date().toISOString() }
+  /** List and Get read with GET through the cache, whatever method a document saved before they were GET-only has. */
+  async function read(target: Resolved, url: string): Promise<{ json: unknown, fetchedAt: string }> {
+    return api.fetchJson(url, { headers: target.headers })
   }
 
   /** Drops the cached list and record after a write; a path that no longer resolves has nothing cached. */
   async function forget(target: Resolved, collection: Collection, id?: string): Promise<void> {
     const { list, get } = sourceOf(collection).endpoints
     const drop = async (endpoint: Endpoint | undefined, recordId?: string) => {
-      if (endpoint?.method !== 'GET') return
+      if (!endpoint) return
       try {
         await api.invalidate(urlFor(target, endpoint.path, recordId), { headers: target.headers })
       } catch {
@@ -146,7 +153,7 @@ export function createRemote(api: ApiFetcher, env: EnvStore) {
     const endpoint = endpointOf(collection, 'list')
     const target = await connectionTarget(projectId, connections, collection)
     return redacted(target.secrets, async () => {
-      const { json, fetchedAt } = await read(target, endpoint, urlFor(target, endpoint.path))
+      const { json, fetchedAt } = await read(target, urlFor(target, endpoint.path))
       const items = readItems(json, endpoint.itemsPath) ?? fail(`The API response has no list of items at "${endpoint.itemsPath ?? ''}"`)
       return remoteRows(items, collection.fields, sourceOf(collection).idPath).map(row => ({ id: row.id, createdAt: fetchedAt, updatedAt: fetchedAt, values: row.values }))
     })
@@ -164,7 +171,7 @@ export function createRemote(api: ApiFetcher, env: EnvStore) {
     const endpoint = endpoints.get
     const target = await connectionTarget(projectId, connections, collection)
     return redacted(target.secrets, async () => {
-      const { json, fetchedAt } = await read(target, endpoint, urlFor(target, endpoint.path, id))
+      const { json, fetchedAt } = await read(target, urlFor(target, endpoint.path, id))
       const item = readItem(json, endpoint.itemPath) ?? notFound()
       return toRecord(collection, item, fetchedAt, id)
     })
@@ -185,6 +192,7 @@ export function createRemote(api: ApiFetcher, env: EnvStore) {
     get,
 
     async create(projectId: string, connections: Connection[], collection: Collection, values: Record<string, RecordValue>): Promise<DataRecord> {
+      if (tooBig(values)) fail(TOO_BIG)
       const { json } = await write(projectId, connections, collection, 'create', undefined, bodyFor(collection.fields, values))
       const now = new Date().toISOString()
       const item = readItem(json, endpointOf(collection, 'create').itemPath)
@@ -194,7 +202,9 @@ export function createRemote(api: ApiFetcher, env: EnvStore) {
     /** PATCH (and POST) send the given values; PUT sends the whole record, read first. */
     async update(projectId: string, connections: Connection[], collection: Collection, id: string, values: Record<string, RecordValue>): Promise<DataRecord> {
       const endpoint = endpointOf(collection, 'update')
+      if (tooBig(values)) fail(TOO_BIG)
       const merged = endpoint.method === 'PUT' ? { ...(await get(projectId, connections, collection, id)).values, ...values } : values
+      if (tooBig(merged)) fail(TOO_BIG)
       const { json } = await write(projectId, connections, collection, 'update', id, bodyFor(collection.fields, merged))
       const now = new Date().toISOString()
       const item = readItem(json, endpoint.itemPath)

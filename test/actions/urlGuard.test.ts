@@ -185,6 +185,42 @@ describe('guardedFetch', () => {
     ])
   })
 
+  it('refuses a 307 or 308 of a write to another origin, sending nothing there', async () => {
+    const seen: { url: string, method?: string }[] = []
+    const send: Transport = async (url, init) => {
+      seen.push({ url: url.href, method: init.method })
+      if (url.pathname === '/a') return new Response(null, { status: 307, headers: { location: 'https://cdn.example.com/x?key=sk_test_SECRET123' } })
+      if (url.pathname === '/b') return new Response(null, { status: 308, headers: { location: '/c' } })
+      if (url.pathname === '/c') return new Response(null, { status: 308, headers: { location: 'http://api.example.com/d' } })
+      return new Response('{}')
+    }
+    await expect(guardedFetch('https://api.example.com/a', { resolve, transport: send, method: 'POST', body: '{}' })).rejects.toMatchObject({ code: 'invalid', message: 'The API redirected a write to another site' })
+    await expect(guardedFetch('https://api.example.com/b', { resolve, transport: send, method: 'DELETE' })).rejects.toMatchObject({ message: 'The API redirected a write to another site' })
+    expect(seen).toEqual([
+      { url: 'https://api.example.com/a', method: 'POST' },
+      { url: 'https://api.example.com/b', method: 'DELETE' },
+      { url: 'https://api.example.com/c', method: 'DELETE' }
+    ])
+  })
+
+  it('follows a 308 of a write on the same origin, and a 307 of a GET to another one', async () => {
+    const seen: { url: string, method?: string, body?: string }[] = []
+    const send: Transport = async (url, init) => {
+      seen.push({ url: url.href, method: init.method, body: init.body })
+      if (url.pathname === '/a') return new Response(null, { status: 308, headers: { location: '/done' } })
+      if (url.pathname === '/b') return new Response(null, { status: 307, headers: { location: 'https://cdn.example.com/done' } })
+      return new Response('{}')
+    }
+    await guardedFetch('https://api.example.com/a', { resolve, transport: send, method: 'PATCH', body: '{}' })
+    await guardedFetch('https://api.example.com/b', { resolve, transport: send })
+    expect(seen).toEqual([
+      { url: 'https://api.example.com/a', method: 'PATCH', body: '{}' },
+      { url: 'https://api.example.com/done', method: 'PATCH', body: '{}' },
+      { url: 'https://api.example.com/b', method: 'GET', body: undefined },
+      { url: 'https://cdn.example.com/done', method: 'GET', body: undefined }
+    ])
+  })
+
   it('stops after 3 redirects', async () => {
     const { send } = transport({
       'https://api.example.com/1': redirect('/2'),

@@ -9,7 +9,8 @@ import type { Collection, Connection, ConnectionEndpoints, ConnectionSource } fr
  * verb, a path (checked as typed) and Test; the row's `−` removes it and the
  * header `+` adds a missing one with its REST default next to the list path.
  * Then the id path and Edit mapping. Every change is one `collection_update`
- * of the source. Test runs `endpoint_test`; any verb but GET asks first.
+ * of the source. Test runs `endpoint_test`; any verb but GET asks first,
+ * naming the record it uses. List and Get always use GET.
  */
 const props = defineProps<{ collection: Collection, source: ConnectionSource }>()
 const editor = useEditor()
@@ -30,6 +31,8 @@ watch(() => props.collection.id, () => {
   results.value = {}
 })
 
+const isRead = (op: EndpointOperation) => op === 'list' || op === 'get'
+const methodOf = (op: EndpointOperation): EndpointMethod => (isRead(op) ? 'GET' : props.source.endpoints[op]?.method ?? 'GET')
 const pathOf = (op: EndpointOperation) => drafts.value[op] ?? props.source.endpoints[op]?.path ?? ''
 const problemOf = (op: EndpointOperation) => {
   const path = pathOf(op).trim()
@@ -84,15 +87,17 @@ async function test(op: EndpointOperation) {
   const endpoint = props.source.endpoints[op]
   if (!endpoint || problemOf(op)) return
   const path = pathOf(op).trim()
-  if (endpoint.method !== 'GET' && !confirm(`This sends a real ${endpoint.method} request to ${connection.value?.baseUrl ?? 'the API'}. It can change data there, and it cannot be undone.`)) return
   const id = editor.records[0]?.id
   if (path.includes('{id}') && !id) {
     results.value = { ...results.value, [op]: { ok: false, text: 'The path needs a record id: load the list first' } }
     return
   }
-  const input: Record<string, unknown> = { projectId: editor.projectId, connectionId: props.source.connectionId, method: endpoint.method, path }
+  const record = path.includes('{id}') ? ` for record ${id}` : ''
+  const method = methodOf(op)
+  if (method !== 'GET' && !confirm(`This sends a real ${method} request${record} to ${connection.value?.baseUrl ?? 'the API'}. It can change data there, and it cannot be undone.`)) return
+  const input: Record<string, unknown> = { projectId: editor.projectId, connectionId: props.source.connectionId, method, path }
   if (path.includes('{id}')) input.id = id
-  if (endpoint.method !== 'GET') input.confirm = true
+  if (method !== 'GET') input.confirm = true
   if (op === 'list' && 'itemsPath' in endpoint && endpoint.itemsPath !== undefined) input.itemsPath = endpoint.itemsPath
   if (op !== 'list' && 'itemPath' in endpoint && endpoint.itemPath !== undefined) input.itemPath = endpoint.itemPath
   testing.value = op
@@ -125,8 +130,10 @@ async function test(op: EndpointOperation) {
       @remove="remove(op)"
     >
       <USelect
-        :model-value="source.endpoints[op]!.method"
+        :model-value="methodOf(op)"
         :items="[...ENDPOINT_METHODS]"
+        :disabled="isRead(op)"
+        :title="isRead(op) ? 'List and Get endpoints use GET' : undefined"
         :aria-label="`${OPERATION_LABELS[op]} method`"
         size="xs"
         variant="soft"
@@ -152,7 +159,7 @@ async function test(op: EndpointOperation) {
         @change="commitPath(op)"
         @keydown.esc="resetDraft(op)"
       />
-      <UTooltip :text="source.endpoints[op]!.method === 'GET' ? 'Test' : `Test (sends a real ${source.endpoints[op]!.method})`">
+      <UTooltip :text="methodOf(op) === 'GET' ? 'Test' : `Test (sends a real ${methodOf(op)})`">
         <UButton
           icon="i-lucide-play"
           size="xs"

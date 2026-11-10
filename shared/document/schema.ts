@@ -119,14 +119,17 @@ export const EndpointPathSchema = z.string().superRefine((path, ctx) => {
 })
 
 const EndpointBase = { method: z.enum(ENDPOINT_METHODS), path: EndpointPathSchema }
+/** Reads are cached and may run from a published app, so they never write. */
+const ReadMethodSchema = z.literal('GET', { error: 'List and Get endpoints use GET' })
 /** `itemsPath`: where the items array is in the response (the root by default). */
-export const ListEndpointSchema = z.object({ ...EndpointBase, itemsPath: ItemsPathSchema.optional() })
+export const ListEndpointSchema = z.object({ ...EndpointBase, method: ReadMethodSchema, itemsPath: ItemsPathSchema.optional() })
 /** `itemPath`: where the item is in the response (the root by default). */
 export const ItemEndpointSchema = z.object({ ...EndpointBase, itemPath: ItemsPathSchema.optional() })
+export const GetEndpointSchema = ItemEndpointSchema.extend({ method: ReadMethodSchema })
 
 export const ConnectionEndpointsSchema = z.object({
   list: ListEndpointSchema.optional(),
-  get: ItemEndpointSchema.optional(),
+  get: GetEndpointSchema.optional(),
   create: ItemEndpointSchema.optional(),
   update: ItemEndpointSchema.optional(),
   delete: ItemEndpointSchema.optional()
@@ -169,6 +172,23 @@ export const CollectionSourceSchema = z.discriminatedUnion('type', [
   })
 ])
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/**
+ * Documents saved before List and Get endpoints were GET-only read them as
+ * GET, as the server sends them; input is checked strictly
+ * by `CollectionSourceSchema` before it reaches a document.
+ */
+function readsWithGet(source: unknown): unknown {
+  if (!isPlainObject(source) || source.type !== 'connection' || !isPlainObject(source.endpoints)) return source
+  const endpoints = { ...source.endpoints }
+  for (const op of ['list', 'get']) {
+    const endpoint = endpoints[op]
+    if (isPlainObject(endpoint) && (ENDPOINT_METHODS as readonly unknown[]).includes(endpoint.method)) endpoints[op] = { ...endpoint, method: 'GET' }
+  }
+  return { ...source, endpoints }
+}
+
 /**
  * A collection's schema lives in the document (undoable, published); its
  * records do not (see `shared/data/records`). Changing a field's type or
@@ -181,7 +201,7 @@ export const CollectionSchema = z.object({
   slug: SlugSchema,
   fields: z.array(FieldSchema),
   // Collections saved before API sources existed are internal.
-  source: CollectionSourceSchema.default(() => ({ type: 'internal' as const })),
+  source: z.preprocess(readsWithGet, CollectionSourceSchema).default(() => ({ type: 'internal' as const })),
   publicRead: z.boolean().default(false),
   publicCreate: z.boolean().default(false)
 }).superRefine((collection, ctx) => {
