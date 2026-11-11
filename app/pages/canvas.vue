@@ -13,8 +13,10 @@ import { insertTargetAt, toolForKey } from '#shared/editor/insertTools'
 import type { StylePatch } from '#shared/editor/preview'
 import { previewTree, settlePreviews } from '#shared/editor/preview'
 import { breakpointAt, DRAG_MIME, draggedNodeId, laysOutInRow } from '#shared/editor/dropTarget'
+import type { GestureEffect, GestureEndReason, GestureState } from '#shared/editor/gesture'
+import { gestureTargetGone, startGesture, stepGesture } from '#shared/editor/gesture'
 import type { ReorderHit } from '#shared/editor/reorder'
-import { canDragNode, isNoopMove, pastThreshold, reorderTarget } from '#shared/editor/reorder'
+import { canDragNode, isNoopMove, REORDER_THRESHOLD, reorderTarget } from '#shared/editor/reorder'
 import type { Axis, HandleId, Insets, Point, ResizeDrag, SpacingHandle, SpacingTarget } from '#shared/editor/handles'
 import { changedPatch, gapRects, handleCursor, handlePoint, HANDLES, hitPoint, hitRadius, paddingRects, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '#shared/editor/handles'
 import { editorTakesKey, hasTextSelection } from '#shared/editor/clipboardKeys'
@@ -205,11 +207,13 @@ const spacingHandleList = computed<SpacingHandle[]>(() => {
 })
 const resizeHandles = computed(() => (editableBox.value ? HANDLES.map(handle => ({ handle, ...handlePoint(toRect(editableBox.value!), handle) })) : []))
 
+/** A drag's node, the page it started on, and its lifecycle (`stepGesture`: pending → active → done or cancelled). */
+interface GestureBase { nodeId: string, pageId: string | undefined, state: GestureState }
 type Gesture
-  = | { kind: 'resize', nodeId: string, pointerId: number, start: Point, drag: ResizeDrag, patch: Record<string, string>, cursor: string }
-    | { kind: 'spacing', nodeId: string, pointerId: number, start: Point, target: SpacingTarget, startPx: number, patch: Record<string, string>, cursor: string, shown: { padding: boolean, gap: boolean } }
-    | { kind: 'reorder', nodeId: string, pointerId: number, start: Point, dragging: boolean, target: DropTarget | null }
-/** The drag in progress, from the press until the release or Esc. */
+  = | GestureBase & { kind: 'resize', drag: ResizeDrag, patch: Record<string, string>, cursor: string }
+    | GestureBase & { kind: 'spacing', target: SpacingTarget, startPx: number, patch: Record<string, string>, cursor: string, shown: { padding: boolean, gap: boolean } }
+    | GestureBase & { kind: 'reorder', target: DropTarget | null }
+/** The drag in progress, from the press until it ends (`stepGesture`). */
 let gesture: Gesture | null = null
 /** The live token label of a handle drag, at the pointer (canvas px). */
 const dragLabel = ref<{ text: string, x: number, y: number } | null>(null)
@@ -255,6 +259,19 @@ function layoutElement(el: Element): Element {
   return at
 }
 
+/** An element's content box (inside its border and padding), in canvas px. */
+function contentOf(target: Element): { x: number, y: number, width: number, height: number } {
+  const px = (value: string) => Number.parseFloat(value) || 0
+  const r = target.getBoundingClientRect()
+  const c = getComputedStyle(target)
+  return {
+    x: r.left + window.scrollX + px(c.borderLeftWidth) + px(c.paddingLeft),
+    y: r.top + window.scrollY + px(c.borderTopWidth) + px(c.paddingTop),
+    width: r.width - px(c.borderLeftWidth) - px(c.borderRightWidth) - px(c.paddingLeft) - px(c.paddingRight),
+    height: r.height - px(c.borderTopWidth) - px(c.borderBottomWidth) - px(c.paddingTop) - px(c.paddingBottom)
+  }
+}
+
 /** The padding and flex gaps of node `id`'s element, in canvas px. */
 function measureSpacing(id: string, box: Box): Omit<SpacingBox, 'showPadding' | 'showGap'> & { flex: boolean } | null {
   const el = firstCopy(id)
@@ -268,16 +285,6 @@ function measureSpacing(id: string, box: Box): Omit<SpacingBox, 'showPadding' | 
   const lcss = getComputedStyle(layout)
   const flex = lcss.display.includes('flex')
   const axis: Axis = lcss.flexDirection.startsWith('column') ? 'col' : 'row'
-  const contentOf = (target: Element) => {
-    const r = target.getBoundingClientRect()
-    const c = getComputedStyle(target)
-    return {
-      x: r.left + window.scrollX + px(c.borderLeftWidth) + px(c.paddingLeft),
-      y: r.top + window.scrollY + px(c.borderTopWidth) + px(c.paddingTop),
-      width: r.width - px(c.borderLeftWidth) - px(c.borderRightWidth) - px(c.paddingLeft) - px(c.paddingRight),
-      height: r.height - px(c.borderTopWidth) - px(c.borderBottomWidth) - px(c.paddingTop) - px(c.paddingBottom)
-    }
-  }
   const children = flex
     ? [...layout.children].filter((child) => {
         const c = getComputedStyle(child)
@@ -415,6 +422,8 @@ function onPointerMove(event: MouseEvent) {
 
 function onPointerLeave() {
   pointer = null
+  // A press that hasn't become a drag ends here: its release outside the frame would never reach it.
+  endGestureBy('leave')
   if (!gesture) setCursor(null)
   if (tool.value) indicator.value = null
   hoveredId.value = null
@@ -486,7 +495,7 @@ function onContextMenu(event: MouseEvent) {
 const SHORTCUT_KEYS = new Set(['Delete', 'Backspace', 'Escape', 'Enter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 function onKeyDown(event: KeyboardEvent) {
   // Esc is a drag's own: it cancels it rather than selecting the parent.
-  if (event.key === 'Escape' && cancelGesture()) {
+  if (event.key === 'Escape' && endGestureBy('escape') === 'cancel') {
     event.preventDefault()
     return
   }
@@ -551,19 +560,29 @@ function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } 
   return hit ? { target: hit.target, indicator: indicatorAt(hit.rect, hit.position, hit.horizontal) } : null
 }
 
+/** The size Fill (`full`) resolves to for node `id`: its element's parent's content box. */
+function fillSize(id: string): { width: number, height: number } | undefined {
+  const parent = firstCopy(id)?.parentElement
+  if (!parent) return undefined
+  const { width, height } = contentOf(parent)
+  return { width, height }
+}
+
 /** A press in the active frame: on a handle it starts a resize or spacing drag, on the selection a pending drag-to-reorder. */
 function onGestureDown(event: PointerEvent) {
   if (event.button !== 0) return
   swallowClick = false
+  // A new press means the last one is over, even if its release never reached this frame.
+  if (gesture) endGestureBy('press')
   const root = page.value?.root
   const id = editable.value
-  if (gesture || !root || !id || !editableBox.value) return
+  if (!root || !id || !editableBox.value) return
   const start = canvasPoint(event)
   const hit = handleAt(start)
-  const base = { nodeId: id, pointerId: event.pointerId, start }
+  const base = { nodeId: id, pageId: page.value?.id, state: startGesture(event.pointerId, start, !!hit) }
   if (hit && 'handle' in hit) {
     const box = editableBox.value
-    const drag = { handle: hit.handle, width: box.width, height: box.height, breakpoint: breakpointAt(window.innerWidth), basePx: spacingBasePx(theme.value?.spacing ?? 'default') }
+    const drag = { handle: hit.handle, width: box.width, height: box.height, breakpoint: breakpointAt(window.innerWidth), basePx: spacingBasePx(theme.value?.spacing ?? 'default'), fill: fillSize(id) }
     gesture = { kind: 'resize', ...base, drag, patch: {}, cursor: handleCursor(hit.handle) }
   } else if (hit && spacing.value) {
     const s = spacing.value
@@ -581,18 +600,24 @@ function onGestureDown(event: PointerEvent) {
     const reached = reachableAt(event.target)
     const node = findNode(root, id)
     if (!reached || !node || !containsNode(node, reached)) return
-    gesture = { kind: 'reorder', ...base, dragging: false, target: null }
+    gesture = { kind: 'reorder', ...base, target: null }
   }
-  if (gesture.kind !== 'reorder') beginDrag(gesture)
+  if (gesture.state.phase === 'active') beginDrag(gesture)
   window.addEventListener('pointermove', onGestureMove)
   window.addEventListener('pointerup', onGestureUp)
-  window.addEventListener('pointercancel', cancelGesture)
+  window.addEventListener('pointercancel', onGestureCancel)
+  window.addEventListener('blur', onGestureBlur)
+  document.documentElement.addEventListener('lostpointercapture', onLostCapture)
 }
 
-/** A press becomes a drag: the pointer is captured (so it keeps dragging outside the frame), and the frame takes the keys (Esc). */
+/**
+ * A press becomes a drag: the pointer is captured (so it keeps dragging outside the frame), and the frame takes the keys (Esc).
+ * A pending press is not captured, so its click still reaches the node under it: a move with the button up (released
+ * outside the frame) or leaving the frame ends it instead.
+ */
 function beginDrag(g: Gesture) {
   try {
-    document.documentElement.setPointerCapture(g.pointerId)
+    document.documentElement.setPointerCapture(g.state.pointerId)
   } catch {
     // The pointer is already gone; its pointerup ends the drag.
   }
@@ -615,15 +640,19 @@ function showPatch(g: Extract<Gesture, { kind: 'resize' | 'spacing' }>, patch: R
 function onGestureMove(event: PointerEvent) {
   const g = gesture
   const root = page.value?.root
-  if (!g || !root || event.pointerId !== g.pointerId) return
+  if (!g || !root) return
   const at = canvasPoint(event)
-  const delta = { dx: at.x - g.start.x, dy: at.y - g.start.y }
+  // The threshold is screen px: scaled back by the editor zoom, like the handles.
+  const step = stepGesture(g.state, { type: 'move', pointerId: event.pointerId, point: at, buttons: event.buttons }, REORDER_THRESHOLD / zoom.value)
+  if (step.effect === 'ignore' || step.effect === 'wait') return
+  if (!step.state) {
+    finishGesture(step.effect)
+    return
+  }
+  g.state = step.state
+  if (step.effect === 'activate') beginDrag(g)
+  const delta = { dx: at.x - g.state.start.x, dy: at.y - g.state.start.y }
   if (g.kind === 'reorder') {
-    if (!g.dragging) {
-      if (!pastThreshold(g.start, at)) return
-      g.dragging = true
-      beginDrag(g)
-    }
     // The pointer is captured, so the element under it comes from its position.
     const hit = dropHitAt(document.elementFromPoint(event.clientX, event.clientY), { x: event.clientX, y: event.clientY }, g.nodeId)
     g.target = hit && !isNoopMove(root, g.nodeId, hit.target) ? hit.target : null
@@ -643,26 +672,54 @@ function endGesture(): Gesture | null {
   gesture = null
   window.removeEventListener('pointermove', onGestureMove)
   window.removeEventListener('pointerup', onGestureUp)
-  window.removeEventListener('pointercancel', cancelGesture)
-  if (g && document.documentElement.hasPointerCapture?.(g.pointerId)) document.documentElement.releasePointerCapture(g.pointerId)
+  window.removeEventListener('pointercancel', onGestureCancel)
+  window.removeEventListener('blur', onGestureBlur)
+  document.documentElement.removeEventListener('lostpointercapture', onLostCapture)
+  if (g && document.documentElement.hasPointerCapture?.(g.state.pointerId)) document.documentElement.releasePointerCapture(g.state.pointerId)
   setCursor(null)
   dragLabel.value = null
   return g
 }
 
-/** The release: a handle drag commits its patch (one undo step), a reorder drag moves the node to the slot shown. */
 function onGestureUp(event: PointerEvent) {
-  if (!gesture || event.pointerId !== gesture.pointerId) return
-  const g = endGesture()!
+  if (!gesture) return
+  const step = stepGesture(gesture.state, { type: 'up', pointerId: event.pointerId })
+  if (!step.state) finishGesture(step.effect)
+}
+
+const onGestureCancel = (event: PointerEvent) => endGestureBy('pointercancel', event.pointerId)
+const onGestureBlur = () => endGestureBy('blur')
+const onLostCapture = (event: PointerEvent) => endGestureBy('lostcapture', event.pointerId)
+
+/** Ends the gesture for an exit (Esc, blur, lost capture…) if it applies; returns what that did (`cancel` for a running drag). */
+function endGestureBy(reason: GestureEndReason, pointerId?: number): GestureEffect {
+  if (!gesture) return 'ignore'
+  const step = stepGesture(gesture.state, { type: 'end', reason, pointerId })
+  if (!step.state) finishGesture(step.effect)
+  return step.effect
+}
+
+/** Ends the gesture by its outcome: `commit`, `cancel` (like Esc) or `abandon` (a press that never dragged: no effect). */
+function finishGesture(effect: GestureEffect) {
+  const g = endGesture()
+  if (!g) return
+  if (g.kind === 'reorder') indicator.value = null
+  if (effect === 'abandon') return
+  swallowClick = true
+  if (effect === 'cancel') {
+    if (g.kind !== 'reorder' && Object.keys(g.patch).length) dropPreview(g.nodeId)
+    return
+  }
+  commitGesture(g)
+}
+
+/** The release: a handle drag commits its patch (one undo step), a reorder drag moves the node to the slot shown. */
+function commitGesture(g: Gesture) {
   const root = page.value?.root
   if (g.kind === 'reorder') {
-    indicator.value = null
-    if (!g.dragging) return
-    swallowClick = true
     if (g.target) post({ type: 'bildr:drop', ...g.target, payload: JSON.stringify({ kind: 'node', id: g.nodeId }) })
     return
   }
-  swallowClick = true
   const node = root ? findNode(root, g.nodeId) : undefined
   const changed = node ? changedPatch(node.style, g.patch) : {}
   if (Object.keys(changed).length) post({ type: 'bildr:style-commit', nodeId: g.nodeId, style: changed })
@@ -675,19 +732,11 @@ function dropPreview(nodeId: string) {
   post({ type: 'bildr:style-preview', nodeId, style: null })
 }
 
-/** Esc (or a lost pointer): drops a drag and its preview; true when a drag was running. A press that never moved is no drag. */
-function cancelGesture(): boolean {
+// The dragged node going (deselected, deleted, another page, locked, or no longer editable here) cancels the drag like Esc.
+watch([page, selectedIds, editable], () => {
   const g = gesture
-  if (!g || (g.kind === 'reorder' && !g.dragging)) {
-    if (g) endGesture()
-    return false
-  }
-  endGesture()
-  swallowClick = true
-  if (g.kind === 'reorder') indicator.value = null
-  else if (Object.keys(g.patch).length) dropPreview(g.nodeId)
-  return true
-}
+  if (g && (gestureTargetGone(g, { pageId: page.value?.id, root: page.value?.root, selectedIds: selectedIds.value }) || editable.value !== g.nodeId)) endGestureBy('target-gone')
+})
 
 /** The drop indicator for `position` relative to an element's viewport `rect`: its outline inside, else a line on that side. */
 function indicatorAt(rect: Rect, position: DropPosition, horizontal: boolean): Indicator {

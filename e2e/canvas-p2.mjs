@@ -4,8 +4,12 @@
  * "w-N · Npx" label, Esc cancels a drag (no write, the selection stays),
  * hovering the panel's Padding field paints the padding overlay, a gap
  * handle drag writes a snapped gap token, a selected node dragged onto a
- * sibling reorders it in one node_move (one undo), and a locked node has no
- * handles and doesn't drag. Shots go to e2e/.shots/canvas-p2/.
+ * sibling reorders it in one node_move (one undo), a locked node has no
+ * handles and doesn't drag, a press released outside the frame leaves no
+ * drag behind, and an outward drag of a wide Fill node doesn't shrink it.
+ * "Nothing was written" checks are proved by a sentinel write through the
+ * same page afterwards (the only write since), not by a fixed wait.
+ * Shots go to e2e/.shots/canvas-p2/.
  */
 import { action, canvas, check, findNode, openEditor, project, run, shot, until } from './lib.mjs'
 
@@ -22,6 +26,7 @@ await run('canvas-p2', async ({ page, errors }) => {
     texts.push((await action('node_insert', { projectId: p.id, pageId, parentId: column.nodeId, type: 'Text', props: { text: label } })).nodeId)
   }
   const [alpha, bravo, charlie] = texts
+  const wide = (await action('node_insert', { projectId: p.id, pageId, type: 'Text', props: { text: 'Wide text' }, style: { w: 'full' } })).nodeId
   const getRoot = async () => (await action('project_get', { projectId: p.id })).pages[0].root
   const nodeOf = async id => findNode(await getRoot(), n => n.id === id)
   const order = async () => (await nodeOf(column.nodeId)).children.map(n => n.id)
@@ -47,10 +52,41 @@ await run('canvas-p2', async ({ page, errors }) => {
     if (['node_update_style', 'node_move', 'node_move_many', 'component_variant_set_override'].includes(name)) calls.push(name)
   })
   const callsOf = name => calls.filter(c => c === name).length
+  const handles = frame.locator('[data-resize-handle]')
+  /** Waits until the canvas shows node `id` selected (its selection box), then for two of its frames to have run. */
+  const canvasShowsSelected = async (id) => {
+    check(!!await until(async () => await frame.locator(`[data-selection-box="${id}"]`).count() === 1), `the canvas shows ${id} selected`)
+    await frame.locator('body').evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  }
+  /** The drag cursor the canvas sets on every element while a reorder drag runs. */
+  const grabbing = () => frame.locator('#bildr-canvas-cursor').evaluate(el => el.textContent.includes('grabbing')).catch(() => false)
+  /**
+   * A positive sync point for "nothing was written": a known W write through the canvas (a resize of the
+   * sentinel node, a fixed-width Text, then undone through the API). Requests go out in order, so when the writes since `mark`
+   * are exactly that one, nothing else was sent before it.
+   */
+  const writesBeforeSentinel = async (mark) => {
+    const id = charlie
+    await select(id)
+    await canvasShowsSelected(id)
+    check(!!await until(async () => await handles.count() === 8), 'the sentinel node has its handles')
+    const e = await center(frame.locator('[data-resize-handle="e"]'))
+    const sent = calls.length
+    await page.mouse.move(e.x, e.y)
+    await page.mouse.down()
+    await page.mouse.move(e.x + 60, e.y, { steps: 8 })
+    await page.mouse.up()
+    const landed = !!await until(async () => calls.length > sent && (await nodeOf(id))?.style.w !== undefined)
+    check(landed, 'the sentinel write lands')
+    const since = calls.slice(mark)
+    if (!landed) return since.length
+    await action('history_undo', { projectId: p.id })
+    await until(async () => (await nodeOf(id))?.style.w === undefined)
+    return since.length - 1
+  }
 
   // S6a: the 8 handles show on a single unlocked selection; the right edge drags W to a snapped token with a live label.
   await select(alpha)
-  const handles = frame.locator('[data-resize-handle]')
   check(!!await until(async () => await handles.count() === 8), `a selected text has 8 resize handles (${await handles.count()})`)
   const east = await center(frame.locator('[data-resize-handle="e"]'))
   const historyBefore = (await action('history_get', { projectId: p.id })).undo
@@ -67,7 +103,7 @@ await run('canvas-p2', async ({ page, errors }) => {
   await page.mouse.up()
   const width = await until(async () => (await nodeOf(alpha))?.style.w)
   check(WIDTHS.includes(width), `the release commits a snapped W token (w-${width})`)
-  check(label === undefined || label.startsWith(`w-${width} `), `the committed token is the one the label showed (${label})`)
+  check(typeof label === 'string' && label.startsWith(`w-${width} `), `the committed token is the one the label showed (${label})`)
   await page.waitForTimeout(300)
   check(callsOf('node_update_style') === 1, `the resize is one style write (${callsOf('node_update_style')})`)
   check(await isSelected(alpha), 'the click that ends the drag selects nothing else')
@@ -93,9 +129,9 @@ await run('canvas-p2', async ({ page, errors }) => {
   check(!!await until(async () => await alphaHeight() === heightBefore), 'and its preview')
   await page.mouse.move(south.x, south.y + 80, { steps: 3 })
   await page.mouse.up()
-  await page.waitForTimeout(400)
-  check(calls.length === writes && (await nodeOf(alpha)).style.h === undefined, 'a cancelled drag writes nothing')
   check(await isSelected(alpha), 'Esc during a drag keeps the selection (it doesn\'t select the parent)')
+  const escWrites = await writesBeforeSentinel(writes)
+  check(escWrites === 0 && (await nodeOf(alpha)).style.h === undefined, `a cancelled drag writes nothing (${escWrites} writes before the sentinel)`)
 
   // S6b: hovering the panel's Padding field paints the padding overlay on the selection; leaving it clears it.
   await select(column.nodeId)
@@ -136,15 +172,18 @@ await run('canvas-p2', async ({ page, errors }) => {
 
   // S6c: dragging the selected Alpha onto the lower half of Charlie moves it after Charlie, in one node_move.
   await select(alpha)
+  await canvasShowsSelected(alpha)
   const from = await center(frame.locator(`[data-bildr-id="${alpha}"]`))
   const charlieBox = await frame.locator(`[data-bildr-id="${charlie}"]`).boundingBox()
   const moves = calls.length
   await page.mouse.move(from.x, from.y)
   await page.mouse.down()
   await page.mouse.move(from.x + 2, from.y + 2, { steps: 2 })
-  check(await frame.locator('[data-drop-indicator]').count() === 0, 'a press that moves less than 4px is no drag')
+  await frame.locator('body').evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  check(!await grabbing() && await frame.locator('[data-drop-indicator]').count() === 0, 'a press that moves less than 4px is no drag (no drag cursor, no indicator)')
   await page.mouse.move(charlieBox.x + charlieBox.width / 2, charlieBox.y + charlieBox.height * 0.8, { steps: 10 })
   check(!!await until(async () => await frame.locator('[data-drop-indicator]').count() === 1), 'the drop indicator shows the slot under the pointer')
+  check(await grabbing(), 'past 4px the press is a drag (the drag cursor shows)')
   await shot(page, 'canvas-p2/reorder-drag')
   await page.mouse.up()
   check(!!await until(async () => JSON.stringify(await order()) === JSON.stringify([bravo, charlie, alpha])), `the drop moves Alpha after Charlie (${(await order()).join(', ')})`)
@@ -166,26 +205,68 @@ await run('canvas-p2', async ({ page, errors }) => {
   await page.keyboard.press('Escape')
   check(!!await until(async () => await frame.locator('[data-drop-indicator]').count() === 0), 'Esc drops the reorder indicator')
   await page.mouse.up()
-  await page.waitForTimeout(400)
-  check(calls.length === beforeEsc && JSON.stringify(await order()) === JSON.stringify([alpha, bravo, charlie]), 'a cancelled reorder moves nothing')
   check(await isSelected(alpha), 'and keeps the selection')
+  const escMoves = await writesBeforeSentinel(beforeEsc)
+  check(escMoves === 0 && JSON.stringify(await order()) === JSON.stringify([alpha, bravo, charlie]), `a cancelled reorder moves nothing (${escMoves} writes before the sentinel)`)
+
+  // A press on the selection released outside the frame before 4px leaves no drag behind: hover back in doesn't drag, and the next click selects.
+  await select(alpha)
+  await canvasShowsSelected(alpha)
+  const outFrom = await center(frame.locator(`[data-bildr-id="${alpha}"]`))
+  const frameBox = await page.locator('iframe[title="Canvas"]').first().boundingBox()
+  const outside = { x: frameBox.x + frameBox.width / 2, y: frameBox.y - 12 }
+  const beforeOut = calls.length
+  await page.mouse.move(outFrom.x, outFrom.y)
+  await page.mouse.down()
+  await page.mouse.move(outFrom.x, outFrom.y - 1)
+  await page.mouse.move(outside.x, outside.y, { steps: 2 })
+  await page.mouse.up()
+  const charlieOut = await frame.locator(`[data-bildr-id="${charlie}"]`).boundingBox()
+  await page.mouse.move(charlieOut.x + charlieOut.width / 2, charlieOut.y + charlieOut.height * 0.8, { steps: 10 })
+  await frame.locator('body').evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  check(!await grabbing() && await frame.locator('[data-drop-indicator]').count() === 0, 'hovering back in after a release outside the frame is no drag')
+  await page.mouse.down()
+  await page.mouse.up()
+  check(!!await until(() => isSelected(charlie)), 'the next click selects the node under it (the press is not swallowed)')
+  const outMoves = await writesBeforeSentinel(beforeOut)
+  check(outMoves === 0 && JSON.stringify(await order()) === JSON.stringify([alpha, bravo, charlie]), `a press released outside the frame moves nothing (${outMoves} writes before the sentinel)`)
 
   // A locked node selected from the layers has no handles and doesn't drag.
   await action('node_set_locked', { projectId: p.id, pageId, nodeId: bravo, locked: true })
   await row(bravo).locator('[data-layer-lock]').waitFor()
   await select(bravo)
-  await page.waitForTimeout(300)
+  await canvasShowsSelected(bravo)
   check(await handles.count() === 0, `a locked node has no resize handles (${await handles.count()})`)
   const locked = await center(frame.locator(`[data-bildr-id="${bravo}"]`))
   const lockedCalls = calls.length
   await page.mouse.move(locked.x, locked.y)
   await page.mouse.down()
   await page.mouse.move(charlieAgain.x + charlieAgain.width / 2, charlieAgain.y + charlieAgain.height * 0.8, { steps: 10 })
-  check(await frame.locator('[data-drop-indicator]').count() === 0, 'dragging a locked node shows no drop indicator')
-  await page.mouse.up()
-  await page.waitForTimeout(400)
-  check(calls.length === lockedCalls && JSON.stringify(await order()) === JSON.stringify([alpha, bravo, charlie]), 'a locked node doesn\'t move')
+  await frame.locator('body').evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  check(!await grabbing() && await frame.locator('[data-drop-indicator]').count() === 0, 'dragging a locked node is no drag (no drag cursor, no indicator)')
   await shot(page, 'canvas-p2/locked')
+  await page.mouse.up()
+  const lockedMoves = await writesBeforeSentinel(lockedCalls)
+  check(lockedMoves === 0 && JSON.stringify(await order()) === JSON.stringify([alpha, bravo, charlie]), `a locked node doesn't move (${lockedMoves} writes before the sentinel)`)
+
+  // An outward drag of the right edge of a wide Fill (w-full) node keeps it Fill: it doesn't shrink to the largest step.
+  await select(wide)
+  await canvasShowsSelected(wide)
+  const wideEl = frame.locator(`[data-bildr-id="${wide}"]`)
+  const wideBefore = await wideEl.evaluate(el => el.offsetWidth)
+  check(wideBefore > 384, `the Fill node is wider than the largest W step (${wideBefore}px)`)
+  const wideEast = await center(frame.locator('[data-resize-handle="e"]'))
+  const beforeWide = calls.length
+  await page.mouse.move(wideEast.x, wideEast.y)
+  await page.mouse.down()
+  await page.mouse.move(wideEast.x + 50, wideEast.y, { steps: 8 })
+  await frame.locator('body').evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+  const wideDuring = await wideEl.evaluate(el => el.offsetWidth)
+  check(wideDuring >= wideBefore, `dragging its right edge out doesn't shrink it (${wideBefore}px → ${wideDuring}px)`)
+  await page.mouse.up()
+  const wideWrites = await writesBeforeSentinel(beforeWide)
+  check(wideWrites === 0 && (await nodeOf(wide)).style.w === 'full', `and the release keeps w-full (${(await nodeOf(wide)).style.w}, ${wideWrites} writes before the sentinel)`)
+  check(await wideEl.evaluate(el => el.offsetWidth) === wideBefore, 'at its width')
 
   // Keyboard shortcuts still work after the drags: Esc selects the parent.
   await action('node_set_locked', { projectId: p.id, pageId, nodeId: bravo, locked: false })

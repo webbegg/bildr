@@ -92,6 +92,46 @@ describe('resizePatch', () => {
     expect(resizePatch({ ...drag, width: 128 }, { dx: 40, dy: 0 }, true)).toEqual({ w: '32' })
     expect(resizePatch({ ...drag, width: 128 }, { dx: 90, dy: 0 }, true)).toEqual({ w: '64' })
   })
+
+  it('never snaps opposite to the drag: a small outward drag keeps the start step, an inward one never grows', () => {
+    // 250px grown to 254: w-64 (256) lies that way.
+    expect(resizePatch({ ...drag, width: 250 }, { dx: 4, dy: 0 }, false)).toEqual({ w: '64' })
+    // 258px grown to 262: the nearest is w-64 (256), smaller than the start, so no patch.
+    expect(resizePatch({ ...drag, width: 258 }, { dx: 4, dy: 0 }, false)).toEqual({})
+    // 260px dragged in by 3 (257): w-64 (256) is not larger, fine; never w-72.
+    expect(resizePatch({ ...drag, width: 260 }, { dx: -3, dy: 0 }, false)).toEqual({ w: '64' })
+    // 254px dragged in by 3 (251): the nearest is w-64 (256), larger than the start, so no patch.
+    expect(resizePatch({ ...drag, width: 254 }, { dx: -3, dy: 0 }, false)).toEqual({})
+  })
+
+  it('a node wider than the scale is not shrunk by an outward drag (no patch)', () => {
+    // A 1000px Fill (w-full) node, its right edge dragged out by 50: w-96 (384px) would shrink it.
+    expect(resizePatch({ ...drag, width: 1000 }, { dx: 50, dy: 0 }, false)).toEqual({})
+    expect(resizePatch({ ...drag, width: 1000 }, { dx: 50, dy: 0 }, true)).toEqual({})
+    expect(resizePatch({ ...drag, handle: 'w', width: 1000 }, { dx: -50, dy: 0 }, false)).toEqual({})
+    expect(resizePatch({ ...drag, handle: 's', height: 900 }, { dx: 0, dy: 40 }, false)).toEqual({})
+  })
+
+  it('a node wider than the scale dragged inward snaps down to a step', () => {
+    expect(resizePatch({ ...drag, width: 1000 }, { dx: -50, dy: 0 }, false)).toEqual({ w: '96' })
+    expect(resizePatch({ ...drag, width: 1000 }, { dx: -720, dy: 0 }, false)).toEqual({ w: '72' })
+  })
+
+  it('snaps to Fill (`full`, the parent\'s content size) between the largest step and the parent', () => {
+    const wide = { ...drag, width: 300, fill: { width: 800, height: 600 } }
+    // Dragged out to 700: `full` (800) is nearer than w-96 (384).
+    expect(resizePatch(wide, { dx: 400, dy: 0 }, false)).toEqual({ w: 'full' })
+    // Dragged out to 500: w-96 is nearer.
+    expect(resizePatch(wide, { dx: 200, dy: 0 }, false)).toEqual({ w: '96' })
+    // A 1000px Fill node in a 1000px parent dragged out: it stays Fill.
+    expect(resizePatch({ ...drag, width: 1000, fill: { width: 1000, height: 600 } }, { dx: 50, dy: 0 }, false)).toEqual({ w: 'full' })
+    // Past the parent too: no candidate lies that way, no patch.
+    expect(resizePatch({ ...drag, width: 1000, fill: { width: 800, height: 600 } }, { dx: 50, dy: 0 }, false)).toEqual({})
+    // Inward from Fill, still nearer the parent's size: it stays Fill.
+    expect(resizePatch({ ...drag, width: 800, fill: { width: 800, height: 600 } }, { dx: -40, dy: 0 }, false)).toEqual({ w: 'full' })
+    // H snaps to the parent's height the same way.
+    expect(resizePatch({ ...drag, handle: 's', height: 300, fill: { width: 800, height: 600 } }, { dx: 0, dy: 280 }, false)).toEqual({ h: 'full' })
+  })
 })
 
 describe('changedPatch', () => {

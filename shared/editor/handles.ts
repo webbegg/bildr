@@ -1,7 +1,7 @@
 import { parseStyleKey, styleKey } from '../design/tokens'
 import type { Breakpoint } from '../design/tokens'
 import type { Theme } from '../design/theme'
-import { scalePx, scaleStops, SHIFT_STOPS } from './scale'
+import { scalePx, scaleStops, scaleValues, SHIFT_STOPS } from './scale'
 import { SCRUB_DEAD_ZONE } from './scrub'
 import type { Side } from './spacing'
 import { sideKey, spacingSide } from './spacing'
@@ -108,25 +108,47 @@ export interface ResizeDrag {
   breakpoint: Breakpoint | undefined
   /** Px per scale unit (the project's `--spacing`). */
   basePx: number
+  /** The parent's content box in px, the size Fill (`full`) resolves to; without it, `full` is no candidate. */
+  fill?: { width: number, height: number }
 }
+
+/** The fill stop of a size scale, measured as the parent's content size. */
+const FILL = 'full'
 
 /**
  * The W/H tokens a resize drag holds: for each axis the handle resizes and
- * the pointer has moved along (past the scrub dead zone), the nearest step
- * to the start size plus the travel (a left or top handle grows as it moves
- * out). Always a number, so a Fit or Fill size becomes a fixed one.
+ * the pointer has moved along (past the scrub dead zone), the candidate
+ * nearest the start size plus the travel (a left or top handle grows as it
+ * moves out), Shift by 4 candidates from the start's. The candidates are the
+ * scale's numbers and Fill (`full`, at the parent's content size, when
+ * `fill` is given), so a Fit size becomes a fixed one or Fill. A snap never
+ * goes against the drag: a candidate smaller than the start on an outward
+ * drag (or larger on an inward one) leaves the axis unpatched, e.g. an
+ * outward drag of a node wider than the scale and its parent.
  */
 export function resizePatch(drag: ResizeDrag, delta: Delta, shift: boolean): Record<string, string> {
   const axes = handleAxes(drag.handle)
   const patch: Record<string, string> = {}
-  const axis = (base: 'w' | 'h', sign: number, travel: number, start: number) => {
+  const axis = (base: 'w' | 'h', sign: number, travel: number, start: number, fillPx: number | undefined) => {
     if (!sign || Math.abs(travel) < SCRUB_DEAD_ZONE) return
     const key = styleKey(base, drag.breakpoint)
-    const value = nearestStop(key, start + sign * travel, drag.basePx, { shift, startPx: start })
-    if (value !== undefined) patch[key] = value
+    const candidates = scaleStops(key).map(value => ({ value, px: Number(value) * drag.basePx }))
+    if (fillPx !== undefined && scaleValues(key).includes(FILL)) candidates.push({ value: FILL, px: fillPx })
+    candidates.sort((a, b) => a.px - b.px)
+    if (!candidates.length) return
+    const nearest = (px: number) => candidates.reduce((best, c, i) => (Math.abs(c.px - px) < Math.abs(candidates[best]!.px - px) ? i : best), 0)
+    const grow = sign * travel > 0
+    let at = nearest(start + sign * travel)
+    if (shift) {
+      const from = nearest(start)
+      at = Math.min(candidates.length - 1, Math.max(0, from + Math.round((at - from) / SHIFT_STOPS) * SHIFT_STOPS))
+    }
+    const pick = candidates[at]!
+    if (grow ? pick.px < start : pick.px > start) return
+    patch[key] = pick.value
   }
-  axis('w', axes.x, delta.dx, drag.width)
-  axis('h', axes.y, delta.dy, drag.height)
+  axis('w', axes.x, delta.dx, drag.width, drag.fill?.width)
+  axis('h', axes.y, delta.dy, drag.height, drag.fill?.height)
   return patch
 }
 
