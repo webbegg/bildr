@@ -15,7 +15,8 @@ import { instanceVariantValue, PRIMARY_VARIANT, variantItems } from '~/composabl
  * back to the default), plus each slot's "Own content" switch. In the
  * component view: the variants, one row style for all (Primary first, with
  * its tag; click one to show and edit it, its menu renames or deletes it
- * after a confirm, "+" adds one), the component name and properties on its
+ * after a confirm, "+" adds one), the active variant's interactions and
+ * transition (EditorInteractionsSection), the component name and properties on its
  * root, and on any definition node the properties bound to it (labelled
  * by what they set, `propertyLabel`), with "+" to turn one of its props, a
  * style key, or a container's children (a slot), into a property: the same
@@ -37,7 +38,11 @@ function setValue(property: PropertyDef, value: PropValue | null) {
   editor.runOnPage('instance_set_values', { nodeId: node.id, values: { [property.id]: value } })
 }
 
-const variantChoices = computed(() => (instanceOf.value ? variantItems(instanceOf.value) : []))
+// Base variants only: an instance's states show by themselves, from the pointer.
+const variantChoices = computed(() => {
+  const states = new Set(instanceOf.value?.variants.filter(v => v.state).map(v => v.id))
+  return instanceOf.value ? variantItems(instanceOf.value).filter(item => !states.has(item.value)) : []
+})
 const variantSet = computed<Provenance>(() => (node.props.variant ? { state: 'set', key: 'variant', value: String(node.props.variant) } : { state: 'unset' }))
 
 function setVariant(item: string) {
@@ -155,7 +160,7 @@ function renameComponent(name: string) {
       </div>
     </EditorRow>
     <EditorRow
-      v-if="instanceOf?.variants.length"
+      v-if="variantChoices.length > 1"
       label="Variant"
       :provenance="variantSet"
       data-instance-variant
@@ -268,6 +273,8 @@ function renameComponent(name: string) {
       Prop and style edits now override {{ editor.variant.name }} only.
     </p>
   </EditorStyleSection>
+
+  <EditorInteractionsSection v-if="def" />
 
   <EditorStyleSection
     v-if="def"

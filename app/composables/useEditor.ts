@@ -3,7 +3,7 @@ import { sourcePaging } from '#shared/data/paging'
 import type { DataRecord } from '#shared/data/records'
 import { loadMoreLimit, tableLimit } from '#shared/data/table'
 import type { Theme, ThemePatch } from '#shared/design/theme'
-import type { DocNode, Page, Project } from '#shared/document/schema'
+import type { DocNode, InteractionEvent, Page, Project, StateKind, Transition } from '#shared/document/schema'
 import type { EnvListEntry, EnvValues } from '#shared/env/variables'
 import type { PropValue } from '#shared/document/components'
 import { INSTANCE_TYPE, isFlexType } from '#shared/document/components'
@@ -37,6 +37,8 @@ import { selectionAccent } from '#shared/editor/accent'
 import { insertableComponents, outsideInstance, parseInstancePayload } from './componentEditor'
 import { layoutSelection, pageSlots, parseLayoutPayload } from './layoutEditor'
 import { boardShown } from '#shared/editor/variantBoard'
+import { previewPageFor } from '#shared/editor/interactionPanel'
+import { effectiveOverride } from '#shared/runtime/instances'
 import { activeVariant, applyVariant, newVariantName, overrideInput, pasteStyleOverride, primaryStyle } from './componentVariants'
 import type { NodeOverridePatch, OverridePatch } from './componentVariants'
 
@@ -110,6 +112,8 @@ export function createEditor(projectId: string) {
   const variantId = ref<string | null>(null)
   /** The variant board's toggle per component, as last set (in memory only); a component without one follows `boardShown`'s default. */
   const boardChoices = ref<Record<string, boolean>>({})
+  /** In the component view, the interaction selected on the board (its arrow) or being edited in its popover; null when none. */
+  const interactionId = ref<string | null>(null)
   /** The selection in the order it was made; Shift+click adds and removes nodes. */
   const selectedIds = ref<string[]>([])
   /** The primary (last selected) node: the one the panel edits alone, and the editor context reports. Setting it selects only it. */
@@ -212,7 +216,15 @@ export function createEditor(projectId: string) {
   function variantPage(id: string | null): Page | null {
     const def = component.value
     if (!def) return null
-    return { id: def.id, name: def.name, slug: currentPage.value?.slug ?? '', root: applyVariant(def.root, activeVariant(def, id), def.properties) }
+    const shown = activeVariant(def, id)
+    // A state shows over its base variant: its overrides layered over the base's.
+    const layered = shown?.state?.of
+      ? { ...shown, overrides: Object.fromEntries([...new Set([...Object.keys(shown.overrides), ...Object.keys(def.variants.find(v => v.id === shown.state!.of)?.overrides ?? {})])].flatMap((nodeId) => {
+          const override = effectiveOverride(def, shown, nodeId)
+          return override ? [[nodeId, override]] : []
+        })) }
+      : shown
+    return { id: def.id, name: def.name, slug: currentPage.value?.slug ?? '', root: applyVariant(def.root, layered, def.properties) }
   }
   /** The component view shows the variant board: every variant side by side at the active breakpoint (see `variantBoard.ts`). */
   const variantBoard = computed(() => !!component.value && boardShown(boardChoices.value[component.value.id], component.value.variants.length))
@@ -796,6 +808,7 @@ export function createEditor(projectId: string) {
    * a lock) counts as its nearest unlocked ancestor; under a locked root nothing.
    */
   function canvasClick(id: string, { shift, meta }: { shift: boolean, meta: boolean }): void {
+    interactionId.value = null
     const root = page.value?.root
     const reachable = root ? nearestUnlocked(root, id) : id
     if (!reachable) return
@@ -956,6 +969,57 @@ export function createEditor(projectId: string) {
     if (result) selectVariant(result.variantId)
   }
 
+  /** Adds a hover or pressed state of base variant `baseId` (null: the primary) and makes it the active one. */
+  async function addState(baseId: string | null, kind: StateKind): Promise<void> {
+    const def = component.value
+    if (!def) return
+    const result = await run<{ variantId: string }>('component_state_add', { componentId: def.id, baseVariantId: baseId ?? '', kind })
+    if (result) selectVariant(result.variantId)
+  }
+
+  /** Adds an interaction to variant `fromId` (null: the primary) going to `to` (`''`: the primary), selects it and returns its id. */
+  async function addInteraction(fromId: string | null, on: InteractionEvent, to: string, delay?: number): Promise<string | undefined> {
+    const def = component.value
+    if (!def) return undefined
+    const result = await run<{ interactionId: string }>('component_interaction_add', { componentId: def.id, ...(fromId ? { variantId: fromId } : {}), on, to, ...(delay ? { delay } : {}) })
+    if (result) interactionId.value = result.interactionId
+    return result?.interactionId
+  }
+
+  /** Changes an interaction's event, target or delay (null removes the delay). */
+  async function updateInteraction(id: string, patch: { on?: InteractionEvent, to?: string, delay?: number | null }): Promise<void> {
+    if (component.value) await run('component_interaction_update', { componentId: component.value.id, interactionId: id, ...patch })
+  }
+
+  /** Removes an interaction (one undo step) and drops it from the board's selection. */
+  async function removeInteraction(id: string): Promise<void> {
+    if (!component.value) return
+    if (interactionId.value === id) interactionId.value = null
+    await run('component_interaction_remove', { componentId: component.value.id, interactionId: id })
+  }
+
+  /** Sets the transition of variant `id` (null: the component's own, the primary's and every variant's default); null clears it. */
+  async function setTransition(id: string | null, transition: Transition | null): Promise<void> {
+    if (component.value) await run('component_transition_set', { componentId: component.value.id, ...(id ? { variantId: id } : {}), transition })
+  }
+
+  /** Opens the interactive preview on the first page showing component `id` (the one being edited), or says how to get one. */
+  function previewInteractions(id: string | undefined = component.value?.id): void {
+    const shown = project.value && id ? previewPageFor(project.value, id) : null
+    if (shown) {
+      window.open(`/preview/${projectId}/${shown.slug}`, '_blank')
+      return
+    }
+    toast.add({ title: 'Nothing to preview yet', description: 'Place this component on a page to preview its interactions.', icon: 'i-lucide-zap' })
+  }
+
+  // A new component, variant list or undo can take the selected interaction away.
+  watch(() => [component.value?.id, component.value], () => {
+    const def = component.value
+    const id = interactionId.value
+    if (id && !(def && [def.interactions ?? [], ...def.variants.map(v => v.interactions ?? [])].some(list => list.some(i => i.id === id)))) interactionId.value = null
+  })
+
   /** Renames a variant of the component being edited; a blank or unchanged name does nothing. */
   async function renameVariant(id: string, name: string): Promise<void> {
     const def = component.value
@@ -1046,7 +1110,9 @@ export function createEditor(projectId: string) {
    * level). Cmd/Ctrl+Alt+K creates a component and Cmd/Ctrl+Alt+B detaches the selected instance (both matched on `code`). Cmd/Ctrl+C copies, +V pastes, +Alt+V pastes the style
    * (matched on `code`), +R renames and +L locks. Bare letters pick the canvas tools
    * (V Move, H Hand, and the insert tools); `I` opens the Insert panel, as in
-   * Framer, rather than arming Image. Cmd/Ctrl+P opens the draft preview,
+   * Framer, rather than arming Image. Cmd/Ctrl+P opens the draft preview (in
+   * the component view, on a page showing the component: `previewInteractions`),
+   * Delete removes the interaction selected on the variant board (Esc deselects it),
    * Cmd/Ctrl+F the sidebar search and Cmd/Ctrl+K the quick actions (in any
    * view). Alt/Option + 1–3 edits Desktop, Tablet or Mobile, matched on the
    * physical `code`. `canvas` marks a key from the canvas iframe, where the
@@ -1065,7 +1131,9 @@ export function createEditor(projectId: string) {
       return true
     }
     if (meta && !shift && lower === 'p') {
-      openPreview()
+      // In the component view the preview goes where the component's interactions run: a page showing it.
+      if (component.value) previewInteractions()
+      else openPreview()
       return true
     }
     if (meta && !shift && lower === 'k') {
@@ -1090,8 +1158,10 @@ export function createEditor(projectId: string) {
     else if (meta && lower === 'g') group()
     else if (meta && lower === 'a' && page.value) selectedIds.value = selectAllSiblings(page.value.root, selectedIds.value)
     else if (!meta && shift && lower === 'a') autoLayout()
+    else if (!meta && (key === 'Delete' || key === 'Backspace') && interactionId.value && component.value) void removeInteraction(interactionId.value)
     else if (!meta && (key === 'Delete' || key === 'Backspace')) remove()
     else if (key === 'Escape' && tool.value !== MOVE_TOOL) tool.value = MOVE_TOOL
+    else if (key === 'Escape' && interactionId.value) interactionId.value = null
     else if (key === 'Escape' && !selectedIds.value.length && editStack.value.length) leaveView()
     else if (key === 'Escape') selectedIds.value = page.value ? escapeSelection(page.value.root, selectedIds.value) : []
     else if (armed) tool.value = armed
@@ -1104,9 +1174,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, componentId, component, layoutId, layout, editStack, createRequest, propertiesRequest, confirmRequest, canvasAccent, variantId, variant, variantBoard, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
+    projectId, project, pageId, componentId, component, layoutId, layout, editStack, createRequest, propertiesRequest, confirmRequest, canvasAccent, variantId, variant, variantBoard, interactionId, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
-    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, layoutFromSelection, createLayoutFromSelection, setPageLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, renameVariant, variantPage, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, layoutFromSelection, createLayoutFromSelection, setPageLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, addState, addInteraction, updateInteraction, removeInteraction, setTransition, previewInteractions, renameVariant, variantPage, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, updateStyles, previewTheme, updateTheme, undo, redo, shortcut
   })

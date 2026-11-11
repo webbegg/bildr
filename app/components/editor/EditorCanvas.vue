@@ -11,7 +11,10 @@ import { isInsertTool, pointerMode } from '#shared/editor/insertTools'
 import { revealFrame } from '#shared/editor/devices'
 import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, layoutFrames, panView, selectionView, stepZoom, viewportHeight, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 import type { BoardFrame } from '#shared/editor/variantBoard'
-import { boardFrameKey, boardFrames, boardLayout } from '#shared/editor/variantBoard'
+import { boardDropTarget, boardFrameKey, boardFrames, boardLayout } from '#shared/editor/variantBoard'
+import { ARROW_TOP, arrowGeometry, boardArrows } from '#shared/editor/interactionArrows'
+import { EVENT_LABELS } from '#shared/editor/interactionPanel'
+import type { StateKind } from '#shared/document/schema'
 import { childrenSlotNode } from '~/composables/layoutEditor'
 
 /**
@@ -45,7 +48,14 @@ import { childrenSlotNode } from '~/composables/layoutEditor'
  * (EditorVariantBar) and ending with a dashed "+ Variant" tile. The active
  * variant's frame is the active one: it alone shows the selection, handles
  * and previews. A click, right-click, drop or insert in another frame makes
- * its variant active first, so edits override that variant.
+ * its variant active first, so edits override that variant. Each base's
+ * hover and pressed states go under it, joined by a purple line, with a
+ * dashed "+ Hover / Pressed" tile below while a kind is missing. Each frame
+ * has a ⚡ handle on its right edge: dragging it to another base frame
+ * adds a click interaction and opens its popover. Interactions draw as
+ * curved purple arrows over the board (`interactionArrows.ts`); clicking
+ * one, or its event label, selects it and opens the popover, and Delete
+ * removes the selected one.
  * In the layout view, the children slot gets a light-purple placeholder,
  * "Page content — your page appears here", drawn over its box as measured
  * in each frame (clicks and drops pass through to the slot).
@@ -80,13 +90,18 @@ const singleFrame = ref(view === 'page' && localStorage.getItem(FRAMES_KEY) === 
 const heights = reactive<Record<string, number>>({})
 const frameHeight = (key: string) => Math.max(FRAME_MIN_HEIGHT, heights[key] ?? 0)
 const shownDevices = computed(() => (singleFrame.value ? [editor.device] : editor.visibleDevices))
+/** On the board, where its frames, tiles and state lines go (`boardLayout`), with the frames' keys; null off the board. */
+const boardPlaced = computed(() => {
+  if (!board.value) return null
+  const keys = boardList.value.map(f => boardKey(f.variantId))
+  return { keys, ...boardLayout(boardList.value, keys.map(frameHeight), editor.device.width, FRAME_GAP) }
+})
 /** The frames and where they go, plus the board's "+ Variant" tile (null off the board). */
 const placement = computed<{ frames: ShownFrame[], add: Rect | null }>(() => {
-  if (board.value) {
+  const placed = boardPlaced.value
+  if (placed) {
     const device = editor.device
-    const keys = boardList.value.map(f => boardKey(f.variantId))
-    const placed = boardLayout(keys.map(frameHeight), device.width, FRAME_GAP)
-    return { frames: boardList.value.map((variant, i) => ({ key: keys[i]!, device, rect: placed.frames[i]!, variant })), add: placed.add }
+    return { frames: boardList.value.map((variant, i) => ({ key: placed.keys[i]!, device, rect: placed.frames[i]!, variant })), add: placed.add }
   }
   const rects = layoutFrames(shownDevices.value.map(d => ({ width: d.width, height: frameHeight(d.id) })), FRAME_GAP)
   return { frames: shownDevices.value.map((device, i) => ({ key: device.id, device, rect: rects[i]! })), add: null }
@@ -105,7 +120,89 @@ let autoFit = true
 
 function fit() {
   const add = placement.value.add
-  viewport.value = fitView(boundsOf([...layout.value.map(f => f.rect), ...(add ? [add] : [])]), stageSize, FIT_PADDING)
+  const stateAdds = boardPlaced.value?.stateAdds.map(tile => tile.rect) ?? []
+  viewport.value = fitView(boundsOf([...layout.value.map(f => f.rect), ...(add ? [add] : []), ...stateAdds]), stageSize, FIT_PADDING)
+}
+
+/** A "+ Hover / Pressed" tile's menu: the kinds its base lacks (the others disabled). */
+function stateMenu(tile: { variantId: string | null, taken: StateKind[] }) {
+  const item = (kind: StateKind, label: string, icon: string) => ({
+    label,
+    icon,
+    disabled: tile.taken.includes(kind),
+    description: tile.taken.includes(kind) ? 'Already added' : undefined,
+    onSelect: () => editor.addState(tile.variantId, kind)
+  })
+  return [item('hover', 'Hover', 'i-lucide-mouse-pointer-2'), item('pressed', 'Pressed', 'i-lucide-pointer')]
+}
+
+/** Where a frame's ⚡ handle sits: on its right edge, level with the arrows. */
+const handlePoint = (rect: Rect): Point => ({ x: rect.x + rect.width, y: rect.y + Math.min(ARROW_TOP, rect.height / 2) })
+
+/** The board's interaction arrows, with their geometry in board pixels. */
+const arrows = computed(() => {
+  const placed = boardPlaced.value
+  const def = editor.component
+  if (!placed || !def) return []
+  const rectOf = new Map(boardList.value.map((f, i) => [f.key, placed.frames[i]!]))
+  return boardArrows(def, boardList.value).map(arrow => ({
+    ...arrow,
+    label: EVENT_LABELS[arrow.on],
+    ...arrowGeometry(rectOf.get(arrow.from)!, rectOf.get(arrow.to)!, { lane: arrow.lane, head: 10 / viewport.value.zoom })
+  }))
+})
+const selectedArrow = computed(() => arrows.value.find(arrow => arrow.id === editor.interactionId) ?? null)
+/** The board's Interaction popover, at the selected arrow. */
+const arrowPopover = ref(false)
+watch(selectedArrow, (arrow) => {
+  if (!arrow) arrowPopover.value = false
+})
+
+function selectArrow(id: string) {
+  editor.interactionId = id
+  arrowPopover.value = true
+}
+
+/** A ⚡ drag in progress: from which frame, where it started and is now (board pixels), and the frame it would go to. */
+const linking = ref<{ from: BoardFrame, start: Point, at: Point, target: string | null } | null>(null)
+
+function contentPoint(clientX: number, clientY: number): Point {
+  const p = stagePoint(clientX, clientY)
+  return { x: (p.x - viewport.value.x) / viewport.value.zoom, y: (p.y - viewport.value.y) / viewport.value.zoom }
+}
+
+function linkTarget(from: BoardFrame, at: Point): BoardFrame | undefined {
+  const placed = boardPlaced.value
+  return placed ? boardDropTarget(boardList.value, placed.frames, at, from.key) : undefined
+}
+
+/** Drags from a frame's ⚡ handle; dropped on another base frame, it adds a click interaction and opens its popover. */
+function startLink(event: PointerEvent, frame: ShownFrame) {
+  const from = frame.variant
+  if (event.button !== 0 || !from) return
+  event.preventDefault()
+  event.stopPropagation()
+  const handle = event.currentTarget as HTMLElement
+  handle.setPointerCapture(event.pointerId)
+  const start = handlePoint(frame.rect)
+  linking.value = { from, start, at: start, target: null }
+  const move = (e: PointerEvent) => {
+    const at = contentPoint(e.clientX, e.clientY)
+    linking.value = { from, start, at, target: linkTarget(from, at)?.key ?? null }
+  }
+  const end = async (e: PointerEvent) => {
+    handle.removeEventListener('pointermove', move)
+    handle.removeEventListener('pointerup', end)
+    handle.removeEventListener('pointercancel', end)
+    linking.value = null
+    const target = e.type === 'pointerup' ? linkTarget(from, contentPoint(e.clientX, e.clientY)) : undefined
+    if (!target) return
+    const id = await editor.addInteraction(from.variantId, 'click', target.variantId ?? '')
+    if (id) selectArrow(id)
+  }
+  handle.addEventListener('pointermove', move)
+  handle.addEventListener('pointerup', end)
+  handle.addEventListener('pointercancel', end)
 }
 
 // Turning the board on or off shows other frames: fit them again.
@@ -508,6 +605,14 @@ onBeforeUnmount(() => {
       :style="{ transform: `translate(${viewport.x}px, ${viewport.y}px) scale(${viewport.zoom})` }"
       data-canvas-content
     >
+      <!-- The purple line joining each base variant to its states, under the frames. -->
+      <div
+        v-for="(link, i) in boardPlaced?.links ?? []"
+        :key="`link-${i}`"
+        class="pointer-events-none absolute bg-(--editor-context)"
+        :style="{ left: `${link.x - 0.5 / viewport.zoom}px`, top: `${link.y1}px`, width: `${1 / viewport.zoom}px`, height: `${link.y2 - link.y1}px` }"
+        :data-board-link="link.base"
+      />
       <div
         v-for="frame in layout"
         :key="frame.key"
@@ -546,8 +651,27 @@ onBeforeUnmount(() => {
           :data-device="frame.variant ? undefined : frame.device.id"
           :data-board-variant="frame.variant?.key"
           class="block size-full bg-white"
-          :style="frame.key === activeKey ? { outline: `${2 / viewport.zoom}px solid var(--editor-context)` } : undefined"
+          :style="linking && frame.variant && linking.target === frame.variant.key
+            ? { outline: `${2 / viewport.zoom}px dashed var(--editor-context)`, outlineOffset: `${4 / viewport.zoom}px` }
+            : frame.key === activeKey ? { outline: `${2 / viewport.zoom}px solid var(--editor-context)` } : undefined"
         />
+        <!-- The ⚡ handle: drag it to another variant to add an interaction. -->
+        <button
+          v-if="frame.variant"
+          type="button"
+          class="absolute z-[1] grid size-6 cursor-crosshair place-items-center rounded-full bg-(--editor-context) text-white shadow-md ring-2 ring-white/80 hover:brightness-110"
+          :class="FOCUS_RING"
+          :style="{ left: `${frame.rect.width}px`, top: `${handlePoint(frame.rect).y - frame.rect.y}px`, transform: `translate(-50%, -50%) scale(${1 / viewport.zoom})` }"
+          :aria-label="`Add an interaction from ${frame.variant.label}: drag to another variant`"
+          title="Drag to another variant to add an interaction"
+          :data-board-handle="frame.variant.key"
+          @pointerdown="startLink($event, frame)"
+        >
+          <UIcon
+            name="i-lucide-zap"
+            class="size-3.5"
+          />
+        </button>
         <!-- The layout's children slot: where each page's own content goes. -->
         <div
           v-if="slotBoxes[frame.key]"
@@ -595,6 +719,115 @@ onBeforeUnmount(() => {
           Variant
         </span>
       </button>
+      <!-- A dashed "+ Hover / Pressed" tile under each base variant's column while it lacks one. -->
+      <EditorMenu
+        v-for="tile in boardPlaced?.stateAdds ?? []"
+        :key="`state-${tile.base}`"
+        :items="stateMenu(tile)"
+      >
+        <button
+          type="button"
+          class="absolute flex items-center justify-center rounded-xl border-dashed border-(--editor-context)/50 text-(--editor-context) hover:border-(--editor-context) hover:bg-(--editor-context)/8 aria-expanded:border-(--editor-context)"
+          :class="FOCUS_RING"
+          :style="{ left: `${tile.rect.x}px`, top: `${tile.rect.y}px`, width: `${tile.rect.width}px`, height: `${tile.rect.height}px`, borderWidth: `${1.5 / viewport.zoom}px` }"
+          aria-label="Add a hover or pressed state"
+          title="Add a state that shows while the pointer is over or pressing an instance"
+          :data-board-state-add="tile.base"
+        >
+          <span
+            class="flex items-center gap-1.5 text-[13px] font-[550] whitespace-nowrap"
+            :style="{ transform: `scale(${1 / viewport.zoom})` }"
+          >
+            <UIcon
+              name="i-lucide-plus"
+              class="size-4"
+            />
+            Hover / Pressed
+          </span>
+        </button>
+      </EditorMenu>
+      <!-- The interactions, as curved purple arrows; the drag in progress as a dashed line. -->
+      <svg
+        v-if="board"
+        class="pointer-events-none absolute top-0 left-0 overflow-visible"
+        width="1"
+        height="1"
+        data-board-arrows
+      >
+        <g
+          v-for="arrow in arrows"
+          :key="arrow.id"
+          class="cursor-pointer text-(--editor-context)"
+          :data-interaction-arrow="arrow.id"
+          :data-selected="arrow.id === editor.interactionId || undefined"
+          @click="selectArrow(arrow.id)"
+        >
+          <path
+            :d="arrow.d"
+            fill="none"
+            stroke="transparent"
+            :stroke-width="14 / viewport.zoom"
+            style="pointer-events: stroke"
+          />
+          <path
+            :d="arrow.d"
+            fill="none"
+            stroke="currentColor"
+            :stroke-width="(arrow.id === editor.interactionId ? 3 : 1.5) / viewport.zoom"
+            stroke-linecap="round"
+          />
+          <polygon
+            :points="arrow.head"
+            fill="currentColor"
+            style="pointer-events: fill"
+          />
+        </g>
+        <line
+          v-if="linking"
+          :x1="linking.start.x"
+          :y1="linking.start.y"
+          :x2="linking.at.x"
+          :y2="linking.at.y"
+          stroke="var(--editor-context)"
+          :stroke-width="2 / viewport.zoom"
+          :stroke-dasharray="`${6 / viewport.zoom} ${4 / viewport.zoom}`"
+          data-board-linking
+        />
+      </svg>
+      <!-- Each arrow's event, at its middle: a larger target to select it. -->
+      <button
+        v-for="arrow in arrows"
+        :key="`label-${arrow.id}`"
+        type="button"
+        class="absolute h-5 rounded-full px-2 text-[11px] leading-5 font-[550] whitespace-nowrap"
+        :class="[FOCUS_RING, arrow.id === editor.interactionId ? 'bg-(--editor-context) text-white' : 'bg-(--editor-context)/15 text-(--editor-context) hover:bg-(--editor-context)/25']"
+        :style="{ left: `${arrow.mid.x}px`, top: `${arrow.mid.y}px`, transform: `translate(-50%, -50%) scale(${1 / viewport.zoom})` }"
+        :aria-label="`${arrow.label} interaction: edit`"
+        :aria-pressed="arrow.id === editor.interactionId"
+        :data-interaction-label="arrow.id"
+        @click="selectArrow(arrow.id)"
+      >
+        {{ arrow.label }}
+      </button>
+      <EditorPopover
+        v-if="board"
+        v-model:open="arrowPopover"
+        title="Interaction"
+        :content="{ side: 'right', align: 'start' }"
+        data-interaction-popover
+      >
+        <template #anchor>
+          <div
+            class="pointer-events-none absolute size-px"
+            :style="{ left: `${selectedArrow?.mid.x ?? 0}px`, top: `${selectedArrow?.mid.y ?? 0}px` }"
+          />
+        </template>
+        <EditorInteractionFields
+          v-if="editor.interactionId && selectedArrow"
+          :interaction-id="editor.interactionId"
+          @removed="arrowPopover = false"
+        />
+      </EditorPopover>
     </div>
     <div
       v-if="panMode || panning"

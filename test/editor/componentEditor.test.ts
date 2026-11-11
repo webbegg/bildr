@@ -197,4 +197,15 @@ describe('componentCommands', () => {
     expect(create.enabled(ctx())).toBe(false)
     expect(componentCommands(project(), { editingId: null, canCreate: true }, actions).find(c => c.id === 'component:create')!.enabled(ctx())).toBe(true)
   })
+
+  it('previews the interactions of the component being edited, with ⌘P', () => {
+    const actions = { insert: vi.fn(), edit: vi.fn(), create: vi.fn(), previewInteractions: vi.fn() }
+    const preview = componentCommands(project(), { editingId: 'cmp_card', canCreate: false }, actions).find(c => c.id === 'component:preview-interactions')!
+    expect(preview).toMatchObject({ group: 'actions', label: 'Preview interactions', shortcut: ['meta', 'p'] })
+    expect(preview.enabled(ctx())).toBe(true)
+    expect(preview.enabled(ctx('data'))).toBe(false)
+    preview.run(ctx())
+    expect(actions.previewInteractions).toHaveBeenCalledWith('cmp_card')
+    expect(componentCommands(project(), { editingId: null, canCreate: false }, actions).find(c => c.id === 'component:preview-interactions')).toBeUndefined()
+  })
 })

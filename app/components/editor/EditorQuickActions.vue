@@ -60,7 +60,8 @@ const commands = computed(() => [
     ? componentCommands(editor.project, { editingId: editor.componentId, canCreate: canCreate.value }, {
         insert: id => editor.insertInstance(id),
         edit: id => editor.editComponent(id),
-        create: () => editor.createComponent()
+        create: () => editor.createComponent(),
+        previewInteractions: id => editor.previewInteractions(id)
       })
     : []),
   ...(editor.project

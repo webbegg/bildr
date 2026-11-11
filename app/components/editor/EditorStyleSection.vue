@@ -9,7 +9,9 @@ import type { DropdownMenuItem } from '@nuxt/ui'
  * id. The "+" is named `addLabel`, by default "Add <label> property".
  * `collapsed` (a section with nothing to show yet) renders the header only:
  * Framer's title plus "+". `editLabel` adds a gear before them, which emits
- * `edit` (e.g. "Edit properties…", opening the properties modal).
+ * `edit` (e.g. "Edit properties…", opening the properties modal). An item
+ * with `children` is a submenu (e.g. On › a target), which emits its
+ * children's ids.
  */
 export interface SectionMenuItem {
   id: string
@@ -17,17 +19,19 @@ export interface SectionMenuItem {
   disabled?: boolean
   /** The item's second line: what it adds, or why a disabled item is disabled. */
   hint?: string
+  children?: SectionMenuItem[]
 }
 
 const props = withDefaults(defineProps<{ label: string, menu?: SectionMenuItem[], removeLabel?: string, addLabel?: string, editLabel?: string, collapsed?: boolean }>(), { menu: () => [], removeLabel: undefined, addLabel: undefined, editLabel: undefined })
 const emit = defineEmits<{ add: [id: string], remove: [], edit: [] }>()
 
-const items = computed<DropdownMenuItem[]>(() => props.menu.map(item => ({
+const toItem = (item: SectionMenuItem): DropdownMenuItem => ({
   label: item.label,
   description: item.hint,
   disabled: item.disabled,
-  onSelect: () => emit('add', item.id)
-})))
+  ...(item.children ? { children: item.children.map(toItem) } : { onSelect: () => emit('add', item.id) })
+})
+const items = computed<DropdownMenuItem[]>(() => props.menu.map(toItem))
 </script>
 
 <template>

@@ -3,6 +3,7 @@ import { STYLE_TOKENS, variantsOf } from '#shared/design/tokens'
 import { COMPONENTS } from '#shared/document/components'
 import { createProject } from '#shared/document/factory'
 import { IdSchema } from '#shared/document/schema'
+import type { Interaction, Transition } from '#shared/document/schema'
 import { ActionError, defineAction } from './define'
 
 export const projectList = defineAction({
@@ -58,9 +59,14 @@ export const projectGet = defineAction({
   run: async ({ projectId }, { services }) => services.loadProject(projectId)
 })
 
+/** The interactions and transition of a component (its primary's) or a variant, for listings: only the ones set. */
+function motion({ interactions, transition }: { interactions?: Interaction[], transition?: Transition }) {
+  return { ...(interactions?.length ? { interactions } : {}), ...(transition ? { transition } : {}) }
+}
+
 export const componentsList = defineAction({
   name: 'components_list',
-  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and default style; plus the design tokens a node style can use (key, label, group, allowed values, and the breakpoints whose prefix it takes, e.g. md:cols; colour tokens list alsoAccepts: they also take a #rgb, #rrggbb or #rrggbbaa hex or a theme custom colour name). With projectId, also userComponents: the project\'s own components (id, name, properties, variants), inserted as node_insert { type: "Instance", props: { component: id } }.',
+  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and default style; plus the design tokens a node style can use (key, label, group, allowed values, and the breakpoints whose prefix it takes, e.g. md:cols; colour tokens list alsoAccepts: they also take a #rgb, #rrggbb or #rrggbbaa hex or a theme custom colour name). With projectId, also userComponents: the project\'s own components (id, name, properties, variants with their state, interactions and transition when set, and the primary\'s interactions and the component transition), inserted as node_insert { type: "Instance", props: { component: id } }.',
   input: z.object({ projectId: IdSchema.optional().describe('Also list this project\'s own components') }),
   readOnly: true,
   run: async ({ projectId }, { services }) => ({
@@ -72,7 +78,8 @@ export const componentsList = defineAction({
             id: c.id,
             name: c.name,
             properties: c.properties.map(p => ({ id: p.id, name: p.name, kind: p.kind, ...(p.default === undefined ? {} : { default: p.default }) })),
-            variants: c.variants.map(v => ({ id: v.id, name: v.name }))
+            ...motion(c),
+            variants: c.variants.map(v => ({ id: v.id, name: v.name, ...(v.state ? { state: v.state } : {}), ...motion(v) }))
           }))
         }),
     tokens: STYLE_TOKENS.map(token => ({

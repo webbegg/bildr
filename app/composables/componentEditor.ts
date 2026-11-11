@@ -252,6 +252,8 @@ export interface ComponentCommandActions {
   insert: (componentId: string) => unknown
   edit: (componentId: string) => unknown
   create: () => unknown
+  /** Opens the interactive preview on a page showing the component (see `previewPageFor`). */
+  previewInteractions?: (componentId: string) => unknown
 }
 
 const onCanvas = ({ editor }: CommandContext) => editor.mode === 'build' && !!editor.page
@@ -283,6 +285,18 @@ export function componentCommands(project: Project, state: { editingId: string |
       enabled: c => onCanvas(c) && state.canCreate,
       run: () => actions.create()
     },
+    ...(state.editingId && actions.previewInteractions
+      ? [{
+        id: 'component:preview-interactions',
+        group: 'actions',
+        label: 'Preview interactions',
+        icon: 'i-lucide-zap',
+        keywords: ['play', 'hover', 'pressed', 'click', 'variant', 'state', 'prototype'],
+        shortcut: shortcutKeys('preview'),
+        enabled: c => c.editor.mode === 'build',
+        run: () => actions.previewInteractions!(state.editingId!)
+      } satisfies Command<CommandContext>]
+      : []),
     ...project.components.map((def): Command<CommandContext> => ({
       id: `component:${def.id}`,
       group: 'goto',
