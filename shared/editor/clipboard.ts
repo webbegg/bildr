@@ -96,7 +96,6 @@ export function parseClip(text: string): Clip | null {
   return { kind: CLIP_KIND, sourceIds: [data.sourceId], nodes: [data.node], copiedAt: 0 }
 }
 
-/** The clip a paste uses: the system clipboard's when it was copied after the in-memory one (e.g. in another tab), else the in-memory one. */
 /**
  * A system clipboard read that gives up: null when it is refused or still
  * pending after `ms` (a permission prompt nobody answers), so a paste falls
@@ -113,6 +112,7 @@ export function readWithin(read: Promise<string>, ms: number): Promise<string | 
   })
 }
 
+/** The clip a paste uses: the system clipboard's when it was copied after the in-memory one (e.g. in another tab), else the in-memory one. */
 export function newerClip(memory: Clip | null, system: Clip | null): Clip | null {
   if (!system) return memory
   return !memory || system.copiedAt > memory.copiedAt ? system : memory

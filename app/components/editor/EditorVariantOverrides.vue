@@ -32,13 +32,17 @@ function reset(list: OverrideEntry[]) {
       v-for="entry in entries"
       :key="`${entry.kind}:${entry.key}`"
       :label="entry.key"
-      :title="`${entry.key} differs from the primary in ${editor.variant.name}`"
-      :provenance="{ state: 'set', key: entry.key, value: String(entry.value) }"
+      :title="entry.removed ? `${entry.key} is removed in ${editor.variant.name}` : `${entry.key} differs from the primary in ${editor.variant.name}`"
+      :provenance="{ state: 'set', key: entry.key, value: entry.removed ? 'removed' : String(entry.value) }"
       :data-override="`${entry.kind}:${entry.key}`"
+      :data-override-removed="entry.removed ? '' : undefined"
       @reset="reset([entry])"
     >
-      <p class="flex h-[30px] items-center truncate text-[12px] text-toned">
-        {{ String(entry.value) }}
+      <p
+        class="flex h-[30px] items-center truncate text-[12px]"
+        :class="entry.removed ? 'text-dimmed italic' : 'text-toned'"
+      >
+        {{ entry.removed ? 'Removed' : String(entry.value) }}
       </p>
     </EditorRow>
     <p

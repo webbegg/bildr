@@ -231,6 +231,7 @@ await run('colors-p1', async ({ context, page, errors }) => {
   const defOne = (await action('project_get', { projectId: p.id })).components.find(c => c.id === swatchId).root.children[0]
   check(defOne.style.p === '4', 'the primary keeps its p')
   check(await until(async () => (await page.locator('[data-override="style:p"]').count()) === 1), 'the overrides section lists the removed p')
+  check((await page.locator('[data-override="style:p"][data-override-removed]').innerText()).includes('Removed'), 'and shows it as Removed')
   await page.locator('[data-variant-overrides]').scrollIntoViewIfNeeded()
   await snap(page, 'variant-removed')
   check((await action('history_get', { projectId: p.id })).undo === 'Override variant', 'the variant paste style is one "Override variant" undo step')
