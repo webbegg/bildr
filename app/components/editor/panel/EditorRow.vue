@@ -7,7 +7,9 @@ import type { Provenance } from '#shared/editor/styleFields'
  * control on the right. `scrub` makes dragging the label scrub the control,
  * and the `below` slot spans the control column under it (joined side fields).
  * A `removable` row (an added optional property) shows a "−" (or `removeIcon`)
- * at the end of the label column on hover, which emits `remove`.
+ * at the end of the label column on hover, which emits `remove`. `bind` (a
+ * base token key) puts the binding dot in the gutter before the label
+ * (see EditorBindingDot).
  */
 withDefaults(defineProps<{
   label: string
@@ -20,18 +22,24 @@ withDefaults(defineProps<{
   scrub?: (event: PointerEvent) => void
   removable?: boolean
   removeIcon?: string
-}>(), { title: undefined, provenance: () => ({ state: 'unset' }), device: '', name: undefined, scrub: undefined, removable: false, removeIcon: 'i-lucide-minus' })
+  bind?: string
+}>(), { title: undefined, provenance: () => ({ state: 'unset' }), device: '', name: undefined, scrub: undefined, removable: false, removeIcon: 'i-lucide-minus', bind: undefined })
 const emit = defineEmits<{ reset: [], remove: [] }>()
 </script>
 
 <template>
   <div class="group/row grid grid-cols-[88px_minmax(0,1fr)] items-start gap-x-2">
     <div
-      class="flex h-[30px] min-w-0 items-center gap-1"
+      class="relative flex h-[30px] min-w-0 items-center gap-1"
       :class="{ 'cursor-ew-resize': scrub }"
       :data-field-label="name"
       @pointerdown="scrub?.($event)"
     >
+      <EditorBindingDot
+        v-if="bind"
+        mode="style"
+        :name="bind"
+      />
       <EditorFieldLabel
         :label="label"
         :title="title ?? label"
@@ -42,7 +50,7 @@ const emit = defineEmits<{ reset: [], remove: [] }>()
       <button
         v-if="removable"
         type="button"
-        class="ms-auto grid size-5 shrink-0 place-items-center rounded-lg text-dimmed opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 hover:bg-white/8 hover:text-highlighted focus-visible:opacity-100"
+        class="order-2 ms-auto grid size-5 shrink-0 place-items-center rounded-lg text-dimmed opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 hover:bg-white/8 hover:text-highlighted focus-visible:opacity-100"
         :aria-label="`Remove ${(title ?? label).toLowerCase()}`"
         :title="`Remove ${(title ?? label).toLowerCase()}${device ? ` on ${device}` : ''}`"
         data-row-remove

@@ -36,6 +36,7 @@ const usages = computed(() => (editor.project && editor.component ? componentUsa
         aria-label="Variant to show and edit"
         size="xs"
         variant="soft"
+        :ui="SELECT_UI"
         class="w-32"
         data-component-view-variant
         @update:model-value="editor.selectVariant($event === PRIMARY_VARIANT ? null : $event)"

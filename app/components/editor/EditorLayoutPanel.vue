@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { getComponent, INSTANCE_TYPE, isContainerType, SLOT_FILL_TYPE } from '#shared/document/components'
+import { INSTANCE_TYPE, isContainerType, SLOT_FILL_TYPE } from '#shared/document/components'
 import type { DocNode, LayoutSlot, PropertyDef } from '#shared/document/schema'
 import { CHILDREN_SLOT } from '#shared/document/schema'
 import { findNode } from '#shared/document/tree'
-import { uniqueComponentName } from '~/composables/componentEditor'
+import { bindingLabel, propBindingAdd, uniqueComponentName } from '~/composables/componentEditor'
 import { slotOf, variableAddItems } from '~/composables/layoutEditor'
 
 /**
@@ -35,7 +35,7 @@ function nodeLabel(nodeId: string): string {
 
 function boundTo(variable: PropertyDef): string {
   const binding = variable.bindings[0]
-  return binding ? `${nodeLabel(binding.nodeId)} · ${binding.prop}` : 'Not bound; use {{ layout.NAME }} in texts'
+  return binding && layout.value ? bindingLabel(layout.value.root, binding) : 'Not bound; use {{ layout.NAME }} in texts'
 }
 
 function addSlot() {
@@ -52,15 +52,8 @@ function removeSlot(slot: LayoutSlot) {
 }
 
 function addVariable(item: string) {
-  const propDef = getComponent(node.type)?.props.find(p => p.name === item)
-  if (!layout.value || !propDef) return
-  // No stored default: the node's own value is the default, so editing it reaches every page.
-  editor.run('layout_variable_add', {
-    layoutId: layout.value.id,
-    name: uniqueComponentName(propDef.label, layout.value.variables),
-    kind: propDef.kind,
-    bindings: [{ nodeId: node.id, prop: item }]
-  })
+  const add = layout.value ? propBindingAdd(layout.value.variables, node, item) : undefined
+  if (add) editor.run('layout_variable_add', { layoutId: layout.value!.id, ...add })
 }
 
 function renameVariable(variable: PropertyDef, name: string) {

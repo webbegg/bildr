@@ -10,7 +10,11 @@ import {
   instanceDragPayload,
   outsideInstance,
   parseInstancePayload,
+  bindingLabel,
+  boundProperty,
+  propBindingAdd,
   propertyField,
+  styleBindingAdd,
   uniqueComponentName
 } from '../../app/composables/componentEditor'
 
@@ -101,6 +105,54 @@ describe('propertyField', () => {
     const field = propertyField(card, color)
     expect(field).toMatchObject({ name: 'prop_color', kind: 'select', default: 'error' })
     expect(field.options).toContain('primary')
+  })
+
+  it('takes a style binding\'s default and options from the bound style key, not the prop of the same name', () => {
+    const heading = { ...node('Heading', { text: 'Hi' }), style: { text: '2xl', color: 'muted' } }
+    const card = def('cmp_x', 'X', node('Card', {}, [heading]))
+    const size = { id: 'prop_size', name: 'Size', kind: 'select' as const, bindings: [{ nodeId: heading.id, prop: 'text', target: 'style' as const }] }
+    const field = propertyField(card, size)
+    expect(field).toMatchObject({ name: 'prop_size', kind: 'select', default: '2xl' })
+    expect(field.options).toEqual(['xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl'])
+    const tone = { id: 'prop_tone', name: 'Tone', kind: 'select' as const, default: 'error', bindings: [{ nodeId: heading.id, prop: 'color', target: 'style' as const }] }
+    expect(propertyField(card, tone)).toMatchObject({ default: 'error' })
+    expect(propertyField(card, tone).options).toContain('primary')
+  })
+})
+
+describe('propBindingAdd and styleBindingAdd', () => {
+  it('turns a node prop into a property named after it, bound to it, without a stored default', () => {
+    const button = { ...node('Button'), id: 'b1' }
+    expect(propBindingAdd([{ name: 'Label' }], button, 'label')).toEqual({ name: 'Label 2', kind: 'text', bindings: [{ nodeId: 'b1', prop: 'label' }] })
+    expect(propBindingAdd([], button, 'nope')).toBeUndefined()
+  })
+
+  it('turns a style key into a select property bound to that key', () => {
+    expect(styleBindingAdd([], 'b1', 'md:p')).toEqual({ name: 'Padding', kind: 'select', bindings: [{ nodeId: 'b1', prop: 'md:p', target: 'style' }] })
+    expect(styleBindingAdd([{ name: 'Background' }], 'b1', 'bg').name).toBe('Background 2')
+  })
+})
+
+describe('boundProperty and bindingLabel', () => {
+  const props = [
+    { id: 'p_text', name: 'Title', kind: 'text' as const, bindings: [{ nodeId: 'n1', prop: 'text' }] },
+    { id: 'p_size', name: 'Size', kind: 'select' as const, bindings: [{ nodeId: 'n1', prop: 'text', target: 'style' as const }] }
+  ]
+
+  it('tells a prop binding from a style binding of the same name', () => {
+    expect(boundProperty(props, 'n1', 'text', 'prop')?.id).toBe('p_text')
+    expect(boundProperty(props, 'n1', 'text', 'style')?.id).toBe('p_size')
+    expect(boundProperty(props, 'n2', 'text', 'style')).toBeUndefined()
+    expect(boundProperty(props, 'n1', 'bg', 'style')).toBeUndefined()
+  })
+
+  it('names what a binding drives', () => {
+    const root = node('Card', {}, [{ ...node('Heading'), id: 'n1' }])
+    expect(bindingLabel(root, props[0]!.bindings[0])).toBe('Heading · text')
+    expect(bindingLabel(root, props[1]!.bindings[0])).toBe('Heading · style text')
+    expect(bindingLabel(root, { nodeId: 'n1', prop: 'children' })).toBe('Heading')
+    expect(bindingLabel(root, { nodeId: 'gone', prop: 'text' })).toBe('Missing node')
+    expect(bindingLabel(root, undefined)).toBe('Not bound')
   })
 })
 

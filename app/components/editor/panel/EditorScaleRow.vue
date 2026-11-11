@@ -19,6 +19,8 @@ const props = defineProps<{
   placeholder?: string
   stepper?: boolean
   slider?: boolean
+  /** The base token key of the binding dot (see EditorRow). */
+  bind?: string
 }>()
 const emit = defineEmits<{ preview: [value: string | null], commit: [value: string], reset: [] }>()
 
@@ -34,6 +36,7 @@ const scrub = (event: PointerEvent) => field.value?.scrub(event)
     :device="device"
     :name="token.key"
     :scrub="scrub"
+    :bind="bind"
     @reset="emit('reset')"
   >
     <EditorScaleField

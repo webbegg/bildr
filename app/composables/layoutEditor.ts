@@ -3,7 +3,7 @@ import type { PropDef, PropValue } from '#shared/document/components'
 import { CHILDREN_SLOT } from '#shared/document/schema'
 import type { DocNode, Layout, LayoutSlot, Page, Project, PropertyDef } from '#shared/document/schema'
 import { matches } from '#shared/editor/sidebar'
-import { propertyField } from './componentEditor'
+import { boundProperty, propertyField } from './componentEditor'
 
 /**
  * The layout editor's pure parts: the Assets list of layouts (with the pages
@@ -66,6 +66,7 @@ export function pageSlots(layout: Layout, page: Page): { slot: LayoutSlot, fille
 /** The props of a layout node that "+" can turn into a variable; the ones a variable drives already are disabled. */
 export function variableAddItems(layout: Layout, node: DocNode): { id: string, label: string, disabled: boolean, hint?: string }[] {
   if (node.type === INSTANCE_TYPE || node.type === SLOT_FILL_TYPE) return []
-  const bound = (prop: string) => layout.variables.some(v => v.bindings.some(b => b.nodeId === node.id && b.prop === prop))
+  // A style binding of the same name (style `text` is the font size) leaves the prop free.
+  const bound = (prop: string) => !!boundProperty(layout.variables, node.id, prop, 'prop')
   return (getComponent(node.type)?.props ?? []).map(p => ({ id: p.name, label: p.label, disabled: bound(p.name), ...(bound(p.name) ? { hint: 'Already a variable' } : {}) }))
 }

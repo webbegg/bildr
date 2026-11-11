@@ -218,6 +218,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
             :def="def"
             :value="propValue(def.name, def.default)"
             :changed="changed(def)"
+            bindable
             @update="editor.updateProps(node.id, { [def.name]: $event })"
             @reset="editor.updateProps(node.id, { [def.name]: resetValue(def) })"
           />
@@ -250,6 +251,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
         @preview="editor.previewStyle(styleTargets, $event)"
         @update="editor.updateStyle(styleTargets, $event)"
       />
+      <EditorSelectionColors />
     </div>
   </div>
 </template>
