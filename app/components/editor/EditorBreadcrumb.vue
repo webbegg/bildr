@@ -10,7 +10,8 @@ import { layoutPages } from '~/composables/layoutEditor'
  * context purple. Each crumb goes to its level; Done (or Esc with nothing
  * selected) goes up one. Beside it: how many instances (or pages) the edits
  * reach and, for a component with variants, the variant the canvas shows
- * and edits.
+ * and edits, and the Board toggle, which lays every variant out side by side
+ * on the canvas (on by default with 2 or more, counting the primary).
  */
 const editor = useEditor()
 
@@ -98,6 +99,19 @@ const variantChoices = computed(() => (editor.component ? variantItems(editor.co
         aria-label="Variant to show and edit"
         data-component-view-variant
         @update:model-value="editor.selectVariant($event === PRIMARY_VARIANT ? null : $event)"
+      />
+    </div>
+    <div
+      v-if="editor.component"
+      class="shrink-0"
+      title="Show every variant side by side"
+    >
+      <EditorSwitch
+        :model-value="editor.variantBoard"
+        label="Board"
+        aria-label="Variant board"
+        data-variant-board-toggle
+        @update:model-value="editor.setVariantBoard($event)"
       />
     </div>
     <EditorButton

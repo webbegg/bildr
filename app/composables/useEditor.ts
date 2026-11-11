@@ -35,7 +35,8 @@ import { goToLevel, leaveLevel, openLevel, pruneLevels, topLevel } from '#shared
 import { componentPrefill, uniqueName } from '#shared/editor/names'
 import { selectionAccent } from '#shared/editor/accent'
 import { insertableComponents, outsideInstance, parseInstancePayload } from './componentEditor'
-import { activeVariant, applyVariant, overrideInput, pasteStyleOverride, primaryStyle } from './componentVariants'
+import { boardShown } from '#shared/editor/variantBoard'
+import { activeVariant, applyVariant, newVariantName, overrideInput, pasteStyleOverride, primaryStyle } from './componentVariants'
 import type { NodeOverridePatch, OverridePatch } from './componentVariants'
 
 /** Identifies this editor tab on change events, so it can skip its own echoes. */
@@ -106,6 +107,8 @@ export function createEditor(projectId: string) {
   const confirmRequest = shallowRef<(ConfirmOptions & { answer: (ok: boolean) => void }) | null>(null)
   /** In the component view, the variant the Canvas shows and prop/style edits override; null is the primary (the definition itself). */
   const variantId = ref<string | null>(null)
+  /** The variant board's toggle per component, as last set (in memory only); a component without one follows `boardShown`'s default. */
+  const boardChoices = ref<Record<string, boolean>>({})
   /** The selection in the order it was made; Shift+click adds and removes nodes. */
   const selectedIds = ref<string[]>([])
   /** The primary (last selected) node: the one the panel edits alone, and the editor context reports. Setting it selects only it. */
@@ -200,10 +203,18 @@ export function createEditor(projectId: string) {
    * applied, or in the layout view the layout's tree, as a page of its own.
    */
   const page = computed<Page | null>(() => {
-    if (component.value) return { id: component.value.id, name: component.value.name, slug: currentPage.value?.slug ?? '', root: applyVariant(component.value.root, variant.value, component.value.properties) }
+    if (component.value) return variantPage(variant.value?.id ?? null)
     if (layout.value) return { id: layout.value.id, name: layout.value.name, slug: currentPage.value?.slug ?? '', root: layout.value.root }
     return currentPage.value
   })
+  /** In the component view, the definition with variant `id` applied (null: the primary), as the page the Canvas shows (see `page`). */
+  function variantPage(id: string | null): Page | null {
+    const def = component.value
+    if (!def) return null
+    return { id: def.id, name: def.name, slug: currentPage.value?.slug ?? '', root: applyVariant(def.root, activeVariant(def, id), def.properties) }
+  }
+  /** The component view shows the variant board: every variant side by side at the active breakpoint (see `variantBoard.ts`). */
+  const variantBoard = computed(() => !!component.value && boardShown(boardChoices.value[component.value.id], component.value.variants.length))
   /** The `pageId`, `componentId` or `layoutId` the node actions take for that tree. */
   const treeRef = computed(() => {
     if (component.value) return { componentId: component.value.id }
@@ -890,6 +901,27 @@ export function createEditor(projectId: string) {
     variantId.value = activeVariant(component.value, id)?.id ?? null
   }
 
+  /** The Board toggle: shows (or hides) the variant board for the component being edited, remembered for it until the editor closes. */
+  function setVariantBoard(on: boolean): void {
+    if (component.value) boardChoices.value = { ...boardChoices.value, [component.value.id]: on }
+  }
+
+  /** Adds a variant to the component being edited (`Variant N`, like the primary) and makes it the active one. */
+  async function addVariant(): Promise<void> {
+    const def = component.value
+    if (!def) return
+    const result = await run<{ variantId: string }>('component_variant_add', { componentId: def.id, name: newVariantName(def) })
+    if (result) selectVariant(result.variantId)
+  }
+
+  /** Renames a variant of the component being edited; a blank or unchanged name does nothing. */
+  async function renameVariant(id: string, name: string): Promise<void> {
+    const def = component.value
+    const current = def?.variants.find(v => v.id === id)
+    const next = name.trim()
+    if (def && current && next && next !== current.name) await run('component_variant_rename', { componentId: def.id, variantId: id, name: next })
+  }
+
   /** Overrides props and design tokens of one definition node in the active variant; a null resets (removes) one, `unset` removes primary tokens. */
   async function setOverride(nodeId: string, patch: OverridePatch): Promise<unknown> {
     return setOverrides([{ nodeId, ...patch }])
@@ -1030,9 +1062,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, componentId, component, layoutId, layout, editStack, createRequest, propertiesRequest, confirmRequest, canvasAccent, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
+    projectId, project, pageId, componentId, component, layoutId, layout, editStack, createRequest, propertiesRequest, confirmRequest, canvasAccent, variantId, variant, variantBoard, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
-    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, renameVariant, variantPage, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, updateStyles, previewTheme, updateTheme, undo, redo, shortcut
   })

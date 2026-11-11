@@ -5,11 +5,13 @@ import { isCanvasMessage } from '#shared/editor/protocol'
 import { createThrottle, PREVIEW_INTERVAL } from '#shared/editor/preview'
 import type { PreviewState } from '#shared/editor/preview'
 import type { NodeBox } from '#shared/editor/autoLayout'
-import type { DeviceId } from '#shared/editor/styleFields'
-import type { Point, Viewport, ZoomCommand } from '#shared/editor/viewport'
+import type { Device } from '#shared/editor/styleFields'
+import type { Point, Rect, Viewport, ZoomCommand } from '#shared/editor/viewport'
 import { isInsertTool, pointerMode } from '#shared/editor/insertTools'
 import { revealFrame } from '#shared/editor/devices'
-import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, layoutFrames, panView, selectionView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, layoutFrames, panView, selectionView, stepZoom, viewportHeight, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import type { BoardFrame } from '#shared/editor/variantBoard'
+import { boardFrameKey, boardFrames, boardLayout } from '#shared/editor/variantBoard'
 
 /**
  * The editor canvas. The page view is a Figma-style infinite surface showing
@@ -36,6 +38,13 @@ import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MI
  * patch and commit it through `updateStyle` (one undo step, `setOverride` in
  * the variant view), and the panel's hovered Padding or Gap field goes to the
  * frames as `bildr:overlay`.
+ * In the component view, the variant board (`editor.variantBoard`) replaces
+ * the device frames with one frame per variant at the active breakpoint
+ * (Primary, then each variant), each labelled with a purple chip
+ * (EditorVariantBar) and ending with a dashed "+ Variant" tile. The active
+ * variant's frame is the active one: it alone shows the selection, handles
+ * and previews. A click, right-click, drop or insert in another frame makes
+ * its variant active first, so edits override that variant.
  */
 const { view = 'page' } = defineProps<{ view?: CanvasView }>()
 const editor = useEditor()
@@ -43,24 +52,42 @@ const emit = defineEmits<{ key: [message: Extract<CanvasToEditor, { type: 'bildr
 const stage = useTemplateRef<HTMLDivElement>('stage')
 const tokenFrame = useTemplateRef<HTMLIFrameElement>('tokenFrame')
 
-/** The mounted frame iframes by device; null keys the token preview. */
-const frames = new Map<DeviceId | null, HTMLIFrameElement>()
-function frameRef(id: DeviceId) {
+/** The mounted frame iframes by frame key (a device id, or `variant:<key>` on the board); null keys the token preview. */
+const frames = new Map<string | null, HTMLIFrameElement>()
+function frameRef(key: string) {
   return (el: unknown) => {
-    if (el) frames.set(id, el as HTMLIFrameElement)
-    else frames.delete(id)
+    if (el) frames.set(key, el as HTMLIFrameElement)
+    else frames.delete(key)
   }
 }
+
+/** A frame on the canvas: a device's, or on the variant board a variant's (at the active device's width). */
+interface ShownFrame { key: string, device: Device, rect: Rect, variant?: BoardFrame }
+
+const board = computed(() => view === 'page' && editor.variantBoard)
+const boardList = computed<BoardFrame[]>(() => (editor.component ? boardFrames(editor.component.variants) : []))
+const boardKey = (variantId: string | null) => `variant:${boardFrameKey(variantId)}`
+/** The frame the style panel edits: the active device's, or on the board the active variant's. */
+const activeKey = computed(() => (board.value ? boardKey(editor.variant?.id ?? null) : editor.deviceId))
 
 const FRAMES_KEY = 'bildr:canvas-frames'
 /** All frames, or only the active one (small screens, performance); remembered across reloads. */
 const singleFrame = ref(view === 'page' && localStorage.getItem(FRAMES_KEY) === 'single')
-const heights = reactive<Partial<Record<DeviceId, number>>>({})
+const heights = reactive<Record<string, number>>({})
+const frameHeight = (key: string) => Math.max(FRAME_MIN_HEIGHT, heights[key] ?? 0)
 const shownDevices = computed(() => (singleFrame.value ? [editor.device] : editor.visibleDevices))
-const layout = computed(() => {
-  const rects = layoutFrames(shownDevices.value.map(d => ({ width: d.width, height: Math.max(FRAME_MIN_HEIGHT, heights[d.id] ?? 0) })), FRAME_GAP)
-  return shownDevices.value.map((device, i) => ({ device, rect: rects[i]! }))
+/** The frames and where they go, plus the board's "+ Variant" tile (null off the board). */
+const placement = computed<{ frames: ShownFrame[], add: Rect | null }>(() => {
+  if (board.value) {
+    const device = editor.device
+    const keys = boardList.value.map(f => boardKey(f.variantId))
+    const placed = boardLayout(keys.map(frameHeight), device.width, FRAME_GAP)
+    return { frames: boardList.value.map((variant, i) => ({ key: keys[i]!, device, rect: placed.frames[i]!, variant })), add: placed.add }
+  }
+  const rects = layoutFrames(shownDevices.value.map(d => ({ width: d.width, height: frameHeight(d.id) })), FRAME_GAP)
+  return { frames: shownDevices.value.map((device, i) => ({ key: device.id, device, rect: rects[i]! })), add: null }
 })
+const layout = computed(() => placement.value.frames)
 
 const viewport = ref<Viewport>({ x: 0, y: 0, zoom: 1 })
 const stageSize = reactive({ width: 0, height: 0 })
@@ -73,8 +100,14 @@ const FIT_PADDING = 48 + FRAME_BAR_HEIGHT
 let autoFit = true
 
 function fit() {
-  viewport.value = fitView(boundsOf(layout.value.map(f => f.rect)), stageSize, FIT_PADDING)
+  const add = placement.value.add
+  viewport.value = fitView(boundsOf([...layout.value.map(f => f.rect), ...(add ? [add] : [])]), stageSize, FIT_PADDING)
 }
+
+// Turning the board on or off shows other frames: fit them again.
+watch(board, () => {
+  autoFit = true
+})
 
 watch([layout, () => stageSize.width, () => stageSize.height], () => {
   if (autoFit && stageSize.width) fit()
@@ -87,7 +120,7 @@ function zoomTo(zoom: number, at: Point = { x: stageSize.width / 2, y: stageSize
 
 /** Shift+2: fits the selection, as measured in the active frame; nothing without one. */
 async function zoomToSelection() {
-  const frame = layout.value.find(f => f.device.id === editor.deviceId)?.rect
+  const frame = layout.value.find(f => f.key === activeKey.value)?.rect
   if (!frame || !editor.selectedIds.length) return
   const view = selectionView(await measureNodes(editor.selectedIds), frame, stageSize, FIT_PADDING)
   if (!view) return
@@ -110,7 +143,7 @@ watch(() => editor.zoomRequest, (request) => {
 
 // A device picked on the floating bar, with ⌥1–3 or ⌘K: pan its frame into view at the same zoom (a single frame refits instead).
 watch(() => editor.frameRequest, (request) => {
-  const rect = request && view === 'page' && !singleFrame.value ? layout.value.find(f => f.device.id === request.deviceId)?.rect : undefined
+  const rect = request && view === 'page' && !singleFrame.value && !board.value ? layout.value.find(f => f.key === request.deviceId)?.rect : undefined
   if (!rect || !stageSize.width) return
   autoFit = false
   viewport.value = revealFrame(viewport.value, rect, stageSize, FIT_PADDING)
@@ -234,14 +267,18 @@ watch(() => editor.deviceId, () => {
   if (singleFrame.value) autoFit = true
 })
 
-function activate(id: DeviceId | null) {
-  if (id) editor.deviceId = id
+/** Makes a frame the active one: its device, or on the board its variant (`variantId`, as the frame reported it, wins). */
+function activate(frame: ShownFrame | undefined, variantId?: string | null) {
+  if (frame?.variant) editor.selectVariant(variantId !== undefined ? variantId : frame.variant.variantId)
+  else if (frame) editor.deviceId = frame.device.id
 }
 
-function frameTitle(id: DeviceId, label: string): string {
+function frameTitle(frame: ShownFrame): string {
   // The active frame keeps the plain "Canvas" title the e2e scripts and assistive tech look for.
-  return id === editor.deviceId ? 'Canvas' : `Canvas ${label}`
+  return frame.key === activeKey.value ? 'Canvas' : `Canvas ${frame.variant?.label ?? frame.device.label}`
 }
+
+const frameAt = (key: string | null | undefined) => (key ? layout.value.find(f => f.key === key) : undefined)
 
 function post(el: HTMLIFrameElement, message: EditorToCanvas) {
   // The document lives in reactive proxies, which postMessage cannot clone.
@@ -252,13 +289,44 @@ function broadcast(message: EditorToCanvas) {
   for (const el of frames.values()) post(el, message)
 }
 
-function renderMessage(): EditorToCanvas | null {
+/** What frame `key` renders: the page, or on the board the definition with its variant applied (and which variant that is). */
+function renderMessage(key: string | null): EditorToCanvas | null {
   if (!editor.page || !editor.project || !editor.theme) return null
-  return { type: 'bildr:render', page: editor.page, base: `/p/${editor.project.slug}`, theme: editor.theme, view, lists: editor.lists, env: editor.publicEnv, components: editor.project.components, layouts: editor.project.layouts }
+  const variant = frameAt(key)?.variant
+  const page = variant ? editor.variantPage(variant.variantId) : editor.page
+  if (!page) return null
+  return {
+    type: 'bildr:render', page, base: `/p/${editor.project.slug}`, theme: editor.theme, view, lists: editor.lists, env: editor.publicEnv, components: editor.project.components, layouts: editor.project.layouts,
+    ...(variant ? { variant: { id: variant.variantId, label: variant.label } } : {})
+  }
 }
 
-function selectMessage(): EditorToCanvas {
-  return { type: 'bildr:select', nodeId: editor.selectedId, nodeIds: editor.selectedIds, accent: editor.canvasAccent }
+/** Every frame shows the selection, except on the board, where only the active variant's does. */
+const showsSelection = (key: string | null) => !board.value || key === activeKey.value
+
+function selectMessage(key: string | null): EditorToCanvas {
+  return showsSelection(key)
+    ? { type: 'bildr:select', nodeId: editor.selectedId, nodeIds: editor.selectedIds, accent: editor.canvasAccent }
+    : { type: 'bildr:select', nodeId: null, nodeIds: [], accent: editor.canvasAccent }
+}
+
+/** On the board, the frame the pointer hovers in (else the active one) shows the hover; elsewhere every frame does. */
+const hoverKey = ref<string | null>(null)
+function hoverMessage(key: string | null): EditorToCanvas {
+  const shows = !board.value || key === (hoverKey.value ?? activeKey.value)
+  return { type: 'bildr:hover', nodeId: shows ? editor.hoveredId : null }
+}
+
+function activeFrameMessage(key: string): EditorToCanvas {
+  if (!board.value) return activeMessage(key, editor.deviceId, viewport.value.zoom)
+  return { type: 'bildr:active', active: key === activeKey.value, zoom: viewport.value.zoom, viewportHeight: viewportHeight(editor.deviceId) }
+}
+
+function postEach(message: (key: string | null) => EditorToCanvas | null) {
+  for (const [key, el] of frames) {
+    const m = message(key)
+    if (m) post(el, m)
+  }
 }
 
 function toolMessage(): EditorToCanvas {
@@ -266,25 +334,24 @@ function toolMessage(): EditorToCanvas {
 }
 
 function render() {
-  const message = renderMessage()
-  if (!message) return
-  broadcast(message)
-  broadcast(selectMessage())
+  if (!renderMessage(null)) return
+  postEach(renderMessage)
+  postEach(selectMessage)
 }
 
 /** Brings a frame that just loaded up to date with the others. */
-function sync(id: DeviceId | null, el: HTMLIFrameElement) {
-  const message = renderMessage()
+function sync(key: string | null, el: HTMLIFrameElement) {
+  const message = renderMessage(key)
   if (!message) return
   post(el, message)
-  post(el, selectMessage())
-  post(el, { type: 'bildr:hover', nodeId: editor.hoveredId })
+  post(el, selectMessage(key))
+  post(el, hoverMessage(key))
   post(el, toolMessage())
   post(el, { type: 'bildr:dark', dark: editor.previewDark })
   post(el, { type: 'bildr:overlay', overlay: editor.spacingOverlay })
-  if (id) post(el, activeMessage(id, editor.deviceId, viewport.value.zoom))
+  if (key) post(el, activeFrameMessage(key))
   const preview = editor.stylePreview
-  if (preview) for (const nodeId of previewTargets(preview)) post(el, { type: 'bildr:preview', nodeId, style: preview.style })
+  if (preview && showsSelection(key)) for (const nodeId of previewTargets(preview)) post(el, { type: 'bildr:preview', nodeId, style: preview.style })
 }
 
 /** Pending `bildr:measure` requests by id; a frame that never answers resolves with no boxes. */
@@ -293,7 +360,7 @@ let measureId = 0
 
 /** The boxes of nodes in the active frame, in its canvas pixels. */
 function measureNodes(nodeIds: string[]): Promise<NodeBox[]> {
-  const el = frames.get(editor.deviceId)
+  const el = frames.get(activeKey.value)
   if (!el || !nodeIds.length) return Promise.resolve([])
   const requestId = ++measureId
   return new Promise((resolve) => {
@@ -320,13 +387,17 @@ function onMessage(event: MessageEvent) {
   const [id, el] = [...frames].find(([, frame]) => frame.contentWindow === event.source) ?? []
   if (!el || !isCanvasMessage<CanvasToEditor>(event.data)) return
   const message = event.data
+  const frame = frameAt(id)
   if (message.type === 'bildr:ready') sync(id ?? null, el)
-  else if (message.type === 'bildr:hover') editor.hoveredId = message.nodeId
-  else if (message.type === 'bildr:click') {
+  else if (message.type === 'bildr:hover') {
+    hoverKey.value = message.nodeId ? id ?? null : null
+    editor.hoveredId = message.nodeId
+  } else if (message.type === 'bildr:click') {
+    // On the board the frame's variant becomes the active one first, so the selection edits it.
+    activate(frame, message.variantId)
     editor.canvasClick(message.nodeId, message)
-    activate(id ?? null)
   } else if (message.type === 'bildr:insert') {
-    activate(id ?? null)
+    activate(frame)
     editor.insertWithTool({ parentId: message.parentId, index: message.index })
   } else if (message.type === 'bildr:rects') measures.get(message.requestId)?.(message.rects)
   else if (message.type === 'bildr:key') {
@@ -334,10 +405,10 @@ function onMessage(event: MessageEvent) {
     if (command) zoomCommand(command)
     else emit('key', message)
   } else if (message.type === 'bildr:contextmenu') {
-    activate(id ?? null)
+    activate(frame, message.variantId)
     openNodeMenu(el, message)
   } else if (message.type === 'bildr:drop') {
-    activate(id ?? null)
+    activate(frame)
     editor.drop(message.payload, { parentId: message.parentId, index: message.index })
   } else if (message.type === 'bildr:style-preview') editor.previewStyle(message.nodeId, message.style)
   else if (message.type === 'bildr:style-commit') editor.updateStyle(message.nodeId, message.style)
@@ -347,20 +418,22 @@ function onMessage(event: MessageEvent) {
   else if (id && message.type === 'bildr:space') spaceHeld.value = message.down
 }
 
-watch(() => [editor.page, editor.theme, editor.lists, editor.publicEnv, editor.project?.components, editor.project?.layouts], render, { deep: true })
-watch([() => editor.selectedIds, () => editor.canvasAccent], () => broadcast(selectMessage()))
-watch(() => editor.hoveredId, nodeId => broadcast({ type: 'bildr:hover', nodeId }))
+watch(() => [editor.page, editor.theme, editor.lists, editor.publicEnv, editor.project?.components, editor.project?.layouts, board.value], render, { deep: true })
+watch([() => editor.selectedIds, () => editor.canvasAccent, activeKey], () => postEach(selectMessage))
+watch([() => editor.hoveredId, hoverKey, activeKey], () => postEach(hoverMessage))
 watch(() => editor.tool, () => broadcast(toolMessage()))
 watch(() => editor.previewDark, dark => broadcast({ type: 'bildr:dark', dark }))
 watch(() => editor.spacingOverlay, overlay => broadcast({ type: 'bildr:overlay', overlay }))
-watch([() => editor.deviceId, () => viewport.value.zoom], ([deviceId, zoom]) => {
-  for (const [id, el] of frames) if (id) post(el, activeMessage(id, deviceId, zoom))
+watch([() => editor.deviceId, () => viewport.value.zoom, activeKey], () => {
+  for (const [key, el] of frames) if (key) post(el, activeFrameMessage(key))
 })
 
 type PreviewMessage = Extract<EditorToCanvas, { type: 'bildr:preview' }>
 const previewTargets = (state: PreviewState) => state.nodeIds ?? [state.nodeId]
 // Style previews move with a drag, so they are throttled (one batch per selection); a clear goes at once and drops any pending one.
-const previews = createThrottle<PreviewMessage[]>(batch => batch.forEach(broadcast), PREVIEW_INTERVAL)
+// On the board only the active variant's frame shows them.
+const postPreview = (message: PreviewMessage) => postEach(key => (showsSelection(key) ? message : null))
+const previews = createThrottle<PreviewMessage[]>(batch => batch.forEach(postPreview), PREVIEW_INTERVAL)
 // After the render watcher, so a commit's clear always follows the render that shows the committed value.
 watch(() => editor.stylePreview, (next, prev) => {
   const kept = next ? previewTargets(next) : []
@@ -413,33 +486,69 @@ onBeforeUnmount(() => {
       data-canvas-content
     >
       <div
-        v-for="{ device, rect } in layout"
-        :key="device.id"
+        v-for="frame in layout"
+        :key="frame.key"
         class="absolute"
-        :style="{ left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` }"
-        :data-frame="device.id"
-        :data-active="device.id === editor.deviceId || undefined"
+        :style="{ left: `${frame.rect.x}px`, top: `${frame.rect.y}px`, width: `${frame.rect.width}px`, height: `${frame.rect.height}px` }"
+        :data-frame="frame.variant ? undefined : frame.device.id"
+        :data-board-frame="frame.variant?.key"
+        :data-active="frame.key === activeKey || undefined"
       >
         <!-- The header bar and the active outline keep their screen size at any zoom. -->
-        <EditorFrameBar
-          :device="device"
+        <EditorVariantBar
+          v-if="frame.variant"
+          :label="frame.variant.label"
+          :primary="frame.variant.primary"
+          :active="frame.key === activeKey"
           :zoom="viewport.zoom"
-          :active="device.id === editor.deviceId"
+          :width="frame.rect.width"
+          @activate="activate(frame)"
+          @rename="frame.variant.variantId && editor.renameVariant(frame.variant.variantId, $event)"
+        />
+        <EditorFrameBar
+          v-else
+          :device="frame.device"
+          :zoom="viewport.zoom"
+          :active="frame.key === activeKey"
           :hidden="editor.hiddenDevices"
-          @activate="activate(device.id)"
-          @preview="editor.openPreview(device.width)"
+          @activate="activate(frame)"
+          @preview="editor.openPreview(frame.device.width)"
           @add="editor.showFrame($event)"
-          @hide="editor.hideFrame(device.id)"
+          @hide="editor.hideFrame(frame.device.id)"
         />
         <iframe
-          :ref="frameRef(device.id)"
+          :ref="frameRef(frame.key)"
           src="/canvas"
-          :title="frameTitle(device.id, device.label)"
-          :data-device="device.id"
+          :title="frameTitle(frame)"
+          :data-device="frame.variant ? undefined : frame.device.id"
+          :data-board-variant="frame.variant?.key"
           class="block size-full bg-white"
-          :style="device.id === editor.deviceId ? { outline: `${2 / viewport.zoom}px solid var(--editor-context)` } : undefined"
+          :style="frame.key === activeKey ? { outline: `${2 / viewport.zoom}px solid var(--editor-context)` } : undefined"
         />
       </div>
+      <!-- The board's dashed "+ Variant" tile, after the last variant. -->
+      <button
+        v-if="placement.add"
+        type="button"
+        class="absolute flex items-center justify-center rounded-xl border-dashed border-(--editor-context)/50 text-(--editor-context) hover:border-(--editor-context) hover:bg-(--editor-context)/8"
+        :class="FOCUS_RING"
+        :style="{ left: `${placement.add.x}px`, top: `${placement.add.y}px`, width: `${placement.add.width}px`, height: `${placement.add.height}px`, borderWidth: `${1.5 / viewport.zoom}px` }"
+        aria-label="Add variant"
+        title="Add a variant, starting like the primary"
+        data-board-add
+        @click="editor.addVariant()"
+      >
+        <span
+          class="flex items-center gap-1.5 text-[13px] font-[550] whitespace-nowrap"
+          :style="{ transform: `scale(${1 / viewport.zoom})` }"
+        >
+          <UIcon
+            name="i-lucide-plus"
+            class="size-4"
+          />
+          Variant
+        </span>
+      </button>
     </div>
     <div
       v-if="panMode || panning"

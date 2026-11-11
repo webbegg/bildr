@@ -89,6 +89,7 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
     v-else-if="editor.project && editor.page"
     class="flex h-screen flex-col"
     :data-editor-context="editor.componentId ? 'component' : editor.layoutId ? 'layout' : 'page'"
+    :data-editor-variant="editor.variant ? '' : undefined"
   >
     <EditorToolbar />
     <EditorQuickActions />

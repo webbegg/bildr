@@ -43,6 +43,13 @@ import type { StylePatch } from './preview'
  * resolves `{{ env.NAME }}` with in props and theme colours; a missing one
  * shows as written.
  *
+ * The variant board (`variantBoard.ts`) shows one frame per variant of the
+ * component being edited, each its own canvas: `bildr:render.variant` names
+ * the variant that frame shows (`id` null is the primary), and the frame's
+ * `bildr:click` and `bildr:contextmenu` carry it back as `variantId`, so the
+ * editor makes that variant active before it selects. A frame without a
+ * `variant` (every other view) reports none.
+ *
  * `bildr:dark` previews the project's dark colours: the frame puts `.dark` on
  * its `<html>`, which the theme CSS answers with its dark values.
  *
@@ -60,8 +67,11 @@ export type SpacingOverlay = 'padding' | 'gap'
 /** What a canvas shows: the page being edited, or the theme's token preview sheet. */
 export type CanvasView = 'page' | 'tokens'
 
+/** The variant a board frame shows: `id` null is the primary. */
+export interface BoardVariant { id: string | null, label: string }
+
 export type EditorToCanvas
-  = | { type: 'bildr:render', page: Page, base: string, theme: Theme, view: CanvasView, lists: Record<string, DataRecord[]>, env: EnvValues, components: ComponentDefinition[], layouts: Layout[] }
+  = | { type: 'bildr:render', page: Page, base: string, theme: Theme, view: CanvasView, lists: Record<string, DataRecord[]>, env: EnvValues, components: ComponentDefinition[], layouts: Layout[], variant?: BoardVariant }
     | { type: 'bildr:select', nodeId: string | null, nodeIds: string[], accent?: string }
     | { type: 'bildr:hover', nodeId: string | null }
     | { type: 'bildr:preview', nodeId: string, style: StylePatch | null }
@@ -75,9 +85,9 @@ export type EditorToCanvas
 export type CanvasToEditor
   = | { type: 'bildr:ready' }
     | { type: 'bildr:hover', nodeId: string | null }
-    | { type: 'bildr:click', nodeId: string, shift: boolean, meta: boolean }
+    | { type: 'bildr:click', nodeId: string, shift: boolean, meta: boolean, variantId?: string | null }
     | { type: 'bildr:rects', requestId: number, rects: NodeBox[] }
-    | { type: 'bildr:contextmenu', nodeId: string, x: number, y: number }
+    | { type: 'bildr:contextmenu', nodeId: string, x: number, y: number, variantId?: string | null }
     | { type: 'bildr:key', key: string, code: string, meta: boolean, shift: boolean, alt: boolean }
     | { type: 'bildr:drop', parentId: string, index: number, payload: string }
     | { type: 'bildr:insert', parentId: string, index: number }

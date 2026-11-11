@@ -59,7 +59,7 @@ const SHAPE = 'max-w-full truncate rounded-sm text-left text-[12px] leading-5'
   >
     <button
       type="button"
-      :class="[SHAPE, 'text-(color:--editor-selection) hover:brightness-125']"
+      :class="[SHAPE, 'text-(color:--editor-override) hover:brightness-125']"
       :title="`${title} (⌥ click: reset)`"
       data-field-state="set"
       data-highlight="override"

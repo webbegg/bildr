@@ -3,7 +3,7 @@ import type { DataRecord } from '#shared/data/records'
 import type { Theme } from '#shared/design/theme'
 import type { ComponentDefinition, Layout, Page } from '#shared/document/schema'
 import type { EnvValues } from '#shared/env/variables'
-import type { CanvasToEditor, CanvasView, EditorToCanvas, SpacingOverlay } from '#shared/editor/protocol'
+import type { BoardVariant, CanvasToEditor, CanvasView, EditorToCanvas, SpacingOverlay } from '#shared/editor/protocol'
 import { canvasKeyMessage, isCanvasMessage } from '#shared/editor/protocol'
 import { spacingBasePx } from '#shared/design/theme'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
@@ -62,6 +62,8 @@ import { SELECTION_ACCENT } from '#shared/editor/accent'
  * The frame grows with its content, so `screen` heights (100vh) would grow
  * with it: in the page view they resolve to the device's nominal viewport
  * height from `bildr:active` instead.
+ * A variant board frame shows one variant (`bildr:render.variant`) and
+ * reports it with its clicks and right-clicks (`variantId`).
  *
  * Direct manipulation (#23), in the active frame on a single unlocked
  * selection (not the root), with no insert tool armed:
@@ -91,6 +93,10 @@ const theme = shallowRef<Theme | null>(null)
 const env = shallowRef<EnvValues>({})
 useTheme(theme, env)
 const view = ref<CanvasView>('page')
+/** The variant this frame shows on the variant board; null elsewhere. */
+const boardVariant = shallowRef<BoardVariant | null>(null)
+/** Hit-testing reports the board variant with the node. */
+const variantField = () => (boardVariant.value ? { variantId: boardVariant.value.id } : {})
 const selectedId = ref<string | null>(null)
 const selectedIds = ref<string[]>([])
 const hoveredId = ref<string | null>(null)
@@ -379,6 +385,7 @@ function onMessage(event: MessageEvent) {
     env.value = message.env ?? {}
     theme.value = message.theme
     view.value = message.view
+    boardVariant.value = message.variant ?? null
   } else if (message.type === 'bildr:select') {
     selectedId.value = message.nodeId
     selectedIds.value = message.nodeIds
@@ -447,7 +454,7 @@ function onClick(event: MouseEvent) {
     return
   }
   const id = reachableAt(event.target)
-  if (id) post({ type: 'bildr:click', nodeId: id, shift: event.shiftKey, meta: event.metaKey || event.ctrlKey })
+  if (id) post({ type: 'bildr:click', nodeId: id, shift: event.shiftKey, meta: event.metaKey || event.ctrlKey, ...variantField() })
 }
 
 /** The last pointer position of a middle-button pan, in screen pixels (zoom-independent). */
@@ -491,7 +498,7 @@ function onWheel(event: WheelEvent) {
 function onContextMenu(event: MouseEvent) {
   event.preventDefault()
   const id = reachableAt(event.target)
-  if (id) post({ type: 'bildr:contextmenu', nodeId: id, x: event.clientX, y: event.clientY })
+  if (id) post({ type: 'bildr:contextmenu', nodeId: id, x: event.clientX, y: event.clientY, ...variantField() })
 }
 
 const SHORTCUT_KEYS = new Set(['Delete', 'Backspace', 'Escape', 'Enter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
@@ -849,6 +856,7 @@ onBeforeUnmount(() => {
     :data-canvas-viewport="view === 'page' || undefined"
     :style="view === 'page' ? { minHeight: `${FRAME_MIN_HEIGHT}px`, [VIEWPORT_VAR]: `${viewportHeight}px`, [ACCENT_VAR]: accent } : { [ACCENT_VAR]: accent }"
     :data-canvas-accent="accent"
+    :data-board-variant="boardVariant ? (boardVariant.id ?? 'primary') : undefined"
   >
     <EditorTokenSheet
       v-if="view === 'tokens'"

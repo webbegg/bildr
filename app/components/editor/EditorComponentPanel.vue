@@ -6,7 +6,7 @@ import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Provenance } from '#shared/editor/styleFields'
 import { propertyLabel } from '#shared/editor/propertyLabels'
 import { bindingLabel, boundProperty, propBindingAdd, propertyField, STYLE_ITEM, styleAddItems, styleBindingAdd, uniqueComponentName } from '~/composables/componentEditor'
-import { instanceVariantValue, newVariantName, PRIMARY_VARIANT, variantItems } from '~/composables/componentVariants'
+import { instanceVariantValue, PRIMARY_VARIANT, variantItems } from '~/composables/componentVariants'
 
 /**
  * The panel's component sections. On an Instance: its component (with Edit
@@ -85,15 +85,12 @@ function removeProperty(property: PropertyDef) {
   if (def.value) editor.run('component_property_remove', { componentId: def.value.id, propertyId: property.id })
 }
 
-async function addVariant() {
-  if (!def.value) return
-  const result = await editor.run<{ variantId: string }>('component_variant_add', { componentId: def.value.id, name: newVariantName(def.value) })
-  if (result) editor.selectVariant(result.variantId)
+function addVariant() {
+  void editor.addVariant()
 }
 
 function renameVariant(variant: Variant, name: string) {
-  const next = name.trim()
-  if (def.value && next && next !== variant.name) editor.run('component_variant_rename', { componentId: def.value.id, variantId: variant.id, name: next })
+  void editor.renameVariant(variant.id, name)
 }
 
 async function deleteVariant(variant: Variant) {

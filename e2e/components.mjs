@@ -467,3 +467,117 @@ await run('components-p1', async ({ page, errors }) => {
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 })
+
+/**
+ * The variant board (S2.4): with Primary and Hover the component view lays
+ * both out side by side at the active breakpoint, each with a purple label
+ * chip; a chip makes its variant active, a double-click renames it; a click
+ * on a node in the Hover frame makes Hover active, so an inspector edit
+ * writes a Hover override (undone in one step); "+ Variant" adds a frame and
+ * makes it active; the Board toggle goes back to the single view, and the
+ * choice is remembered for the component. Shots go to e2e/.shots/components-p1/.
+ */
+await run('components-board', async ({ page, errors }) => {
+  const snap = async (name) => {
+    await page.waitForTimeout(350)
+    await shot(page, `components-p1/${name}`)
+  }
+  const p = await project('components-board')
+  const projectId = p.id
+  const pageId = p.pages[0].id
+  const get = () => action('project_get', { projectId })
+  const componentOf = async id => (await get()).components.find(c => c.id === id)
+
+  const cardNode = await action('node_insert', { projectId, pageId, type: 'Card', style: { p: '6' }, children: [{ type: 'Heading', props: { text: 'Latte' } }, { type: 'Button', props: { label: 'Buy' } }] })
+  const { componentId: cardId } = await action('component_create', { projectId, pageId, nodeId: cardNode.nodeId, name: 'Card' })
+  const card = await componentOf(cardId)
+  const headingId = card.root.children[0].id
+  const { variantId: hoverId } = await action('component_variant_add', { projectId, componentId: cardId, name: 'Hover' })
+
+  await openEditor(page, projectId)
+  await page.getByRole('tab', { name: 'Assets' }).click()
+  const openCard = async () => {
+    await page.getByRole('tab', { name: 'Assets' }).click()
+    await page.locator(`[data-component-id="${cardId}"] button[draggable]`).click()
+    await page.locator('[data-component-view]').waitFor()
+  }
+  await openCard()
+  const boardFrames = () => page.locator('[data-board-frame]').evaluateAll(els => els.map(el => el.getAttribute('data-board-frame')))
+  const labels = () => page.locator('[data-board-label]').evaluateAll(els => els.map(el => el.textContent.trim()))
+  const activeFrame = () => page.locator('[data-board-frame][data-active]').getAttribute('data-board-frame')
+  const toggle = page.locator('[data-variant-board-toggle]')
+  const frameOf = key => page.frameLocator(`iframe[data-board-variant="${key}"]`)
+  const undo = async () => {
+    await page.mouse.move(700, 800)
+    await page.locator('body').press('Control+z')
+  }
+
+  // With Primary and Hover, the board is on: one frame each, Primary first, then the "+ Variant" tile.
+  check(!!await until(async () => JSON.stringify(await boardFrames()) === JSON.stringify(['primary', hoverId])), `the board shows Primary then Hover (${await boardFrames()})`)
+  check(JSON.stringify(await labels()) === JSON.stringify(['Primary', 'Hover']), `the frames are labelled "Primary" and "Hover" (${await labels()})`)
+  check(await toggle.getAttribute('aria-checked') === 'true', 'the Board toggle is on by default with 2 variants')
+  check(await page.locator('[data-board-add]').count() === 1, 'a dashed "+ Variant" tile ends the board')
+  check(await page.locator('[data-frame]').count() === 0, 'the board replaces the breakpoint frames')
+  check(!!await until(async () => (await frameOf(hoverId).locator(`[data-bildr-id="${headingId}"]`).count()) === 1), 'the Hover frame renders the definition')
+  const chipColor = await page.locator('[data-board-label]').last().evaluate(el => getComputedStyle(el).color)
+  check(chipColor === PURPLE, `a label chip is the context purple (${chipColor})`)
+
+  // A label chip makes its variant active.
+  await page.locator('[data-board-label]').filter({ hasText: 'Hover' }).click()
+  check(!!await until(async () => (await activeFrame()) === hoverId), 'clicking the Hover chip makes Hover the active frame')
+  check(await page.locator('iframe[title="Canvas"]').getAttribute('data-board-variant') === hoverId, 'the active frame is the Hover one')
+  check((await page.locator('[data-component-view-variant]').innerText()).includes('Hover'), 'the variant select shows Hover')
+  await page.locator('[data-board-label]').filter({ hasText: 'Primary' }).click()
+  check(!!await until(async () => (await activeFrame()) === 'primary'), 'clicking the Primary chip goes back to the primary')
+
+  // Selecting a node in the Hover frame makes Hover active and selects it; an edit then overrides Hover only.
+  await frameOf(hoverId).locator(`[data-bildr-id="${headingId}"]`).click()
+  check(!!await until(async () => (await activeFrame()) === hoverId), 'a click in the Hover frame makes Hover active')
+  await page.getByRole('tab', { name: 'Layers' }).click()
+  check(!!await until(async () => (await page.locator(`[data-layer-id="${headingId}"]`).first().getAttribute('aria-selected')) === 'true'), 'and selects the clicked Heading')
+  check(!!await until(async () => (await frameOf(hoverId).locator(`[data-selection-box="${headingId}"]`).count()) === 1), 'the Hover frame shows the selection')
+  check(await frameOf('primary').locator('[data-selection-box]').count() === 0, 'the Primary frame shows none')
+  const textField = page.locator('[data-prop-row="text"]').locator('input, textarea').first()
+  await textField.fill('Hover latte')
+  await textField.evaluate(el => el.blur())
+  const hoverText = async () => (await componentOf(cardId)).variants.find(v => v.id === hoverId).overrides[headingId]?.props?.text
+  check(!!await until(async () => (await hoverText()) === 'Hover latte'), 'the edit writes a Hover override')
+  check((await componentOf(cardId)).root.children[0].props.text === 'Latte', 'the primary keeps its text')
+  check(!!await until(async () => (await frameOf(hoverId).locator('body').innerText()).includes('Hover latte')), 'the Hover frame shows the override')
+  check(!(await frameOf('primary').locator('body').innerText()).includes('Hover latte'), 'the Primary frame does not')
+  const overrideLabel = page.locator('[data-prop-row="text"] [data-highlight="override"]')
+  check(await overrideLabel.count() === 1, 'the inspector marks the text as overridden')
+  const overrideColor = await overrideLabel.evaluate(el => getComputedStyle(el).color)
+  check(overrideColor === PURPLE, `the overridden value is purple (${overrideColor})`)
+  await snap('board')
+  await undo()
+  check(!!await until(async () => (await hoverText()) === undefined), 'undo removes the Hover override')
+
+  // A double-click on a chip renames the variant.
+  await page.locator('[data-board-label]').filter({ hasText: 'Hover' }).dblclick()
+  const rename = page.locator('[data-board-rename]')
+  await rename.waitFor()
+  await rename.fill('Hovered')
+  await rename.press('Enter')
+  check(!!await until(async () => (await componentOf(cardId)).variants.find(v => v.id === hoverId).name === 'Hovered'), 'a double-click on the chip renames the variant')
+  check(!!await until(async () => JSON.stringify(await labels()) === JSON.stringify(['Primary', 'Hovered'])), 'the chip shows the new name')
+
+  // "+ Variant" adds a frame and makes it active; undo takes it away.
+  await page.locator('[data-board-add]').click()
+  const added = await until(async () => (await componentOf(cardId)).variants[1]?.id)
+  check(!!added, '"+ Variant" adds a variant')
+  check(!!await until(async () => (await boardFrames()).length === 3 && (await activeFrame()) === added), 'the new variant gets a frame and becomes active')
+  await undo()
+  check(!!await until(async () => (await componentOf(cardId)).variants.length === 1 && (await boardFrames()).length === 2), 'undo removes the added variant and its frame')
+
+  // The toggle goes back to the single view with the breakpoint frames, and stays off for this component.
+  await toggle.click()
+  check(!!await until(async () => (await page.locator('[data-board-frame]').count()) === 0), 'Board off removes the variant frames')
+  check(await page.locator('[data-frame]').count() > 0 && await page.locator('[data-board-add]').count() === 0, 'and shows the breakpoint frames again')
+  await page.getByRole('button', { name: 'Leave the component view' }).click()
+  await page.locator('[data-breadcrumb]').waitFor({ state: 'detached' })
+  await openCard()
+  check(await toggle.getAttribute('aria-checked') === 'false' && await page.locator('[data-board-frame]').count() === 0, 'the Board choice is remembered for the component')
+
+  check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
+})

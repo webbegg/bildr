@@ -52,6 +52,8 @@ html.bildr-editor,
   --editor-selection: #09f;
   --editor-component: #85f;
   --editor-context: var(--editor-selection);
+  /* A value set here (an instance's, a non-default one); purple while a variant is shown, where it overrides that variant. */
+  --editor-override: var(--editor-selection);
   /* Text on the blue "set here" pills: the accent itself, there is one blue. */
   --editor-info: var(--editor-selection);
   --editor-provenance: #ffbc86;
@@ -98,6 +100,11 @@ html.bildr-editor body {
 [data-editor-context='component'],
 [data-editor-context='layout'] {
   --editor-context: var(--editor-component);
+}
+
+/* A component variant is shown (`data-editor-variant`): its overrides are purple, as in Framer. */
+[data-editor-variant] {
+  --editor-override: var(--editor-component);
 }
 
 /* What <html> and <body> give the editor page, for a subtree elsewhere. */
