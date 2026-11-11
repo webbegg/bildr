@@ -52,16 +52,18 @@ const StyleUpdateSchema = styleTokensSchema(values => values.nullable())
 
 const NodeSpecSchema: z.ZodType<NodeSpec> = z.lazy(() => z.object({
   type: z.string().describe('Component type, see components_list'),
-  props: z.record(z.string(), PropValueSchema).optional().describe('Overrides of the component default props'),
-  style: StyleSchema.optional().describe('Design tokens added to the component default style'),
+  props: z.record(z.string(), PropValueSchema).optional().describe('Overrides of the component default props (with exact, all the props)'),
+  style: StyleSchema.optional().describe('Design tokens added to the component default style (with exact, the whole style)'),
   children: z.array(NodeSpecSchema).optional().describe('Child nodes; only for container components')
 }))
 
-function buildNode(spec: NodeSpec): DocNode {
+/** A new node for `spec` and its children; `exact` leaves out the component default props and style (a paste). */
+function buildNode(spec: NodeSpec, exact = false): DocNode {
   if (!getComponent(spec.type)) throw new ActionError('invalid', `Unknown component type "${spec.type}"`)
   const node = createNode(spec.type, spec.props)
-  node.style = { ...node.style, ...spec.style }
-  node.children = (spec.children ?? []).map(buildNode)
+  if (exact) node.props = { ...spec.props }
+  node.style = exact ? { ...spec.style } : { ...node.style, ...spec.style }
+  node.children = (spec.children ?? []).map(child => buildNode(child, exact))
   return node
 }
 
@@ -126,7 +128,7 @@ function outermost(tree: LoadedTree, ids: string[], verb: string): DocNode[] {
 
 export const nodeInsert = defineAction({
   name: 'node_insert',
-  description: 'Insert a component, optionally with nested children, into a container node (defaults to the tree root: the page root, or with componentId the component definition root, or with layoutId the layout root; at the end). Returns the new node id. Inside a List (bound to a collection slug), string props of its children such as text, label, src and to can use bindings like "{{ item.name }}" or "/menu/{{ item.id }}", resolved per record.',
+  description: 'Insert a component, optionally with nested children, into a container node (defaults to the tree root: the page root, or with componentId the component definition root, or with layoutId the layout root; at the end). Returns the new node id. Inside a List (bound to a collection slug), string props of its children such as text, label, src and to can use bindings like "{{ item.name }}" or "/menu/{{ item.id }}", resolved per record. With exact: true, the node and its children get only the given props and style, not the component defaults, e.g. to paste a copied node unchanged.',
   input: z.object({
     ...Target,
     parentId: IdSchema.optional().describe('Container node id; defaults to the tree root'),
@@ -134,10 +136,11 @@ export const nodeInsert = defineAction({
     type: z.string().describe('Component type, see components_list'),
     props: z.record(z.string(), PropValueSchema).optional(),
     style: StyleSchema.optional(),
-    children: z.array(NodeSpecSchema).optional()
+    children: z.array(NodeSpecSchema).optional(),
+    exact: z.boolean().optional().describe('true gives the node and every child exactly the given props and style, without the component defaults (as a paste of a copied node does); defaults to false')
   }).refine(oneTree, ONE_TREE),
-  run: async ({ projectId, pageId, componentId, layoutId, parentId, index, ...spec }, ctx) => {
-    const node = buildNode(spec)
+  run: async ({ projectId, pageId, componentId, layoutId, parentId, index, exact, ...spec }, ctx) => {
+    const node = buildNode(spec, exact)
     const tree = treeOf({ pageId, componentId, layoutId })
     const { root } = await loadTree(ctx, projectId, tree)
     const project = await ctx.services.mutate(ctx, projectId, `Insert ${spec.type}`, [

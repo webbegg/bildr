@@ -19,9 +19,9 @@ import { isInsertTool, MOVE_TOOL, toolForKey } from '#shared/editor/insertTools'
 import type { PreviewState, StylePatch } from '#shared/editor/preview'
 import { createStylePreview } from '#shared/editor/preview'
 import type { SelectionStep } from '#shared/editor/selection'
-import { drillTarget, escapeSelection, navigateSelection, nearestUnlocked, selectAllSiblings, selectionAfterDelete, siblingParent, toggleSelection, topLevelSelection } from '#shared/editor/selection'
+import { canvasMovable, drillTarget, escapeSelection, navigateSelection, nearestUnlocked, selectAllSiblings, selectionAfterDelete, siblingParent, toggleSelection, topLevelSelection } from '#shared/editor/selection'
 import type { Clip } from '#shared/editor/clipboard'
-import { copyNode, parseClip, pasteStylePatch, pasteTarget, serializeClip } from '#shared/editor/clipboard'
+import { copyNode, parseClip, pasteInput, pasteStylePatch, pasteTarget, serializeClip } from '#shared/editor/clipboard'
 import { resolvePageWithLayout } from '#shared/runtime/layouts'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 import type { ZoomCommand } from '#shared/editor/viewport'
@@ -597,10 +597,14 @@ export function createEditor(projectId: string) {
     if (to && await runOnPage('node_move', { nodeId: id, ...to })) selectedId.value = id
   }
 
-  /** Arrow keys: moves every selected node one step among its siblings, as one undo step (nothing moves at an end). */
-  async function moveSelection(delta: -1 | 1): Promise<void> {
+  /**
+   * Arrow keys: moves every selected node one step among its siblings, as one
+   * undo step (nothing moves at an end). From the canvas (`canvas`), locked
+   * nodes (or ones inside a lock) stay where they are.
+   */
+  async function moveSelection(delta: -1 | 1, { canvas = false }: { canvas?: boolean } = {}): Promise<void> {
     const root = page.value?.root
-    const ids = root ? topLevelSelection(root, selectedIds.value) : []
+    const ids = root ? (canvas ? canvasMovable : topLevelSelection)(root, selectedIds.value) : []
     const moves = root && ids.length ? siblingMoves(root, ids, delta) : null
     if (moves) await runOnPage('node_move_many', { moves })
   }
@@ -662,14 +666,13 @@ export function createEditor(projectId: string) {
     }
   }
 
-  /** Paste (Cmd/Ctrl+V): inserts the copied node with new ids (one undo step), where `pasteTarget` puts it, and selects it. */
+  /** Paste (Cmd/Ctrl+V): inserts the copied node as it was, with new ids (one undo step), where `pasteTarget` puts it, and selects it. */
   async function paste(): Promise<void> {
     const clip = await readClip()
     const root = page.value?.root
     if (!clip || !root) return
     const at = outsideInstance(root, pasteTarget(root, selectedId.value, clip))
-    const { type, props, style, children } = clip.node
-    const result = await runOnPage<{ nodeId: string }>('node_insert', { ...at, type, props, style, children })
+    const result = await runOnPage<{ nodeId: string }>('node_insert', { ...at, ...pasteInput(clip) })
     if (result) selectedId.value = result.nodeId
   }
 
@@ -817,9 +820,10 @@ export function createEditor(projectId: string) {
    * Framer, rather than arming Image. Cmd/Ctrl+P opens the draft preview,
    * Cmd/Ctrl+F the sidebar search and Cmd/Ctrl+K the quick actions (in any
    * view). Alt/Option + 1–3 edits Desktop, Tablet or Mobile, matched on the
-   * physical `code`. Callers skip keys typed into fields.
+   * physical `code`. `canvas` marks a key from the canvas iframe, where the
+   * arrows leave locked nodes in place. Callers skip keys typed into fields.
    */
-  function shortcut(key: string, meta: boolean, shift: boolean, nav = false, { code = '', alt = false }: { code?: string, alt?: boolean } = {}): boolean {
+  function shortcut(key: string, meta: boolean, shift: boolean, nav = false, { code = '', alt = false, canvas = false }: { code?: string, alt?: boolean, canvas?: boolean } = {}): boolean {
     const lower = key.toLowerCase()
     if (meta && !shift && lower === 'p') {
       openPreview()
@@ -855,8 +859,8 @@ export function createEditor(projectId: string) {
     else if (armed) tool.value = armed
     else if (nav && !meta && key === 'Enter') return navigate(shift ? 'parent' : 'child')
     else if (nav && !meta && key === 'Tab') return navigate(shift ? 'prev' : 'next')
-    else if (nav && !meta && !shift && (key === 'ArrowUp' || key === 'ArrowLeft') && selectedIds.value.length) moveSelection(-1)
-    else if (nav && !meta && !shift && (key === 'ArrowDown' || key === 'ArrowRight') && selectedIds.value.length) moveSelection(1)
+    else if (nav && !meta && !shift && (key === 'ArrowUp' || key === 'ArrowLeft') && selectedIds.value.length) moveSelection(-1, { canvas })
+    else if (nav && !meta && !shift && (key === 'ArrowDown' || key === 'ArrowRight') && selectedIds.value.length) moveSelection(1, { canvas })
     else return false
     return true
   }

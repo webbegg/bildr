@@ -1,6 +1,6 @@
 import { INSTANCE_TYPE } from '../document/components'
 import type { DocNode } from '../document/schema'
-import { containsNode, findNode, findParent, pathTo } from '../document/tree'
+import { containsNode, findNode, findParent, isLockedAt, pathTo } from '../document/tree'
 
 /** What to select after deleting node `id`: next sibling, else previous, else the parent. */
 export function selectionAfterDelete(root: DocNode, id: string): string | null {
@@ -62,6 +62,11 @@ export function navigateSelection(root: DocNode, id: string, step: SelectionStep
 export function topLevelSelection(root: DocNode, ids: readonly string[]): string[] {
   const known = [...new Set(ids)].filter(id => id !== root.id && findNode(root, id))
   return known.filter(id => !known.some(other => other !== id && containsNode(findNode(root, other)!, id)))
+}
+
+/** The nodes a canvas arrow-key move acts on: the `topLevelSelection` without locked nodes or nodes inside a lock. */
+export function canvasMovable(root: DocNode, ids: readonly string[]): string[] {
+  return topLevelSelection(root, ids).filter(id => !isLockedAt(root, id))
 }
 
 /**

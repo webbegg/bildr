@@ -2,7 +2,9 @@
  * The editor clipboard (Copy, Paste, Paste style): a copied node as a
  * `node_insert` spec (type, props, style, children; no ids, which the insert
  * makes new, and no layer name or lock), kept in memory and written to the
- * system clipboard as JSON text so another editor tab can paste it.
+ * system clipboard as JSON text so another editor tab can paste it. A paste
+ * inserts it with `exact: true` (`pasteInput`), so no component default the
+ * source lacks comes back.
  */
 import type { PropValue } from '../document/components'
 import type { DocNode } from '../document/schema'
@@ -62,6 +64,16 @@ export function parseClip(text: string): Clip | null {
   }
   if (!isRecord(data) || data.kind !== CLIP_KIND || typeof data.sourceId !== 'string' || !isClipNode(data.node)) return null
   return { kind: CLIP_KIND, sourceId: data.sourceId, node: data.node }
+}
+
+/**
+ * The `node_insert` input that pastes `clip` (the target aside): its node with
+ * `exact: true`, so the copy and its descendants keep exactly the copied props
+ * and style, without the component defaults the source no longer has.
+ */
+export function pasteInput(clip: Clip): ClipNode & { exact: true } {
+  const { type, props, style, children } = clip.node
+  return { type, props, style, children, exact: true }
 }
 
 /**

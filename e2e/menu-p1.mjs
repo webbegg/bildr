@@ -3,7 +3,10 @@
  * menu's search (#14), rename by double-click in the layers, a lock keeping
  * a node from canvas selection until unlocked from its row (S4a), Copy and
  * Paste style and Paste, Esc selecting the parent and ⇧2 zooming to the
- * selection (#15). Shots go to e2e/.shots/menu-p1/.
+ * selection (#15). Also the review fixes: a paste keeps exactly the copied
+ * props and style (RELIABILITY-001), ⌘⌥V works with focus in the canvas
+ * (-006), and the canvas arrows and insert tools leave locked nodes alone
+ * (-007). Shots go to e2e/.shots/menu-p1/.
  */
 import { action, canvas, check, findNode, openEditor, project, run, shot, until } from './lib.mjs'
 
@@ -22,7 +25,13 @@ await run('menu-p1', async ({ page, errors }) => {
   const text = await action('node_insert', { projectId: p.id, pageId, parentId: column.nodeId, type: 'Text', props: { text: 'Hello menu' } })
   const button = await action('node_insert', { projectId: p.id, pageId, parentId: column.nodeId, type: 'Button', props: { label: 'Go' }, style: { bg: '#ff6600', rounded: 'lg' } })
   const other = await action('node_insert', { projectId: p.id, pageId, type: 'Text', props: { text: 'Other text' } })
-  const nodeOf = async id => findNode((await action('project_get', { projectId: p.id })).pages[0].root, n => n.id === id)
+  const third = await action('node_insert', { projectId: p.id, pageId, type: 'Text', props: { text: 'Third text' } })
+  // A Card without its default gap, holding a Text without its default text prop.
+  const card = await action('node_insert', { projectId: p.id, pageId, type: 'Card', style: { p: '6' }, children: [{ type: 'Text', style: { color: '#ff6600' } }] })
+  await action('node_update_style', { projectId: p.id, pageId, nodeId: card.nodeId, style: { gap: null } })
+  const getRoot = async () => (await action('project_get', { projectId: p.id })).pages[0].root
+  const nodeOf = async id => findNode(await getRoot(), n => n.id === id)
+  await action('node_update_props', { projectId: p.id, pageId, nodeId: (await nodeOf(card.nodeId)).children[0].id, props: { text: null } })
 
   await openEditor(page, p.id)
   await page.getByRole('tab', { name: 'Layers' }).click()
@@ -101,6 +110,65 @@ await run('menu-p1', async ({ page, errors }) => {
     return buttons.length === 2 && buttons
   })
   check(!!pasted && pasted.includes(button.nodeId), 'Ctrl+V pastes the copied Button as a new node')
+
+  // RELIABILITY-001: the pasted Card and its Text keep exactly the copied props and style (no default gap or text comes back).
+  const shape = node => ({ type: node.type, props: node.props, style: node.style, children: node.children.map(shape) })
+  await select(card.nodeId)
+  await page.keyboard.press('Control+c')
+  await page.keyboard.press('Control+v')
+  const cardCopy = await until(async () => {
+    const cards = (await getRoot()).children.filter(n => n.type === 'Card')
+    return cards.length === 2 && cards.find(n => n.id !== card.nodeId)
+  })
+  const source = await nodeOf(card.nodeId)
+  const sorted = value => JSON.stringify(value, (_, v) => (v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v))
+  check(!!cardCopy && sorted(shape(cardCopy)) === sorted(shape(source)), `the pasted Card matches its source exactly (${JSON.stringify(cardCopy && shape(cardCopy))})`)
+  check(!!cardCopy && !('gap' in cardCopy.style) && !('text' in cardCopy.children[0].props), 'the paste brings back neither the removed gap nor the removed text prop')
+
+  // RELIABILITY-006: ⌘⌥V (Ctrl+Alt+V) pastes the style with focus in the canvas, after a canvas click.
+  await select(button.nodeId)
+  await page.keyboard.press('Control+c')
+  await canvas(page).getByText('Third text').click()
+  await until(() => isSelected(third.nodeId))
+  await page.keyboard.press('Control+Alt+KeyV')
+  check(!!await until(async () => (await nodeOf(third.nodeId))?.style.bg === '#ff6600'), 'Ctrl+Alt+V from the canvas pastes the Button\'s style')
+
+  // RELIABILITY-007: a locked node selected from the layers doesn't move with the arrows from the canvas, but does from its layers menu.
+  const indexIn = async (parentId, id) => (await nodeOf(parentId)).children.findIndex(n => n.id === id)
+  const focusCanvas = () => page.evaluate(() => document.querySelector('iframe[title="Canvas"]').contentWindow.focus())
+  await select(button.nodeId)
+  await focusCanvas()
+  await page.keyboard.press('ArrowUp')
+  check(!!await until(async () => await indexIn(column.nodeId, button.nodeId) === 0), 'ArrowUp from the canvas moves an unlocked node (control)')
+  await page.keyboard.press('ArrowDown')
+  await until(async () => await indexIn(column.nodeId, button.nodeId) === 1)
+  await action('node_set_locked', { projectId: p.id, pageId, nodeId: text.nodeId, locked: true })
+  await row(text.nodeId).locator('[data-layer-lock]').waitFor()
+  await select(text.nodeId)
+  await focusCanvas()
+  await page.keyboard.press('ArrowDown')
+  await page.waitForTimeout(500)
+  check(await indexIn(column.nodeId, text.nodeId) === 0, 'ArrowDown from the canvas leaves a locked node in place')
+  await openMenu(text.nodeId)
+  await page.locator('[role=menu] [role^=menuitem]').filter({ hasText: 'Move down' }).click()
+  check(!!await until(async () => await indexIn(column.nodeId, text.nodeId) === 1), 'Move down from its layers menu still moves the locked node')
+  await openMenu(text.nodeId)
+  await page.locator('[role=menu] [role^=menuitem]').filter({ hasText: 'Move up' }).click()
+  await until(async () => await indexIn(column.nodeId, text.nodeId) === 0)
+
+  // RELIABILITY-007: the Text tool clicked inside a locked Column inserts into its nearest unlocked ancestor (the page root).
+  await action('node_set_locked', { projectId: p.id, pageId, nodeId: column.nodeId, locked: true })
+  await row(column.nodeId).locator('[data-layer-lock]').waitFor()
+  const rootTexts = async () => (await getRoot()).children.filter(n => n.type === 'Text').length
+  const textsBefore = await rootTexts()
+  await select(other.nodeId)
+  await page.keyboard.press('t')
+  await canvas(page).getByRole('button', { name: 'Go' }).first().click()
+  check(!!await until(async () => await rootTexts() === textsBefore + 1), 'the Text tool on a locked Column inserts at the page root')
+  check((await nodeOf(column.nodeId)).children.length === 2, 'nothing lands inside the locked Column')
+  await page.keyboard.press('Escape')
+  await action('node_set_locked', { projectId: p.id, pageId, nodeIds: [column.nodeId, text.nodeId], locked: false })
+  await until(async () => await row(column.nodeId).locator('[data-layer-lock]').count() === 0)
 
   // #15: Esc selects the parent, then the root, then clears.
   await select(text.nodeId)
