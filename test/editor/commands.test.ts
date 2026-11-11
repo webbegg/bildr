@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createNode, createPage } from '#shared/document/factory'
 import type { CommandContext, CommandEditor } from '#shared/editor/commands'
-import { editorCommands, matchScore, pushRecent, searchCommands, SHORTCUTS } from '#shared/editor/commands'
+import { editorCommands, filterMenuItems, matchScore, pushRecent, searchCommands, shortcutKeys, SHORTCUTS } from '#shared/editor/commands'
 import { INSERT_TOOLS } from '#shared/editor/insertTools'
 
 const cmd = (id: string, group: 'insert' | 'actions' | 'goto' | 'help', label: string, keywords: string[] = []) =>
@@ -83,15 +83,47 @@ describe('SHORTCUTS', () => {
 
   it('lists every editor shortcut once', () => {
     expect([...combos].sort()).toEqual([
-      'a', 'alt', 'alt+1', 'alt+2', 'alt+3', 'b', 'c', 'delete', 'enter', 'f', 'h', 'i', 'meta+d', 'meta+f', 'meta+g', 'meta+k', 'meta+p', 'meta+shift+z', 'meta+z',
-      'r', 'shift+0', 'shift+1', 'shift+a', 'shift+enter', 'shift+tab', 'space', 't', 'tab', 'v'
+      'a', 'alt', 'alt+1', 'alt+2', 'alt+3', 'b', 'c', 'delete', 'enter', 'escape', 'f', 'h', 'i', 'meta+alt+v', 'meta+c', 'meta+d', 'meta+f', 'meta+g', 'meta+k', 'meta+l', 'meta+p', 'meta+r', 'meta+shift+z', 'meta+v', 'meta+z',
+      'r', 'shift+0', 'shift+1', 'shift+2', 'shift+a', 'shift+enter', 'shift+tab', 'space', 't', 'tab', 'v'
     ])
+  })
+
+  it('lists the P1 shortcuts: Esc selects the parent, rename, lock, copy and paste, zoom to the selection', () => {
+    expect(shortcutKeys('select-parent')).toEqual(['escape'])
+    expect(SHORTCUTS.find(s => s.id === 'select-parent')?.keys).toEqual([['escape'], ['shift', 'enter']])
+    expect(shortcutKeys('rename')).toEqual(['meta', 'r'])
+    expect(shortcutKeys('lock')).toEqual(['meta', 'l'])
+    expect(shortcutKeys('copy')).toEqual(['meta', 'c'])
+    expect(shortcutKeys('paste')).toEqual(['meta', 'v'])
+    expect(shortcutKeys('paste-style')).toEqual(['meta', 'alt', 'v'])
+    expect(shortcutKeys('zoom-selection')).toEqual(['shift', '2'])
   })
 
   it('gives each canvas tool the letters that arm it', () => {
     for (const tool of INSERT_TOOLS.filter(t => t.keys.length)) {
       expect(SHORTCUTS.find(s => s.id === `tool:${tool.id}`)?.keys).toEqual(tool.keys.map(key => [key.toLowerCase()]))
     }
+  })
+})
+
+describe('filterMenuItems', () => {
+  const items = [
+    [{ label: 'Duplicate' }, { label: 'Wrap in', children: [{ label: 'Row' }, { label: 'Column' }] }],
+    [{ label: 'Rename' }, { label: 'Lock', disabled: true }]
+  ]
+
+  it('keeps the menu as it is for an empty query', () => {
+    expect(filterMenuItems(items, '  ')).toBe(items)
+  })
+
+  it('flattens the matching items, sub-items labelled with their parent, best first', () => {
+    expect(filterMenuItems(items, 'lo')).toEqual([[{ label: 'Lock', disabled: true }]])
+    expect(filterMenuItems(items, 'col')).toEqual([[{ label: 'Wrap in › Column' }]])
+    expect(filterMenuItems(items, 'wrap').flat().map(i => i.label)).toEqual(['Wrap in › Row', 'Wrap in › Column'])
+  })
+
+  it('is empty when nothing matches', () => {
+    expect(filterMenuItems(items, 'zzz')).toEqual([])
   })
 })
 

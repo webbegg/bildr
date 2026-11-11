@@ -75,9 +75,9 @@ export function wheelPixels(delta: number, mode: number): number {
   return delta * (mode === 1 ? 16 : mode === 2 ? 800 : 1)
 }
 
-export type ZoomCommand = 'fit' | 'reset' | 'in' | 'out'
+export type ZoomCommand = 'fit' | 'reset' | 'in' | 'out' | 'selection'
 
-/** Figma's zoom keys: Shift+1 fit, Shift+0 100%, Cmd/Ctrl +/- step. Matched on `code`, so any layout works. */
+/** Figma's zoom keys: Shift+1 fit, Shift+2 the selection, Shift+0 100%, Cmd/Ctrl +/- step. Matched on `code`, so any layout works. */
 export function zoomShortcut(event: { code: string, key: string, meta: boolean, shift: boolean }): ZoomCommand | null {
   if (event.meta) {
     if (event.code === 'Equal' || event.code === 'NumpadAdd' || event.key === '+') return 'in'
@@ -86,6 +86,7 @@ export function zoomShortcut(event: { code: string, key: string, meta: boolean, 
   }
   if (!event.shift) return null
   if (event.code === 'Digit1') return 'fit'
+  if (event.code === 'Digit2') return 'selection'
   if (event.code === 'Digit0') return 'reset'
   return null
 }
@@ -171,6 +172,17 @@ export function fitView(content: Rect, stage: Size, padding: number): Viewport {
     y: (stage.height - content.height * zoom) / 2 - content.y * zoom,
     zoom
   }
+}
+
+/**
+ * Shift+2: the viewport fitting the selection's `boxes` (measured in their
+ * frame's canvas pixels) on the `frame` placed at its content rect; null
+ * without boxes.
+ */
+export function selectionView(boxes: Rect[], frame: Rect, stage: Size, padding: number): Viewport | null {
+  if (!boxes.length) return null
+  const bounds = boundsOf(boxes)
+  return fitView({ ...bounds, x: frame.x + bounds.x, y: frame.y + bounds.y }, stage, padding)
 }
 
 /** The viewport after a pan drag from screen point `from` to `to` (Hand tool, Space or middle drag): the content follows the pointer. */

@@ -62,11 +62,16 @@ export const SHORTCUTS: Shortcut[] = [
   { id: 'quick-actions', label: 'Quick actions', keys: [['meta', 'k']] },
   { id: 'preview', label: 'Preview the draft', keys: [['meta', 'p']] },
   { id: 'search', label: 'Search the sidebar', keys: [['meta', 'f']] },
+  { id: 'copy', label: 'Copy', keys: [['meta', 'c']] },
+  { id: 'paste', label: 'Paste', keys: [['meta', 'v']] },
+  { id: 'paste-style', label: 'Paste style', keys: [['meta', 'alt', 'v']] },
   { id: 'duplicate', label: 'Duplicate', keys: [['meta', 'd']] },
+  { id: 'rename', label: 'Rename the layer', keys: [['meta', 'r']] },
+  { id: 'lock', label: 'Lock or unlock on the canvas', keys: [['meta', 'l']] },
   { id: 'group', label: 'Group in a Container', keys: [['meta', 'g']] },
   { id: 'auto-layout', label: 'Auto layout (Row or Column)', keys: [['shift', 'a']] },
   { id: 'select-child', label: 'Select the first child', keys: [['enter']] },
-  { id: 'select-parent', label: 'Select the parent', keys: [['shift', 'enter']] },
+  { id: 'select-parent', label: 'Select the parent', keys: [['escape'], ['shift', 'enter']] },
   { id: 'select-next', label: 'Select the next sibling', keys: [['tab']] },
   { id: 'select-prev', label: 'Select the previous sibling', keys: [['shift', 'tab']] },
   { id: 'delete', label: 'Delete', keys: [['delete']] },
@@ -74,6 +79,7 @@ export const SHORTCUTS: Shortcut[] = [
   { id: 'redo', label: 'Redo', keys: [['meta', 'shift', 'z']] },
   { id: 'zoom-100', label: 'Zoom to 100%', keys: [['shift', '0']] },
   { id: 'zoom-fit', label: 'Zoom to fit', keys: [['shift', '1']] },
+  { id: 'zoom-selection', label: 'Zoom to selection', keys: [['shift', '2']] },
   ...DEVICE_ORDER.map(device => ({ id: `device:${device.id}`, label: `Edit ${deviceHint(device)}`, keys: [deviceShortcut(device.id)] })),
   { id: 'pan', label: 'Hold to pan', keys: [['space']] },
   { id: 'measure', label: 'Hold over an element to measure', keys: [['alt']] }
@@ -105,6 +111,30 @@ export function matchScore(command: Pick<Command, 'label' | 'keywords'>, query: 
   const words = [...label.split(/[^a-z0-9%]+/), ...command.keywords.map(k => k.toLowerCase())]
   if (words.some(word => word.startsWith(q))) return 2
   return isSubsequence(q, label) ? 1 : 0
+}
+
+/** A menu item as `filterMenuItems` reads it (Nuxt UI's `ContextMenuItem` fits). */
+export interface FilterableItem {
+  label?: string
+  children?: FilterableItem[] | FilterableItem[][]
+}
+
+/**
+ * The node menu's search: with a query, the matching actions as one flat
+ * group, best match first (ties keep the menu order). A submenu's items
+ * count as "Parent › Item" and stand alone (their parent goes); unavailable
+ * items stay, dimmed. An empty query returns `groups` itself.
+ */
+export function filterMenuItems<T extends FilterableItem>(groups: T[][], query: string): T[][] {
+  if (!normalize(query)) return groups
+  const leaves = groups.flat().flatMap((item): T[] => item.children?.length
+    ? (item.children.flat() as T[]).map(child => ({ ...child, label: `${item.label} › ${child.label}` }))
+    : [item])
+  const matches = leaves
+    .map(item => ({ item, score: matchScore({ label: item.label ?? '', keywords: [] }, query) }))
+    .filter(m => m.score > 0)
+    .sort((a, b) => b.score - a.score)
+  return matches.length ? [matches.map(m => m.item)] : []
 }
 
 export interface CommandSection<C = unknown> {
@@ -195,7 +225,7 @@ export interface CommandEditor {
   redo: () => unknown
   publish: () => unknown
   openPreview: () => unknown
-  requestZoom: (command: 'fit' | 'reset') => unknown
+  requestZoom: (command: 'fit' | 'reset' | 'selection') => unknown
   setPreviewDark: (value: boolean) => unknown
   setDeepSelect: (value: boolean) => unknown
   selectPage: (id: string) => unknown
@@ -262,6 +292,7 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
     action('publish', 'Publish', 'i-lucide-rocket', ['deploy', 'release'], c => !!c.editor.project, ({ editor }) => editor.publish()),
     action('preview', 'Preview', 'i-lucide-play', ['open', 'draft'], c => !!c.editor.page, ({ editor }) => editor.openPreview()),
     action('zoom-fit', 'Zoom to fit', 'i-lucide-scan', ['fit'], onCanvas, ({ editor }) => editor.requestZoom('fit')),
+    action('zoom-selection', 'Zoom to selection', 'i-lucide-scan-search', ['selected', 'focus'], c => onCanvas(c) && c.editor.selectedIds.length > 0, ({ editor }) => editor.requestZoom('selection')),
     action('zoom-100', 'Zoom to 100%', 'i-lucide-zoom-in', ['reset', 'actual'], onCanvas, ({ editor }) => editor.requestZoom('reset')),
     action('dark-preview', `Dark preview ${editor.previewDark ? 'off' : 'on'}`, editor.previewDark ? 'i-lucide-sun' : 'i-lucide-moon', ['theme', 'toggle', 'light'], always, ({ editor }) => editor.setPreviewDark(!editor.previewDark)),
     action('deep-select', `Deep select ${editor.deepSelect ? 'off' : 'on'}`, 'i-lucide-mouse-pointer-2', ['drill', 'toggle'], always, ({ editor }) => editor.setDeepSelect(!editor.deepSelect)),

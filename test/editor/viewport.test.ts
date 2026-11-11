@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DEVICES } from '#shared/editor/styleFields'
-import { activeMessage, boundsOf, clampZoom, fitView, FRAME_MIN_HEIGHT, frameBar, frameOrder, layoutFrames, panView, previewWindowFeatures, stepZoom, viewportHeight, viewportUnitRules, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { activeMessage, boundsOf, clampZoom, fitView, FRAME_MIN_HEIGHT, frameBar, frameOrder, layoutFrames, panView, previewWindowFeatures, selectionView, stepZoom, viewportHeight, viewportUnitRules, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
 describe('panView', () => {
   it('moves the content with a drag from one screen point to another, at any zoom', () => {
@@ -81,6 +81,12 @@ describe('zoomShortcut', () => {
     expect(zoomShortcut(key('Digit1', '1'))).toBeNull()
   })
 
+  it('maps Shift+2 to the selection', () => {
+    expect(zoomShortcut(key('Digit2', '@', { shift: true }))).toBe('selection')
+    expect(zoomShortcut(key('Digit2', '"', { shift: true }))).toBe('selection')
+    expect(zoomShortcut(key('Digit2', '2'))).toBeNull()
+  })
+
   it('maps Cmd/Ctrl + plus and minus to stepping in and out', () => {
     expect(zoomShortcut(key('Equal', '=', { meta: true }))).toBe('in')
     expect(zoomShortcut(key('Equal', '+', { meta: true, shift: true }))).toBe('in')
@@ -149,6 +155,20 @@ describe('previewWindowFeatures', () => {
   it('opens a popup at the frame width, as tall as the screen allows up to 900 px', () => {
     expect(previewWindowFeatures(1280, 1080)).toBe('popup,width=1280,height=900')
     expect(previewWindowFeatures(390, 700)).toBe('popup,width=390,height=700')
+  })
+})
+
+describe('selectionView', () => {
+  it('fits the selection boxes, offset by their frame, in the padded stage', () => {
+    // Two boxes in a frame at x 1000: their bounds are (1100, 50) 400×200 in content, which fits 1000/400 = 250%.
+    const frame = { x: 1000, y: 0, width: 1200, height: 800 }
+    const view = selectionView([{ x: 100, y: 50, width: 100, height: 100 }, { x: 300, y: 150, width: 200, height: 100 }], frame, { width: 1100, height: 800 }, 50)
+    expect(view).toEqual(fitView({ x: 1100, y: 50, width: 400, height: 200 }, { width: 1100, height: 800 }, 50))
+    expect(view!.zoom).toBe(2.5)
+  })
+
+  it('is null without boxes (nothing selected or measured)', () => {
+    expect(selectionView([], { x: 0, y: 0, width: 100, height: 100 }, { width: 100, height: 100 }, 0)).toBeNull()
   })
 })
 

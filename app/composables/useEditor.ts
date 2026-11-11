@@ -19,7 +19,9 @@ import { isInsertTool, MOVE_TOOL, toolForKey } from '#shared/editor/insertTools'
 import type { PreviewState, StylePatch } from '#shared/editor/preview'
 import { createStylePreview } from '#shared/editor/preview'
 import type { SelectionStep } from '#shared/editor/selection'
-import { drillTarget, navigateSelection, selectAllSiblings, selectionAfterDelete, siblingParent, toggleSelection, topLevelSelection } from '#shared/editor/selection'
+import { drillTarget, escapeSelection, navigateSelection, nearestUnlocked, selectAllSiblings, selectionAfterDelete, siblingParent, toggleSelection, topLevelSelection } from '#shared/editor/selection'
+import type { Clip } from '#shared/editor/clipboard'
+import { copyNode, parseClip, pasteStylePatch, pasteTarget, serializeClip } from '#shared/editor/clipboard'
 import { resolvePageWithLayout } from '#shared/runtime/layouts'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 import type { ZoomCommand } from '#shared/editor/viewport'
@@ -86,6 +88,10 @@ export function createEditor(projectId: string) {
   let measurer: ((nodeIds: string[]) => Promise<NodeBox[]>) | null = null
   /** Layers rows whose children are hidden; kept in memory only. */
   const collapsed = ref(new Set<string>())
+  /** The layers row being renamed inline (Rename, Cmd/Ctrl+R, a double-click on its name). */
+  const renamingId = ref<string | null>(null)
+  /** The last Copy, for Paste and Paste style; also written to the system clipboard as JSON. */
+  const clipboard = shallowRef<Clip | null>(null)
   const history = ref<{ undo: string | null, redo: string | null }>({ undo: null, redo: null })
   /** The view, Framer's: Canvas (`build`) edits the pages, Data the collections and records, Design the theme and the theme library, Settings the project. */
   const mode = ref<EditorView>('build')
@@ -599,10 +605,16 @@ export function createEditor(projectId: string) {
     if (moves) await runOnPage('node_move_many', { moves })
   }
 
-  /** A canvas click on the innermost element `id`: drills (or selects it with Deep select or Cmd/Ctrl); Shift toggles. */
+  /**
+   * A canvas click on the innermost element `id`: drills (or selects it with
+   * Deep select or Cmd/Ctrl); Shift toggles. A locked element (or one inside
+   * a lock) counts as its nearest unlocked ancestor; under a locked root nothing.
+   */
   function canvasClick(id: string, { shift, meta }: { shift: boolean, meta: boolean }): void {
     const root = page.value?.root
-    const target = root ? drillTarget(root, selectedIds.value, id, { deep: deepSelect.value || meta }) : id
+    const reachable = root ? nearestUnlocked(root, id) : id
+    if (!reachable) return
+    const target = root ? drillTarget(root, selectedIds.value, reachable, { deep: deepSelect.value || meta }) : reachable
     if (!target) return
     if (shift) selectedIds.value = toggleSelection(selectedIds.value, target)
     else selectedId.value = target
@@ -630,6 +642,95 @@ export function createEditor(projectId: string) {
     const next = root && selectedId.value ? navigateSelection(root, selectedId.value, step) : null
     if (next) selectedId.value = next
     return !!selectedId.value
+  }
+
+  /** Copy (Cmd/Ctrl+C): node `id` (the primary selection by default) to the editor clipboard and, as JSON, the system one. */
+  function copy(id: string | null = selectedId.value): void {
+    const clip = page.value && id ? copyNode(page.value.root, id) : null
+    if (!clip) return
+    clipboard.value = clip
+    void navigator.clipboard?.writeText(serializeClip(clip)).catch(() => {})
+  }
+
+  /** The editor clipboard, else a clip copied in another tab (the system clipboard, which may ask for permission). */
+  async function readClip(): Promise<Clip | null> {
+    if (clipboard.value) return clipboard.value
+    try {
+      return parseClip(await navigator.clipboard.readText())
+    } catch {
+      return null
+    }
+  }
+
+  /** Paste (Cmd/Ctrl+V): inserts the copied node with new ids (one undo step), where `pasteTarget` puts it, and selects it. */
+  async function paste(): Promise<void> {
+    const clip = await readClip()
+    const root = page.value?.root
+    if (!clip || !root) return
+    const at = outsideInstance(root, pasteTarget(root, selectedId.value, clip))
+    const { type, props, style, children } = clip.node
+    const result = await runOnPage<{ nodeId: string }>('node_insert', { ...at, type, props, style, children })
+    if (result) selectedId.value = result.nodeId
+  }
+
+  /** Paste style (Cmd/Ctrl+Alt+V): gives node `id`, or the selection, the copied node's style (one undo step through `updateStyle`). */
+  async function pasteStyle(id?: string): Promise<void> {
+    const clip = await readClip()
+    const root = page.value?.root
+    const nodes = root && clip ? (id ? [id] : selectedIds.value).map(other => findNode(root, other)).filter(n => n !== undefined) : []
+    if (!clip || !nodes.length) return
+    const style = clip.node.style
+    const patch = nodes.length === 1
+      ? pasteStylePatch(nodes[0]!.style, style)
+      : { ...Object.fromEntries(nodes.flatMap(n => Object.keys(n.style)).map(key => [key, null])), ...style }
+    if (Object.keys(patch).length) await updateStyle(nodes.map(n => n.id), patch)
+  }
+
+  /** Rename (Cmd/Ctrl+R): selects node `id` (the primary selection by default) and opens its layers row for an inline rename. */
+  function startRename(id: string | null = selectedId.value): void {
+    const root = page.value?.root
+    if (!root || !id || id === root.id || !findNode(root, id)) return
+    if (!selectedIds.value.includes(id)) selectedId.value = id
+    sidebarPanel.value = 'layers'
+    const hidden = collapsedAncestors(root, collapsed.value, id)
+    if (hidden.length) collapsed.value = new Set([...collapsed.value].filter(row => !hidden.includes(row)))
+    renamingId.value = id
+  }
+
+  /** Commits an inline rename (one undo step): an empty name removes the layer name; the unchanged or derived name changes nothing. */
+  async function renameNode(id: string, name: string): Promise<void> {
+    renamingId.value = null
+    const node = page.value ? findNode(page.value.root, id) : undefined
+    const next = name.trim()
+    if (!node || next === (node.name ?? '') || (!node.name && next === nodeName(node))) return
+    await runOnPage('node_rename', { nodeId: id, name: next || null })
+  }
+
+  /** Locks or unlocks nodes on the canvas (one undo step); never the root. */
+  async function setLocked(ids: string[], locked: boolean): Promise<void> {
+    const list = ids.filter(id => id !== page.value?.root.id)
+    if (list.length) await runOnPage('node_set_locked', { ...(list.length > 1 ? { nodeIds: list } : { nodeId: list[0] }), locked })
+  }
+
+  /** Lock / Unlock (Cmd/Ctrl+L) on node `id`, or the selection: unlocks when every one is locked, else locks them all. */
+  async function toggleLock(id?: string): Promise<void> {
+    const root = page.value?.root
+    const ids = root ? topLevelSelection(root, id ? [id] : selectedIds.value) : []
+    if (!ids.length) return
+    await setLocked(ids, !ids.every(other => findNode(root!, other)?.locked === true))
+  }
+
+  /** Add to agent: reports the page and the primary selection to MCP agents now (`editor_set_context`, read with `editor_get_context`); pages only. */
+  async function addToAgent(): Promise<void> {
+    const pageId = currentPage.value?.id
+    if (!pageId || componentId.value || layoutId.value) return
+    const node = selected.value
+    try {
+      await callAction('editor_set_context', { projectId, pageId, selectedId: node?.id ?? null })
+      toast.add({ title: 'Added to agent', description: `${node ? nodeName(node) : 'The page'} is now the editor context agents read (editor_get_context).`, icon: 'i-lucide-sparkles' })
+    } catch (error) {
+      toast.add({ title: 'Could not add to agent', description: actionErrorMessage(error), color: 'error', icon: 'i-lucide-circle-alert' })
+    }
   }
 
   function setCollapsed(id: string, value: boolean): void {
@@ -708,8 +809,10 @@ export function createEditor(projectId: string) {
    * Editor shortcuts, Figma's where they exist; returns true when `key` was
    * handled. `nav` allows the keys that also move focus or scroll (Enter, Tab,
    * arrows): the canvas and the layers tree pass it, a focused button does not.
-   * Escape disarms an insert tool, else clears the selection (Figma would
-   * select the parent; Shift+Enter does). Bare letters pick the canvas tools
+   * Escape disarms an insert tool, else selects the parent as in Framer (on
+   * the root it clears; with nothing selected it leaves the component or
+   * layout view). Cmd/Ctrl+C copies, +V pastes, +Alt+V pastes the style
+   * (matched on `code`), +R renames and +L locks. Bare letters pick the canvas tools
    * (V Move, H Hand, and the insert tools); `I` opens the Insert panel, as in
    * Framer, rather than arming Image. Cmd/Ctrl+P opens the draft preview,
    * Cmd/Ctrl+F the sidebar search and Cmd/Ctrl+K the quick actions (in any
@@ -735,6 +838,11 @@ export function createEditor(projectId: string) {
     else if (!meta && !shift && lower === 'i') insertOpen.value = true
     else if (meta && lower === 'z') (shift ? redo : undo)()
     else if (meta && lower === 'y') redo()
+    else if (meta && !shift && lower === 'c' && selectedId.value) copy()
+    else if (meta && !shift && alt && code === 'KeyV') pasteStyle()
+    else if (meta && !shift && lower === 'v') paste()
+    else if (meta && !shift && lower === 'r' && selectedId.value) startRename()
+    else if (meta && !shift && lower === 'l' && selectedId.value) toggleLock()
     else if (meta && lower === 'd') duplicate()
     else if (meta && lower === 'g') group()
     else if (meta && lower === 'a' && page.value) selectedIds.value = selectAllSiblings(page.value.root, selectedIds.value)
@@ -743,7 +851,7 @@ export function createEditor(projectId: string) {
     else if (key === 'Escape' && tool.value !== MOVE_TOOL) tool.value = MOVE_TOOL
     else if (key === 'Escape' && !selectedIds.value.length && componentId.value) exitComponent()
     else if (key === 'Escape' && !selectedIds.value.length && layoutId.value) exitLayout()
-    else if (key === 'Escape') selectedId.value = null
+    else if (key === 'Escape') selectedIds.value = page.value ? escapeSelection(page.value.root, selectedIds.value) : []
     else if (armed) tool.value = armed
     else if (nav && !meta && key === 'Enter') return navigate(shift ? 'parent' : 'child')
     else if (nav && !meta && key === 'Tab') return navigate(shift ? 'prev' : 'next')
@@ -754,9 +862,10 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, componentId, component, layoutId, layout, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
+    projectId, project, pageId, componentId, component, layoutId, layout, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
     reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, createLayout, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
   })
 }
