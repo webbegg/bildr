@@ -128,25 +128,32 @@ function outermost(tree: LoadedTree, ids: string[], verb: string): DocNode[] {
 
 export const nodeInsert = defineAction({
   name: 'node_insert',
-  description: 'Insert a component, optionally with nested children, into a container node (defaults to the tree root: the page root, or with componentId the component definition root, or with layoutId the layout root; at the end). Returns the new node id. Inside a List (bound to a collection slug), string props of its children such as text, label, src and to can use bindings like "{{ item.name }}" or "/menu/{{ item.id }}", resolved per record. With exact: true, the node and its children get only the given props and style, not the component defaults, e.g. to paste a copied node unchanged.',
+  description: 'Insert a component, optionally with nested children, into a container node (defaults to the tree root: the page root, or with componentId the component definition root, or with layoutId the layout root; at the end). Returns the new node id. Inside a List (bound to a collection slug), string props of its children such as text, label, src and to can use bindings like "{{ item.name }}" or "/menu/{{ item.id }}", resolved per record. With exact: true, the node and its children get only the given props and style, not the component defaults, e.g. to paste a copied node unchanged. With nodes (instead of type, props, style and children), inserts several nodes in order from index, as one undo step (all or nothing), and also returns nodeIds, in the nodes order (nodeId is the first); exact applies to each, e.g. to paste a copied selection.',
   input: z.object({
     ...Target,
     parentId: IdSchema.optional().describe('Container node id; defaults to the tree root'),
     index: z.number().int().nonnegative().optional().describe('Position among the parent children; defaults to the end'),
-    type: z.string().describe('Component type, see components_list'),
+    type: z.string().optional().describe('Component type, see components_list. Required unless nodes is given'),
     props: z.record(z.string(), PropValueSchema).optional(),
     style: StyleSchema.optional(),
     children: z.array(NodeSpecSchema).optional(),
-    exact: z.boolean().optional().describe('true gives the node and every child exactly the given props and style, without the component defaults (as a paste of a copied node does); defaults to false')
-  }).refine(oneTree, ONE_TREE),
-  run: async ({ projectId, pageId, componentId, layoutId, parentId, index, exact, ...spec }, ctx) => {
-    const node = buildNode(spec, exact)
+    nodes: z.array(NodeSpecSchema).min(1).optional().describe('Several nodes to insert side by side, in order from index, as one undo step; replaces type, props, style and children'),
+    exact: z.boolean().optional().describe('true gives the node (or every node of nodes) and every child exactly the given props and style, without the component defaults (as a paste of a copied node does); defaults to false')
+  }).refine(oneTree, ONE_TREE)
+    .refine(input => (input.nodes ? [input.type, input.props, input.style, input.children].every(field => field === undefined) : input.type !== undefined), {
+      message: 'Give type, or nodes (not both)',
+      path: ['type']
+    }),
+  run: async ({ projectId, pageId, componentId, layoutId, parentId, index, exact, nodes: specs, ...spec }, ctx) => {
+    const nodes = (specs ?? [spec as NodeSpec]).map(one => buildNode(one, exact))
     const tree = treeOf({ pageId, componentId, layoutId })
     const { root } = await loadTree(ctx, projectId, tree)
-    const project = await ctx.services.mutate(ctx, projectId, `Insert ${spec.type}`, [
-      { op: 'insert', ...tree, parentId: parentId ?? root.id, index: index ?? Number.MAX_SAFE_INTEGER, node }
-    ])
-    return { version: project.version, nodeId: node.id }
+    const label = nodes.length > 1 ? `Insert ${nodes.length}` : `Insert ${nodes[0]!.type}`
+    const project = await ctx.services.mutate(ctx, projectId, label, nodes.map((node, i) => (
+      { op: 'insert' as const, ...tree, parentId: parentId ?? root.id, index: index === undefined ? Number.MAX_SAFE_INTEGER : index + i, node }
+    )))
+    const nodeIds = nodes.map(node => node.id)
+    return specs ? { version: project.version, nodeId: nodeIds[0]!, nodeIds } : { version: project.version, nodeId: nodeIds[0]! }
   }
 })
 
@@ -162,11 +169,23 @@ export const nodeUpdateProps = defineAction({
 
 export const nodeUpdateStyle = defineAction({
   name: 'node_update_style',
-  description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). Colour tokens (bg, color, borderColor) also take a #rgb, #rrggbb or #rrggbbaa hex or a theme custom colour name (theme_get theme.custom), e.g. { "bg": "#ff6600" }. Tokens listing breakpoints also take a mobile-first prefix, e.g. { "md:cols": "3" } applies from the md breakpoint up. A null value removes the token. With nodeIds the same tokens go to every node, as one undo step (all or nothing).',
-  input: z.object({ ...Target, ...Nodes, style: StyleUpdateSchema }).refine(oneTree, ONE_TREE),
-  run: async ({ projectId, pageId, componentId, layoutId, style, ...nodes }, ctx) => {
+  description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). Colour tokens (bg, color, borderColor) also take a #rgb, #rrggbb or #rrggbbaa hex or a theme custom colour name (theme_get theme.custom), e.g. { "bg": "#ff6600" }. Tokens listing breakpoints also take a mobile-first prefix, e.g. { "md:cols": "3" } applies from the md breakpoint up. A null value removes the token. With nodeIds the same tokens go to every node, as one undo step (all or nothing). With updates (instead of nodeId, nodeIds and style), each node gets its own tokens, e.g. [{ "nodeId": "a", "style": { "bg": "error" } }, { "nodeId": "b", "style": { "color": "error" } }], also as one undo step (all or nothing), e.g. to swap a colour across a selection.',
+  input: z.object({
+    ...Target,
+    ...Nodes,
+    style: StyleUpdateSchema.optional().describe('Design tokens to set; null removes a token. Required unless updates is given'),
+    updates: z.array(z.object({ nodeId: IdSchema, style: StyleUpdateSchema })).min(1).optional()
+      .describe('Per-node tokens, applied in order as one undo step (all or nothing); replaces nodeId, nodeIds and style')
+  }).refine(oneTree, ONE_TREE)
+    .refine(input => (input.updates ? input.style === undefined && input.nodeId === undefined && input.nodeIds === undefined : input.style !== undefined), {
+      message: 'Give updates, or style with nodeId or nodeIds',
+      path: ['updates']
+    }),
+  run: async ({ projectId, pageId, componentId, layoutId, style, updates, ...nodes }, ctx) => {
     const tree = treeOf({ pageId, componentId, layoutId })
-    const ops = nodeIdsOf(nodes).map(nodeId => ({ op: 'setStyle' as const, ...tree, nodeId, style }))
+    const ops = updates
+      ? updates.map(update => ({ op: 'setStyle' as const, ...tree, ...update }))
+      : nodeIdsOf(nodes).map(nodeId => ({ op: 'setStyle' as const, ...tree, nodeId, style: style! }))
     const project = await ctx.services.mutate(ctx, projectId, 'Update style', ops)
     return { version: project.version }
   }

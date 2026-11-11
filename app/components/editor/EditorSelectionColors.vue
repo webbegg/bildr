@@ -6,10 +6,10 @@ import { colorSwapPlan, selectionColors } from '#shared/editor/selectionColors'
  * Framer's "Selection colours": every colour the selected subtrees use (a
  * token, a theme colour or a hex, on bg, text and border colour keys), with
  * a swatch and how many times it is used. Picking another colour for one
- * swaps it everywhere in the subtrees (see `colorSwapPlan`): nodes changing
- * the same keys share one `node_update_style` with `nodeIds`, so a colour
- * used on one kind of key is one undo step. In the variant view the edit
- * goes to the variant's overrides (`updateStyle`).
+ * swaps it everywhere in the subtrees (see `colorSwapPlan`) as one
+ * `node_update_style` with per-node `updates`: one undo step, all or nothing
+ * (`updateStyles`). In the variant view the edit goes to the variant's
+ * overrides, one node at a time.
  */
 const editor = useEditor()
 
@@ -17,9 +17,7 @@ const colors = computed(() => selectionColors(editor.selectedNodes))
 const customNames = computed(() => Object.keys(editor.theme?.custom ?? {}))
 
 async function swap(from: string, to: string) {
-  for (const { nodeIds, style } of colorSwapPlan(editor.selectedNodes, from, to, customNames.value)) {
-    await editor.updateStyle(nodeIds, style)
-  }
+  await editor.updateStyles(colorSwapPlan(editor.selectedNodes, from, to, customNames.value))
 }
 </script>
 

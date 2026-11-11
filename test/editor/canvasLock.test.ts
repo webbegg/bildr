@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createNode, createPage } from '#shared/document/factory'
 import { CLIP_KIND, copyNode, pasteInput } from '#shared/editor/clipboard'
+import { dropNodeAt } from '#shared/editor/dropTarget'
 import { canvasKeyMessage } from '#shared/editor/protocol'
 import { canvasMovable } from '#shared/editor/selection'
 
@@ -37,6 +38,41 @@ describe('canvasMovable (RELIABILITY-007)', () => {
   })
 })
 
+describe('dropNodeAt (RELIABILITY-014)', () => {
+  it('drops on the element under the pointer when nothing is locked, keeping a placeholder', () => {
+    const { root, card, inner } = fixture()
+    expect(dropNodeAt(root, inner.id, false)).toEqual({ nodeId: inner.id, placeholder: false, redirected: false })
+    expect(dropNodeAt(root, card.id, true)).toEqual({ nodeId: card.id, placeholder: true, redirected: false })
+  })
+
+  it('sends a drop on a locked node to its nearest unlocked ancestor, without its placeholder', () => {
+    const { root, card, a } = fixture()
+    a.locked = true
+    expect(dropNodeAt(root, a.id, false)).toEqual({ nodeId: root.id, placeholder: false, redirected: true })
+    card.locked = true
+    expect(dropNodeAt(root, card.id, true)).toEqual({ nodeId: root.id, placeholder: false, redirected: true })
+  })
+
+  it('sends a drop on a node inside a lock above every lock', () => {
+    const { root, card, inner } = fixture()
+    card.locked = true
+    expect(dropNodeAt(root, inner.id, false)).toEqual({ nodeId: root.id, placeholder: false, redirected: true })
+    const outer = createNode('Column')
+    outer.children.push(card)
+    root.children = [outer]
+    expect(dropNodeAt(root, inner.id, false)).toEqual({ nodeId: outer.id, placeholder: false, redirected: true })
+  })
+
+  it('takes no drop under a locked root, nor on a missing node', () => {
+    const { root, inner } = fixture()
+    expect(dropNodeAt(root, 'missing', false)).toBeNull()
+    expect(dropNodeAt(root, null, false)).toBeNull()
+    root.locked = true
+    expect(dropNodeAt(root, inner.id, false)).toBeNull()
+    expect(dropNodeAt(root, root.id, true)).toBeNull()
+  })
+})
+
 describe('canvasKeyMessage (RELIABILITY-006)', () => {
   it('carries alt and the physical code, so ⌘⌥V (key "√" on a Mac) reaches Paste style', () => {
     expect(canvasKeyMessage({ key: '√', code: 'KeyV', metaKey: true, ctrlKey: false, shiftKey: false, altKey: true }))
@@ -55,6 +91,6 @@ describe('pasteInput (RELIABILITY-001)', () => {
     card.style = { items: 'start' }
     const clip = copyNode(root, card.id)!
     expect(clip.kind).toBe(CLIP_KIND)
-    expect(pasteInput(clip)).toEqual({ ...clip.node, exact: true })
+    expect(pasteInput(clip)).toEqual({ nodes: clip.nodes, exact: true })
   })
 })

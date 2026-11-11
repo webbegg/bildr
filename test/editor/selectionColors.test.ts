@@ -39,29 +39,30 @@ describe('selectionColors', () => {
 })
 
 describe('colorSwapPlan', () => {
-  it('replaces a colour on every node and key that uses it, grouping nodes by the keys they change', () => {
+  it('replaces a colour on every node and key that uses it, one update per node (node_update_style updates)', () => {
     expect(colorSwapPlan([section()], 'primary', 'secondary')).toEqual([
-      { nodeIds: ['card'], style: { bg: 'secondary' } },
-      { nodeIds: ['title'], style: { color: 'secondary' } }
+      { nodeId: 'card', style: { bg: 'secondary' } },
+      { nodeId: 'title', style: { color: 'secondary' } }
     ])
   })
 
-  it('puts nodes changing the same keys in one group', () => {
+  it('gives each node exactly the keys it changes, in tree order', () => {
     const root = n('r', {}, [n('a', { bg: 'primary' }), n('b', { bg: 'primary', color: 'muted' }), n('c', { bg: 'primary', color: 'primary' })])
     expect(colorSwapPlan([root], 'primary', '#123456')).toEqual([
-      { nodeIds: ['a', 'b'], style: { bg: '#123456' } },
-      { nodeIds: ['c'], style: { bg: '#123456', color: '#123456' } }
+      { nodeId: 'a', style: { bg: '#123456' } },
+      { nodeId: 'b', style: { bg: '#123456' } },
+      { nodeId: 'c', style: { bg: '#123456', color: '#123456' } }
     ])
   })
 
   it('skips keys the replacement is not a value of, and does nothing for a same-colour swap', () => {
     // `elevated` is a background, not a text colour.
-    expect(colorSwapPlan([section()], 'muted', 'elevated')).toEqual([{ nodeIds: ['sec'], style: { bg: 'elevated' } }])
+    expect(colorSwapPlan([section()], 'muted', 'elevated')).toEqual([{ nodeId: 'sec', style: { bg: 'elevated' } }])
     expect(colorSwapPlan([section()], 'primary', 'primary')).toEqual([])
   })
 
   it('accepts the theme colours it is given as replacements', () => {
     expect(colorSwapPlan([section()], '#ff6600', 'ink')).toEqual([])
-    expect(colorSwapPlan([section()], '#ff6600', 'ink', ['ink'])).toEqual([{ nodeIds: ['card'], style: { borderColor: 'ink' } }])
+    expect(colorSwapPlan([section()], '#ff6600', 'ink', ['ink'])).toEqual([{ nodeId: 'card', style: { borderColor: 'ink' } }])
   })
 })

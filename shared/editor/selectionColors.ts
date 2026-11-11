@@ -20,9 +20,10 @@ export interface SelectionColor {
   keys: string[]
 }
 
+/** One node's edit of a swap: an entry of `node_update_style`'s `updates`, so the whole swap is one undo step. */
 export interface ColorSwap {
-  nodeIds: string[]
-  /** The same patch for every node of the group (one `node_update_style` with `nodeIds`). */
+  nodeId: string
+  /** The node's colour keys that held the colour, set to the new one. */
   style: Record<string, string>
 }
 
@@ -69,22 +70,17 @@ export function selectionColors(roots: DocNode[]): SelectionColor[] {
 
 /**
  * The edits that replace `from` with `to` on every colour key of the
- * subtrees that holds it: nodes changing the same keys share one group.
- * Keys `to` is not a value of (e.g. a background-only token on a text
- * colour) are left alone; `customColors` are the theme's own colour names.
+ * subtrees that holds it, one per node in tree order (together, one
+ * `node_update_style` with `updates`). Keys `to` is not a value of (e.g. a
+ * background-only token on a text colour) are left alone; `customColors`
+ * are the theme's own colour names.
  */
 export function colorSwapPlan(roots: DocNode[], from: string, to: string, customColors: readonly string[] = []): ColorSwap[] {
   if (from === to) return []
-  const groups = new Map<string, ColorSwap>()
-  for (const node of subtreeNodes(roots)) {
+  return subtreeNodes(roots).flatMap((node) => {
     const keys = colorEntries(node)
       .filter(({ key, value }) => value === from && !styleTokenProblem(key, to, customColors))
       .map(({ key }) => key)
-    if (!keys.length) continue
-    const signature = [...keys].sort().join(' ')
-    const group = groups.get(signature) ?? { nodeIds: [], style: Object.fromEntries(keys.map(key => [key, to])) }
-    group.nodeIds.push(node.id)
-    groups.set(signature, group)
-  }
-  return [...groups.values()]
+    return keys.length ? [{ nodeId: node.id, style: Object.fromEntries(keys.map(key => [key, to])) }] : []
+  })
 }

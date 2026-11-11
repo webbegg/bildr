@@ -12,7 +12,8 @@ import type { InsertHit } from '#shared/editor/insertTools'
 import { insertTargetAt, toolForKey } from '#shared/editor/insertTools'
 import type { StylePatch } from '#shared/editor/preview'
 import { previewTree, settlePreviews } from '#shared/editor/preview'
-import { breakpointAt, DRAG_MIME, draggedNodeId, dropPosition, laysOutInRow, resolveDrop } from '#shared/editor/dropTarget'
+import { breakpointAt, DRAG_MIME, draggedNodeId, dropNodeAt, dropPosition, laysOutInRow, resolveDrop } from '#shared/editor/dropTarget'
+import { editorTakesKey, hasTextSelection } from '#shared/editor/clipboardKeys'
 import { FRAME_MIN_HEIGHT, viewportUnitRules, wheelPixels, zoomShortcut } from '#shared/editor/viewport'
 import type { NodeBox } from '#shared/editor/autoLayout'
 import type { MeasureLine } from '#shared/editor/measure'
@@ -305,9 +306,14 @@ function onKeyDown(event: KeyboardEvent) {
   const lower = event.key.toLowerCase()
   const armsTool = !!toolForKey({ key: event.key, meta, shift: event.shiftKey, alt: event.altKey })
   // Cmd/Ctrl+C, V, R and L (copy, paste, rename, lock) without Alt; Cmd/Ctrl+Alt+V (Paste style) by its physical code, as Alt changes the key on a Mac.
+  // Copy, rename and lock only with a selection, and copy and paste not over a text selection (`editorTakesKey`): else the browser keeps them.
   const pasteStyleKey = meta && event.altKey && !event.shiftKey && event.code === 'KeyV'
   const editorMeta = pasteStyleKey || (meta && (['z', 'y', 'd', 'a', 'g', 'p', 'f', 'k'].includes(lower) || (!event.altKey && ['c', 'v', 'r', 'l'].includes(lower))))
-  if (!zoom && !armsTool && !SHORTCUT_KEYS.has(event.key) && !editorMeta && !(event.shiftKey && !meta && lower === 'a')) return
+  const takes = editorTakesKey(
+    { key: event.key, code: event.code, meta, shift: event.shiftKey, alt: event.altKey },
+    { focus: 'canvas', textSelected: hasTextSelection(window), hasSelection: selectedIds.value.length > 0 }
+  )
+  if (!takes || (!zoom && !armsTool && !SHORTCUT_KEYS.has(event.key) && !editorMeta && !(event.shiftKey && !meta && lower === 'a'))) return
   event.preventDefault()
   post(canvasKeyMessage(event))
 }
@@ -335,10 +341,10 @@ function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } 
   const overEl = over ?? el?.closest?.('[data-bildr-id]')
   const overId = over?.getAttribute('data-bildr-placeholder') ?? overEl?.getAttribute('data-bildr-id')
   // A locked node (or one inside a lock) is no drop target: its nearest unlocked ancestor takes the drop.
-  const id = overId && findNode(root, overId) ? nearestUnlocked(root, overId) : null
-  const placeholder = id === overId ? over : null
-  const nodeEl = id === overId ? overEl : id ? firstCopy(id) : null
-  const node = id ? findNode(root, id) : undefined
+  const reached = dropNodeAt(root, overId, !!over)
+  const placeholder = reached?.placeholder
+  const nodeEl = reached ? (reached.redirected ? firstCopy(reached.nodeId) : overEl) : null
+  const node = reached ? findNode(root, reached.nodeId) : undefined
   if (!nodeEl || !node) return null
   const rect = nodeEl.getBoundingClientRect()
   // The canvas is as wide as the editor's device, so its width gives the breakpoint that applies.

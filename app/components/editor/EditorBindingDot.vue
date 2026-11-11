@@ -4,6 +4,8 @@ import { getStyleToken, isResponsiveToken, STYLE_HEX, styleKey } from '#shared/d
 import type { PropDef, PropValue } from '#shared/document/components'
 import { INSTANCE_TYPE, SLOT_FILL_TYPE } from '#shared/document/components'
 import type { PropertyBinding, PropertyDef } from '#shared/document/schema'
+import { customColorNames } from '#shared/design/theme'
+import { propertyValues, styleBindCandidates, styleBindingAt } from '#shared/editor/bindingDot'
 import { cssColorToHex } from '#shared/editor/color'
 import { colorSwatch, colorSwatchRows, customColorSwatches, styleProvenance } from '#shared/editor/styleFields'
 import { envRef } from '#shared/env/insert'
@@ -20,7 +22,12 @@ import { bindsKey, boundProperty, propBindingAdd, styleBindingAdd } from '~/comp
  * property/variable and Bind to an existing one in those views, and Insert
  * env variable on text props (emitted as `update`, which the row commits).
  * Bound, the dot fills in the accent and the property's name follows the
- * label; the menu then offers Unbind. Each pick is one action, one undo step.
+ * label; the menu then offers Unbind. A style key bound only at its base key
+ * shows that binding at the other breakpoints too, as inherited, rather
+ * than offering Create again. Bind to property lists only the properties
+ * whose values (default and instance or page values) all fit the style key,
+ * as the server checks (`styleBindCandidates`). Each pick is one action,
+ * one undo step.
  */
 const props = defineProps<{
   mode: 'style' | 'prop'
@@ -50,7 +57,16 @@ const bindable = computed(() => {
   if (!owner.value || !node || node.type === SLOT_FILL_TYPE) return false
   return props.mode === 'style' || node.type !== INSTANCE_TYPE
 })
-const bound = computed(() => (owner.value && single.value ? boundProperty(owner.value.list, single.value.id, key.value, target.value) : undefined))
+/** The row's binding: the property, the key it is on, and whether that is the base key seen from a breakpoint (inherited). */
+const boundAt = computed(() => {
+  const o = owner.value
+  const node = single.value
+  if (!o || !node) return undefined
+  if (props.mode === 'style') return styleBindingAt(o.list, node.id, key.value, props.name)
+  const property = boundProperty(o.list, node.id, key.value, target.value)
+  return property ? { property, key: key.value, inherited: false } : undefined
+})
+const bound = computed(() => boundAt.value?.property)
 
 /** The style value every selected node shows at the device; undefined when unset or mixed. */
 const shared = computed(() => {
@@ -92,9 +108,15 @@ function create() {
 }
 
 const binding = computed((): PropertyBinding | undefined => single.value && ({ nodeId: single.value.id, prop: key.value, ...(props.mode === 'style' ? { target: 'style' as const } : {}) }))
-/** Existing properties this row can join: text or select ones for a style key, the prop's kind for a prop. */
-const candidates = computed(() => (owner.value?.list ?? []).filter(p => p.kind !== 'slot'
-  && (props.mode === 'style' ? p.kind === 'text' || p.kind === 'select' : p.kind === props.prop?.kind)))
+/** Existing properties this row can join: for a style key, text or select ones whose values all fit it; the prop's kind for a prop. */
+const candidates = computed(() => {
+  const o = owner.value
+  const project = editor.project
+  if (!o || !project) return []
+  if (props.mode === 'prop') return o.list.filter(p => p.kind !== 'slot' && p.kind === props.prop?.kind)
+  const ownerRef = o.kind === 'component' ? { componentId: editor.component!.id } : { layoutId: editor.layout!.id }
+  return styleBindCandidates(o.list, key.value, p => propertyValues(project, ownerRef, p), customColorNames(project.theme))
+})
 
 const TEXT_KINDS = new Set(['text', 'textarea', 'image'])
 
@@ -108,10 +130,11 @@ const swatchItems = computed(() => {
 const items = computed<DropdownMenuItem[][]>(() => {
   const groups: DropdownMenuItem[][] = []
   const o = owner.value
-  if (bound.value && o) {
+  const at = boundAt.value
+  if (at && o) {
     groups.push([
-      { type: 'label', label: `Bound to ${bound.value.name}` },
-      { label: `Unbind ${o.noun}`, icon: 'i-lucide-unlink-2', onSelect: () => setBindings(bound.value!, bound.value!.bindings.filter(b => !bindsKey(b, single.value!.id, key.value, target.value))) }
+      { type: 'label', label: label.value },
+      { label: `Unbind ${o.noun}`, icon: 'i-lucide-unlink-2', onSelect: () => setBindings(at.property, at.property.bindings.filter(b => !bindsKey(b, single.value!.id, at.key, target.value))) }
     ])
   }
   if (props.mode === 'style' && token.value) {
@@ -143,7 +166,11 @@ const items = computed<DropdownMenuItem[][]>(() => {
 const swatchOf = (item: unknown) => (item as { swatch?: string }).swatch
 
 const shown = computed(() => items.value.length > 0)
-const label = computed(() => (bound.value ? `Bound to ${bound.value.name}` : `Bind ${props.prop?.label ?? token.value?.label ?? props.name}`))
+const label = computed(() => {
+  const at = boundAt.value
+  if (!at) return `Bind ${props.prop?.label ?? token.value?.label ?? props.name}`
+  return at.inherited ? `Bound to ${at.property.name} (inherited)` : `Bound to ${at.property.name}`
+})
 </script>
 
 <template>
@@ -160,6 +187,7 @@ const label = computed(() => (bound.value ? `Bound to ${bound.value.name}` : `Bi
       :title="label"
       :data-binding-dot="name"
       :data-bound="bound ? bound.name : undefined"
+      :data-bound-inherited="boundAt?.inherited || undefined"
       @pointerdown.stop
     >
       <span
@@ -177,7 +205,7 @@ const label = computed(() => (bound.value ? `Bound to ${bound.value.name}` : `Bi
   <span
     v-if="bound"
     class="order-1 min-w-0 flex-1 basis-0 truncate text-[10px] text-(color:--editor-selection)"
-    :title="`Bound to ${bound.name}`"
+    :title="label"
     data-bound-name
   >{{ bound.name }}</span>
 </template>

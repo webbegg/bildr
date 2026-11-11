@@ -1,14 +1,18 @@
 /**
- * Checks of the P1 context menu and keys (not part of all.mjs): the node
- * menu's search (#14), rename by double-click in the layers, a lock keeping
- * a node from canvas selection until unlocked from its row (S4a), Copy and
- * Paste style and Paste, Esc selecting the parent and ⇧2 zooming to the
- * selection (#15). Also the review fixes: a paste keeps exactly the copied
- * props and style (RELIABILITY-001), ⌘⌥V works with focus in the canvas
- * (-006), and the canvas arrows and insert tools leave locked nodes alone
- * (-007). Shots go to e2e/.shots/menu-p1/.
+ * Checks of the P1 context menu and keys (run by all.mjs): the node menu's
+ * search (#14), rename by double-click in the layers, a lock keeping a node
+ * from canvas selection until unlocked from its row (S4a), Copy and Paste
+ * style and Paste, Esc selecting the parent and ⇧2 zooming to the selection
+ * (#15). Also the review fixes: a paste keeps exactly the copied props and
+ * style (RELIABILITY-001), ⌘⌥V works with focus in the canvas (-006), the
+ * canvas arrows and insert tools leave locked nodes alone (-007), Ctrl+C is
+ * the browser's outside the canvas and the layers and over selected text
+ * (-005), a multi-selection copies and pastes in one undo step (-004), a
+ * newer clip in the system clipboard wins (-003), and the canvas leaves
+ * Ctrl+L to the browser with nothing selected (-013). The context may read
+ * and write the clipboard. Shots go to e2e/.shots/menu-p1/.
  */
-import { action, canvas, check, findNode, openEditor, project, run, shot, until } from './lib.mjs'
+import { action, BASE, canvas, check, findNode, openEditor, project, run, shot, until } from './lib.mjs'
 
 // After the menus' open animation.
 const snap = async (page, name) => {
@@ -16,7 +20,8 @@ const snap = async (page, name) => {
   await shot(page, `menu-p1/${name}`)
 }
 
-await run('menu-p1', async ({ page, errors }) => {
+await run('menu-p1', async ({ context, page, errors }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE })
   const p = await project('menu p1')
   const { pages } = await action('project_get', { projectId: p.id })
   const pageId = pages[0].id
@@ -82,7 +87,7 @@ await run('menu-p1', async ({ page, errors }) => {
   await until(() => isSelected(column.nodeId))
   check(await isSelected(column.nodeId) && !await isSelected(text.nodeId), 'a canvas click on a locked node selects its nearest unlocked ancestor')
   await select(text.nodeId)
-  check(true, 'the locked node is still selectable from the layers')
+  check(await isSelected(text.nodeId), 'the locked node is still selectable from the layers')
   await snap(page, 'locked')
   await row(text.nodeId).locator('[data-layer-lock]').click()
   check(!!await until(async () => (await nodeOf(text.nodeId))?.locked === undefined), 'the row\'s lock unlocks it')
@@ -90,9 +95,29 @@ await run('menu-p1', async ({ page, errors }) => {
   await canvas(page).getByText('Hello menu').click()
   check(!!await until(() => isSelected(text.nodeId)), 'once unlocked, a canvas click selects it again')
 
-  // Copy the Button (Ctrl+C), then Paste style onto the other text through the menu search (Enter runs the match).
+  // RELIABILITY-005: with focus outside the canvas and the layers, or over selected text, Ctrl+C is the browser's (nothing is copied yet).
+  const pasteDisabled = async () => {
+    await openMenu(other.nodeId)
+    const disabled = await page.locator('[role=menu] [role^=menuitem]').filter({ hasText: /^\s*Paste\s*$/ }).first().getAttribute('data-disabled') !== null
+    await page.keyboard.press('Escape')
+    await page.locator('[role=menu]').waitFor({ state: 'detached' })
+    return disabled
+  }
+  await select(button.nodeId)
+  await page.locator('[data-inspector-head]').click()
+  check(await page.evaluate(() => !document.activeElement?.closest('[data-layers]')), 'a click in the inspector moves the focus out of the layers')
+  await page.keyboard.press('Control+c')
+  check(await pasteDisabled(), 'Ctrl+C with focus in the inspector copies no node')
+  await select(button.nodeId)
+  await page.evaluate(() => getSelection().selectAllChildren(document.querySelector('[data-inspector-head]')))
+  await page.keyboard.press('Control+c')
+  await page.evaluate(() => getSelection().removeAllRanges())
+  check(await pasteDisabled(), 'Ctrl+C over selected text copies no node, with focus in the layers')
+
+  // Copy the Button (Ctrl+C, focus in the layers: the positive control), then Paste style onto the other text through the menu search (Enter runs the match).
   await select(button.nodeId)
   await page.keyboard.press('Control+c')
+  check(!await pasteDisabled(), 'Ctrl+C with focus in the layers and no text selected copies the node')
   await openMenu(other.nodeId)
   await page.keyboard.type('paste style')
   await page.keyboard.press('Enter')
@@ -125,6 +150,37 @@ await run('menu-p1', async ({ page, errors }) => {
   check(!!cardCopy && sorted(shape(cardCopy)) === sorted(shape(source)), `the pasted Card matches its source exactly (${JSON.stringify(cardCopy && shape(cardCopy))})`)
   check(!!cardCopy && !('gap' in cardCopy.style) && !('text' in cardCopy.children[0].props), 'the paste brings back neither the removed gap nor the removed text prop')
 
+  // RELIABILITY-004: Copy takes the whole multi-selection, Paste inserts all of it in one undo step.
+  const rootTextsOf = async label => (await getRoot()).children.filter(n => n.type === 'Text' && n.props.text === label).length
+  await select(other.nodeId)
+  await row(third.nodeId).click({ modifiers: ['Shift'] })
+  await until(() => isSelected(third.nodeId))
+  check(await isSelected(other.nodeId) && await isSelected(third.nodeId), 'Shift+click selects both texts')
+  await page.keyboard.press('Control+c')
+  await page.keyboard.press('Control+v')
+  check(!!await until(async () => await rootTextsOf('Other text') === 2 && await rootTextsOf('Third text') === 2), 'Ctrl+V pastes both copied texts')
+  check((await action('history_get', { projectId: p.id })).undo === 'Insert 2', 'the paste of two nodes is one "Insert 2" undo step')
+  await action('history_undo', { projectId: p.id })
+  check(!!await until(async () => await rootTextsOf('Other text') === 1 && await rootTextsOf('Third text') === 1), 'one undo removes both pasted texts')
+
+  // RELIABILITY-003: a clip in the system clipboard copied after the in-memory one (another tab's) wins; an older one doesn't.
+  const writeClip = (text, copiedAt) => page.evaluate(([label, at]) => navigator.clipboard.writeText(JSON.stringify({
+    kind: 'bildr/node', sourceIds: ['elsewhere'], copiedAt: at === 'later' ? Date.now() + 60_000 : at, nodes: [{ type: 'Heading', props: { text: label }, style: {}, children: [] }]
+  })), [text, copiedAt])
+  const headings = async label => (await getRoot()).children.filter(n => n.type === 'Heading' && n.props.text === label).length
+  await select(other.nodeId)
+  await writeClip('From another tab', 'later')
+  await page.keyboard.press('Control+v')
+  check(!!await until(async () => await headings('From another tab') === 1), 'Ctrl+V pastes the newer clip from the system clipboard')
+  await select(other.nodeId)
+  await writeClip('Older clip', 1)
+  await page.keyboard.press('Control+v')
+  check(!!await until(async () => await rootTextsOf('Other text') === 2), 'with an older system clip, Ctrl+V pastes the in-memory one (the two texts)')
+  check(await headings('Older clip') === 0, 'the older system clip is not pasted')
+  await action('history_undo', { projectId: p.id })
+  await action('history_undo', { projectId: p.id })
+  check(!!await until(async () => await headings('From another tab') === 0 && await rootTextsOf('Other text') === 1), 'undo removes both pastes')
+
   // RELIABILITY-006: ⌘⌥V (Ctrl+Alt+V) pastes the style with focus in the canvas, after a canvas click.
   await select(button.nodeId)
   await page.keyboard.press('Control+c')
@@ -146,9 +202,15 @@ await run('menu-p1', async ({ page, errors }) => {
   await row(text.nodeId).locator('[data-layer-lock]').waitFor()
   await select(text.nodeId)
   await focusCanvas()
+  // The canvas sends its keys in order, so once the Escape after it has selected the Column the ArrowDown has been handled.
+  const moves = []
+  const onRequest = request => request.url().endsWith('/api/actions/node_move_many') && moves.push(request)
+  page.on('request', onRequest)
   await page.keyboard.press('ArrowDown')
-  await page.waitForTimeout(500)
-  check(await indexIn(column.nodeId, text.nodeId) === 0, 'ArrowDown from the canvas leaves a locked node in place')
+  await page.keyboard.press('Escape')
+  check(!!await until(() => isSelected(column.nodeId)), 'the Escape sent after the ArrowDown selects the Column (control)')
+  page.off('request', onRequest)
+  check(!moves.length && await indexIn(column.nodeId, text.nodeId) === 0, 'ArrowDown from the canvas leaves a locked node in place (no move sent)')
   await openMenu(text.nodeId)
   await page.locator('[role=menu] [role^=menuitem]').filter({ hasText: 'Move down' }).click()
   check(!!await until(async () => await indexIn(column.nodeId, text.nodeId) === 1), 'Move down from its layers menu still moves the locked node')
@@ -178,6 +240,24 @@ await run('menu-p1', async ({ page, errors }) => {
   check(!!await until(() => isSelected(rootId)), 'Esc again selects the page root')
   await page.keyboard.press('Escape')
   check(!!await until(async () => await page.locator('[data-layer-id][aria-selected="true"]').count() === 0), 'Esc on the root clears the selection')
+
+  // RELIABILITY-013: with nothing selected, the canvas leaves Ctrl+L to the browser; with a selection it takes it (Lock).
+  const frame = await (await page.locator('iframe[title="Canvas"]').elementHandle()).contentFrame()
+  await frame.evaluate(() => {
+    window.__keys = []
+    window.addEventListener('keydown', event => window.__keys.push({ key: event.key, prevented: event.defaultPrevented }))
+  })
+  const lastKey = () => frame.evaluate(() => window.__keys.at(-1))
+  await focusCanvas()
+  await page.keyboard.press('Control+l')
+  check((await lastKey())?.prevented === false, 'Ctrl+L in the canvas with nothing selected is not taken')
+  await select(other.nodeId)
+  await focusCanvas()
+  await page.keyboard.press('Control+l')
+  check((await lastKey())?.prevented === true, 'Ctrl+L in the canvas with a selection is taken')
+  check(!!await until(async () => (await nodeOf(other.nodeId))?.locked === true), 'and locks the selected node')
+  await page.keyboard.press('Control+l')
+  await until(async () => (await nodeOf(other.nodeId))?.locked === undefined)
 
   // #15: ⇧2 zooms to the selection.
   const zoom = () => page.locator('[data-canvas-content]').evaluate(el => Number(/scale\(([\d.]+)\)/.exec(el.style.transform)?.[1]))

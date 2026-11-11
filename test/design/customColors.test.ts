@@ -41,6 +41,16 @@ describe('theme custom colours (S4c)', () => {
     expect(css.replace('  --bildr-color-brand: #ff6600;\n', '')).toBe(themeCss(defaultTheme()))
   })
 
+  it('re-checks custom colour names and values when it writes the CSS (RISK-001)', () => {
+    const custom = { 'brand': '#ff6600', 'x;}body{color:red': '#000', 'ok': 'red;}body{x:y', 'Bad': '#fff' }
+    const css = themeCss({ ...defaultTheme(), custom } as never)
+    expect(css).toContain('--bildr-color-brand: #ff6600;')
+    expect(css).not.toContain('body')
+    expect(css).not.toContain('--bildr-color-ok')
+    expect(css).not.toContain('--bildr-color-Bad')
+    expect(css).toBe(themeCss({ ...defaultTheme(), custom: { brand: '#ff6600' } }))
+  })
+
   it('patches custom colours by name, null removing one', () => {
     expect(CustomColorsPatchSchema.parse({ brand: '#ff6600', old: null })).toEqual({ brand: '#ff6600', old: null })
     expect(CustomColorsPatchSchema.safeParse({ primary: '#fff' }).success).toBe(false)
