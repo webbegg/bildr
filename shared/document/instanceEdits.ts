@@ -1,8 +1,8 @@
-import { resolveInstance } from '../runtime/instances'
+import { isDefinitionNodeId, resolveInstance } from '../runtime/instances'
 import { uniqueName } from '../editor/names'
 import { INSTANCE_TYPE, SLOT_FILL_TYPE } from './components'
 import type { PropValue } from './components'
-import { cloneWithNewIds } from './factory'
+import { newId } from './factory'
 import type { TreeRef } from './operations'
 import { instanceProblems } from './schema'
 import type { ComponentDefinition, DocNode, Project } from './schema'
@@ -21,17 +21,54 @@ const key = (name: string) => name.trim().toLowerCase()
 
 /**
  * The tree `instance` renders (its variant, values, defaults and slot fills
- * applied, nested definition instances expanded) as plain nodes with new
- * ids. Layer names stay: the root takes the instance's layer name (its own,
- * else the component's), definition nodes and slot content keep theirs.
- * Null when the component is missing.
+ * applied) with its definition's nodes as plain nodes with new ids, as in
+ * Framer: Instances the definition holds stay Instances (linked, with their
+ * values), and slot content is the host's own, so it keeps its nodes and
+ * ids (what the host binds or overrides there stays valid). Layer names
+ * stay: the root takes the instance's layer name (its own, else the
+ * component's), definition nodes and slot content keep theirs. Null when the
+ * component is missing.
  */
 export function detachedTree(instance: DocNode, components: ComponentDefinition[]): DocNode | null {
-  const resolved = resolveInstance(instance, components, { keepNames: true })
+  const resolved = resolveInstance(instance, components, { keepNames: true, linked: true })
   if (!resolved) return null
+  const renew = (node: DocNode): DocNode => (isDefinitionNodeId(node.id) ? { ...node, id: newId('n'), children: node.children.map(renew) } : node)
   const def = components.find(c => c.id === instance.props.component)
   const name = instance.name ?? def?.name
-  return { ...cloneWithNewIds(resolved), ...(name ? { name } : {}), ...(instance.locked ? { locked: true } : {}) }
+  return { ...structuredClone(renew(resolved)), ...(name ? { name } : {}), ...(instance.locked ? { locked: true } : {}) }
+}
+
+/** A detached tree split for operations that never leave a reference dangling (see `detachParts`). */
+export interface DetachParts {
+  /** The detached tree without the slot content, to insert in the instance's place. */
+  root: DocNode
+  /** The slot content, moved (same nodes, same ids) from the instance's fills into the detached tree, in order. */
+  moves: { nodeId: string, parentId: string, index: number }[]
+  /** The style the definition gives the root, without the instance's own: what a host variant's `unset` on the instance shows. */
+  definitionStyle: Record<string, string>
+}
+
+/**
+ * `detachedTree` as an insert of the tree without the slot content, then
+ * moves of the slot content into it, so the host's bindings, variant
+ * overrides and layout slots or variables on that content stay valid at
+ * every step. Null when the component is missing.
+ */
+export function detachParts(instance: DocNode, components: ComponentDefinition[]): DetachParts | null {
+  const detached = detachedTree(instance, components)
+  const plain = resolveInstance({ ...instance, style: {} }, components, { linked: true })
+  if (!detached || !plain) return null
+  const content = new Set(instance.children.flatMap(fill => fill.children.map(c => c.id)))
+  const moves: DetachParts['moves'] = []
+  const strip = (node: DocNode): DocNode => {
+    const kept: DocNode[] = []
+    for (const child of node.children) {
+      if (content.has(child.id)) moves.push({ nodeId: child.id, parentId: node.id, index: moves.filter(m => m.parentId === node.id).length })
+      else kept.push(strip(child))
+    }
+    return { ...node, children: kept }
+  }
+  return { root: strip(detached), moves, definitionStyle: plain.style }
 }
 
 /**

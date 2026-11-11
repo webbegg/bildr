@@ -1,7 +1,7 @@
 import { CUSTOM_COLORS_MAX, customColorNames, CustomColorsPatchSchema, defaultTheme, ThemePatchSchema } from '../design/theme'
 import type { CustomColorsPatch, ThemePatch } from '../design/theme'
 import { isStyleTokenKey, styleTokenProblem } from '../design/tokens'
-import { getComponent, INSTANCE_TYPE, isContainerType } from './components'
+import { getComponent, INSTANCE_TYPE, isContainerType, SLOT_FILL_TYPE } from './components'
 import type { PropValue } from './components'
 import { z } from 'zod'
 import { ApiPathSchema, CHILDREN_SLOT, CollectionSchema, componentProblems, ComponentDefinitionSchema, CONNECTIONS_MAX, ConnectionSchema, FieldSchema, FieldTypeSchema, instanceProblems, isStyleBinding, layoutProblems, LayoutSchema, LayoutSlotSchema, NODE_NAME_MAX, nodeTreeProblems, pageLayoutProblems, PageSchema, ProjectSchema, PropertyBindingSchema, PropertyDefSchema, propValueProblem, SlugSchema, styleKeyProblem, VariantSchema } from './schema'
@@ -28,7 +28,12 @@ export type Operation
   = | ({ op: 'insert', parentId: string, index: number, node: DocNode } & TreeRef)
     | ({ op: 'remove', nodeId: string } & TreeRef)
     | ({ op: 'move', nodeId: string, parentId: string, index: number } & TreeRef)
-    | ({ op: 'setProps', nodeId: string, props: Record<string, PropValue | null> } & TreeRef)
+    /**
+     * On an Instance, `slots` re-keys SlotFill children (fill node id to slot
+     * id) in the same step, so it can change component and keep its slot
+     * content in place (Replace with).
+     */
+    | ({ op: 'setProps', nodeId: string, props: Record<string, PropValue | null>, slots?: Record<string, string> } & TreeRef)
     | ({ op: 'setStyle', nodeId: string, style: Record<string, string | null> } & TreeRef)
     /** A null (or empty) name, or `locked: false` / null, removes the field. */
     | ({ op: 'setNodeMeta', nodeId: string, name?: string | null, locked?: boolean | null } & TreeRef)
@@ -405,8 +410,16 @@ function apply(project: Project, op: Operation): Operation {
           if (value === null) Reflect.deleteProperty(props, name)
           else props[name] = value
         }
-        const problems = instanceProblems({ ...node, props, children: [] }, project.components, false, customColorNames(project.theme))
+        // With slots, the fills are checked against the (new) component too, without their content.
+        const slots = op.slots ?? {}
+        for (const fillId of Object.keys(slots)) {
+          if (!node.children.some(c => c.id === fillId && c.type === SLOT_FILL_TYPE)) fail('not_found', `SlotFill "${fillId}" not found under Instance "${node.id}"`)
+        }
+        const fills = op.slots ? node.children.map(c => ({ ...c, props: c.id in slots ? { ...c.props, slot: slots[c.id]! } : c.props, children: [] })) : []
+        const problems = instanceProblems({ ...node, props, children: fills }, project.components, false, customColorNames(project.theme))
         if (problems.length) fail('invalid', problems.join('; '))
+      } else if (op.slots) {
+        fail('invalid', `"${node.type}" is not an Instance, so it has no slot fills`)
       } else {
         const def = getComponent(node.type)
         for (const [name, value] of Object.entries(op.props)) {
@@ -424,7 +437,14 @@ function apply(project: Project, op: Operation): Operation {
         if (value === null) Reflect.deleteProperty(node.props, name)
         else node.props[name] = value
       }
-      return { op: 'setProps', ...tree.ref, nodeId: node.id, props: previous }
+      if (!op.slots) return { op: 'setProps', ...tree.ref, nodeId: node.id, props: previous }
+      const previousSlots: Record<string, string> = {}
+      for (const fill of node.children) {
+        if (!(fill.id in op.slots)) continue
+        previousSlots[fill.id] = String(fill.props.slot)
+        fill.props.slot = op.slots[fill.id]!
+      }
+      return { op: 'setProps', ...tree.ref, nodeId: node.id, props: previous, slots: previousSlots }
     }
     case 'setStyle': {
       const tree = getTree(project, op)

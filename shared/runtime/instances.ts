@@ -93,12 +93,18 @@ export function variantStyle(style: Record<string, string>, override: VariantOve
   return merged
 }
 
-/** `keepNames` copies the layer names of definition nodes (and nested instances) into the tree, for detaching it into plain nodes. */
-export function resolveInstance(instance: DocNode, components: ComponentDefinition[], { keepNames = false }: { keepNames?: boolean } = {}): DocNode | null {
-  return expand(instance, new Map(components.map(c => [c.id, c])), [], keepNames)
+/**
+ * `keepNames` copies the layer names of definition nodes (and nested
+ * instances) into the tree, and `linked` keeps the definition's own
+ * Instances as Instances (their variant overrides, bound values and
+ * `{{ prop.NAME }}` applied to their props and style) instead of expanding
+ * them: both for detaching an instance into plain nodes.
+ */
+export function resolveInstance(instance: DocNode, components: ComponentDefinition[], { keepNames = false, linked = false }: { keepNames?: boolean, linked?: boolean } = {}): DocNode | null {
+  return expand(instance, new Map(components.map(c => [c.id, c])), [], keepNames, linked)
 }
 
-function expand(instance: DocNode, definitions: Definitions, stack: string[], keepNames = false): DocNode | null {
+function expand(instance: DocNode, definitions: Definitions, stack: string[], keepNames = false, linked = false): DocNode | null {
   const def = definitions.get(String(instance.props.component))
   if (!def || stack.includes(def.id) || stack.length >= MAX_INSTANCE_DEPTH) return null
   const variantId = instance.props.variant
@@ -136,7 +142,7 @@ function expand(instance: DocNode, definitions: Definitions, stack: string[], ke
       style,
       children
     }
-    return node.type === INSTANCE_TYPE ? expand(built, definitions, next, keepNames) : built
+    return node.type === INSTANCE_TYPE && !linked ? expand(built, definitions, next, keepNames) : built
   }
 
   const root = build(def.root)

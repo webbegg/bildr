@@ -332,6 +332,40 @@ await run('components-p1', async ({ page, errors }) => {
   await undo()
   check(!!await until(async () => (await instanceAt(second))?.type === 'Instance'), 'undo after ⌥⌘B brings it back')
 
+  // ⌥⌘B in the component view and Detach instance in the layout view act on the tree being edited.
+  const { nodeId: cardInTile } = await action('node_insert', { projectId, componentId: tileId, type: 'Instance', props: { component: cardId } })
+  const { nodeId: cardInLayout } = await action('node_insert', { projectId, layoutId, type: 'Instance', props: { component: cardId } })
+  await page.getByRole('tab', { name: 'Assets' }).click()
+  await page.locator(`[data-component-id="${tileId}"] button[draggable]`).click()
+  await page.locator('[data-component-view]').waitFor()
+  await page.getByRole('tab', { name: 'Layers' }).click()
+  await select(cardInTile)
+  await page.locator('body').press('Control+Alt+b')
+  check(!!await until(async () => {
+    const tileRoot = (await componentOf(tileId)).root
+    return !findNode(tileRoot, n => n.id === cardInTile) && tileRoot.children.at(-1)?.type === 'Card'
+  }), '⌥⌘B detaches an instance inside a component')
+  await undo()
+  check(!!await until(async () => findNode((await componentOf(tileId)).root, n => n.id === cardInTile)?.type === 'Instance'), 'undo brings the instance back in the component')
+  await page.getByRole('button', { name: 'Leave the component view' }).click()
+  await page.locator('[data-breadcrumb]').waitFor({ state: 'detached' })
+  await page.getByRole('tab', { name: 'Assets' }).click()
+  await page.locator(`[data-layout-id="${layoutId}"] button[title]`).click()
+  await page.locator('[data-breadcrumb]').waitFor()
+  await page.getByRole('tab', { name: 'Layers' }).click()
+  const layoutRoot = async () => (await get()).layouts.find(l => l.id === layoutId).root
+  await row(cardInLayout).click({ button: 'right' })
+  await page.locator('[data-node-menu-search]').waitFor()
+  await menuItem('Detach instance').click()
+  check(!!await until(async () => !findNode(await layoutRoot(), n => n.id === cardInLayout) && !!findNode(await layoutRoot(), n => n.type === 'Card')), 'Detach instance works in the layout view')
+  await undo()
+  check(!!await until(async () => findNode(await layoutRoot(), n => n.id === cardInLayout)?.type === 'Instance'), 'undo brings the instance back in the layout')
+  await page.getByRole('button', { name: 'Leave the layout view' }).click()
+  await page.locator('[data-breadcrumb]').waitFor({ state: 'detached' })
+  await action('node_delete', { projectId, componentId: tileId, nodeId: cardInTile })
+  await action('node_delete', { projectId, layoutId, nodeId: cardInLayout })
+  await page.getByRole('tab', { name: 'Layers' }).click()
+
   // Replace with ›: the submenu lists components with usage counts, the current one disabled; search, then pick.
   await row(first).click({ button: 'right' })
   await page.locator('[data-node-menu-search]').waitFor()

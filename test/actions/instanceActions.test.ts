@@ -114,6 +114,46 @@ describe('instance_detach in a component with bindings and variants', () => {
   })
 })
 
+describe('slot content the host binds to', () => {
+  /** Host, a component holding a Card instance whose Body holds a Text bound to Host\'s Caption property. */
+  async function hosted() {
+    const ctx = await setup()
+    const { nodeId: hostNode } = await ctx.call<{ nodeId: string }>('node_insert', { pageId: ctx.pageId, type: 'Column' })
+    const { componentId: hostId } = await ctx.call<{ componentId: string }>('component_create', { pageId: ctx.pageId, nodeId: hostNode, name: 'Host' })
+    const { nodeId: cardInHost } = await ctx.call<{ nodeId: string }>('node_insert', { componentId: hostId, type: 'Instance', props: { component: ctx.cardId } })
+    const { fillId } = await ctx.call<{ fillId: string }>('instance_set_slot', { componentId: hostId, nodeId: cardInHost, slot: ctx.bodyId, filled: true })
+    const { nodeId: caption } = await ctx.call<{ nodeId: string }>('node_insert', { componentId: hostId, parentId: fillId, type: 'Text', props: { text: 'cap' } })
+    await ctx.call('component_property_add', { componentId: hostId, name: 'Caption', kind: 'textarea', bindings: [{ nodeId: caption, prop: 'text' }] })
+    return { ...ctx, hostId, cardInHost, fillId, caption }
+  }
+
+  it('detach keeps it (same node, same id) and undoes exactly', async () => {
+    const ctx = await hosted()
+    const before = await ctx.get()
+    const { nodeId } = await ctx.call<{ nodeId: string }>('instance_detach', { componentId: ctx.hostId, nodeId: ctx.cardInHost })
+    const host = (await ctx.get()).components.find(c => c.id === ctx.hostId)!
+    const detached = findNode(host.root, nodeId)!
+    expect(detached.children[1]!.children.map(c => c.id)).toEqual([ctx.caption])
+    expect(host.properties[0]!.bindings[0]!.nodeId).toBe(ctx.caption)
+    await ctx.call('history_undo', {})
+    expect((await ctx.get()).components).toEqual(before.components)
+    await ctx.call('history_redo', {})
+    expect((await ctx.get()).components.find(c => c.id === ctx.hostId)).toEqual(host)
+  })
+
+  it('replace keeps the fill in place, re-keyed to the slot of the same name, and undoes exactly', async () => {
+    const ctx = await hosted()
+    const before = await ctx.get()
+    await ctx.call('instance_replace', { inComponentId: ctx.hostId, nodeId: ctx.cardInHost, componentId: ctx.tileId })
+    const replaced = findNode((await ctx.get()).components.find(c => c.id === ctx.hostId)!.root, ctx.cardInHost)!
+    expect(replaced.props.component).toBe(ctx.tileId)
+    expect(replaced.children.map(c => [c.id, c.props.slot])).toEqual([[ctx.fillId, ctx.tileBodyId]])
+    expect(replaced.children[0]!.children.map(c => c.id)).toEqual([ctx.caption])
+    await ctx.call('history_undo', {})
+    expect((await ctx.get()).components).toEqual(before.components)
+  })
+})
+
 describe('instance_replace', () => {
   it('swaps the component, keeping the values, slot content and variant whose names match', async () => {
     const ctx = await setup()

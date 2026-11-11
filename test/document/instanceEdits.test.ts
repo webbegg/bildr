@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ComponentDefinition, DocNode, Project } from '#shared/document/schema'
-import { copyName, detachedTree, replacedInstance, replaceProblem } from '#shared/document/instanceEdits'
+import { copyName, detachedTree, detachParts, replacedInstance, replaceProblem } from '#shared/document/instanceEdits'
 import { resolveInstance } from '#shared/runtime/instances'
 
 const node = (id: string, type: string, extra: Partial<DocNode> = {}): DocNode => ({ id, type, props: {}, style: {}, children: [], ...extra })
@@ -62,14 +62,29 @@ describe('detachedTree', () => {
     expect(detached.children[1]!.children.map(c => c.props.text)).toEqual(['Mine'])
   })
 
-  it('gives every node a new plain id', () => {
+  it('gives every definition node a new plain id, and slot content keeps its own', () => {
     const detached = detachedTree(instance(), [card])!
     const all = ids(detached)
     expect(new Set(all).size).toBe(all.length)
-    for (const id of all) {
-      expect(id).toMatch(/^n_[a-z0-9]+$/)
-      expect(['n_inst', 'n_own', 'c_root', 'c_title']).not.toContain(id)
+    for (const id of all) expect(id).toMatch(/^n_[a-z0-9]+$/)
+    expect(all).toContain('n_own')
+    for (const id of ['n_inst', 'n_fill', 'c_root', 'c_title', 'c_body']) expect(all).not.toContain(id)
+  })
+
+  it('keeps the definition\'s instances as instances, with the values they render', () => {
+    const badge: ComponentDefinition = { id: 'cmp_badge', name: 'Badge', root: node('b_root', 'Text', { props: { text: 'B' } }), properties: [{ id: 'prop_b', name: 'Label', kind: 'text', bindings: [{ nodeId: 'b_root', prop: 'text' }] }], variants: [] }
+    const holder: ComponentDefinition = {
+      ...card,
+      id: 'cmp_holder',
+      root: node('h_root', 'Column', { children: [node('h_badge', 'Instance', { name: 'Tag', props: { component: 'cmp_badge', prop_b: 'Hi {{ prop.Title }}' }, style: { mt: '1' } })] }),
+      properties: [{ id: 'prop_title', name: 'Title', kind: 'text', bindings: [] }],
+      variants: [{ id: 'var_big', name: 'Big', overrides: { h_badge: { style: { mt: '4' } } } }]
     }
+    const detached = detachedTree(node('n_h', 'Instance', { props: { component: 'cmp_holder', variant: 'var_big', prop_title: 'Ana' } }), [badge, holder])!
+    const inner = detached.children[0]!
+    expect(inner).toMatchObject({ type: 'Instance', name: 'Tag', props: { component: 'cmp_badge', prop_b: 'Hi Ana' }, style: { mt: '4' } })
+    expect(inner.id).toMatch(/^n_[a-z0-9]+$/)
+    expect(resolveInstance(inner, [badge, holder])!.props.text).toBe('Hi Ana')
   })
 
   it('keeps the layer name: the instance\'s own, else the component\'s; definition layers keep theirs', () => {
@@ -89,6 +104,16 @@ describe('detachedTree', () => {
 
   it('is null for an instance of a missing component', () => {
     expect(detachedTree(instance({ props: { component: 'cmp_gone' } }), [card])).toBeNull()
+  })
+})
+
+describe('detachParts', () => {
+  it('splits the detached tree into a tree without the slot content and moves of that content into it', () => {
+    const parts = detachParts(instance(), [card])!
+    const body = parts.root.children[1]!
+    expect(body.children).toEqual([])
+    expect(parts.moves).toEqual([{ nodeId: 'n_own', parentId: body.id, index: 0 }])
+    expect(parts.definitionStyle).toEqual({ bg: 'default' })
   })
 })
 
