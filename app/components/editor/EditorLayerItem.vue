@@ -6,7 +6,7 @@ import { DRAG_MIME, draggedNodeId, dropPosition, nodeDragType, resolveDrop } fro
 import { hiddenBadge, naturalDisplay, visibilityAt, visibilityToggle } from '#shared/editor/layers'
 
 /**
- * A layers row after Stacki's tree, at Framer's density (32px rows, 13px
+ * A layers row after Stacki's tree, at Framer's density (32px rows, 12px
  * text): 16px of indent per level, a chevron that
  * collapses the children, the type icon, the name (the type, or an instance's
  * component and a slot fill's slot) with its text in italics,
@@ -17,8 +17,10 @@ import { hiddenBadge, naturalDisplay, visibilityAt, visibilityToggle } from '#sh
  * A row hidden there is dimmed with a crossed eye; one hidden only on other
  * devices names their breakpoints. With a search `filter` (the ids to show)
  * only those rows show, expanded.
+ * A selected row is a solid accent pill (Framer's); the rows under it
+ * (`inSelection`) get a subtle accent tint.
  */
-const props = defineProps<{ node: DocNode, depth: number, filter?: ReadonlySet<string> | null }>()
+const props = defineProps<{ node: DocNode, depth: number, filter?: ReadonlySet<string> | null, inSelection?: boolean }>()
 const editor = useEditor()
 const row = useTemplateRef<HTMLElement>('row')
 
@@ -55,6 +57,12 @@ const DROP_CLASS: Record<DropPosition, string> = {
   before: 'shadow-[inset_0_2px_0_var(--ui-primary)]',
   after: 'shadow-[inset_0_-2px_0_var(--ui-primary)]',
   inside: 'ring-2 ring-inset ring-primary'
+}
+/** The same marks on the selected row, whose solid accent fill would hide them. */
+const DROP_CLASS_SELECTED: Record<DropPosition, string> = {
+  before: 'shadow-[inset_0_2px_0_white]',
+  after: 'shadow-[inset_0_-2px_0_white]',
+  inside: 'ring-2 ring-inset ring-white'
 }
 
 function onDragStart(event: DragEvent) {
@@ -109,10 +117,14 @@ function onDrop(event: DragEvent) {
       :data-layer-id="node.id"
       :data-layer-hidden="hidden ? '' : undefined"
       :draggable="!isRoot"
-      class="group flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg pe-1.5 text-[13px] whitespace-nowrap select-none"
+      class="group flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg pe-1.5 text-[12px] whitespace-nowrap select-none"
       :class="[
-        selected ? 'bg-primary/10 text-highlighted' : editor.hoveredId === node.id ? 'bg-white/6 text-highlighted' : 'text-toned hover:bg-white/6',
-        dropAt && DROP_CLASS[dropAt]
+        selected
+          ? 'bg-(--editor-selection) text-white'
+          : inSelection
+            ? (editor.hoveredId === node.id ? 'bg-(--editor-selection)/15 text-highlighted' : 'bg-(--editor-selection)/8 text-toned hover:bg-(--editor-selection)/15')
+            : editor.hoveredId === node.id ? 'bg-white/6 text-highlighted' : 'text-toned hover:bg-white/6',
+        dropAt && (selected ? DROP_CLASS_SELECTED : DROP_CLASS)[dropAt]
       ]"
       :style="{ paddingLeft: `${4 + depth * 16}px` }"
       @click="editor.selectRow(node.id, $event.shiftKey)"
@@ -127,7 +139,8 @@ function onDrop(event: DragEvent) {
         v-if="hasChildren"
         type="button"
         tabindex="-1"
-        class="flex h-full w-4 shrink-0 items-center justify-center rounded-sm text-dimmed hover:text-highlighted"
+        class="flex h-full w-4 shrink-0 items-center justify-center rounded-sm"
+        :class="selected ? 'text-white/70 hover:text-white' : 'text-dimmed hover:text-highlighted'"
         :aria-label="collapsed ? `Expand ${name}` : `Collapse ${name}`"
         data-layer-toggle
         @click.stop="editor.setCollapsed(node.id, !collapsed)"
@@ -145,28 +158,31 @@ function onDrop(event: DragEvent) {
       <UIcon
         :name="icon"
         class="size-4 shrink-0"
-        :class="[selected ? 'text-primary' : 'text-dimmed group-hover:text-muted', { 'opacity-45': hidden }]"
+        :class="[selected ? 'text-white' : 'text-dimmed group-hover:text-muted', { 'opacity-45': hidden && !selected }]"
       />
       <span
         class="min-w-0 flex-1 truncate"
-        :class="{ 'opacity-45': hidden }"
+        :class="{ 'opacity-45': hidden && !selected }"
       >
-        <span class="font-medium">{{ name }}</span>
+        <span :class="selected ? 'font-[550]' : 'font-[450]'">{{ name }}</span>
         <span
           v-if="preview"
-          class="ms-1.5 text-dimmed italic"
+          class="ms-1.5 italic"
+          :class="selected ? 'text-white/70' : 'text-dimmed'"
         >{{ preview }}</span>
       </span>
       <span
         v-if="badge"
-        class="shrink-0 text-[10px] text-dimmed"
+        class="shrink-0 text-[10px]"
+        :class="selected ? 'text-white/70' : 'text-dimmed'"
         :title="`Hidden at ${badge}`"
         data-layer-badge
       >{{ badge }}</span>
       <UIcon
         v-if="!isRoot"
         name="i-lucide-grip-vertical"
-        class="size-3.5 shrink-0 cursor-grab text-dimmed opacity-0 group-hover:opacity-100"
+        class="size-3.5 shrink-0 cursor-grab opacity-0 group-hover:opacity-100"
+        :class="selected ? 'text-white/70' : 'text-dimmed'"
         aria-hidden="true"
         data-layer-handle
       />
@@ -174,8 +190,8 @@ function onDrop(event: DragEvent) {
         v-if="!isRoot"
         type="button"
         tabindex="-1"
-        class="flex h-full w-4 shrink-0 items-center justify-center rounded-sm hover:text-highlighted"
-        :class="hidden ? 'text-muted' : 'text-dimmed opacity-0 group-hover:opacity-100'"
+        class="flex h-full w-4 shrink-0 items-center justify-center rounded-sm"
+        :class="[selected ? 'text-white/70 hover:text-white' : hidden ? 'text-muted hover:text-highlighted' : 'text-dimmed hover:text-highlighted', { 'opacity-0 group-hover:opacity-100': !hidden }]"
         :aria-label="hidden ? `Show ${name}` : `Hide ${name}`"
         :aria-pressed="hidden"
         data-layer-eye
@@ -197,6 +213,7 @@ function onDrop(event: DragEvent) {
         :node="child"
         :depth="depth + 1"
         :filter="filter"
+        :in-selection="selected || inSelection"
       />
     </div>
   </div>

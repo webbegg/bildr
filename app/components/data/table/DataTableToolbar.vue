@@ -137,7 +137,7 @@ function removeFilter(index: number) {
         v-for="(filter, index) in filters"
         :key="index"
         type="button"
-        class="flex h-6 shrink-0 items-center gap-1 rounded-md bg-white/6 ps-2 pe-1 text-xs text-toned hover:bg-white/10"
+        class="flex h-6 shrink-0 items-center gap-1 rounded-lg bg-white/6 ps-2 pe-1 text-xs text-toned hover:bg-white/10"
         :aria-label="`Remove filter ${filterLabel(filter, fields)}`"
         data-filter-chip
         @click="removeFilter(index)"

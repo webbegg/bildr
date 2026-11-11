@@ -183,7 +183,7 @@ watch(open, (isOpen) => {
             :help="`Relative to ${connection.baseUrl}`"
             :error="path.trim() && pathProblem ? pathProblem : undefined"
           >
-            <span class="flex h-[30px] shrink-0 items-center rounded-lg bg-elevated px-2.5 font-mono text-[11px] font-semibold text-toned">GET</span>
+            <span class="flex h-[30px] shrink-0 items-center rounded-lg bg-elevated px-2.5 font-mono text-[11px] font-[550] text-toned">GET</span>
             <EditorInput
               v-model="path"
               mono
@@ -210,11 +210,11 @@ watch(open, (isOpen) => {
           label="Response"
         >
           <p
-            class="flex items-center gap-2 text-[13px] text-muted"
+            class="flex items-center gap-2 text-[12px] text-muted"
             data-endpoint-status
           >
             <span
-              class="rounded-md px-1.5 py-0.5 font-mono text-[11px] font-semibold"
+              class="rounded-md px-1.5 py-0.5 font-mono text-[11px] font-[550]"
               :class="status < 300 ? 'bg-success/12 text-success' : 'bg-error/12 text-error'"
             >{{ status }}</span>
             <template v-if="total !== null">

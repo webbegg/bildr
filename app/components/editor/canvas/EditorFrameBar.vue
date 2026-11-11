@@ -21,8 +21,8 @@ const bar = computed(() => frameBar(props.device, props.zoom))
     :data-active="active || undefined"
   >
     <div
-      class="flex cursor-pointer items-center gap-1 rounded-md px-1 text-[13px] whitespace-nowrap"
-      :class="active ? 'bg-(--editor-selection)/18 text-[#4cb3ff]' : 'bg-white/5 text-muted hover:bg-white/8 hover:text-default'"
+      class="flex cursor-pointer items-center gap-1 rounded-lg px-1 text-[12px] whitespace-nowrap"
+      :class="active ? 'bg-(--editor-selection)/18 text-(--editor-selection)' : 'bg-white/5 text-muted hover:bg-white/8 hover:text-default'"
       :style="{ height: `${FRAME_BAR_HEIGHT}px` }"
       @click="emit('activate')"
     >
@@ -32,7 +32,7 @@ const bar = computed(() => frameBar(props.device, props.zoom))
       >
         <button
           type="button"
-          class="flex size-5 shrink-0 items-center justify-center rounded-[4px]"
+          class="flex size-5 shrink-0 items-center justify-center rounded-md"
           :class="active ? 'bg-(--editor-selection) text-white' : 'hover:bg-white/10'"
           :aria-label="`Preview ${bar.name} ${bar.size}`"
           data-frame-preview
@@ -51,7 +51,7 @@ const bar = computed(() => frameBar(props.device, props.zoom))
       >
         <button
           type="button"
-          class="flex min-w-0 items-center gap-1.5 truncate px-1 font-medium"
+          class="flex min-w-0 items-center gap-1.5 truncate px-1 font-[550]"
           :aria-label="`${bar.name} ${bar.size}${bar.primary ? ' (Primary)' : ''}`"
           data-frame-label
           @click.stop="emit('activate')"
@@ -59,11 +59,11 @@ const bar = computed(() => frameBar(props.device, props.zoom))
           <span class="truncate">{{ bar.name }}</span>
           <span
             v-if="bar.showSize"
-            class="font-normal opacity-80"
+            class="font-[450] opacity-80"
           >{{ bar.size }}</span>
           <span
             v-if="bar.primary && bar.showPrimary"
-            class="text-[11px] font-normal opacity-60"
+            class="text-[10px] font-[450] opacity-60"
           >Primary</span>
         </button>
       </UTooltip>
@@ -79,7 +79,7 @@ const bar = computed(() => frameBar(props.device, props.zoom))
           <button
             type="button"
             disabled
-            class="flex size-5 items-center justify-center rounded-[4px] opacity-60"
+            class="flex size-5 items-center justify-center rounded-md opacity-60"
             aria-label="Add breakpoint"
           >
             <UIcon

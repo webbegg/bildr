@@ -107,7 +107,7 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
       <!-- Hidden, not unmounted, in the other views so the canvas does not reload. The canvas zooms and pans edge to edge. -->
       <main
         v-show="editor.mode === 'build'"
-        class="relative min-w-0 flex-1 bg-[#1e1e1e]"
+        class="relative min-w-0 flex-1 bg-(--editor-canvas)"
         data-canvas-area
       >
         <EditorComponentBar />
@@ -118,14 +118,14 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
       </main>
       <main
         v-if="editor.mode === 'data'"
-        class="min-w-0 flex-1 overflow-hidden bg-[#1e1e1e]"
+        class="min-w-0 flex-1 overflow-hidden bg-(--editor-canvas)"
         data-data-area
       >
         <DataView class="size-full" />
       </main>
       <main
         v-if="editor.mode === 'design'"
-        class="min-w-0 flex-1 bg-[#1e1e1e] p-4"
+        class="min-w-0 flex-1 bg-(--editor-canvas) p-4"
         data-design-area
       >
         <EditorCanvas

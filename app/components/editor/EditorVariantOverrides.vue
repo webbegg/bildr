@@ -37,7 +37,7 @@ function reset(list: OverrideEntry[]) {
       :data-override="`${entry.kind}:${entry.key}`"
       @reset="reset([entry])"
     >
-      <p class="flex h-[30px] items-center truncate text-[13px] text-toned">
+      <p class="flex h-[30px] items-center truncate text-[12px] text-toned">
         {{ String(entry.value) }}
       </p>
     </EditorRow>

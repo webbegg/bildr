@@ -25,14 +25,14 @@ const shortcutsOpen = ref(false)
 const MODAL = mergeUi(MODAL_UI, { content: 'sm:max-w-[560px]' })
 const PALETTE_UI = {
   root: 'divide-white/8',
-  input: '[&>input]:h-11 [&>input]:text-[13px]',
+  input: '[&>input]:h-11 [&>input]:text-[12px]',
   viewport: 'divide-white/8',
   group: 'p-1',
   label: 'px-2.5 pt-2 pb-1 text-[11px] font-medium text-dimmed',
-  item: 'gap-2 px-2.5 py-1.5 text-[13px] data-highlighted:not-data-disabled:before:bg-white/8',
+  item: 'gap-2 px-2.5 py-1.5 text-[12px] before:rounded-lg data-highlighted:not-data-disabled:before:bg-white/8',
   itemLeadingIcon: 'size-4',
   itemLabelSuffix: 'text-[12px]',
-  empty: 'py-6 text-[13px] text-dimmed'
+  empty: 'py-6 text-[12px] text-dimmed'
 }
 
 const RECENT_KEY = 'bildr:recent-commands'

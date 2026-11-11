@@ -137,8 +137,8 @@ watch(() => editor.recordsTotal, (total) => {
         type="button"
         role="tab"
         :aria-selected="tab === item.value"
-        class="h-7 rounded-md px-2.5 text-sm font-medium transition-colors"
-        :class="tab === item.value ? 'bg-white/8 text-highlighted' : 'text-muted hover:text-default'"
+        class="h-7 rounded-lg px-2.5 text-[12px] font-[550] transition-colors"
+        :class="[FOCUS_RING, tab === item.value ? 'bg-white/8 text-highlighted' : 'text-muted hover:text-default']"
         :data-data-tab="item.value"
         @click="tab = item.value"
       >
@@ -184,7 +184,7 @@ watch(() => editor.recordsTotal, (total) => {
         >
           <button
             type="button"
-            class="flex h-9 w-full items-center gap-2.5 rounded-lg ps-3 text-left text-sm text-muted hover:bg-white/4 hover:text-toned"
+            class="flex h-9 w-full items-center gap-2.5 rounded-lg ps-3 text-left text-[12px] text-muted hover:bg-white/4 hover:text-toned"
             aria-label="Add collection"
             @click="adding = true"
           >

@@ -26,7 +26,7 @@ const modes = computed(() => [
     >
       <button
         type="button"
-        class="grid w-7 place-items-center rounded-md"
+        class="grid w-7 place-items-center rounded-lg"
         :class="modelValue === mode.value ? 'bg-white/14 text-highlighted' : 'text-muted hover:text-highlighted'"
         :aria-label="mode.label"
         :aria-pressed="modelValue === mode.value"

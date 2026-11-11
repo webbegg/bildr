@@ -90,10 +90,10 @@ async function add() {
     class="scroll-mt-6 space-y-2"
     data-env-section
   >
-    <h2 class="text-[13px] font-semibold text-highlighted">
+    <h2 class="text-[12px] font-[550] text-highlighted">
       Variables
     </h2>
-    <p class="text-[13px] text-muted">
+    <p class="text-[12px] text-muted">
       {{ HELP }}
     </p>
 
@@ -129,7 +129,7 @@ async function add() {
             class="flex items-center gap-2"
           >
             <span
-              class="flex-1 ps-2.5 font-mono text-[13px] text-muted"
+              class="flex-1 ps-2.5 font-mono text-[12px] text-muted"
               data-env-masked
             >{{ MASK }}</span>
             <EditorButton

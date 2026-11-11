@@ -15,7 +15,7 @@ const emit = defineEmits<{ add: [] }>()
   >
     <button
       type="button"
-      class="flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-lg bg-elevated ps-1 text-left text-[13px] text-dimmed hover:text-toned hover:ring-1 hover:ring-white/10 hover:ring-inset"
+      class="flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-lg bg-elevated ps-1 text-left text-[12px] text-dimmed hover:text-toned hover:ring-1 hover:ring-white/10 hover:ring-inset"
       :aria-label="`Add ${label.toLowerCase()}`"
       :data-add-row="name"
       @click="emit('add')"

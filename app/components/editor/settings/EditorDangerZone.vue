@@ -44,11 +44,11 @@ async function remove() {
     class="space-y-2"
     data-danger-zone
   >
-    <h2 class="text-[13px] font-semibold text-error">
+    <h2 class="text-[12px] font-[550] text-error">
       Danger zone
     </h2>
     <div class="flex items-center gap-3 rounded-lg py-2 ps-3 pe-2 ring ring-error/40">
-      <p class="min-w-0 flex-1 text-[13px] text-muted">
+      <p class="min-w-0 flex-1 text-[12px] text-muted">
         Delete the project, its data and the published app. This cannot be undone.
       </p>
       <EditorButton
@@ -72,7 +72,7 @@ async function remove() {
       data-delete-project-confirm
       @submit.prevent="remove"
     >
-      <p class="text-[13px] text-muted">
+      <p class="text-[12px] text-muted">
         This deletes the project's pages, its data (collections and records), its environment variables and the published app at /p/{{ project.slug }}.
       </p>
       <EditorFormRow

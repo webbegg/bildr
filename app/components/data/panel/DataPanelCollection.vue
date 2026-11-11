@@ -79,7 +79,7 @@ function update(patch: Record<string, unknown>) {
       >
         <button
           type="button"
-          class="flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 text-[13px] text-muted hover:bg-white/4 hover:text-highlighted"
+          class="flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 text-[12px] text-muted hover:bg-white/4 hover:text-highlighted"
           title="Edit the fields in the sidebar"
           data-show-fields
           @click="sidebarTab = 'fields'"
@@ -98,7 +98,7 @@ function update(patch: Record<string, unknown>) {
       >
         <button
           type="button"
-          class="flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 text-[13px] text-muted hover:bg-white/4 hover:text-highlighted"
+          class="flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 text-[12px] text-muted hover:bg-white/4 hover:text-highlighted"
           title="Show the connection"
           data-show-connection
           @click="editor.connectionId = connectionSource.connectionId"

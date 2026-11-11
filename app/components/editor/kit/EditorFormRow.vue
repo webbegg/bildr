@@ -15,7 +15,7 @@ defineProps<{ label: string, help?: string, error?: string, stacked?: boolean, f
   >
     <label
       :for="$props.for"
-      :class="stacked ? 'text-[12px] text-muted' : 'flex h-[30px] min-w-0 items-center truncate text-[13px] text-muted'"
+      :class="stacked ? 'text-[12px] text-muted' : 'flex h-[30px] min-w-0 items-center truncate text-[12px] text-muted'"
     >{{ label }}</label>
     <div class="min-w-0">
       <div class="flex min-h-[30px] min-w-0 items-center gap-2">

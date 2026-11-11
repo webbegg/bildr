@@ -81,13 +81,13 @@ onBeforeUnmount(() => document.documentElement.classList.remove('bildr-editor'))
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col bg-[#1e1e1e]">
+  <div class="flex min-h-screen flex-col bg-(--editor-canvas)">
     <header class="sticky top-0 z-20 grid h-12 shrink-0 grid-cols-[1fr_minmax(0,320px)_1fr] items-center gap-3 border-b border-default bg-default px-3">
       <NuxtLink
         to="/"
-        class="flex items-center gap-2 justify-self-start rounded-md px-1.5 text-[15px] font-semibold tracking-tight text-highlighted"
+        class="flex items-center gap-2 justify-self-start rounded-lg px-1.5 text-[15px] font-semibold tracking-tight text-highlighted"
       >
-        <span class="grid size-6 place-items-center rounded-md bg-(--editor-selection) text-white">
+        <span class="grid size-6 place-items-center rounded-lg bg-(--editor-selection) text-white">
           <UIcon
             name="i-lucide-blocks"
             class="size-3.5"
@@ -114,7 +114,7 @@ onBeforeUnmount(() => document.documentElement.classList.remove('bildr-editor'))
     </header>
 
     <main class="mx-auto w-full max-w-6xl flex-1 px-6 py-8">
-      <h1 class="mb-4 text-[13px] font-semibold text-highlighted">
+      <h1 class="mb-4 text-[12px] font-[550] text-highlighted">
         Projects
       </h1>
       <div
@@ -139,7 +139,7 @@ onBeforeUnmount(() => document.documentElement.classList.remove('bildr-editor'))
               />
             </div>
             <div class="space-y-1 px-3.5 py-3 pe-10">
-              <p class="truncate text-[13px] font-semibold text-highlighted">
+              <p class="truncate text-[12px] font-[550] text-highlighted">
                 {{ project.name }}
               </p>
               <p class="flex min-w-0 items-center gap-1.5 text-[12px] text-dimmed">
@@ -178,13 +178,13 @@ onBeforeUnmount(() => document.documentElement.classList.remove('bildr-editor'))
       </div>
       <p
         v-if="projects && !projects.length"
-        class="mt-8 text-[13px] text-dimmed"
+        class="mt-8 text-[12px] text-dimmed"
       >
         No projects yet. Start one with New project.
       </p>
       <p
         v-else-if="projects && !shown.length"
-        class="mt-8 text-[13px] text-dimmed"
+        class="mt-8 text-[12px] text-dimmed"
       >
         No projects match “{{ query }}”.
       </p>

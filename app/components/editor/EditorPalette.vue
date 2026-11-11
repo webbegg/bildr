@@ -55,7 +55,7 @@ function insertFirst() {
     />
     <div class="max-h-80 overflow-y-auto">
       <template v-if="own.length">
-        <p class="px-2 pt-1 pb-0.5 text-[11px] font-semibold text-dimmed uppercase">
+        <p class="px-2 pt-1 pb-0.5 text-[11px] font-[550] text-dimmed uppercase">
           Components
         </p>
         <button
@@ -64,7 +64,8 @@ function insertFirst() {
           type="button"
           draggable="true"
           :data-palette-component="component.id"
-          class="flex w-full cursor-grab items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-toned hover:bg-white/8 hover:text-highlighted active:cursor-grabbing"
+          class="flex w-full cursor-grab items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-toned hover:bg-white/8 hover:text-highlighted active:cursor-grabbing"
+          :class="FOCUS_RING"
           @dragstart="onDragStart($event, instanceDragPayload(component.id))"
           @dragend="emit('done')"
           @click="insertInstance(component.id)"
@@ -75,7 +76,7 @@ function insertFirst() {
           />
           <span class="truncate">{{ component.name }}</span>
         </button>
-        <p class="px-2 pt-2 pb-0.5 text-[11px] font-semibold text-dimmed uppercase">
+        <p class="px-2 pt-2 pb-0.5 text-[11px] font-[550] text-dimmed uppercase">
           Built-in
         </p>
       </template>
@@ -90,7 +91,8 @@ function insertFirst() {
           type="button"
           draggable="true"
           :data-palette-type="component.type"
-          class="flex w-full cursor-grab items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[13px] text-toned hover:bg-white/8 hover:text-highlighted active:cursor-grabbing"
+          class="flex w-full cursor-grab items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-toned hover:bg-white/8 hover:text-highlighted active:cursor-grabbing"
+          :class="FOCUS_RING"
           @dragstart="onDragStart($event, JSON.stringify({ kind: 'component', type: component.type }))"
           @dragend="emit('done')"
           @click="insert(component.type)"

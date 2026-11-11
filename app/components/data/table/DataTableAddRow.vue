@@ -85,7 +85,7 @@ defineExpose({ focus })
         :aria-label="`New item ${field.label}`"
         :readonly="busy"
         size="1"
-        class="h-full w-full min-w-0 bg-transparent text-sm outline-none [color-scheme:dark] placeholder:text-dimmed"
+        class="h-full w-full min-w-0 bg-transparent text-[12px] outline-none [color-scheme:dark] placeholder:text-dimmed"
         :class="field.type === 'date' && !drafts[field.key] ? 'text-dimmed' : 'text-highlighted'"
         data-add-input
         @input="drafts[field.key] = ($event.target as HTMLInputElement).value"

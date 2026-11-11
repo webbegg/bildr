@@ -100,7 +100,7 @@ const scrub = (event: PointerEvent) => field.value?.scrub(event)
     >
       <button
         type="button"
-        class="flex h-[30px] min-w-0 flex-1 items-center rounded-lg bg-elevated px-2.5 text-left text-[13px] text-toned tabular-nums hover:ring-1 hover:ring-white/10 hover:ring-inset"
+        class="flex h-[30px] min-w-0 flex-1 items-center rounded-lg bg-elevated px-2.5 text-left text-[12px] text-toned tabular-nums hover:ring-1 hover:ring-white/10 hover:ring-inset"
         :aria-label="`Edit ${label.toLowerCase()}`"
         :data-box-summary="box"
       >
@@ -112,10 +112,10 @@ const scrub = (event: PointerEvent) => field.value?.scrub(event)
           :data-box-popover="box"
         >
           <div class="flex h-12 items-center justify-between border-b border-default ps-4 pe-2">
-            <span class="text-[13px] font-semibold text-highlighted">{{ label }}</span>
+            <span class="text-[12px] font-[550] text-highlighted">{{ label }}</span>
             <button
               type="button"
-              class="grid size-7 place-items-center rounded-md text-muted hover:bg-white/8 hover:text-highlighted"
+              class="grid size-7 place-items-center rounded-lg text-muted hover:bg-white/8 hover:text-highlighted"
               aria-label="Close"
               @click="popover = false"
             >
@@ -127,7 +127,7 @@ const scrub = (event: PointerEvent) => field.value?.scrub(event)
           </div>
           <div class="space-y-2 p-4">
             <EditorRow label="Set">
-              <div class="flex h-[30px] min-w-0 flex-1 items-center rounded-lg bg-elevated px-2.5 text-[13px] text-dimmed">
+              <div class="flex h-[30px] min-w-0 flex-1 items-center rounded-lg bg-elevated px-2.5 text-[12px] text-dimmed">
                 {{ mixed ? 'Mixed' : '' }}
               </div>
               <EditorSplitToggle

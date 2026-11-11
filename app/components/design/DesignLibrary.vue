@@ -90,7 +90,7 @@ async function remove() {
     data-theme-library
   >
     <div class="flex h-11 shrink-0 items-center justify-between ps-4 pe-2.5">
-      <p class="text-[13px] font-semibold text-highlighted">
+      <p class="text-[12px] font-[550] text-highlighted">
         Themes
       </p>
       <span class="text-[11px] text-dimmed tabular-nums">{{ themes.length || '' }}</span>
@@ -142,7 +142,7 @@ async function remove() {
       title="Delete theme"
       width="sm"
     >
-      <p class="text-[13px] text-toned">
+      <p class="text-[12px] text-toned">
         Delete “{{ deleteName }}” from the library? Projects that applied it keep their copy. This can't be undone.
       </p>
       <template #footer>

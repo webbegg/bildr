@@ -94,16 +94,16 @@ function renamePage(field: 'name' | 'slug', value: string) {
         />
         <p
           v-if="multi"
-          class="min-w-0 flex-1 truncate text-[13px] font-semibold text-highlighted"
+          class="min-w-0 flex-1 truncate text-[12px] font-[550] text-highlighted"
           :data-selection-count="editor.selectedNodes.length"
         >
           {{ editor.selectedNodes.length }} selected
         </p>
         <p
           v-else
-          class="min-w-0 flex-1 truncate text-[13px] font-semibold text-highlighted"
+          class="min-w-0 flex-1 truncate text-[12px] font-[550] text-highlighted"
         >
-          {{ editor.nodeName(node) }} <span class="ms-1 font-mono text-[11px] font-normal text-dimmed">{{ node.id }}</span>
+          {{ editor.nodeName(node) }} <span class="ms-1 font-mono text-[11px] font-[450] text-dimmed">{{ node.id }}</span>
         </p>
         <template v-if="!isRoot">
           <UTooltip
@@ -146,6 +146,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
           <button
             type="button"
             class="max-w-28 truncate rounded-sm px-1 text-muted hover:bg-elevated hover:text-highlighted"
+            :class="FOCUS_RING"
             :data-crumb-id="crumb.id"
             @click="editor.selectedId = crumb.id"
             @mouseenter="editor.hoveredId = crumb.id"

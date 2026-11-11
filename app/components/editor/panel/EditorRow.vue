@@ -42,7 +42,7 @@ const emit = defineEmits<{ reset: [], remove: [] }>()
       <button
         v-if="removable"
         type="button"
-        class="ms-auto grid size-5 shrink-0 place-items-center rounded-md text-dimmed opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 hover:bg-white/8 hover:text-highlighted focus-visible:opacity-100"
+        class="ms-auto grid size-5 shrink-0 place-items-center rounded-lg text-dimmed opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 hover:bg-white/8 hover:text-highlighted focus-visible:opacity-100"
         :aria-label="`Remove ${(title ?? label).toLowerCase()}`"
         :title="`Remove ${(title ?? label).toLowerCase()}${device ? ` on ${device}` : ''}`"
         data-row-remove

@@ -25,7 +25,11 @@ import { labelPlacement } from '#shared/editor/labelPlacement'
  * editor sends with the same runtime as the published app, draws hover and
  * selection outlines, and turns pointer and key gestures into messages.
  * The `tokens` view shows the theme's style guide instead (the Design view).
- * Outlines use a fixed editor colour, not the project's `primary`.
+ * Outlines use a fixed editor colour, not the project's `primary`: the
+ * editor's accent (`--editor-selection` in main.css), defined again on this
+ * document's root as `--canvas-accent` since the iframe has no editor chrome.
+ * Selection and hover are 1 px (Framer's), and a single selection's parent
+ * gets a dashed outline for context.
  * List repetitions share their template's node ids: a click on any copy
  * selects the template, while outlines and drops stay on the first copy.
  * Style previews from the editor render over the page until it clears them
@@ -94,12 +98,21 @@ const shownPage = computed(() => {
 })
 
 interface Box { id: string, top: number, left: number, width: number, height: number, label: string }
-const boxes = reactive<{ hover: Box | null, selected: Box[] }>({ hover: null, selected: [] })
+const boxes = reactive<{ hover: Box | null, selected: Box[], parent: Box | null }>({ hover: null, selected: [], parent: null })
+/** The editor accent (`--editor-selection`), which this document can't inherit. */
+const ACCENT_VAR = '--canvas-accent'
+const ACCENT = '#09f'
+/** A single selection's parent, outlined dashed for context. */
+const parentId = computed(() => {
+  const root = page.value?.root
+  const id = selectedIds.value.length === 1 ? selectedIds.value[0] : undefined
+  return root && id ? findParent(root, id)?.parent.id ?? null : null
+})
 
 const toRect = (box: Box) => ({ x: box.left, y: box.top, width: box.width, height: box.height })
 
-/** The selection label (20 px on screen, `leading-5`): above the box, or inset inside it at the frame top. */
-const LABEL_PX = 20
+/** The selection label (16 px on screen, `leading-4`): above the box, or inset inside it at the frame top. */
+const LABEL_PX = 16
 const labelInside = (box: Box) => labelPlacement(box.top, LABEL_PX / zoom.value) === 'inside'
 /** The selection's bounds, measured from, and the hovered element's box, measured to. */
 const measurement = computed(() => {
@@ -151,6 +164,7 @@ let frame = 0
 function track() {
   boxes.hover = hoveredId.value && !selectedIds.value.includes(hoveredId.value) ? measure(hoveredId.value) : null
   boxes.selected = selectedIds.value.map(measure).filter((box): box is Box => !!box)
+  boxes.parent = active.value && parentId.value ? measure(parentId.value) : null
   frame = requestAnimationFrame(track)
 }
 
@@ -421,7 +435,7 @@ onBeforeUnmount(() => {
     :class="{ 'min-h-screen': view === 'tokens', 'cursor-crosshair! **:cursor-crosshair!': tool && view === 'page' }"
     :data-armed-tool="tool ?? undefined"
     :data-canvas-viewport="view === 'page' || undefined"
-    :style="view === 'page' ? { minHeight: `${FRAME_MIN_HEIGHT}px`, [VIEWPORT_VAR]: `${viewportHeight}px` } : undefined"
+    :style="view === 'page' ? { minHeight: `${FRAME_MIN_HEIGHT}px`, [VIEWPORT_VAR]: `${viewportHeight}px`, [ACCENT_VAR]: ACCENT } : { [ACCENT_VAR]: ACCENT }"
   >
     <EditorTokenSheet
       v-if="view === 'tokens'"
@@ -440,18 +454,22 @@ onBeforeUnmount(() => {
       :style="{ minHeight: `${FRAME_MIN_HEIGHT}px` }"
     />
     <div
+      v-if="boxes.parent"
+      class="pointer-events-none absolute z-50 outline-dashed outline-(--canvas-accent)/60"
+      :style="{ top: `${boxes.parent.top}px`, left: `${boxes.parent.left}px`, width: `${boxes.parent.width}px`, height: `${boxes.parent.height}px`, outlineWidth: `${1 / zoom}px`, outlineOffset: `${-1 / zoom}px` }"
+      :data-selection-parent="boxes.parent.id"
+    />
+    <div
       v-for="box in [...boxes.selected, ...(boxes.hover ? [boxes.hover] : [])]"
       :key="box === boxes.hover ? 'hover' : box.id"
-      class="pointer-events-none absolute z-50 rounded-sm"
-      :class="box === boxes.hover
-        ? (measurement ? 'outline-solid outline-[#f24822]' : 'outline-dashed outline-blue-500/60')
-        : 'outline-solid outline-blue-500'"
-      :style="{ top: `${box.top}px`, left: `${box.left}px`, width: `${box.width}px`, height: `${box.height}px`, outlineWidth: `${(box === boxes.hover && measurement ? 1 : 2) / zoom}px`, outlineOffset: `${-1 / zoom}px` }"
+      class="pointer-events-none absolute z-50 outline-solid"
+      :class="box === boxes.hover ? (measurement ? 'outline-[#f24822]' : 'outline-(--canvas-accent)/50') : 'outline-(--canvas-accent)'"
+      :style="{ top: `${box.top}px`, left: `${box.left}px`, width: `${box.width}px`, height: `${box.height}px`, outlineWidth: `${1 / zoom}px`, outlineOffset: `${-1 / zoom}px` }"
       :data-selection-box="box === boxes.hover ? undefined : box.id"
     >
       <span
         v-if="box.id === selectedId && box !== boxes.hover && active"
-        class="absolute left-0 bg-blue-500 px-1.5 text-[10px] leading-5 whitespace-nowrap text-white"
+        class="absolute left-0 bg-(--canvas-accent) px-1 text-[10px] leading-4 font-medium whitespace-nowrap text-white"
         :class="labelInside(box) ? 'top-0 origin-top-left rounded-sm' : 'bottom-full origin-bottom-left rounded-t-sm'"
         :style="{ transform: labelInside(box) ? `translate(${2 / zoom}px, ${2 / zoom}px) scale(${1 / zoom})` : `scale(${1 / zoom})` }"
         :data-selection-label="labelInside(box) ? 'inside' : 'above'"
@@ -477,7 +495,7 @@ onBeforeUnmount(() => {
     <div
       v-if="indicator"
       class="pointer-events-none absolute z-50"
-      :class="indicator.line ? 'rounded-full bg-blue-500' : 'rounded-sm bg-blue-500/5 outline-2 -outline-offset-2 outline-blue-500'"
+      :class="indicator.line ? 'rounded-full bg-(--canvas-accent)' : 'rounded-sm bg-(--canvas-accent)/5 outline-2 -outline-offset-2 outline-(--canvas-accent)'"
       :style="{ top: `${indicator.top}px`, left: `${indicator.left}px`, width: `${indicator.width}px`, height: `${indicator.height}px` }"
       data-drop-indicator
     />

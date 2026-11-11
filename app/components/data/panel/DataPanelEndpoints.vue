@@ -39,7 +39,7 @@ watch(() => props.collection.id, () => {
 
 /** The verb is a compact chip inside the path field, so the path gets the rest of the row. */
 const PATH_UI = { ...VARIABLE_FIELD_UI, base: 'ps-[50px] pe-8', leading: 'ps-[3px]' }
-const VERB_UI = { base: 'h-6 justify-center rounded-md bg-white/6 px-0.5 text-[10.5px] font-semibold text-toned', trailing: 'hidden', content: 'min-w-24' }
+const VERB_UI = { base: 'h-6 justify-center rounded-lg bg-white/6 px-0.5 text-[10.5px] font-[550] text-toned', trailing: 'hidden', content: 'min-w-24' }
 
 const isRead = (op: EndpointOperation) => op === 'list' || op === 'get'
 const methodOf = (op: EndpointOperation): EndpointMethod => (isRead(op) ? 'GET' : props.source.endpoints[op]?.method ?? 'GET')

@@ -30,7 +30,7 @@ function commit() {
 <template>
   <span
     v-if="readonly"
-    class="flex min-w-0 flex-1 items-center gap-2 text-[13px] text-toned"
+    class="flex min-w-0 flex-1 items-center gap-2 text-[12px] text-toned"
   >
     <img
       v-if="field.type === 'image' && modelValue"

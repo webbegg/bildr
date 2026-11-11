@@ -21,7 +21,7 @@ const pressed = (on: boolean) => (on ? 'bg-white/10 text-highlighted' : '')
 
 <template>
   <div
-    class="flex h-11 items-center gap-1 rounded-xl bg-[#2c2c2c] px-1.5 text-white/80 shadow-[0_4px_16px_rgba(0,0,0,0.35)] ring ring-white/10"
+    class="flex h-11 items-center gap-1 rounded-xl bg-(--editor-bar) px-1.5 text-white/80 shadow-[0_4px_16px_rgba(0,0,0,0.35)] ring ring-white/10"
     role="toolbar"
     aria-label="Canvas"
     data-floating-bar
@@ -29,7 +29,7 @@ const pressed = (on: boolean) => (on ? 'bg-white/10 text-highlighted' : '')
   >
     <div
       v-if="hint"
-      class="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-md bg-(--editor-selection) px-2 py-1 text-[11px] whitespace-nowrap text-white shadow"
+      class="pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-lg bg-(--editor-selection) px-2 py-1 text-[11px] whitespace-nowrap text-white shadow"
       role="status"
       data-tool-hint
     >

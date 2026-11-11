@@ -13,7 +13,7 @@ defineProps<{ icon: string, title: string, detail?: string }>()
         :name="icon"
         class="size-3.5 shrink-0 text-muted"
       />
-      <p class="min-w-0 flex-1 truncate text-[13px] font-semibold text-highlighted">
+      <p class="min-w-0 flex-1 truncate text-[12px] font-[550] text-highlighted">
         {{ title }} <span
           v-if="detail"
           class="ms-1 font-mono text-[11px] font-normal text-dimmed"
