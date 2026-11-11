@@ -5,7 +5,13 @@ import type { ComponentDefinition, DocNode, Layout, Page } from '../document/sch
 import { findNode, findParent, pathTo } from '../document/tree'
 import type { DropTarget } from './dropTarget'
 import { DEVICES, styleProvenance } from './styleFields'
-import type { DeviceId } from './styleFields'
+import type { Device, DeviceId } from './styleFields'
+import { DEFAULT_FRAMES } from './frames'
+
+/** The devices the layers eye works over, mobile-first: the shown frames, plus `device` (the edited one). */
+function eyeDevices(device: DeviceId, shown: readonly DeviceId[]): Device[] {
+  return DEVICES.filter(d => d.id === device || !d.breakpoint || shown.includes(d.id))
+}
 
 /**
  * The layers tree's pure behaviour: which rows show when some are collapsed,
@@ -112,10 +118,10 @@ export function visibilityAt(style: Record<string, string>, device: DeviceId): V
   return { hidden: p.value === 'hidden', source, value: p.value }
 }
 
-/** The other devices' breakpoints a node is hidden at (`base` for Mobile), e.g. `md`; null when none, or when hidden here. */
-export function hiddenBadge(style: Record<string, string>, device: DeviceId): string | null {
+/** The other shown devices' breakpoints a node is hidden at (`base` for Mobile), e.g. `md`; null when none, or when hidden here. */
+export function hiddenBadge(style: Record<string, string>, device: DeviceId, shown: readonly DeviceId[] = DEFAULT_FRAMES): string | null {
   if (visibilityAt(style, device).hidden) return null
-  const others = DEVICES.filter(d => d.id !== device && visibilityAt(style, d.id).hidden)
+  const others = eyeDevices(device, shown).filter(d => d.id !== device && visibilityAt(style, d.id).hidden)
   return others.length ? others.map(d => d.breakpoint ?? 'base').join(' ') : null
 }
 
@@ -135,11 +141,13 @@ export function naturalDisplay(node: Pick<DocNode, 'type' | 'props'>): string {
  * also writes the display Tablet had, keeping wider frames as they were; and
  * an override that the toggle no longer needs is removed, so hide then show
  * gives the original style back. `natural` is the node's `naturalDisplay`.
+ * The wider device is the next shown frame (`shown`, the visible frames).
  */
-export function visibilityToggle(style: Record<string, string>, device: DeviceId, natural: string): Record<string, string | null> {
-  const index = DEVICES.findIndex(d => d.id === device)
-  const key = styleKey('display', DEVICES[index]!.breakpoint)
-  const next = DEVICES[index + 1]
+export function visibilityToggle(style: Record<string, string>, device: DeviceId, natural: string, shown: readonly DeviceId[] = DEFAULT_FRAMES): Record<string, string | null> {
+  const devices = eyeDevices(device, shown)
+  const index = devices.findIndex(d => d.id === device)
+  const key = styleKey('display', devices[index]!.breakpoint)
+  const next = devices[index + 1]
   const displayAt = (s: Record<string, string>, id: DeviceId) => visibilityAt(s, id).value ?? natural
   const without = (s: Record<string, string>, k: string) => Object.fromEntries(Object.entries(s).filter(([other]) => other !== k))
 

@@ -118,8 +118,8 @@ describe('layoutFrames', () => {
 })
 
 describe('frameOrder', () => {
-  it('shows the frames Desktop, Tablet, Mobile from left to right, like Framer', () => {
-    expect(frameOrder(DEVICES).map(d => d.id)).toEqual(['desktop', 'tablet', 'mobile'])
+  it('shows the frames Desktop, Tablet, Large phone, Mobile from left to right, like Framer', () => {
+    expect(frameOrder(DEVICES).map(d => d.id)).toEqual(['desktop', 'tablet', 'large-phone', 'mobile'])
   })
 
   it('keeps a single frame', () => {
@@ -128,7 +128,8 @@ describe('frameOrder', () => {
 })
 
 describe('frameBar', () => {
-  const [mobile, tablet, desktop] = DEVICES
+  const device = (id: string) => DEVICES.find(d => d.id === id)
+  const [mobile, tablet, desktop] = [device('mobile'), device('tablet'), device('desktop')]
 
   it('names the frame and its width, and marks the base (mobile-first) frame as Primary', () => {
     expect(frameBar(desktop!, 1)).toMatchObject({ name: 'Desktop', size: '1280', primary: false })

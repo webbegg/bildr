@@ -29,7 +29,7 @@ import type { ZoomCommand } from '#shared/editor/viewport'
 import { previewWindowFeatures } from '#shared/editor/viewport'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
-import { deviceForKey } from '#shared/editor/devices'
+import { canHideFrame, frameForKey, hiddenFrames, PRIMARY_FRAME, visibleFrames } from '#shared/editor/frames'
 import { insertableComponents, outsideInstance, parseInstancePayload, uniqueComponentName } from './componentEditor'
 import { activeVariant, applyVariant } from './componentVariants'
 
@@ -111,8 +111,13 @@ export function createEditor(projectId: string) {
   /** The canvas width, and the breakpoint the style panel edits (Mobile is the base, mobile-first). */
   const deviceId = ref<DeviceId>('mobile')
   const device = computed(() => DEVICES.find(d => d.id === deviceId.value)!)
-  /** The last device frame asked to be shown (the floating bar's switch, ⌥1–3, ⌘K); the canvas pans each new one into view. */
+  /** The last device frame asked to be shown (the floating bar's switch, ⌥ + digit, ⌘K); the canvas pans each new one into view. */
   const frameRequest = shallowRef<{ deviceId: DeviceId } | null>(null)
+  /** The visible frames (a per-project editor preference): canvas frames, Layers rows, the device switch and ⌥ + digit follow them. */
+  const visibility = useEditorFrames(projectId)
+  const frames = computed<readonly DeviceId[]>(() => visibility.shown.value)
+  const visibleDevices = computed(() => visibleFrames(frames.value))
+  const hiddenDevices = computed(() => hiddenFrames(frames.value))
   /** An uncommitted theme previewed in the canvas, e.g. while a colour picker drags. */
   const themeDraft = shallowRef<Theme | null>(null)
   /** An uncommitted style patch the canvas shows on one node, e.g. while a field scrubs. */
@@ -464,6 +469,19 @@ export function createEditor(projectId: string) {
   function setDevice(id: DeviceId): void {
     deviceId.value = id
     frameRequest.value = { deviceId: id }
+  }
+
+  /** The frame bar's "+": shows a hidden frame and edits it. */
+  function showFrame(id: DeviceId): void {
+    visibility.show(id)
+    setDevice(id)
+  }
+
+  /** Hides a frame (never the Primary); hiding the edited one goes back to the Primary. */
+  function hideFrame(id: DeviceId): void {
+    if (!canHideFrame(id)) return
+    visibility.hide(id)
+    if (deviceId.value === id) setDevice(PRIMARY_FRAME)
   }
 
   /** Picks a canvas tool: Move, Hand, or an insert tool to arm. */
@@ -856,7 +874,7 @@ export function createEditor(projectId: string) {
     // The Canvas view's shortcuts would act on a page the Data and Settings views do not show.
     if (mode.value !== 'build' && !(meta && (lower === 'z' || lower === 'y'))) return false
     const armed = toolForKey({ key, meta, shift })
-    const deviceKey = deviceForKey({ code, alt, meta, shift })
+    const deviceKey = frameForKey(frames.value, { code, alt, meta, shift })
     if (deviceKey) setDevice(deviceKey)
     else if (meta && !shift && lower === 'f') searchRequest.value++
     else if (!meta && !shift && lower === 'i') insertOpen.value = true
@@ -886,9 +904,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, componentId, component, layoutId, layout, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
+    projectId, project, pageId, componentId, component, layoutId, layout, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
-    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, createLayout, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, createLayout, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, updateStyles, previewTheme, updateTheme, undo, redo, shortcut
   })

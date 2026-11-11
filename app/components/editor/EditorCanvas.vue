@@ -6,11 +6,10 @@ import { createThrottle, PREVIEW_INTERVAL } from '#shared/editor/preview'
 import type { PreviewState } from '#shared/editor/preview'
 import type { NodeBox } from '#shared/editor/autoLayout'
 import type { DeviceId } from '#shared/editor/styleFields'
-import { DEVICES } from '#shared/editor/styleFields'
 import type { Point, Viewport, ZoomCommand } from '#shared/editor/viewport'
 import { isInsertTool, pointerMode } from '#shared/editor/insertTools'
 import { revealFrame } from '#shared/editor/devices'
-import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, frameOrder, layoutFrames, panView, selectionView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, layoutFrames, panView, selectionView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
 /**
  * The editor canvas. The page view is a Figma-style infinite surface showing
@@ -31,6 +30,8 @@ import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MI
  * goes to the frames, which report where a click inserts, and so does the
  * light/dark preview. Each frame has Framer's header bar (EditorFrameBar):
  * clicking it activates the frame, ▶ previews the draft in a popup that wide.
+ * The frames shown are the editor's visible frames (`editor.visibleDevices`):
+ * the bar's "+" adds a hidden one back and its right-click menu hides one.
  * Direct manipulation (#23): the active frame's handle drags preview a style
  * patch and commit it through `updateStyle` (one undo step, `setOverride` in
  * the variant view), and the panel's hovered Padding or Gap field goes to the
@@ -55,7 +56,7 @@ const FRAMES_KEY = 'bildr:canvas-frames'
 /** All frames, or only the active one (small screens, performance); remembered across reloads. */
 const singleFrame = ref(view === 'page' && localStorage.getItem(FRAMES_KEY) === 'single')
 const heights = reactive<Partial<Record<DeviceId, number>>>({})
-const shownDevices = computed(() => (singleFrame.value ? [editor.device] : frameOrder(DEVICES)))
+const shownDevices = computed(() => (singleFrame.value ? [editor.device] : editor.visibleDevices))
 const layout = computed(() => {
   const rects = layoutFrames(shownDevices.value.map(d => ({ width: d.width, height: Math.max(FRAME_MIN_HEIGHT, heights[d.id] ?? 0) })), FRAME_GAP)
   return shownDevices.value.map((device, i) => ({ device, rect: rects[i]! }))
@@ -424,8 +425,11 @@ onBeforeUnmount(() => {
           :device="device"
           :zoom="viewport.zoom"
           :active="device.id === editor.deviceId"
+          :hidden="editor.hiddenDevices"
           @activate="activate(device.id)"
           @preview="editor.openPreview(device.width)"
+          @add="editor.showFrame($event)"
+          @hide="editor.hideFrame(device.id)"
         />
         <iframe
           :ref="frameRef(device.id)"

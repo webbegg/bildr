@@ -80,6 +80,12 @@ describe('visibilityAt', () => {
     expect(hiddenBadge({ 'md:display': 'hidden', 'lg:display': 'flex' }, 'desktop')).toBe('md')
     expect(hiddenBadge({}, 'mobile')).toBeNull()
   })
+
+  it('badges over the shown frames, Large phone (sm) only when shown', () => {
+    const style = { 'display': 'hidden', 'md:display': 'block' }
+    expect(hiddenBadge(style, 'tablet')).toBe('base')
+    expect(hiddenBadge(style, 'tablet', ['desktop', 'tablet', 'large-phone', 'mobile'])).toBe('base sm')
+  })
 })
 
 describe('naturalDisplay', () => {
@@ -108,6 +114,17 @@ describe('visibilityToggle', () => {
     expect(visibilityToggle({ 'display': 'hidden', 'md:display': 'block' }, 'mobile', 'block')).toEqual({ 'display': null, 'md:display': null })
     expect(visibilityToggle({ 'md:display': 'hidden', 'lg:display': 'flex' }, 'tablet', 'flex')).toEqual({ 'md:display': null, 'lg:display': null })
     expect(visibilityToggle({ 'lg:display': 'hidden' }, 'desktop', 'flex')).toEqual({ 'lg:display': null })
+  })
+
+  it('works over the shown frames: with Large phone shown, Mobile hands over to sm', () => {
+    const shown = ['desktop', 'tablet', 'large-phone', 'mobile'] as const
+    expect(visibilityToggle({}, 'mobile', 'block', shown)).toEqual({ 'display': 'hidden', 'sm:display': 'block' })
+    expect(visibilityToggle({}, 'large-phone', 'flex', shown)).toEqual({ 'sm:display': 'hidden', 'md:display': 'flex' })
+    expect(visibilityToggle({ 'display': 'hidden', 'sm:display': 'block' }, 'mobile', 'block', shown)).toEqual({ 'display': null, 'sm:display': null })
+  })
+
+  it('includes the edited device even when its frame is not in the shown list', () => {
+    expect(visibilityToggle({}, 'large-phone', 'flex')).toEqual({ 'sm:display': 'hidden', 'md:display': 'flex' })
   })
 
   it('shows a node hidden from a smaller breakpoint with its natural display', () => {

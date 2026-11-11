@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { SHORTCUTS } from '#shared/editor/commands'
+import { shortcutsFor } from '#shared/editor/commands'
 
-/** The keyboard shortcuts sheet (quick actions › Keyboard shortcuts), listing `SHORTCUTS`. */
+/**
+ * The keyboard shortcuts sheet (quick actions › Keyboard shortcuts), listing
+ * `shortcutsFor` the visible frames, so the ⌥ + digit rows match the frames.
+ */
 const open = defineModel<boolean>('open', { default: false })
+const editor = useEditor()
+const shortcuts = computed(() => shortcutsFor(editor.frames))
 </script>
 
 <template>
@@ -16,7 +21,7 @@ const open = defineModel<boolean>('open', { default: false })
       data-shortcuts-sheet
     >
       <li
-        v-for="shortcut in SHORTCUTS"
+        v-for="shortcut in shortcuts"
         :key="shortcut.id"
         class="flex items-center justify-between gap-4 py-1.5"
       >

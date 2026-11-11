@@ -20,7 +20,7 @@ export const FRAME_MIN_HEIGHT = 800
  * canvas resolves `screen` heights to it, since a frame as tall as its
  * content would otherwise grow with them. Other frames get FRAME_MIN_HEIGHT.
  */
-const VIEWPORT_HEIGHTS: Record<DeviceId, number> = { desktop: 800, tablet: 1024, mobile: 844 }
+const VIEWPORT_HEIGHTS: Record<DeviceId, number> = { 'desktop': 800, 'tablet': 1024, 'large-phone': 900, 'mobile': 844 }
 
 export function viewportHeight(device: string): number {
   return VIEWPORT_HEIGHTS[device as DeviceId] ?? FRAME_MIN_HEIGHT
