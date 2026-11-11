@@ -7,7 +7,9 @@ import { findNode, findParent, walk } from '#shared/document/tree'
 import { componentUsages } from '#shared/document/usages'
 import type { ComponentUsage } from '#shared/document/usages'
 import type { Command, CommandContext } from '#shared/editor/commands'
+import { shortcutKeys } from '#shared/editor/commands'
 import type { DropTarget } from '#shared/editor/dropTarget'
+import { targetLabel } from '#shared/editor/propertyLabels'
 import { matches } from '#shared/editor/sidebar'
 
 /**
@@ -43,13 +45,21 @@ export function componentFolders(project: Project, query: string): ComponentFold
   return [...folders].filter(([, entries]) => entries.length).map(([name, entries]) => ({ name, entries }))
 }
 
-/** The delete confirmation: one line per place the component is used, counting its instances there. */
-export function componentDeleteMessage(def: ComponentDefinition, usages: ComponentUsage[]): string {
-  if (!usages.length) return `Delete component "${def.name}"?`
+/** The delete confirm (EditorConfirm): one item per place the component is used, counting its instances there. */
+export function componentDeleteConfirm(def: ComponentDefinition, usages: ComponentUsage[]): { title: string, description: string, items: string[], confirmLabel: string, danger: true } {
+  const title = `Delete "${def.name}"?`
+  if (!usages.length) return { title, description: 'No instance uses it. Undo brings it back.', items: [], confirmLabel: 'Delete component', danger: true }
   const counts = new Map<string, number>()
   for (const usage of usages) counts.set(usage.where, (counts.get(usage.where) ?? 0) + 1)
-  const list = [...counts].map(([where, count]) => `• ${where}${count > 1 ? ` (${count} instances)` : ''}`).join('\n')
-  return `"${def.name}" is used by ${usages.length} instance${usages.length === 1 ? '' : 's'}:\n${list}\n\nDelete the component and these instances?`
+  const n = usages.length
+  const instances = `${n} instance${n === 1 ? '' : 's'}`
+  return {
+    title,
+    description: `Used by ${instances}. Deleting the component deletes ${n === 1 ? 'it' : 'them'} too; undo brings everything back.`,
+    items: [...counts].map(([where, count]) => `${where}${count > 1 ? ` (${count} instances)` : ''}`),
+    confirmLabel: `Delete with ${instances}`,
+    danger: true
+  }
 }
 
 /** True when the definition of `componentId` has an Instance of `targetId`, directly or through other components. */
@@ -135,13 +145,14 @@ export function boundProperty(properties: PropertyDef[], nodeId: string, key: st
   return properties.find(p => p.bindings.some(b => bindsKey(b, nodeId, key, target)))
 }
 
-/** What a binding drives, for a tooltip: `Heading · text`, `Heading · style text`, a slot's container alone. */
+/** What a binding drives, for a tooltip: `Heading · text`, `Heading · style text`, a slot's container alone; a named layer is `Footer (Container)`. */
 export function bindingLabel(root: DocNode, binding: PropertyBinding | undefined): string {
   if (!binding) return 'Not bound'
   const target = findNode(root, binding.nodeId)
   if (!target) return 'Missing node'
-  if (isStyleBinding(binding)) return `${target.type} · style ${binding.prop}`
-  return binding.prop === 'children' ? target.type : `${target.type} · ${binding.prop}`
+  const label = targetLabel(target)
+  if (isStyleBinding(binding)) return `${label} · style ${binding.prop}`
+  return binding.prop === 'children' ? label : `${label} · ${binding.prop}`
 }
 
 export interface BindingAdd {
@@ -207,6 +218,7 @@ export function componentCommands(project: Project, state: { editingId: string |
       label: 'Create component',
       icon: 'i-lucide-component',
       keywords: ['component', 'symbol', 'reuse'],
+      shortcut: shortcutKeys('create-component'),
       enabled: c => onCanvas(c) && state.canCreate,
       run: () => actions.create()
     },

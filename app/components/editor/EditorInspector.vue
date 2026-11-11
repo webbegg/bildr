@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { takesFormRecords } from '#shared/data/collections'
-import { getComponent } from '#shared/document/components'
+import { getComponent, INSTANCE_TYPE } from '#shared/document/components'
 import type { PropDef, PropValue } from '#shared/document/components'
 import { findNode, findParent } from '#shared/document/tree'
 import { groupedProps, isDefaultProp } from '#shared/editor/propGroups'
@@ -64,7 +64,12 @@ async function testSubmit() {
   const form = node.value
   const collection = formCollection.value
   if (!form || !collection) return
-  if (collection.source.type === 'connection' && !confirm(`This sends a real ${collection.source.endpoints.create?.method ?? 'POST'} request to the "${collection.name}" API. It cannot be undone.`)) return
+  if (collection.source.type === 'connection' && !await editor.confirm({
+    title: 'Send a real request?',
+    description: `This sends a real ${collection.source.endpoints.create?.method ?? 'POST'} request to the "${collection.name}" API. It cannot be undone.`,
+    confirmLabel: 'Send request',
+    danger: true
+  })) return
   const mapped = formFields(form)
   const values = sampleValues(collection.fields, new Date(), mapped.length ? mapped : undefined)
   const record = await editor.run<{ id: string }>('record_create', { collection: collection.id, values })
@@ -105,7 +110,13 @@ function renamePage(field: 'name' | 'slug', value: string) {
           v-else
           class="min-w-0 flex-1 truncate text-[12px] font-[550] text-highlighted"
         >
-          {{ editor.nodeName(node) }} <span class="ms-1 font-mono text-[11px] font-[450] text-dimmed">{{ node.id }}</span>
+          {{ editor.nodeName(node) }}
+          <span
+            v-if="node.type === INSTANCE_TYPE"
+            class="ms-1 rounded-sm bg-(--editor-component)/15 px-1 text-[10px] leading-4 font-[550] text-(--editor-component)"
+            data-inspector-component-tag
+          >Component</span>
+          <span class="ms-1 font-mono text-[11px] font-[450] text-dimmed">{{ node.id }}</span>
         </p>
         <template v-if="!isRoot">
           <UTooltip

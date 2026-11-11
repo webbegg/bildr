@@ -4,7 +4,7 @@ import type { ComponentDefinition, DocNode, Project } from '#shared/document/sch
 import type { CommandContext } from '#shared/editor/commands'
 import {
   componentCommands,
-  componentDeleteMessage,
+  componentDeleteConfirm,
   componentFolders,
   insertableComponents,
   instanceDragPayload,
@@ -58,11 +58,17 @@ describe('componentFolders', () => {
   })
 })
 
-describe('componentDeleteMessage', () => {
+describe('componentDeleteConfirm', () => {
   it('lists each place once, counting the instances there', () => {
     const primary = componentFolders(project(), '')[1]!.entries[0]!
-    expect(componentDeleteMessage(primary.def, primary.usages)).toBe('"Buttons/Primary" is used by 3 instances:\n• page "Home" (2 instances)\n• component "Card"\n\nDelete the component and these instances?')
-    expect(componentDeleteMessage(primary.def, [])).toBe('Delete component "Buttons/Primary"?')
+    expect(componentDeleteConfirm(primary.def, primary.usages)).toEqual({
+      title: 'Delete "Buttons/Primary"?',
+      description: 'Used by 3 instances. Deleting the component deletes them too; undo brings everything back.',
+      items: ['page "Home" (2 instances)', 'component "Card"'],
+      confirmLabel: 'Delete with 3 instances',
+      danger: true
+    })
+    expect(componentDeleteConfirm(primary.def, [])).toEqual({ title: 'Delete "Buttons/Primary"?', description: 'No instance uses it. Undo brings it back.', items: [], confirmLabel: 'Delete component', danger: true })
   })
 })
 
@@ -153,6 +159,12 @@ describe('boundProperty and bindingLabel', () => {
     expect(bindingLabel(root, { nodeId: 'n1', prop: 'children' })).toBe('Heading')
     expect(bindingLabel(root, { nodeId: 'gone', prop: 'text' })).toBe('Missing node')
     expect(bindingLabel(root, undefined)).toBe('Not bound')
+  })
+
+  it('names a bound layer by its layer name, a slot as its container', () => {
+    const root = node('Card', {}, [{ ...node('Container'), id: 'n_foot', name: 'Footer' }])
+    expect(bindingLabel(root, { nodeId: 'n_foot', prop: 'children' })).toBe('Footer (Container)')
+    expect(bindingLabel(root, { nodeId: 'n_foot', prop: 'bg', target: 'style' })).toBe('Footer (Container) · style bg')
   })
 })
 

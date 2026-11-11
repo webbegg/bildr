@@ -72,7 +72,7 @@ function insertFirst() {
         >
           <UIcon
             name="i-lucide-component"
-            class="size-4 shrink-0 text-violet-400"
+            class="size-4 shrink-0 text-(--editor-component)"
           />
           <span class="truncate">{{ component.name }}</span>
         </button>

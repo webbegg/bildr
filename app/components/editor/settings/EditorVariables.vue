@@ -61,8 +61,8 @@ async function setSecret(name: string, secret: boolean) {
   }
 }
 
-function remove(name: string) {
-  if (confirm(`Delete the variable "${name}"? References to it stop resolving.`)) void editor.runEnv('env_delete', { name })
+async function remove(name: string) {
+  if (await editor.confirm({ title: `Delete "${name}"?`, description: 'References to the variable stop resolving.', confirmLabel: 'Delete variable', danger: true })) void editor.runEnv('env_delete', { name })
 }
 
 const adding = ref(false)

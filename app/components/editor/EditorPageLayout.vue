@@ -29,11 +29,16 @@ const items = computed(() => (editor.project ? layoutItems(editor.project).map(i
 const fields = computed(() => (layout.value ? layout.value.variables.map(variable => ({ variable, field: variableField(layout.value!, variable) })) : []))
 const slots = computed(() => (layout.value && page.value ? pageSlots(layout.value, page.value) : []))
 
-function setLayout(value: string) {
+async function setLayout(value: string) {
   const current = page.value
-  if (!current) return
+  if (!current || value === (layout.value?.id ?? NO_LAYOUT)) return
   const loses = !!Object.keys(current.layoutValues ?? {}).length || slots.value.some(s => s.filled)
-  if (loses && !confirm(`Changing the layout drops this page's layout values and its own slot content. Continue?`)) return
+  if (loses && !await editor.confirm({
+    title: 'Change the layout?',
+    description: `${current.name} drops its layout values and its own slot content. Undo brings them back.`,
+    items: slots.value.filter(s => s.filled).map(s => `${s.slot.name}: own content`),
+    confirmLabel: 'Change layout'
+  })) return
   editor.run('page_set_layout', { pageId: current.id, layoutId: value === NO_LAYOUT ? null : value })
 }
 
@@ -53,21 +58,17 @@ function setSlot(slot: LayoutSlot, filled: boolean) {
       data-page-layout
     >
       <div class="flex w-full min-w-0 items-center gap-1">
-        <USelect
-          :model-value="layout?.id ?? NO_LAYOUT"
-          :items="items"
-          aria-label="Page layout"
-          size="xs"
-          variant="soft"
-          :ui="SELECT_UI"
-          class="min-w-0 flex-1"
-          @update:model-value="setLayout"
-        />
-        <UButton
+        <div class="min-w-0 flex-1">
+          <EditorSelect
+            :model-value="layout?.id ?? NO_LAYOUT"
+            :items="items"
+            aria-label="Page layout"
+            @update:model-value="setLayout"
+          />
+        </div>
+        <EditorButton
           v-if="layout"
           icon="i-lucide-pencil-ruler"
-          size="xs"
-          color="neutral"
           variant="soft"
           :aria-label="`Edit layout ${layout.name}`"
           @click="editor.editLayout(layout.id)"
@@ -90,8 +91,7 @@ function setSlot(slot: LayoutSlot, filled: boolean) {
       :title="`${slot.name}: on, this page has its own content; off, it shows the layout's`"
     >
       <div class="flex h-[30px] items-center gap-2">
-        <USwitch
-          size="sm"
+        <EditorSwitch
           :model-value="filled"
           :aria-label="`${slot.name}: own content`"
           @update:model-value="setSlot(slot, $event)"

@@ -25,7 +25,8 @@ import type { StylePatch } from './preview'
  * button) as screen-pixel deltas, and the space key held or released.
  *
  * Selection is a list (`nodeIds`, Shift+click toggles); `nodeId` is the
- * primary (last) one, which the active frame labels. A click reports the
+ * primary (last) one, which the active frame labels. `accent` is the colour
+ * the selection, handles and labels draw in (see `selectionAccent`). A click reports the
  * deepest element under the pointer and its modifiers; the editor decides
  * what it selects (drill). `bildr:measure` asks a frame for the on-canvas
  * boxes of nodes (Shift+A infers an auto layout from them); it answers with
@@ -61,7 +62,7 @@ export type CanvasView = 'page' | 'tokens'
 
 export type EditorToCanvas
   = | { type: 'bildr:render', page: Page, base: string, theme: Theme, view: CanvasView, lists: Record<string, DataRecord[]>, env: EnvValues, components: ComponentDefinition[], layouts: Layout[] }
-    | { type: 'bildr:select', nodeId: string | null, nodeIds: string[] }
+    | { type: 'bildr:select', nodeId: string | null, nodeIds: string[], accent?: string }
     | { type: 'bildr:hover', nodeId: string | null }
     | { type: 'bildr:preview', nodeId: string, style: StylePatch | null }
     | { type: 'bildr:active', active: boolean, zoom: number, viewportHeight: number }

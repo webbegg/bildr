@@ -258,7 +258,7 @@ function renderMessage(): EditorToCanvas | null {
 }
 
 function selectMessage(): EditorToCanvas {
-  return { type: 'bildr:select', nodeId: editor.selectedId, nodeIds: editor.selectedIds }
+  return { type: 'bildr:select', nodeId: editor.selectedId, nodeIds: editor.selectedIds, accent: editor.canvasAccent }
 }
 
 function toolMessage(): EditorToCanvas {
@@ -348,7 +348,7 @@ function onMessage(event: MessageEvent) {
 }
 
 watch(() => [editor.page, editor.theme, editor.lists, editor.publicEnv, editor.project?.components, editor.project?.layouts], render, { deep: true })
-watch(() => editor.selectedIds, () => broadcast(selectMessage()))
+watch([() => editor.selectedIds, () => editor.canvasAccent], () => broadcast(selectMessage()))
 watch(() => editor.hoveredId, nodeId => broadcast({ type: 'bildr:hover', nodeId }))
 watch(() => editor.tool, () => broadcast(toolMessage()))
 watch(() => editor.previewDark, dark => broadcast({ type: 'bildr:dark', dark }))
@@ -437,7 +437,7 @@ onBeforeUnmount(() => {
           :title="frameTitle(device.id, device.label)"
           :data-device="device.id"
           class="block size-full bg-white"
-          :style="device.id === editor.deviceId ? { outline: `${2 / viewport.zoom}px solid var(--editor-selection)` } : undefined"
+          :style="device.id === editor.deviceId ? { outline: `${2 / viewport.zoom}px solid var(--editor-context)` } : undefined"
         />
       </div>
     </div>

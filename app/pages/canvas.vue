@@ -27,6 +27,7 @@ import { layerName } from '#shared/editor/layers'
 import { measure as measureLines } from '#shared/editor/measure'
 import { nearestUnlocked } from '#shared/editor/selection'
 import { labelPlacement } from '#shared/editor/labelPlacement'
+import { SELECTION_ACCENT } from '#shared/editor/accent'
 
 /**
  * The editor canvas, loaded in an iframe. It renders whatever page the
@@ -127,9 +128,9 @@ const shownPage = computed(() => {
 
 interface Box { id: string, top: number, left: number, width: number, height: number, label: string }
 const boxes = reactive<{ hover: Box | null, selected: Box[], parent: Box | null }>({ hover: null, selected: [], parent: null })
-/** The editor accent (`--editor-selection`), which this document can't inherit. */
+/** The editor accent (`--editor-selection`, purple `--editor-context` in a component, a layout or on instances), which this document can't inherit. */
 const ACCENT_VAR = '--canvas-accent'
-const ACCENT = '#09f'
+const accent = ref(SELECTION_ACCENT)
 /** A single selection's parent, outlined dashed for context. */
 const parentId = computed(() => {
   const root = page.value?.root
@@ -381,6 +382,7 @@ function onMessage(event: MessageEvent) {
   } else if (message.type === 'bildr:select') {
     selectedId.value = message.nodeId
     selectedIds.value = message.nodeIds
+    accent.value = message.accent ?? SELECTION_ACCENT
   } else if (message.type === 'bildr:measure') {
     post({ type: 'bildr:rects', requestId: message.requestId, rects: nodeBoxes(message.nodeIds) })
   } else if (message.type === 'bildr:alt') {
@@ -512,7 +514,9 @@ function onKeyDown(event: KeyboardEvent) {
   // Cmd/Ctrl+C, V, R and L (copy, paste, rename, lock) without Alt; Cmd/Ctrl+Alt+V (Paste style) by its physical code, as Alt changes the key on a Mac.
   // Copy, rename and lock only with a selection, and copy and paste not over a text selection (`editorTakesKey`): else the browser keeps them.
   const pasteStyleKey = meta && event.altKey && !event.shiftKey && event.code === 'KeyV'
-  const editorMeta = pasteStyleKey || (meta && (['z', 'y', 'd', 'a', 'g', 'p', 'f', 'k'].includes(lower) || (!event.altKey && ['c', 'v', 'r', 'l'].includes(lower))))
+  // Cmd/Ctrl+Alt+K (Create component) by its physical code too.
+  const createKey = meta && event.altKey && !event.shiftKey && event.code === 'KeyK'
+  const editorMeta = pasteStyleKey || createKey || (meta && (['z', 'y', 'd', 'a', 'g', 'p', 'f', 'k'].includes(lower) || (!event.altKey && ['c', 'v', 'r', 'l'].includes(lower))))
   const takes = editorTakesKey(
     { key: event.key, code: event.code, meta, shift: event.shiftKey, alt: event.altKey },
     { focus: 'canvas', textSelected: hasTextSelection(window), hasSelection: selectedIds.value.length > 0 }
@@ -843,7 +847,8 @@ onBeforeUnmount(() => {
     :class="{ 'min-h-screen': view === 'tokens', 'cursor-crosshair! **:cursor-crosshair!': tool && view === 'page' }"
     :data-armed-tool="tool ?? undefined"
     :data-canvas-viewport="view === 'page' || undefined"
-    :style="view === 'page' ? { minHeight: `${FRAME_MIN_HEIGHT}px`, [VIEWPORT_VAR]: `${viewportHeight}px`, [ACCENT_VAR]: ACCENT } : { [ACCENT_VAR]: ACCENT }"
+    :style="view === 'page' ? { minHeight: `${FRAME_MIN_HEIGHT}px`, [VIEWPORT_VAR]: `${viewportHeight}px`, [ACCENT_VAR]: accent } : { [ACCENT_VAR]: accent }"
+    :data-canvas-accent="accent"
   >
     <EditorTokenSheet
       v-if="view === 'tokens'"

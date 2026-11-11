@@ -4,6 +4,7 @@ import { createNode, createPage, newId } from '#shared/document/factory'
 import type { Operation } from '#shared/document/operations'
 import { CHILDREN_SLOT, IdSchema, PropertyBindingSchema, PropertyKindSchema, PropValueSchema } from '#shared/document/schema'
 import type { Layout, Page, Project } from '#shared/document/schema'
+import { nameProblem, uniqueName } from '#shared/editor/names'
 import { ActionError, defineAction } from './define'
 import { assertFound } from './project'
 
@@ -17,6 +18,12 @@ import { assertFound } from './project'
 const LayoutRef = IdSchema.describe('A layout id, from project_get layouts')
 const NameSchema = z.string().trim().min(1).max(100)
 const VariableKindSchema = PropertyKindSchema.exclude(['slot'])
+
+/** Refuses a layout name another layout has, ignoring case (`exceptId` is the one being renamed). */
+function assertLayoutName(project: Project, name: string, exceptId?: string): void {
+  const problem = nameProblem(name, project.layouts, 'layout', exceptId)
+  if (problem) throw new ActionError('invalid', problem)
+}
 
 function pagesUsing(project: Project, layoutId: string): Page[] {
   return project.pages.filter(p => p.layoutId === layoutId)
@@ -37,9 +44,12 @@ function detachOps(page: Page, layoutId: string | null = null): Operation[] {
 
 export const layoutCreate = defineAction({
   name: 'layout_create',
-  description: 'Create a page layout: a Page root holding one Container, the children slot, where each page using the layout shows its own content. Add shared regions around it with node_insert { layoutId }, named slots with layout_slot_add and variables with layout_variable_add; pages pick it with page_set_layout. Returns the layout id and the children slot node id.',
-  input: z.object({ projectId: IdSchema, name: NameSchema }),
-  run: async ({ projectId, name }, ctx) => {
+  description: 'Create a page layout: a Page root holding one Container, the children slot, where each page using the layout shows its own content. Add shared regions around it with node_insert { layoutId }, named slots with layout_slot_add and variables with layout_variable_add; pages pick it with page_set_layout. Names are unique ignoring case; without one it is "Layout", numbered when taken. Returns the layout id and the children slot node id.',
+  input: z.object({ projectId: IdSchema, name: NameSchema.optional().describe('Unique ignoring case; defaults to "Layout"') }),
+  run: async ({ projectId, name: given }, ctx) => {
+    const current = await ctx.services.loadProject(projectId)
+    if (given !== undefined) assertLayoutName(current, given)
+    const name = given ?? uniqueName('Layout', current.layouts)
     const slotNode = createNode('Container')
     const root = { ...createPage(name).root, children: [slotNode] }
     const layout: Layout = { id: newId('lay'), name, root, slots: [{ id: CHILDREN_SLOT, name: 'Content', nodeId: slotNode.id }], variables: [] }
@@ -50,9 +60,10 @@ export const layoutCreate = defineAction({
 
 export const layoutRename = defineAction({
   name: 'layout_rename',
-  description: 'Rename a layout.',
+  description: 'Rename a layout. Names are unique ignoring case: another layout\'s name is refused.',
   input: z.object({ projectId: IdSchema, layoutId: LayoutRef, name: NameSchema }),
   run: async ({ projectId, layoutId, name }, ctx) => {
+    assertLayoutName(await ctx.services.loadProject(projectId), name, layoutId)
     const project = await ctx.services.mutate(ctx, projectId, 'Rename layout', [{ op: 'updateLayout', layoutId, name }])
     return { version: project.version }
   }

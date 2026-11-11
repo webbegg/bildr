@@ -9,8 +9,10 @@ import { MOVE_TOOL } from '#shared/editor/insertTools'
  * current view, then the insert icons: + opens the Insert panel (`I`),
  * Frame and Text arm their tools (`F`, `T`). Centre: the project name and
  * slug with the project menu, which renames in place (Rename… swaps the name
- * for an input; Enter or blur saves, Esc cancels). Right: undo/redo, Preview
- * (Cmd/Ctrl+P, the draft) and Publish. The canvas frames set the breakpoint.
+ * for an input; Enter or blur saves, Esc cancels); while editing a component
+ * or a layout, the breadcrumb (EditorBreadcrumb) instead. Right: undo/redo,
+ * Preview (Cmd/Ctrl+P, the draft) and Publish, in the context accent. The
+ * canvas frames set the breakpoint.
  */
 const editor = useEditor()
 const publishing = ref(false)
@@ -159,8 +161,9 @@ async function publish() {
     </div>
 
     <div class="flex min-w-0 justify-center">
+      <EditorBreadcrumb v-if="editor.mode === 'build' && editor.editStack.length" />
       <EditorInput
-        v-if="renaming"
+        v-else-if="renaming"
         ref="nameInput"
         v-model="nameDraft"
         class="w-56"
@@ -229,7 +232,8 @@ async function publish() {
       <EditorButton
         variant="primary"
         label="Publish"
-        class="ms-1 px-3"
+        class="ms-1 bg-(--editor-context) px-3 hover:bg-(--editor-context)/75"
+        data-publish
         :loading="publishing"
         @click="publish"
       />

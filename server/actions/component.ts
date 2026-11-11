@@ -6,6 +6,7 @@ import { IdSchema, PropertyBindingSchema, PropertyKindSchema, PropValueSchema, R
 import type { ComponentDefinition, DocNode, Project } from '#shared/document/schema'
 import { findNode, findParent } from '#shared/document/tree'
 import { componentInstances, componentUsages } from '#shared/document/usages'
+import { nameProblem, uniqueName } from '#shared/editor/names'
 import { ActionError, defineAction } from './define'
 import { ONE_TREE, oneTree, treeOf } from './node'
 import { assertFound } from './project'
@@ -35,6 +36,12 @@ function treeRoot(project: Project, tree: TreeRef): DocNode {
   return definitionIn(project, tree.componentId).root
 }
 
+/** Refuses a component name another component has, ignoring case (`exceptId` is the one being renamed). */
+function assertComponentName(project: Project, name: string, exceptId?: string): void {
+  const problem = nameProblem(name, project.components, 'component', exceptId)
+  if (problem) throw new ActionError('invalid', problem)
+}
+
 function definitionIn(project: Project, componentId: string): ComponentDefinition {
   return assertFound(project.components.find(c => c.id === componentId), `Component "${componentId}" not found`)
 }
@@ -47,13 +54,13 @@ function instanceIn(project: Project, tree: TreeRef, nodeId: string): DocNode {
 
 export const componentCreate = defineAction({
   name: 'component_create',
-  description: 'Turn a selection into a reusable component: the node (or, with nodeIds, several siblings wrapped in a Container, in the nodeIds order) becomes the definition, with ids of its own, and an Instance of it takes its place on the page. Instances render the definition, so editing it updates every instance. name may use / for folders, e.g. "Cards/Product". One undo step. Returns the component id and the instance node id.',
+  description: 'Turn a selection into a reusable component: the node (or, with nodeIds, several siblings wrapped in a Container, in the nodeIds order) becomes the definition, with ids of its own, and an Instance of it takes its place on the page. Instances render the definition, so editing it updates every instance. name may use / for folders, e.g. "Cards/Product"; names are unique ignoring case. Without a name, the component is named after the node (its layer name or type; "Component" for several), numbered when taken. One undo step. Returns the component id and the instance node id.',
   input: z.object({
     projectId: IdSchema,
     pageId: IdSchema,
     nodeId: IdSchema.optional().describe('The node to turn into a component; or give nodeIds'),
     nodeIds: z.array(IdSchema).min(1).optional().describe('Several siblings to turn into one component; replaces nodeId'),
-    name: NameSchema
+    name: NameSchema.optional().describe('Unique ignoring case; defaults to a name from the node')
   }),
   run: async ({ projectId, pageId, nodeId, nodeIds, name }, ctx) => {
     const ids = [...new Set(nodeIds ?? (nodeId ? [nodeId] : []))]
@@ -65,9 +72,11 @@ export const componentCreate = defineAction({
     if (locations.some(location => !location)) throw new ActionError('forbidden', 'The page root cannot become a component')
     const parent = locations[0]!.parent
     if (locations.some(location => location!.parent !== parent)) throw new ActionError('invalid', 'Only siblings (nodes of one parent) can become one component')
+    if (name !== undefined) assertComponentName(current, name)
+    const finalName = name ?? uniqueName(nodes.length === 1 ? nodes[0]!.name ?? nodes[0]!.type : 'Component', current.components)
 
     const root = nodes.length === 1 ? cloneWithNewIds(nodes[0]!) : { ...createNode('Container'), children: nodes.map(cloneWithNewIds) }
-    const component: ComponentDefinition = { id: newId('cmp'), name, root, properties: [], variants: [] }
+    const component: ComponentDefinition = { id: newId('cmp'), name: finalName, root, properties: [], variants: [] }
     const instance = createNode(INSTANCE_TYPE, { component: component.id })
     const project = await ctx.services.mutate(ctx, projectId, 'Create component', [
       { op: 'addComponent', index: Number.MAX_SAFE_INTEGER, component },
@@ -80,9 +89,10 @@ export const componentCreate = defineAction({
 
 export const componentRename = defineAction({
   name: 'component_rename',
-  description: 'Rename a component. / in the name makes folders, e.g. "Cards/Product".',
+  description: 'Rename a component. / in the name makes folders, e.g. "Cards/Product". Names are unique ignoring case: another component\'s name is refused.',
   input: z.object({ projectId: IdSchema, componentId: ComponentRef, name: NameSchema }),
   run: async ({ projectId, componentId, name }, ctx) => {
+    assertComponentName(await ctx.services.loadProject(projectId), name, componentId)
     const project = await ctx.services.mutate(ctx, projectId, 'Rename component', [{ op: 'updateComponent', componentId, name }])
     return { version: project.version }
   }

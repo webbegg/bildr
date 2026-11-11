@@ -55,8 +55,8 @@ function menu(page: Page): DropdownMenuItem[] {
       icon: 'i-lucide-trash-2',
       color: 'error',
       disabled: (editor.project?.pages.length ?? 0) < 2,
-      onSelect: () => {
-        if (confirm(`Delete page "${page.name}"?`)) editor.run('page_delete', { pageId: page.id })
+      onSelect: async () => {
+        if (await editor.confirm({ title: `Delete "${page.name}"?`, description: 'The page and its content go. Undo brings it back.', confirmLabel: 'Delete page', danger: true })) editor.run('page_delete', { pageId: page.id })
       }
     }
   ]

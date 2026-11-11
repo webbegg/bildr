@@ -55,7 +55,7 @@ const menuItems = computed<ContextMenuItem[][]>(() => [[
     >
       <div
         class="flex cursor-pointer items-center gap-1 rounded-lg px-1 text-[12px] whitespace-nowrap"
-        :class="active ? 'bg-(--editor-selection)/18 text-(--editor-selection)' : 'bg-white/5 text-muted hover:bg-white/8 hover:text-default'"
+        :class="active ? 'bg-(--editor-context)/18 text-(--editor-context)' : 'bg-white/5 text-muted hover:bg-white/8 hover:text-default'"
         :style="{ height: `${FRAME_BAR_HEIGHT}px` }"
         data-frame-bar-row
         @click="emit('activate')"
@@ -67,7 +67,7 @@ const menuItems = computed<ContextMenuItem[][]>(() => [[
           <button
             type="button"
             class="flex size-5 shrink-0 items-center justify-center rounded-md"
-            :class="active ? 'bg-(--editor-selection) text-white' : 'hover:bg-white/10'"
+            :class="active ? 'bg-(--editor-context) text-white' : 'hover:bg-white/10'"
             :aria-label="`Preview ${bar.name} ${bar.size}`"
             data-frame-preview
             @click.stop="preview"

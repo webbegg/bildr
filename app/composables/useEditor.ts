@@ -30,7 +30,11 @@ import { previewWindowFeatures } from '#shared/editor/viewport'
 import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 import { canHideFrame, frameForKey, hiddenFrames, PRIMARY_FRAME, visibleFrames } from '#shared/editor/frames'
-import { insertableComponents, outsideInstance, parseInstancePayload, uniqueComponentName } from './componentEditor'
+import type { EditKind, EditLevel, LevelMove } from '#shared/editor/editStack'
+import { goToLevel, leaveLevel, openLevel, pruneLevels, topLevel } from '#shared/editor/editStack'
+import { componentPrefill, uniqueName } from '#shared/editor/names'
+import { selectionAccent } from '#shared/editor/accent'
+import { insertableComponents, outsideInstance, parseInstancePayload } from './componentEditor'
 import { activeVariant, applyVariant, overrideInput, pasteStyleOverride, primaryStyle } from './componentVariants'
 import type { NodeOverridePatch, OverridePatch } from './componentVariants'
 
@@ -45,6 +49,24 @@ export function callAction<T = unknown>(name: string, input: Record<string, unkn
 /** The public variables of an `env_list` by name; secrets have no value to show. */
 export function listedPublicEnv(entries: EnvListEntry[]): EnvValues {
   return Object.fromEntries(entries.flatMap(v => (v.secret ? [] : [[v.name, v.value]])))
+}
+
+/** A confirm dialog (EditorConfirm) the editor asks instead of the browser's `confirm()`. */
+export interface ConfirmOptions {
+  title: string
+  description?: string
+  /** Lines listed under the description, e.g. where a component is used. */
+  items?: string[]
+  confirmLabel: string
+  danger?: boolean
+}
+
+/** The "New component" / "New layout" dialog (EditorCreateDialog): the kind, and the name it opens with. */
+export interface CreateRequest {
+  kind: EditKind
+  name: string
+  /** The page nodes a component is made from, in document order. */
+  nodeIds: string[]
 }
 
 export function actionErrorMessage(error: unknown): string {
@@ -66,6 +88,12 @@ export function createEditor(projectId: string) {
   const componentId = ref<string | null>(null)
   /** The layout the Canvas edits instead of the page (the layout view); null edits the page. Never set with `componentId`. */
   const layoutId = ref<string | null>(null)
+  /** The breadcrumb's levels over the page (`Home › Card › Button`); its top is `componentId` or `layoutId`. */
+  const editStack = ref<EditLevel[]>([])
+  /** The open "New component" / "New layout" dialog, or null. */
+  const createRequest = shallowRef<CreateRequest | null>(null)
+  /** The open confirm dialog and how to answer it, or null. */
+  const confirmRequest = shallowRef<(ConfirmOptions & { answer: (ok: boolean) => void }) | null>(null)
   /** In the component view, the variant the Canvas shows and prop/style edits override; null is the primary (the definition itself). */
   const variantId = ref<string | null>(null)
   /** The selection in the order it was made; Shift+click adds and removes nodes. */
@@ -173,6 +201,8 @@ export function createEditor(projectId: string) {
   })
   const selected = computed(() => (page.value && selectedId.value ? findNode(page.value.root, selectedId.value) ?? null : null))
   const selectedNodes = computed(() => (page.value ? selectedIds.value.map(id => findNode(page.value!.root, id)).filter(n => n !== undefined) : []))
+  /** The canvas selection's colour: purple in a component or layout, or for instances on a page (`selectionAccent`). */
+  const canvasAccent = computed(() => selectionAccent(!!(componentId.value || layoutId.value), selectedNodes.value.map(n => n.type)))
   /** What the layers and the inspector call a node of `page`: an instance its component's name, a slot fill its slot's (see `layerName`). */
   function nodeName(node: DocNode): string {
     return page.value && project.value ? layerName(page.value, node, project.value) : node.type
@@ -225,15 +255,9 @@ export function createEditor(projectId: string) {
     history.value = nextHistory
     if (!envLoaded) await reloadEnv()
     if (!next.pages.some(p => p.id === pageId.value)) pageId.value = next.pages[0]!.id
-    // A component deleted here or elsewhere leaves its view.
-    if (componentId.value && !next.components.some(c => c.id === componentId.value)) {
-      componentId.value = null
-      selectedIds.value = []
-    }
-    if (layoutId.value && !next.layouts.some(l => l.id === layoutId.value)) {
-      layoutId.value = null
-      selectedIds.value = []
-    }
+    // A component or layout deleted here or elsewhere leaves its level (and the ones opened from it).
+    const kept = pruneLevels(editStack.value, level => (level.kind === 'component' ? next.components : next.layouts).some(item => item.id === level.id))
+    if (kept !== editStack.value) applyStack({ stack: kept, restore: [] })
     if (variantId.value && !variant.value) variantId.value = null
     if (selectedIds.value.some(id => !findNode(page.value!.root, id))) selectedIds.value = selectedIds.value.filter(id => findNode(page.value!.root, id))
   }
@@ -344,77 +368,124 @@ export function createEditor(projectId: string) {
     return run<T>(name, { ...treeRef.value, ...input })
   }
 
+  /** Makes `stack` the breadcrumb: its top is the tree the Canvas edits; `restore` (when not null) becomes the selection. */
+  function applyStack({ stack, restore }: LevelMove): void {
+    const top = topLevel(stack)
+    const nextComponent = top?.kind === 'component' ? top.id : null
+    if (nextComponent !== componentId.value) variantId.value = null
+    editStack.value = stack
+    componentId.value = nextComponent
+    layoutId.value = top?.kind === 'layout' ? top.id : null
+    hoveredId.value = null
+    if (restore) selectedIds.value = restore.filter(id => !!page.value && !!findNode(page.value.root, id))
+  }
+
   /** Shows a page; it also leaves the component and layout views. */
   function selectPage(id: string): void {
     pageId.value = id
-    componentId.value = null
-    layoutId.value = null
-    variantId.value = null
-    selectedId.value = null
-    hoveredId.value = null
+    applyStack({ stack: [], restore: [] })
   }
 
-  /** Opens a component in the component view: the Canvas edits its definition until `exitComponent` (Escape, Done, or a page). */
-  function editComponent(id: string, nodeId: string | null = null): void {
+  /**
+   * Opens a component in the component view, selecting `nodeId`. `nested` (an
+   * instance in the tree being edited) pushes it onto the breadcrumb; from
+   * Assets or ⌘K it replaces the levels. Esc or Done goes back up.
+   */
+  function editComponent(id: string, nodeId: string | null = null, { nested = false }: { nested?: boolean } = {}): void {
     if (!project.value?.components.some(c => c.id === id)) return
     mode.value = 'build'
-    if (componentId.value !== id) variantId.value = null
-    componentId.value = id
-    layoutId.value = null
+    applyStack({ stack: openLevel(editStack.value, { kind: 'component', id }, selectedIds.value, { nested }), restore: null })
     selectedId.value = nodeId
-    hoveredId.value = null
   }
 
-  /** Opens a layout in the layout view: the Canvas edits its tree until `exitLayout` (Escape, Done, or a page). */
+  /** Opens a layout in the layout view, selecting `nodeId`; it replaces the breadcrumb's levels. */
   function editLayout(id: string, nodeId: string | null = null): void {
     if (!project.value?.layouts.some(l => l.id === id)) return
     mode.value = 'build'
-    componentId.value = null
-    variantId.value = null
-    layoutId.value = id
+    applyStack({ stack: openLevel(editStack.value, { kind: 'layout', id }, selectedIds.value), restore: null })
     selectedId.value = nodeId
-    hoveredId.value = null
+  }
+
+  /** Done, or Esc with nothing selected: up one breadcrumb level, selecting what it was opened from. */
+  function leaveView(): void {
+    if (editStack.value.length) applyStack(leaveLevel(editStack.value))
+  }
+
+  /** A breadcrumb click: back to that level (-1 is the page). */
+  function goToCrumb(index: number): void {
+    if (index < editStack.value.length - 1) applyStack(goToLevel(editStack.value, index))
   }
 
   function exitLayout(): void {
-    if (!layoutId.value) return
-    layoutId.value = null
-    selectedId.value = null
-    hoveredId.value = null
-  }
-
-  /** Creates a layout (a children slot only) and opens it in the layout view. */
-  async function createLayout(): Promise<void> {
-    const result = await run<{ layoutId: string }>('layout_create', { name: uniqueComponentName('Layout', project.value?.layouts ?? []) })
-    if (result) editLayout(result.layoutId)
+    if (layoutId.value) leaveView()
   }
 
   function exitComponent(): void {
-    if (!componentId.value) return
-    componentId.value = null
-    variantId.value = null
-    selectedId.value = null
-    hoveredId.value = null
+    if (componentId.value) leaveView()
+  }
+
+  /** Asks the user through the kit's confirm dialog (EditorConfirm); resolves false when dismissed. */
+  function confirm(options: ConfirmOptions): Promise<boolean> {
+    confirmRequest.value?.answer(false)
+    return new Promise((resolve) => {
+      confirmRequest.value = {
+        ...options,
+        answer: (ok) => {
+          confirmRequest.value = null
+          resolve(ok)
+        }
+      }
+    })
+  }
+
+  /** "New layout": opens the naming dialog; Create makes the layout (a children slot only) and opens it. */
+  function createLayout(): void {
+    if (!project.value) return
+    createRequest.value = { kind: 'layout', name: uniqueName('Layout', project.value.layouts), nodeIds: [] }
+  }
+
+  /**
+   * "Create component" (the node menu, ⌥⌘K, ⌘K, Assets "+"): opens the naming
+   * dialog for the selected siblings (in document order), named after the one
+   * layer or "Component"; pages only.
+   */
+  function createComponent(): void {
+    const ids = componentId.value || layoutId.value ? null : siblingSelection('create a component')
+    const root = page.value?.root
+    if (!ids || !root || !project.value) return
+    const ordered = [...ids].sort((a, b) => findParent(root, a)!.index - findParent(root, b)!.index)
+    const names = ordered.map(id => nodeName(findNode(root, id)!))
+    createRequest.value = { kind: 'component', name: componentPrefill(names, project.value.components), nodeIds: ordered }
+  }
+
+  /**
+   * The dialog's Create: a component from the request's nodes (an instance
+   * takes their place and is selected), opened on top of the page, or a
+   * layout, opened. True when created.
+   */
+  async function confirmCreate(name: string): Promise<boolean> {
+    const request = createRequest.value
+    if (!request) return false
+    if (request.kind === 'layout') {
+      const result = await run<{ layoutId: string }>('layout_create', { name: name.trim() })
+      if (!result) return false
+      createRequest.value = null
+      editLayout(result.layoutId)
+      return true
+    }
+    const ids = request.nodeIds
+    const result = await runOnPage<{ componentId: string, nodeId: string }>('component_create', { ...(ids.length > 1 ? { nodeIds: ids } : { nodeId: ids[0] }), name: name.trim() })
+    if (!result) return false
+    createRequest.value = null
+    selectedId.value = result.nodeId
+    editComponent(result.componentId, null, { nested: true })
+    return true
   }
 
   /** Inserts an instance of a component (at the selection by default) and selects it; a component never goes into itself. */
   async function insertInstance(id: string, target?: DropTarget): Promise<void> {
     if (!project.value || !insertableComponents(project.value, componentId.value).some(c => c.id === id)) return
     await insert(INSTANCE_TYPE, target, { component: id })
-  }
-
-  /** Turns the selected siblings (in document order) into a component, leaving an instance selected in their place; not in the component view. */
-  async function createComponent(): Promise<void> {
-    const ids = componentId.value || layoutId.value ? null : siblingSelection('create a component')
-    const root = page.value?.root
-    if (!ids || !root) return
-    const ordered = [...ids].sort((a, b) => findParent(root, a)!.index - findParent(root, b)!.index)
-    const base = ordered.length === 1 ? findNode(root, ordered[0]!)!.type : 'Component'
-    const result = await runOnPage<{ nodeId: string }>('component_create', {
-      ...(ordered.length > 1 ? { nodeIds: ordered } : { nodeId: ordered[0] }),
-      name: uniqueComponentName(base, project.value?.components ?? [])
-    })
-    if (result) selectedId.value = result.nodeId
   }
 
   /** Adds a page and shows it; true when it was added. */
@@ -862,8 +933,8 @@ export function createEditor(projectId: string) {
    * handled. `nav` allows the keys that also move focus or scroll (Enter, Tab,
    * arrows): the canvas and the layers tree pass it, a focused button does not.
    * Escape disarms an insert tool, else selects the parent as in Framer (on
-   * the root it clears; with nothing selected it leaves the component or
-   * layout view). Cmd/Ctrl+C copies, +V pastes, +Alt+V pastes the style
+   * the root it clears; with nothing selected it goes up one breadcrumb
+   * level). Cmd/Ctrl+Alt+K creates a component (matched on `code`). Cmd/Ctrl+C copies, +V pastes, +Alt+V pastes the style
    * (matched on `code`), +R renames and +L locks. Bare letters pick the canvas tools
    * (V Move, H Hand, and the insert tools); `I` opens the Insert panel, as in
    * Framer, rather than arming Image. Cmd/Ctrl+P opens the draft preview,
@@ -874,6 +945,11 @@ export function createEditor(projectId: string) {
    */
   function shortcut(key: string, meta: boolean, shift: boolean, nav = false, { code = '', alt = false, canvas = false }: { code?: string, alt?: boolean, canvas?: boolean } = {}): boolean {
     const lower = key.toLowerCase()
+    if (meta && alt && !shift && code === 'KeyK') {
+      if (mode.value !== 'build') return false
+      createComponent()
+      return true
+    }
     if (meta && !shift && lower === 'p') {
       openPreview()
       return true
@@ -902,8 +978,7 @@ export function createEditor(projectId: string) {
     else if (!meta && shift && lower === 'a') autoLayout()
     else if (!meta && (key === 'Delete' || key === 'Backspace')) remove()
     else if (key === 'Escape' && tool.value !== MOVE_TOOL) tool.value = MOVE_TOOL
-    else if (key === 'Escape' && !selectedIds.value.length && componentId.value) exitComponent()
-    else if (key === 'Escape' && !selectedIds.value.length && layoutId.value) exitLayout()
+    else if (key === 'Escape' && !selectedIds.value.length && editStack.value.length) leaveView()
     else if (key === 'Escape') selectedIds.value = page.value ? escapeSelection(page.value.root, selectedIds.value) : []
     else if (armed) tool.value = armed
     else if (nav && !meta && key === 'Enter') return navigate(shift ? 'parent' : 'child')
@@ -915,9 +990,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, componentId, component, layoutId, layout, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
+    projectId, project, pageId, componentId, component, layoutId, layout, editStack, createRequest, confirmRequest, canvasAccent, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
-    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, createLayout, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, confirmCreate, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, updateStyles, previewTheme, updateTheme, undo, redo, shortcut
   })

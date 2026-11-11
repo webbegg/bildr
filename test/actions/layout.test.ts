@@ -46,6 +46,25 @@ describe('layout_create, layout_rename', () => {
   })
 })
 
+describe('unique layout names', () => {
+  it('refuses to create or rename a layout to a name already used, ignoring case', async () => {
+    const { call, get } = await setup()
+    const { layoutId } = await call<{ layoutId: string }>('layout_create', { name: 'Main' })
+    await expect(call('layout_create', { name: 'main' })).rejects.toMatchObject({ code: 'invalid', message: 'A layout named "Main" already exists' })
+    const { layoutId: blog } = await call<{ layoutId: string }>('layout_create', { name: 'Blog' })
+    await expect(call('layout_rename', { layoutId: blog, name: ' MAIN ' })).rejects.toMatchObject({ code: 'invalid', message: 'A layout named "Main" already exists' })
+    await call('layout_rename', { layoutId, name: 'MAIN' })
+    expect((await get()).layouts.map(l => l.name)).toEqual(['MAIN', 'Blog'])
+  })
+
+  it('names a layout itself when no name is given (agents)', async () => {
+    const { call, get } = await setup()
+    await call('layout_create', {})
+    await call('layout_create', {})
+    expect((await get()).layouts.map(l => l.name)).toEqual(['Layout', 'Layout 2'])
+  })
+})
+
 describe('a page using a layout', () => {
   it('renders the shared regions around the page content, defaults in unfilled slots and the page values', async () => {
     const { call, get, pageId, variableId, slotId } = await withLayout()

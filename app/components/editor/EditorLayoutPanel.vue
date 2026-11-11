@@ -2,7 +2,7 @@
 import { INSTANCE_TYPE, isContainerType, SLOT_FILL_TYPE } from '#shared/document/components'
 import type { DocNode, LayoutSlot, PropertyDef } from '#shared/document/schema'
 import { CHILDREN_SLOT } from '#shared/document/schema'
-import { findNode } from '#shared/document/tree'
+import { propertyLabel } from '#shared/editor/propertyLabels'
 import { bindingLabel, propBindingAdd, uniqueComponentName } from '~/composables/componentEditor'
 import { slotOf, variableAddItems } from '~/composables/layoutEditor'
 
@@ -28,9 +28,9 @@ const canBeSlot = computed(() => !isRoot.value && isContainerType(node.type) && 
 const slotItems = computed(() => (canBeSlot.value ? [{ id: SLOT_ITEM, label: 'Make slot', disabled: !!nodeSlot.value, hint: nodeSlot.value ? 'Already a slot' : 'Pages can give it their own content' }] : []))
 const variableItems = computed(() => (layout.value ? variableAddItems(layout.value, node) : []))
 
-function nodeLabel(nodeId: string): string {
-  const target = layout.value ? findNode(layout.value.root, nodeId) : undefined
-  return target?.type ?? 'Missing node'
+/** What a slot is bound to, the same richer label as properties (`Footer (Container)`). */
+function slotTarget(slot: LayoutSlot): string {
+  return layout.value ? bindingLabel(layout.value.root, { nodeId: slot.nodeId, prop: 'children' }) : 'Missing node'
 }
 
 function boundTo(variable: PropertyDef): string {
@@ -100,8 +100,8 @@ function renameLayout(name: string) {
       <EditorRow
         v-for="slot in shownSlots"
         :key="slot.id"
-        :label="slot.id === CHILDREN_SLOT ? 'page content' : 'slot'"
-        :title="`Bound to ${nodeLabel(slot.nodeId)}`"
+        :label="slot.id === CHILDREN_SLOT ? 'Page content' : 'Slot'"
+        :title="`Bound to ${slotTarget(slot)}`"
         :removable="slot.id !== CHILDREN_SLOT"
         @remove="removeSlot(slot)"
       >
@@ -131,7 +131,7 @@ function renameLayout(name: string) {
       <EditorRow
         v-for="variable in shownVariables"
         :key="variable.id"
-        :label="variable.kind"
+        :label="propertyLabel(variable)"
         :title="`Bound to ${boundTo(variable)}`"
         removable
         @remove="removeVariable(variable)"

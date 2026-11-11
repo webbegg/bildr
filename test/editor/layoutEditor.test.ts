@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createProject } from '#shared/document/factory'
 import type { DocNode, Layout, Project } from '#shared/document/schema'
 import {
-  layoutDeleteMessage,
+  layoutDeleteConfirm,
   layoutEntries,
   layoutItems,
   layoutPages,
@@ -46,11 +46,17 @@ describe('layoutEntries and layoutPages', () => {
   })
 })
 
-describe('layoutDeleteMessage', () => {
+describe('layoutDeleteConfirm', () => {
   it('names the pages that will detach', () => {
     const p = project()
-    expect(layoutDeleteMessage(p.layouts[0]!, layoutPages(p, 'main'))).toBe('"Main" is used by 2 pages:\n• Home\n• Pricing\n\nDelete the layout? These pages keep their content and lose the layout.')
-    expect(layoutDeleteMessage(p.layouts[1]!, [])).toBe('Delete layout "Blank"?')
+    expect(layoutDeleteConfirm(p.layouts[0]!, layoutPages(p, 'main'))).toEqual({
+      title: 'Delete "Main"?',
+      description: 'Used by 2 pages. They keep their content and lose the layout; undo brings it back.',
+      items: ['Home', 'Pricing'],
+      confirmLabel: 'Delete layout',
+      danger: true
+    })
+    expect(layoutDeleteConfirm(p.layouts[1]!, [])).toEqual({ title: 'Delete "Blank"?', description: 'No page uses it. Undo brings it back.', items: [], confirmLabel: 'Delete layout', danger: true })
   })
 })
 

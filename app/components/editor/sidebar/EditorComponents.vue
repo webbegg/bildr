@@ -4,7 +4,7 @@ import type { ComponentDefinition } from '#shared/document/schema'
 import type { ComponentUsage } from '#shared/document/usages'
 import { DRAG_MIME } from '#shared/editor/dropTarget'
 import type { ComponentEntry } from '~/composables/componentEditor'
-import { componentDeleteMessage, componentFolders, insertableComponents, instanceDragPayload } from '~/composables/componentEditor'
+import { componentDeleteConfirm, componentFolders, insertableComponents, instanceDragPayload } from '~/composables/componentEditor'
 
 /**
  * The Assets panel's Components: the project's components by folder (the
@@ -13,6 +13,8 @@ import { componentDeleteMessage, componentFolders, insertableComponents, instanc
  * canvas or the layers, and each row counts its instances; the chevron
  * lists where they are (the usage index), each a link to it. Deleting a
  * component in use names its instances and asks before deleting them too.
+ * "+" (or ⌥⌘K) opens the "New component" dialog for the selection; its
+ * tooltip says why when it can't.
  */
 const { query = '' } = defineProps<{ query?: string }>()
 const editor = useEditor()
@@ -22,6 +24,14 @@ const insertable = computed(() => new Set(editor.project ? insertableComponents(
 const expanded = ref(new Set<string>())
 const renamingId = ref<string | null>(null)
 const renameValue = ref('')
+
+/** Why "+" can't make a component now, or '' when it can. */
+const cannotCreate = computed(() => {
+  if (editor.componentId) return 'Leave the component to create another'
+  if (editor.layoutId) return 'Leave the layout to create a component'
+  if (!editor.selectedIds.length || (editor.selectedIds.length === 1 && editor.selectedId === editor.page?.root.id)) return 'Select layers on the page to make a component'
+  return ''
+})
 
 function toggleUsages(id: string) {
   const next = new Set(expanded.value)
@@ -60,8 +70,13 @@ async function commitRename() {
   if (def && name && name !== def.name) await editor.run('component_rename', { componentId, name })
 }
 
+// Rename mounts the field focused; the closing menu must not take the focus back (its blur would commit).
+function keepRenameFocus(event: Event) {
+  if (renamingId.value) event.preventDefault()
+}
+
 async function remove({ def, usages }: ComponentEntry) {
-  if (!confirm(componentDeleteMessage(def, usages))) return
+  if (!await editor.confirm(componentDeleteConfirm(def, usages))) return
   await editor.run('component_delete', { componentId: def.id, ...(usages.length ? { force: true } : {}) })
 }
 
@@ -82,23 +97,32 @@ function menu(entry: ComponentEntry): DropdownMenuItem[] {
       <p class="text-xs font-[550] text-muted uppercase">
         Components
       </p>
-      <UTooltip text="Create component from the selection">
-        <UButton
-          icon="i-lucide-plus"
-          size="xs"
-          color="neutral"
-          variant="ghost"
-          aria-label="Create component"
-          :disabled="!editor.selectedIds.length || !!editor.componentId || !!editor.layoutId"
-          @click="editor.createComponent()"
-        />
+      <UTooltip
+        :text="cannotCreate || 'Create component from the selection'"
+        :kbds="cannotCreate ? undefined : ['meta', 'alt', 'k']"
+      >
+        <!-- A disabled button gets no pointer events, so the tooltip hangs on this wrapper. -->
+        <span
+          class="inline-flex"
+          data-create-component-wrap
+        >
+          <EditorButton
+            icon="i-lucide-plus"
+            size="xs"
+            variant="ghost"
+            aria-label="Create component"
+            :disabled="!!cannotCreate"
+            @click="editor.createComponent()"
+          />
+        </span>
       </UTooltip>
     </div>
     <p
       v-if="!editor.project?.components.length"
       class="text-xs text-dimmed"
+      data-components-empty
     >
-      None yet. Select elements, then right-click › Create component.
+      No components yet. Select layers and press ⌥⌘K, or use +.
     </p>
     <p
       v-else-if="!folders.length"
@@ -128,10 +152,9 @@ function menu(entry: ComponentEntry): DropdownMenuItem[] {
         :data-component-id="entry.def.id"
       >
         <div class="group relative flex items-center">
-          <UInput
+          <EditorInput
             v-if="renamingId === entry.def.id"
             v-model="renameValue"
-            size="sm"
             autofocus
             class="flex-1"
             aria-label="Component name"
@@ -167,7 +190,7 @@ function menu(entry: ComponentEntry): DropdownMenuItem[] {
             >
               <UIcon
                 name="i-lucide-component"
-                class="size-4 shrink-0 text-violet-400"
+                class="size-4 shrink-0 text-(--editor-component)"
               />
               <span class="truncate">{{ entry.label }}</span>
               <span
@@ -175,16 +198,19 @@ function menu(entry: ComponentEntry): DropdownMenuItem[] {
                 :data-usage-count="entry.usages.length"
               >{{ entry.usages.length }}</span>
             </button>
-            <UDropdownMenu :items="menu(entry)">
-              <UButton
+            <EditorMenu
+              :items="menu(entry)"
+              :content="{ align: 'end' }"
+              :on-close-auto-focus="keepRenameFocus"
+            >
+              <EditorButton
                 icon="i-lucide-ellipsis"
                 size="xs"
-                color="neutral"
                 variant="ghost"
                 aria-label="Component actions"
                 class="absolute end-1 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
               />
-            </UDropdownMenu>
+            </EditorMenu>
           </template>
         </div>
         <ul

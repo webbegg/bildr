@@ -88,9 +88,12 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
   <div
     v-else-if="editor.project && editor.page"
     class="flex h-screen flex-col"
+    :data-editor-context="editor.componentId ? 'component' : editor.layoutId ? 'layout' : 'page'"
   >
     <EditorToolbar />
     <EditorQuickActions />
+    <EditorCreateDialog />
+    <EditorConfirm />
     <div class="flex min-h-0 flex-1">
       <aside
         v-if="editor.mode === 'data'"
@@ -116,8 +119,6 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
         class="relative min-w-0 flex-1 bg-(--editor-canvas)"
         data-canvas-area
       >
-        <EditorComponentBar />
-        <EditorLayoutBar />
         <EditorNodeMenu class="size-full">
           <EditorCanvas @key="message => editor.shortcut(message.key, message.meta, message.shift, true, { code: message.code, alt: message.alt, canvas: true })" />
         </EditorNodeMenu>

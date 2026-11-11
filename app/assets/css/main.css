@@ -31,6 +31,11 @@
  * selection, focus, the active frame and the primary action. The canvas
  * iframe can't see these variables: its overlays (pages/canvas.vue) define
  * the same accent on their own root.
+ * `--editor-context` is the accent of where you are, Framer's: the selection
+ * blue on pages, `--editor-component` purple while editing a component or a
+ * layout (`data-editor-context` on the editor root). The breadcrumb, the
+ * selected Layers row and Publish use it; instances and the Assets
+ * component and layout icons use `--editor-component` everywhere.
  */
 html.bildr-editor,
 .bildr-chrome {
@@ -45,6 +50,8 @@ html.bildr-editor,
   /* The canvas's floating bar. */
   --editor-bar: #111;
   --editor-selection: #09f;
+  --editor-component: #85f;
+  --editor-context: var(--editor-selection);
   /* Text on the blue "set here" pills: the accent itself, there is one blue. */
   --editor-info: var(--editor-selection);
   --editor-provenance: #ffbc86;
@@ -85,6 +92,12 @@ html.bildr-editor,
 html.bildr-editor body {
   font-size: 12px;
   font-weight: 450;
+}
+
+/* Inside a component or a layout: the context accent turns purple. */
+[data-editor-context='component'],
+[data-editor-context='layout'] {
+  --editor-context: var(--editor-component);
 }
 
 /* What <html> and <body> give the editor page, for a subtree elsewhere. */

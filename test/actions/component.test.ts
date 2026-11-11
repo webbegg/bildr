@@ -86,6 +86,41 @@ describe('component_create', () => {
   })
 })
 
+describe('unique component names', () => {
+  it('refuses to create a component with a name already used, ignoring case', async () => {
+    const ctx = await createCard()
+    await expect(ctx.call('component_create', { pageId: ctx.pageId, nodeId: ctx.tailId, name: 'cards/product' }))
+      .rejects.toMatchObject({ code: 'invalid', message: 'A component named "Cards/Product" already exists' })
+    expect((await ctx.get()).components).toHaveLength(1)
+  })
+
+  it('names a component itself when no name is given (agents), never a used one', async () => {
+    const ctx = await withCard()
+    const first = await ctx.call<{ componentId: string }>('component_create', { pageId: ctx.pageId, nodeId: ctx.cardId })
+    const second = await ctx.call<{ componentId: string }>('component_create', { pageId: ctx.pageId, nodeId: ctx.tailId })
+    const names = (await ctx.get()).components.map(c => [c.id, c.name])
+    expect(names).toEqual([[first.componentId, 'Card'], [second.componentId, 'Text']])
+  })
+
+  it('auto-names several siblings "Component", numbered when taken', async () => {
+    const ctx = await withCard()
+    await ctx.call('component_create', { pageId: ctx.pageId, nodeIds: [ctx.cardId, ctx.tailId] })
+    const { nodeId } = await ctx.call<{ nodeId: string }>('node_insert', { pageId: ctx.pageId, type: 'Text' })
+    const { nodeId: other } = await ctx.call<{ nodeId: string }>('node_insert', { pageId: ctx.pageId, type: 'Text' })
+    await ctx.call('component_create', { pageId: ctx.pageId, nodeIds: [nodeId, other] })
+    expect((await ctx.get()).components.map(c => c.name)).toEqual(['Component', 'Component 2'])
+  })
+
+  it('refuses to rename a component to another one\'s name, but lets it change its own case', async () => {
+    const ctx = await createCard()
+    const { componentId: other } = await ctx.call<{ componentId: string }>('component_create', { pageId: ctx.pageId, nodeId: ctx.tailId, name: 'Footer' })
+    await expect(ctx.call('component_rename', { componentId: other, name: 'CARDS/PRODUCT' }))
+      .rejects.toMatchObject({ code: 'invalid', message: 'A component named "Cards/Product" already exists' })
+    await ctx.call('component_rename', { componentId: ctx.componentId, name: 'cards/product' })
+    expect((await ctx.get()).components.map(c => c.name)).toEqual(['cards/product', 'Footer'])
+  })
+})
+
 describe('component_rename and component_delete', () => {
   it('renames a component', async () => {
     const { call, get, componentId } = await createCard()

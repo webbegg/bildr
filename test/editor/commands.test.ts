@@ -83,7 +83,7 @@ describe('SHORTCUTS', () => {
 
   it('lists every editor shortcut once', () => {
     expect([...combos].sort()).toEqual([
-      'a', 'alt', 'alt+1', 'alt+2', 'alt+3', 'b', 'c', 'delete', 'enter', 'escape', 'f', 'h', 'i', 'meta+alt+v', 'meta+c', 'meta+d', 'meta+f', 'meta+g', 'meta+k', 'meta+l', 'meta+p', 'meta+r', 'meta+shift+z', 'meta+v', 'meta+z',
+      'a', 'alt', 'alt+1', 'alt+2', 'alt+3', 'b', 'c', 'delete', 'enter', 'escape', 'f', 'h', 'i', 'meta+alt+k', 'meta+alt+v', 'meta+c', 'meta+d', 'meta+f', 'meta+g', 'meta+k', 'meta+l', 'meta+p', 'meta+r', 'meta+shift+z', 'meta+v', 'meta+z',
       'r', 'shift+0', 'shift+1', 'shift+2', 'shift+a', 'shift+enter', 'shift+tab', 'space', 't', 'tab', 'v'
     ])
   })
@@ -97,6 +97,10 @@ describe('SHORTCUTS', () => {
     expect(shortcutKeys('paste')).toEqual(['meta', 'v'])
     expect(shortcutKeys('paste-style')).toEqual(['meta', 'alt', 'v'])
     expect(shortcutKeys('zoom-selection')).toEqual(['shift', '2'])
+  })
+
+  it('lists Create component as ⌥⌘K (Ctrl+Alt+K)', () => {
+    expect(shortcutKeys('create-component')).toEqual(['meta', 'alt', 'k'])
   })
 
   it('lists the device shortcuts of the visible frames (shortcutsFor)', () => {

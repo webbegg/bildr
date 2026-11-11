@@ -27,10 +27,18 @@ export function layoutEntries(project: Project, query: string): LayoutEntry[] {
   return project.layouts.filter(l => matches(query, l.name)).map(layout => ({ layout, pages: layoutPages(project, layout.id) }))
 }
 
-export function layoutDeleteMessage(layout: Layout, pages: Page[]): string {
-  if (!pages.length) return `Delete layout "${layout.name}"?`
-  const list = pages.map(p => `• ${p.name}`).join('\n')
-  return `"${layout.name}" is used by ${pages.length} page${pages.length === 1 ? '' : 's'}:\n${list}\n\nDelete the layout? These pages keep their content and lose the layout.`
+/** The delete confirm (EditorConfirm): the pages that will detach. */
+export function layoutDeleteConfirm(layout: Layout, pages: Page[]): { title: string, description: string, items: string[], confirmLabel: string, danger: true } {
+  const n = pages.length
+  return {
+    title: `Delete "${layout.name}"?`,
+    description: n
+      ? `Used by ${n} page${n === 1 ? '' : 's'}. ${n === 1 ? 'It keeps its' : 'They keep their'} content and lose${n === 1 ? 's' : ''} the layout; undo brings it back.`
+      : 'No page uses it. Undo brings it back.',
+    items: pages.map(p => p.name),
+    confirmLabel: 'Delete layout',
+    danger: true
+  }
 }
 
 /** The `<USelect>` value of "no layout" (select items cannot be empty). */

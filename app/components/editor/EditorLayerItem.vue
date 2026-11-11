@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { getComponent, isContainerType } from '#shared/document/components'
+import { getComponent, INSTANCE_TYPE, isContainerType, SLOT_FILL_TYPE } from '#shared/document/components'
 import type { DocNode } from '#shared/document/schema'
 import type { DropPosition } from '#shared/editor/dropTarget'
 import { DRAG_MIME, draggedNodeId, dropPosition, nodeDragType, resolveDrop } from '#shared/editor/dropTarget'
@@ -17,8 +17,11 @@ import { hiddenBadge, naturalDisplay, visibilityAt, visibilityToggle } from '#sh
  * A row hidden there is dimmed with a crossed eye; one hidden only on other
  * devices names their breakpoints. With a search `filter` (the ids to show)
  * only those rows show, expanded.
- * A selected row is a solid accent pill (Framer's); the rows under it
- * (`inSelection`) get a subtle accent tint.
+ * A selected row is a solid pill in the context accent (Framer's: blue on
+ * pages, purple in a component or layout); the rows under it
+ * (`inSelection`) get a subtle tint of it. Instances are recognisable, as in
+ * Framer: a purple component icon and a purple pill when selected; slot
+ * fills a lighter purple.
  * A double-click on the name (or Rename, Cmd/Ctrl+R) renames the layer in
  * place: Enter or leaving the field saves (empty restores the derived name),
  * Escape cancels. A locked row shows a lock that unlocks it on click; locked
@@ -45,6 +48,10 @@ const children = computed(() => (props.filter ? props.node.children.filter(child
 const hasChildren = computed(() => children.value.length > 0)
 const collapsed = computed(() => !props.filter && editor.collapsed.has(props.node.id))
 const selected = computed(() => editor.selectedIds.includes(props.node.id))
+const kind = computed(() => (props.node.type === INSTANCE_TYPE ? 'instance' : props.node.type === SLOT_FILL_TYPE ? 'slot' : null))
+/** The selected pill: purple for an instance (lighter for a slot fill), else the context accent. */
+const pill = computed(() => (kind.value === 'instance' ? 'bg-(--editor-component)' : kind.value === 'slot' ? 'bg-(--editor-component)/70' : 'bg-(--editor-context)'))
+const iconTint = computed(() => (kind.value === 'instance' ? 'text-(--editor-component)' : kind.value === 'slot' ? 'text-(--editor-component)/60' : 'text-dimmed group-hover:text-muted'))
 const dropAt = ref<DropPosition | null>(null)
 
 const renaming = computed(() => !isRoot.value && editor.renamingId === props.node.id)
@@ -156,13 +163,14 @@ function onDrop(event: DragEvent) {
       :data-layer-id="node.id"
       :data-layer-hidden="hidden ? '' : undefined"
       :data-layer-locked="node.locked ? '' : undefined"
+      :data-layer-kind="kind ?? undefined"
       :draggable="!isRoot && !renaming"
       class="group flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg pe-1.5 text-[12px] whitespace-nowrap select-none"
       :class="[
         selected
-          ? 'bg-(--editor-selection) text-white'
+          ? `${pill} text-white`
           : inSelection
-            ? (editor.hoveredId === node.id ? 'bg-(--editor-selection)/15 text-highlighted' : 'bg-(--editor-selection)/8 text-toned hover:bg-(--editor-selection)/15')
+            ? (editor.hoveredId === node.id ? 'bg-(--editor-context)/15 text-highlighted' : 'bg-(--editor-context)/8 text-toned hover:bg-(--editor-context)/15')
             : editor.hoveredId === node.id ? 'bg-white/6 text-highlighted' : 'text-toned hover:bg-white/6',
         dropAt && (selected ? DROP_CLASS_SELECTED : DROP_CLASS)[dropAt]
       ]"
@@ -198,7 +206,7 @@ function onDrop(event: DragEvent) {
       <UIcon
         :name="icon"
         class="size-4 shrink-0"
-        :class="[selected ? 'text-white' : 'text-dimmed group-hover:text-muted', { 'opacity-45': hidden && !selected }]"
+        :class="[selected ? 'text-white' : iconTint, { 'opacity-45': hidden && !selected }]"
       />
       <input
         v-if="renaming"

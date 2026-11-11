@@ -2,13 +2,13 @@
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Layout } from '#shared/document/schema'
 import type { LayoutEntry } from '~/composables/layoutEditor'
-import { layoutDeleteMessage, layoutEntries } from '~/composables/layoutEditor'
+import { layoutDeleteConfirm, layoutEntries } from '~/composables/layoutEditor'
 
 /**
  * The Assets panel's Layouts: the project's page layouts, filtered by the
- * sidebar search, each counting the pages that use it. "+" creates one and
- * opens it in the layout view, a click opens one, and deleting one names
- * the pages that will detach and asks first.
+ * sidebar search, each counting the pages that use it. "+" opens the "New
+ * layout" dialog (then the new layout's view), a click opens one, and
+ * deleting one names the pages that will detach and asks first.
  */
 const { query = '' } = defineProps<{ query?: string }>()
 const editor = useEditor()
@@ -30,8 +30,13 @@ async function commitRename() {
   if (layout && name && name !== layout.name) await editor.run('layout_rename', { layoutId, name })
 }
 
+// Rename mounts the field focused; the closing menu must not take the focus back (its blur would commit).
+function keepRenameFocus(event: Event) {
+  if (renamingId.value) event.preventDefault()
+}
+
 async function remove({ layout, pages }: LayoutEntry) {
-  if (confirm(layoutDeleteMessage(layout, pages))) await editor.run('layout_delete', { layoutId: layout.id })
+  if (await editor.confirm(layoutDeleteConfirm(layout, pages))) await editor.run('layout_delete', { layoutId: layout.id })
 }
 
 function menu(entry: LayoutEntry): DropdownMenuItem[] {
@@ -51,10 +56,9 @@ function menu(entry: LayoutEntry): DropdownMenuItem[] {
         Layouts
       </p>
       <UTooltip text="New layout">
-        <UButton
+        <EditorButton
           icon="i-lucide-plus"
           size="xs"
-          color="neutral"
           variant="ghost"
           aria-label="New layout"
           @click="editor.createLayout()"
@@ -64,8 +68,9 @@ function menu(entry: LayoutEntry): DropdownMenuItem[] {
     <p
       v-if="!editor.project?.layouts.length"
       class="text-xs text-dimmed"
+      data-layouts-empty
     >
-      None yet. A layout frames the pages that use it.
+      No layouts yet. A layout frames pages with a shared nav or footer. Use + to create one.
     </p>
     <p
       v-else-if="!entries.length"
@@ -79,10 +84,9 @@ function menu(entry: LayoutEntry): DropdownMenuItem[] {
       class="group relative flex items-center"
       :data-layout-id="entry.layout.id"
     >
-      <UInput
+      <EditorInput
         v-if="renamingId === entry.layout.id"
         v-model="renameValue"
-        size="sm"
         autofocus
         class="flex-1"
         aria-label="Layout name"
@@ -102,7 +106,7 @@ function menu(entry: LayoutEntry): DropdownMenuItem[] {
         >
           <UIcon
             name="i-lucide-layout-template"
-            class="size-4 shrink-0 text-sky-400"
+            class="size-4 shrink-0 text-(--editor-component)"
           />
           <span class="truncate">{{ entry.layout.name }}</span>
           <span
@@ -110,16 +114,19 @@ function menu(entry: LayoutEntry): DropdownMenuItem[] {
             :data-layout-pages="entry.pages.length"
           >{{ entry.pages.length }}</span>
         </button>
-        <UDropdownMenu :items="menu(entry)">
-          <UButton
+        <EditorMenu
+          :items="menu(entry)"
+          :content="{ align: 'end' }"
+          :on-close-auto-focus="keepRenameFocus"
+        >
+          <EditorButton
             icon="i-lucide-ellipsis"
             size="xs"
-            color="neutral"
             variant="ghost"
             aria-label="Layout actions"
             class="absolute end-1 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
           />
-        </UDropdownMenu>
+        </EditorMenu>
       </template>
     </div>
   </section>
