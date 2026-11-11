@@ -4,7 +4,7 @@ import { isStyleTokenKey, styleTokenProblem } from '../design/tokens'
 import { getComponent, INSTANCE_TYPE, isContainerType } from './components'
 import type { PropValue } from './components'
 import { z } from 'zod'
-import { ApiPathSchema, CHILDREN_SLOT, CollectionSchema, componentProblems, ComponentDefinitionSchema, CONNECTIONS_MAX, ConnectionSchema, FieldSchema, FieldTypeSchema, instanceProblems, layoutProblems, LayoutSchema, LayoutSlotSchema, NODE_NAME_MAX, nodeTreeProblems, pageLayoutProblems, PageSchema, ProjectSchema, PropertyBindingSchema, PropertyDefSchema, propValueProblem, SlugSchema, VariantSchema } from './schema'
+import { ApiPathSchema, CHILDREN_SLOT, CollectionSchema, componentProblems, ComponentDefinitionSchema, CONNECTIONS_MAX, ConnectionSchema, FieldSchema, FieldTypeSchema, instanceProblems, isStyleBinding, layoutProblems, LayoutSchema, LayoutSlotSchema, NODE_NAME_MAX, nodeTreeProblems, pageLayoutProblems, PageSchema, ProjectSchema, PropertyBindingSchema, PropertyDefSchema, propValueProblem, SlugSchema, styleKeyProblem, VariantSchema } from './schema'
 import type { ApiHeader, Collection, CollectionSource, ComponentDefinition, Connection, DocNode, Field, FieldType, Layout, LayoutSlot, Page, Project, PropertyBinding, PropertyDef, Variant } from './schema'
 import { containsNode, findNode, findParent, walk } from './tree'
 import { componentUsages } from './usages'
@@ -58,7 +58,7 @@ export type Operation
     | { op: 'removeVariant', componentId: string, variantId: string }
     | { op: 'updateVariant', componentId: string, variantId: string, name?: string }
     /** Sparse: a null value, or the primary variant's own value, removes that override. */
-    | { op: 'setOverride', componentId: string, variantId: string, nodeId: string, props?: Record<string, PropValue | null>, style?: Record<string, string | null> }
+    | { op: 'setOverride', componentId: string, variantId: string, nodeId: string, props?: Record<string, PropValue | null>, style?: Record<string, string | null>, unset?: string[] }
     | { op: 'addLayout', index: number, layout: Layout }
     /** Refused while pages use the layout; `layout_delete` detaches them first. */
     | { op: 'removeLayout', layoutId: string }
@@ -688,7 +688,13 @@ function apply(project: Project, op: Operation): Operation {
       const node = findNode(def.root, op.nodeId) ?? fail('not_found', `Node "${op.nodeId}" not found on component "${def.name}"`)
       const props = { ...variant.overrides[node.id]?.props }
       const style = { ...variant.overrides[node.id]?.style }
+      const unset = new Set(variant.overrides[node.id]?.unset)
       const inverse: Extract<Operation, { op: 'setOverride' }> = { op: 'setOverride', componentId: def.id, variantId: variant.id, nodeId: node.id }
+      for (const key of op.unset ?? []) {
+        if (op.style && key in op.style) fail('invalid', `"${key}" cannot be both set and removed`)
+        const problem = styleKeyProblem(key)
+        if (problem) fail('invalid', problem)
+      }
       if (op.props) {
         inverse.props = {}
         for (const [name, value] of Object.entries(op.props)) {
@@ -697,15 +703,35 @@ function apply(project: Project, op: Operation): Operation {
           else props[name] = value
         }
       }
-      if (op.style) {
-        inverse.style = {}
-        for (const [key, value] of Object.entries(op.style)) {
-          inverse.style[key] = style[key] ?? null
+      if (op.style || op.unset) {
+        // The inverse restores each key's value, or its removed marker (inverse.unset), or resets it (null).
+        const restyle: Record<string, string | null> = {}
+        const removed: string[] = []
+        const remember = (key: string) => {
+          if (key in restyle || removed.includes(key)) return
+          if (unset.has(key)) removed.push(key)
+          else restyle[key] = style[key] ?? null
+        }
+        for (const [key, value] of Object.entries(op.style ?? {})) {
+          remember(key)
+          unset.delete(key)
           if (value === null || value === '' || value === node.style[key]) Reflect.deleteProperty(style, key)
           else style[key] = value
         }
+        for (const key of op.unset ?? []) {
+          remember(key)
+          Reflect.deleteProperty(style, key)
+          // A marker only where the primary sets the key (itself or a style binding): the variant stays sparse.
+          if (node.style[key] !== undefined || def.properties.some(p => p.bindings.some(b => b.nodeId === node.id && b.prop === key && isStyleBinding(b)))) unset.add(key)
+        }
+        if (op.style || Object.keys(restyle).length) inverse.style = restyle
+        if (removed.length) inverse.unset = removed
       }
-      const override = { ...(Object.keys(props).length ? { props } : {}), ...(Object.keys(style).length ? { style } : {}) }
+      const override = {
+        ...(Object.keys(props).length ? { props } : {}),
+        ...(Object.keys(style).length ? { style } : {}),
+        ...(unset.size ? { unset: [...unset] } : {})
+      }
       if (Object.keys(override).length) variant.overrides[node.id] = override
       else Reflect.deleteProperty(variant.overrides, node.id)
       return inverse

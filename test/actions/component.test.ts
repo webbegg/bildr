@@ -229,6 +229,55 @@ describe('component variants', () => {
     expect(project.pages[0]!.root.children[0]!.props).toEqual({ component: componentId })
   })
 
+  it('removes a primary token in a variant with unset, and a null resets it', async () => {
+    const { call, get, componentId, def, nodeId, pageId } = await createCard()
+    const { variantId } = await call<{ variantId: string }>('component_variant_add', { componentId, name: 'Flat' })
+    await call('component_variant_set_override', { componentId, variantId, nodeId: def.root.id, unset: ['p'] })
+    expect((await get()).components[0]!.variants[0]!.overrides).toEqual({ [def.root.id]: { unset: ['p'] } })
+    await call('instance_set_values', { pageId, nodeId, variant: variantId })
+    let project = await get()
+    expect(resolveInstance(project.pages[0]!.root.children[0]!, project.components)!.style.p).toBeUndefined()
+
+    await call('component_variant_set_override', { componentId, variantId, nodeId: def.root.id, style: { p: null } })
+    project = await get()
+    expect(project.components[0]!.variants[0]!.overrides).toEqual({})
+    expect(resolveInstance(project.pages[0]!.root.children[0]!, project.components)!.style.p).toBe('6')
+  })
+
+  it('applies a batch of per-node overrides as one all-or-nothing undo step', async () => {
+    const { call, get, componentId, def } = await createCard()
+    const headingId = def.root.children[0]!.id
+    const { variantId } = await call<{ variantId: string }>('component_variant_add', { componentId, name: 'Dark' })
+    const before = (await get()).components[0]
+
+    await expect(call('component_variant_set_override', { componentId, variantId, overrides: [
+      { nodeId: headingId, style: { color: 'primary' } },
+      { nodeId: def.root.id, style: { p: 'nope' } }
+    ] })).rejects.toThrow('"nope" is not a value of style token "p"')
+    expect((await get()).components[0]).toEqual(before)
+
+    await call('component_variant_set_override', { componentId, variantId, overrides: [
+      { nodeId: headingId, props: { text: 'Espresso' }, style: { color: 'primary' } },
+      { nodeId: def.root.id, style: { bg: 'muted' }, unset: ['p'] }
+    ] })
+    expect((await get()).components[0]!.variants[0]!.overrides).toEqual({
+      [headingId]: { props: { text: 'Espresso' }, style: { color: 'primary' } },
+      [def.root.id]: { style: { bg: 'muted' }, unset: ['p'] }
+    })
+    await call('history_undo', {})
+    expect((await get()).components[0]).toEqual(before)
+  })
+
+  it('refuses a batch mixed with the single-node form, or neither', async () => {
+    const { call, componentId, def } = await createCard()
+    const { variantId } = await call<{ variantId: string }>('component_variant_add', { componentId, name: 'Dark' })
+    await expect(call('component_variant_set_override', { componentId, variantId, nodeId: def.root.id, overrides: [{ nodeId: def.root.id, style: { p: '2' } }] }))
+      .rejects.toThrow('Give nodeId (with props, style or unset) or overrides, not both')
+    await expect(call('component_variant_set_override', { componentId, variantId, style: { p: '2' }, overrides: [{ nodeId: def.root.id, style: { p: '2' } }] }))
+      .rejects.toThrow('Give nodeId (with props, style or unset) or overrides, not both')
+    await expect(call('component_variant_set_override', { componentId, variantId })).rejects.toThrow('Give nodeId or overrides')
+  })
+
   it('renames a variant as one undo step', async () => {
     const { call, get, componentId } = await createCard()
     const { variantId } = await call<{ variantId: string }>('component_variant_add', { componentId, name: 'Dark' })

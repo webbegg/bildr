@@ -22,7 +22,7 @@ import { createStylePreview } from '#shared/editor/preview'
 import type { SelectionStep } from '#shared/editor/selection'
 import { canvasMovable, drillTarget, escapeSelection, navigateSelection, nearestUnlocked, selectAllSiblings, selectionAfterDelete, siblingParent, toggleSelection, topLevelSelection } from '#shared/editor/selection'
 import type { Clip } from '#shared/editor/clipboard'
-import { clipStyle, copyNodes, newerClip, parseClip, pasteInput, pasteStylePatch, pasteTarget, serializeClip } from '#shared/editor/clipboard'
+import { clipStyle, copyNodes, newerClip, parseClip, pasteInput, pasteStylePatch, pasteTarget, readWithin, serializeClip } from '#shared/editor/clipboard'
 import { resolvePageWithLayout } from '#shared/runtime/layouts'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 import type { ZoomCommand } from '#shared/editor/viewport'
@@ -31,7 +31,8 @@ import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 import { canHideFrame, frameForKey, hiddenFrames, PRIMARY_FRAME, visibleFrames } from '#shared/editor/frames'
 import { insertableComponents, outsideInstance, parseInstancePayload, uniqueComponentName } from './componentEditor'
-import { activeVariant, applyVariant } from './componentVariants'
+import { activeVariant, applyVariant, overrideInput, pasteStyleOverride, primaryStyle } from './componentVariants'
+import type { NodeOverridePatch, OverridePatch } from './componentVariants'
 
 /** Identifies this editor tab on change events, so it can skip its own echoes. */
 export const TAB_ID = import.meta.client ? crypto.randomUUID() : 'server'
@@ -679,13 +680,14 @@ export function createEditor(projectId: string) {
 
   /** The editor clipboard, or a newer clip in the system one (copied in another tab, `newerClip`); reading it may ask for permission. */
   async function readClip(): Promise<Clip | null> {
-    let system: Clip | null = null
+    let text: string | null = null
     try {
-      system = parseClip(await navigator.clipboard.readText())
+      // A refused or unanswered read falls back to the in-memory clip after a moment.
+      text = await readWithin(navigator.clipboard.readText(), 1500)
     } catch {
-      // No permission or no clipboard: the in-memory clip.
+      // No clipboard API: the in-memory clip.
     }
-    return newerClip(clipboard.value, system)
+    return newerClip(clipboard.value, text === null ? null : parseClip(text))
   }
 
   /** Paste (Cmd/Ctrl+V): inserts every copied node as it was, with new ids (one undo step), where `pasteTarget` puts them, and selects them. */
@@ -705,6 +707,12 @@ export function createEditor(projectId: string) {
     const nodes = root && clip ? (id ? [id] : selectedIds.value).map(other => findNode(root, other)).filter(n => n !== undefined) : []
     if (!clip || !nodes.length) return
     const style = clipStyle(clip)
+    if (variant.value && component.value) {
+      // The variant view: tokens of the primary the copy lacks are removed in the variant (unset), all nodes in one call.
+      const definition = component.value
+      await setOverrides(nodes.map(n => ({ nodeId: n.id, ...pasteStyleOverride(primaryStyle(definition, n.id), n.style, style) })))
+      return
+    }
     const patch = nodes.length === 1
       ? pasteStylePatch(nodes[0]!.style, style)
       : { ...Object.fromEntries(nodes.flatMap(n => Object.keys(n.style)).map(key => [key, null])), ...style }
@@ -776,10 +784,16 @@ export function createEditor(projectId: string) {
     variantId.value = activeVariant(component.value, id)?.id ?? null
   }
 
-  /** Overrides props and design tokens of one definition node in the active variant; a null resets (removes) one. */
-  async function setOverride(nodeId: string, patch: { props?: Record<string, PropValue | null>, style?: StylePatch }): Promise<unknown> {
-    if (!component.value || !variant.value) return undefined
-    return run('component_variant_set_override', { componentId: component.value.id, variantId: variant.value.id, nodeId, ...patch })
+  /** Overrides props and design tokens of one definition node in the active variant; a null resets (removes) one, `unset` removes primary tokens. */
+  async function setOverride(nodeId: string, patch: OverridePatch): Promise<unknown> {
+    return setOverrides([{ nodeId, ...patch }])
+  }
+
+  /** `setOverride` for several nodes: one `component_variant_set_override` (a batch for several), so one undo step, all or nothing. */
+  async function setOverrides(patches: NodeOverridePatch[]): Promise<unknown> {
+    const input = overrideInput(patches)
+    if (!component.value || !variant.value || !input) return undefined
+    return run('component_variant_set_override', { componentId: component.value.id, variantId: variant.value.id, ...input })
   }
 
   async function updateProps(nodeId: string, props: Record<string, PropValue | null>): Promise<void> {
@@ -797,9 +811,7 @@ export function createEditor(projectId: string) {
     const target = typeof nodeIds === 'string' || nodeIds.length === 1 ? { nodeId: typeof nodeIds === 'string' ? nodeIds : nodeIds[0] } : { nodeIds }
     if (variant.value) {
       const ids = typeof nodeIds === 'string' ? [nodeIds] : nodeIds
-      await styles.commit(nodeIds, style, async () => {
-        for (const id of ids) await setOverride(id, { style })
-      })
+      await styles.commit(nodeIds, style, () => setOverrides(ids.map(id => ({ nodeId: id, style }))))
       return
     }
     await styles.commit(nodeIds, style, () => runOnPage('node_update_style', { ...target, style }))
@@ -808,13 +820,12 @@ export function createEditor(projectId: string) {
   /**
    * Commits a different style patch per node, as one undo step (`node_update_style`
    * with `updates`, all or nothing), e.g. a selection colour swap. In the variant
-   * view each node is one `component_variant_set_override`, which takes one node
-   * at a time, so there it is one undo step per node.
+   * view it is one `component_variant_set_override` batch, also all or nothing.
    */
   async function updateStyles(updates: { nodeId: string, style: StylePatch }[]): Promise<void> {
     if (!updates.length) return
     if (variant.value) {
-      for (const { nodeId, style } of updates) await setOverride(nodeId, { style })
+      await setOverrides(updates)
       return
     }
     await runOnPage('node_update_style', updates.length === 1 ? updates[0]! : { updates })

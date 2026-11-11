@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createNode, createPage } from '#shared/document/factory'
-import { CLIP_KIND, clipStyle, copyNode, copyNodes, newerClip, parseClip, pasteInput, pasteStylePatch, pasteTarget, serializeClip } from '#shared/editor/clipboard'
+import { CLIP_KIND, clipStyle, copyNode, copyNodes, newerClip, parseClip, pasteInput, pasteStylePatch, pasteTarget, readWithin, serializeClip } from '#shared/editor/clipboard'
 
 function fixture() {
   const page = createPage('Home')
@@ -94,6 +94,18 @@ describe('serializeClip and parseClip', () => {
     expect(parseClip(JSON.stringify({ kind: CLIP_KIND, sourceIds: ['x'], nodes: [], copiedAt: 1 }))).toBeNull()
     expect(parseClip(JSON.stringify({ kind: CLIP_KIND, sourceIds: ['x', 'y'], nodes: [node], copiedAt: 1 }))).toBeNull()
     expect(parseClip(JSON.stringify({ kind: CLIP_KIND, sourceIds: ['x'], nodes: [node], copiedAt: 'now' }))).toBeNull()
+  })
+})
+
+describe('readWithin (T8-002)', () => {
+  it('gives the text when the read settles in time', async () => {
+    await expect(readWithin(Promise.resolve('x'), 50)).resolves.toBe('x')
+  })
+  it('gives null when the read never settles (an unanswered permission prompt)', async () => {
+    await expect(readWithin(new Promise<string>(() => {}), 20)).resolves.toBeNull()
+  })
+  it('gives null when the read is refused', async () => {
+    await expect(readWithin(Promise.reject(new Error('denied')), 50)).resolves.toBeNull()
   })
 })
 

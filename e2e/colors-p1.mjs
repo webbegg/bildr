@@ -6,16 +6,20 @@
  * this" (#12), with the custom colour listed in the Design view (removing
  * a used one is refused, and says so); and the Selection colours section
  * swapping a colour across the subtree (#13) as one undo step
- * (RELIABILITY-009). Shots go to e2e/.shots/colors-p1/.
+ * (RELIABILITY-009); in a component variant, a swap over two nodes is one
+ * undo step and Paste style removes the primary's tokens the copy lacks
+ * (S8, RELIABILITY-002). Shots go to e2e/.shots/colors-p1/.
  */
-import { action, check, findNode, openEditor, project, run, shot, toView, until } from './lib.mjs'
+import { action, BASE, check, findNode, openEditor, project, run, shot, toView, until } from './lib.mjs'
 
 const snap = async (page, name) => {
   await page.waitForTimeout(300)
   await shot(page, `colors-p1/${name}`)
 }
 
-await run('colors-p1', async ({ page, errors }) => {
+await run('colors-p1', async ({ context, page, errors }) => {
+  // Paste style reads the system clipboard (a newer clip from another tab wins).
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE })
   const p = await project('colors p1')
   const { pages } = await action('project_get', { projectId: p.id })
   const pageId = pages[0].id
@@ -175,6 +179,64 @@ await run('colors-p1', async ({ page, errors }) => {
   })
   check(tabletDir, 'Create property on Tablet adds an md:direction binding and keeps the base one')
   check(await until(async () => (await dirDot().getAttribute('data-bound-inherited')) === null), 'the Tablet row is then bound at its own key')
+
+  // S8: in a variant, a colour swap over two nodes is one undo step, and Paste style removes primary tokens the copy lacks.
+  const box = await action('node_insert', { projectId: p.id, pageId, type: 'Column', style: { bg: 'muted' }, children: [
+    { type: 'Text', props: { text: 'Swatch one' }, style: { color: 'primary', p: '4' } },
+    { type: 'Text', props: { text: 'Swatch two' }, style: { color: 'primary' } }
+  ] })
+  const { componentId: swatchId } = await action('component_create', { projectId: p.id, pageId, nodeId: box.nodeId, name: 'Swatch' })
+  const { variantId: flatId } = await action('component_variant_add', { projectId: p.id, componentId: swatchId, name: 'Flat' })
+  const swatchDoc = await action('project_get', { projectId: p.id })
+  const swatch = swatchDoc.components.find(c => c.id === swatchId)
+  const [oneId, twoId] = swatch.root.children.map(c => c.id)
+  const swatchInstance = findNode(swatchDoc.pages[0].root, n => n.type === 'Instance' && n.props.component === swatchId)
+  const flat = async () => (await action('project_get', { projectId: p.id })).components.find(c => c.id === swatchId).variants.find(v => v.id === flatId)
+  await openEditor(page, p.id)
+  await page.getByRole('tab', { name: 'Layers' }).click()
+  await select(swatchInstance.id)
+  await page.locator('[data-component-instance]').getByRole('button', { name: 'Edit' }).click()
+  await page.locator('[data-component-view]').waitFor()
+  await select(swatch.root.id)
+  await page.getByRole('button', { name: 'Show and edit Flat' }).click()
+  await until(async () => (await page.getByRole('button', { name: 'Show and edit Flat' }).getAttribute('aria-pressed')) === 'true')
+  await page.waitForTimeout(400)
+
+  const variantColors = page.locator('[data-selection-colors]')
+  await variantColors.locator('[data-selection-color="primary"] [data-style-key]').click()
+  await page.locator('[data-color-picker]').getByRole('button', { name: 'secondary', exact: true }).click()
+  const variantSwapped = await until(async () => {
+    const v = await flat()
+    return v.overrides[oneId]?.style?.color === 'secondary' && v.overrides[twoId]?.style?.color === 'secondary'
+  })
+  check(variantSwapped, 'a colour swap in the variant overrides both texts')
+  await page.keyboard.press('Escape')
+  check((await action('history_get', { projectId: p.id })).undo === 'Override variant', 'the variant swap is one "Override variant" undo step')
+  await action('history_undo', { projectId: p.id })
+  check(!!await until(async () => Object.keys((await flat()).overrides).length === 0), 'one undo reverts the variant swap on both texts')
+
+  // Copy Swatch two (color only) and Paste style onto Swatch one: its primary p is removed in the variant.
+  await page.waitForTimeout(400)
+  await select(twoId)
+  await page.keyboard.press('Control+c')
+  await page.locator(`[data-layer-id="${oneId}"]`).first().click({ button: 'right' })
+  await page.locator('[data-node-menu-search]').waitFor()
+  await page.keyboard.type('paste style')
+  await page.keyboard.press('Enter')
+  const removedP = await until(async () => {
+    const v = await flat()
+    return JSON.stringify(v.overrides[oneId]) === JSON.stringify({ unset: ['p'] })
+  })
+  check(removedP, `Paste style in the variant removes the primary's p (${JSON.stringify((await flat()).overrides)})`)
+  const defOne = (await action('project_get', { projectId: p.id })).components.find(c => c.id === swatchId).root.children[0]
+  check(defOne.style.p === '4', 'the primary keeps its p')
+  check(await until(async () => (await page.locator('[data-override="style:p"]').count()) === 1), 'the overrides section lists the removed p')
+  check((await page.locator('[data-override="style:p"][data-override-removed]').innerText()).includes('Removed'), 'and shows it as Removed')
+  await page.locator('[data-variant-overrides]').scrollIntoViewIfNeeded()
+  await snap(page, 'variant-removed')
+  check((await action('history_get', { projectId: p.id })).undo === 'Override variant', 'the variant paste style is one "Override variant" undo step')
+  await action('history_undo', { projectId: p.id })
+  check(!!await until(async () => Object.keys((await flat()).overrides).length === 0), 'one undo brings the primary p back')
 
   check(!errors.length, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 }, { ignore: [/422 \(The theme colour "brand-orange" is still used/] })

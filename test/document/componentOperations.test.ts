@@ -141,6 +141,77 @@ describe('component definition operations', () => {
   })
 })
 
+/** A project whose card title sets `color` and `p` in the primary. */
+function styled(): Project {
+  const { project } = setup()
+  project.components[0]!.root.children[0]!.style = { color: 'muted', p: '4' }
+  return project
+}
+
+describe('removed tokens in a variant (unset)', () => {
+  it('the schema accepts the optional unset list of a node override', () => {
+    const project = styled()
+    project.components[0]!.variants[0]!.overrides = { 'c-title': { unset: ['color'] } }
+    expect(ProjectSchema.safeParse(project).success).toBe(true)
+  })
+
+  it('the schema rejects a malformed unset list', () => {
+    const parse = (override: unknown) => {
+      const project = styled() as unknown as { components: { variants: { overrides: Record<string, unknown> }[] }[] }
+      project.components[0]!.variants[0]!.overrides = { 'c-title': override }
+      const result = ProjectSchema.safeParse(project)
+      return result.success ? '' : result.error.issues.map(i => i.message).join('; ')
+    }
+    expect(parse({ unset: 'color' })).not.toBe('')
+    expect(parse({ unset: [3] })).not.toBe('')
+    expect(parse({ unset: ['nope'] })).toContain('Unknown style token "nope"')
+    expect(parse({ unset: ['xl:p'] })).toContain('Unknown breakpoint "xl"')
+    expect(parse({ unset: ['color', 'color'] })).toContain('Variant "Dark" removes "color" twice on "c-title"')
+    expect(parse({ style: { color: 'primary' }, unset: ['color'] })).toContain('Variant "Dark" both overrides and removes "color" on "c-title"')
+  })
+
+  it('old documents without the marker parse to the same bytes', () => {
+    const project = styled()
+    project.components[0]!.variants[0]!.overrides = { 'c-title': { props: { text: 'Dark' }, style: { color: 'primary' } } }
+    const parsed = ProjectSchema.parse(structuredClone(project))
+    expect(JSON.stringify(parsed)).toBe(JSON.stringify(project))
+  })
+
+  it('removes a primary token in the variant, and a reset (null) restores the primary', () => {
+    const project = styled()
+    const after = roundTrip(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', unset: ['color'] })
+    expect(after.components[0]!.variants[0]!.overrides).toEqual({ 'c-title': { unset: ['color'] } })
+
+    applyOperation(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', style: { p: '8' }, unset: ['color'] })
+    expect(project.components[0]!.variants[0]!.overrides).toEqual({ 'c-title': { style: { p: '8' }, unset: ['color'] } })
+    // The inverse of a reset puts the marker back.
+    roundTrip(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', style: { color: null } })
+    applyOperation(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', style: { color: null, p: null } })
+    expect(project.components[0]!.variants[0]!.overrides).toEqual({})
+  })
+
+  it('a value replaces the marker, and removing replaces an overridden value', () => {
+    const project = styled()
+    applyOperation(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', unset: ['color'] })
+    roundTrip(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', style: { color: 'primary' } })
+    applyOperation(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', style: { color: 'primary' } })
+    expect(project.components[0]!.variants[0]!.overrides).toEqual({ 'c-title': { style: { color: 'primary' } } })
+    roundTrip(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', unset: ['color'] })
+    applyOperation(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', unset: ['color'] })
+    expect(project.components[0]!.variants[0]!.overrides).toEqual({ 'c-title': { unset: ['color'] } })
+  })
+
+  it('stores no marker for a token the primary does not set, and refuses set-and-remove or an unknown key', () => {
+    const project = styled()
+    applyOperation(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', style: { bg: 'muted' } })
+    applyOperation(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', unset: ['bg'] })
+    expect(project.components[0]!.variants[0]!.overrides).toEqual({})
+    expect(() => applyOperation(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', style: { color: 'primary' }, unset: ['color'] })).toThrow('"color" cannot be both set and removed')
+    expect(() => applyOperation(project, { op: 'setOverride', componentId: 'card', variantId: 'dark', nodeId: 'c-title', unset: ['nope'] })).toThrow('Unknown style token "nope"')
+    expect(project.components[0]!.variants[0]!.overrides).toEqual({})
+  })
+})
+
 describe('node operations in a component definition', () => {
   it('insert, setProps, setStyle, move and remove edit the definition tree with inverses', () => {
     const { project } = setup()

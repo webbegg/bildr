@@ -1,12 +1,14 @@
 import type { PropValue } from '#shared/document/components'
 import type { ComponentDefinition, DocNode, PropertyDef, Variant } from '#shared/document/schema'
-import { applySetters, applyStyleSetters, propertySetters } from '#shared/runtime/instances'
+import { findNode } from '#shared/document/tree'
+import type { StylePatch } from '#shared/editor/preview'
+import { applySetters, applyStyleSetters, propertySetters, variantStyle } from '#shared/runtime/instances'
 
 /**
  * The variants UI's pure parts. The primary variant is the definition
  * itself; a variant stores only the props and design tokens it overrides,
- * per definition node, and a null value removes an override (so a reset
- * keeps the variant sparse). The component view shows the definition with
+ * and the tokens it removes (`unset`), per definition node, and a null value
+ * removes an override or a removal (so a reset keeps the variant sparse). The component view shows the definition with
  * the active variant applied, ids unchanged, so the canvas, the layers and
  * the panel work on the same nodes in every variant.
  */
@@ -17,7 +19,18 @@ export interface OverrideEntry {
   kind: OverrideKind
   key: string
   value: PropValue
+  /** A token the variant removes (its value is empty). */
+  removed?: true
 }
+
+/** One node's `component_variant_set_override` change: null resets a prop or token, `unset` removes primary tokens. */
+export interface OverridePatch {
+  props?: Record<string, PropValue | null>
+  style?: StylePatch
+  unset?: string[]
+}
+
+export type NodeOverridePatch = OverridePatch & { nodeId: string }
 
 /** The `<USelect>` value of the primary variant (select items cannot be empty). */
 export const PRIMARY_VARIANT = '__primary'
@@ -36,8 +49,8 @@ export function applyVariant(root: DocNode, variant: Variant | null, properties:
     const override = variant?.overrides[node.id]
     const props = { ...node.props, ...override?.props }
     applySetters(props, setters, node.id, override?.props)
-    const style = { ...node.style, ...override?.style }
-    applyStyleSetters(style, setters, node.id, override?.style)
+    const style = variantStyle(node.style, override)
+    applyStyleSetters(style, setters, node.id, override?.style, override?.unset)
     return {
       ...node,
       props,
@@ -48,17 +61,56 @@ export function applyVariant(root: DocNode, variant: Variant | null, properties:
   return build(root)
 }
 
-/** What `variant` overrides on one node: props, then design tokens. */
+/** What `variant` overrides on one node: props, then design tokens, then removed tokens (empty values). */
 export function overrideEntries(variant: Variant | null, nodeId: string): OverrideEntry[] {
   const override = variant?.overrides[nodeId]
   return [
     ...Object.entries(override?.props ?? {}).map(([key, value]): OverrideEntry => ({ kind: 'props', key, value })),
-    ...Object.entries(override?.style ?? {}).map(([key, value]): OverrideEntry => ({ kind: 'style', key, value }))
+    ...Object.entries(override?.style ?? {}).map(([key, value]): OverrideEntry => ({ kind: 'style', key, value })),
+    ...(override?.unset ?? []).map((key): OverrideEntry => ({ kind: 'style', key, value: '', removed: true }))
   ]
 }
 
 export function isOverridden(variant: Variant | null, nodeId: string, kind: OverrideKind, key: string): boolean {
-  return !!variant?.overrides[nodeId]?.[kind] && key in variant.overrides[nodeId][kind]
+  const override = variant?.overrides[nodeId]
+  if (kind === 'style' && override?.unset?.includes(key)) return true
+  return !!override?.[kind] && key in override[kind]
+}
+
+/** A node's style in the primary variant, with the property bindings' defaults applied (the base a variant's overrides and removals are against). */
+export function primaryStyle(component: { root: DocNode, properties?: PropertyDef[] }, nodeId: string): Record<string, string> {
+  return findNode(applyVariant(component.root, null, component.properties ?? []), nodeId)?.style ?? {}
+}
+
+/**
+ * The override a variant Paste style makes so the node's effective style
+ * becomes `copied` exactly: differing tokens set, tokens only the variant
+ * adds reset (null), and tokens of the primary (`base`, see `primaryStyle`)
+ * the copy lacks removed (`unset`). Empty when nothing changes.
+ */
+export function pasteStyleOverride(base: Record<string, string>, effective: Record<string, string>, copied: Record<string, string>): OverridePatch {
+  const style: StylePatch = {}
+  const unset: string[] = []
+  for (const [key, value] of Object.entries(copied)) if (effective[key] !== value) style[key] = value
+  for (const key of Object.keys(effective)) {
+    if (key in copied) continue
+    if (key in base) unset.push(key)
+    else style[key] = null
+  }
+  return { ...(Object.keys(style).length ? { style } : {}), ...(unset.length ? { unset } : {}) }
+}
+
+const hasChange = ({ props, style, unset }: OverridePatch) => !!(props && Object.keys(props).length) || !!(style && Object.keys(style).length) || !!unset?.length
+
+/**
+ * The `component_variant_set_override` input for per-node patches (without
+ * the component and variant): the single form for one node, a batch
+ * (`overrides`, one undo step) for several; null when none changes anything.
+ */
+export function overrideInput(patches: NodeOverridePatch[]): NodeOverridePatch | { overrides: NodeOverridePatch[] } | null {
+  const changes = patches.filter(hasChange)
+  if (!changes.length) return null
+  return changes.length === 1 ? changes[0]! : { overrides: changes }
 }
 
 /** The `component_variant_set_override` patch that removes `entries`. */

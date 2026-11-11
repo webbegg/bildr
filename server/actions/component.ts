@@ -207,19 +207,31 @@ export const componentVariantRename = defineAction({
   }
 })
 
+const OverrideFields = {
+  props: z.record(z.string(), PropValueSchema.nullable()).optional().describe('Props of the node to override; null resets one'),
+  style: z.record(z.string(), z.string().nullable()).optional().describe('Design tokens of the node to override (see components_list.tokens); null resets one (a set value, or a removal)'),
+  unset: z.array(z.string()).optional().describe('Style keys to remove in this variant, e.g. ["bg", "md:p"]: they render as absent even where the primary sets them; a null in style resets one. A key cannot be in both style and unset')
+}
+
 export const componentVariantSetOverride = defineAction({
   name: 'component_variant_set_override',
-  description: 'Override props and design tokens of one definition node in a variant. A variant stores only what differs from the primary: a null value, or the primary\'s own value, resets that override (removes it).',
+  description: 'Override props and design tokens of definition nodes in a variant, or remove primary tokens there (unset). A variant stores only what differs from the primary: a null value, or the primary\'s own value, resets that override (removes it, or a removal), so the primary\'s value shows again. One node: nodeId with props, style and/or unset. Several nodes: overrides, a list of { nodeId, props?, style?, unset? }, applied as one undo step, all or nothing (one bad entry changes nothing). Give one form, not both.',
   input: z.object({
     projectId: IdSchema,
     componentId: ComponentRef,
     variantId: IdSchema,
-    nodeId: IdSchema.describe('A node of the component definition'),
-    props: z.record(z.string(), PropValueSchema.nullable()).optional().describe('Props of the node to override; null resets one'),
-    style: z.record(z.string(), z.string().nullable()).optional().describe('Design tokens of the node to override (see components_list.tokens); null resets one')
+    nodeId: IdSchema.optional().describe('A node of the component definition; or give overrides'),
+    ...OverrideFields,
+    overrides: z.array(z.object({ nodeId: IdSchema.describe('A node of the component definition'), ...OverrideFields })).min(1).optional()
+      .describe('Per-node overrides applied as one undo step, all or nothing; replaces nodeId, props, style and unset')
   }),
-  run: async ({ projectId, ...override }, ctx) => {
-    const project = await ctx.services.mutate(ctx, projectId, 'Override variant', [{ op: 'setOverride', ...override }])
+  run: async ({ projectId, componentId, variantId, overrides, ...single }, ctx) => {
+    const singleGiven = Object.values(single).some(value => value !== undefined)
+    if (overrides && singleGiven) throw new ActionError('invalid', 'Give nodeId (with props, style or unset) or overrides, not both')
+    const { nodeId, ...patch } = single
+    const entries = overrides ?? (nodeId === undefined ? [] : [{ nodeId, ...patch }])
+    if (!entries.length) throw new ActionError('invalid', 'Give nodeId or overrides')
+    const project = await ctx.services.mutate(ctx, projectId, 'Override variant', entries.map(entry => ({ op: 'setOverride' as const, componentId, variantId, ...entry })))
     return { version: project.version }
   }
 })

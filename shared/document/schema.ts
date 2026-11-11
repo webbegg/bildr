@@ -91,15 +91,26 @@ export const PropertyDefSchema = z.object({
   bindings: z.array(PropertyBindingSchema).default(() => [])
 })
 
-/** Sparse overrides per node id: absence means the value of the primary variant. */
+/**
+ * Sparse overrides per node id: absence means the value of the primary
+ * variant. `unset` lists style keys removed in the variant: they render as
+ * absent even where the primary sets them (never also in `style`).
+ */
 export const VariantSchema = z.object({
   id: IdSchema,
   name: z.string().trim().min(1).max(100),
   overrides: z.record(IdSchema, z.object({
     props: z.record(z.string(), PropValueSchema).optional(),
-    style: z.record(z.string(), z.string()).optional()
+    style: z.record(z.string(), z.string()).optional(),
+    // Overrides saved before removed tokens have none.
+    unset: z.array(z.string()).optional()
   }))
 })
+
+/** Why `key` is not a style key (a variant's removed token), e.g. `Unknown style token "x"`; undefined when it is one. */
+export function styleKeyProblem(key: string): string | undefined {
+  return isStyleTokenKey(key) ? undefined : styleTokenProblem(key, '')
+}
 
 /** The primary variant is the `root` tree itself; `variants` holds the others. */
 export const ComponentDefinitionSchema = z.object({
@@ -394,6 +405,8 @@ export const ProjectSchema = z.object({
 export type PropertyDef = z.infer<typeof PropertyDefSchema>
 export type PropertyBinding = z.infer<typeof PropertyBindingSchema>
 export type Variant = z.infer<typeof VariantSchema>
+/** What a variant overrides on one node: props, style tokens and removed tokens (`unset`). */
+export type VariantOverride = Variant['overrides'][string]
 export type ComponentDefinition = z.infer<typeof ComponentDefinitionSchema>
 export type LayoutSlot = z.infer<typeof LayoutSlotSchema>
 export type Layout = z.infer<typeof LayoutSchema>
@@ -568,6 +581,14 @@ export function componentProblems(components: ComponentDefinition[], colors: rea
           const message = styleTokenProblem(key, value, colors)
           if (message) add([...at, 'style', key], message)
         }
+        const removed = new Set<string>()
+        override.unset?.forEach((key, u) => {
+          const message = styleKeyProblem(key)
+            ?? (removed.has(key) ? `Variant "${variant.name}" removes "${key}" twice on "${nodeId}"` : undefined)
+            ?? (override.style && key in override.style ? `Variant "${variant.name}" both overrides and removes "${key}" on "${nodeId}"` : undefined)
+          if (message) add([...at, 'unset', u], message)
+          removed.add(key)
+        })
       }
     })
   })
