@@ -10,7 +10,7 @@ import { DEVICES } from '#shared/editor/styleFields'
 import type { Point, Viewport, ZoomCommand } from '#shared/editor/viewport'
 import { isInsertTool, pointerMode } from '#shared/editor/insertTools'
 import { revealFrame } from '#shared/editor/devices'
-import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, frameOrder, layoutFrames, panView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
+import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, frameOrder, layoutFrames, panView, selectionView, stepZoom, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 
 /**
  * The editor canvas. The page view is a Figma-style infinite surface showing
@@ -80,7 +80,18 @@ function zoomTo(zoom: number, at: Point = { x: stageSize.width / 2, y: stageSize
   viewport.value = zoomAround(viewport.value, zoom, at)
 }
 
+/** Shift+2: fits the selection, as measured in the active frame; nothing without one. */
+async function zoomToSelection() {
+  const frame = layout.value.find(f => f.device.id === editor.deviceId)?.rect
+  if (!frame || !editor.selectedIds.length) return
+  const view = selectionView(await measureNodes(editor.selectedIds), frame, stageSize, FIT_PADDING)
+  if (!view) return
+  autoFit = false
+  viewport.value = view
+}
+
 function zoomCommand(command: ZoomCommand) {
+  if (command === 'selection') return void zoomToSelection()
   autoFit = false
   if (command === 'fit') fit()
   else if (command === 'reset') zoomTo(1)
@@ -190,9 +201,13 @@ const zoomItems = computed<DropdownMenuItem[][]>(() => [
   ],
   [
     { label: 'Zoom to fit', kbds: ['shift', '1'], onSelect: () => zoomCommand('fit') },
+    { label: 'Zoom to selection', kbds: ['shift', '2'], disabled: !editor.selectedIds.length, onSelect: () => zoomCommand('selection') },
     { label: 'Zoom to 50%', onSelect: () => zoomTo(0.5) },
     { label: 'Zoom to 100%', kbds: ['shift', '0'], onSelect: () => zoomTo(1) },
     { label: 'Zoom to 200%', onSelect: () => zoomTo(2) }
+  ],
+  [
+    { label: 'Select parent', kbds: ['escape'], disabled: !editor.selectedId || editor.selectedId === editor.page?.root.id, onSelect: () => editor.navigate('parent') }
   ],
   [
     { label: 'All frames', type: 'checkbox', checked: !singleFrame.value, onUpdateChecked: () => setSingleFrame(false) },

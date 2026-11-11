@@ -66,13 +66,20 @@ export type CanvasToEditor
     | { type: 'bildr:click', nodeId: string, shift: boolean, meta: boolean }
     | { type: 'bildr:rects', requestId: number, rects: NodeBox[] }
     | { type: 'bildr:contextmenu', nodeId: string, x: number, y: number }
-    | { type: 'bildr:key', key: string, code: string, meta: boolean, shift: boolean }
+    | { type: 'bildr:key', key: string, code: string, meta: boolean, shift: boolean, alt: boolean }
     | { type: 'bildr:drop', parentId: string, index: number, payload: string }
     | { type: 'bildr:insert', parentId: string, index: number }
     | { type: 'bildr:size', height: number }
     | { type: 'bildr:wheel', dx: number, dy: number, zoom: boolean, x: number, y: number }
     | { type: 'bildr:pan', dx: number, dy: number }
     | { type: 'bildr:space', down: boolean }
+
+type KeyFields = Pick<KeyboardEvent, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey'>
+
+/** The `bildr:key` message for a canvas key press: Cmd or Ctrl is `meta`; `alt` and the physical `code` let Alt shortcuts (Paste style) through. */
+export function canvasKeyMessage(event: KeyFields): Extract<CanvasToEditor, { type: 'bildr:key' }> {
+  return { type: 'bildr:key', key: event.key, code: event.code, meta: event.metaKey || event.ctrlKey, shift: event.shiftKey, alt: event.altKey }
+}
 
 export function isCanvasMessage<T extends { type: string } = CanvasToEditor | EditorToCanvas>(data: unknown): data is T {
   return typeof data === 'object' && data !== null && typeof (data as { type?: unknown }).type === 'string'

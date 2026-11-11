@@ -19,6 +19,10 @@ import { hiddenBadge, naturalDisplay, visibilityAt, visibilityToggle } from '#sh
  * only those rows show, expanded.
  * A selected row is a solid accent pill (Framer's); the rows under it
  * (`inSelection`) get a subtle accent tint.
+ * A double-click on the name (or Rename, Cmd/Ctrl+R) renames the layer in
+ * place: Enter or leaving the field saves (empty restores the derived name),
+ * Escape cancels. A locked row shows a lock that unlocks it on click; locked
+ * nodes stay selectable here, though not on the canvas.
  */
 const props = defineProps<{ node: DocNode, depth: number, filter?: ReadonlySet<string> | null, inSelection?: boolean }>()
 const editor = useEditor()
@@ -41,6 +45,40 @@ const hasChildren = computed(() => children.value.length > 0)
 const collapsed = computed(() => !props.filter && editor.collapsed.has(props.node.id))
 const selected = computed(() => editor.selectedIds.includes(props.node.id))
 const dropAt = ref<DropPosition | null>(null)
+
+const renaming = computed(() => !isRoot.value && editor.renamingId === props.node.id)
+const draft = ref('')
+let cancelled = false
+const renameField = useTemplateRef<HTMLInputElement>('renameField')
+watch(renaming, (value) => {
+  if (!value) return
+  draft.value = props.node.name ?? name.value
+  cancelled = false
+  // After the node menu has closed and handed the focus back.
+  requestAnimationFrame(() => {
+    renameField.value?.focus()
+    renameField.value?.select()
+  })
+}, { immediate: true, flush: 'post' })
+
+function startRename() {
+  if (!isRoot.value) editor.startRename(props.node.id)
+}
+
+function onRenameKeyDown(event: KeyboardEvent) {
+  // The layers tree's arrows and the editor's shortcuts stay out of the field.
+  event.stopPropagation()
+  if (event.key === 'Enter') (event.target as HTMLInputElement).blur()
+  else if (event.key === 'Escape') {
+    cancelled = true
+    editor.renamingId = null
+  }
+}
+
+function commitRename() {
+  if (cancelled || editor.renamingId !== props.node.id) return
+  editor.renameNode(props.node.id, draft.value)
+}
 
 const hidden = computed(() => visibilityAt(props.node.style, editor.deviceId).hidden)
 const badge = computed(() => hiddenBadge(props.node.style, editor.deviceId))
@@ -116,7 +154,8 @@ function onDrop(event: DragEvent) {
       :aria-level="depth + 1"
       :data-layer-id="node.id"
       :data-layer-hidden="hidden ? '' : undefined"
-      :draggable="!isRoot"
+      :data-layer-locked="node.locked ? '' : undefined"
+      :draggable="!isRoot && !renaming"
       class="group flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg pe-1.5 text-[12px] whitespace-nowrap select-none"
       :class="[
         selected
@@ -160,9 +199,26 @@ function onDrop(event: DragEvent) {
         class="size-4 shrink-0"
         :class="[selected ? 'text-white' : 'text-dimmed group-hover:text-muted', { 'opacity-45': hidden && !selected }]"
       />
+      <input
+        v-if="renaming"
+        ref="renameField"
+        v-model="draft"
+        type="text"
+        maxlength="100"
+        :aria-label="`Rename ${name}`"
+        class="h-6 min-w-0 flex-1 rounded-md bg-default px-1.5 text-[12px] text-highlighted outline-none ring-1 ring-(color:--editor-selection)"
+        data-layer-rename
+        @click.stop
+        @dblclick.stop
+        @keydown="onRenameKeyDown"
+        @blur="commitRename"
+      >
       <span
+        v-else
         class="min-w-0 flex-1 truncate"
         :class="{ 'opacity-45': hidden && !selected }"
+        data-layer-name
+        @dblclick.stop="startRename"
       >
         <span :class="selected ? 'font-[550]' : 'font-[450]'">{{ name }}</span>
         <span
@@ -178,8 +234,24 @@ function onDrop(event: DragEvent) {
         :title="`Hidden at ${badge}`"
         data-layer-badge
       >{{ badge }}</span>
+      <button
+        v-if="node.locked"
+        type="button"
+        tabindex="-1"
+        class="flex h-full w-4 shrink-0 items-center justify-center rounded-sm"
+        :class="selected ? 'text-white/70 hover:text-white' : 'text-muted hover:text-highlighted'"
+        :aria-label="`Unlock ${name}`"
+        title="Locked on the canvas: click to unlock"
+        data-layer-lock
+        @click.stop="editor.setLocked([node.id], false)"
+      >
+        <UIcon
+          name="i-lucide-lock"
+          class="size-3.5"
+        />
+      </button>
       <UIcon
-        v-if="!isRoot"
+        v-if="!isRoot && !renaming"
         name="i-lucide-grip-vertical"
         class="size-3.5 shrink-0 cursor-grab opacity-0 group-hover:opacity-100"
         :class="selected ? 'text-white/70' : 'text-dimmed'"

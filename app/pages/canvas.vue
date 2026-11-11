@@ -4,7 +4,7 @@ import type { Theme } from '#shared/design/theme'
 import type { ComponentDefinition, Layout, Page } from '#shared/document/schema'
 import type { EnvValues } from '#shared/env/variables'
 import type { CanvasToEditor, CanvasView, EditorToCanvas } from '#shared/editor/protocol'
-import { isCanvasMessage } from '#shared/editor/protocol'
+import { canvasKeyMessage, isCanvasMessage } from '#shared/editor/protocol'
 import { isContainerType } from '#shared/document/components'
 import { findNode, findParent } from '#shared/document/tree'
 import type { DropPosition, DropTarget } from '#shared/editor/dropTarget'
@@ -18,6 +18,7 @@ import type { NodeBox } from '#shared/editor/autoLayout'
 import type { MeasureLine } from '#shared/editor/measure'
 import { layerName } from '#shared/editor/layers'
 import { measure as measureLines } from '#shared/editor/measure'
+import { nearestUnlocked } from '#shared/editor/selection'
 import { labelPlacement } from '#shared/editor/labelPlacement'
 
 /**
@@ -45,6 +46,9 @@ import { labelPlacement } from '#shared/editor/labelPlacement'
  * Component instances render from the `components` the editor sends; their
  * parts report the instance's id, so a click anywhere in one selects it.
  * Labels name nodes as the layers do (`layerName`); layout parts read Layout.
+ * A locked node (`locked`, or inside one) can't be hovered, clicked or
+ * right-clicked here: the pointer reaches its nearest unlocked ancestor, and
+ * under a locked root nothing (the layers still select it).
  * `{{ env.NAME }}` resolves from the public variables the editor sends; a
  * missing one shows as written.
  * The frame grows with its content, so `screen` heights (100vh) would grow
@@ -139,6 +143,13 @@ function nodeIdAt(target: EventTarget | null): string | null {
   return (target as Element | null)?.closest?.('[data-bildr-id]')?.getAttribute('data-bildr-id') ?? null
 }
 
+/** The node a pointer gesture on `target` reaches: the element's node, or its nearest unlocked ancestor. */
+function reachableAt(target: EventTarget | null): string | null {
+  const id = nodeIdAt(target)
+  const root = page.value?.root
+  return id && root && findNode(root, id) ? nearestUnlocked(root, id) : id
+}
+
 function firstCopy(id: string): Element | null {
   return document.querySelector(`[data-bildr-id="${id}"]:not([data-bildr-copy])`)
 }
@@ -211,7 +222,7 @@ function onMessage(event: MessageEvent) {
 function onPointerMove(event: MouseEvent) {
   alt.value = event.altKey
   if (tool.value) indicator.value = insertAt(event)?.indicator ?? null
-  const id = nodeIdAt(event.target)
+  const id = reachableAt(event.target)
   if (id === hoveredId.value) return
   hoveredId.value = id
   post({ type: 'bildr:hover', nodeId: id })
@@ -233,7 +244,7 @@ function onClick(event: MouseEvent) {
     if (insert) post({ type: 'bildr:insert', ...insert.hit.target })
     return
   }
-  const id = nodeIdAt(event.target)
+  const id = reachableAt(event.target)
   if (id) post({ type: 'bildr:click', nodeId: id, shift: event.shiftKey, meta: event.metaKey || event.ctrlKey })
 }
 
@@ -277,7 +288,7 @@ function onWheel(event: WheelEvent) {
 /** A right-click opens the editor's node menu; the editor places it over the iframe. */
 function onContextMenu(event: MouseEvent) {
   event.preventDefault()
-  const id = nodeIdAt(event.target)
+  const id = reachableAt(event.target)
   if (id) post({ type: 'bildr:contextmenu', nodeId: id, x: event.clientX, y: event.clientY })
 }
 
@@ -293,9 +304,12 @@ function onKeyDown(event: KeyboardEvent) {
   const zoom = zoomShortcut({ code: event.code, key: event.key, meta, shift: event.shiftKey })
   const lower = event.key.toLowerCase()
   const armsTool = !!toolForKey({ key: event.key, meta, shift: event.shiftKey, alt: event.altKey })
-  if (!zoom && !armsTool && !SHORTCUT_KEYS.has(event.key) && !(meta && ['z', 'y', 'd', 'a', 'g', 'p', 'f', 'k'].includes(lower)) && !(event.shiftKey && !meta && lower === 'a')) return
+  // Cmd/Ctrl+C, V, R and L (copy, paste, rename, lock) without Alt; Cmd/Ctrl+Alt+V (Paste style) by its physical code, as Alt changes the key on a Mac.
+  const pasteStyleKey = meta && event.altKey && !event.shiftKey && event.code === 'KeyV'
+  const editorMeta = pasteStyleKey || (meta && (['z', 'y', 'd', 'a', 'g', 'p', 'f', 'k'].includes(lower) || (!event.altKey && ['c', 'v', 'r', 'l'].includes(lower))))
+  if (!zoom && !armsTool && !SHORTCUT_KEYS.has(event.key) && !editorMeta && !(event.shiftKey && !meta && lower === 'a')) return
   event.preventDefault()
-  post({ type: 'bildr:key', key: event.key, code: event.code, meta, shift: event.shiftKey })
+  post(canvasKeyMessage(event))
 }
 
 function onKeyUp(event: KeyboardEvent) {
@@ -317,9 +331,13 @@ function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } 
   if (!root || !types.includes(DRAG_MIME)) return null
   const el = event.target as Element | null
   if (el?.closest?.('[data-bildr-copy]')) return null
-  const placeholder = el?.closest?.('[data-bildr-placeholder]')
-  const nodeEl = placeholder ?? el?.closest?.('[data-bildr-id]')
-  const id = placeholder?.getAttribute('data-bildr-placeholder') ?? nodeEl?.getAttribute('data-bildr-id')
+  const over = el?.closest?.('[data-bildr-placeholder]')
+  const overEl = over ?? el?.closest?.('[data-bildr-id]')
+  const overId = over?.getAttribute('data-bildr-placeholder') ?? overEl?.getAttribute('data-bildr-id')
+  // A locked node (or one inside a lock) is no drop target: its nearest unlocked ancestor takes the drop.
+  const id = overId && findNode(root, overId) ? nearestUnlocked(root, overId) : null
+  const placeholder = id === overId ? over : null
+  const nodeEl = id === overId ? overEl : id ? firstCopy(id) : null
   const node = id ? findNode(root, id) : undefined
   if (!nodeEl || !node) return null
   const rect = nodeEl.getBoundingClientRect()
@@ -347,7 +365,8 @@ function indicatorAt(rect: DOMRect, position: DropPosition, horizontal: boolean)
 /** The insert slot for an armed tool under the pointer, plus where to draw it. */
 function insertAt(event: MouseEvent): { hit: InsertHit, indicator: Indicator } | null {
   const root = page.value?.root
-  const id = nodeIdAt(event.target)
+  // Lock-aware: a click on a locked node (or inside a lock) inserts into its nearest unlocked ancestor.
+  const id = reachableAt(event.target)
   const node = root && id && view.value === 'page' ? findNode(root, id) : undefined
   if (!root || !node) return null
   const breakpoint = breakpointAt(window.innerWidth)

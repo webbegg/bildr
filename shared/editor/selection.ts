@@ -1,5 +1,6 @@
+import { INSTANCE_TYPE } from '../document/components'
 import type { DocNode } from '../document/schema'
-import { containsNode, findNode, findParent, pathTo } from '../document/tree'
+import { containsNode, findNode, findParent, isLockedAt, pathTo } from '../document/tree'
 
 /** What to select after deleting node `id`: next sibling, else previous, else the parent. */
 export function selectionAfterDelete(root: DocNode, id: string): string | null {
@@ -61,6 +62,49 @@ export function navigateSelection(root: DocNode, id: string, step: SelectionStep
 export function topLevelSelection(root: DocNode, ids: readonly string[]): string[] {
   const known = [...new Set(ids)].filter(id => id !== root.id && findNode(root, id))
   return known.filter(id => !known.some(other => other !== id && containsNode(findNode(root, other)!, id)))
+}
+
+/** The nodes a canvas arrow-key move acts on: the `topLevelSelection` without locked nodes or nodes inside a lock. */
+export function canvasMovable(root: DocNode, ids: readonly string[]): string[] {
+  return topLevelSelection(root, ids).filter(id => !isLockedAt(root, id))
+}
+
+/**
+ * What a canvas click or hover on `id` reaches: `id`, or when it or an
+ * ancestor is locked, the nearest ancestor above every lock (locks cover
+ * their descendants). Null when the root is locked or `id` is missing.
+ */
+export function nearestUnlocked(root: DocNode, id: string): string | null {
+  const path = pathTo(root, id)
+  const firstLocked = path.findIndex(step => findNode(root, step)!.locked === true)
+  if (firstLocked < 0) return path.at(-1) ?? null
+  return firstLocked > 0 ? path[firstLocked - 1]! : null
+}
+
+/** Escape, as in Framer: the selection becomes the primary selection's parent; on the root (or nothing) it clears. */
+export function escapeSelection(root: DocNode, ids: readonly string[]): string[] {
+  const primary = ids.at(-1)
+  const parent = primary ? findParent(root, primary)?.parent : undefined
+  return parent ? [parent.id] : []
+}
+
+function collect(node: DocNode, keep: (node: DocNode) => boolean, out: string[] = []): string[] {
+  if (keep(node)) out.push(node.id)
+  for (const child of node.children) collect(child, keep, out)
+  return out
+}
+
+/** Select ▸ Same type: every node of `id`'s type, in document order. */
+export function sameTypeNodes(root: DocNode, id: string): string[] {
+  const node = findNode(root, id)
+  return node ? collect(root, other => other.type === node.type) : []
+}
+
+/** Select ▸ Same component: every instance of `id`'s component, in document order; none when `id` is not an instance. */
+export function sameComponentNodes(root: DocNode, id: string): string[] {
+  const node = findNode(root, id)
+  if (node?.type !== INSTANCE_TYPE) return []
+  return collect(root, other => other.type === INSTANCE_TYPE && other.props.component === node.props.component)
 }
 
 /** The parent shared by all `ids` (siblings only); undefined for none, the root, or nodes of different parents. */
