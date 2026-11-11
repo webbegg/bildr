@@ -44,7 +44,17 @@ import type { StylePatch } from './preview'
  *
  * `bildr:dark` previews the project's dark colours: the frame puts `.dark` on
  * its `<html>`, which the theme CSS answers with its dark values.
+ *
+ * Direct manipulation (#23): `bildr:overlay` is the panel field being hovered
+ * (Padding or Gap), whose overlay the active frame paints on the selection.
+ * A handle drag in the active frame (resize, padding, gap) reports the style
+ * patch it holds as `bildr:style-preview` (null when Esc cancels it) and the
+ * one it ends on as `bildr:style-commit`, which the editor commits as one
+ * undo step. A drag of a selected node reports its drop as `bildr:drop`.
  */
+
+/** The spacing overlay a panel field asks for while hovered. */
+export type SpacingOverlay = 'padding' | 'gap'
 
 /** What a canvas shows: the page being edited, or the theme's token preview sheet. */
 export type CanvasView = 'page' | 'tokens'
@@ -59,6 +69,7 @@ export type EditorToCanvas
     | { type: 'bildr:alt', down: boolean }
     | { type: 'bildr:tool', tool: string | null }
     | { type: 'bildr:dark', dark: boolean }
+    | { type: 'bildr:overlay', overlay: SpacingOverlay | null }
 
 export type CanvasToEditor
   = | { type: 'bildr:ready' }
@@ -73,6 +84,8 @@ export type CanvasToEditor
     | { type: 'bildr:wheel', dx: number, dy: number, zoom: boolean, x: number, y: number }
     | { type: 'bildr:pan', dx: number, dy: number }
     | { type: 'bildr:space', down: boolean }
+    | { type: 'bildr:style-preview', nodeId: string, style: StylePatch | null }
+    | { type: 'bildr:style-commit', nodeId: string, style: StylePatch }
 
 type KeyFields = Pick<KeyboardEvent, 'key' | 'code' | 'metaKey' | 'ctrlKey' | 'shiftKey' | 'altKey'>
 
