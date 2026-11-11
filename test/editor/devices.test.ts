@@ -4,13 +4,16 @@ import { DEVICES } from '#shared/editor/styleFields'
 
 describe('DEVICE_ORDER', () => {
   it('lists the devices as the frames sit, Desktop to the Primary Mobile', () => {
-    expect(DEVICE_ORDER.map(d => d.label)).toEqual(['Desktop', 'Tablet', 'Mobile'])
+    expect(DEVICE_ORDER.map(d => d.label)).toEqual(['Desktop', 'Tablet', 'Large phone', 'Mobile'])
   })
 })
 
+/** The frames shown by default: Large phone starts hidden. */
+const SHOWN = DEVICE_ORDER.filter(d => d.id !== 'large-phone')
+
 describe('deviceForKey', () => {
   const key = (code: string, mods: Partial<{ alt: boolean, meta: boolean, shift: boolean }> = {}) =>
-    deviceForKey({ code, alt: false, meta: false, shift: false, ...mods })
+    deviceForKey({ code, alt: false, meta: false, shift: false, ...mods }, SHOWN)
 
   it('maps Alt/Option + 1, 2, 3 to Desktop, Tablet, Mobile by the physical key', () => {
     expect([key('Digit1', { alt: true }), key('Digit2', { alt: true }), key('Digit3', { alt: true })]).toEqual(['desktop', 'tablet', 'mobile'])
@@ -27,8 +30,9 @@ describe('deviceForKey', () => {
 
 describe('deviceShortcut and deviceHint', () => {
   it('gives each device its Alt + digit combo and a name · width hint', () => {
-    expect(deviceShortcut('desktop')).toEqual(['alt', '1'])
-    expect(deviceShortcut('mobile')).toEqual(['alt', '3'])
+    expect(deviceShortcut('desktop', SHOWN)).toEqual(['alt', '1'])
+    expect(deviceShortcut('mobile', SHOWN)).toEqual(['alt', '3'])
+    expect(deviceShortcut('mobile')).toEqual(['alt', '4'])
     expect(deviceHint(DEVICES.find(d => d.id === 'tablet')!)).toBe('Tablet · 768')
   })
 })

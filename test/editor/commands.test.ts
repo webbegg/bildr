@@ -317,6 +317,16 @@ describe('editorCommands', () => {
     expect(get('device:tablet').enabled(ctx)).toBe(false)
   })
 
+  it('follows the visible frames: a hidden frame is not offered, the digits count the shown ones', () => {
+    expect(fixture().get('device:large-phone').enabled(fixture().ctx)).toBe(false)
+    const { ctx, get } = fixture({ frames: ['desktop', 'tablet', 'large-phone', 'mobile'] })
+    expect(['device:large-phone', 'device:mobile'].map(id => [get(id).label, get(id).shortcut?.join('+')])).toEqual([
+      ['Edit Large phone', 'alt+3'],
+      ['Edit Mobile', 'alt+4']
+    ])
+    expect(get('device:large-phone').enabled(ctx)).toBe(true)
+  })
+
   it('opens the shortcuts sheet', () => {
     const { ctx, get } = fixture()
     get('help:shortcuts').run(ctx)

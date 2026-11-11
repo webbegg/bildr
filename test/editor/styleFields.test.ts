@@ -65,9 +65,10 @@ describe('style fields', () => {
 })
 
 describe('devices and breakpoints', () => {
-  it('offers Mobile, Tablet and Desktop, mobile-first', () => {
+  it('offers Mobile, Large phone, Tablet and Desktop, mobile-first', () => {
     expect(DEVICES).toEqual([
       { id: 'mobile', label: 'Mobile', width: 390, breakpoint: undefined, icon: 'i-lucide-smartphone' },
+      { id: 'large-phone', label: 'Large phone', width: 640, breakpoint: 'sm', icon: 'i-lucide-tablet-smartphone' },
       { id: 'tablet', label: 'Tablet', width: 768, breakpoint: 'md', icon: 'i-lucide-tablet' },
       { id: 'desktop', label: 'Desktop', width: 1280, breakpoint: 'lg', icon: 'i-lucide-monitor' }
     ])
@@ -91,7 +92,7 @@ describe('devices and breakpoints', () => {
     expect(breakpointLabel(undefined)).toBe('Mobile')
     expect(breakpointLabel('md')).toBe('Tablet')
     expect(breakpointLabel('lg')).toBe('Desktop')
-    expect(breakpointLabel('sm')).toBe('sm')
+    expect(breakpointLabel('sm')).toBe('Large phone')
   })
 })
 
@@ -129,6 +130,8 @@ describe('provenance', () => {
     expect(provenanceHint(styleProvenance({ mt: '10' }, 'mt', 'tablet'))).toBe('From Mobile: 10')
     expect(provenanceHint(styleProvenance(style, 'mt', 'desktop'))).toBe('From Tablet: 8')
     expect(provenanceHint(styleProvenance(style, 'mt', 'mobile'))).toBeUndefined()
+    expect(provenanceHint(styleProvenance({ 'mt': '10', 'sm:mt': '4' }, 'mt', 'tablet'))).toBe('From Large phone: 4')
+    expect(styleProvenance({ 'mt': '10', 'sm:mt': '4' }, 'mt', 'large-phone')).toEqual({ state: 'set', key: 'sm:mt', value: '4' })
     expect(provenanceHint({ state: 'unset' })).toBeUndefined()
   })
 

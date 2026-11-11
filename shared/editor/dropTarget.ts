@@ -49,7 +49,7 @@ export function draggedNodeId(types: readonly string[]): string | undefined {
 }
 
 /** Tailwind's breakpoint widths in CSS px, smallest first. */
-const BREAKPOINT_WIDTHS: [Breakpoint, number][] = [['sm', 640], ['md', 768], ['lg', 1024]]
+export const BREAKPOINT_WIDTHS: readonly [Breakpoint, number][] = [['sm', 640], ['md', 768], ['lg', 1024]]
 
 /** The largest breakpoint a viewport `width` reaches; undefined below `sm` (the base). */
 export function breakpointAt(width: number): Breakpoint | undefined {

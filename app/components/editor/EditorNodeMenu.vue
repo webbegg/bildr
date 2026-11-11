@@ -137,7 +137,7 @@ const items = computed<ContextMenuItem[][]>(() => {
         label: hidden ? 'Show here' : 'Hide here',
         icon: hidden ? 'i-lucide-eye' : 'i-lucide-eye-off',
         disabled: isRoot || !node,
-        onSelect: () => node && editor.updateStyle(id, visibilityToggle(node.style, editor.deviceId, naturalDisplay(node)))
+        onSelect: () => node && editor.updateStyle(id, visibilityToggle(node.style, editor.deviceId, naturalDisplay(node), editor.frames))
       }
     ],
     [

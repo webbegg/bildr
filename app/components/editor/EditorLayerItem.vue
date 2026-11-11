@@ -22,9 +22,10 @@ import { hiddenBadge, naturalDisplay, visibilityAt, visibilityToggle } from '#sh
  * A double-click on the name (or Rename, Cmd/Ctrl+R) renames the layer in
  * place: Enter or leaving the field saves (empty restores the derived name),
  * Escape cancels. A locked row shows a lock that unlocks it on click; locked
- * nodes stay selectable here, though not on the canvas.
+ * nodes stay selectable here, though not on the canvas. `indent` adds levels
+ * of indent for the frame row the tree sits under.
  */
-const props = defineProps<{ node: DocNode, depth: number, filter?: ReadonlySet<string> | null, inSelection?: boolean }>()
+const props = withDefaults(defineProps<{ node: DocNode, depth: number, indent?: number, filter?: ReadonlySet<string> | null, inSelection?: boolean }>(), { indent: 0, filter: undefined })
 const editor = useEditor()
 const row = useTemplateRef<HTMLElement>('row')
 
@@ -81,9 +82,9 @@ function commitRename() {
 }
 
 const hidden = computed(() => visibilityAt(props.node.style, editor.deviceId).hidden)
-const badge = computed(() => hiddenBadge(props.node.style, editor.deviceId))
+const badge = computed(() => hiddenBadge(props.node.style, editor.deviceId, editor.frames))
 function toggleVisibility() {
-  editor.updateStyle(props.node.id, visibilityToggle(props.node.style, editor.deviceId, naturalDisplay(props.node)))
+  editor.updateStyle(props.node.id, visibilityToggle(props.node.style, editor.deviceId, naturalDisplay(props.node), editor.frames))
 }
 
 // Keyboard steps and canvas clicks can select a row that is scrolled away.
@@ -151,7 +152,7 @@ function onDrop(event: DragEvent) {
       role="treeitem"
       :aria-selected="selected"
       :aria-expanded="hasChildren ? !collapsed : undefined"
-      :aria-level="depth + 1"
+      :aria-level="depth + indent + 1"
       :data-layer-id="node.id"
       :data-layer-hidden="hidden ? '' : undefined"
       :data-layer-locked="node.locked ? '' : undefined"
@@ -165,7 +166,7 @@ function onDrop(event: DragEvent) {
             : editor.hoveredId === node.id ? 'bg-white/6 text-highlighted' : 'text-toned hover:bg-white/6',
         dropAt && (selected ? DROP_CLASS_SELECTED : DROP_CLASS)[dropAt]
       ]"
-      :style="{ paddingLeft: `${4 + depth * 16}px` }"
+      :style="{ paddingLeft: `${4 + (depth + indent) * 16}px` }"
       @click="editor.selectRow(node.id, $event.shiftKey)"
       @mouseenter="editor.hoveredId = node.id"
       @dragstart="onDragStart"
@@ -284,6 +285,7 @@ function onDrop(event: DragEvent) {
         :key="child.id"
         :node="child"
         :depth="depth + 1"
+        :indent="indent"
         :filter="filter"
         :in-selection="selected || inSelection"
       />

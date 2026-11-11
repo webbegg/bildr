@@ -73,7 +73,7 @@ export function setStyleTokens(style: Record<string, string>): SetStyleToken[] {
   }))
 }
 
-export type DeviceId = 'mobile' | 'tablet' | 'desktop'
+export type DeviceId = 'mobile' | 'large-phone' | 'tablet' | 'desktop'
 
 export interface Device {
   id: DeviceId
@@ -87,6 +87,8 @@ export interface Device {
 
 export const DEVICES: Device[] = [
   { id: 'mobile', label: 'Mobile', width: 390, breakpoint: undefined, icon: 'i-lucide-smartphone' },
+  // Hidden by default (shared/editor/frames.ts); the frame bar's "+" shows it.
+  { id: 'large-phone', label: 'Large phone', width: 640, breakpoint: 'sm', icon: 'i-lucide-tablet-smartphone' },
   { id: 'tablet', label: 'Tablet', width: 768, breakpoint: 'md', icon: 'i-lucide-tablet' },
   { id: 'desktop', label: 'Desktop', width: 1280, breakpoint: 'lg', icon: 'i-lucide-monitor' }
 ]
@@ -124,7 +126,7 @@ export function breakpointStyles(style: Record<string, string>, breakpoint: Brea
 
 const deviceBreakpoint = (device: DeviceId) => DEVICES.find(d => d.id === device)!.breakpoint
 
-/** The device a breakpoint edits, e.g. `Tablet` for `md`; `sm` has no device. */
+/** The device a breakpoint edits, e.g. `Tablet` for `md`, `Large phone` for `sm`. */
 export function breakpointLabel(breakpoint: Breakpoint | undefined): string {
   return DEVICES.find(d => d.breakpoint === breakpoint)?.label ?? breakpoint!
 }

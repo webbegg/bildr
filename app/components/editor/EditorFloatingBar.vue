@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { HAND_TOOL, INSERT_TOOLS, MOVE_TOOL, toolHint } from '#shared/editor/insertTools'
-import { DEVICE_ORDER, deviceHint, deviceShortcut } from '#shared/editor/devices'
+import { deviceHint } from '#shared/editor/devices'
+import { frameShortcut } from '#shared/editor/frames'
 
 /**
  * The canvas's floating bar, Framer-style, centred at the bottom: Move (V)
- * and Hand (H) tools, the device switch (Desktop ⌥1, Tablet ⌥2, Mobile ⌥3:
- * the frame being edited, panned into view), the canvas light/dark preview
+ * and Hand (H) tools, the device switch over the visible frames (Desktop ⌥1,
+ * Tablet ⌥2, Mobile ⌥3 by default: the frame being edited, panned into
+ * view), the canvas light/dark preview
  * and the zoom menu. The insert tools have no buttons; their letters arm
  * them, and the bar then shows a hint chip.
  */
@@ -57,10 +59,10 @@ const pressed = (on: boolean) => (on ? 'bg-white/10 text-highlighted' : '')
       aria-hidden="true"
     />
     <UTooltip
-      v-for="device in DEVICE_ORDER"
+      v-for="device in editor.visibleDevices"
       :key="device.id"
       :text="deviceHint(device)"
-      :kbds="deviceShortcut(device.id)"
+      :kbds="frameShortcut(editor.frames, device.id)"
       :content="{ side: 'top' }"
     >
       <EditorButton

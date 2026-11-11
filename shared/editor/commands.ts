@@ -7,7 +7,8 @@
 import { uniqueCollectionName } from '../data/collections'
 import { COMPONENTS } from '../document/components'
 import type { DocNode } from '../document/schema'
-import { DEVICE_ORDER, deviceHint, deviceShortcut } from './devices'
+import { DEVICE_ORDER, deviceHint } from './devices'
+import { DEFAULT_FRAMES, frameShortcut, visibleFrames } from './frames'
 import type { SelectionStep } from './selection'
 import { siblingParent, topLevelSelection } from './selection'
 import type { DeviceId } from './styleFields'
@@ -80,7 +81,8 @@ export const SHORTCUTS: Shortcut[] = [
   { id: 'zoom-100', label: 'Zoom to 100%', keys: [['shift', '0']] },
   { id: 'zoom-fit', label: 'Zoom to fit', keys: [['shift', '1']] },
   { id: 'zoom-selection', label: 'Zoom to selection', keys: [['shift', '2']] },
-  ...DEVICE_ORDER.map(device => ({ id: `device:${device.id}`, label: `Edit ${deviceHint(device)}`, keys: [deviceShortcut(device.id)] })),
+  // The default frames; with others shown the digits shift, as the floating bar's tooltips say.
+  ...visibleFrames(DEFAULT_FRAMES).map(device => ({ id: `device:${device.id}`, label: `Edit ${deviceHint(device)}`, keys: [frameShortcut(DEFAULT_FRAMES, device.id)!] })),
   { id: 'pan', label: 'Hold to pan', keys: [['space']] },
   { id: 'measure', label: 'Hold over an element to measure', keys: [['alt']] }
 ]
@@ -215,6 +217,8 @@ export interface CommandEditor {
   variablesRequest: number
   /** The device frame being edited. */
   deviceId: DeviceId
+  /** The visible frames (an editor preference); the defaults when absent. */
+  frames?: readonly DeviceId[]
   insert: (type: string) => unknown
   group: () => unknown
   autoLayout: () => unknown
@@ -308,7 +312,11 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
     action('settings:delete-project', 'Delete project…', 'i-lucide-trash-2', ['remove', 'project', 'settings', 'danger'], c => !!c.editor.project, ({ editor }) => {
       editor.mode = 'settings'
     }),
-    ...DEVICE_ORDER.map(device => action(`device:${device.id}`, `Edit ${device.label}`, device.icon, ['device', 'breakpoint', 'frame', String(device.width)], c => onCanvas(c) && c.editor.deviceId !== device.id, ({ editor }) => editor.setDevice(device.id))),
+    ...DEVICE_ORDER.map((device) => {
+      const shown = editor.frames ?? DEFAULT_FRAMES
+      const visible = visibleFrames(shown).includes(device)
+      return action(`device:${device.id}`, `Edit ${device.label}`, device.icon, ['device', 'breakpoint', 'frame', String(device.width)], c => visible && onCanvas(c) && c.editor.deviceId !== device.id, ({ editor }) => editor.setDevice(device.id), frameShortcut(shown, device.id))
+    }),
     ...(editor.project?.pages ?? []).map((page): EditorCommand => ({
       id: `page:${page.id}`,
       group: 'goto',

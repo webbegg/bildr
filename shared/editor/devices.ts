@@ -8,22 +8,26 @@ import { DEVICES } from './styleFields'
 import type { Rect, Size, Viewport } from './viewport'
 import { frameOrder } from './viewport'
 
-/** Desktop, Tablet, then the Primary Mobile, as the frames sit; ⌥1–3 follow it. */
+/**
+ * Every device, widest first, as the frames sit: Desktop, Tablet, Large phone,
+ * then the Primary Mobile. The editor shows the visible ones
+ * (`visibleFrames` in ./frames), and ⌥ + digit follows those.
+ */
 export const DEVICE_ORDER: Device[] = frameOrder(DEVICES)
 
-/** A device's shortcut as `UKbd` values, e.g. `['alt', '2']` for Tablet. */
-export function deviceShortcut(id: DeviceId): string[] {
-  return ['alt', String(DEVICE_ORDER.findIndex(d => d.id === id) + 1)]
+/** A device's shortcut in `order` as `UKbd` values, e.g. `['alt', '2']` for Tablet. */
+export function deviceShortcut(id: DeviceId, order: readonly Pick<Device, 'id'>[] = DEVICE_ORDER): string[] {
+  return ['alt', String(order.findIndex(d => d.id === id) + 1)]
 }
 
 /**
- * The device Alt/Option + 1, 2 or 3 switches to. Matched on `code`, since on
- * macOS Option + digit types a symbol (`¡`, `™`, `£`) as the `key`.
+ * The device in `order` Alt/Option + 1, 2, 3… switches to. Matched on `code`,
+ * since on macOS Option + digit types a symbol (`¡`, `™`, `£`) as the `key`.
  */
-export function deviceForKey(event: { code: string, alt: boolean, meta: boolean, shift: boolean }): DeviceId | null {
+export function deviceForKey(event: { code: string, alt: boolean, meta: boolean, shift: boolean }, order: readonly Pick<Device, 'id'>[] = DEVICE_ORDER): DeviceId | null {
   if (!event.alt || event.meta || event.shift) return null
   const digit = /^Digit([1-9])$/.exec(event.code)?.[1]
-  return digit ? DEVICE_ORDER[Number(digit) - 1]?.id ?? null : null
+  return digit ? order[Number(digit) - 1]?.id ?? null : null
 }
 
 /** A device's name and width, e.g. `Tablet · 768`. */

@@ -244,7 +244,7 @@ const visible = computed(() => !visibilityAt(props.styles, editor.deviceId).hidd
 const VISIBLE_ITEMS = [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]
 function setVisible(next: string) {
   if ((next === 'yes') === visible.value) return
-  update(visibilityToggle(props.styles, editor.deviceId, layout.value === 'grid' ? 'grid' : natural.value))
+  update(visibilityToggle(props.styles, editor.deviceId, layout.value === 'grid' ? 'grid' : natural.value, editor.frames))
 }
 
 // Border width: all sides, or per side (Framer's split toggle); the radius corners are a "+" row.
