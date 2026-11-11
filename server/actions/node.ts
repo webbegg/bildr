@@ -3,9 +3,9 @@ import { cloneWithNewIds, createNode } from '#shared/document/factory'
 import { getComponent } from '#shared/document/components'
 import type { PropValue } from '#shared/document/components'
 import type { TreeRef } from '#shared/document/operations'
-import { STYLE_TOKENS, styleKey, variantsOf } from '#shared/design/tokens'
+import { CUSTOM_COLOR_NAME, STYLE_HEX, STYLE_TOKENS, styleKey, variantsOf } from '#shared/design/tokens'
 import type { StyleToken } from '#shared/design/tokens'
-import { IdSchema, PropValueSchema } from '#shared/document/schema'
+import { IdSchema, NODE_NAME_MAX, PropValueSchema } from '#shared/document/schema'
 import type { DocNode } from '#shared/document/schema'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
 import { ActionError, defineAction } from './define'
@@ -20,21 +20,33 @@ interface NodeSpec {
 }
 
 /**
- * One optional key per design token and breakpoint (`cols`, `sm:cols`, `md:cols`, `lg:cols`),
- * its value an enum, so the MCP schema lists every allowed value.
+ * A token's value: an enum, so the MCP schema lists every allowed value; a
+ * colour token also takes a hex or the name of a theme colour (checked
+ * against the project theme when the edit applies).
  */
 // A multi-value literal rather than z.enum, which reorders numeric-looking values ("10" before "0.5").
-function styleTokensSchema(wrap: (values: z.ZodLiteral<string>, token: StyleToken) => z.ZodType) {
+function tokenValueSchema(token: StyleToken): z.ZodType<string> {
+  const values = z.literal(token.values)
+  if (token.kind !== 'color') return values
+  return z.union([
+    values,
+    z.string().regex(STYLE_HEX).describe('A #rgb, #rrggbb or #rrggbbaa hex colour'),
+    z.string().regex(CUSTOM_COLOR_NAME).describe('The name of one of the project theme\'s custom colours (theme_get theme.custom)')
+  ], { error: issue => `"${String(issue.input)}" is not a value of style token "${token.key}" (use a colour token, a #rgb, #rrggbb or #rrggbbaa hex, or a theme colour)` })
+}
+
+/** One optional key per design token and breakpoint (`cols`, `sm:cols`, `md:cols`, `lg:cols`). */
+function styleTokensSchema(wrap: (values: z.ZodType<string>, token: StyleToken) => z.ZodType) {
   return z.object(Object.fromEntries(STYLE_TOKENS.flatMap(t => variantsOf(t).map(b => [
     styleKey(t.key, b),
-    wrap(z.literal(t.values), t).optional().describe(b
+    wrap(tokenValueSchema(t), t).optional().describe(b
       ? `${t.label} from the ${b} breakpoint up: Tailwind class ${b}:${t.prefix ? `${t.prefix}-` : ''}<value>`
       : `${t.label}: Tailwind class ${t.prefix ? `${t.prefix}-` : ''}<value>`)
   ])))).strict()
 }
 
 const StyleSchema = styleTokensSchema(values => values)
-  .describe('Design tokens, e.g. { "mt": "10", "bg": "primary", "rounded": "lg" } renders class="mt-10 bg-primary rounded-lg". Layout tokens (Spacing, Size, Typography, Layout) also take a mobile-first breakpoint prefix sm:, md: or lg:, e.g. { "cols": "1", "md:cols": "3" } renders class="grid-cols-1 md:grid-cols-3". See components_list.tokens') as z.ZodType<Record<string, string>>
+  .describe('Design tokens, e.g. { "mt": "10", "bg": "primary", "rounded": "lg" } renders class="mt-10 bg-primary rounded-lg". Layout tokens (Spacing, Size, Typography, Layout) also take a mobile-first breakpoint prefix sm:, md: or lg:, e.g. { "cols": "1", "md:cols": "3" } renders class="grid-cols-1 md:grid-cols-3". Colour tokens (bg, color, borderColor) also take a #rgb, #rrggbb or #rrggbbaa hex, or the name of a theme custom colour, e.g. { "bg": "#ff6600", "color": "brand" }, rendered as an inline style. See components_list.tokens') as z.ZodType<Record<string, string>>
 const StyleUpdateSchema = styleTokensSchema(values => values.nullable())
   .describe('Design tokens to set; null removes a token') as z.ZodType<Record<string, string | null>>
 
@@ -147,12 +159,39 @@ export const nodeUpdateProps = defineAction({
 
 export const nodeUpdateStyle = defineAction({
   name: 'node_update_style',
-  description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). Tokens listing breakpoints also take a mobile-first prefix, e.g. { "md:cols": "3" } applies from the md breakpoint up. A null value removes the token. With nodeIds the same tokens go to every node, as one undo step (all or nothing).',
+  description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). Colour tokens (bg, color, borderColor) also take a #rgb, #rrggbb or #rrggbbaa hex or a theme custom colour name (theme_get theme.custom), e.g. { "bg": "#ff6600" }. Tokens listing breakpoints also take a mobile-first prefix, e.g. { "md:cols": "3" } applies from the md breakpoint up. A null value removes the token. With nodeIds the same tokens go to every node, as one undo step (all or nothing).',
   input: z.object({ ...Target, ...Nodes, style: StyleUpdateSchema }).refine(oneTree, ONE_TREE),
   run: async ({ projectId, pageId, componentId, layoutId, style, ...nodes }, ctx) => {
     const tree = treeOf({ pageId, componentId, layoutId })
     const ops = nodeIdsOf(nodes).map(nodeId => ({ op: 'setStyle' as const, ...tree, nodeId, style }))
     const project = await ctx.services.mutate(ctx, projectId, 'Update style', ops)
+    return { version: project.version }
+  }
+})
+
+export const nodeRename = defineAction({
+  name: 'node_rename',
+  description: 'Give a node a layer name (shown in the layers, the canvas label and the inspector instead of its type, component or slot name). An empty string or null removes it. One undo step, "Rename layer".',
+  input: z.object({
+    ...Target,
+    nodeId: IdSchema,
+    name: z.string().max(NODE_NAME_MAX).nullable().describe(`The layer name, at most ${NODE_NAME_MAX} characters (trimmed); empty or null removes it`)
+  }).refine(oneTree, ONE_TREE),
+  run: async ({ projectId, pageId, componentId, layoutId, nodeId, name }, ctx) => {
+    const project = await ctx.services.mutate(ctx, projectId, 'Rename layer', [{ op: 'setNodeMeta', ...treeOf({ pageId, componentId, layoutId }), nodeId, name }])
+    return { version: project.version }
+  }
+})
+
+export const nodeSetLocked = defineAction({
+  name: 'node_set_locked',
+  description: 'Lock or unlock nodes on the canvas. A locked node, and everything inside it, cannot be selected or moved from the canvas, but can still be from the layers and through actions. Unlocking removes the flag. With nodeIds, every node at once, as one undo step.',
+  input: z.object({ ...Target, ...Nodes, locked: z.boolean().describe('true locks, false unlocks') }).refine(oneTree, ONE_TREE),
+  run: async ({ projectId, pageId, componentId, layoutId, locked, ...nodes }, ctx) => {
+    const tree = treeOf({ pageId, componentId, layoutId })
+    const ids = nodeIdsOf(nodes)
+    const verb = locked ? 'Lock' : 'Unlock'
+    const project = await ctx.services.mutate(ctx, projectId, ids.length > 1 ? `${verb} ${ids.length}` : verb, ids.map(nodeId => ({ op: 'setNodeMeta' as const, ...tree, nodeId, locked })))
     return { version: project.version }
   }
 })

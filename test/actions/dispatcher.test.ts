@@ -167,7 +167,7 @@ describe('action dispatcher', () => {
     const bad = [
       bildr.call('node_update_style', { projectId, pageId, nodeId: rootId, style: { mt: '13' } }, ui),
       bildr.call('node_update_style', { projectId, pageId, nodeId: rootId, style: { padding: '16px' } }, ui),
-      bildr.call('node_insert', { projectId, pageId, type: 'Text', style: { bg: '#f00' } }, ui),
+      bildr.call('node_insert', { projectId, pageId, type: 'Text', style: { bg: '#f0' } }, ui),
       bildr.call('node_insert', { projectId, pageId, type: 'Row', children: [{ type: 'Text', style: { mt: '13' } }] }, ui),
       bildr.call('node_update_style', { projectId, pageId, nodeId: rootId, style: { 'xl:gap': '4' } }, ui),
       bildr.call('node_update_style', { projectId, pageId, nodeId: rootId, style: { 'md:gap': '7' } }, ui),
@@ -184,7 +184,10 @@ describe('action dispatcher', () => {
     const updateStyle = schema('node_update_style').properties.style!
     expect(updateStyle.additionalProperties).toBe(false)
     expect(updateStyle.properties.mt!.anyOf![0]!.enum).toEqual(['0', '0.5', '1', '1.5', '2', '2.5', '3', '4', '5', '6', '8', '10', '12', '16', '20', '24', '32', 'auto'])
-    expect(schema('node_insert').properties.style!.properties.bg!.enum).toContain('primary-500')
+    // Colour tokens also take a hex or a theme colour name (S4b, S4c).
+    const bg = schema('node_insert').properties.style!.properties.bg!.anyOf! as (JsonSchema & { pattern?: string })[]
+    expect(bg[0]!.enum).toContain('primary-500')
+    expect(bg.slice(1).map(s => s.pattern)).toEqual(['^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$', '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'])
     expect(schema('node_insert').properties.style!.properties['md:cols']!.enum).toEqual(['1', '2', '3', '4', '5', '6', '12'])
     expect(updateStyle.properties['lg:mt']!.anyOf![0]!.enum).toContain('auto')
     expect(updateStyle.properties['md:bg']).toBeUndefined()

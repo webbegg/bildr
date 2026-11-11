@@ -52,7 +52,7 @@ export const projectDelete = defineAction({
 
 export const projectGet = defineAction({
   name: 'project_get',
-  description: 'Get the full project document: pages, each with a root node tree of { id, type, props, style, children }.',
+  description: 'Get the full project document: pages, each with a root node tree of { id, type, name?, locked?, props, style, children }. name is a layer name set with node_rename; locked (node_set_locked) keeps a node and its descendants from being selected or moved on the canvas. Colour style keys may hold a token, a #rgb, #rrggbb or #rrggbbaa hex, or a theme custom colour name (theme.custom).',
   input: z.object({ projectId: IdSchema }),
   readOnly: true,
   run: async ({ projectId }, { services }) => services.loadProject(projectId)
@@ -60,7 +60,7 @@ export const projectGet = defineAction({
 
 export const componentsList = defineAction({
   name: 'components_list',
-  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and default style; plus the design tokens a node style can use (key, label, group, allowed values, and the breakpoints whose prefix it takes, e.g. md:cols). With projectId, also userComponents: the project\'s own components (id, name, properties, variants), inserted as node_insert { type: "Instance", props: { component: id } }.',
+  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and default style; plus the design tokens a node style can use (key, label, group, allowed values, and the breakpoints whose prefix it takes, e.g. md:cols; colour tokens list alsoAccepts: they also take a #rgb, #rrggbb or #rrggbbaa hex or a theme custom colour name). With projectId, also userComponents: the project\'s own components (id, name, properties, variants), inserted as node_insert { type: "Instance", props: { component: id } }.',
   input: z.object({ projectId: IdSchema.optional().describe('Also list this project\'s own components') }),
   readOnly: true,
   run: async ({ projectId }, { services }) => ({
@@ -80,7 +80,8 @@ export const componentsList = defineAction({
       label: token.label,
       group: token.group,
       values: token.values,
-      breakpoints: variantsOf(token).filter(b => b !== undefined)
+      breakpoints: variantsOf(token).filter(b => b !== undefined),
+      ...(token.kind === 'color' ? { alsoAccepts: ['#rgb, #rrggbb or #rrggbbaa hex', 'a theme custom colour name (theme_get theme.custom)'] } : {})
     }))
   })
 })

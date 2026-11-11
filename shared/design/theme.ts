@@ -3,6 +3,7 @@ import { resolveEnv } from '../env/variables'
 import type { EnvValues } from '../env/variables'
 import { PALETTES } from './palettes'
 import type { PaletteName } from './palettes'
+import { CUSTOM_COLOR_NAME, customColorVar, isColorTokenValue, STYLE_HEX } from './tokens'
 
 /**
  * A project's design system, on top of the Tailwind / Nuxt UI theme. It is
@@ -65,12 +66,38 @@ export const ThemeColorSchema = z.union([
 
 const colorShape = Object.fromEntries(THEME_COLORS.map(c => [c, ThemeColorSchema])) as Record<ThemeColorName, typeof ThemeColorSchema>
 
+export const CUSTOM_COLORS_MAX = 50
+export const CUSTOM_COLOR_NAME_MAX = 32
+
+/** A theme colour of the project's own, used on colour keys by name (`{ bg: "brand" }`). */
+export const CustomColorNameSchema = z.string()
+  .max(CUSTOM_COLOR_NAME_MAX)
+  .regex(CUSTOM_COLOR_NAME, 'Colour names use lowercase letters, digits and single dashes, starting with a letter (e.g. brand, ink-2)')
+  .refine(name => !isColorTokenValue(name) && !(THEME_COLORS as readonly string[]).includes(name), { error: issue => `"${issue.input as string}" is already a colour token; pick another name` })
+
+export const CustomColorValueSchema = z.string().regex(STYLE_HEX, 'Use a #rgb, #rrggbb or #rrggbbaa hex colour')
+
+/** Checks the names one by one: zod reports a bad record key only as "Invalid key in record". */
+function checkNames(colors: Record<string, unknown>, ctx: z.RefinementCtx): void {
+  if (Object.keys(colors).length > CUSTOM_COLORS_MAX) ctx.addIssue({ code: 'custom', message: `A theme has at most ${CUSTOM_COLORS_MAX} custom colours` })
+  for (const name of Object.keys(colors)) {
+    const result = CustomColorNameSchema.safeParse(name)
+    if (!result.success) ctx.addIssue({ code: 'custom', path: [name], message: result.error.issues[0]!.message })
+  }
+}
+
+const CustomColorsSchema = z.record(z.string(), CustomColorValueSchema)
+  .superRefine(checkNames)
+  .describe(`The project's own named colours, name → #rgb, #rrggbb or #rrggbbaa (at most ${CUSTOM_COLORS_MAX}). Colour style keys (bg, color, borderColor) take the name, e.g. { "bg": "brand" }; it renders through the CSS variable --bildr-color-<name>`)
+
 const ThemeFontSchema = z.enum(THEME_FONTS).describe('Font family ("system" uses the platform UI font)')
 const ThemeRadiusSchema = z.enum(THEME_RADII).describe('Base corner radius; rounded-sm equals it, rounded-lg is twice it')
 const ThemeSpacingSchema = z.enum(THEME_SPACINGS).describe('Spacing density: the --spacing base is 0.2rem, 0.25rem or 0.3rem')
 
 export const ThemeSchema = z.strictObject({
   colors: z.strictObject(colorShape),
+  // Themes saved before custom colours have none.
+  custom: CustomColorsSchema.optional(),
   font: ThemeFontSchema,
   radius: ThemeRadiusSchema,
   spacing: ThemeSpacingSchema
@@ -78,7 +105,16 @@ export const ThemeSchema = z.strictObject({
 
 export type Theme = z.infer<typeof ThemeSchema>
 
-/** A deep patch: any subset of the colours and of the scalar fields. */
+/**
+ * A patch of the custom colours: name → hex to add or change one, null to
+ * remove it. Separate from `ThemePatch`, whose values never take null.
+ */
+export const CustomColorsPatchSchema = z.record(z.string(), CustomColorValueSchema.nullable()).superRefine(checkNames)
+  .describe('Custom colours to add or change, name → #rgb, #rrggbb or #rrggbbaa; null removes one (refused while a style uses it). Others are kept')
+
+export type CustomColorsPatch = z.infer<typeof CustomColorsPatchSchema>
+
+/** A deep patch: any subset of the semantic colours and of the scalar fields (custom colours: `CustomColorsPatch`). */
 export const ThemePatchSchema = z.strictObject({
   colors: z.strictObject(colorShape).partial().optional(),
   font: ThemeFontSchema.optional(),
@@ -98,6 +134,11 @@ export const DEFAULT_THEME: Theme = {
 
 export function defaultTheme(): Theme {
   return structuredClone(DEFAULT_THEME)
+}
+
+/** The names of the theme's own colours, which colour style keys accept. */
+export function customColorNames(theme: Pick<Theme, 'custom'> | undefined): string[] {
+  return Object.keys(theme?.custom ?? {})
 }
 
 /** The theme options agents and the design editor can pick from. */
@@ -259,6 +300,7 @@ export function themeCss(theme: Theme): string {
   return [
     block(':root, :host', [
       ...THEME_COLORS.flatMap(name => shadeDeclarations(name, theme.colors[name])),
+      ...Object.entries(theme.custom ?? {}).map(([name, value]) => `${customColorVar(name)}: ${value};`),
       `--font-sans: ${fontStack(theme.font)};`,
       `--ui-radius: ${theme.radius};`,
       `--spacing: ${SPACING_BASE[theme.spacing]};`

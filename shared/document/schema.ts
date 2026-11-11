@@ -2,8 +2,8 @@ import { z } from 'zod'
 import { API_PATH, API_PATH_HINT, API_PATH_MAX, apiUrlProblem } from '../data/apiSource'
 import { PAGE_SIZE_MAX, PAGING_PARAM, PAGING_PARAM_HINT } from '../data/paging'
 import { ENDPOINT_METHODS, endpointPathProblem } from '../data/remote'
-import { defaultTheme, ThemeSchema } from '../design/theme'
-import { styleTokenProblem } from '../design/tokens'
+import { customColorNames, defaultTheme, ThemeSchema } from '../design/theme'
+import { isStyleTokenKey, styleTokenProblem } from '../design/tokens'
 import { ENV_NAME, ENV_NAME_HINT, ENV_REF, envRefs } from '../env/variables'
 import { getComponent, INSTANCE_TYPE, isContainerType, PAGE_ROOT_TYPE, SLOT_FILL_TYPE } from './components'
 import type { PropDef, PropKind, PropValue } from './components'
@@ -17,10 +17,16 @@ import type { PropDef, PropKind, PropValue } from './components'
 export interface DocNode {
   id: string
   type: string
+  /** A layer name set by the user; without one the layers derive it (`layerName`). */
+  name?: string
+  /** Locked on the canvas (it and its descendants): not selectable or movable there, still from the layers. */
+  locked?: boolean
   props: Record<string, PropValue>
   style: Record<string, string>
   children: DocNode[]
 }
+
+export const NODE_NAME_MAX = 100
 
 export const IdSchema = z.string().regex(/^[\w-]{1,64}$/, 'Invalid id')
 export const SlugSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use lowercase letters, digits, and dashes').max(64)
@@ -29,6 +35,9 @@ export const PropValueSchema = z.union([z.string().max(5000), z.number(), z.bool
 export const NodeSchema: z.ZodType<DocNode> = z.lazy(() => z.object({
   id: IdSchema,
   type: z.string(),
+  // Both optional: nodes saved before layer names and locks have neither.
+  name: z.string().trim().min(1).max(NODE_NAME_MAX).optional(),
+  locked: z.boolean().optional(),
   props: z.record(z.string(), PropValueSchema),
   // Design tokens (key → value from `shared/design/tokens`), checked in nodeTreeProblems.
   style: z.record(z.string(), z.string()),
@@ -57,8 +66,22 @@ export const PropertyKindSchema = z.enum(PROPERTY_KINDS)
 /** Instance prop keys that are not property ids. */
 export const RESERVED_INSTANCE_KEYS = ['component', 'variant'] as const
 
-/** Which node prop a property drives. A slot property binds the node (`prop` is `children`). */
-export const PropertyBindingSchema = z.object({ nodeId: IdSchema, prop: z.string().min(1).max(64) })
+/**
+ * Which node prop a property drives. A slot property binds the node (`prop`
+ * is `children`). With `target: 'style'`, `prop` is a style key instead
+ * (`bg`, `md:p`): the property's value sets that design token.
+ */
+export const PropertyBindingSchema = z.object({
+  nodeId: IdSchema,
+  prop: z.string().min(1).max(64),
+  // Bindings saved before style bindings drive props.
+  target: z.literal('style').optional().describe('"style": prop names a style key (e.g. bg, md:p) of the node instead of a prop')
+})
+
+/** Whether a binding drives a style key rather than a prop. */
+export function isStyleBinding(binding: { target?: 'style' }): boolean {
+  return binding.target === 'style'
+}
 
 export const PropertyDefSchema = z.object({
   id: IdSchema,
@@ -326,10 +349,12 @@ export const ProjectSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string()
 }).superRefine((project, ctx) => {
-  for (const { path, message } of componentProblems(project.components)) {
+  // Colour style keys take the theme's own colour names too.
+  const colors = customColorNames(project.theme)
+  for (const { path, message } of componentProblems(project.components, colors)) {
     ctx.addIssue({ code: 'custom', path: ['components', ...path], message })
   }
-  for (const { path, message } of layoutProblems(project.layouts, project.components)) {
+  for (const { path, message } of layoutProblems(project.layouts, project.components, colors)) {
     ctx.addIssue({ code: 'custom', path: ['layouts', ...path], message })
   }
   const connectionIds = new Set<string>()
@@ -357,10 +382,10 @@ export const ProjectSchema = z.object({
     slugs.add(page.slug)
     if (page.root.type !== PAGE_ROOT_TYPE) ctx.addIssue({ code: 'custom', path: ['pages', i, 'root'], message: 'Page root must be a Page node' })
     const layout = page.layoutId === undefined ? undefined : project.layouts.find(l => l.id === page.layoutId)
-    for (const problem of [...nodeTreeProblems(page.root, ids, true), ...instanceProblems(page.root, project.components, layout !== undefined)]) {
+    for (const problem of [...nodeTreeProblems(page.root, ids, true, colors), ...instanceProblems(page.root, project.components, layout !== undefined, colors)]) {
       ctx.addIssue({ code: 'custom', path: ['pages', i, 'root'], message: problem })
     }
-    for (const { path, message } of pageLayoutProblems(page, layout)) {
+    for (const { path, message } of pageLayoutProblems(page, layout, colors)) {
       ctx.addIssue({ code: 'custom', path: ['pages', i, ...path], message })
     }
   })
@@ -396,8 +421,10 @@ export interface PublishedSnapshot {
  * under containers, props and style tokens from the registries, and ids
  * unique across `seen`. Returns human-readable
  * problems; empty means valid. `seen` collects every id visited.
+ * `colors` are the project theme's own colour names (`customColorNames`),
+ * which colour keys accept next to tokens and hex values.
  */
-export function nodeTreeProblems(node: DocNode, seen: Set<string>, isRoot = false): string[] {
+export function nodeTreeProblems(node: DocNode, seen: Set<string>, isRoot = false, colors: readonly string[] = []): string[] {
   const problems: string[] = []
   const visit = (n: DocNode, root: boolean) => {
     if (seen.has(n.id)) problems.push(`Duplicate node id "${n.id}"`)
@@ -415,7 +442,7 @@ export function nodeTreeProblems(node: DocNode, seen: Set<string>, isRoot = fals
       if (problem) problems.push(problem)
     }
     for (const [key, value] of Object.entries(n.style)) {
-      const problem = styleTokenProblem(key, value)
+      const problem = styleTokenProblem(key, value, colors)
       if (problem) problems.push(problem)
     }
     n.children.forEach(child => visit(child, false))
@@ -469,15 +496,24 @@ function nodeIndex(root: DocNode): Map<string, DocNode> {
  * The problem with a value for a property, judged against every prop it is
  * bound to (so a `select` property inherits the options of its targets).
  * An unbound property only has its kind to go by; `select` then accepts any
- * string. Slot properties take no value.
+ * string. Slot properties take no value. A style binding takes a string
+ * that is a value of its style key (`colors` being the theme's own colour
+ * names).
  */
-function propertyValueProblem(property: PropertyDef, value: PropValue, nodes: Map<string, DocNode>): string | undefined {
+function propertyValueProblem(property: PropertyDef, value: PropValue, nodes: Map<string, DocNode>, colors: readonly string[]): string | undefined {
   if (property.kind === 'slot') return `"${property.id}" is a slot and takes no value`
-  const bound = property.bindings.flatMap((binding) => {
+  const styleKeys = property.bindings.filter(isStyleBinding).map(b => b.prop).filter(isStyleTokenKey)
+  for (const key of styleKeys) {
+    if (typeof value !== 'string') return `"${property.id}" must be a string`
+    const problem = styleTokenProblem(key, value, colors)
+    if (problem) return problem
+  }
+  const bound = property.bindings.filter(b => !isStyleBinding(b)).flatMap((binding) => {
     const node = nodes.get(binding.nodeId)
     const propDef = node && getComponent(node.type)?.props.find(p => p.name === binding.prop)
     return propDef ? [propDef] : []
   })
+  if (!bound.length && styleKeys.length) return undefined
   if (!bound.length) return propValueProblem({ name: property.id, label: property.name, kind: property.kind === 'select' ? 'text' : property.kind, default: '' }, value)
   for (const propDef of bound) {
     const problem = propValueProblem({ ...propDef, name: property.id }, value)
@@ -486,14 +522,14 @@ function propertyValueProblem(property: PropertyDef, value: PropValue, nodes: Ma
 }
 
 /** Structural rules for the `components` list; node rules come from `nodeTreeProblems`. */
-export function componentProblems(components: ComponentDefinition[]): ComponentProblem[] {
+export function componentProblems(components: ComponentDefinition[], colors: readonly string[] = []): ComponentProblem[] {
   const problems: ComponentProblem[] = []
   const add = (path: (string | number)[], message: string) => problems.push({ path, message })
   const ids = new Set<string>()
   components.forEach((def, i) => {
     if (ids.has(def.id)) add([i, 'id'], `Duplicate component id "${def.id}"`)
     ids.add(def.id)
-    for (const message of [...nodeTreeProblems(def.root, new Set()), ...instanceProblems(def.root, components)]) add([i, 'root'], message)
+    for (const message of [...nodeTreeProblems(def.root, new Set(), false, colors), ...instanceProblems(def.root, components, false, colors)]) add([i, 'root'], message)
     const nodes = nodeIndex(def.root)
 
     const propertyIds = new Set<string>()
@@ -503,7 +539,7 @@ export function componentProblems(components: ComponentDefinition[]): ComponentP
       propertyIds.add(property.id)
       if ((RESERVED_INSTANCE_KEYS as readonly string[]).includes(property.id)) add([...at, 'id'], `Property id "${property.id}" is reserved`)
       if (property.kind === 'slot' && property.bindings.length !== 1) add([...at, 'bindings'], `Slot "${property.name}" must bind exactly one container node`)
-      for (const problem of propertyProblems(property, nodes, 'Property')) add([...at, ...problem.path], problem.message)
+      for (const problem of propertyProblems(property, nodes, 'Property', colors)) add([...at, ...problem.path], problem.message)
     })
     const slots = def.properties.flatMap((property, p) => {
       const nodeId = property.kind === 'slot' ? property.bindings[0]?.nodeId : undefined
@@ -529,7 +565,7 @@ export function componentProblems(components: ComponentDefinition[]): ComponentP
           if (message) add([...at, 'props', name], message)
         }
         for (const [key, value] of Object.entries(override.style ?? {})) {
-          const message = styleTokenProblem(key, value)
+          const message = styleTokenProblem(key, value, colors)
           if (message) add([...at, 'style', key], message)
         }
       }
@@ -542,10 +578,10 @@ export function componentProblems(components: ComponentDefinition[]): ComponentP
 }
 
 /** Default and binding rules shared by component properties and layout variables (`noun` names them in messages). */
-function propertyProblems(property: PropertyDef, nodes: Map<string, DocNode>, noun: 'Property' | 'Variable'): ComponentProblem[] {
+function propertyProblems(property: PropertyDef, nodes: Map<string, DocNode>, noun: 'Property' | 'Variable', colors: readonly string[]): ComponentProblem[] {
   const problems: ComponentProblem[] = []
   if (property.default !== undefined) {
-    const message = propertyValueProblem(property, property.default, nodes)
+    const message = propertyValueProblem(property, property.default, nodes, colors)
     if (message) problems.push({ path: ['default'], message })
   }
   property.bindings.forEach((binding, b) => {
@@ -553,7 +589,13 @@ function propertyProblems(property: PropertyDef, nodes: Map<string, DocNode>, no
     const node = nodes.get(binding.nodeId)
     if (!node) return add(`${noun} "${property.name}" is bound to the missing node "${binding.nodeId}"`)
     if (property.kind === 'slot') {
-      if (!isContainerType(node.type) || node.type === INSTANCE_TYPE) add(`Slot "${property.name}" must bind a container node, not "${node.type}"`)
+      if (isStyleBinding(binding)) add(`Slot "${property.name}" must bind a node's children, not a style`)
+      else if (!isContainerType(node.type) || node.type === INSTANCE_TYPE) add(`Slot "${property.name}" must bind a container node, not "${node.type}"`)
+      return
+    }
+    if (isStyleBinding(binding)) {
+      if (!isStyleTokenKey(binding.prop)) add(`${noun} "${property.name}" is bound to the unknown style token "${binding.prop}"`)
+      else if (property.kind !== 'text' && property.kind !== 'select') add(`${noun} "${property.name}" (kind ${property.kind}) cannot drive style "${binding.prop}": use a text or select property`)
       return
     }
     const propDef = getComponent(node.type)?.props.find(p => p.name === binding.prop)
@@ -569,7 +611,7 @@ function propertyProblems(property: PropertyDef, nodes: Map<string, DocNode>, no
  * `children` slot, and variables checked like component properties (but
  * never slots).
  */
-export function layoutProblems(layouts: Layout[], components: ComponentDefinition[]): ComponentProblem[] {
+export function layoutProblems(layouts: Layout[], components: ComponentDefinition[], colors: readonly string[] = []): ComponentProblem[] {
   const problems: ComponentProblem[] = []
   const add = (path: (string | number)[], message: string) => problems.push({ path, message })
   const ids = new Set<string>()
@@ -577,7 +619,7 @@ export function layoutProblems(layouts: Layout[], components: ComponentDefinitio
     if (ids.has(layout.id)) add([i, 'id'], `Duplicate layout id "${layout.id}"`)
     ids.add(layout.id)
     if (layout.root.type !== PAGE_ROOT_TYPE) add([i, 'root'], 'Layout root must be a Page node')
-    for (const message of [...nodeTreeProblems(layout.root, new Set(), true), ...instanceProblems(layout.root, components)]) add([i, 'root'], message)
+    for (const message of [...nodeTreeProblems(layout.root, new Set(), true, colors), ...instanceProblems(layout.root, components, false, colors)]) add([i, 'root'], message)
     const nodes = nodeIndex(layout.root)
 
     if (layout.slots.filter(s => s.id === CHILDREN_SLOT).length !== 1) add([i, 'slots'], `Layout "${layout.name}" must have exactly one children slot`)
@@ -601,7 +643,7 @@ export function layoutProblems(layouts: Layout[], components: ComponentDefinitio
         add([...at, 'kind'], `Variable "${variable.name}" of layout "${layout.name}" cannot be a slot`)
         return
       }
-      for (const problem of propertyProblems(variable, nodes, 'Variable')) add([...at, ...problem.path], problem.message)
+      for (const problem of propertyProblems(variable, nodes, 'Variable', colors)) add([...at, ...problem.path], problem.message)
     })
   })
   return problems
@@ -639,7 +681,7 @@ function contains(node: DocNode | undefined, id: string): boolean {
  * root's SlotFills fill distinct named slots. Without a layout a page has
  * no values; its SlotFills are refused by `instanceProblems`.
  */
-export function pageLayoutProblems(page: Page, layout: Layout | undefined): ComponentProblem[] {
+export function pageLayoutProblems(page: Page, layout: Layout | undefined, colors: readonly string[] = []): ComponentProblem[] {
   const problems: ComponentProblem[] = []
   const values = Object.entries(page.layoutValues ?? {})
   if (page.layoutId === undefined) {
@@ -650,7 +692,7 @@ export function pageLayoutProblems(page: Page, layout: Layout | undefined): Comp
   const nodes = nodeIndex(layout.root)
   for (const [key, value] of values) {
     const variable = layout.variables.find(v => v.id === key && v.kind !== 'slot')
-    const problem = variable ? propertyValueProblem(variable, value, nodes) : `Layout "${layout.name}" has no variable "${key}"`
+    const problem = variable ? propertyValueProblem(variable, value, nodes, colors) : `Layout "${layout.name}" has no variable "${key}"`
     if (problem) problems.push({ path: ['layoutValues', key], message: `Page "${page.name}": ${problem}` })
   }
   const filled = new Set<string>()
@@ -699,20 +741,20 @@ function reachesItself(start: ComponentDefinition, components: ComponentDefiniti
  * With `layoutFills`, the root's own SlotFill children are allowed: they
  * fill its page's layout slots (see `pageLayoutProblems`).
  */
-export function instanceProblems(root: DocNode, components: ComponentDefinition[], layoutFills = false): string[] {
+export function instanceProblems(root: DocNode, components: ComponentDefinition[], layoutFills = false, colors: readonly string[] = []): string[] {
   const problems: string[] = []
   const byId = new Map(components.map(c => [c.id, c]))
   const visit = (node: DocNode, parent?: DocNode) => {
     const fillsLayout = layoutFills && parent === root
     if (node.type === SLOT_FILL_TYPE && parent?.type !== INSTANCE_TYPE && !fillsLayout) problems.push(`SlotFill "${node.id}" must be directly under an Instance`)
-    if (node.type === INSTANCE_TYPE) problems.push(...instanceNodeProblems(node, byId))
+    if (node.type === INSTANCE_TYPE) problems.push(...instanceNodeProblems(node, byId, colors))
     node.children.forEach(child => visit(child, node))
   }
   visit(root)
   return problems
 }
 
-function instanceNodeProblems(node: DocNode, byId: Map<string, ComponentDefinition>): string[] {
+function instanceNodeProblems(node: DocNode, byId: Map<string, ComponentDefinition>, colors: readonly string[]): string[] {
   const problems: string[] = []
   const def = byId.get(String(node.props.component))
   if (!def) return [`Instance "${node.id}" uses the unknown component "${String(node.props.component)}"`]
@@ -722,7 +764,7 @@ function instanceNodeProblems(node: DocNode, byId: Map<string, ComponentDefiniti
   for (const [key, value] of Object.entries(node.props)) {
     if ((RESERVED_INSTANCE_KEYS as readonly string[]).includes(key)) continue
     const property = def.properties.find(p => p.id === key && p.kind !== 'slot')
-    const problem = property ? propertyValueProblem(property, value, nodes) : `"${def.name}" has no property "${key}"`
+    const problem = property ? propertyValueProblem(property, value, nodes, colors) : `"${def.name}" has no property "${key}"`
     if (problem) problems.push(`Instance "${node.id}": ${problem}`)
   }
   const filled = new Set<string>()

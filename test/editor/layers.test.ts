@@ -181,4 +181,10 @@ describe('layerName', () => {
     expect(layerName(page, findNode(page.root, 'odd')!, sources)).toBe('SlotFill')
     expect(layerName({ ...page, layoutId: undefined }, footer, sources)).toBe('SlotFill')
   })
+
+  it('uses the node\'s own name over any derived one', () => {
+    expect(layerName(page, { ...n('t', 'Text'), name: 'Hero title' }, sources)).toBe('Hero title')
+    expect(layerName(page, { ...instance, name: 'Main card' }, sources)).toBe('Main card')
+    expect(layerName(page, { ...fill, name: 'Card body' }, sources)).toBe('Card body')
+  })
 })

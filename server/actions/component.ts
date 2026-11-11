@@ -108,12 +108,12 @@ export const componentDelete = defineAction({
 
 const PropertyFields = {
   default: PropValueSchema.optional().describe('The value instances get when they set none'),
-  bindings: z.array(PropertyBindingSchema).optional().describe('The definition node props the property drives, e.g. [{ "nodeId": "n_title", "prop": "text" }]; a slot binds one container with prop "children"')
+  bindings: z.array(PropertyBindingSchema).optional().describe('The definition node props the property drives, e.g. [{ "nodeId": "n_title", "prop": "text" }]; a slot binds one container with prop "children". With "target": "style", prop is a style key of the node instead, e.g. [{ "nodeId": "n_title", "prop": "color", "target": "style" }] (text or select properties; values must be values of that key)')
 }
 
 export const componentPropertyAdd = defineAction({
   name: 'component_property_add',
-  description: 'Add a property to a component. kind is a prop kind (text, number, boolean, select, link, image, icon...) or slot. A property drives the bound props of definition nodes (their kind must match; select takes the options of its targets), and definition strings can use {{ prop.NAME }}. A slot binds one container node, whose children are the default content. Returns the property id, which is the key of instance values.',
+  description: 'Add a property to a component. kind is a prop kind (text, number, boolean, select, link, image, icon...) or slot. A property drives the bound props of definition nodes (their kind must match; select takes the options of its targets), or with target "style" a bound style key (a text or select property whose values are values of that key: a token, or for colour keys also a hex or theme colour), and definition strings can use {{ prop.NAME }}. A slot binds one container node, whose children are the default content. Returns the property id, which is the key of instance values.',
   input: z.object({
     projectId: IdSchema,
     componentId: ComponentRef,
@@ -226,7 +226,7 @@ export const componentVariantSetOverride = defineAction({
 
 export const instanceSetValues = defineAction({
   name: 'instance_set_values',
-  description: 'Set property values of a component instance (keys are property ids, values are checked against the property; null removes one, so the default applies) and/or its variant (a variant id; null or "" for the primary).',
+  description: 'Set property values of a component instance (keys are property ids, values are checked against the property, and against the style key of a style binding; null removes one, so the default applies) and/or its variant (a variant id; null or "" for the primary).',
   input: z.object({
     ...InstanceTarget,
     values: z.record(z.string(), PropValueSchema.nullable()).optional(),

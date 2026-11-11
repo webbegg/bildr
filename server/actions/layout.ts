@@ -113,12 +113,12 @@ export const layoutSlotRemove = defineAction({
 
 const VariableFields = {
   default: PropValueSchema.optional().describe('The value pages get when they set none'),
-  bindings: z.array(PropertyBindingSchema).optional().describe('The layout node props the variable drives, e.g. [{ "nodeId": "n_title", "prop": "text" }]')
+  bindings: z.array(PropertyBindingSchema).optional().describe('The layout node props the variable drives, e.g. [{ "nodeId": "n_title", "prop": "text" }]. With "target": "style", prop is a style key of the node instead, e.g. [{ "nodeId": "n_bar", "prop": "bg", "target": "style" }] (text or select variables; values must be values of that key)')
 }
 
 export const layoutVariableAdd = defineAction({
   name: 'layout_variable_add',
-  description: 'Add a variable to a layout, which each page sets (page_set_layout_values). kind is a prop kind (text, number, boolean, select, link, image, icon...). A variable drives the bound props of layout nodes (their kind must match), and layout strings can use {{ layout.NAME }}. Returns the variable id, the key of page values.',
+  description: 'Add a variable to a layout, which each page sets (page_set_layout_values). kind is a prop kind (text, number, boolean, select, link, image, icon...). A variable drives the bound props of layout nodes (their kind must match), or with target "style" a bound style key (values must be values of that key), and layout strings can use {{ layout.NAME }}. Returns the variable id, the key of page values.',
   input: z.object({
     projectId: IdSchema,
     layoutId: LayoutRef,

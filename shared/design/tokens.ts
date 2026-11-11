@@ -6,6 +6,13 @@
  *
  * A key can carry a breakpoint prefix (mobile-first, as in Tailwind):
  * `{ cols: '1', 'md:cols': '3' }` renders as `grid-cols-1 md:grid-cols-3`.
+ *
+ * Colour keys (`kind: 'color'`) also take a raw hex (`#rgb`, `#rrggbb`,
+ * `#rrggbbaa`) or a colour the project theme names (`theme.custom`, e.g.
+ * `brand`). Neither has a generated class: they render as an inline style
+ * (`styleInline`), the theme colour through its CSS variable
+ * (`customColorVar`). Colour keys have no breakpoint variants, so an inline
+ * value never needs a media query.
  */
 
 export const BREAKPOINTS = ['sm', 'md', 'lg'] as const
@@ -36,7 +43,22 @@ export interface StyleToken {
   prefix: string
   values: string[]
   kind?: 'color'
+  /** For colour tokens: the CSS property an inline (hex or theme) colour sets. */
+  css?: string
 }
+
+/** A raw hex colour for a colour key. No `i` flag: JSON Schema patterns (the MCP tool schemas) drop regex flags. */
+export const STYLE_HEX = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
+
+/** The shape of a theme's own colour name (`theme.custom`), e.g. `brand` or `ink-2`. */
+export const CUSTOM_COLOR_NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
+
+/** The CSS variable `themeCss` declares for theme colour `name`. */
+export function customColorVar(name: string): string {
+  return `--bildr-color-${name}`
+}
+
+const COLOR_HINT = ' (use a colour token, a #rgb, #rrggbb or #rrggbbaa hex, or a theme colour)'
 
 const SPACING = ['0', '0.5', '1', '1.5', '2', '2.5', '3', '4', '5', '6', '8', '10', '12', '16', '20', '24', '32']
 const MARGIN = [...SPACING, 'auto']
@@ -77,9 +99,9 @@ export const STYLE_TOKENS: StyleToken[] = [
   { key: 'maxW', label: 'Max width', group: 'Size', prefix: 'max-w', values: ['xs', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', 'full', 'prose'] },
   { key: 'minH', label: 'Min height', group: 'Size', prefix: 'min-h', values: ['0', 'full', 'screen', '32', '48', '64', '96'] },
   { key: 'maxH', label: 'Max height', group: 'Size', prefix: 'max-h', values: ['full', 'screen', ...FIXED_WIDTHS] },
-  { key: 'bg', label: 'Background', group: 'Color', prefix: 'bg', kind: 'color', values: [...THEME_COLORS, 'default', 'muted', 'elevated', 'accented', 'inverted'] },
-  { key: 'color', label: 'Text color', group: 'Color', prefix: 'text', kind: 'color', values: [...THEME_COLORS, 'default', 'highlighted', 'toned', 'muted', 'dimmed', 'inverted'] },
-  { key: 'borderColor', label: 'Border color', group: 'Color', prefix: 'border', kind: 'color', values: [...THEME_COLORS, 'default', 'muted', 'accented', 'inverted'] },
+  { key: 'bg', label: 'Background', group: 'Color', prefix: 'bg', kind: 'color', css: 'background-color', values: [...THEME_COLORS, 'default', 'muted', 'elevated', 'accented', 'inverted'] },
+  { key: 'color', label: 'Text color', group: 'Color', prefix: 'text', kind: 'color', css: 'color', values: [...THEME_COLORS, 'default', 'highlighted', 'toned', 'muted', 'dimmed', 'inverted'] },
+  { key: 'borderColor', label: 'Border color', group: 'Color', prefix: 'border', kind: 'color', css: 'border-color', values: [...THEME_COLORS, 'default', 'muted', 'accented', 'inverted'] },
   { key: 'text', label: 'Font size', group: 'Typography', prefix: 'text', values: ['xs', 'sm', 'base', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl'] },
   { key: 'font', label: 'Font weight', group: 'Typography', prefix: 'font', values: ['light', 'normal', 'medium', 'semibold', 'bold', 'extrabold'] },
   { key: 'align', label: 'Text align', group: 'Typography', prefix: 'text', values: ['left', 'center', 'right', 'justify'] },
@@ -155,8 +177,28 @@ export function isStyleTokenKey(key: string): boolean {
   return parseStyleKey(key) !== undefined
 }
 
-/** Returns a problem message for an unknown key or breakpoint, or a value outside the token's scale. */
-export function styleTokenProblem(key: string, value: string): string | undefined {
+/** Whether `name` is a value of any colour token, which a theme colour name cannot take. */
+export function isColorTokenValue(name: string): boolean {
+  return STYLE_TOKENS.some(t => t.kind === 'color' && t.values.includes(name))
+}
+
+/**
+ * The inline CSS value of a colour token's value outside its scale: the hex
+ * itself, or the theme colour's variable; undefined for scale values (they
+ * are classes), other tokens and values of no colour shape.
+ */
+function inlineColor(token: StyleToken, value: string): string | undefined {
+  if (token.kind !== 'color' || token.values.includes(value)) return undefined
+  if (STYLE_HEX.test(value)) return value
+  return CUSTOM_COLOR_NAME.test(value) ? `var(${customColorVar(value)})` : undefined
+}
+
+/**
+ * Returns a problem message for an unknown key or breakpoint, or a value
+ * outside the token's scale. Colour keys also take a hex or one of
+ * `customColors`, the names of the project theme's own colours.
+ */
+export function styleTokenProblem(key: string, value: string, customColors: readonly string[] = []): string | undefined {
   const { breakpoint } = splitKey(key)
   if (breakpoint !== undefined && !isBreakpoint(breakpoint)) {
     return `Unknown breakpoint "${breakpoint}" in style token "${key}" (use sm:, md: or lg:)`
@@ -166,7 +208,9 @@ export function styleTokenProblem(key: string, value: string): string | undefine
     const base = BY_KEY.get(splitKey(key).base)
     return base ? `Style token "${base.key}" has no breakpoint variants (only ${RESPONSIVE_GROUPS.join(', ')} tokens do)` : `Unknown style token "${key}"`
   }
-  return token.values.includes(value) ? undefined : `"${value}" is not a value of style token "${key}"`
+  if (token.values.includes(value)) return undefined
+  if (token.kind !== 'color') return `"${value}" is not a value of style token "${key}"`
+  return STYLE_HEX.test(value) || customColors.includes(value) ? undefined : `"${value}" is not a value of style token "${key}"${COLOR_HINT}`
 }
 
 /** The breakpoints a token can be set at, `undefined` being the base (mobile-first) value. */
@@ -174,19 +218,41 @@ export function variantsOf(token: StyleToken): (Breakpoint | undefined)[] {
   return isResponsiveToken(token) ? [undefined, ...BREAKPOINTS] : [undefined]
 }
 
-/** A style's valid tokens ordered by base key in registry order, then base, sm, md, lg. */
-export function orderedStyleTokens(style: Record<string, string>): { key: string, token: StyleToken, breakpoint: Breakpoint | undefined, value: string, className: string }[] {
-  return STYLE_TOKENS.flatMap(token => variantsOf(token).flatMap((breakpoint) => {
+export interface OrderedStyleToken {
+  key: string
+  token: StyleToken
+  breakpoint: Breakpoint | undefined
+  value: string
+  /** The class it renders; empty for an inline colour. */
+  className: string
+  /** A hex or theme colour, rendered as this inline declaration instead of a class. */
+  inline?: { property: string, value: string }
+}
+
+/**
+ * A style's valid tokens ordered by base key in registry order, then base,
+ * sm, md, lg. Colour keys holding a hex or a theme colour name come with
+ * their `inline` declaration and no class.
+ */
+export function orderedStyleTokens(style: Record<string, string>): OrderedStyleToken[] {
+  return STYLE_TOKENS.flatMap(token => variantsOf(token).flatMap((breakpoint): OrderedStyleToken[] => {
     const key = styleKey(token.key, breakpoint)
     const value = style[key]
-    if (value === undefined || !token.values.includes(value)) return []
-    return [{ key, token, breakpoint, value, className: styleKey(tokenClass(token, value), breakpoint) }]
+    if (value === undefined) return []
+    if (token.values.includes(value)) return [{ key, token, breakpoint, value, className: styleKey(tokenClass(token, value), breakpoint) }]
+    const inline = inlineColor(token, value)
+    return inline && token.css ? [{ key, token, breakpoint, value, className: '', inline: { property: token.css, value: inline } }] : []
   }))
 }
 
-/** The class list for a style map, in registry order. Invalid tokens are skipped. */
+/** The class list for a style map, in registry order. Invalid tokens and inline colours are skipped. */
 export function styleClasses(style: Record<string, string>): string {
-  return orderedStyleTokens(style).map(t => t.className).join(' ')
+  return orderedStyleTokens(style).flatMap(t => (t.className ? [t.className] : [])).join(' ')
+}
+
+/** The inline declarations of a style map: its hex and theme colours, e.g. `{ 'background-color': '#ff0000' }`. */
+export function styleInline(style: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(orderedStyleTokens(style).flatMap(t => (t.inline ? [[t.inline.property, t.inline.value]] : [])))
 }
 
 /** Every class the registry can produce, breakpoint variants included. */

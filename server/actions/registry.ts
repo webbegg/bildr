@@ -5,7 +5,7 @@ import type { ActionDef } from './define'
 import { editorGetContext, editorNavigate, editorSetContext } from './editor'
 import { envDelete, envList, envSet } from './env'
 import { layoutCreate, layoutDelete, layoutRename, layoutSlotAdd, layoutSlotRemove, layoutSlotUpdate, layoutVariableAdd, layoutVariableRemove, layoutVariableUpdate, pageSetLayout, pageSetLayoutValues, pageSetSlot } from './layout'
-import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
+import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeRename, nodeSetLocked, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
 import { pageAdd, pageDelete, pageRename } from './page'
 import { themeGet, themeUpdate } from './theme'
 import { themeApply, themeLibraryDelete, themeLibraryDuplicate, themeLibraryList, themeLibrarySave, themeLibraryUpdate } from './themeLibrary'
@@ -25,6 +25,8 @@ export const ACTIONS = [
   nodeInsert,
   nodeUpdateProps,
   nodeUpdateStyle,
+  nodeRename,
+  nodeSetLocked,
   nodeMove,
   nodeMoveMany,
   nodeDelete,
