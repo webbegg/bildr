@@ -12,7 +12,9 @@ import { isOverridden } from '~/composables/componentVariants'
 /**
  * The right panel, one scrolling view: a sticky head with the element's
  * identity, breadcrumb and quick actions, then the component's prop sections
- * (Content, Behaviour, Appearance, Advanced), then its style sections. The
+ * (Content, Behaviour, Appearance, Advanced; Behaviour first on an actionable
+ * node such as a Button or Link), then its style sections. The page root
+ * leads with its Page section, then Layout (see `panelRows`). The
  * styles edit the breakpoint of the canvas frame picked last (or the floating
  * bar's device switch), which a caption names, in the override blue off the
  * Primary Mobile. With several nodes selected the head reads "N selected" and
@@ -47,7 +49,7 @@ function propValue(name: string, fallback: PropValue): PropValue {
 }
 
 // The props in Content, Behaviour, Appearance, Advanced sections, above the styles. Props edit one node, so a multi-selection shows styles only.
-const propGroups = computed(() => groupedProps(propDefs.value))
+const propGroups = computed(() => groupedProps(propDefs.value, node.value?.type))
 // With a variant shown, blue means overridden in it, and a reset (null) removes the override.
 const changed = (def: PropDef) => !!node.value && (editor.variant ? isOverridden(editor.variant, node.value.id, 'props', def.name) : !isDefaultProp(def, node.value.props))
 const resetValue = (def: PropDef) => (editor.variant ? null : def.default)

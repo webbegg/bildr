@@ -2,13 +2,15 @@
 import type { PropDef, PropValue } from '#shared/document/components'
 import type { Provenance } from '#shared/editor/styleFields'
 import { takesFormRecords } from '#shared/data/collections'
+import { propOptions } from '#shared/editor/propGroups'
 import { enclosingForm, FORM_TYPE } from '#shared/runtime/form'
 
 /**
  * One prop row, Framer's label-column look: a grey label (blue when the
  * prop differs from the component default; click for Reset to default,
  * Alt-click resets) and the soft control for the prop's kind. Controls carry
- * the prop label as their accessible name.
+ * the prop label as their accessible name; select options that need it (an
+ * Action) are two-line items with a description (see `propOptions`).
  */
 const props = defineProps<{ def: PropDef, value: PropValue, changed: boolean }>()
 const emit = defineEmits<{ update: [value: PropValue], reset: [] }>()
@@ -121,7 +123,7 @@ function onLinkMode(mode: string) {
       <USelect
         v-else-if="def.kind === 'select'"
         :model-value="text"
-        :items="def.options ?? []"
+        :items="propOptions(def)"
         :aria-label="def.label"
         size="xs"
         variant="soft"

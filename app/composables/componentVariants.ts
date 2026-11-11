@@ -70,9 +70,19 @@ export function activeVariant(def: ComponentDefinition | null, variantId: string
   return (variantId && def?.variants.find(v => v.id === variantId)) || null
 }
 
-/** The variant choices of an instance: Primary, then each variant. */
-export function variantItems(def: ComponentDefinition): { label: string, value: string }[] {
-  return [{ label: 'Primary', value: PRIMARY_VARIANT }, ...def.variants.map(v => ({ label: v.name, value: v.id }))]
+/** How many props and design tokens a variant overrides, over all nodes. */
+const overrideCount = (variant: Variant) => Object.keys(variant.overrides).reduce((n, nodeId) => n + overrideEntries(variant, nodeId).length, 0)
+
+/** The variant choices of an instance: Primary, then each variant, described (two-line menu items) by what it overrides. */
+export function variantItems(def: ComponentDefinition): { label: string, value: string, description: string }[] {
+  const describe = (variant: Variant) => {
+    const n = overrideCount(variant)
+    return n ? `${n} override${n === 1 ? '' : 's'}` : 'Same as Primary'
+  }
+  return [
+    { label: 'Primary', value: PRIMARY_VARIANT, description: 'The component as defined' },
+    ...def.variants.map(v => ({ label: v.name, value: v.id, description: describe(v) }))
+  ]
 }
 
 /** The `instance_set_values` variant for a chosen item: `''` for the primary. */

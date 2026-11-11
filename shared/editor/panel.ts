@@ -7,14 +7,17 @@ import type { Breakpoint } from '../design/tokens'
 import type { DeviceId, Provenance } from './styleFields'
 
 /**
- * The right panel in Framer's sections, as a row model. Sections never
- * collapse. Each shows its core rows (where they apply to the node); Fill,
- * Border and Shadows are inline "Add…" slots; the other optional properties
- * sit in the header "+" menu until the node has a value for them (at any
- * breakpoint), and an added one shows a "−" where the edited breakpoint sets
- * it. Layout on a leaf has no core row: it is a title with a "+" (Padding,
- * Margin, Align self, Overflow), like Framer's frame without a layout, and no
- * Reset layout, since each added row has its own "−".
+ * The right panel in Framer's sections, as a row model. Each section shows
+ * its core rows (where they apply to the node); Fill, Border and Shadows are
+ * inline "Add…" slots; the other optional properties sit in the header "+"
+ * menu until the node has a value for them (at any breakpoint), and an added
+ * one shows a "−" where the edited breakpoint sets it. A section with no row
+ * to show collapses to its title and "+" (Framer's rule), so the panel only
+ * grows with real content: Layout on a leaf (Padding, Margin, Align self,
+ * Overflow, like Framer's frame without a layout, and no Reset layout, since
+ * each added row has its own "−"), and Typography on a node without text of
+ * its own (a container or an Image) until a text token is set. The page root
+ * shows Layout first.
  */
 
 export const PANEL_SECTIONS = ['Size', 'Layout', 'Styles', 'Typography'] as const
@@ -150,6 +153,8 @@ export interface PanelMenuItem {
 export interface PanelSectionRows {
   section: PanelSection
   rows: PanelRow[]
+  /** No row to show: the section is its title and "+" only. */
+  collapsed: boolean
   /** The header "+" menu: the optional rows that apply and are not shown. */
   menu: PanelMenuItem[]
   /** The header "−", Reset layout: on the Layout section of a container. */
@@ -165,6 +170,12 @@ export interface PanelView {
 }
 
 const GRID_TYPES = ['Grid', 'List']
+
+/** Whether a node shows text of its own (or is the page root, whose type styles the page): its typography rows are core. */
+const textual = (node: PanelNode) => !!node.root || (!isContainerType(node.type) && node.type !== 'Image')
+
+/** The section order: the page root leads with Layout, as Framer's breakpoint frame does. */
+const sectionOrder = (node: PanelNode): readonly PanelSection[] => (node.root ? ['Layout', 'Size', 'Styles', 'Typography'] : PANEL_SECTIONS)
 
 /** The rendered sections for a node, their rows in Framer's order, and their "+" menus. */
 export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] {
@@ -214,19 +225,27 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
     lineHeight: true,
     transform: true
   }
-  const kind = (row: RowId) => (row === 'padding' && !container ? 'menu' : def(row).kind)
+  const kind = (row: RowId) => {
+    if (row === 'padding' && !container) return 'menu'
+    if (def(row).section === 'Typography' && !textual(node)) return 'menu'
+    return def(row).kind
+  }
   const valued = (row: RowId) => (row === 'display' ? setsDisplay : sets(...rowKeys(row)))
   const has = (row: RowId) => added.includes(row) || rowKeys(row).some(key => mixed.includes(key)) || valued(row)
   const shown = (row: RowId) => applies[row] && (kind(row) !== 'menu' || has(row))
   const removable = (row: RowId) => kind(row) !== 'core' && (rowProvenance(node.style, row, device).state === 'set' || (added.includes(row) && !valued(row)))
   const inSection = (section: PanelSection) => ROW_IDS.filter(row => def(row).section === section)
 
-  return PANEL_SECTIONS.map(section => ({
-    section,
-    rows: inSection(section).filter(shown).map(id => ({ id, slot: kind(id) === 'slot' && !has(id), removable: removable(id) })),
-    menu: inSection(section).filter(row => applies[row] && kind(row) === 'menu' && !shown(row)).map(id => ({ id })),
-    reset: section === 'Layout' && (container || !!layout)
-  }))
+  return sectionOrder(node).map((section) => {
+    const rows = inSection(section).filter(shown).map(id => ({ id, slot: kind(id) === 'slot' && !has(id), removable: removable(id) }))
+    return {
+      section,
+      rows,
+      collapsed: rows.length === 0,
+      menu: inSection(section).filter(row => applies[row] && kind(row) === 'menu' && !shown(row)).map(id => ({ id })),
+      reset: section === 'Layout' && (container || !!layout)
+    }
+  })
 }
 
 /** What adding an optional row writes (base keys; the panel puts responsive ones at the device). */
