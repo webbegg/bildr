@@ -4,7 +4,9 @@ import { createNode, createPage, newId } from '#shared/document/factory'
 import type { Operation } from '#shared/document/operations'
 import { CHILDREN_SLOT, IdSchema, PropertyBindingSchema, PropertyKindSchema, PropValueSchema } from '#shared/document/schema'
 import type { Layout, Page, Project } from '#shared/document/schema'
+import { copyName } from '#shared/document/instanceEdits'
 import { nameProblem, uniqueName } from '#shared/editor/names'
+import { givenDetails, PropertyDetails, PropertyDetailsPatch } from './component'
 import { ActionError, defineAction } from './define'
 import { assertFound } from './project'
 
@@ -66,6 +68,20 @@ export const layoutRename = defineAction({
     assertLayoutName(await ctx.services.loadProject(projectId), name, layoutId)
     const project = await ctx.services.mutate(ctx, projectId, 'Rename layout', [{ op: 'updateLayout', layoutId, name }])
     return { version: project.version }
+  }
+})
+
+export const layoutDuplicate = defineAction({
+  name: 'layout_duplicate',
+  description: 'Duplicate a layout: its tree, slots and variables, listed right after it; pages keep the layout they use. Without a name it is "<name> copy" ("Site layout copy", numbered when taken); names are unique ignoring case. One undo step. Returns the new layout id.',
+  input: z.object({ projectId: IdSchema, layoutId: LayoutRef, name: NameSchema.optional().describe('Unique ignoring case; defaults to "<name> copy"') }),
+  run: async ({ projectId, layoutId, name }, ctx) => {
+    const current = await ctx.services.loadProject(projectId)
+    const layout = assertFound(current.layouts.find(l => l.id === layoutId), `Layout "${layoutId}" not found`)
+    if (name !== undefined) assertLayoutName(current, name)
+    const copy: Layout = { ...structuredClone(layout), id: newId('lay'), name: name ?? copyName(layout.name, current.layouts) }
+    const project = await ctx.services.mutate(ctx, projectId, 'Duplicate layout', [{ op: 'addLayout', index: current.layouts.indexOf(layout) + 1, layout: copy }])
+    return { version: project.version, layoutId: copy.id }
   }
 })
 
@@ -136,10 +152,11 @@ export const layoutVariableAdd = defineAction({
     name: NameSchema,
     kind: VariableKindSchema,
     ...VariableFields,
+    ...PropertyDetails,
     index: z.number().int().nonnegative().optional().describe('Position in the variable list; defaults to the end')
   }),
-  run: async ({ projectId, layoutId, name, kind, default: value, bindings = [], index }, ctx) => {
-    const variable = { id: newId('var'), name, kind, ...(value === undefined ? {} : { default: value }), bindings }
+  run: async ({ projectId, layoutId, name, kind, default: value, bindings = [], index, ...details }, ctx) => {
+    const variable = { id: newId('var'), name, kind, ...(value === undefined ? {} : { default: value }), ...givenDetails(details), bindings }
     const project = await ctx.services.mutate(ctx, projectId, 'Add variable', [{ op: 'addLayoutVariable', layoutId, index: index ?? Number.MAX_SAFE_INTEGER, variable }])
     return { version: project.version, variableId: variable.id }
   }
@@ -147,13 +164,14 @@ export const layoutVariableAdd = defineAction({
 
 export const layoutVariableUpdate = defineAction({
   name: 'layout_variable_update',
-  description: 'Change a layout variable: name, default (null removes it) or bindings. To change its kind, remove it and add it again.',
+  description: 'Change a layout variable: name, default, description, optional, placeholder (null removes any of these) or bindings, and with index its position in the list. One undo step. To change its kind, remove it and add it again.',
   input: z.object({
     projectId: IdSchema,
     layoutId: LayoutRef,
     variableId: IdSchema,
     name: NameSchema.optional(),
     default: PropValueSchema.nullable().optional().describe('The value pages get when they set none; null removes it'),
+    ...PropertyDetailsPatch,
     bindings: VariableFields.bindings
   }),
   run: async ({ projectId, ...patch }, ctx) => {

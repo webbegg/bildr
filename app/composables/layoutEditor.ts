@@ -51,7 +51,7 @@ export function layoutItems(project: Project): { label: string, value: string }[
 /** A variable as a prop field of the page settings: keyed by its id, its default and options from the first bound prop. */
 export function variableField(layout: Layout, variable: PropertyDef): PropDef {
   const field = propertyField({ id: layout.id, name: layout.name, root: layout.root, properties: [], variants: [] }, variable)
-  return { ...field, description: `${variable.name}, a variable of layout ${layout.name}` }
+  return { ...field, description: variable.description ?? `${variable.name}, a variable of layout ${layout.name}` }
 }
 
 /** The page's own value for a variable; undefined when the default applies. */

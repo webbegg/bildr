@@ -93,6 +93,7 @@ useHead(() => ({ title: editor.project ? `${editor.project.name} · bildr` : 'bi
     <EditorToolbar />
     <EditorQuickActions />
     <EditorCreateDialog />
+    <EditorPropertiesModal />
     <EditorConfirm />
     <div class="flex min-h-0 flex-1">
       <aside

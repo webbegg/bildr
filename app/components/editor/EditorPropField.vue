@@ -4,6 +4,7 @@ import type { Provenance } from '#shared/editor/styleFields'
 import { takesFormRecords } from '#shared/data/collections'
 import { propOptions } from '#shared/editor/propGroups'
 import { enclosingForm, FORM_TYPE } from '#shared/runtime/form'
+import { useBinding } from '~/composables/useBinding'
 
 /**
  * One prop row, Framer's label-column look: a grey label (blue when the
@@ -12,11 +13,16 @@ import { enclosingForm, FORM_TYPE } from '#shared/runtime/form'
  * the prop label as their accessible name; select options that need it (an
  * Action) are two-line items with a description (see `propOptions`).
  * `bindable` (a prop of the selected node) puts the binding dot before the
- * label: create or bind a property/variable, insert an env variable.
+ * label: create or bind a property/variable, insert an env variable; bound,
+ * the property's chip `◇ Title ×` replaces the control. A text field shows
+ * `def.placeholder` (an instance field gets its property's).
  */
 const props = defineProps<{ def: PropDef, value: PropValue, changed: boolean, bindable?: boolean }>()
 const emit = defineEmits<{ update: [value: PropValue], reset: [] }>()
 const editor = useEditor()
+const binding = useBinding('prop', () => props.def.name)
+/** Bound to a property here: the property's chip takes the control's place. */
+const chipped = computed(() => !!props.bindable && !!binding.ownBound.value)
 
 const provenance = computed<Provenance>(() => (props.changed ? { state: 'set', key: props.def.name, value: String(props.value) } : { state: 'unset' }))
 const BOOLEAN_ITEMS = [{ value: 'true', label: 'On' }, { value: 'false', label: 'Off' }]
@@ -93,11 +99,16 @@ function onLinkMode(mode: string) {
       />
     </div>
     <div class="min-w-0">
+      <EditorBindingValue
+        v-if="chipped"
+        mode="prop"
+        :name="def.name"
+      />
       <EditorCommitInput
-        v-if="def.kind === 'text' || def.kind === 'textarea' || def.kind === 'image'"
+        v-else-if="def.kind === 'text' || def.kind === 'textarea' || def.kind === 'image'"
         :model-value="text"
         :multiline="def.kind === 'textarea'"
-        :placeholder="def.kind === 'image' ? 'https://' : undefined"
+        :placeholder="def.placeholder ?? (def.kind === 'image' ? 'https://' : undefined)"
         :aria-label="def.label"
         variables="public"
         size="xs"

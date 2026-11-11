@@ -7,8 +7,9 @@ import { layoutDeleteConfirm, layoutEntries } from '~/composables/layoutEditor'
 /**
  * The Assets panel's Layouts: the project's page layouts, filtered by the
  * sidebar search, each counting the pages that use it. "+" opens the "New
- * layout" dialog (then the new layout's view), a click opens one, and
- * deleting one names the pages that will detach and asks first.
+ * layout" dialog (then the new layout's view), a click opens one, the row
+ * menu duplicates one ("<name> copy"), and deleting one names the pages that
+ * will detach and asks first.
  */
 const { query = '' } = defineProps<{ query?: string }>()
 const editor = useEditor()
@@ -44,6 +45,7 @@ function menu(entry: LayoutEntry): DropdownMenuItem[] {
   return [
     { label: 'Edit layout', icon: 'i-lucide-pencil-ruler', onSelect: () => editor.editLayout(layout.id) },
     { label: 'Rename', icon: 'i-lucide-pencil', onSelect: () => startRename(layout) },
+    { label: 'Duplicate', icon: 'i-lucide-copy', onSelect: () => editor.run('layout_duplicate', { layoutId: layout.id }) },
     { label: 'Delete…', icon: 'i-lucide-trash-2', color: 'error', onSelect: () => remove(entry) }
   ]
 }

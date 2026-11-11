@@ -1,10 +1,10 @@
-import { componentCreate, componentDelete, componentPropertyAdd, componentPropertyRemove, componentPropertyUpdate, componentRename, componentVariantAdd, componentVariantDelete, componentVariantRename, componentVariantSetOverride, instanceSetSlot, instanceSetValues } from './component'
+import { componentCreate, componentDelete, componentDuplicate, componentPropertyAdd, componentPropertyRemove, componentPropertyUpdate, componentRename, componentVariantAdd, componentVariantDelete, componentVariantRename, componentVariantSetOverride, instanceDetach, instanceReplace, instanceSetSlot, instanceSetValues } from './component'
 import { connectionCreate, connectionDelete, connectionUpdate, endpointTest } from './connection'
 import { apiSourcePreview, collectionCreate, collectionDelete, collectionUpdate, fieldAdd, fieldMove, fieldRemove, fieldUpdate, publicRecordCreate, recordCreate, recordDelete, recordGet, recordList, recordUpdate } from './data'
 import type { ActionDef } from './define'
 import { editorGetContext, editorNavigate, editorSetContext } from './editor'
 import { envDelete, envList, envSet } from './env'
-import { layoutCreate, layoutDelete, layoutRename, layoutSlotAdd, layoutSlotRemove, layoutSlotUpdate, layoutVariableAdd, layoutVariableRemove, layoutVariableUpdate, pageSetLayout, pageSetLayoutValues, pageSetSlot } from './layout'
+import { layoutCreate, layoutDelete, layoutDuplicate, layoutRename, layoutSlotAdd, layoutSlotRemove, layoutSlotUpdate, layoutVariableAdd, layoutVariableRemove, layoutVariableUpdate, pageSetLayout, pageSetLayoutValues, pageSetSlot } from './layout'
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeRename, nodeSetLocked, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
 import { pageAdd, pageDelete, pageRename } from './page'
 import { themeGet, themeUpdate } from './theme'
@@ -35,6 +35,7 @@ export const ACTIONS = [
   componentCreate,
   componentRename,
   componentDelete,
+  componentDuplicate,
   componentPropertyAdd,
   componentPropertyUpdate,
   componentPropertyRemove,
@@ -44,8 +45,11 @@ export const ACTIONS = [
   componentVariantSetOverride,
   instanceSetValues,
   instanceSetSlot,
+  instanceDetach,
+  instanceReplace,
   layoutCreate,
   layoutRename,
+  layoutDuplicate,
   layoutDelete,
   layoutSlotAdd,
   layoutSlotUpdate,

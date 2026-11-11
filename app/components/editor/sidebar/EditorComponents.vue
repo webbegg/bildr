@@ -4,7 +4,7 @@ import type { ComponentDefinition } from '#shared/document/schema'
 import type { ComponentUsage } from '#shared/document/usages'
 import { DRAG_MIME } from '#shared/editor/dropTarget'
 import type { ComponentEntry } from '~/composables/componentEditor'
-import { componentDeleteConfirm, componentFolders, insertableComponents, instanceDragPayload } from '~/composables/componentEditor'
+import { componentDeleteConfirm, componentFolders, insertableComponents, instanceDragPayload, replaceChoiceHint, replaceChoices } from '~/composables/componentEditor'
 
 /**
  * The Assets panel's Components: the project's components by folder (the
@@ -13,6 +13,8 @@ import { componentDeleteConfirm, componentFolders, insertableComponents, instanc
  * canvas or the layers, and each row counts its instances; the chevron
  * lists where they are (the usage index), each a link to it. Deleting a
  * component in use names its instances and asks before deleting them too.
+ * The row menu also duplicates one ("<name> copy") and replaces all its
+ * instances with another component ("Replace all instances with ›").
  * "+" (or ⌥⌘K) opens the "New component" dialog for the selection; its
  * tooltip says why when it can't.
  */
@@ -80,12 +82,40 @@ async function remove({ def, usages }: ComponentEntry) {
   await editor.run('component_delete', { componentId: def.id, ...(usages.length ? { force: true } : {}) })
 }
 
+/** Replace all instances with ›: the other components, those that would contain themselves disabled; replaces from the first usage with `all`. */
+function replaceAllItems({ def, usages }: ComponentEntry): DropdownMenuItem[] {
+  const first = usages[0]
+  if (!editor.project || !first) return []
+  return replaceChoices(editor.project, def.id, usages).map(choice => ({
+    label: choice.def.name,
+    icon: 'i-lucide-component',
+    description: replaceChoiceHint(choice),
+    disabled: choice.disabled,
+    onSelect: () => replaceAll(first, choice.def.id)
+  }))
+}
+
+async function replaceAll(usage: ComponentUsage, componentId: string) {
+  const tree = usage.pageId !== undefined ? { pageId: usage.pageId } : usage.layoutId !== undefined ? { layoutId: usage.layoutId } : { inComponentId: usage.componentId }
+  await editor.run('instance_replace', { ...tree, nodeId: usage.nodeId, componentId, all: true })
+}
+
 function menu(entry: ComponentEntry): DropdownMenuItem[] {
-  const { def } = entry
+  const { def, usages } = entry
+  const replace = replaceAllItems(entry)
   return [
     { label: 'Insert', icon: 'i-lucide-plus', disabled: !insertable.value.has(def.id) || !editor.page, onSelect: () => editor.insertInstance(def.id) },
     { label: 'Edit component', icon: 'i-lucide-pencil-ruler', onSelect: () => editor.editComponent(def.id) },
     { label: 'Rename', icon: 'i-lucide-pencil', onSelect: () => startRename(def) },
+    { label: 'Duplicate', icon: 'i-lucide-copy', onSelect: () => editor.run('component_duplicate', { componentId: def.id }) },
+    {
+      label: 'Replace all instances with',
+      icon: 'i-lucide-replace',
+      description: usages.length ? undefined : 'No instances to replace',
+      disabled: !usages.length || replace.length < 2,
+      content: { class: 'max-h-80 overflow-y-auto' },
+      children: replace
+    },
     { label: 'Delete…', icon: 'i-lucide-trash-2', color: 'error', onSelect: () => remove(entry) }
   ]
 }

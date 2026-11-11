@@ -514,8 +514,8 @@ function onKeyDown(event: KeyboardEvent) {
   // Cmd/Ctrl+C, V, R and L (copy, paste, rename, lock) without Alt; Cmd/Ctrl+Alt+V (Paste style) by its physical code, as Alt changes the key on a Mac.
   // Copy, rename and lock only with a selection, and copy and paste not over a text selection (`editorTakesKey`): else the browser keeps them.
   const pasteStyleKey = meta && event.altKey && !event.shiftKey && event.code === 'KeyV'
-  // Cmd/Ctrl+Alt+K (Create component) by its physical code too.
-  const createKey = meta && event.altKey && !event.shiftKey && event.code === 'KeyK'
+  // Cmd/Ctrl+Alt+K (Create component) and Cmd/Ctrl+Alt+B (Detach instance) by their physical code too.
+  const createKey = meta && event.altKey && !event.shiftKey && (event.code === 'KeyK' || event.code === 'KeyB')
   const editorMeta = pasteStyleKey || createKey || (meta && (['z', 'y', 'd', 'a', 'g', 'p', 'f', 'k'].includes(lower) || (!event.altKey && ['c', 'v', 'r', 'l'].includes(lower))))
   const takes = editorTakesKey(
     { key: event.key, code: event.code, meta, shift: event.shiftKey, alt: event.altKey },

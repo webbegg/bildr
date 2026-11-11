@@ -67,6 +67,7 @@ const BEFORE_DEVICES: Shortcut[] = [
   { id: 'group', label: 'Group in a Container', keys: [['meta', 'g']] },
   { id: 'auto-layout', label: 'Auto layout (Row or Column)', keys: [['shift', 'a']] },
   { id: 'create-component', label: 'Create component', keys: [['meta', 'alt', 'k']] },
+  { id: 'detach-instance', label: 'Detach instance', keys: [['meta', 'alt', 'b']] },
   { id: 'select-child', label: 'Select the first child', keys: [['enter']] },
   { id: 'select-parent', label: 'Select the parent', keys: [['escape'], ['shift', 'enter']] },
   { id: 'select-next', label: 'Select the next sibling', keys: [['tab']] },

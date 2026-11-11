@@ -53,7 +53,8 @@ export type Operation
     | { op: 'updateComponent', componentId: string, name?: string }
     | { op: 'addProperty', componentId: string, index: number, property: PropertyDef }
     | { op: 'removeProperty', componentId: string, propertyId: string }
-    | { op: 'updateProperty', componentId: string, propertyId: string, name?: string, default?: PropValue | null, bindings?: PropertyBinding[] }
+    /** `index` moves the property in the list; a null `default`, `description` or `placeholder` (or `optional` false or null) removes it. */
+    | ({ op: 'updateProperty', componentId: string, propertyId: string } & PropertyPatch)
     | { op: 'addVariant', componentId: string, index: number, variant: Variant }
     | { op: 'removeVariant', componentId: string, variantId: string }
     | { op: 'updateVariant', componentId: string, variantId: string, name?: string }
@@ -68,11 +69,23 @@ export type Operation
     | { op: 'updateLayoutSlot', layoutId: string, slotId: string, name?: string, nodeId?: string }
     | { op: 'addLayoutVariable', layoutId: string, index: number, variable: PropertyDef }
     | { op: 'removeLayoutVariable', layoutId: string, variableId: string }
-    | { op: 'updateLayoutVariable', layoutId: string, variableId: string, name?: string, default?: PropValue | null, bindings?: PropertyBinding[] }
+    | ({ op: 'updateLayoutVariable', layoutId: string, variableId: string } & PropertyPatch)
     /** Sets both exactly: a null `layoutId` detaches the page, a missing or null `layoutValues` clears them. */
     | { op: 'setPageLayout', pageId: string, layoutId: string | null, layoutValues?: Record<string, PropValue> | null }
     /** Sparse, by variable id: a null value removes the page's value, so the default applies. */
     | { op: 'setLayoutValues', pageId: string, values: Record<string, PropValue | null> }
+
+/** The changes `updateProperty` and `updateLayoutVariable` make to a property (or variable). */
+export interface PropertyPatch {
+  name?: string
+  default?: PropValue | null
+  description?: string | null
+  optional?: boolean | null
+  placeholder?: string | null
+  bindings?: PropertyBinding[]
+  /** The property's new position in its list. */
+  index?: number
+}
 
 export type OperationErrorCode = 'not_found' | 'invalid' | 'forbidden'
 
@@ -173,6 +186,60 @@ function assertNewTree(project: Project, node: DocNode, isRoot = false, ids = pr
   const colors = customColorNames(project.theme)
   const problems = [...nodeTreeProblems(node, ids, isRoot, colors), ...instanceProblems(placed, project.components, layoutFills, colors)]
   if (problems.length) fail('invalid', problems.join('; '))
+}
+
+/**
+ * Applies `patch` to `property` of `list` (a component's properties or a
+ * layout's variables; `noun` and `owner` name them in messages) in place
+ * and returns the patch that undoes it.
+ */
+function patchProperty(list: PropertyDef[], property: PropertyDef, patch: PropertyPatch, noun: 'Property' | 'Variable', owner: string): PropertyPatch {
+  if (patch.name !== undefined && !patch.name.trim()) fail('invalid', `${noun} name cannot be empty`)
+  const bindings = patch.bindings === undefined ? undefined : z.array(PropertyBindingSchema).safeParse(patch.bindings)
+  if (bindings && !bindings.success) fail('invalid', `Invalid bindings: ${issues(bindings.error)}`)
+  for (const field of ['description', 'placeholder'] as const) {
+    const value = patch[field]
+    if (value === undefined || value === null) continue
+    const parsed = PropertyDefSchema.shape[field].safeParse(value)
+    if (!parsed.success) fail('invalid', `Invalid ${field}: ${issues(parsed.error)}`)
+  }
+  const many = noun === 'Property' ? 'properties' : 'variables'
+  if (patch.index !== undefined && (!Number.isInteger(patch.index) || patch.index < 0 || patch.index >= list.length)) {
+    fail('invalid', `Index ${patch.index} is out of bounds: "${owner}" has ${list.length} ${many}`)
+  }
+  const inverse: PropertyPatch = {}
+  if (patch.name !== undefined) {
+    inverse.name = property.name
+    property.name = patch.name.trim()
+  }
+  if (patch.default !== undefined) {
+    inverse.default = property.default ?? null
+    if (patch.default === null) Reflect.deleteProperty(property, 'default')
+    else property.default = patch.default
+  }
+  for (const field of ['description', 'placeholder'] as const) {
+    const value = patch[field]
+    if (value === undefined) continue
+    inverse[field] = property[field] ?? null
+    if (value === null || value === '') Reflect.deleteProperty(property, field)
+    else property[field] = value
+  }
+  if (patch.optional !== undefined) {
+    inverse.optional = property.optional ?? null
+    if (patch.optional) property.optional = true
+    else Reflect.deleteProperty(property, 'optional')
+  }
+  if (bindings) {
+    inverse.bindings = property.bindings
+    property.bindings = bindings.data
+  }
+  if (patch.index !== undefined) {
+    const from = list.indexOf(property)
+    list.splice(from, 1)
+    list.splice(patch.index, 0, property)
+    inverse.index = from
+  }
+  return inverse
 }
 
 function getProperty(def: ComponentDefinition, propertyId: string): PropertyDef {
@@ -639,24 +706,8 @@ function apply(project: Project, op: Operation): Operation {
     case 'updateProperty': {
       const def = getDefinition(project, op.componentId)
       const property = getProperty(def, op.propertyId)
-      const inverse: Extract<Operation, { op: 'updateProperty' }> = { op: 'updateProperty', componentId: def.id, propertyId: property.id }
-      if (op.name !== undefined && !op.name.trim()) fail('invalid', 'Property name cannot be empty')
-      const bindings = op.bindings === undefined ? undefined : z.array(PropertyBindingSchema).safeParse(op.bindings)
-      if (bindings && !bindings.success) fail('invalid', `Invalid bindings: ${issues(bindings.error)}`)
-      if (op.name !== undefined) {
-        inverse.name = property.name
-        property.name = op.name.trim()
-      }
-      if (op.default !== undefined) {
-        inverse.default = property.default ?? null
-        if (op.default === null) Reflect.deleteProperty(property, 'default')
-        else property.default = op.default
-      }
-      if (bindings) {
-        inverse.bindings = property.bindings
-        property.bindings = bindings.data
-      }
-      return inverse
+      const { op: _op, componentId: _c, propertyId: _p, ...patch } = op
+      return { op: 'updateProperty', componentId: def.id, propertyId: property.id, ...patchProperty(def.properties, property, patch, 'Property', def.name) }
     }
     case 'addVariant': {
       const def = getDefinition(project, op.componentId)
@@ -807,24 +858,8 @@ function apply(project: Project, op: Operation): Operation {
     case 'updateLayoutVariable': {
       const layout = getLayout(project, op.layoutId)
       const variable = getVariable(layout, op.variableId)
-      const inverse: Extract<Operation, { op: 'updateLayoutVariable' }> = { op: 'updateLayoutVariable', layoutId: layout.id, variableId: variable.id }
-      if (op.name !== undefined && !op.name.trim()) fail('invalid', 'Variable name cannot be empty')
-      const bindings = op.bindings === undefined ? undefined : z.array(PropertyBindingSchema).safeParse(op.bindings)
-      if (bindings && !bindings.success) fail('invalid', `Invalid bindings: ${issues(bindings.error)}`)
-      if (op.name !== undefined) {
-        inverse.name = variable.name
-        variable.name = op.name.trim()
-      }
-      if (op.default !== undefined) {
-        inverse.default = variable.default ?? null
-        if (op.default === null) Reflect.deleteProperty(variable, 'default')
-        else variable.default = op.default
-      }
-      if (bindings) {
-        inverse.bindings = variable.bindings
-        variable.bindings = bindings.data
-      }
-      return inverse
+      const { op: _op, layoutId: _l, variableId: _v, ...patch } = op
+      return { op: 'updateLayoutVariable', layoutId: layout.id, variableId: variable.id, ...patchProperty(layout.variables, variable, patch, 'Variable', layout.name) }
     }
     case 'setPageLayout': {
       const page = getPage(project, op.pageId)

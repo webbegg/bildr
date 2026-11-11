@@ -20,6 +20,8 @@ export interface PropDef {
   default: PropValue
   options?: string[]
   description?: string
+  /** The hint an empty text field shows (a component property's placeholder). */
+  placeholder?: string
 }
 
 export interface ComponentDef {

@@ -5,6 +5,7 @@ import { findNode, findParent } from '#shared/document/tree'
 import { filterMenuItems } from '#shared/editor/commands'
 import { naturalDisplay, siblingMove, visibilityAt, visibilityToggle } from '#shared/editor/layers'
 import { sameComponentNodes, sameTypeNodes, selectAllSiblings, siblingParent } from '#shared/editor/selection'
+import { replaceChoiceHint, replaceChoices } from '~/composables/componentEditor'
 
 /**
  * The node context menu (Stacki's ElementContextMenu, completed after
@@ -15,7 +16,10 @@ import { sameComponentNodes, sameTypeNodes, selectAllSiblings, siblingParent } f
  * then act on all of it). A search field on top filters the actions (a
  * submenu's items as "Parent › Item"); Arrow Down moves into the list and
  * Enter runs the first match. Items that don't apply (the root, an empty
- * clipboard, a non-instance) show dimmed rather than hidden.
+ * clipboard, a non-instance) show dimmed rather than hidden. On an
+ * instance, Detach instance (⌥⌘B) and Replace with › (every component with
+ * its usage count; the current one and ones that would contain themselves
+ * dimmed) act on it.
  */
 defineOptions({ inheritAttrs: false })
 
@@ -63,6 +67,22 @@ function select(ids: string[]) {
   if (ids.length) editor.selectedIds = ids
 }
 
+/** Replace with ›: every component with its usage count; the current one, and ones that would contain themselves, are disabled. */
+const replaceItems = computed<ContextMenuItem[]>(() => {
+  const id = nodeId.value
+  const node = id && editor.page ? findNode(editor.page.root, id) : undefined
+  if (!editor.project || node?.type !== INSTANCE_TYPE) return []
+  // Only a component host can make a cycle; pages and layouts take any component.
+  const hosts = editor.componentId ? [{ componentId: editor.componentId }] : []
+  return replaceChoices(editor.project, String(node.props.component), hosts).map(choice => ({
+    label: choice.def.name,
+    icon: 'i-lucide-component',
+    description: replaceChoiceHint(choice),
+    disabled: choice.disabled,
+    onSelect: () => editor.replaceInstance(node.id, choice.def.id)
+  }))
+})
+
 const items = computed<ContextMenuItem[][]>(() => {
   const id = nodeId.value
   const root = editor.page?.root
@@ -89,7 +109,15 @@ const items = computed<ContextMenuItem[][]>(() => {
     [
       // Components are made from page content; in the component view, nest one with Insert instead.
       { label: 'Create component…', icon: 'i-lucide-component', kbds: ['meta', 'alt', 'k'], disabled: cannotWrap || !onPage, onSelect: () => editor.createComponent() },
-      { label: 'Edit component', icon: 'i-lucide-pencil-ruler', disabled: !isInstance, onSelect: () => node && editor.editComponent(String(node.props.component), null, { nested: true }) }
+      { label: 'Edit component', icon: 'i-lucide-pencil-ruler', disabled: !isInstance, onSelect: () => node && editor.editComponent(String(node.props.component), null, { nested: true }) },
+      { label: 'Detach instance', icon: 'i-lucide-unlink', kbds: ['meta', 'alt', 'b'], disabled: !isInstance, onSelect: () => editor.detachInstance(id) },
+      {
+        label: 'Replace with',
+        icon: 'i-lucide-replace',
+        disabled: !isInstance || replaceItems.value.length < 2,
+        content: { class: 'max-h-80 overflow-y-auto' },
+        children: replaceItems.value
+      }
     ],
     [
       {

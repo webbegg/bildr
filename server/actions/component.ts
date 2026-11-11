@@ -2,10 +2,12 @@ import { z } from 'zod'
 import { INSTANCE_TYPE, SLOT_FILL_TYPE } from '#shared/document/components'
 import { cloneWithNewIds, createNode, newId } from '#shared/document/factory'
 import type { Operation, TreeRef } from '#shared/document/operations'
-import { IdSchema, PropertyBindingSchema, PropertyKindSchema, PropValueSchema, RESERVED_INSTANCE_KEYS } from '#shared/document/schema'
-import type { ComponentDefinition, DocNode, Project } from '#shared/document/schema'
+import { IdSchema, PROPERTY_DESCRIPTION_MAX, PROPERTY_PLACEHOLDER_MAX, PropertyBindingSchema, PropertyKindSchema, PropValueSchema, RESERVED_INSTANCE_KEYS } from '#shared/document/schema'
+import type { ComponentDefinition, DocNode, Project, PropertyDef } from '#shared/document/schema'
+import type { PropValue } from '#shared/document/components'
 import { findNode, findParent } from '#shared/document/tree'
 import { componentInstances, componentUsages } from '#shared/document/usages'
+import { copyName, detachedTree, replacedInstance, replaceProblem } from '#shared/document/instanceEdits'
 import { nameProblem, uniqueName } from '#shared/editor/names'
 import { ActionError, defineAction } from './define'
 import { ONE_TREE, oneTree, treeOf } from './node'
@@ -116,6 +118,30 @@ export const componentDelete = defineAction({
   }
 })
 
+/** The fields that only describe a property to the editor (and the agent): add takes them, update also removes them (null). */
+export const PropertyDetails = {
+  description: z.string().max(PROPERTY_DESCRIPTION_MAX).optional().describe('What the property is for, shown as a tooltip where it is set'),
+  optional: z.boolean().optional().describe('Whether instances (or pages) may leave it empty'),
+  placeholder: z.string().max(PROPERTY_PLACEHOLDER_MAX).optional().describe('The hint an empty text field shows')
+}
+
+/** The update form of `PropertyDetails`, where null removes a field. */
+export const PropertyDetailsPatch = {
+  description: PropertyDetails.description.unwrap().nullable().optional().describe('What the property is for; null removes it'),
+  optional: z.boolean().nullable().optional().describe('Whether instances (or pages) may leave it empty; false or null removes it'),
+  placeholder: PropertyDetails.placeholder.unwrap().nullable().optional().describe('The hint an empty text field shows; null removes it'),
+  index: z.number().int().nonnegative().optional().describe('Move it to this position in the list')
+}
+
+/** `PropertyDetails` given in an add, without the ones left out. */
+export function givenDetails(input: { description?: string, optional?: boolean, placeholder?: string }) {
+  return {
+    ...(input.description ? { description: input.description } : {}),
+    ...(input.optional ? { optional: true } : {}),
+    ...(input.placeholder ? { placeholder: input.placeholder } : {})
+  }
+}
+
 const PropertyFields = {
   default: PropValueSchema.optional().describe('The value instances get when they set none'),
   bindings: z.array(PropertyBindingSchema).optional().describe('The definition node props the property drives, e.g. [{ "nodeId": "n_title", "prop": "text" }]; a slot binds one container with prop "children". With "target": "style", prop is a style key of the node instead, e.g. [{ "nodeId": "n_title", "prop": "color", "target": "style" }] (text or select properties; values must be values of that key)')
@@ -130,10 +156,11 @@ export const componentPropertyAdd = defineAction({
     name: NameSchema,
     kind: PropertyKindSchema,
     ...PropertyFields,
+    ...PropertyDetails,
     index: z.number().int().nonnegative().optional().describe('Position in the property list; defaults to the end')
   }),
-  run: async ({ projectId, componentId, name, kind, default: value, bindings = [], index }, ctx) => {
-    const property = { id: newId('prop'), name, kind, ...(value === undefined ? {} : { default: value }), bindings }
+  run: async ({ projectId, componentId, name, kind, default: value, bindings = [], index, ...details }, ctx) => {
+    const property = { id: newId('prop'), name, kind, ...(value === undefined ? {} : { default: value }), ...givenDetails(details), bindings }
     const project = await ctx.services.mutate(ctx, projectId, 'Add property', [
       { op: 'addProperty', componentId, index: index ?? Number.MAX_SAFE_INTEGER, property }
     ])
@@ -143,13 +170,14 @@ export const componentPropertyAdd = defineAction({
 
 export const componentPropertyUpdate = defineAction({
   name: 'component_property_update',
-  description: 'Change a component property: name, default (null removes it) or bindings. To change its kind, remove it and add it again.',
+  description: 'Change a component property: name, default, description, optional, placeholder (null removes any of these) or bindings, and with index its position in the list. One undo step. To change its kind, remove it and add it again.',
   input: z.object({
     projectId: IdSchema,
     componentId: ComponentRef,
     propertyId: IdSchema,
     name: NameSchema.optional(),
     default: PropValueSchema.nullable().optional().describe('The value instances get when they set none; null removes it'),
+    ...PropertyDetailsPatch,
     bindings: PropertyFields.bindings
   }),
   run: async ({ projectId, ...patch }, ctx) => {
@@ -261,6 +289,119 @@ export const instanceSetValues = defineAction({
     if (!Object.keys(props).length) throw new ActionError('invalid', 'Give values or variant')
     const project = await ctx.services.mutate(ctx, projectId, 'Set instance values', [{ op: 'setProps', ...treeOf(tree), nodeId, props }])
     return { version: project.version }
+  }
+})
+
+/**
+ * The ops that move what the host tree ties to node `fromId` over to `toId`:
+ * bindings of the host component's properties (or the host layout's
+ * variables) and, in a component, its variants' style overrides, which are
+ * cleared on `fromId`.
+ */
+function retargetOps(project: Project, tree: TreeRef, fromId: string, toId: string): Operation[] {
+  const retarget = (bindings: PropertyDef['bindings']) => bindings.map(b => (b.nodeId === fromId ? { ...b, nodeId: toId } : b))
+  const bound = (p: PropertyDef) => p.bindings.some(b => b.nodeId === fromId)
+  if (tree.layoutId !== undefined) {
+    const layout = assertFound(project.layouts.find(l => l.id === tree.layoutId), `Layout "${tree.layoutId}" not found`)
+    return layout.variables.filter(bound).map(v => ({ op: 'updateLayoutVariable' as const, layoutId: layout.id, variableId: v.id, bindings: retarget(v.bindings) }))
+  }
+  if (tree.componentId === undefined) return []
+  const def = definitionIn(project, tree.componentId)
+  const ops: Operation[] = def.properties.filter(bound).map(p => ({ op: 'updateProperty' as const, componentId: def.id, propertyId: p.id, bindings: retarget(p.bindings) }))
+  for (const variant of def.variants) {
+    const override = variant.overrides[fromId]
+    if (!override) continue
+    const keys = [...Object.keys(override.style ?? {}), ...(override.unset ?? [])]
+    ops.push(
+      { op: 'setOverride', componentId: def.id, variantId: variant.id, nodeId: toId, ...(override.style ? { style: override.style } : {}), ...(override.unset ? { unset: override.unset } : {}) },
+      { op: 'setOverride', componentId: def.id, variantId: variant.id, nodeId: fromId, style: Object.fromEntries(keys.map(k => [k, null])) }
+    )
+  }
+  return ops
+}
+
+export const instanceDetach = defineAction({
+  name: 'instance_detach',
+  description: 'Detach a component instance (Framer\'s Detach instance): the tree it renders, with its variant, values, defaults and slot content applied, takes its place as plain nodes with new ids, no longer linked to the component. The root keeps the instance\'s layer name (else the component\'s name) and its style; definition layers keep their names. In a component or layout, bindings and variant style overrides of the instance move to the new root. One undo step. Returns the new root node id.',
+  input: z.object(InstanceTarget).refine(oneTree, ONE_TREE),
+  run: async ({ projectId, nodeId, ...target }, ctx) => {
+    const tree = treeOf(target)
+    const current = await ctx.services.loadProject(projectId)
+    const instance = instanceIn(current, tree, nodeId)
+    const detached = detachedTree(instance, current.components)
+    if (!detached) throw new ActionError('invalid', `Instance "${nodeId}" uses the missing component "${String(instance.props.component)}"`)
+    const location = findParent(treeRoot(current, tree), nodeId)!
+    const project = await ctx.services.mutate(ctx, projectId, 'Detach instance', [
+      { op: 'insert', ...tree, parentId: location.parent.id, index: location.index, node: detached },
+      ...retargetOps(current, tree, nodeId, detached.id),
+      { op: 'remove', ...tree, nodeId }
+    ])
+    return { version: project.version, nodeId: detached.id }
+  }
+})
+
+const ReplaceTarget = z.object({
+  projectId: IdSchema,
+  pageId: IdSchema.optional().describe('The page the instance is on; or give inComponentId or layoutId'),
+  inComponentId: IdSchema.optional().describe('The component definition the instance is nested in; replaces pageId'),
+  layoutId: IdSchema.optional().describe('The layout the instance is in; replaces pageId'),
+  nodeId: IdSchema.describe('The Instance node'),
+  componentId: ComponentRef.describe('The component to use instead'),
+  all: z.boolean().optional().describe('Replace every instance of the instance\'s component, on pages, in components and in layouts')
+}).refine(input => [input.pageId, input.inComponentId, input.layoutId].filter(id => id !== undefined).length === 1, { message: 'Give pageId, inComponentId or layoutId', path: ['pageId'] })
+
+/** Ops that turn `instance` (in `tree`) into `next`: its slot fills go, its props change, the kept (re-keyed) fills come back. */
+function replaceOps(tree: TreeRef, instance: DocNode, next: DocNode): Operation[] {
+  const props: Record<string, PropValue | null> = { ...next.props }
+  for (const key of Object.keys(instance.props)) if (!(key in next.props)) props[key] = null
+  return [
+    ...instance.children.map(fill => ({ op: 'remove' as const, ...tree, nodeId: fill.id })),
+    { op: 'setProps', ...tree, nodeId: instance.id, props },
+    ...next.children.map((fill, index) => ({ op: 'insert' as const, ...tree, parentId: instance.id, index, node: fill }))
+  ]
+}
+
+export const instanceReplace = defineAction({
+  name: 'instance_replace',
+  description: 'Replace a component instance with an instance of another component (Framer\'s Replace with). It keeps its id, layer name and style, the property values whose property names match (ignoring case; same kind, and only values the new property accepts), the variant of the same name, and slot content for slots of the same name; the rest is dropped. componentId is the component to use; the instance is on pageId, in layoutId, or nested in the definition inComponentId. With all: true, every instance of the old component is replaced, on pages, in components and in layouts. A swap that would make a component contain itself is refused. One undo step.',
+  input: ReplaceTarget,
+  run: async ({ projectId, nodeId, componentId, all, pageId, inComponentId, layoutId }, ctx) => {
+    const tree = treeOf({ pageId, componentId: inComponentId, layoutId })
+    const current = await ctx.services.loadProject(projectId)
+    const instance = instanceIn(current, tree, nodeId)
+    const to = definitionIn(current, componentId)
+    const fromId = String(instance.props.component)
+    if (fromId === to.id) throw new ActionError('invalid', `The instance already uses "${to.name}"`)
+    const from = current.components.find(c => c.id === fromId) ?? { id: fromId, name: fromId, root: instance, properties: [], variants: [] }
+    const usages: { tree: TreeRef, node: DocNode }[] = all
+      ? componentInstances(current, fromId).filter(u => !u.nested).map(u => ({ tree: treeOf(u), node: u.node }))
+      : [{ tree, node: instance }]
+    const problem = replaceProblem(current, usages.map(u => u.tree), to.id)
+    if (problem) throw new ActionError('invalid', problem)
+    // Instances of the old component in another one's slot content are replaced with it.
+    const rebuild = (node: DocNode): DocNode => {
+      const children = node.children.map(rebuild)
+      return node.type === INSTANCE_TYPE && node.props.component === fromId ? replacedInstance({ ...node, children }, from, to, current.components) : { ...node, children }
+    }
+    const ops = usages.flatMap(u => replaceOps(u.tree, u.node, rebuild(u.node)))
+    const project = await ctx.services.mutate(ctx, projectId, all ? 'Replace all instances' : 'Replace instance', ops)
+    return { version: project.version, replaced: usages.map(u => u.node.id) }
+  }
+})
+
+export const componentDuplicate = defineAction({
+  name: 'component_duplicate',
+  description: 'Duplicate a component: its definition, properties and variants, listed right after it, with no instances. Without a name it is "<name> copy" ("Card copy", numbered when taken); names are unique ignoring case. One undo step. Returns the new component id.',
+  input: z.object({ projectId: IdSchema, componentId: ComponentRef, name: NameSchema.optional().describe('Unique ignoring case; defaults to "<name> copy"') }),
+  run: async ({ projectId, componentId, name }, ctx) => {
+    const current = await ctx.services.loadProject(projectId)
+    const def = definitionIn(current, componentId)
+    if (name !== undefined) assertComponentName(current, name)
+    const copy: ComponentDefinition = { ...structuredClone(def), id: newId('cmp'), name: name ?? copyName(def.name, current.components) }
+    const project = await ctx.services.mutate(ctx, projectId, 'Duplicate component', [
+      { op: 'addComponent', index: current.components.indexOf(def) + 1, component: copy }
+    ])
+    return { version: project.version, componentId: copy.id }
   }
 })
 

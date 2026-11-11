@@ -3,7 +3,7 @@ import { INSTANCE_TYPE, isContainerType, SLOT_FILL_TYPE } from '#shared/document
 import type { DocNode, LayoutSlot, PropertyDef } from '#shared/document/schema'
 import { CHILDREN_SLOT } from '#shared/document/schema'
 import { propertyLabel } from '#shared/editor/propertyLabels'
-import { bindingLabel, propBindingAdd, uniqueComponentName } from '~/composables/componentEditor'
+import { bindingLabel, propBindingAdd, STYLE_ITEM, styleAddItems, styleBindingAdd, uniqueComponentName } from '~/composables/componentEditor'
 import { slotOf, variableAddItems } from '~/composables/layoutEditor'
 
 /**
@@ -11,7 +11,8 @@ import { slotOf, variableAddItems } from '~/composables/layoutEditor'
  * name, every slot and every variable. On another node: the slot bound to
  * it, if any, with "+" to make a container a named slot (pages can then
  * give it their own content), and the variables bound to its props, with
- * "+" to turn one of its props into a variable that each page sets. The
+ * "+" to turn one of its props or style keys into a variable that each page
+ * sets (the binding dot's choices); the gear opens the variables modal. The
  * children slot, where the page content goes, cannot be removed.
  */
 const { node } = defineProps<{ node: DocNode }>()
@@ -26,7 +27,7 @@ const shownSlots = computed(() => (layout.value ? layout.value.slots.filter(s =>
 const shownVariables = computed(() => (layout.value ? layout.value.variables.filter(v => isRoot.value || v.bindings.some(b => b.nodeId === node.id)) : []))
 const canBeSlot = computed(() => !isRoot.value && isContainerType(node.type) && node.type !== INSTANCE_TYPE && node.type !== SLOT_FILL_TYPE)
 const slotItems = computed(() => (canBeSlot.value ? [{ id: SLOT_ITEM, label: 'Make slot', disabled: !!nodeSlot.value, hint: nodeSlot.value ? 'Already a slot' : 'Pages can give it their own content' }] : []))
-const variableItems = computed(() => (layout.value ? variableAddItems(layout.value, node) : []))
+const variableItems = computed(() => (layout.value ? [...variableAddItems(layout.value, node), ...styleAddItems(layout.value.variables, node, 'variable')] : []))
 
 /** What a slot is bound to, the same richer label as properties (`Footer (Container)`). */
 function slotTarget(slot: LayoutSlot): string {
@@ -51,9 +52,11 @@ function removeSlot(slot: LayoutSlot) {
   if (layout.value) editor.run('layout_slot_remove', { layoutId: layout.value.id, slotId: slot.id })
 }
 
+/** "+", the same choices as the binding dot: a prop or a style key becomes a variable. */
 function addVariable(item: string) {
-  const add = layout.value ? propBindingAdd(layout.value.variables, node, item) : undefined
-  if (add) editor.run('layout_variable_add', { layoutId: layout.value!.id, ...add })
+  if (!layout.value) return
+  const add = item.startsWith(STYLE_ITEM) ? styleBindingAdd(layout.value.variables, node.id, item.slice(STYLE_ITEM.length)) : propBindingAdd(layout.value.variables, node, item)
+  if (add) editor.run('layout_variable_add', { layoutId: layout.value.id, ...add })
 }
 
 function renameVariable(variable: PropertyDef, name: string) {
@@ -124,9 +127,11 @@ function renameLayout(name: string) {
     <EditorStyleSection
       label="Variables"
       add-label="Add variable"
+      edit-label="Edit variables…"
       :menu="variableItems"
       data-layout-variables
       @add="addVariable"
+      @edit="editor.openProperties(shownVariables[0]?.id ?? null)"
     >
       <EditorRow
         v-for="variable in shownVariables"

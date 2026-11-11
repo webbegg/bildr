@@ -9,7 +9,8 @@ import type { Provenance } from '#shared/editor/styleFields'
  * A `removable` row (an added optional property) shows a "−" (or `removeIcon`)
  * at the end of the label column on hover, which emits `remove`. `bind` (a
  * base token key) puts the binding dot in the gutter before the label
- * (see EditorBindingDot).
+ * (see EditorBindingDot), and while that key is bound, the property's chip
+ * in place of the control (EditorBindingValue).
  */
 withDefaults(defineProps<{
   label: string
@@ -64,7 +65,14 @@ const emit = defineEmits<{ reset: [], remove: [] }>()
       </button>
     </div>
     <div class="flex min-h-[30px] min-w-0 items-center gap-2">
-      <slot />
+      <EditorBindingValue
+        v-if="bind"
+        mode="style"
+        :name="bind"
+      >
+        <slot />
+      </EditorBindingValue>
+      <slot v-else />
     </div>
     <div
       v-if="$slots.below"

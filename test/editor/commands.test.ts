@@ -83,7 +83,7 @@ describe('SHORTCUTS', () => {
 
   it('lists every editor shortcut once', () => {
     expect([...combos].sort()).toEqual([
-      'a', 'alt', 'alt+1', 'alt+2', 'alt+3', 'b', 'c', 'delete', 'enter', 'escape', 'f', 'h', 'i', 'meta+alt+k', 'meta+alt+v', 'meta+c', 'meta+d', 'meta+f', 'meta+g', 'meta+k', 'meta+l', 'meta+p', 'meta+r', 'meta+shift+z', 'meta+v', 'meta+z',
+      'a', 'alt', 'alt+1', 'alt+2', 'alt+3', 'b', 'c', 'delete', 'enter', 'escape', 'f', 'h', 'i', 'meta+alt+b', 'meta+alt+k', 'meta+alt+v', 'meta+c', 'meta+d', 'meta+f', 'meta+g', 'meta+k', 'meta+l', 'meta+p', 'meta+r', 'meta+shift+z', 'meta+v', 'meta+z',
       'r', 'shift+0', 'shift+1', 'shift+2', 'shift+a', 'shift+enter', 'shift+tab', 'space', 't', 'tab', 'v'
     ])
   })
@@ -101,6 +101,11 @@ describe('SHORTCUTS', () => {
 
   it('lists Create component as ⌥⌘K (Ctrl+Alt+K)', () => {
     expect(shortcutKeys('create-component')).toEqual(['meta', 'alt', 'k'])
+  })
+
+  it('lists Detach instance as ⌥⌘B (Ctrl+Alt+B), as in Framer', () => {
+    expect(shortcutKeys('detach-instance')).toEqual(['meta', 'alt', 'b'])
+    expect(SHORTCUTS.find(s => s.id === 'detach-instance')?.label).toBe('Detach instance')
   })
 
   it('lists the device shortcuts of the visible frames (shortcutsFor)', () => {

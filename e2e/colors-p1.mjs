@@ -17,6 +17,13 @@ const snap = async (page, name) => {
   await shot(page, `colors-p1/${name}`)
 }
 
+/** Create property opens the properties modal on the new property (S2.2); Done closes it. */
+const closeProperties = async (page) => {
+  await page.locator('[data-properties-modal]').waitFor()
+  await page.locator('[data-properties-done]').click()
+  await page.locator('[data-properties-modal]').waitFor({ state: 'detached' })
+}
+
 await run('colors-p1', async ({ context, page, errors }) => {
   // Paste style reads the system clipboard (a newer clip from another tab wins).
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE })
@@ -141,6 +148,7 @@ await run('colors-p1', async ({ context, page, errors }) => {
   await fill().hover()
   await fill().locator('[data-binding-dot="bg"]').click()
   await page.locator('[role=menuitem]').filter({ hasText: 'Create property' }).click()
+  await closeProperties(page)
   const bound = await until(async () => {
     const def = (await action('project_get', { projectId: p.id })).components.find(c => c.id === componentId)
     return def.properties.find(prop => prop.bindings.some(b => b.nodeId === defRoot.id && b.prop === 'bg' && b.target === 'style'))
@@ -158,6 +166,7 @@ await run('colors-p1', async ({ context, page, errors }) => {
   await dirRow().hover()
   await dirDot().click()
   await page.locator('[role=menuitem]').filter({ hasText: 'Create property' }).click()
+  await closeProperties(page)
   const baseDir = await until(async () => bindsAt(await defOf(), 'direction'))
   check(!!baseDir, `Create property on Mobile binds the base key direction (${baseDir?.name})`)
   await page.getByRole('button', { name: 'Tablet', exact: true }).click()
@@ -173,6 +182,7 @@ await run('colors-p1', async ({ context, page, errors }) => {
   check(menuTexts.includes('Unbind property on all breakpoints'), 'the inherited unbind is labelled "Unbind property on all breakpoints"')
   await snap(page, 'inherited-menu')
   await page.locator('[role=menuitem]').filter({ hasText: 'Create property' }).click()
+  await closeProperties(page)
   const tabletDir = await until(async () => {
     const def = await defOf()
     return !!(bindsAt(def, 'md:direction') && bindsAt(def, 'direction'))

@@ -8,7 +8,8 @@ import type { DropdownMenuItem } from '@nuxt/ui'
  * items when they have a `hint`), which emits `add` with the picked item's
  * id. The "+" is named `addLabel`, by default "Add <label> property".
  * `collapsed` (a section with nothing to show yet) renders the header only:
- * Framer's title plus "+".
+ * Framer's title plus "+". `editLabel` adds a gear before them, which emits
+ * `edit` (e.g. "Edit properties…", opening the properties modal).
  */
 export interface SectionMenuItem {
   id: string
@@ -18,8 +19,8 @@ export interface SectionMenuItem {
   hint?: string
 }
 
-const props = withDefaults(defineProps<{ label: string, menu?: SectionMenuItem[], removeLabel?: string, addLabel?: string, collapsed?: boolean }>(), { menu: () => [], removeLabel: undefined, addLabel: undefined })
-const emit = defineEmits<{ add: [id: string], remove: [] }>()
+const props = withDefaults(defineProps<{ label: string, menu?: SectionMenuItem[], removeLabel?: string, addLabel?: string, editLabel?: string, collapsed?: boolean }>(), { menu: () => [], removeLabel: undefined, addLabel: undefined, editLabel: undefined })
+const emit = defineEmits<{ add: [id: string], remove: [], edit: [] }>()
 
 const items = computed<DropdownMenuItem[]>(() => props.menu.map(item => ({
   label: item.label,
@@ -39,6 +40,23 @@ const items = computed<DropdownMenuItem[]>(() => props.menu.map(item => ({
       <h3 class="min-w-0 flex-1 truncate text-[12px] font-[550] text-highlighted">
         {{ label }}
       </h3>
+      <UTooltip
+        v-if="editLabel"
+        :text="editLabel"
+      >
+        <button
+          type="button"
+          :class="ACTION"
+          :aria-label="editLabel"
+          data-section-action="edit"
+          @click="emit('edit')"
+        >
+          <UIcon
+            name="i-lucide-settings-2"
+            class="size-4"
+          />
+        </button>
+      </UTooltip>
       <UTooltip
         v-if="removeLabel"
         :text="removeLabel"

@@ -93,11 +93,12 @@ export function variantStyle(style: Record<string, string>, override: VariantOve
   return merged
 }
 
-export function resolveInstance(instance: DocNode, components: ComponentDefinition[]): DocNode | null {
-  return expand(instance, new Map(components.map(c => [c.id, c])), [])
+/** `keepNames` copies the layer names of definition nodes (and nested instances) into the tree, for detaching it into plain nodes. */
+export function resolveInstance(instance: DocNode, components: ComponentDefinition[], { keepNames = false }: { keepNames?: boolean } = {}): DocNode | null {
+  return expand(instance, new Map(components.map(c => [c.id, c])), [], keepNames)
 }
 
-function expand(instance: DocNode, definitions: Definitions, stack: string[]): DocNode | null {
+function expand(instance: DocNode, definitions: Definitions, stack: string[], keepNames = false): DocNode | null {
   const def = definitions.get(String(instance.props.component))
   if (!def || stack.includes(def.id) || stack.length >= MAX_INSTANCE_DEPTH) return null
   const variantId = instance.props.variant
@@ -130,15 +131,17 @@ function expand(instance: DocNode, definitions: Definitions, stack: string[]): D
     const built: DocNode = {
       id: `${instance.id}${INSTANCE_ID_SEPARATOR}${node.id}`,
       type: node.type,
+      ...(keepNames && node.name ? { name: node.name } : {}),
       props,
       style,
       children
     }
-    return node.type === INSTANCE_TYPE ? expand(built, definitions, next) : built
+    return node.type === INSTANCE_TYPE ? expand(built, definitions, next, keepNames) : built
   }
 
   const root = build(def.root)
-  return root && { ...root, style: { ...root.style, ...instance.style } }
+  const name = keepNames ? instance.name ?? root?.name : undefined
+  return root && { ...root, ...(name ? { name } : {}), style: { ...root.style, ...instance.style } }
 }
 
 /**

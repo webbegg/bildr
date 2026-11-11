@@ -69,6 +69,14 @@ export interface CreateRequest {
   nodeIds: string[]
 }
 
+/** The "<Component> properties" / "<Layout> variables" modal (EditorPropertiesModal): whose, the property shown, and whether its name field takes the focus. */
+export interface PropertiesRequest {
+  kind: EditKind
+  id: string
+  propertyId: string | null
+  focusName: boolean
+}
+
 export function actionErrorMessage(error: unknown): string {
   const data = (error as { data?: { data?: { message?: string }, message?: string } }).data
   return data?.data?.message ?? data?.message ?? String(error)
@@ -92,6 +100,8 @@ export function createEditor(projectId: string) {
   const editStack = ref<EditLevel[]>([])
   /** The open "New component" / "New layout" dialog, or null. */
   const createRequest = shallowRef<CreateRequest | null>(null)
+  /** The open properties modal, or null. */
+  const propertiesRequest = shallowRef<PropertiesRequest | null>(null)
   /** The open confirm dialog and how to answer it, or null. */
   const confirmRequest = shallowRef<(ConfirmOptions & { answer: (ok: boolean) => void }) | null>(null)
   /** In the component view, the variant the Canvas shows and prop/style edits override; null is the primary (the definition itself). */
@@ -480,6 +490,31 @@ export function createEditor(projectId: string) {
     selectedId.value = result.nodeId
     editComponent(result.componentId, null, { nested: true })
     return true
+  }
+
+  /**
+   * Opens the properties modal of the component or layout being edited, on
+   * `propertyId` (the first property by default); `focusName` puts the focus
+   * in its name field, e.g. right after the binding dot created it.
+   */
+  function openProperties(propertyId: string | null = null, { focusName = false }: { focusName?: boolean } = {}): void {
+    const owner = component.value ? { kind: 'component' as const, id: component.value.id } : layout.value ? { kind: 'layout' as const, id: layout.value.id } : null
+    if (owner) propertiesRequest.value = { ...owner, propertyId, focusName }
+  }
+
+  /** Detach instance (⌥⌘B): the selected instance becomes the plain tree it renders, which is selected. */
+  async function detachInstance(id: string | null = selectedId.value): Promise<void> {
+    const node = id && page.value ? findNode(page.value.root, id) : undefined
+    if (node?.type !== INSTANCE_TYPE) return
+    const result = await runOnPage<{ nodeId: string }>('instance_detach', { nodeId: node.id })
+    if (result) selectedId.value = result.nodeId
+  }
+
+  /** Replace with ›: instance `nodeId` of the tree being edited (or with `all`, every instance of its component) becomes an instance of `componentId`. */
+  async function replaceInstance(nodeId: string, componentId: string, { all = false }: { all?: boolean } = {}): Promise<void> {
+    const tree = treeRef.value
+    const host = 'componentId' in tree && tree.componentId ? { inComponentId: tree.componentId } : tree
+    await run('instance_replace', { ...host, nodeId, componentId, ...(all ? { all: true } : {}) })
   }
 
   /** Inserts an instance of a component (at the selection by default) and selects it; a component never goes into itself. */
@@ -934,7 +969,7 @@ export function createEditor(projectId: string) {
    * arrows): the canvas and the layers tree pass it, a focused button does not.
    * Escape disarms an insert tool, else selects the parent as in Framer (on
    * the root it clears; with nothing selected it goes up one breadcrumb
-   * level). Cmd/Ctrl+Alt+K creates a component (matched on `code`). Cmd/Ctrl+C copies, +V pastes, +Alt+V pastes the style
+   * level). Cmd/Ctrl+Alt+K creates a component and Cmd/Ctrl+Alt+B detaches the selected instance (both matched on `code`). Cmd/Ctrl+C copies, +V pastes, +Alt+V pastes the style
    * (matched on `code`), +R renames and +L locks. Bare letters pick the canvas tools
    * (V Move, H Hand, and the insert tools); `I` opens the Insert panel, as in
    * Framer, rather than arming Image. Cmd/Ctrl+P opens the draft preview,
@@ -948,6 +983,11 @@ export function createEditor(projectId: string) {
     if (meta && alt && !shift && code === 'KeyK') {
       if (mode.value !== 'build') return false
       createComponent()
+      return true
+    }
+    if (meta && alt && !shift && code === 'KeyB') {
+      if (mode.value !== 'build') return false
+      void detachInstance()
       return true
     }
     if (meta && !shift && lower === 'p') {
@@ -990,9 +1030,9 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, componentId, component, layoutId, layout, editStack, createRequest, confirmRequest, canvasAccent, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
+    projectId, project, pageId, componentId, component, layoutId, layout, editStack, createRequest, propertiesRequest, confirmRequest, canvasAccent, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
-    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, confirmCreate, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, updateStyles, previewTheme, updateTheme, undo, redo, shortcut
   })

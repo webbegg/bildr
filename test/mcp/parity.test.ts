@@ -19,6 +19,7 @@ const COMPONENT_ACTIONS = [
   'component_create',
   'component_rename',
   'component_delete',
+  'component_duplicate',
   'component_property_add',
   'component_property_update',
   'component_property_remove',
@@ -27,12 +28,15 @@ const COMPONENT_ACTIONS = [
   'component_variant_rename',
   'component_variant_set_override',
   'instance_set_values',
-  'instance_set_slot'
+  'instance_set_slot',
+  'instance_detach',
+  'instance_replace'
 ]
 
 const LAYOUT_ACTIONS = [
   'layout_create',
   'layout_rename',
+  'layout_duplicate',
   'layout_delete',
   'layout_slot_add',
   'layout_slot_update',

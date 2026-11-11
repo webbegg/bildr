@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
-import { getStyleToken, isResponsiveToken, STYLE_HEX, styleKey } from '#shared/design/tokens'
+import { STYLE_HEX } from '#shared/design/tokens'
 import type { PropDef, PropValue } from '#shared/document/components'
-import { INSTANCE_TYPE, SLOT_FILL_TYPE } from '#shared/document/components'
-import type { PropertyBinding, PropertyDef } from '#shared/document/schema'
+import type { PropertyBinding } from '#shared/document/schema'
 import { customColorNames } from '#shared/design/theme'
-import type { BindingDotAction, StyleBindingDot } from '#shared/editor/bindingDot'
-import { propertyValues, styleBindCandidates, styleBindingDot, unbindLabel } from '#shared/editor/bindingDot'
+import type { BindingDotAction } from '#shared/editor/bindingDot'
+import { propertyValues, styleBindCandidates, unbindLabel, variantOverridden } from '#shared/editor/bindingDot'
 import { cssColorToHex } from '#shared/editor/color'
 import { colorSwatch, colorSwatchRows, customColorSwatches, styleProvenance } from '#shared/editor/styleFields'
 import { envRef } from '#shared/env/insert'
-import { bindsKey, boundProperty, propBindingAdd, styleBindingAdd } from '~/composables/componentEditor'
+import { propBindingAdd, styleBindingAdd } from '~/composables/componentEditor'
+import { useBinding } from '~/composables/useBinding'
 
 /**
  * Framer's binding dot: a small dot in the gutter before a bindable row's
@@ -29,8 +29,11 @@ import { bindsKey, boundProperty, propBindingAdd, styleBindingAdd } from '~/comp
  * binds the edited key, and its unbind is labelled as reaching every
  * breakpoint that inherits it. Bind to property lists only the properties
  * whose values (default and instance or page values) all fit the style key,
- * as the server checks (`styleBindCandidates`). Each pick is one action,
- * one undo step.
+ * as the server checks (`styleBindCandidates`). Create opens the properties
+ * modal on the new property, its name field focused. On a value a variant
+ * overrides (or removes), the menu offers Reset override. Each pick is one
+ * action, one undo step. The bound row itself shows the property's chip
+ * (EditorBindingValue, which shares this state through `useBinding`).
  */
 const props = defineProps<{
   mode: 'style' | 'prop'
@@ -42,37 +45,7 @@ const props = defineProps<{
 const emit = defineEmits<{ update: [value: PropValue] }>()
 const editor = useEditor()
 
-const nodes = computed(() => editor.selectedNodes)
-const single = computed(() => (nodes.value.length === 1 ? nodes.value[0]! : undefined))
-const token = computed(() => (props.mode === 'style' ? getStyleToken(props.name) : undefined))
-/** The key edits go to: the token at the edited breakpoint, or the prop. */
-const key = computed(() => (token.value && isResponsiveToken(token.value) ? styleKey(props.name, editor.device.breakpoint) : props.name))
-const target = computed(() => (props.mode === 'style' ? 'style' as const : 'prop' as const))
-
-/** Who can own a binding here: the component's properties or the layout's variables. */
-const owner = computed(() => {
-  if (editor.component) return { kind: 'component' as const, noun: 'property', list: editor.component.properties }
-  if (editor.layout) return { kind: 'layout' as const, noun: 'variable', list: editor.layout.variables }
-  return null
-})
-const bindable = computed(() => {
-  const node = single.value
-  if (!owner.value || !node || node.type === SLOT_FILL_TYPE) return false
-  return props.mode === 'style' || node.type !== INSTANCE_TYPE
-})
-/** The row's binding state (own, inherited or none) and its menu actions, each with the key it writes. */
-const dot = computed((): StyleBindingDot | undefined => {
-  const o = owner.value
-  const node = single.value
-  if (!o || !node) return undefined
-  if (props.mode === 'style') return styleBindingDot(o.list, node.id, node.style, key.value)
-  const property = boundProperty(o.list, node.id, key.value, target.value)
-  return property
-    ? { state: 'own', property, boundKey: key.value, actions: [{ kind: 'unbind', key: key.value, property, scope: 'key' }] }
-    : { state: 'none', actions: [{ kind: 'bind', key: key.value }, { kind: 'create', key: key.value }] }
-})
-const bound = computed(() => (dot.value?.state === 'none' ? undefined : dot.value?.property))
-const inherited = computed(() => dot.value?.state === 'inherited')
+const { nodes, single, token, key, owner, bindable, dot, bound, inherited, setBindings, unbind } = useBinding(() => props.mode, () => props.name)
 const actionOf = <K extends BindingDotAction['kind']>(kind: K) => dot.value?.actions.find((a): a is Extract<BindingDotAction, { kind: K }> => a.kind === kind)
 
 /** The style value every selected node shows at the device; undefined when unset or mixed. */
@@ -97,21 +70,29 @@ const rawHex = computed(() => {
   return swatch ? cssColorToHex(swatch.color) : undefined
 })
 
-function setBindings(property: PropertyDef, bindings: PropertyBinding[]) {
-  const o = owner.value
-  if (!o) return
-  if (o.kind === 'component') editor.run('component_property_update', { componentId: editor.component!.id, propertyId: property.id, bindings })
-  else editor.run('layout_variable_update', { layoutId: editor.layout!.id, variableId: property.id, bindings })
-}
-
-function create(at: string) {
+async function create(at: string) {
   const o = owner.value
   const node = single.value
   if (!o || !node) return
   const add = props.mode === 'style' ? styleBindingAdd(o.list, node.id, at) : propBindingAdd(o.list, node, props.name)
   if (!add) return
-  if (o.kind === 'component') editor.run('component_property_add', { componentId: editor.component!.id, ...add })
-  else editor.run('layout_variable_add', { layoutId: editor.layout!.id, ...add })
+  const created = o.kind === 'component'
+    ? (await editor.run<{ propertyId: string }>('component_property_add', { componentId: editor.component!.id, ...add }))?.propertyId
+    : (await editor.run<{ variableId: string }>('layout_variable_add', { layoutId: editor.layout!.id, ...add }))?.variableId
+  if (created) editor.openProperties(created, { focusName: true })
+}
+
+/** In the variant view, whether the active variant overrides (or removes) this row's value on the selected node. */
+const overridden = computed(() => {
+  const node = single.value
+  const variant = editor.variant
+  return !!node && !!variant && variantOverridden(variant.overrides[node.id], props.mode, key.value)
+})
+
+function resetOverride() {
+  const node = single.value
+  if (!node) return
+  editor.setOverride(node.id, props.mode === 'prop' ? { props: { [key.value]: null } } : { style: { [key.value]: null } })
 }
 
 const bindingOf = (at: string): PropertyBinding => ({ nodeId: single.value!.id, prop: at, ...(props.mode === 'style' ? { target: 'style' as const } : {}) })
@@ -137,12 +118,16 @@ const swatchItems = computed(() => {
 const items = computed<DropdownMenuItem[][]>(() => {
   const groups: DropdownMenuItem[][] = []
   const o = owner.value
-  const unbind = actionOf('unbind')
-  if (unbind && o) {
+  const unbinding = actionOf('unbind')
+  if (unbinding && o) {
     groups.push([
       { type: 'label', label: label.value },
-      { label: unbindLabel(unbind, o.noun), icon: 'i-lucide-unlink-2', onSelect: () => setBindings(unbind.property, unbind.property.bindings.filter(b => !bindsKey(b, single.value!.id, unbind.key, target.value))) }
+      { label: `Edit ${o.noun}…`, icon: 'i-lucide-settings-2', onSelect: () => editor.openProperties(unbinding.property.id) },
+      { label: unbindLabel(unbinding, o.noun), icon: 'i-lucide-unlink-2', onSelect: () => unbind(unbinding.property, unbinding.key) }
     ])
+  }
+  if (overridden.value && editor.variant) {
+    groups.push([{ label: 'Reset override', icon: 'i-lucide-rotate-ccw', description: `Back to the primary in ${editor.variant.name}`, onSelect: resetOverride }])
   }
   if (props.mode === 'style' && token.value) {
     groups.push([
@@ -212,7 +197,7 @@ const label = computed(() => {
     </template>
   </EditorMenu>
   <span
-    v-if="bound"
+    v-if="bound && inherited"
     class="order-1 min-w-0 flex-1 basis-0 truncate text-[10px] text-(color:--editor-selection)"
     :title="label"
     data-bound-name

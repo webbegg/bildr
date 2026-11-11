@@ -5,7 +5,7 @@ import type { DocNode, PropertyDef, Variant } from '#shared/document/schema'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Provenance } from '#shared/editor/styleFields'
 import { propertyLabel } from '#shared/editor/propertyLabels'
-import { bindingLabel, boundProperty, propBindingAdd, propertyField, uniqueComponentName } from '~/composables/componentEditor'
+import { bindingLabel, boundProperty, propBindingAdd, propertyField, STYLE_ITEM, styleAddItems, styleBindingAdd, uniqueComponentName } from '~/composables/componentEditor'
 import { instanceVariantValue, newVariantName, PRIMARY_VARIANT, variantItems } from '~/composables/componentVariants'
 
 /**
@@ -17,8 +17,9 @@ import { instanceVariantValue, newVariantName, PRIMARY_VARIANT, variantItems } f
  * its tag; click one to show and edit it, its menu renames or deletes it
  * after a confirm, "+" adds one), the component name and properties on its
  * root, and on any definition node the properties bound to it (labelled
- * by what they set, `propertyLabel`), with "+" to turn one of its props, or
- * a container's children (a slot), into a property.
+ * by what they set, `propertyLabel`), with "+" to turn one of its props, a
+ * style key, or a container's children (a slot), into a property: the same
+ * choices as the binding dot. The gear opens the properties modal.
  */
 const { node } = defineProps<{ node: DocNode }>()
 const editor = useEditor()
@@ -58,21 +59,20 @@ const addItems = computed(() => {
   if (!def.value || node.type === INSTANCE_TYPE || node.type === SLOT_FILL_TYPE) return []
   const props = (getComponent(node.type)?.props ?? []).map(p => ({ id: p.name, label: p.label, disabled: bound(p.name), hint: bound(p.name) ? 'Already a property' : undefined }))
   const slot = isContainerType(node.type) ? [{ id: SLOT_ITEM, label: 'Slot (children)', disabled: bound(SLOT_PROP), hint: bound(SLOT_PROP) ? 'Already a slot' : 'Instances can fill it' }] : []
-  return [...props, ...slot]
+  return [...props, ...styleAddItems(def.value.properties, node), ...slot]
 })
 
 function boundTo(property: PropertyDef): string {
   return def.value ? bindingLabel(def.value.root, property.bindings[0]) : 'Not bound'
 }
 
+/** "+", the same choices as the binding dot: a prop, a style key, or the children (a slot) become a property. */
 function addProperty(item: string) {
   if (!def.value) return
   const taken = def.value.properties
-  if (item === SLOT_ITEM) {
-    editor.run('component_property_add', { componentId: def.value.id, name: uniqueComponentName('Content', taken), kind: 'slot', bindings: [{ nodeId: node.id, prop: SLOT_PROP }] })
-    return
-  }
-  const add = propBindingAdd(taken, node, item)
+  const add = item === SLOT_ITEM
+    ? { name: uniqueComponentName('Content', taken), kind: 'slot' as const, bindings: [{ nodeId: node.id, prop: SLOT_PROP }] }
+    : item.startsWith(STYLE_ITEM) ? styleBindingAdd(taken, node.id, item.slice(STYLE_ITEM.length)) : propBindingAdd(taken, node, item)
   if (add) editor.run('component_property_add', { componentId: def.value.id, ...add })
 }
 
@@ -276,9 +276,11 @@ function renameComponent(name: string) {
     v-if="def"
     :label="isDefRoot ? 'Component properties' : 'Properties'"
     add-label="Add property"
+    edit-label="Edit properties…"
     :menu="addItems"
     data-component-properties
     @add="addProperty"
+    @edit="editor.openProperties(shownProperties[0]?.id ?? null)"
   >
     <EditorRow
       v-if="isDefRoot"

@@ -88,6 +88,13 @@ export function styleBindingDot(properties: readonly PropertyDef[], nodeId: stri
   return { state: 'none', actions: bindHere }
 }
 
+/** Whether a variant's `override` of a node changes prop `key` (`mode` prop) or style key `key`: sets it or removes it. The dot then offers Reset override. */
+export function variantOverridden(override: { props?: Record<string, unknown>, style?: Record<string, string>, unset?: readonly string[] } | undefined, mode: 'prop' | 'style', key: string): boolean {
+  if (!override) return false
+  if (mode === 'prop') return override.props?.[key] !== undefined
+  return override.style?.[key] !== undefined || !!override.unset?.includes(key)
+}
+
 /** An unbind's menu label: `Unbind property`, or for an inherited binding the breakpoints it also unbinds. */
 export function unbindLabel(action: Extract<BindingDotAction, { kind: 'unbind' }>, noun: string): string {
   if (action.scope === 'key') return `Unbind ${noun}`

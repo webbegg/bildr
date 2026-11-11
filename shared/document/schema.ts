@@ -83,11 +83,23 @@ export function isStyleBinding(binding: { target?: 'style' }): boolean {
   return binding.target === 'style'
 }
 
+export const PROPERTY_DESCRIPTION_MAX = 500
+export const PROPERTY_PLACEHOLDER_MAX = 200
+
+/**
+ * A component property or layout variable. `description` (a tooltip for
+ * whoever sets it), `optional` (instances or pages may leave it empty) and
+ * `placeholder` (the hint of an empty text field) only describe it to the
+ * editor; properties saved before them have none.
+ */
 export const PropertyDefSchema = z.object({
   id: IdSchema,
   name: z.string().trim().min(1).max(100),
   kind: PropertyKindSchema,
   default: PropValueSchema.optional(),
+  description: z.string().max(PROPERTY_DESCRIPTION_MAX).optional(),
+  optional: z.boolean().optional(),
+  placeholder: z.string().max(PROPERTY_PLACEHOLDER_MAX).optional(),
   bindings: z.array(PropertyBindingSchema).default(() => [])
 })
 

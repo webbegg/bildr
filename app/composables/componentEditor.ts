@@ -1,4 +1,6 @@
-import { getComponent, INSTANCE_TYPE } from '#shared/document/components'
+import { getComponent, INSTANCE_TYPE, SLOT_FILL_TYPE } from '#shared/document/components'
+import { replaceProblem } from '#shared/document/instanceEdits'
+import type { TreeRef } from '#shared/document/operations'
 import type { PropDef } from '#shared/document/components'
 import { parseStyleKey } from '#shared/design/tokens'
 import { isStyleBinding } from '#shared/document/schema'
@@ -112,13 +114,20 @@ export function outsideInstance(root: DocNode, target: DropTarget): DropTarget {
 /**
  * A non-slot property as a prop field of its instances: keyed by the
  * property id, its default and options from the first binding: a bound
- * prop, or for a style binding the bound style key (its token scale).
+ * prop, or for a style binding the bound style key (its token scale). Its
+ * description (the field's tooltip) and placeholder come from the property.
  */
 export function propertyField(def: ComponentDefinition, property: PropertyDef): PropDef {
   const binding = property.bindings[0]
   const target = binding ? findNode(def.root, binding.nodeId) : undefined
   const kind = property.kind === 'slot' ? 'text' : property.kind
-  const common = { name: property.id, label: property.name, kind, description: `${property.name}, a property of ${def.name}` }
+  const common = {
+    name: property.id,
+    label: property.name,
+    kind,
+    description: property.description ?? `${property.name}, a property of ${def.name}`,
+    ...(property.placeholder ? { placeholder: property.placeholder } : {})
+  }
   if (binding && isStyleBinding(binding)) {
     const token = parseStyleKey(binding.prop)?.token
     return {
@@ -186,6 +195,58 @@ export function uniqueComponentName(base: string, components: readonly Pick<Comp
   for (let n = 2; taken.has(name); n++) name = `${base} ${n}`
   return name
 }
+
+/** A Replace with › item's second line: the usage count, and why it is disabled (`2 instances · The current component`). */
+export function replaceChoiceHint(choice: Pick<ReplaceChoice, 'usages' | 'reason'>): string {
+  const count = `${choice.usages} instance${choice.usages === 1 ? '' : 's'}`
+  return choice.reason ? `${count} · ${choice.reason}` : count
+}
+
+export interface ReplaceChoice {
+  def: ComponentDefinition
+  /** Its instances (`componentUsages`). */
+  usages: number
+  disabled: boolean
+  /** Why it is disabled: the current component, or the cycle it would make; '' when it isn't. */
+  reason: string
+}
+
+/**
+ * "Replace with ›": every component, with its usage count, to replace
+ * instances of `currentId` that sit in the trees `hosts` with. The current
+ * component and the ones that would make a component contain itself are
+ * disabled, saying why.
+ */
+export function replaceChoices(project: Project, currentId: string, hosts: TreeRef[]): ReplaceChoice[] {
+  return project.components.map((def) => {
+    const reason = def.id === currentId ? 'The current component' : replaceProblem(project, hosts, def.id) ?? ''
+    return { def, usages: componentUsages(project, def.id).length, disabled: !!reason, reason }
+  })
+}
+
+/** Style keys "+" offers besides the ones a node sets, so an unstyled node can still get a style property. */
+const COMMON_STYLE_KEYS = ['bg', 'color']
+
+/**
+ * The style choices of the Properties (or Variables) "+" menu, as the
+ * binding dot offers on every style row: each style key node `node` sets,
+ * then Background and Text color. A key some property already drives is
+ * disabled. Ids are `style:<key>`.
+ */
+export function styleAddItems(properties: readonly PropertyDef[], node: DocNode, noun = 'property'): { id: string, label: string, disabled: boolean, hint: string }[] {
+  if (node.type === INSTANCE_TYPE || node.type === SLOT_FILL_TYPE) return []
+  const keys = [...new Set([...Object.keys(node.style), ...COMMON_STYLE_KEYS])]
+  return keys.flatMap((key) => {
+    const parsed = parseStyleKey(key)
+    if (!parsed) return []
+    const bound = !!boundProperty([...properties], node.id, key, 'style')
+    const label = `Style · ${parsed.token.label}${parsed.breakpoint ? ` (${parsed.breakpoint})` : ''}`
+    return [{ id: `${STYLE_ITEM}${key}`, label, disabled: bound, hint: bound ? `Already a ${noun}` : noun === 'property' ? 'Instances can set it' : 'Each page can set it' }]
+  })
+}
+
+/** The id prefix of `styleAddItems` items. */
+export const STYLE_ITEM = 'style:'
 
 export interface ComponentCommandActions {
   insert: (componentId: string) => unknown

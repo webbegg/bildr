@@ -254,3 +254,216 @@ await run('components', async ({ page, errors }) => {
   check(native.length === 0, `no native confirm() dialogs${native.length ? `: ${native.join(' | ')}` : ''}`)
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 })
+
+/**
+ * Components and layouts P1 (S2.1–S2.3): Detach instance (the node menu and
+ * ⌥⌘B), Replace with › (search, then pick) and Replace all instances from
+ * Assets, Duplicate of a component and a layout, the properties modal
+ * (created from the binding dot with the name focused, a default that an
+ * instance then renders), the chip of a bound field and its × unbind, and
+ * Reset override from the dot on a variant value. Each step is undone and
+ * checked. Shots go to e2e/.shots/components-p1/.
+ */
+await run('components-p1', async ({ page, errors }) => {
+  const snap = async (name) => {
+    await page.waitForTimeout(350)
+    await shot(page, `components-p1/${name}`)
+  }
+  const p = await project('components-p1')
+  const projectId = p.id
+  const pageId = p.pages[0].id
+  const get = () => action('project_get', { projectId })
+  const root = async () => (await get()).pages[0].root
+  const componentOf = async id => (await get()).components.find(c => c.id === id)
+
+  // Card (a Heading bound to Title, a Button) used twice; Tile (a Heading bound to "title"); a layout.
+  const cardNode = await action('node_insert', { projectId, pageId, type: 'Card', style: { p: '6' }, children: [{ type: 'Heading', props: { text: 'Latte' } }, { type: 'Button', props: { label: 'Buy' } }] })
+  const { componentId: cardId, nodeId: first } = await action('component_create', { projectId, pageId, nodeId: cardNode.nodeId, name: 'Card' })
+  const card = await componentOf(cardId)
+  const [headingId, buttonId] = card.root.children.map(c => c.id)
+  const { propertyId: titleId } = await action('component_property_add', { projectId, componentId: cardId, name: 'Title', kind: 'text', bindings: [{ nodeId: headingId, prop: 'text' }] })
+  await action('instance_set_values', { projectId, pageId, nodeId: first, values: { [titleId]: 'Mocha' } })
+  const { nodeId: second } = await action('node_insert', { projectId, pageId, type: 'Instance', props: { component: cardId } })
+  const tileNode = await action('node_insert', { projectId, pageId, type: 'Column', children: [{ type: 'Heading', props: { text: 'Tile' } }] })
+  const { componentId: tileId } = await action('component_create', { projectId, pageId, nodeId: tileNode.nodeId, name: 'Tile' })
+  const tile = await componentOf(tileId)
+  const { propertyId: tileTitleId } = await action('component_property_add', { projectId, componentId: tileId, name: 'title', kind: 'text', bindings: [{ nodeId: tile.root.children[0].id, prop: 'text' }] })
+  const { layoutId } = await action('layout_create', { projectId, name: 'Site' })
+
+  await openEditor(page, projectId)
+  await page.getByRole('tab', { name: 'Layers' }).click()
+  const row = id => page.locator(`[data-layer-id="${id}"]`).first()
+  const select = async (id) => {
+    await row(id).click()
+    await until(async () => await row(id).getAttribute('aria-selected') === 'true')
+  }
+  const menuItem = label => page.locator('[role=menu] [role^=menuitem]').filter({ hasText: label })
+  const undo = async () => {
+    await page.mouse.move(700, 800)
+    // A picked menu item closes its menu; the key goes to the editor once it has.
+    check(await until(async () => (await page.locator('[data-dismissable-layer]').count()) === 0), 'the menu has closed')
+    await page.locator('body').press('Control+z')
+  }
+  const instanceAt = async id => findNode(await root(), n => n.id === id)
+  const canvasText = () => canvas(page).locator('body').innerText()
+
+  // Detach via the node menu: the instance becomes the plain Card it rendered, named "Card".
+  const index = (await root()).children.findIndex(n => n.id === first)
+  await row(first).click({ button: 'right' })
+  await page.locator('[data-node-menu-search]').waitFor()
+  check((await menuItem('Detach instance').innerText()).replace(/\s+/g, '').toLowerCase().endsWith('ctrlaltb'), `the node menu shows Detach instance with ⌥⌘B (${(await menuItem('Detach instance').innerText()).replace(/\s+/g, ' ')})`)
+  await menuItem('Detach instance').click()
+  const detached = await until(async () => {
+    const node = (await root()).children[index]
+    return node && node.type === 'Card' ? node : null
+  })
+  check(!!detached && !await instanceAt(first), 'Detach instance replaces the instance with plain nodes')
+  check(detached?.name === 'Card' && findNode(detached, n => n.type === 'Heading')?.props.text === 'Mocha', `the detached tree keeps the layer name and the instance's value (${detached?.name}, ${findNode(detached ?? { children: [] }, n => n.type === 'Heading')?.props.text})`)
+  check(!!await until(async () => (await row(detached.id).getAttribute('aria-selected')) === 'true'), 'the detached root is selected')
+  check((await canvasText()).includes('Mocha'), 'the canvas still shows the detached content')
+  await snap('detached')
+  await undo()
+  check(!!await until(async () => (await instanceAt(first))?.type === 'Instance'), 'undo brings the instance back')
+
+  // ⌥⌘B on the second instance.
+  await select(second)
+  await page.locator('body').press('Control+Alt+b')
+  check(!!await until(async () => !await instanceAt(second)), '⌥⌘B detaches the selected instance')
+  await undo()
+  check(!!await until(async () => (await instanceAt(second))?.type === 'Instance'), 'undo after ⌥⌘B brings it back')
+
+  // Replace with ›: the submenu lists components with usage counts, the current one disabled; search, then pick.
+  await row(first).click({ button: 'right' })
+  await page.locator('[data-node-menu-search]').waitFor()
+  await menuItem('Replace with').hover()
+  const sub = page.locator('[role=menu]').filter({ hasText: 'Tile' }).last()
+  await sub.waitFor()
+  const cardChoice = sub.locator('[role^=menuitem]').filter({ hasText: 'Card' })
+  check(await cardChoice.getAttribute('data-disabled') !== null, 'Replace with › disables the current component')
+  check((await sub.innerText()).includes('2 instances') && (await sub.innerText()).includes('1 instance'), `Replace with › shows usage counts (${(await sub.innerText()).replace(/\s+/g, ' ')})`)
+  await snap('replace-with')
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('Escape')
+  await page.locator('[data-node-menu-search]').waitFor({ state: 'detached' }).catch(() => {})
+  await row(first).click({ button: 'right' })
+  await page.locator('[data-node-menu-search]').fill('tile')
+  const tileHit = menuItem('Replace with › Tile')
+  await tileHit.waitFor()
+  await tileHit.click()
+  const replaced = await until(async () => {
+    const node = await instanceAt(first)
+    return node?.props.component === tileId ? node : null
+  })
+  check(!!replaced, 'search, then pick replaces the instance with Tile')
+  check(replaced?.props[tileTitleId] === 'Mocha', 'the value of the property with the same name (Title → title) is kept')
+  check((await instanceAt(second)).props.component === cardId, 'Replace with changes that instance only')
+  await undo()
+  check(!!await until(async () => (await instanceAt(first))?.props.component === cardId), 'undo brings Card back')
+
+  // Assets: Replace all instances with ›, then Duplicate a component and a layout.
+  await page.getByRole('tab', { name: 'Assets' }).click()
+  const cardRow = page.locator(`[data-component-id="${cardId}"]`)
+  const openRowMenu = async (rowLocator, label) => {
+    await rowLocator.hover()
+    await rowLocator.getByLabel(label).click()
+  }
+  await openRowMenu(cardRow, 'Component actions')
+  await page.locator('[role^=menuitem]').filter({ hasText: 'Replace all instances with' }).hover()
+  await page.locator('[role=menu]').last().locator('[role^=menuitem]').filter({ hasText: 'Tile' }).click()
+  check(!!await until(async () => {
+    const r = await root()
+    return (await instanceAt(first))?.props.component === tileId && (await instanceAt(second))?.props.component === tileId && !findNode(r, n => n.props?.component === cardId)
+  }), 'Replace all instances with › Tile swaps every Card instance')
+  await undo()
+  check(!!await until(async () => (await instanceAt(first))?.props.component === cardId && (await instanceAt(second))?.props.component === cardId), 'undo brings every Card back')
+
+  await openRowMenu(cardRow, 'Component actions')
+  await page.locator('[role^=menuitem]').filter({ hasText: /^\s*Duplicate\s*$/ }).click()
+  check(!!await until(async () => (await get()).components.some(c => c.name === 'Card copy')), 'Duplicate makes "Card copy"')
+  await undo()
+  check(!!await until(async () => !(await get()).components.some(c => c.name === 'Card copy')), 'undo removes the duplicate')
+  const layoutRow = page.locator(`[data-layout-id="${layoutId}"]`)
+  await openRowMenu(layoutRow, 'Layout actions')
+  await page.locator('[role^=menuitem]').filter({ hasText: /^\s*Duplicate\s*$/ }).click()
+  check(!!await until(async () => (await get()).layouts.some(l => l.name === 'Site copy')), 'Duplicate makes the layout "Site copy"')
+  await undo()
+  check(!!await until(async () => (await get()).layouts.length === 1), 'undo removes the layout duplicate')
+
+  // The properties modal: the dot's Create property opens it on the new property, its name focused.
+  await cardRow.locator('button[draggable]').click()
+  await page.locator('[data-component-view]').waitFor()
+  await page.getByRole('tab', { name: 'Layers' }).click()
+  await select(buttonId)
+  const labelRow = page.locator('[data-prop-row="label"]')
+  await labelRow.hover()
+  await labelRow.locator('[data-binding-dot="label"]').click()
+  await page.locator('[role=menuitem]').filter({ hasText: 'Create property' }).click()
+  const modal = page.locator('[data-properties-modal]')
+  await modal.waitFor()
+  check(await page.getByRole('dialog').filter({ hasText: 'Card properties' }).count() === 1, 'the modal is titled "Card properties"')
+  const labelProp = await until(async () => (await componentOf(cardId)).properties.find(prop => prop.bindings.some(b => b.nodeId === buttonId && b.prop === 'label')))
+  check(!!labelProp, `Create property adds a property bound to the label (${labelProp?.name})`)
+  check(!!await until(async () => page.locator('[data-property-name]').evaluate(el => el === document.activeElement)), 'the new property\'s name field is focused')
+  check(await modal.locator(`[data-property-details="${labelProp.id}"]`).count() === 1, 'the modal shows the new property')
+  check((await modal.locator('[data-property-type]').innerText()).trim() === 'Text', 'the type is the human label "Text"')
+  const defaultInput = modal.locator('[data-property-default] input').first()
+  await defaultInput.fill('Order')
+  await defaultInput.press('Enter')
+  check(!!await until(async () => (await componentOf(cardId)).properties.find(prop => prop.id === labelProp.id)?.default === 'Order'), 'the Default field stores a default')
+  await snap('modal')
+  await page.locator('[data-properties-done]').click()
+  await modal.waitFor({ state: 'detached' })
+
+  // An instance with no value renders the default.
+  await page.getByRole('button', { name: 'Leave the component view' }).click()
+  await page.locator('[data-breadcrumb]').waitFor({ state: 'detached' })
+  check(!!await until(async () => (await canvasText()).includes('Order')), 'an instance without a value shows the default ("Order")')
+  await undo()
+  check(!!await until(async () => (await componentOf(cardId)).properties.find(prop => prop.id === labelProp.id)?.default === undefined), 'undo removes the default')
+  check(!!await until(async () => !(await canvasText()).includes('Order')), 'the instance shows the definition\'s label again')
+
+  // The chip on a bound field: it replaces the value; click opens the modal on it, × unbinds.
+  await page.getByRole('tab', { name: 'Assets' }).click()
+  await cardRow.locator('button[draggable]').click()
+  await page.locator('[data-component-view]').waitFor()
+  await page.getByRole('tab', { name: 'Layers' }).click()
+  await select(headingId)
+  const textRow = page.locator('[data-prop-row="text"]')
+  const chip = textRow.locator('[data-binding-chip]')
+  await chip.waitFor()
+  check(await chip.getAttribute('data-bound-name') === 'Title', 'the bound text field shows the chip "Title"')
+  check(await textRow.locator('input, textarea').count() === 0, 'the chip takes the place of the value')
+  await snap('chip')
+  await chip.locator('[data-binding-chip-open]').click()
+  await modal.waitFor()
+  check(await modal.locator(`[data-property-details="${titleId}"]`).count() === 1, 'clicking the chip opens the modal on that property')
+  await page.locator('[data-properties-done]').click()
+  await modal.waitFor({ state: 'detached' })
+  await chip.locator('[data-binding-chip-unbind]').click()
+  check(!!await until(async () => !(await componentOf(cardId)).properties.find(prop => prop.id === titleId).bindings.length), '× unbinds the property')
+  check(!!await until(async () => (await textRow.locator('[data-binding-chip]').count()) === 0), 'the field shows its value again')
+  await undo()
+  check(!!await until(async () => (await componentOf(cardId)).properties.find(prop => prop.id === titleId).bindings.length === 1), 'undo binds it again')
+  check(!!await until(async () => (await textRow.locator('[data-binding-chip]').count()) === 1), 'the chip is back')
+
+  // Reset override from the dot on a variant value.
+  const { variantId } = await action('component_variant_add', { projectId, componentId: cardId, name: 'Flat' })
+  await action('component_variant_set_override', { projectId, componentId: cardId, variantId, nodeId: card.root.id, style: { bg: 'muted' } })
+  const override = async () => (await componentOf(cardId)).variants[0].overrides[card.root.id]?.style?.bg
+  await select(card.root.id)
+  const variantRow = page.locator(`[data-variant-row="${variantId}"]`)
+  await variantRow.waitFor()
+  await variantRow.getByRole('button', { name: 'Show and edit Flat' }).click()
+  const fill = page.locator('[data-style-row="bg"]').first()
+  await fill.hover()
+  await fill.locator('[data-binding-dot="bg"]').click()
+  const reset = page.locator('[role=menuitem]').filter({ hasText: 'Reset override' })
+  await reset.waitFor()
+  await snap('reset-override')
+  await reset.click()
+  check(!!await until(async () => (await override()) === undefined), 'Reset override in the dot menu removes the variant\'s value')
+  await undo()
+  check(!!await until(async () => (await override()) === 'muted'), 'undo brings the override back')
+
+  check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
+})
