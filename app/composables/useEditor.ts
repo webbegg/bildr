@@ -11,6 +11,7 @@ import { containsNode, findNode, findParent } from '#shared/document/tree'
 import type { NodeBox } from '#shared/editor/autoLayout'
 import { inferAutoLayout, nearestSpacingToken } from '#shared/editor/autoLayout'
 import type { EditorView, SidebarPanel } from '#shared/editor/commands'
+import type { SpacingOverlay } from '#shared/editor/protocol'
 import { collapsedAncestors, layerName, siblingMove, siblingMoves } from '#shared/editor/layers'
 import type { DropTarget } from '#shared/editor/dropTarget'
 import { insertTargetForSelection, moveTarget, parseDragPayload } from '#shared/editor/dropTarget'
@@ -76,6 +77,8 @@ export function createEditor(projectId: string) {
     }
   })
   const hoveredId = ref<string | null>(null)
+  /** The panel's Padding or Gap field under the pointer: the canvas paints that overlay on the selection. */
+  const spacingOverlay = ref<SpacingOverlay | null>(null)
   /** The canvas tool: Move, Hand (drags pan), or a component type the next canvas click inserts. */
   const tool = ref<ToolId>(MOVE_TOOL)
   const DEEP_KEY = 'bildr:deep-select'
@@ -799,9 +802,10 @@ export function createEditor(projectId: string) {
     await runOnPage('node_update_style', updates.length === 1 ? updates[0]! : { updates })
   }
 
-  // A preview belongs to the nodes being styled.
+  // A preview belongs to the nodes being styled; so does a spacing overlay (its panel row may unmount under the pointer).
   watch([selectedIds, () => page.value?.id], () => {
     if (stylePreview.value) styles.preview(stylePreview.value.nodeId, null)
+    spacingOverlay.value = null
   })
 
   /** Previews a theme change in the canvas without committing it. */
@@ -882,7 +886,7 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, componentId, component, layoutId, layout, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
+    projectId, project, pageId, componentId, component, layoutId, layout, variantId, variant, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
     reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, createLayout, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,

@@ -31,6 +31,10 @@ import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MI
  * goes to the frames, which report where a click inserts, and so does the
  * light/dark preview. Each frame has Framer's header bar (EditorFrameBar):
  * clicking it activates the frame, ▶ previews the draft in a popup that wide.
+ * Direct manipulation (#23): the active frame's handle drags preview a style
+ * patch and commit it through `updateStyle` (one undo step, `setOverride` in
+ * the variant view), and the panel's hovered Padding or Gap field goes to the
+ * frames as `bildr:overlay`.
  */
 const { view = 'page' } = defineProps<{ view?: CanvasView }>()
 const editor = useEditor()
@@ -276,6 +280,7 @@ function sync(id: DeviceId | null, el: HTMLIFrameElement) {
   post(el, { type: 'bildr:hover', nodeId: editor.hoveredId })
   post(el, toolMessage())
   post(el, { type: 'bildr:dark', dark: editor.previewDark })
+  post(el, { type: 'bildr:overlay', overlay: editor.spacingOverlay })
   if (id) post(el, activeMessage(id, editor.deviceId, viewport.value.zoom))
   const preview = editor.stylePreview
   if (preview) for (const nodeId of previewTargets(preview)) post(el, { type: 'bildr:preview', nodeId, style: preview.style })
@@ -333,7 +338,9 @@ function onMessage(event: MessageEvent) {
   } else if (message.type === 'bildr:drop') {
     activate(id ?? null)
     editor.drop(message.payload, { parentId: message.parentId, index: message.index })
-  } else if (id && message.type === 'bildr:size') heights[id] = message.height
+  } else if (message.type === 'bildr:style-preview') editor.previewStyle(message.nodeId, message.style)
+  else if (message.type === 'bildr:style-commit') editor.updateStyle(message.nodeId, message.style)
+  else if (id && message.type === 'bildr:size') heights[id] = message.height
   else if (id && message.type === 'bildr:wheel') onFrameWheel(el, message)
   else if (id && message.type === 'bildr:pan') panBy(message.dx, message.dy)
   else if (id && message.type === 'bildr:space') spaceHeld.value = message.down
@@ -344,6 +351,7 @@ watch(() => editor.selectedIds, () => broadcast(selectMessage()))
 watch(() => editor.hoveredId, nodeId => broadcast({ type: 'bildr:hover', nodeId }))
 watch(() => editor.tool, () => broadcast(toolMessage()))
 watch(() => editor.previewDark, dark => broadcast({ type: 'bildr:dark', dark }))
+watch(() => editor.spacingOverlay, overlay => broadcast({ type: 'bildr:overlay', overlay }))
 watch([() => editor.deviceId, () => viewport.value.zoom], ([deviceId, zoom]) => {
   for (const [id, el] of frames) if (id) post(el, activeMessage(id, deviceId, zoom))
 })

@@ -42,6 +42,8 @@ import { styleProvenance } from '#shared/editor/styleFields'
  * the commit as one `update` (one undo step) and passes previews on.
  * For a multi-selection `styles` holds the shared values and `mixed` the
  * tokens that differ, whose fields read "Mixed".
+ * Hovering the Padding or Gap row paints that overlay on the canvas selection
+ * (`editor.spacingOverlay`).
  */
 const props = defineProps<{
   styles: Record<string, string>
@@ -94,6 +96,24 @@ const update = (patch: Record<string, string | null>) => Object.keys(patch).leng
 /** Select content that previews the option under the pointer or keyboard focus (items carry `data-option-value`). */
 const optionPreview = (key: string) => previewFocusedOption(value => preview(key, value))
 
+/** The row whose hover set `editor.spacingOverlay`, so its unmount (no mouseleave then) can clear it. */
+let overlayRow: RowId | null = null
+
+/** The canvas overlay of a hovered row: Padding's or Gap's, none for the others. */
+function hoverRow(row: RowId, entered: boolean) {
+  const overlay = row === 'padding' ? 'padding' : row === 'gap' ? 'gap' : null
+  if (!overlay) return
+  editor.spacingOverlay = entered ? overlay : null
+  overlayRow = entered ? row : null
+}
+
+/** Clears the overlay this component's row set, if it is still the one shown. */
+function clearRowOverlay() {
+  const row = overlayRow
+  overlayRow = null
+  if (row && editor.spacingOverlay === row) editor.spacingOverlay = null
+}
+
 const natural = computed(() => naturalDisplay({ type: props.type, props: {} }))
 /** Optional rows added this session, before (or, for Display and the corners, without) a token. */
 const added = ref<RowId[]>([])
@@ -123,6 +143,11 @@ function resetRow(row: RowId) {
 }
 
 const shownRows = computed(() => new Map(sections.value.flatMap(s => s.rows).map(row => [row.id, row])))
+// A hovered Padding or Gap row that goes (its section collapses, the node changes type) never sees its mouseleave.
+watch(shownRows, (rows) => {
+  if (overlayRow && !rows.has(overlayRow)) clearRowOverlay()
+})
+onBeforeUnmount(clearRowOverlay)
 /** The base key a row's binding dot binds: rows of one token only. */
 const bindKey = (row: RowId) => (rowKeys(row).length === 1 ? rowKeys(row)[0] : undefined)
 /** A row's label state, its binding dot, and the "−" of an added optional row ("×" on Fill, Border and Shadows). */
@@ -472,6 +497,8 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
           @preview="preview(rowKeys(row.id)[0]!, $event)"
           @commit="setField(rowKeys(row.id)[0]!, $event)"
           @reset="resetRow(row.id)"
+          @mouseenter="hoverRow(row.id, true)"
+          @mouseleave="hoverRow(row.id, false)"
         />
 
         <EditorBoxRow
@@ -485,6 +512,8 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
           @preview="emit('preview', $event)"
           @commit="update"
           @reset="resetRow(row.id)"
+          @mouseenter="hoverRow(row.id, true)"
+          @mouseleave="hoverRow(row.id, false)"
         />
 
         <EditorRow

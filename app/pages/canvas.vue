@@ -3,16 +3,22 @@ import type { DataRecord } from '#shared/data/records'
 import type { Theme } from '#shared/design/theme'
 import type { ComponentDefinition, Layout, Page } from '#shared/document/schema'
 import type { EnvValues } from '#shared/env/variables'
-import type { CanvasToEditor, CanvasView, EditorToCanvas } from '#shared/editor/protocol'
+import type { CanvasToEditor, CanvasView, EditorToCanvas, SpacingOverlay } from '#shared/editor/protocol'
 import { canvasKeyMessage, isCanvasMessage } from '#shared/editor/protocol'
-import { isContainerType } from '#shared/document/components'
-import { findNode, findParent } from '#shared/document/tree'
-import type { DropPosition, DropTarget } from '#shared/editor/dropTarget'
+import { spacingBasePx } from '#shared/design/theme'
+import { containsNode, findNode, findParent } from '#shared/document/tree'
+import type { DropPosition, DropTarget, Rect } from '#shared/editor/dropTarget'
 import type { InsertHit } from '#shared/editor/insertTools'
 import { insertTargetAt, toolForKey } from '#shared/editor/insertTools'
 import type { StylePatch } from '#shared/editor/preview'
 import { previewTree, settlePreviews } from '#shared/editor/preview'
-import { breakpointAt, DRAG_MIME, draggedNodeId, dropNodeAt, dropPosition, laysOutInRow, resolveDrop } from '#shared/editor/dropTarget'
+import { breakpointAt, DRAG_MIME, draggedNodeId, laysOutInRow } from '#shared/editor/dropTarget'
+import type { GestureEffect, GestureEndReason, GestureState } from '#shared/editor/gesture'
+import { gestureTargetGone, startGesture, stepGesture } from '#shared/editor/gesture'
+import type { ReorderHit } from '#shared/editor/reorder'
+import { canDragNode, isNoopMove, REORDER_THRESHOLD, reorderTarget } from '#shared/editor/reorder'
+import type { Axis, HandleId, Insets, Point, ResizeDrag, SpacingHandle, SpacingTarget } from '#shared/editor/handles'
+import { changedPatch, gapRects, handleCursor, handlePoint, HANDLES, hitPoint, hitRadius, paddingRects, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '#shared/editor/handles'
 import { editorTakesKey, hasTextSelection } from '#shared/editor/clipboardKeys'
 import { FRAME_MIN_HEIGHT, viewportUnitRules, wheelPixels, zoomShortcut } from '#shared/editor/viewport'
 import type { NodeBox } from '#shared/editor/autoLayout'
@@ -55,6 +61,23 @@ import { labelPlacement } from '#shared/editor/labelPlacement'
  * The frame grows with its content, so `screen` heights (100vh) would grow
  * with it: in the page view they resolve to the device's nominal viewport
  * height from `bildr:active` instead.
+ *
+ * Direct manipulation (#23), in the active frame on a single unlocked
+ * selection (not the root), with no insert tool armed:
+ * - 8 resize handles (corners and edge midpoints): a drag previews the W/H
+ *   scale step nearest the pointer (`resizePatch`), labelled e.g.
+ *   `w-64 · 256px`, Shift by 4 stops; a Fit or Fill size becomes fixed.
+ * - Padding and gap overlays (hatched, accent) while the panel's Padding or
+ *   Gap field is hovered (`bildr:overlay`), or both while the pointer is over
+ *   a selected auto layout; their handles drag the padding key the side uses
+ *   (`paddingDragKey`) or `gap`, snapped the same way.
+ * - A press on the selection that moves past 4 px drags it: the drop
+ *   indicator shows the sibling slot or container under the pointer (locks
+ *   respected), and the release moves it there (`bildr:drop`, one node_move).
+ * Handle drags preview through the editor (`bildr:style-preview`) and commit
+ * once on release (`bildr:style-commit`), at this frame's breakpoint (the
+ * edited one: only the active frame has handles). Esc cancels any drag and
+ * drops its preview; the click that ends a drag selects nothing.
  */
 definePageMeta({ layout: false })
 
@@ -129,12 +152,173 @@ const measurement = computed(() => {
   const from = { x, y, width: Math.max(...rects.map(r => r.x + r.width)) - x, height: Math.max(...rects.map(r => r.y + r.height)) - y }
   return { target, lines: measureLines(from, toRect(target)) }
 })
+const rectStyle = (rect: { x: number, y: number, width: number, height: number }) => ({ left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` })
+/** The spacing overlays' fill: an accent tint with diagonal hatching, at screen size. */
+const hatch = () => ({
+  backgroundColor: `color-mix(in srgb, var(${ACCENT_VAR}) 10%, transparent)`,
+  backgroundImage: `repeating-linear-gradient(-45deg, color-mix(in srgb, var(${ACCENT_VAR}) 45%, transparent) 0 ${1 / zoom.value}px, transparent ${1 / zoom.value}px ${5 / zoom.value}px)`
+})
+/** The white ring around a handle, `px` wide on screen. */
+const ringShadow = (px: number) => `0 0 0 ${px / zoom.value}px #fff`
+/** A spacing handle: a pill across the side or gap it drags (12 × 4 on screen). */
+function spacingHandleStyle(handle: SpacingHandle) {
+  const across = handle.kind === 'padding' ? handle.side === 'left' || handle.side === 'right' : spacing.value?.axis === 'row'
+  const [w, h] = (across ? [4, 12] : [12, 4]).map(n => n / zoom.value) as [number, number]
+  return { left: `${handle.x - w / 2}px`, top: `${handle.y - h / 2}px`, width: `${w}px`, height: `${h}px`, boxShadow: ringShadow(1) }
+}
 const lineStyle = (line: MeasureLine) => line.y1 === line.y2
   ? { left: `${line.x1}px`, top: `${line.y1 - 0.5 / zoom.value}px`, width: `${line.length}px`, height: `${1 / zoom.value}px` }
   : { left: `${line.x1 - 0.5 / zoom.value}px`, top: `${line.y1}px`, width: `${1 / zoom.value}px`, height: `${line.length}px` }
 
 interface Indicator { top: number, left: number, width: number, height: number, line: boolean }
 const indicator = ref<Indicator | null>(null)
+
+/** The panel field hovered in the editor (Padding or Gap), whose overlay to paint. */
+const panelOverlay = ref<SpacingOverlay | null>(null)
+/** Handle sizes in screen px (scaled back by the zoom): the drawn dot, the hit radius, and a spacing handle's least inset. */
+const HANDLE_PX = 7
+const HANDLE_HIT_PX = 6
+const HANDLE_INSET_PX = 8
+
+/** The node direct manipulation applies to: a single unlocked selection, not the root, in the active page-view frame with Move. */
+const editable = computed(() => {
+  const root = page.value?.root
+  const id = selectedIds.value.length === 1 ? selectedIds.value[0] : undefined
+  return root && id && view.value === 'page' && active.value && !tool.value && canDragNode(root, id) ? id : null
+})
+const editableBox = computed(() => (editable.value ? boxes.selected.find(box => box.id === editable.value) ?? null : null))
+
+interface SpacingBox {
+  /** The padding box (inside the border), its padding, and the gaps of its flex layout. */
+  rect: { x: number, y: number, width: number, height: number }
+  insets: Insets
+  gaps: { x: number, y: number, width: number, height: number }[]
+  axis: Axis
+  gapPx: number
+  showPadding: boolean
+  showGap: boolean
+}
+/** The spacing overlays shown on the editable node, measured each frame; null when none shows. */
+const spacing = shallowRef<SpacingBox | null>(null)
+const spacingHandleList = computed<SpacingHandle[]>(() => {
+  const s = spacing.value
+  if (!s) return []
+  return spacingHandles(s.rect, s.insets, s.gaps, HANDLE_INSET_PX / zoom.value).filter(h => (h.kind === 'padding' ? s.showPadding : s.showGap))
+})
+const resizeHandles = computed(() => (editableBox.value ? HANDLES.map(handle => ({ handle, ...handlePoint(toRect(editableBox.value!), handle) })) : []))
+
+/** A drag's node, the page it started on, and its lifecycle (`stepGesture`: pending → active → done or cancelled). */
+interface GestureBase { nodeId: string, pageId: string | undefined, state: GestureState }
+type Gesture
+  = | GestureBase & { kind: 'resize', drag: ResizeDrag, patch: Record<string, string>, cursor: string }
+    | GestureBase & { kind: 'spacing', target: SpacingTarget, startPx: number, patch: Record<string, string>, cursor: string, shown: { padding: boolean, gap: boolean } }
+    | GestureBase & { kind: 'reorder', target: DropTarget | null }
+/** The drag in progress, from the press until it ends (`stepGesture`). */
+let gesture: Gesture | null = null
+/** The live token label of a handle drag, at the pointer (canvas px). */
+const dragLabel = ref<{ text: string, x: number, y: number } | null>(null)
+/** The pointer in canvas px; null outside the frame. */
+let pointer: Point | null = null
+/** Set when a press ended a drag (or Esc cancelled one): the click that follows selects nothing. */
+let swallowClick = false
+
+const canvasPoint = (event: MouseEvent): Point => ({ x: event.clientX + window.scrollX, y: event.clientY + window.scrollY })
+const inside = (point: Point, rect: { x: number, y: number, width: number, height: number }) =>
+  point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height
+
+const SPACING_CURSORS: Record<string, string> = { top: 'ns-resize', bottom: 'ns-resize', left: 'ew-resize', right: 'ew-resize', row: 'ew-resize', col: 'ns-resize' }
+const spacingCursor = (handle: SpacingHandle) => SPACING_CURSORS[handle.kind === 'padding' ? handle.side : spacing.value?.axis ?? 'row']!
+
+/** The resize or spacing handle under a canvas point (the nearest within the hit radius), or null. */
+function handleAt(point: Point): { handle: HandleId } | { spacing: SpacingHandle } | null {
+  const box = editableBox.value
+  if (!box) return null
+  const candidates = [
+    ...resizeHandles.value.map(h => ({ x: h.x, y: h.y, hit: { handle: h.handle } as const })),
+    ...spacingHandleList.value.map(h => ({ x: h.x, y: h.y, hit: { spacing: h } }))
+  ]
+  return hitPoint(candidates, point, hitRadius(toRect(box), point, HANDLE_HIT_PX / zoom.value))?.hit ?? null
+}
+
+/** Every pointer cursor in the frame, while a handle is hovered or a drag runs; null restores them. */
+function setCursor(cursor: string | null) {
+  let style = document.getElementById('bildr-canvas-cursor')
+  if (!style) {
+    style = document.createElement('style')
+    style.id = 'bildr-canvas-cursor'
+    document.head.appendChild(style)
+  }
+  const css = cursor ? `*, *::before, *::after { cursor: ${cursor} !important; }` : ''
+  if (style.textContent !== css) style.textContent = css
+}
+
+/** The layout element of a node's element: itself, or for wrappers (a Card) its only child, down to the flex box. */
+function layoutElement(el: Element): Element {
+  let at = el
+  for (let depth = 0; depth < 3 && !getComputedStyle(at).display.includes('flex') && at.children.length === 1; depth++) at = at.children[0]!
+  return at
+}
+
+/** An element's content box (inside its border and padding), in canvas px. */
+function contentOf(target: Element): { x: number, y: number, width: number, height: number } {
+  const px = (value: string) => Number.parseFloat(value) || 0
+  const r = target.getBoundingClientRect()
+  const c = getComputedStyle(target)
+  return {
+    x: r.left + window.scrollX + px(c.borderLeftWidth) + px(c.paddingLeft),
+    y: r.top + window.scrollY + px(c.borderTopWidth) + px(c.paddingTop),
+    width: r.width - px(c.borderLeftWidth) - px(c.borderRightWidth) - px(c.paddingLeft) - px(c.paddingRight),
+    height: r.height - px(c.borderTopWidth) - px(c.borderBottomWidth) - px(c.paddingTop) - px(c.paddingBottom)
+  }
+}
+
+/** The padding and flex gaps of node `id`'s element, in canvas px. */
+function measureSpacing(id: string, box: Box): Omit<SpacingBox, 'showPadding' | 'showGap'> & { flex: boolean } | null {
+  const el = firstCopy(id)
+  if (!el) return null
+  const px = (value: string) => Number.parseFloat(value) || 0
+  const css = getComputedStyle(el)
+  const insets = { top: px(css.paddingTop), right: px(css.paddingRight), bottom: px(css.paddingBottom), left: px(css.paddingLeft) }
+  const border = { top: px(css.borderTopWidth), right: px(css.borderRightWidth), bottom: px(css.borderBottomWidth), left: px(css.borderLeftWidth) }
+  const rect = { x: box.left + border.left, y: box.top + border.top, width: box.width - border.left - border.right, height: box.height - border.top - border.bottom }
+  const layout = layoutElement(el)
+  const lcss = getComputedStyle(layout)
+  const flex = lcss.display.includes('flex')
+  const axis: Axis = lcss.flexDirection.startsWith('column') ? 'col' : 'row'
+  const children = flex
+    ? [...layout.children].filter((child) => {
+        const c = getComputedStyle(child)
+        return c.display !== 'none' && c.position !== 'absolute' && c.position !== 'fixed'
+      }).map((child) => {
+        const r = child.getBoundingClientRect()
+        return { x: r.left + window.scrollX, y: r.top + window.scrollY, width: r.width, height: r.height }
+      })
+    : []
+  if (lcss.flexDirection.endsWith('reverse')) children.reverse()
+  const gaps = flex ? gapRects(contentOf(layout), children, axis) : []
+  return { rect, insets, gaps, axis, gapPx: px(axis === 'row' ? lcss.columnGap : lcss.rowGap), flex }
+}
+
+/** Which spacing overlays show: a spacing drag's, the hovered panel field's, or both over a selected auto layout. */
+function trackSpacing() {
+  const id = editable.value
+  const box = editableBox.value
+  const g = gesture
+  const want = !id || !box || (g && g.kind !== 'spacing')
+    ? null
+    : g?.kind === 'spacing'
+      ? g.shown
+      : panelOverlay.value
+        ? { padding: panelOverlay.value === 'padding', gap: panelOverlay.value === 'gap' }
+        : pointer && inside(pointer, toRect(box)) ? 'hover' : null
+  const measured = want ? measureSpacing(id!, box!) : null
+  if (!want || !measured || (want === 'hover' && !measured.flex)) {
+    spacing.value = null
+    return
+  }
+  const { flex, ...rest } = measured
+  spacing.value = { ...rest, showPadding: want === 'hover' || want.padding, showGap: flex && (want === 'hover' || want.gap) }
+}
 
 function post(message: CanvasToEditor) {
   window.parent.postMessage(message, window.location.origin)
@@ -177,6 +361,7 @@ function track() {
   boxes.hover = hoveredId.value && !selectedIds.value.includes(hoveredId.value) ? measure(hoveredId.value) : null
   boxes.selected = selectedIds.value.map(measure).filter((box): box is Box => !!box)
   boxes.parent = active.value && parentId.value ? measure(parentId.value) : null
+  trackSpacing()
   frame = requestAnimationFrame(track)
 }
 
@@ -214,6 +399,8 @@ function onMessage(event: MessageEvent) {
     applyViewportRules()
   } else if (message.type === 'bildr:hover') {
     hoveredId.value = message.nodeId
+  } else if (message.type === 'bildr:overlay') {
+    panelOverlay.value = message.overlay
   } else if (message.type === 'bildr:preview') {
     const { [message.nodeId]: _, ...others } = previews.value
     previews.value = message.style ? { ...others, [message.nodeId]: message.style } : others
@@ -222,6 +409,10 @@ function onMessage(event: MessageEvent) {
 
 function onPointerMove(event: MouseEvent) {
   alt.value = event.altKey
+  pointer = canvasPoint(event)
+  if (gesture) return
+  const over = handleAt(pointer)
+  setCursor(over ? ('handle' in over ? handleCursor(over.handle) : spacingCursor(over.spacing)) : null)
   if (tool.value) indicator.value = insertAt(event)?.indicator ?? null
   const id = reachableAt(event.target)
   if (id === hoveredId.value) return
@@ -230,6 +421,10 @@ function onPointerMove(event: MouseEvent) {
 }
 
 function onPointerLeave() {
+  pointer = null
+  // A press that hasn't become a drag ends here: its release outside the frame would never reach it.
+  endGestureBy('leave')
+  if (!gesture) setCursor(null)
   if (tool.value) indicator.value = null
   hoveredId.value = null
   post({ type: 'bildr:hover', nodeId: null })
@@ -239,6 +434,10 @@ function onPointerLeave() {
 function onClick(event: MouseEvent) {
   event.preventDefault()
   event.stopPropagation()
+  if (swallowClick) {
+    swallowClick = false
+    return
+  }
   if (tool.value) {
     const insert = insertAt(event)
     indicator.value = null
@@ -295,6 +494,11 @@ function onContextMenu(event: MouseEvent) {
 
 const SHORTCUT_KEYS = new Set(['Delete', 'Backspace', 'Escape', 'Enter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 function onKeyDown(event: KeyboardEvent) {
+  // Esc is a drag's own: it cancels it rather than selecting the parent.
+  if (event.key === 'Escape' && endGestureBy('escape') === 'cancel') {
+    event.preventDefault()
+    return
+  }
   const meta = event.metaKey || event.ctrlKey
   if (event.key === 'Alt') alt.value = true
   if (event.code === 'Space' && view.value === 'page') {
@@ -330,36 +534,212 @@ const sizeObserver = import.meta.client
   ? new ResizeObserver(() => view.value === 'page' && post({ type: 'bildr:size', height: Math.ceil(root.value?.offsetHeight ?? 0) }))
   : null
 
-/** The drop slot under the pointer, plus where to draw it. */
-function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } | null {
-  const types = event.dataTransfer?.types ?? []
+/**
+ * The drop slot for a pointer over element `el` (at viewport `point`), for a
+ * drag of node `draggedId` or of a new component. A locked node (or one
+ * inside a lock) is no drop target: its nearest unlocked ancestor takes the drop.
+ */
+function dropHitAt(el: Element | null, point: Point, draggedId: string | undefined): ReorderHit | null {
   const root = page.value?.root
-  if (!root || !types.includes(DRAG_MIME)) return null
-  const el = event.target as Element | null
-  if (el?.closest?.('[data-bildr-copy]')) return null
+  if (!root || el?.closest?.('[data-bildr-copy]')) return null
   const over = el?.closest?.('[data-bildr-placeholder]')
   const overEl = over ?? el?.closest?.('[data-bildr-id]')
   const overId = over?.getAttribute('data-bildr-placeholder') ?? overEl?.getAttribute('data-bildr-id')
-  // A locked node (or one inside a lock) is no drop target: its nearest unlocked ancestor takes the drop.
-  const reached = dropNodeAt(root, overId, !!over)
-  const placeholder = reached?.placeholder
-  const nodeEl = reached ? (reached.redirected ? firstCopy(reached.nodeId) : overEl) : null
-  const node = reached ? findNode(root, reached.nodeId) : undefined
-  if (!nodeEl || !node) return null
-  const rect = nodeEl.getBoundingClientRect()
   // The canvas is as wide as the editor's device, so its width gives the breakpoint that applies.
-  const parent = findParent(root, node.id)?.parent
-  const horizontal = !!parent && laysOutInRow(parent, breakpointAt(window.innerWidth))
-  const position = placeholder || node === root
-    ? 'inside'
-    : dropPosition(rect, { x: event.clientX, y: event.clientY }, { container: isContainerType(node.type), horizontal })
-  const target = resolveDrop(root, node.id, position, draggedNodeId(types))
-  if (!target) return null
-  return { target, indicator: indicatorAt(rect, position, horizontal) }
+  return reorderTarget(root, { id: overId, placeholder: !!over }, point, breakpointAt(window.innerWidth), draggedId, (nodeId, redirected) => {
+    const nodeEl = redirected ? firstCopy(nodeId) : overEl
+    return nodeEl?.getBoundingClientRect() ?? null
+  })
 }
 
+/** The drop slot under the pointer, plus where to draw it. */
+function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } | null {
+  const types = event.dataTransfer?.types ?? []
+  if (!types.includes(DRAG_MIME)) return null
+  const hit = dropHitAt(event.target as Element | null, { x: event.clientX, y: event.clientY }, draggedNodeId(types))
+  return hit ? { target: hit.target, indicator: indicatorAt(hit.rect, hit.position, hit.horizontal) } : null
+}
+
+/** The size Fill (`full`) resolves to for node `id`: its element's parent's content box. */
+function fillSize(id: string): { width: number, height: number } | undefined {
+  const parent = firstCopy(id)?.parentElement
+  if (!parent) return undefined
+  const { width, height } = contentOf(parent)
+  return { width, height }
+}
+
+/** A press in the active frame: on a handle it starts a resize or spacing drag, on the selection a pending drag-to-reorder. */
+function onGestureDown(event: PointerEvent) {
+  if (event.button !== 0) return
+  swallowClick = false
+  // A new press means the last one is over, even if its release never reached this frame.
+  if (gesture) endGestureBy('press')
+  const root = page.value?.root
+  const id = editable.value
+  if (!root || !id || !editableBox.value) return
+  const start = canvasPoint(event)
+  const hit = handleAt(start)
+  const base = { nodeId: id, pageId: page.value?.id, state: startGesture(event.pointerId, start, !!hit) }
+  if (hit && 'handle' in hit) {
+    const box = editableBox.value
+    const drag = { handle: hit.handle, width: box.width, height: box.height, breakpoint: breakpointAt(window.innerWidth), basePx: spacingBasePx(theme.value?.spacing ?? 'default'), fill: fillSize(id) }
+    gesture = { kind: 'resize', ...base, drag, patch: {}, cursor: handleCursor(hit.handle) }
+  } else if (hit && spacing.value) {
+    const s = spacing.value
+    const handle = hit.spacing
+    gesture = {
+      kind: 'spacing',
+      ...base,
+      target: handle.kind === 'padding' ? { kind: 'padding', side: handle.side } : { kind: 'gap', axis: s.axis },
+      startPx: handle.kind === 'padding' ? s.insets[handle.side] : s.gapPx,
+      patch: {},
+      cursor: spacingCursor(handle),
+      shown: { padding: s.showPadding, gap: s.showGap }
+    }
+  } else {
+    const reached = reachableAt(event.target)
+    const node = findNode(root, id)
+    if (!reached || !node || !containsNode(node, reached)) return
+    gesture = { kind: 'reorder', ...base, target: null }
+  }
+  if (gesture.state.phase === 'active') beginDrag(gesture)
+  window.addEventListener('pointermove', onGestureMove)
+  window.addEventListener('pointerup', onGestureUp)
+  window.addEventListener('pointercancel', onGestureCancel)
+  window.addEventListener('blur', onGestureBlur)
+  document.documentElement.addEventListener('lostpointercapture', onLostCapture)
+}
+
+/**
+ * A press becomes a drag: the pointer is captured (so it keeps dragging outside the frame), and the frame takes the keys (Esc).
+ * A pending press is not captured, so its click still reaches the node under it: a move with the button up (released
+ * outside the frame) or leaving the frame ends it instead.
+ */
+function beginDrag(g: Gesture) {
+  try {
+    document.documentElement.setPointerCapture(g.state.pointerId)
+  } catch {
+    // The pointer is already gone; its pointerup ends the drag.
+  }
+  window.focus()
+  setCursor(g.kind === 'reorder' ? 'grabbing' : g.cursor)
+}
+
+/** Shows a handle drag's patch on the node here at once, and through the editor in the other frames. */
+function showPatch(g: Extract<Gesture, { kind: 'resize' | 'spacing' }>, patch: Record<string, string>, at: Point) {
+  const spacingScale = theme.value?.spacing ?? 'default'
+  const entries = Object.entries(patch)
+  dragLabel.value = entries.length ? { text: entries.map(([key, value]) => scaleLabel(key, value, spacingScale)).join(', '), x: at.x, y: at.y } : null
+  if (JSON.stringify(patch) === JSON.stringify(g.patch)) return
+  g.patch = patch
+  const { [g.nodeId]: _, ...others } = previews.value
+  previews.value = entries.length ? { ...others, [g.nodeId]: patch } : others
+  post({ type: 'bildr:style-preview', nodeId: g.nodeId, style: entries.length ? patch : null })
+}
+
+function onGestureMove(event: PointerEvent) {
+  const g = gesture
+  const root = page.value?.root
+  if (!g || !root) return
+  const at = canvasPoint(event)
+  // The threshold is screen px: scaled back by the editor zoom, like the handles.
+  const step = stepGesture(g.state, { type: 'move', pointerId: event.pointerId, point: at, buttons: event.buttons }, REORDER_THRESHOLD / zoom.value)
+  if (step.effect === 'ignore' || step.effect === 'wait') return
+  if (!step.state) {
+    finishGesture(step.effect)
+    return
+  }
+  g.state = step.state
+  if (step.effect === 'activate') beginDrag(g)
+  const delta = { dx: at.x - g.state.start.x, dy: at.y - g.state.start.y }
+  if (g.kind === 'reorder') {
+    // The pointer is captured, so the element under it comes from its position.
+    const hit = dropHitAt(document.elementFromPoint(event.clientX, event.clientY), { x: event.clientX, y: event.clientY }, g.nodeId)
+    g.target = hit && !isNoopMove(root, g.nodeId, hit.target) ? hit.target : null
+    indicator.value = hit && g.target ? indicatorAt(hit.rect, hit.position, hit.horizontal) : null
+    return
+  }
+  const style = findNode(root, g.nodeId)?.style ?? {}
+  const patch = g.kind === 'resize'
+    ? resizePatch(g.drag, delta, event.shiftKey)
+    : spacingDragPatch(style, g.target, g.startPx, delta, { breakpoint: breakpointAt(window.innerWidth), basePx: spacingBasePx(theme.value?.spacing ?? 'default'), shift: event.shiftKey })
+  showPatch(g, patch, at)
+}
+
+/** Ends the drag in progress: listeners, capture, cursor and label. */
+function endGesture(): Gesture | null {
+  const g = gesture
+  gesture = null
+  window.removeEventListener('pointermove', onGestureMove)
+  window.removeEventListener('pointerup', onGestureUp)
+  window.removeEventListener('pointercancel', onGestureCancel)
+  window.removeEventListener('blur', onGestureBlur)
+  document.documentElement.removeEventListener('lostpointercapture', onLostCapture)
+  if (g && document.documentElement.hasPointerCapture?.(g.state.pointerId)) document.documentElement.releasePointerCapture(g.state.pointerId)
+  setCursor(null)
+  dragLabel.value = null
+  return g
+}
+
+function onGestureUp(event: PointerEvent) {
+  if (!gesture) return
+  const step = stepGesture(gesture.state, { type: 'up', pointerId: event.pointerId })
+  if (!step.state) finishGesture(step.effect)
+}
+
+const onGestureCancel = (event: PointerEvent) => endGestureBy('pointercancel', event.pointerId)
+const onGestureBlur = () => endGestureBy('blur')
+const onLostCapture = (event: PointerEvent) => endGestureBy('lostcapture', event.pointerId)
+
+/** Ends the gesture for an exit (Esc, blur, lost capture…) if it applies; returns what that did (`cancel` for a running drag). */
+function endGestureBy(reason: GestureEndReason, pointerId?: number): GestureEffect {
+  if (!gesture) return 'ignore'
+  const step = stepGesture(gesture.state, { type: 'end', reason, pointerId })
+  if (!step.state) finishGesture(step.effect)
+  return step.effect
+}
+
+/** Ends the gesture by its outcome: `commit`, `cancel` (like Esc) or `abandon` (a press that never dragged: no effect). */
+function finishGesture(effect: GestureEffect) {
+  const g = endGesture()
+  if (!g) return
+  if (g.kind === 'reorder') indicator.value = null
+  if (effect === 'abandon') return
+  swallowClick = true
+  if (effect === 'cancel') {
+    if (g.kind !== 'reorder' && Object.keys(g.patch).length) dropPreview(g.nodeId)
+    return
+  }
+  commitGesture(g)
+}
+
+/** The release: a handle drag commits its patch (one undo step), a reorder drag moves the node to the slot shown. */
+function commitGesture(g: Gesture) {
+  const root = page.value?.root
+  if (g.kind === 'reorder') {
+    if (g.target) post({ type: 'bildr:drop', ...g.target, payload: JSON.stringify({ kind: 'node', id: g.nodeId }) })
+    return
+  }
+  const node = root ? findNode(root, g.nodeId) : undefined
+  const changed = node ? changedPatch(node.style, g.patch) : {}
+  if (Object.keys(changed).length) post({ type: 'bildr:style-commit', nodeId: g.nodeId, style: changed })
+  else if (Object.keys(g.patch).length) dropPreview(g.nodeId)
+}
+
+function dropPreview(nodeId: string) {
+  const { [nodeId]: _, ...others } = previews.value
+  previews.value = others
+  post({ type: 'bildr:style-preview', nodeId, style: null })
+}
+
+// The dragged node going (deselected, deleted, another page, locked, or no longer editable here) cancels the drag like Esc.
+watch([page, selectedIds, editable], () => {
+  const g = gesture
+  if (g && (gestureTargetGone(g, { pageId: page.value?.id, root: page.value?.root, selectedIds: selectedIds.value }) || editable.value !== g.nodeId)) endGestureBy('target-gone')
+})
+
 /** The drop indicator for `position` relative to an element's viewport `rect`: its outline inside, else a line on that side. */
-function indicatorAt(rect: DOMRect, position: DropPosition, horizontal: boolean): Indicator {
+function indicatorAt(rect: Rect, position: DropPosition, horizontal: boolean): Indicator {
   const box = { top: rect.top + window.scrollY, left: rect.left + window.scrollX, width: rect.width, height: rect.height }
   if (position === 'inside') return { ...box, line: false }
   const end = position === 'after'
@@ -419,6 +799,7 @@ onMounted(() => {
   document.documentElement.addEventListener('mouseleave', onPointerLeave)
   document.addEventListener('click', onClick, true)
   document.addEventListener('mousedown', onMouseDown, true)
+  document.addEventListener('pointerdown', onGestureDown, true)
   document.addEventListener('contextmenu', onContextMenu, true)
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('keyup', onKeyUp)
@@ -441,6 +822,8 @@ onBeforeUnmount(() => {
   document.documentElement.removeEventListener('mouseleave', onPointerLeave)
   document.removeEventListener('click', onClick, true)
   document.removeEventListener('mousedown', onMouseDown, true)
+  document.removeEventListener('pointerdown', onGestureDown, true)
+  endGesture()
   document.removeEventListener('contextmenu', onContextMenu, true)
   document.removeEventListener('keydown', onKeyDown)
   document.removeEventListener('keyup', onKeyUp)
@@ -500,6 +883,55 @@ onBeforeUnmount(() => {
         :data-selection-label="labelInside(box) ? 'inside' : 'above'"
       >{{ box.label }}</span>
     </div>
+    <!-- Padding and gap overlays: accent hatching, with a drag handle per side and gap. -->
+    <template v-if="spacing">
+      <div
+        v-if="spacing.showPadding"
+        class="contents"
+        data-spacing-overlay="padding"
+      >
+        <div
+          v-for="area in paddingRects(spacing.rect, spacing.insets).filter(a => a.width > 0 && a.height > 0)"
+          :key="area.side"
+          class="pointer-events-none absolute z-50"
+          :style="{ ...rectStyle(area), ...hatch() }"
+          :data-padding-area="area.side"
+        />
+      </div>
+      <div
+        v-if="spacing.showGap"
+        class="contents"
+        data-spacing-overlay="gap"
+      >
+        <div
+          v-for="(gap, i) in spacing.gaps.filter(g => g.width > 0 && g.height > 0)"
+          :key="i"
+          class="pointer-events-none absolute z-50"
+          :style="{ ...rectStyle(gap), ...hatch() }"
+          data-gap-area
+        />
+      </div>
+      <div
+        v-for="handle in spacingHandleList"
+        :key="handle.kind === 'padding' ? handle.side : `gap-${handle.index}`"
+        class="pointer-events-none absolute z-50 rounded-full bg-(--canvas-accent)"
+        :style="spacingHandleStyle(handle)"
+        :data-spacing-handle="handle.kind === 'padding' ? handle.side : 'gap'"
+      />
+    </template>
+    <div
+      v-for="h in resizeHandles"
+      :key="h.handle"
+      class="pointer-events-none absolute z-50 rounded-full bg-(--canvas-accent)"
+      :style="{ left: `${h.x - HANDLE_PX / 2 / zoom}px`, top: `${h.y - HANDLE_PX / 2 / zoom}px`, width: `${HANDLE_PX / zoom}px`, height: `${HANDLE_PX / zoom}px`, boxShadow: ringShadow(1.5) }"
+      :data-resize-handle="h.handle"
+    />
+    <span
+      v-if="dragLabel"
+      class="pointer-events-none absolute z-50 origin-top-left rounded-sm bg-(--canvas-accent) px-1 text-[10px] leading-4 font-medium whitespace-nowrap text-white tabular-nums"
+      :style="{ left: `${dragLabel.x + 12 / zoom}px`, top: `${dragLabel.y + 12 / zoom}px`, transform: `scale(${1 / zoom})` }"
+      data-drag-label
+    >{{ dragLabel.text }}</span>
     <template v-if="measurement">
       <div
         v-for="(line, i) in measurement.lines"
