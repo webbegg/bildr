@@ -2,8 +2,8 @@ import { z } from 'zod'
 import { INSTANCE_TYPE, SLOT_FILL_TYPE } from '#shared/document/components'
 import { cloneWithNewIds, createNode, newId } from '#shared/document/factory'
 import type { Operation, TreeRef } from '#shared/document/operations'
-import { IdSchema, PROPERTY_DESCRIPTION_MAX, PROPERTY_PLACEHOLDER_MAX, PropertyBindingSchema, PropertyKindSchema, PropValueSchema, RESERVED_INSTANCE_KEYS } from '#shared/document/schema'
-import type { ComponentDefinition, DocNode, Project, PropertyDef } from '#shared/document/schema'
+import { IdSchema, INTERACTION_DELAY_MAX, INTERACTION_EVENTS, PRIMARY_VARIANT, PROPERTY_DESCRIPTION_MAX, PROPERTY_PLACEHOLDER_MAX, PropertyBindingSchema, PropertyKindSchema, PropValueSchema, RESERVED_INSTANCE_KEYS, STATE_KINDS, TransitionSchema, VariantRefSchema } from '#shared/document/schema'
+import type { ComponentDefinition, DocNode, Interaction, Project, PropertyDef, Variant } from '#shared/document/schema'
 import type { PropValue } from '#shared/document/components'
 import { findNode, findParent } from '#shared/document/tree'
 import { componentInstances, componentUsages } from '#shared/document/usages'
@@ -223,14 +223,149 @@ export const componentVariantAdd = defineAction({
 
 export const componentVariantDelete = defineAction({
   name: 'component_variant_delete',
-  description: 'Delete a variant of a component. Instances that used it go back to the primary variant, as one undo step.',
+  description: 'Delete a variant of a component, with its hover and pressed states and the interactions that go to it or them. Instances that used any of them go back to the primary variant. One undo step.',
   input: z.object({ projectId: IdSchema, componentId: ComponentRef, variantId: IdSchema }),
   run: async ({ projectId, componentId, variantId }, ctx) => {
-    const users = componentInstances(await ctx.services.loadProject(projectId), componentId).filter(i => i.node.props.variant === variantId)
+    const current = await ctx.services.loadProject(projectId)
+    const def = definitionIn(current, componentId)
+    const states = def.variants.filter(v => v.state?.of === variantId).map(v => v.id)
+    const doomed = new Set([variantId, ...states])
+    const users = componentInstances(current, componentId).filter(i => doomed.has(String(i.node.props.variant)))
+    // Interactions that would point at a deleted variant go first, then the states, then the variant: no step leaves a dangling reference.
+    const owners: { variantId: string, list: Interaction[] }[] = [
+      { variantId: PRIMARY_VARIANT, list: def.interactions ?? [] },
+      ...def.variants.filter(v => !doomed.has(v.id)).map(v => ({ variantId: v.id, list: v.interactions ?? [] }))
+    ]
+    const unlink = owners.filter(o => o.list.some(i => doomed.has(i.to))).map(o => motionOp(def.id, o.variantId, { interactions: o.list.filter(i => !doomed.has(i.to)) }))
     const project = await ctx.services.mutate(ctx, projectId, 'Delete variant', [
       ...users.map(user => ({ op: 'setProps' as const, ...treeOf(user), nodeId: user.nodeId, props: { variant: null } })),
+      ...unlink,
+      ...states.map(id => ({ op: 'removeVariant' as const, componentId, variantId: id })),
       { op: 'removeVariant', componentId, variantId }
     ])
+    return { version: project.version }
+  }
+})
+
+const VariantRef = VariantRefSchema.describe('A variant id of the component; "" for the primary')
+
+/** Variant `variantId` of `def`, or undefined for the primary (`''`). */
+function variantIn(def: ComponentDefinition, variantId: string): Variant | undefined {
+  if (variantId === PRIMARY_VARIANT) return undefined
+  return assertFound(def.variants.find(v => v.id === variantId), `Variant "${variantId}" not found in "${def.name}"`)
+}
+
+/** The op that sets the interactions or transition of variant `variantId` (the component's own for the primary); an empty list removes them. */
+function motionOp(componentId: string, variantId: string, patch: { interactions?: Interaction[], transition?: z.infer<typeof TransitionSchema> | null }): Operation {
+  const motion = { ...patch, ...(patch.interactions ? { interactions: patch.interactions.length ? patch.interactions : null } : {}) }
+  return variantId === PRIMARY_VARIANT ? { op: 'updateComponent', componentId, ...motion } : { op: 'updateVariant', componentId, variantId, ...motion }
+}
+
+/** Where interaction `interactionId` of `def` is: the variant that has it (`''` for the primary) and that variant's list. */
+function interactionIn(def: ComponentDefinition, interactionId: string): { variantId: string, list: Interaction[], interaction: Interaction } {
+  for (const [variantId, list] of [[PRIMARY_VARIANT, def.interactions ?? []] as const, ...def.variants.map(v => [v.id, v.interactions ?? []] as const)]) {
+    const interaction = list.find(i => i.id === interactionId)
+    if (interaction) return { variantId, list, interaction }
+  }
+  throw new ActionError('not_found', `Interaction "${interactionId}" not found in "${def.name}"`)
+}
+
+const STATE_LABELS = { hover: 'Hover', pressed: 'Pressed' } as const
+
+export const componentStateAdd = defineAction({
+  name: 'component_state_add',
+  description: 'Add a hover or pressed state to a variant of a component (baseVariantId; "" for the primary). A state is a variant that instances show by themselves while the pointer is over (hover) or pressing (pressed) them in that base variant, in the preview and in published apps. It starts with no overrides of its own (it looks like its base); component_variant_set_override changes it, on top of the base\'s overrides. A base has at most one state of each kind, and a state has no states. Named "<base> · Hover" ("Primary · Hover") unless name is given; listed after its base. One undo step. Returns the variantId.',
+  input: z.object({
+    projectId: IdSchema,
+    componentId: ComponentRef,
+    baseVariantId: VariantRef,
+    kind: z.enum(STATE_KINDS),
+    name: NameSchema.optional().describe('Defaults to "<base name> · Hover" or "<base name> · Pressed"')
+  }),
+  run: async ({ projectId, componentId, baseVariantId, kind, name }, ctx) => {
+    const def = definitionIn(await ctx.services.loadProject(projectId), componentId)
+    const base = variantIn(def, baseVariantId)
+    const variant: Variant = { id: newId('var'), name: name ?? `${base?.name ?? 'Primary'} · ${STATE_LABELS[kind]}`, overrides: {}, state: { of: baseVariantId, kind } }
+    // After the base and the states it already has (first, for the primary).
+    const after = def.variants.reduce((last, v, i) => (v.id === baseVariantId || v.state?.of === baseVariantId ? i : last), -1)
+    const project = await ctx.services.mutate(ctx, projectId, 'Add state', [{ op: 'addVariant', componentId, index: after + 1, variant }])
+    return { version: project.version, variantId: variant.id }
+  }
+})
+
+const InteractionFields = {
+  on: z.enum(INTERACTION_EVENTS).describe('click, mouseenter, mouseleave, or appear (once, when the instance enters the viewport)'),
+  to: VariantRef.describe('The variant to switch to; "" for the primary. Not a state: states show from the pointer'),
+  delay: z.number().min(0).max(INTERACTION_DELAY_MAX).describe(`Seconds before switching, 0–${INTERACTION_DELAY_MAX}`)
+}
+
+export const componentInteractionAdd = defineAction({
+  name: 'component_interaction_add',
+  description: 'Add an interaction to a variant of a component (variantId; "" or none for the primary): on the event, an instance showing that variant (or one of its states) switches to variant to, after delay seconds. Interactions run in the preview and in published apps, never while editing. One undo step. Returns the interactionId.',
+  input: z.object({
+    projectId: IdSchema,
+    componentId: ComponentRef,
+    variantId: VariantRef.optional().describe('The variant the interaction starts from; "" or none for the primary'),
+    ...InteractionFields,
+    delay: InteractionFields.delay.optional()
+  }),
+  run: async ({ projectId, componentId, variantId = PRIMARY_VARIANT, on, to, delay }, ctx) => {
+    const def = definitionIn(await ctx.services.loadProject(projectId), componentId)
+    const owner = variantIn(def, variantId)
+    const interaction: Interaction = { id: newId('ix'), on, to, ...(delay ? { delay } : {}) }
+    const list = (owner ? owner.interactions : def.interactions) ?? []
+    const project = await ctx.services.mutate(ctx, projectId, 'Add interaction', [motionOp(def.id, variantId, { interactions: [...list, interaction] })])
+    return { version: project.version, interactionId: interaction.id }
+  }
+})
+
+export const componentInteractionUpdate = defineAction({
+  name: 'component_interaction_update',
+  description: 'Change the event, target variant or delay of an interaction of a component (null delay removes it). One undo step.',
+  input: z.object({
+    projectId: IdSchema,
+    componentId: ComponentRef,
+    interactionId: IdSchema,
+    on: InteractionFields.on.optional(),
+    to: InteractionFields.to.optional(),
+    delay: InteractionFields.delay.nullable().optional().describe('Seconds before switching; null removes the delay')
+  }),
+  run: async ({ projectId, componentId, interactionId, on, to, delay }, ctx) => {
+    const def = definitionIn(await ctx.services.loadProject(projectId), componentId)
+    const { variantId, list, interaction } = interactionIn(def, interactionId)
+    const { delay: _delay, ...rest } = interaction
+    const nextDelay = delay === undefined ? interaction.delay : delay
+    const next: Interaction = { ...rest, ...(on ? { on } : {}), ...(to === undefined ? {} : { to }), ...(nextDelay ? { delay: nextDelay } : {}) }
+    const project = await ctx.services.mutate(ctx, projectId, 'Update interaction', [motionOp(def.id, variantId, { interactions: list.map(i => (i === interaction ? next : i)) })])
+    return { version: project.version }
+  }
+})
+
+export const componentInteractionRemove = defineAction({
+  name: 'component_interaction_remove',
+  description: 'Remove an interaction of a component. One undo step.',
+  input: z.object({ projectId: IdSchema, componentId: ComponentRef, interactionId: IdSchema }),
+  run: async ({ projectId, componentId, interactionId }, ctx) => {
+    const def = definitionIn(await ctx.services.loadProject(projectId), componentId)
+    const { variantId, list, interaction } = interactionIn(def, interactionId)
+    const project = await ctx.services.mutate(ctx, projectId, 'Remove interaction', [motionOp(def.id, variantId, { interactions: list.filter(i => i !== interaction) })])
+    return { version: project.version }
+  }
+})
+
+export const componentTransitionSet = defineAction({
+  name: 'component_transition_set',
+  description: 'Set how an instance animates its style changes when it changes variant. Without variantId (or ""), the component\'s transition: the primary\'s and every variant\'s default; with variantId, that variant\'s own, used when changing to it (and, for a hover or pressed state, into and out of it). type: instant; ease with duration (seconds, default 0.3) and easing (ease, ease-in, ease-out, ease-in-out, linear; default ease); spring with stiffness (default 300) and damping (default 30). Without any, changes ease over 0.3 s. Visitors who prefer reduced motion get instant changes. null removes it. One undo step.',
+  input: z.object({
+    projectId: IdSchema,
+    componentId: ComponentRef,
+    variantId: VariantRef.optional().describe('A variant to set its own transition; "" or none for the component'),
+    transition: TransitionSchema.nullable().describe('e.g. { "type": "spring", "stiffness": 400, "damping": 25 } or { "type": "ease", "duration": 0.2, "easing": "ease-out" }; null removes it')
+  }),
+  run: async ({ projectId, componentId, variantId = PRIMARY_VARIANT, transition }, ctx) => {
+    const def = definitionIn(await ctx.services.loadProject(projectId), componentId)
+    variantIn(def, variantId)
+    const project = await ctx.services.mutate(ctx, projectId, 'Set transition', [motionOp(def.id, variantId, { transition })])
     return { version: project.version }
   }
 })

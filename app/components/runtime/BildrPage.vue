@@ -10,10 +10,13 @@ import { resolvePageWithLayout } from '#shared/runtime/layouts'
  * all show the layout around the page content.
  */
 
-const props = defineProps<{
+// A boolean prop left out is false, not undefined: `interactive` needs its own default.
+const props = withDefaults(defineProps<{
   page: Page
   base: string
   editable?: boolean
+  /** Instances run their states and interactions; defaults to not `editable` (the preview and published apps). */
+  interactive?: boolean
   lists?: Record<string, DataRecord[]>
   submitForm?: RuntimeContext['submitForm']
   /** Public variables for `{{ env.NAME }}`. */
@@ -23,13 +26,14 @@ const props = defineProps<{
   /** The project's layouts, for pages with a `layoutId`. */
   layouts?: Layout[]
   missingEnv?: RuntimeContext['onMissingEnv']
-}>()
+}>(), { interactive: undefined })
 
 const root = computed(() => resolvePageWithLayout(props.page, props.layouts ?? [], props.components ?? []))
 
 provide(RUNTIME_KEY, reactive({
   base: computed(() => props.base),
   editable: computed(() => props.editable === true),
+  interactive: computed(() => props.interactive ?? props.editable !== true),
   lists: computed(() => props.lists ?? {}),
   submitForm: computed(() => props.submitForm),
   env: computed(() => props.env),

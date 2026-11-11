@@ -103,10 +103,55 @@ export const PropertyDefSchema = z.object({
   bindings: z.array(PropertyBindingSchema).default(() => [])
 })
 
+/** The primary variant's id where a variant is referred to (instance `variant`, a state's base, an interaction's target). */
+export const PRIMARY_VARIANT = ''
+/** A variant id, or `''` for the primary variant (the definition itself). */
+export const VariantRefSchema = z.union([IdSchema, z.literal(PRIMARY_VARIANT)])
+
+export const STATE_KINDS = ['hover', 'pressed'] as const
+export const INTERACTION_EVENTS = ['click', 'mouseenter', 'mouseleave', 'appear'] as const
+export const TRANSITION_TYPES = ['instant', 'ease', 'spring'] as const
+export const TRANSITION_EASINGS = ['ease', 'ease-in', 'ease-out', 'ease-in-out', 'linear'] as const
+export const INTERACTION_DELAY_MAX = 10
+export const INTERACTIONS_MAX = 20
+
+/**
+ * A variant that is a state of a base variant (`of`, `''` for the primary):
+ * it shows while the pointer is over (`hover`) or pressing (`pressed`) an
+ * instance in that base variant. Its overrides apply over the base's.
+ */
+export const VariantStateSchema = z.object({
+  of: VariantRefSchema.describe('The base variant id; "" for the primary'),
+  kind: z.enum(STATE_KINDS)
+})
+
+/** On `on`, after `delay` seconds, the instance switches to variant `to` (`''` for the primary); `appear` fires once, when it enters the viewport. */
+export const InteractionSchema = z.object({
+  id: IdSchema,
+  on: z.enum(INTERACTION_EVENTS),
+  to: VariantRefSchema.describe('The variant to switch to; "" for the primary'),
+  delay: z.number().min(0).max(INTERACTION_DELAY_MAX).optional().describe(`Seconds before switching, 0–${INTERACTION_DELAY_MAX}`)
+})
+
+/**
+ * How style changes animate when the instance changes variant. `ease`:
+ * `duration` seconds (default 0.3) with `easing` (default `ease`);
+ * `spring`: `stiffness` (default 300) and `damping` (default 30), mass 1.
+ */
+export const TransitionSchema = z.object({
+  type: z.enum(TRANSITION_TYPES),
+  duration: z.number().min(0).max(10).optional().describe('ease: seconds (default 0.3)'),
+  easing: z.enum(TRANSITION_EASINGS).optional().describe('ease: the CSS easing (default ease)'),
+  stiffness: z.number().min(1).max(1000).optional().describe('spring: 1–1000 (default 300)'),
+  damping: z.number().min(0).max(100).optional().describe('spring: 0–100 (default 30)')
+})
+
 /**
  * Sparse overrides per node id: absence means the value of the primary
- * variant. `unset` lists style keys removed in the variant: they render as
- * absent even where the primary sets them (never also in `style`).
+ * variant (for a state, of its base variant). `unset` lists style keys
+ * removed in the variant: they render as absent even where the primary sets
+ * them (never also in `style`). `state`, `interactions` and `transition` are
+ * optional: variants saved before interactions have none.
  */
 export const VariantSchema = z.object({
   id: IdSchema,
@@ -116,7 +161,10 @@ export const VariantSchema = z.object({
     style: z.record(z.string(), z.string()).optional(),
     // Overrides saved before removed tokens have none.
     unset: z.array(z.string()).optional()
-  }))
+  })),
+  state: VariantStateSchema.optional(),
+  interactions: z.array(InteractionSchema).max(INTERACTIONS_MAX).optional(),
+  transition: TransitionSchema.optional()
 })
 
 /** Why `key` is not a style key (a variant's removed token), e.g. `Unknown style token "x"`; undefined when it is one. */
@@ -124,13 +172,20 @@ export function styleKeyProblem(key: string): string | undefined {
   return isStyleTokenKey(key) ? undefined : styleTokenProblem(key, '')
 }
 
-/** The primary variant is the `root` tree itself; `variants` holds the others. */
+/**
+ * The primary variant is the `root` tree itself; `variants` holds the
+ * others. `interactions` are the primary's, and `transition` is the
+ * primary's and the default of every variant; components saved before
+ * interactions have neither.
+ */
 export const ComponentDefinitionSchema = z.object({
   id: IdSchema,
   name: z.string().trim().min(1).max(100),
   root: NodeSchema,
   properties: z.array(PropertyDefSchema).default(() => []),
-  variants: z.array(VariantSchema).default(() => [])
+  variants: z.array(VariantSchema).default(() => []),
+  interactions: z.array(InteractionSchema).max(INTERACTIONS_MAX).optional(),
+  transition: TransitionSchema.optional()
 })
 
 /** The id of the layout slot that takes the page's content. */
@@ -417,6 +472,11 @@ export const ProjectSchema = z.object({
 export type PropertyDef = z.infer<typeof PropertyDefSchema>
 export type PropertyBinding = z.infer<typeof PropertyBindingSchema>
 export type Variant = z.infer<typeof VariantSchema>
+export type VariantState = z.infer<typeof VariantStateSchema>
+export type StateKind = VariantState['kind']
+export type Interaction = z.infer<typeof InteractionSchema>
+export type InteractionEvent = Interaction['on']
+export type Transition = z.infer<typeof TransitionSchema>
 /** What a variant overrides on one node: props, style tokens and removed tokens (`unset`). */
 export type VariantOverride = Variant['overrides'][string]
 export type ComponentDefinition = z.infer<typeof ComponentDefinitionSchema>
@@ -603,9 +663,49 @@ export function componentProblems(components: ComponentDefinition[], colors: rea
         })
       }
     })
+    for (const problem of interactionProblems(def)) add([i, ...problem.path], problem.message)
   })
   for (const [i, def] of components.entries()) {
     if (reachesItself(def, components)) add([i, 'root'], `Component "${def.name}" contains itself (cycle)`)
+  }
+  return problems
+}
+
+/**
+ * Rules for states and interactions: a state's base exists and is no state
+ * itself, a base has at most one state of each kind, interaction ids are
+ * unique in the component, and targets exist and are no states (states
+ * show on their own, from the pointer).
+ */
+function interactionProblems(def: ComponentDefinition): ComponentProblem[] {
+  const problems: ComponentProblem[] = []
+  const byId = new Map(def.variants.map(v => [v.id, v]))
+  const label = (id: string) => (id === PRIMARY_VARIANT ? 'Primary' : byId.get(id)?.name ?? id)
+  const taken = new Set<string>()
+  def.variants.forEach((variant, v) => {
+    if (!variant.state) return
+    const { of, kind } = variant.state
+    const base = of === PRIMARY_VARIANT ? undefined : byId.get(of)
+    const at = ['variants', v, 'state', 'of']
+    if (of === variant.id) problems.push({ path: at, message: `State "${variant.name}" cannot be a state of itself` })
+    else if (of !== PRIMARY_VARIANT && !base) problems.push({ path: at, message: `State "${variant.name}" is a state of the missing variant "${of}" in "${def.name}"` })
+    else if (base?.state) problems.push({ path: at, message: `State "${variant.name}" cannot be a state of the state "${base.name}"` })
+    else if (taken.has(`${of}:${kind}`)) problems.push({ path: ['variants', v, 'state', 'kind'], message: `"${label(of)}" already has a ${kind} state in "${def.name}"` })
+    taken.add(`${of}:${kind}`)
+  })
+  const interactionIds = new Set<string>()
+  const lists: { path: (string | number)[], owner: string, list: Interaction[] }[] = [
+    { path: ['interactions'], owner: 'Primary', list: def.interactions ?? [] },
+    ...def.variants.map((variant, v) => ({ path: ['variants', v, 'interactions'], owner: variant.name, list: variant.interactions ?? [] }))
+  ]
+  for (const { path, owner, list } of lists) {
+    list.forEach((interaction, k) => {
+      if (interactionIds.has(interaction.id)) problems.push({ path: [...path, k, 'id'], message: `Duplicate interaction id "${interaction.id}" in "${def.name}"` })
+      interactionIds.add(interaction.id)
+      const target = interaction.to === PRIMARY_VARIANT ? undefined : byId.get(interaction.to)
+      if (interaction.to !== PRIMARY_VARIANT && !target) problems.push({ path: [...path, k, 'to'], message: `An interaction of "${owner}" goes to the missing variant "${interaction.to}" in "${def.name}"` })
+      else if (target?.state) problems.push({ path: [...path, k, 'to'], message: `An interaction of "${owner}" cannot go to the state "${target.name}": states show from the pointer` })
+    })
   }
   return problems
 }

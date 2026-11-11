@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { mergeProps } from 'vue'
 import type { ButtonProps } from '@nuxt/ui'
 import { displayFallback, parseStyleKey, styleClasses, styleInline } from '#shared/design/tokens'
 import { structuralStyle } from '#shared/document/components'
@@ -6,7 +7,7 @@ import type { DocNode } from '#shared/document/schema'
 import { hasEnvRefs } from '#shared/env/variables'
 import { bindingItem, hasBindings } from '#shared/runtime/bindings'
 import type { BindingItem } from '#shared/runtime/bindings'
-import { isDefinitionNodeId, pageNodeId, resolveInstance } from '#shared/runtime/instances'
+import { INSTANCE_ID_SEPARATOR, isDefinitionNodeId, MAX_INSTANCE_DEPTH, pageNodeId, resolveInstance } from '#shared/runtime/instances'
 import { isLayoutNodeId } from '#shared/runtime/layouts'
 import { listKey, listQueryOf } from '#shared/runtime/list'
 import { resolveLink } from '#shared/runtime/render'
@@ -36,34 +37,62 @@ import { resolveLink } from '#shared/runtime/render'
  * way and are labelled Layout.
  * A Form is a `<form>` (see BildrForm); its Inputs are named by their field,
  * and a Button's action links, submits the enclosing form, or shows a toast.
+ * Outside edit mode (`runtime.interactive`), an Instance whose component has
+ * states or interactions renders its current variant (or a hover or pressed
+ * state) and hands its root the pointer handlers (`behaviour`; see
+ * `useInstanceInteractions`); definition nodes then animate variant changes
+ * with an inline `transition`. Nested instances of a definition render as
+ * instances of their own there, so they keep their own state.
  */
 const props = defineProps<{
   node: DocNode
   /** Set by a vertical stack (Page, Container, Column, Card), whose `items` aligns this node. */
   inStack?: boolean
+  /** Attributes and listeners an interactive instance gives the root of its rendered tree. */
+  behaviour?: Record<string, unknown>
 }>()
 const runtime = useRuntime()
 const scope = useListItem()
 const toast = useToast()
+// The node type is stable for a keyed node, so only Instances set up interactions.
+const interactions = props.node.type === 'Instance' ? useInstanceInteractions(() => props.node, runtime) : null
+const motionTransition = useMotionTransition(() => props.node.id)
 
 const p = computed(() => props.node.props)
 const text = (name: string) => bindValue(String(p.value[name] ?? ''), runtime, scope?.item)
 const link = computed(() => resolveLink(text('to'), runtime.base))
 const fromDefinition = computed(() => isDefinitionNodeId(props.node.id))
 const inline = computed(() => {
-  const style = styleInline(props.node.style)
+  const style: Record<string, string> = styleInline(props.node.style)
+  if (motionTransition.value) style.transition = motionTransition.value
   return Object.keys(style).length ? style : undefined
 })
-const attrs = computed(() => ({
-  'data-bildr-id': pageNodeId(props.node.id),
-  'data-bildr-type': isLayoutNodeId(props.node.id) ? 'Layout' : fromDefinition.value ? 'Instance' : props.node.type,
-  'data-bildr-copy': scope?.copy ? '' : undefined,
-  // Hex and theme colours; empty for token-only styles, so those render as before.
-  'style': inline.value
-}))
+const attrs = computed(() => {
+  const own = {
+    'data-bildr-id': pageNodeId(props.node.id),
+    'data-bildr-type': isLayoutNodeId(props.node.id) ? 'Layout' : fromDefinition.value ? 'Instance' : props.node.type,
+    'data-bildr-copy': scope?.copy ? '' : undefined,
+    // Hex and theme colours; empty for token-only styles, so those render as before.
+    'style': inline.value
+  }
+  return props.behaviour ? mergeProps(own, props.behaviour) : own
+})
 // A binding the canvas shows as written (or an empty value) is no URL to load.
 const imageSrc = computed(() => (hasBindings(text('src')) || hasEnvRefs(text('src')) ? '' : text('src')))
-const instance = computed(() => (props.node.type === 'Instance' ? resolveInstance(props.node, runtime.components ?? []) : null))
+const instance = computed(() => {
+  if (props.node.type !== 'Instance') return null
+  if (!runtime.interactive) return resolveInstance(props.node, runtime.components ?? [])
+  // Linked: nested definition instances stay Instances, cut at the same depth expanding would.
+  if (props.node.id.split(INSTANCE_ID_SEPARATOR).length > MAX_INSTANCE_DEPTH) return null
+  const variant = interactions?.variant.value
+  const node = variant === undefined ? props.node : { ...props.node, props: { ...props.node.props, variant } }
+  return resolveInstance(node, runtime.components ?? [], { linked: true })
+})
+// An instance at the root of another's definition passes the outer handlers on with its own.
+const rootBehaviour = computed(() => {
+  const own = interactions?.rootAttrs.value
+  return props.behaviour && own ? mergeProps(props.behaviour, own) : props.behaviour ?? own
+})
 // Containers of a definition take no drops: the instance is the page node.
 const dropParent = computed(() => runtime.editable && !fromDefinition.value && !props.node.children.length)
 const stacked = computed(() => ['Page', 'Container', 'Column'].includes(props.node.type))
@@ -132,6 +161,7 @@ const list = computed(() => {
       v-if="instance"
       :node="instance"
       :in-stack="inStack"
+      :behaviour="rootBehaviour"
     />
     <div
       v-else-if="runtime.editable"

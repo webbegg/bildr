@@ -5,7 +5,8 @@ import { getComponent, INSTANCE_TYPE, isContainerType, SLOT_FILL_TYPE } from './
 import type { PropValue } from './components'
 import { z } from 'zod'
 import { ApiPathSchema, CHILDREN_SLOT, CollectionSchema, componentProblems, ComponentDefinitionSchema, CONNECTIONS_MAX, ConnectionSchema, FieldSchema, FieldTypeSchema, instanceProblems, isStyleBinding, layoutProblems, LayoutSchema, LayoutSlotSchema, NODE_NAME_MAX, nodeTreeProblems, pageLayoutProblems, PageSchema, ProjectSchema, PropertyBindingSchema, PropertyDefSchema, propValueProblem, SlugSchema, styleKeyProblem, VariantSchema } from './schema'
-import type { ApiHeader, Collection, CollectionSource, ComponentDefinition, Connection, DocNode, Field, FieldType, Layout, LayoutSlot, Page, Project, PropertyBinding, PropertyDef, Variant } from './schema'
+import type { ApiHeader, Collection, CollectionSource, ComponentDefinition, Connection, DocNode, Field, FieldType, Interaction, Layout, LayoutSlot, Page, Project, PropertyBinding, PropertyDef, Transition, Variant } from './schema'
+import { variantStyle } from '../runtime/instances'
 import { containsNode, findNode, findParent, walk } from './tree'
 import { componentUsages } from './usages'
 
@@ -55,14 +56,16 @@ export type Operation
     | { op: 'updateConnection', connectionId: string, name?: string, baseUrl?: string, headers?: ApiHeader[] }
     | { op: 'addComponent', index: number, component: ComponentDefinition }
     | { op: 'removeComponent', componentId: string }
-    | { op: 'updateComponent', componentId: string, name?: string }
+    /** `interactions` (the primary's) and `transition` replace the component's; null or an empty list removes them. */
+    | ({ op: 'updateComponent', componentId: string, name?: string } & MotionPatch)
     | { op: 'addProperty', componentId: string, index: number, property: PropertyDef }
     | { op: 'removeProperty', componentId: string, propertyId: string }
     /** `index` moves the property in the list; a null `default`, `description` or `placeholder` (or `optional` false or null) removes it. */
     | ({ op: 'updateProperty', componentId: string, propertyId: string } & PropertyPatch)
     | { op: 'addVariant', componentId: string, index: number, variant: Variant }
     | { op: 'removeVariant', componentId: string, variantId: string }
-    | { op: 'updateVariant', componentId: string, variantId: string, name?: string }
+    /** `interactions` and `transition` replace the variant's; null or an empty list removes them. */
+    | ({ op: 'updateVariant', componentId: string, variantId: string, name?: string } & MotionPatch)
     /** Sparse: a null value, or the primary variant's own value, removes that override. */
     | { op: 'setOverride', componentId: string, variantId: string, nodeId: string, props?: Record<string, PropValue | null>, style?: Record<string, string | null>, unset?: string[] }
     | { op: 'addLayout', index: number, layout: Layout }
@@ -79,6 +82,32 @@ export type Operation
     | { op: 'setPageLayout', pageId: string, layoutId: string | null, layoutValues?: Record<string, PropValue> | null }
     /** Sparse, by variable id: a null value removes the page's value, so the default applies. */
     | { op: 'setLayoutValues', pageId: string, values: Record<string, PropValue | null> }
+
+/** The interactions and transition `updateComponent` and `updateVariant` set: a value replaces, null (or `[]`) removes. */
+export interface MotionPatch {
+  interactions?: Interaction[] | null
+  transition?: Transition | null
+}
+
+/** Applies `patch` to `target` (a component, for its primary, or a variant) in place and returns the patch that undoes it. */
+function patchMotion(target: { interactions?: Interaction[], transition?: Transition }, patch: MotionPatch): MotionPatch {
+  const interactions = patch.interactions ? VariantSchema.shape.interactions.safeParse(patch.interactions) : undefined
+  if (interactions && !interactions.success) fail('invalid', `Invalid interactions: ${issues(interactions.error)}`)
+  const transition = patch.transition ? VariantSchema.shape.transition.safeParse(patch.transition) : undefined
+  if (transition && !transition.success) fail('invalid', `Invalid transition: ${issues(transition.error)}`)
+  const inverse: MotionPatch = {}
+  if (patch.interactions !== undefined) {
+    inverse.interactions = target.interactions ?? null
+    if (interactions?.data?.length) target.interactions = interactions.data
+    else Reflect.deleteProperty(target, 'interactions')
+  }
+  if (patch.transition !== undefined) {
+    inverse.transition = target.transition ?? null
+    if (transition?.data) target.transition = transition.data
+    else Reflect.deleteProperty(target, 'transition')
+  }
+  return inverse
+}
 
 /** The changes `updateProperty` and `updateLayoutVariable` make to a property (or variable). */
 export interface PropertyPatch {
@@ -703,8 +732,9 @@ function apply(project: Project, op: Operation): Operation {
     case 'updateComponent': {
       const def = getDefinition(project, op.componentId)
       const inverse: Extract<Operation, { op: 'updateComponent' }> = { op: 'updateComponent', componentId: def.id }
+      if (op.name !== undefined && !op.name.trim()) fail('invalid', 'Component name cannot be empty')
+      Object.assign(inverse, patchMotion(def, op))
       if (op.name !== undefined) {
-        if (!op.name.trim()) fail('invalid', 'Component name cannot be empty')
         inverse.name = def.name
         def.name = op.name.trim()
       }
@@ -746,8 +776,9 @@ function apply(project: Project, op: Operation): Operation {
       const def = getDefinition(project, op.componentId)
       const variant = getVariant(def, op.variantId)
       const inverse: Extract<Operation, { op: 'updateVariant' }> = { op: 'updateVariant', componentId: def.id, variantId: variant.id }
+      if (op.name !== undefined && !op.name.trim()) fail('invalid', 'Variant name cannot be empty')
+      Object.assign(inverse, patchMotion(variant, op))
       if (op.name !== undefined) {
-        if (!op.name.trim()) fail('invalid', 'Variant name cannot be empty')
         inverse.name = variant.name
         variant.name = op.name.trim()
       }
@@ -756,7 +787,10 @@ function apply(project: Project, op: Operation): Operation {
     case 'setOverride': {
       const def = getDefinition(project, op.componentId)
       const variant = getVariant(def, op.variantId)
-      const node = findNode(def.root, op.nodeId) ?? fail('not_found', `Node "${op.nodeId}" not found on component "${def.name}"`)
+      const own = findNode(def.root, op.nodeId) ?? fail('not_found', `Node "${op.nodeId}" not found on component "${def.name}"`)
+      // A state's values are sparse against its base variant's (the primary's with the base's overrides).
+      const baseOverride = variant.state?.of ? def.variants.find(v => v.id === variant.state!.of)?.overrides[own.id] : undefined
+      const node = baseOverride ? { ...own, props: { ...own.props, ...baseOverride.props }, style: variantStyle(own.style, baseOverride) } : own
       const props = { ...variant.overrides[node.id]?.props }
       const style = { ...variant.overrides[node.id]?.style }
       const unset = new Set(variant.overrides[node.id]?.unset)

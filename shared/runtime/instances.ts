@@ -1,6 +1,6 @@
 import { INSTANCE_TYPE, SLOT_FILL_TYPE } from '../document/components'
 import type { PropValue } from '../document/components'
-import type { ComponentDefinition, DocNode, PropertyDef, VariantOverride } from '../document/schema'
+import type { ComponentDefinition, DocNode, PropertyDef, Variant, VariantOverride } from '../document/schema'
 import { resolvePropRefs } from './bindings'
 
 /**
@@ -94,6 +94,30 @@ export function variantStyle(style: Record<string, string>, override: VariantOve
 }
 
 /**
+ * `top` applied over `base`: props and style merge, a key `top` sets is no
+ * longer removed, and a key `top` removes is no longer set.
+ */
+export function layerOverride(base: VariantOverride | undefined, top: VariantOverride | undefined): VariantOverride | undefined {
+  if (!base || !top) return top ?? base
+  const style = { ...base.style, ...top.style }
+  for (const key of top.unset ?? []) Reflect.deleteProperty(style, key)
+  const unset = [...new Set([...(base.unset ?? []).filter(key => !(key in (top.style ?? {}))), ...(top.unset ?? [])])]
+  const props = { ...base.props, ...top.props }
+  return {
+    ...(Object.keys(props).length ? { props } : {}),
+    ...(Object.keys(style).length ? { style } : {}),
+    ...(unset.length ? { unset } : {})
+  }
+}
+
+/** What `variant` overrides on node `nodeId`: for a state, its own overrides over its base variant's. */
+export function effectiveOverride(def: ComponentDefinition, variant: Variant | undefined, nodeId: string): VariantOverride | undefined {
+  if (!variant) return undefined
+  const base = variant.state?.of ? def.variants.find(v => v.id === variant.state!.of && !v.state) : undefined
+  return layerOverride(base?.overrides[nodeId], variant.overrides[nodeId])
+}
+
+/**
  * `keepNames` copies the layer names of definition nodes (and nested
  * instances) into the tree, and `linked` keeps the definition's own
  * Instances as Instances (their variant overrides, bound values and
@@ -125,7 +149,7 @@ function expand(instance: DocNode, definitions: Definitions, stack: string[], ke
 
   const next = [...stack, def.id]
   const build = (node: DocNode): DocNode | null => {
-    const override = variant?.overrides[node.id]
+    const override = effectiveOverride(def, variant, node.id)
     const props: Record<string, PropValue> = { ...node.props, ...override?.props }
     for (const [key, value] of Object.entries(props)) {
       if (typeof value === 'string') props[key] = resolvePropRefs(value, refs)

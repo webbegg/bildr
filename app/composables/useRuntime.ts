@@ -1,16 +1,25 @@
-import type { InjectionKey } from 'vue'
+import type { ComputedRef, InjectionKey, VNode } from 'vue'
 import type { DataRecord } from '#shared/data/records'
-import type { ComponentDefinition } from '#shared/document/schema'
+import { INSTANCE_TYPE } from '#shared/document/components'
+import type { ComponentDefinition, DocNode } from '#shared/document/schema'
 import type { EnvValues } from '#shared/env/variables'
 import { resolveEnv } from '#shared/env/variables'
 import type { BindingItem } from '#shared/runtime/bindings'
 import { resolveBindings } from '#shared/runtime/bindings'
+import { INSTANCE_ID_SEPARATOR } from '#shared/runtime/instances'
+import { animatedProperties, createInteractionMachine, cssTransition, hasClick, hasInteractivity, initialMachineState, renderedVariant, transitionFor } from '#shared/runtime/interactions'
 
 export interface RuntimeContext {
   /** Path prefix that page-slug links resolve under, e.g. `/p/shop`. */
   base: string
   /** True inside the editor canvas: links don't navigate, empty containers show a drop hint. */
   editable: boolean
+  /**
+   * Instances run their states and interactions (hover, pressed, click…)
+   * and animate variant changes: the draft preview and published apps.
+   * False in the editor canvas, which stays static while editing.
+   */
+  interactive?: boolean
   /**
    * Records per List query (`listKey`). A query without an entry has no known
    * collection: the canvas shows a hint, published apps render nothing.
@@ -45,6 +54,152 @@ export const RUNTIME_KEY: InjectionKey<RuntimeContext> = Symbol('bildr-runtime')
 
 export function useRuntime(): RuntimeContext {
   return inject(RUNTIME_KEY, { base: '', editable: false, lists: {} })
+}
+
+/**
+ * The transitions of one interactive instance, for the nodes of its
+ * definition (ids `<prefix><nodeId>`): the CSS `transition` of a node for
+ * the instance's last variant change, or undefined.
+ */
+export interface InstanceMotion {
+  prefix: string
+  transitionOf: (id: string) => string | undefined
+}
+
+export const INSTANCE_MOTION_KEY: InjectionKey<InstanceMotion | null> = Symbol('bildr-instance-motion')
+
+/** The definition node's CSS transition, when `id` is a node of the nearest interactive instance. */
+export function useMotionTransition(id: () => string): ComputedRef<string | undefined> {
+  const motion = inject(INSTANCE_MOTION_KEY, null)
+  return computed(() => {
+    if (!motion || !id().startsWith(motion.prefix)) return undefined
+    const nodeId = id().slice(motion.prefix.length)
+    return nodeId.includes(INSTANCE_ID_SEPARATOR) ? undefined : motion.transitionOf(nodeId)
+  })
+}
+
+/** Roots that are interactive already: they keep their own role and keyboard handling. */
+const NATIVE_INTERACTIVE = ['Button', 'Link', 'Input']
+
+/**
+ * The states and interactions of one Instance node, outside edit mode
+ * (`runtime.interactive`) and only when its component has any. It keeps the
+ * instance's current variant (from its set variant, and back to it when
+ * that changes), gives `variant` (the one to render: pressed over hover
+ * over current), and `rootAttrs`: pointer handlers for the rendered root,
+ * plus `role=button`, `tabindex=0` and Enter/Space for a click interaction
+ * on a non-interactive root. Appear fires once, when the root enters the
+ * viewport. Its definition nodes animate the changes (`InstanceMotion`),
+ * instant with `prefers-reduced-motion`. Call it in setup.
+ */
+export function useInstanceInteractions(node: () => DocNode, runtime: RuntimeContext) {
+  const definition = computed(() => (node().type === INSTANCE_TYPE ? runtime.components?.find(c => c.id === String(node().props.component)) : undefined))
+  const reacts = computed(() => !!runtime.interactive && !!definition.value && hasInteractivity(definition.value))
+  const setVariant = () => (typeof node().props.variant === 'string' ? node().props.variant as string : '')
+  const state = reactive(initialMachineState(setVariant()))
+  const machine = createInteractionMachine({ component: () => definition.value, setVariant }, state)
+  watch(setVariant, () => machine.reset())
+
+  const reducedMotion = ref(false)
+  const linear = ref(true)
+  let media: MediaQueryList | undefined
+  const onMedia = () => (reducedMotion.value = !!media?.matches)
+  let observer: IntersectionObserver | undefined
+  let observed: Element | undefined
+  const unobserve = () => {
+    observer?.disconnect()
+    observer = undefined
+    observed = undefined
+  }
+  const observe = (el: unknown) => {
+    const def = definition.value
+    if (!(el instanceof Element) || el === observed || !def) return
+    const appears = [def.interactions ?? [], ...def.variants.map(v => v.interactions ?? [])].some(list => list.some(i => i.on === 'appear'))
+    if (!appears || state.appeared) return
+    unobserve()
+    if (typeof IntersectionObserver === 'undefined') return machine.appear()
+    observed = el
+    observer = new IntersectionObserver((entries) => {
+      if (!entries.some(entry => entry.isIntersecting)) return
+      machine.appear()
+      unobserve()
+    })
+    observer.observe(el)
+  }
+  onMounted(() => {
+    media = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+    onMedia()
+    media?.addEventListener?.('change', onMedia)
+    linear.value = typeof CSS !== 'undefined' && CSS.supports?.('transition-timing-function', 'linear(0, 1)')
+  })
+  onBeforeUnmount(() => {
+    machine.dispose()
+    unobserve()
+    media?.removeEventListener?.('change', onMedia)
+  })
+
+  const variant = computed(() => (reacts.value ? renderedVariant(definition.value!, state.current, state) : undefined))
+
+  provide(INSTANCE_MOTION_KEY, {
+    prefix: `${node().id}${INSTANCE_ID_SEPARATOR}`,
+    transitionOf: (nodeId) => {
+      const def = definition.value
+      if (!reacts.value || !def || !state.change) return undefined
+      const transition = transitionFor(def, state.change.from, state.change.to, { reducedMotion: reducedMotion.value })
+      return cssTransition(transition, animatedProperties(def, nodeId), { linear: linear.value })
+    }
+  })
+
+  const rootAttrs = computed((): Record<string, unknown> | undefined => {
+    const def = definition.value
+    if (!reacts.value || !def) return undefined
+    const rootType = def.root.type
+    const button = hasClick(def) && !NATIVE_INTERACTIVE.includes(rootType)
+    return {
+      onPointerenter: () => {
+        machine.hover(true)
+        machine.dispatch('mouseenter')
+      },
+      onPointerleave: () => {
+        machine.hover(false)
+        machine.dispatch('mouseleave')
+      },
+      onPointerdown: (event: PointerEvent) => {
+        if (event.button === 0) machine.press(true)
+      },
+      onPointerup: () => machine.press(false),
+      onPointercancel: () => machine.press(false),
+      onClick: () => machine.dispatch('click'),
+      onVnodeMounted: (vnode: VNode) => observe(vnode.el),
+      onVnodeUpdated: (vnode: VNode) => observe(vnode.el),
+      onVnodeBeforeUnmount: unobserve,
+      ...(button
+        ? {
+            'role': 'button',
+            'tabindex': 0,
+            'data-bildr-interactive': '',
+            'onKeydown': (event: KeyboardEvent) => {
+              if (event.target !== event.currentTarget) return
+              if (event.key === 'Enter') {
+                event.preventDefault()
+                machine.dispatch('click')
+              } else if (event.key === ' ') {
+                // Space clicks on release, as a native button does; no page scroll.
+                event.preventDefault()
+                machine.press(true)
+              }
+            },
+            'onKeyup': (event: KeyboardEvent) => {
+              if (event.target !== event.currentTarget || event.key !== ' ') return
+              machine.press(false)
+              machine.dispatch('click')
+            }
+          }
+        : { 'data-bildr-interactive': '' })
+    }
+  })
+
+  return { variant, rootAttrs }
 }
 
 /** One repetition of a List's children. The innermost List's item shadows outer ones. */

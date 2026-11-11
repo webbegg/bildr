@@ -872,6 +872,7 @@ onBeforeUnmount(() => {
       :env="env"
       missing-env="keep"
       editable
+      :interactive="false"
       :style="{ minHeight: `${FRAME_MIN_HEIGHT}px` }"
     />
     <div
