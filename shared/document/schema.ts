@@ -892,7 +892,9 @@ function instanceNodeProblems(node: DocNode, byId: Map<string, ComponentDefiniti
   const def = byId.get(String(node.props.component))
   if (!def) return [`Instance "${node.id}" uses the unknown component "${String(node.props.component)}"`]
   const variant = node.props.variant
-  if (variant !== undefined && variant !== '' && !def.variants.some(v => v.id === variant)) problems.push(`Instance "${node.id}" uses the unknown variant "${String(variant)}"`)
+  const chosen = variant !== undefined && variant !== '' ? def.variants.find(v => v.id === variant) : undefined
+  if (variant !== undefined && variant !== '' && !chosen) problems.push(`Instance "${node.id}" uses the unknown variant "${String(variant)}"`)
+  if (chosen?.state) problems.push(`Instance "${node.id}" cannot use the state "${chosen.name}": states show from the pointer`)
   const nodes = nodeIndex(def.root)
   for (const [key, value] of Object.entries(node.props)) {
     if ((RESERVED_INSTANCE_KEYS as readonly string[]).includes(key)) continue

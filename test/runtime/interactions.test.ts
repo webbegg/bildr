@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ComponentDefinition, DocNode } from '#shared/document/schema'
-import { animatedProperties, createInteractionMachine, cssTransition, DEFAULT_TRANSITION, hasInteractivity, initialMachineState, nextVariant, renderedVariant, springCurve, springEasing, transitionFor } from '#shared/runtime/interactions'
+import { animatedProperties, createInteractionMachine, cssTransition, DEFAULT_TRANSITION, hasInteractivity, initialMachineState, nextVariant, renderedVariant, rootElementType, springCurve, springEasing, transitionFor } from '#shared/runtime/interactions'
 import { resolveInstance } from '#shared/runtime/instances'
 
 const n = (id: string, type: string, props: DocNode['props'] = {}, children: DocNode[] = [], style: DocNode['style'] = {}): DocNode =>
@@ -165,6 +165,32 @@ describe('createInteractionMachine', () => {
     set = 'on'
     m.reset()
     expect(state.current).toBe('on')
+  })
+})
+
+describe('dispatch', () => {
+  it('tells whether an interaction handled the event', () => {
+    const state = initialMachineState('')
+    const m = createInteractionMachine({ component: () => button(), setVariant: () => '' }, state)
+    expect(m.dispatch('mouseenter')).toBe(false)
+    expect(m.dispatch('click')).toBe(true)
+  })
+})
+
+describe('rootElementType', () => {
+  it('follows instance roots to the element a component renders', () => {
+    const inner: ComponentDefinition = { id: 'inner', name: 'Inner', root: n('b', 'Button', { label: 'Go' }), properties: [], variants: [] }
+    const outer: ComponentDefinition = { id: 'outer', name: 'Outer', root: n('i', 'Instance', { component: 'inner' }), properties: [], variants: [] }
+    const components = [inner, outer, button()]
+    expect(rootElementType(outer, components)).toBe('Button')
+    expect(rootElementType(button(), components)).toBe('Container')
+    expect(rootElementType({ ...outer, root: n('i', 'Instance', { component: 'gone' }) }, components)).toBe('Instance')
+  })
+
+  it('stops on a cycle', () => {
+    const a: ComponentDefinition = { id: 'a', name: 'A', root: n('i', 'Instance', { component: 'b' }), properties: [], variants: [] }
+    const b: ComponentDefinition = { id: 'b', name: 'B', root: n('j', 'Instance', { component: 'a' }), properties: [], variants: [] }
+    expect(rootElementType(a, [a, b])).toBe('Instance')
   })
 })
 

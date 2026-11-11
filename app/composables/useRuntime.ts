@@ -7,7 +7,7 @@ import { resolveEnv } from '#shared/env/variables'
 import type { BindingItem } from '#shared/runtime/bindings'
 import { resolveBindings } from '#shared/runtime/bindings'
 import { INSTANCE_ID_SEPARATOR } from '#shared/runtime/instances'
-import { animatedProperties, createInteractionMachine, cssTransition, hasClick, hasInteractivity, initialMachineState, renderedVariant, transitionFor } from '#shared/runtime/interactions'
+import { animatedProperties, createInteractionMachine, cssTransition, hasClick, hasInteractivity, initialMachineState, renderedVariant, rootElementType, transitionFor } from '#shared/runtime/interactions'
 
 export interface RuntimeContext {
   /** Path prefix that page-slug links resolve under, e.g. `/p/shop`. */
@@ -81,6 +81,16 @@ export function useMotionTransition(id: () => string): ComputedRef<string | unde
 /** Roots that are interactive already: they keep their own role and keyboard handling. */
 const NATIVE_INTERACTIVE = ['Button', 'Link', 'Input']
 
+/** True below an instance that acts as a button: nested ones get no button role of their own. */
+const BUTTON_ANCESTOR_KEY: InjectionKey<ComputedRef<boolean>> = Symbol('bildr-button-ancestor')
+
+/**
+ * Clicks (and Enter/Space) an instance's interaction handled: nested
+ * instances' handlers skip them, including outer ones whose handlers sit on
+ * the same root element (an instance at the root of another's definition).
+ */
+const handledClicks = new WeakSet<Event>()
+
 /**
  * The states and interactions of one Instance node, outside edit mode
  * (`runtime.interactive`) and only when its component has any. It keeps the
@@ -88,7 +98,9 @@ const NATIVE_INTERACTIVE = ['Button', 'Link', 'Input']
  * that changes), gives `variant` (the one to render: pressed over hover
  * over current), and `rootAttrs`: pointer handlers for the rendered root,
  * plus `role=button`, `tabindex=0` and Enter/Space for a click interaction
- * on a non-interactive root. Appear fires once, when the root enters the
+ * on a root that is not interactive (through nested instance roots too) and
+ * not inside another instance acting as a button. A click an interaction
+ * handled does not reach outer instances. Appear fires once, when the root enters the
  * viewport. Its definition nodes animate the changes (`InstanceMotion`),
  * instant with `prefers-reduced-motion`. Call it in setup.
  */
@@ -140,6 +152,20 @@ export function useInstanceInteractions(node: () => DocNode, runtime: RuntimeCon
 
   const variant = computed(() => (reacts.value ? renderedVariant(definition.value!, state.current, state) : undefined))
 
+  const insideButton = inject(BUTTON_ANCESTOR_KEY, null)
+  const button = computed(() => {
+    const def = definition.value
+    if (!reacts.value || !def || insideButton?.value || !hasClick(def)) return false
+    return !NATIVE_INTERACTIVE.includes(rootElementType(def, runtime.components ?? []))
+  })
+  provide(BUTTON_ANCESTOR_KEY, computed(() => !!insideButton?.value || button.value))
+
+  const click = (event: Event) => {
+    if (handledClicks.has(event) || !machine.dispatch('click')) return
+    handledClicks.add(event)
+    event.stopPropagation()
+  }
+
   provide(INSTANCE_MOTION_KEY, {
     prefix: `${node().id}${INSTANCE_ID_SEPARATOR}`,
     transitionOf: (nodeId) => {
@@ -153,8 +179,6 @@ export function useInstanceInteractions(node: () => DocNode, runtime: RuntimeCon
   const rootAttrs = computed((): Record<string, unknown> | undefined => {
     const def = definition.value
     if (!reacts.value || !def) return undefined
-    const rootType = def.root.type
-    const button = hasClick(def) && !NATIVE_INTERACTIVE.includes(rootType)
     return {
       onPointerenter: () => {
         machine.hover(true)
@@ -169,11 +193,11 @@ export function useInstanceInteractions(node: () => DocNode, runtime: RuntimeCon
       },
       onPointerup: () => machine.press(false),
       onPointercancel: () => machine.press(false),
-      onClick: () => machine.dispatch('click'),
+      onClick: click,
       onVnodeMounted: (vnode: VNode) => observe(vnode.el),
       onVnodeUpdated: (vnode: VNode) => observe(vnode.el),
       onVnodeBeforeUnmount: unobserve,
-      ...(button
+      ...(button.value
         ? {
             'role': 'button',
             'tabindex': 0,
@@ -182,7 +206,7 @@ export function useInstanceInteractions(node: () => DocNode, runtime: RuntimeCon
               if (event.target !== event.currentTarget) return
               if (event.key === 'Enter') {
                 event.preventDefault()
-                machine.dispatch('click')
+                click(event)
               } else if (event.key === ' ') {
                 // Space clicks on release, as a native button does; no page scroll.
                 event.preventDefault()
@@ -192,7 +216,7 @@ export function useInstanceInteractions(node: () => DocNode, runtime: RuntimeCon
             'onKeyup': (event: KeyboardEvent) => {
               if (event.target !== event.currentTarget || event.key !== ' ') return
               machine.press(false)
-              machine.dispatch('click')
+              click(event)
             }
           }
         : { 'data-bildr-interactive': '' })

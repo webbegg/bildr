@@ -22,6 +22,11 @@ import { applySetters, applyStyleSetters, INSTANCE_ID_SEPARATOR, propertySetters
  * and a filled slot node its SlotFill's id, so the canvas drops into the
  * page's own containers; page content keeps its ids and stays editable.
  * A missing layout renders the page root without its SlotFills.
+ *
+ * Instances in the layout are expanded (statically, in their set variant)
+ * unless `linked`: then they stay Instance nodes, with their layout ids,
+ * for the interactive renderer to run their states and interactions as it
+ * does for page instances.
  */
 
 export const LAYOUT_ID_MARKER = '@'
@@ -31,7 +36,7 @@ export function isLayoutNodeId(id: string): boolean {
   return id.split(INSTANCE_ID_SEPARATOR)[1]?.startsWith(LAYOUT_ID_MARKER) ?? false
 }
 
-export function resolvePageWithLayout(page: Page, layouts: Layout[], components: ComponentDefinition[]): DocNode {
+export function resolvePageWithLayout(page: Page, layouts: Layout[], components: ComponentDefinition[], { linked = false }: { linked?: boolean } = {}): DocNode {
   if (page.layoutId === undefined) return page.root
   const content = page.root.children.filter(child => child.type !== SLOT_FILL_TYPE)
   const layout = layouts.find(l => l.id === page.layoutId)
@@ -70,7 +75,7 @@ export function resolvePageWithLayout(page: Page, layouts: Layout[], components:
       style,
       children: place?.children ?? node.children.map(build).filter(child => child !== null)
     }
-    return node.type === INSTANCE_TYPE ? resolveInstance(built, components) : built
+    return node.type === INSTANCE_TYPE && !linked ? resolveInstance(built, components) : built
   }
 
   return build(layout.root) ?? { ...page.root, children: content }

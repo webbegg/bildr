@@ -15,6 +15,13 @@
  * the inspector's Transition popover, the preview running both (computed
  * styles), and × removing the interaction; each step undoes and redoes.
  * Shots go to e2e/.shots/components-p2/.
+ *
+ * Then the runtime fixes (`interactions-runtime`), in the preview and the
+ * published app: an interactive instance in a layout hovers; a Pressed
+ * state's own click and a Hover state's own mouse leave fire; a clickable
+ * instance nested in another clickable one gets no role=button of its own
+ * and its click does not switch the outer one; a clickable component whose
+ * root is a Button instance gets no role=button.
  */
 import { action, BASE, canvas, check, openEditor, project, run, shot, until } from './lib.mjs'
 
@@ -346,6 +353,135 @@ await run('interactions-ui', async ({ page, context, errors }) => {
   const options = await page.locator('[role=option]').allTextContents()
   check(options.some(o => o.includes('On')) && !options.some(o => o.includes('Hover')), `the instance's variant select lists base variants only (${options.map(o => o.trim()).join(', ')})`)
   await page.keyboard.press('Escape')
+
+  check(!errors.length, `no console errors (${errors.slice(0, 3).join(' | ')})`)
+})
+
+await run('interactions-runtime', async ({ page, errors }) => {
+  const YELLOW = 'rgb(255, 255, 0)'
+  const p = await project('interactions-runtime')
+  const projectId = p.id
+  const pageId = p.pages[0].id
+  const get = () => action('project_get', { projectId })
+  /** A component made from a Container with a Text, its instance on `pid`. */
+  const make = async (name, style, text, pid = pageId) => {
+    const box = await action('node_insert', { projectId, pageId: pid, type: 'Container', style: { ...style, p: '4' }, children: [{ type: 'Text', props: { text } }] })
+    const made = await action('component_create', { projectId, pageId: pid, nodeId: box.nodeId, name })
+    const def = (await get()).components.find(d => d.id === made.componentId)
+    return { ...made, rootId: def.root.id }
+  }
+  const variant = async (componentId, rootId, name, color) => {
+    const { variantId } = await action('component_variant_add', { projectId, componentId, name })
+    await action('component_variant_set_override', { projectId, componentId, variantId, nodeId: rootId, style: { bg: color } })
+    return variantId
+  }
+  const instant = componentId => action('component_transition_set', { projectId, componentId, transition: { type: 'instant' } })
+  const bg = locator => locator.evaluate(el => getComputedStyle(el).backgroundColor)
+  const away = () => page.mouse.move(1390, 840)
+
+  // Hov: a Hover state, red → blue.
+  const hov = await make('Hov', { bg: '#ff0000' }, 'Hover me')
+  const { variantId: hovH } = await action('component_state_add', { projectId, componentId: hov.componentId, baseVariantId: '', kind: 'hover' })
+  await action('component_variant_set_override', { projectId, componentId: hov.componentId, variantId: hovH, nodeId: hov.rootId, style: { bg: '#0000ff' } })
+  await instant(hov.componentId)
+
+  // Press: Primary clicks to A (green), its Pressed state clicks to B (yellow).
+  const pr = await make('Press', { bg: '#ff0000' }, 'Press me')
+  const prA = await variant(pr.componentId, pr.rootId, 'A', '#00ff00')
+  const prB = await variant(pr.componentId, pr.rootId, 'B', '#ffff00')
+  const { variantId: prP } = await action('component_state_add', { projectId, componentId: pr.componentId, baseVariantId: '', kind: 'pressed' })
+  await action('component_interaction_add', { projectId, componentId: pr.componentId, on: 'click', to: prA })
+  await action('component_interaction_add', { projectId, componentId: pr.componentId, variantId: prP, on: 'click', to: prB })
+  await instant(pr.componentId)
+
+  // Leave: its Hover state's mouse leave goes to B (yellow).
+  const lv = await make('Leave', { bg: '#ff0000' }, 'Leave me')
+  const lvB = await variant(lv.componentId, lv.rootId, 'B', '#ffff00')
+  const { variantId: lvH } = await action('component_state_add', { projectId, componentId: lv.componentId, baseVariantId: '', kind: 'hover' })
+  await action('component_interaction_add', { projectId, componentId: lv.componentId, variantId: lvH, on: 'mouseleave', to: lvB })
+  await instant(lv.componentId)
+
+  // Outer: clicks to On (green), with a Press instance inside.
+  const outerBox = await action('node_insert', { projectId, pageId, type: 'Column', style: { p: '4', bg: '#ff0000' } })
+  const outer = await action('component_create', { projectId, pageId, nodeId: outerBox.nodeId, name: 'Outer' })
+  const outerRoot = (await get()).components.find(d => d.id === outer.componentId).root.id
+  await action('node_insert', { projectId, componentId: outer.componentId, parentId: outerRoot, type: 'Instance', props: { component: pr.componentId } })
+  const outerOn = await variant(outer.componentId, outerRoot, 'On', '#00ff00')
+  await action('component_interaction_add', { projectId, componentId: outer.componentId, on: 'click', to: outerOn })
+  await instant(outer.componentId)
+
+  // Via: clicks to On; its root is an instance of Btn, whose root is a Button.
+  const btn = await action('node_insert', { projectId, pageId, type: 'Button', props: { label: 'Native' } })
+  const btnC = await action('component_create', { projectId, pageId, nodeId: btn.nodeId, name: 'Btn' })
+  const wrapped = await action('node_insert', { projectId, pageId, type: 'Instance', props: { component: btnC.componentId } })
+  const via = await action('component_create', { projectId, pageId, nodeId: wrapped.nodeId, name: 'Via' })
+  const { variantId: viaOn } = await action('component_variant_add', { projectId, componentId: via.componentId, name: 'On' })
+  await action('component_interaction_add', { projectId, componentId: via.componentId, on: 'click', to: viaOn })
+
+  // A layout with a Hov instance, on page "Two".
+  const { layoutId } = await action('layout_create', { projectId, name: 'Site' })
+  const layoutRoot = (await get()).layouts.find(l => l.id === layoutId).root.id
+  await action('node_insert', { projectId, layoutId, parentId: layoutRoot, index: 0, type: 'Instance', props: { component: hov.componentId } })
+  const two = await action('page_add', { projectId, name: 'Two', slug: 'two' })
+  await action('page_set_layout', { projectId, pageId: two.pageId, layoutId })
+  await action('node_insert', { projectId, pageId: two.pageId, type: 'Text', props: { text: 'Page two' } })
+  await action('project_publish', { projectId })
+
+  const nodes = (await get()).pages[0].root.children
+  const instanceOf = componentId => nodes.find(n => n.type === 'Instance' && n.props.component === componentId)?.id
+  const rootOf = id => page.locator(`[data-bildr-id="${id}"]`).first()
+
+  for (const [base, label] of [[`${BASE}/preview/${projectId}`, 'preview'], [`${BASE}/p/${p.slug}`, 'published']]) {
+    await page.goto(base)
+    const press = rootOf(instanceOf(pr.componentId))
+    await press.waitFor()
+    await away()
+    await press.click()
+    await page.waitForTimeout(200)
+    const pressed = await bg(press)
+    check(pressed === YELLOW, `${label}: a click while the Pressed state shows runs that state's click (→ B, yellow), not Primary's (${pressed})`)
+
+    const leave = rootOf(instanceOf(lv.componentId))
+    await leave.hover()
+    await page.waitForTimeout(100)
+    await away()
+    await page.waitForTimeout(200)
+    const left = await bg(leave)
+    check(left === YELLOW, `${label}: the Hover state's mouse leave fires (→ B, yellow) (${left})`)
+
+    const outerEl = rootOf(instanceOf(outer.componentId))
+    check(await outerEl.getAttribute('role') === 'button', `${label}: the outer clickable instance is role=button`)
+    const nestedRoles = await outerEl.evaluate(el => el.querySelectorAll('[role="button"]').length)
+    check(nestedRoles === 0, `${label}: no role=button inside the outer role=button (${nestedRoles})`)
+    const inner = outerEl.locator('[data-bildr-interactive]').first()
+    check(await inner.getAttribute('tabindex') === null, `${label}: the nested clickable instance gets no tabindex`)
+    await inner.click()
+    await page.waitForTimeout(200)
+    const innerBg = await bg(inner)
+    const outerBg = await bg(outerEl)
+    check(innerBg === YELLOW && outerBg === RED, `${label}: clicking the nested instance switches it (${innerBg}) but not the outer one (${outerBg})`)
+    await away()
+    await page.waitForTimeout(100)
+    await outerEl.click({ position: { x: 4, y: 4 } })
+    await page.waitForTimeout(200)
+    check(await bg(outerEl) === GREEN, `${label}: clicking the outer instance itself still switches it (green)`)
+
+    const viaEl = rootOf(instanceOf(via.componentId))
+    const tag = await viaEl.evaluate(el => el.tagName)
+    check(tag === 'BUTTON' && await viaEl.getAttribute('role') === null && await viaEl.getAttribute('tabindex') === null, `${label}: a clickable component whose root is a Button instance renders a <button> without role or tabindex (<${tag}>)`)
+
+    await page.goto(`${base}/two`)
+    const text = page.getByText('Hover me').first()
+    await text.waitFor()
+    const hovered = text.locator('xpath=..')
+    await away()
+    await page.waitForTimeout(200)
+    const before = await bg(hovered)
+    await hovered.hover()
+    await page.waitForTimeout(300)
+    const after = await bg(hovered)
+    check(before === RED && after === BLUE && await hovered.getAttribute('data-bildr-interactive') !== null, `${label}: an interactive instance in a layout hovers (${before} → ${after})`)
+  }
 
   check(!errors.length, `no console errors (${errors.slice(0, 3).join(' | ')})`)
 })

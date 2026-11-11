@@ -125,6 +125,15 @@ describe('resolvePageWithLayout', () => {
     expect(isLayoutNodeId(text.id)).toBe(true)
   })
 
+  it('keeps layout instances as Instance nodes when linked, for the interactive renderer', () => {
+    const nav: ComponentDefinition = { id: 'nav', name: 'Nav', root: n('nr', 'Container', {}, [n('nt', 'Text', { text: 'x' })]), properties: [], variants: [] }
+    const layout = main()
+    layout.root.children.unshift(n('l-nav', 'Instance', { component: 'nav', variant: '' }))
+    const tree = resolvePageWithLayout(page({ layoutId: 'main' }), [layout], [nav], { linked: true })
+    expect(tree.children[0]).toEqual(n('proot/@l-nav', 'Instance', { component: 'nav', variant: '' }))
+    expect(find(tree, 'proot/@l-nav/nt')).toBeUndefined()
+  })
+
   it('leaves page instances in the content for the renderer', () => {
     const inst = n('i1', 'Instance', { component: 'nav' })
     const tree = resolvePageWithLayout(page({ layoutId: 'main' }, [inst]), [main()], [])

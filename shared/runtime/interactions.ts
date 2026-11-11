@@ -42,6 +42,23 @@ export function hasInteractivity(def: ComponentDefinition): boolean {
   return !!def.interactions?.length || def.variants.some(v => v.state || v.interactions?.length)
 }
 
+/**
+ * The element type `def` renders at its root: its root's type, followed
+ * through instance roots (a component whose root is a Button instance
+ * renders a Button). `Instance` for a missing component or a cycle.
+ */
+export function rootElementType(def: ComponentDefinition, components: ComponentDefinition[]): string {
+  const seen = new Set<string>()
+  let current: ComponentDefinition | undefined = def
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id)
+    if (current.root.type !== 'Instance') return current.root.type
+    const id: string = String(current.root.props.component)
+    current = components.find((c): boolean => c.id === id)
+  }
+  return 'Instance'
+}
+
 /** Whether `def` has a click interaction anywhere, so its instances act as buttons. */
 export function hasClick(def: ComponentDefinition): boolean {
   return [def.interactions ?? [], ...def.variants.map(v => v.interactions ?? [])].some(list => list.some(i => i.on === 'click'))
@@ -76,14 +93,15 @@ export interface VariantStep {
 /**
  * Where `event` takes an instance whose current variant is `current` (the
  * set variant `setVariant` when that is gone): the first interaction for
- * the event on the shown state (`rendered`), else on the current variant,
- * else on the current state's base. Null when nothing listens.
+ * the event on the shown state (`rendered`; several, most specific first),
+ * else on the current variant, else on the current state's base. Null when
+ * nothing listens.
  */
-export function nextVariant(def: ComponentDefinition, setVariant: string, current: string, event: InteractionEvent, rendered?: string): VariantStep | null {
+export function nextVariant(def: ComponentDefinition, setVariant: string, current: string, event: InteractionEvent, rendered?: string | string[]): VariantStep | null {
   const base = known(def, current) ?? known(def, setVariant) ?? PRIMARY_VARIANT
-  const shown = known(def, rendered)
+  const shown = (Array.isArray(rendered) ? rendered : [rendered]).map(id => known(def, id)).filter(id => id !== undefined)
   const of = variantById(def, base)?.state?.of
-  const owners = [...new Set([...(shown === undefined ? [] : [shown]), base, ...(of === undefined ? [] : [of])])]
+  const owners = [...new Set([...shown, base, ...(of === undefined ? [] : [of])])]
   for (const owner of owners) {
     const interaction = interactionsOf(def, owner).find(i => i.on === event && known(def, i.to) !== undefined)
     if (interaction) return { to: interaction.to, delay: interaction.delay ?? 0 }
@@ -112,7 +130,8 @@ export interface MachineOptions {
 export interface InteractionMachine {
   hover: (on: boolean) => void
   press: (on: boolean) => void
-  dispatch: (event: InteractionEvent) => void
+  /** True when an interaction listens to `event` (its switch may still be delayed). */
+  dispatch: (event: InteractionEvent) => boolean
   /** The instance entered the viewport: fires `appear` the first time only. */
   appear: () => void
   /** Back to the set variant (it changed), dropping a pending switch. */
@@ -124,10 +143,17 @@ export interface InteractionMachine {
  * Drives one instance's `state`: pointer flags, event switches after their
  * delay (a new switch replaces a pending one), and appear once. Every
  * change of the shown variant is recorded in `state.change`.
+ *
+ * The renderer clears a pointer flag before the event it ends: pointerup
+ * before click, pointerleave before mouseleave. So the state that showed
+ * until a flag was cleared still listens to the next event dispatched (a
+ * Pressed state's click, a Hover state's mouseleave), before the one shown
+ * now; any other pointer change forgets it.
  */
 export function createInteractionMachine(options: MachineOptions, state: MachineState): InteractionMachine {
   const timers = options.timers ?? { set: (fn, ms) => setTimeout(fn, ms), clear: handle => clearTimeout(handle as ReturnType<typeof setTimeout>) }
   let pending: unknown
+  let released: string | undefined
   const shown = () => {
     const def = options.component()
     return def ? renderedVariant(def, state.current, state) : state.current
@@ -137,6 +163,15 @@ export function createInteractionMachine(options: MachineOptions, state: Machine
     change()
     const to = shown()
     if (from !== to) state.change = { from, to }
+    return from
+  }
+  const pointer = (flag: 'hover' | 'pressed', on: boolean) => {
+    const was = state[flag]
+    const from = mutate(() => {
+      state[flag] = on
+      if (flag === 'hover' && !on) state.pressed = false
+    })
+    released = was && !on ? from : undefined
   }
   const cancel = () => {
     if (pending !== undefined) timers.clear(pending)
@@ -144,8 +179,10 @@ export function createInteractionMachine(options: MachineOptions, state: Machine
   }
   const dispatch = (event: InteractionEvent) => {
     const def = options.component()
-    const step = def && nextVariant(def, options.setVariant(), state.current, event, shown())
-    if (!step) return
+    const before = released
+    released = undefined
+    const step = def && nextVariant(def, options.setVariant(), state.current, event, before === undefined ? shown() : [before, shown()])
+    if (!step) return false
     cancel()
     const go = () => {
       pending = undefined
@@ -153,13 +190,11 @@ export function createInteractionMachine(options: MachineOptions, state: Machine
     }
     if (step.delay > 0) pending = timers.set(go, step.delay * 1000)
     else go()
+    return true
   }
   return {
-    hover: on => mutate(() => {
-      state.hover = on
-      if (!on) state.pressed = false
-    }),
-    press: on => mutate(() => (state.pressed = on)),
+    hover: on => pointer('hover', on),
+    press: on => pointer('pressed', on),
     dispatch,
     appear: () => {
       if (state.appeared) return
@@ -168,6 +203,7 @@ export function createInteractionMachine(options: MachineOptions, state: Machine
     },
     reset: () => {
       cancel()
+      released = undefined
       mutate(() => (state.current = options.setVariant()))
     },
     dispose: cancel

@@ -7,7 +7,8 @@ import { resolvePageWithLayout } from '#shared/runtime/layouts'
 /**
  * A page as it renders: inside its layout when it has one (see
  * `resolvePageWithLayout`), so the canvas, the preview and published apps
- * all show the layout around the page content.
+ * all show the layout around the page content. Interactive ones keep the
+ * layout's instances as Instance nodes, so they react like page instances.
  */
 
 // A boolean prop left out is false, not undefined: `interactive` needs its own default.
@@ -28,12 +29,13 @@ const props = withDefaults(defineProps<{
   missingEnv?: RuntimeContext['onMissingEnv']
 }>(), { interactive: undefined })
 
-const root = computed(() => resolvePageWithLayout(props.page, props.layouts ?? [], props.components ?? []))
+const interactive = computed(() => props.interactive ?? props.editable !== true)
+const root = computed(() => resolvePageWithLayout(props.page, props.layouts ?? [], props.components ?? [], { linked: interactive.value }))
 
 provide(RUNTIME_KEY, reactive({
   base: computed(() => props.base),
   editable: computed(() => props.editable === true),
-  interactive: computed(() => props.interactive ?? props.editable !== true),
+  interactive,
   lists: computed(() => props.lists ?? {}),
   submitForm: computed(() => props.submitForm),
   env: computed(() => props.env),

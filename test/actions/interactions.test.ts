@@ -139,12 +139,12 @@ describe('component_transition_set', () => {
 describe('component_variant_delete with states and interactions', () => {
   it('also deletes the variant\'s states and the interactions that go to it, and moves instances back, as one undo step', async () => {
     const { call, get, componentId, onId, nodeId, pageId, component, undo } = await setup()
-    const { variantId: hoverId } = await call<{ variantId: string }>('component_state_add', { componentId, baseVariantId: onId, kind: 'hover' })
+    await call('component_state_add', { componentId, baseVariantId: onId, kind: 'hover' })
     const { variantId: primaryHover } = await call<{ variantId: string }>('component_state_add', { componentId, baseVariantId: '', kind: 'hover' })
     const { interactionId: toOn } = await call<{ interactionId: string }>('component_interaction_add', { componentId, on: 'click', to: onId })
     const { interactionId: keep } = await call<{ interactionId: string }>('component_interaction_add', { componentId, on: 'appear', to: '' })
     await call('component_interaction_add', { componentId, variantId: primaryHover, on: 'click', to: onId })
-    await call('instance_set_values', { pageId, nodeId, variant: hoverId })
+    await call('instance_set_values', { pageId, nodeId, variant: onId })
     const before = await get()
 
     await call('component_variant_delete', { componentId, variantId: onId })
@@ -171,13 +171,22 @@ describe('component_variant_delete with states and interactions', () => {
 
 describe('states in the document', () => {
   it('render over their base variant\'s overrides', async () => {
-    const { call, get, componentId, onId, def, pageId, nodeId } = await setup()
+    const { call, get, componentId, onId, def, nodeId } = await setup()
     await call('component_variant_set_override', { componentId, variantId: onId, nodeId: def.root.id, style: { p: '4' } })
     const { variantId } = await call<{ variantId: string }>('component_state_add', { componentId, baseVariantId: onId, kind: 'hover' })
     await call('component_variant_set_override', { componentId, variantId, nodeId: def.root.id, style: { bg: 'secondary' } })
-    await call('instance_set_values', { pageId, nodeId, variant: variantId })
     const project = await get()
-    expect(resolveInstance(project.pages[0]!.root.children[0]!, project.components)!.style).toMatchObject({ bg: 'secondary', p: '4' })
+    const instance = project.pages[0]!.root.children.find(c => c.id === nodeId)!
+    expect(resolveInstance({ ...instance, props: { ...instance.props, variant: variantId } }, project.components)!.style).toMatchObject({ bg: 'secondary', p: '4' })
+  })
+
+  it('cannot be set on an instance: states show from the pointer', async () => {
+    const { call, get, componentId, onId, pageId, nodeId } = await setup()
+    const { variantId } = await call<{ variantId: string }>('component_state_add', { componentId, baseVariantId: onId, kind: 'hover' })
+    const before = await get()
+    await expect(call('instance_set_values', { pageId, nodeId, variant: variantId })).rejects.toThrow(`Instance "${nodeId}" cannot use the state "On · Hover": states show from the pointer`)
+    expect((await get()).pages).toEqual(before.pages)
+    await call('instance_set_values', { pageId, nodeId, variant: onId })
   })
 
   it('keep a state override that matches the primary but not its base', async () => {

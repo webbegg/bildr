@@ -88,10 +88,11 @@ const instance = computed(() => {
   const node = variant === undefined ? props.node : { ...props.node, props: { ...props.node.props, variant } }
   return resolveInstance(node, runtime.components ?? [], { linked: true })
 })
-// An instance at the root of another's definition passes the outer handlers on with its own.
+// An instance at the root of another's definition passes the outer handlers on after its own,
+// so the inner one handles a click first (see `useInstanceInteractions`).
 const rootBehaviour = computed(() => {
   const own = interactions?.rootAttrs.value
-  return props.behaviour && own ? mergeProps(props.behaviour, own) : props.behaviour ?? own
+  return props.behaviour && own ? mergeProps(own, props.behaviour) : props.behaviour ?? own
 })
 // Containers of a definition take no drops: the instance is the page node.
 const dropParent = computed(() => runtime.editable && !fromDefinition.value && !props.node.children.length)
