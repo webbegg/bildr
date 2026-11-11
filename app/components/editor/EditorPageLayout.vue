@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { PropValue } from '#shared/document/components'
 import type { LayoutSlot, PropertyDef } from '#shared/document/schema'
-import { layoutItems, layoutValue, NO_LAYOUT, pageSlots, variableField } from '~/composables/layoutEditor'
+import { layoutChoiceHint, layoutItems, layoutValue, NO_LAYOUT, pageSlots, variableField } from '~/composables/layoutEditor'
 
 /**
  * The page settings' layout rows: the Layout the page renders in (None, or
- * one of the project's, each a two-line item naming its slots and variables,
- * with Edit to open it in the layout view), a field
+ * one of the project's, each a two-line item counting the pages using it and
+ * naming its slots and variables, with Edit to open it in the layout view), a field
  * per layout variable, set per page (blue when set; reset goes back to the
  * default), and per named slot an "Own content" switch: on, the page gives
  * the slot its own content; off, the layout's default shows.
@@ -15,31 +15,18 @@ const editor = useEditor()
 
 const page = computed(() => editor.currentPage)
 const layout = computed(() => editor.project?.layouts.find(l => l.id === page.value?.layoutId) ?? null)
-const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
-/** A layout choice's second line: what a page can set in it (its named slots, the children slot aside, and its variables). */
-function layoutHint(value: string): string {
+/** A layout choice's second line (see `layoutChoiceHint`). */
+function layoutHint(value: string, pages = 0): string {
   if (value === NO_LAYOUT) return 'The page renders on its own'
   const option = editor.project?.layouts.find(l => l.id === value)
-  if (!option) return ''
-  const slots = Math.max(0, option.slots.length - 1)
-  const variables = option.variables.length
-  return slots || variables ? [slots && count(slots, 'slot'), variables && count(variables, 'variable')].filter(Boolean).join(', ') : 'No slots or variables'
+  return option ? layoutChoiceHint(option, pages) : ''
 }
-const items = computed(() => (editor.project ? layoutItems(editor.project).map(item => ({ ...item, description: layoutHint(item.value) })) : []))
+const items = computed(() => (editor.project ? layoutItems(editor.project).map(({ pages, ...item }) => ({ ...item, description: layoutHint(item.value, pages) })) : []))
 const fields = computed(() => (layout.value ? layout.value.variables.map(variable => ({ variable, field: variableField(layout.value!, variable) })) : []))
 const slots = computed(() => (layout.value && page.value ? pageSlots(layout.value, page.value) : []))
 
-async function setLayout(value: string) {
-  const current = page.value
-  if (!current || value === (layout.value?.id ?? NO_LAYOUT)) return
-  const loses = !!Object.keys(current.layoutValues ?? {}).length || slots.value.some(s => s.filled)
-  if (loses && !await editor.confirm({
-    title: 'Change the layout?',
-    description: `${current.name} drops its layout values and its own slot content. Undo brings them back.`,
-    items: slots.value.filter(s => s.filled).map(s => `${s.slot.name}: own content`),
-    confirmLabel: 'Change layout'
-  })) return
-  editor.run('page_set_layout', { pageId: current.id, layoutId: value === NO_LAYOUT ? null : value })
+function setLayout(value: string) {
+  void editor.setPageLayout(value === NO_LAYOUT ? null : value)
 }
 
 function setValue(variable: PropertyDef, value: PropValue | null) {

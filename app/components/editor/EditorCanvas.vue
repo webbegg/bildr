@@ -12,6 +12,7 @@ import { revealFrame } from '#shared/editor/devices'
 import { activeMessage, boundsOf, fitView, FRAME_BAR_HEIGHT, FRAME_GAP, FRAME_MIN_HEIGHT, layoutFrames, panView, selectionView, stepZoom, viewportHeight, wheelPixels, wheelZoom, zoomAround, zoomShortcut } from '#shared/editor/viewport'
 import type { BoardFrame } from '#shared/editor/variantBoard'
 import { boardFrameKey, boardFrames, boardLayout } from '#shared/editor/variantBoard'
+import { childrenSlotNode } from '~/composables/layoutEditor'
 
 /**
  * The editor canvas. The page view is a Figma-style infinite surface showing
@@ -45,6 +46,9 @@ import { boardFrameKey, boardFrames, boardLayout } from '#shared/editor/variantB
  * variant's frame is the active one: it alone shows the selection, handles
  * and previews. A click, right-click, drop or insert in another frame makes
  * its variant active first, so edits override that variant.
+ * In the layout view, the children slot gets a light-purple placeholder,
+ * "Page content — your page appears here", drawn over its box as measured
+ * in each frame (clicks and drops pass through to the slot).
  */
 const { view = 'page' } = defineProps<{ view?: CanvasView }>()
 const editor = useEditor()
@@ -358,9 +362,9 @@ function sync(key: string | null, el: HTMLIFrameElement) {
 const measures = new Map<number, (rects: NodeBox[]) => void>()
 let measureId = 0
 
-/** The boxes of nodes in the active frame, in its canvas pixels. */
-function measureNodes(nodeIds: string[]): Promise<NodeBox[]> {
-  const el = frames.get(activeKey.value)
+/** The boxes of nodes in the active frame (or frame `key`), in its canvas pixels. */
+function measureNodes(nodeIds: string[], key: string = activeKey.value): Promise<NodeBox[]> {
+  const el = frames.get(key)
   if (!el || !nodeIds.length) return Promise.resolve([])
   const requestId = ++measureId
   return new Promise((resolve) => {
@@ -419,6 +423,24 @@ function onMessage(event: MessageEvent) {
 }
 
 watch(() => [editor.page, editor.theme, editor.lists, editor.publicEnv, editor.project?.components, editor.project?.layouts, board.value], render, { deep: true })
+
+/** In the layout view, the children slot's node; its placeholder boxes per frame key, in frame pixels. */
+const slotNodeId = computed(() => (view === 'page' && editor.layout ? childrenSlotNode(editor.layout) : null))
+const slotBoxes = ref<Record<string, NodeBox>>({})
+let slotTimer: ReturnType<typeof setTimeout> | undefined
+/** Measures the slot in every frame once the frames have rendered the last change. */
+function measureSlot() {
+  clearTimeout(slotTimer)
+  const id = slotNodeId.value
+  if (!id) return void (slotBoxes.value = {})
+  slotTimer = setTimeout(async () => {
+    const keys = layout.value.map(f => f.key)
+    const boxes = await Promise.all(keys.map(key => measureNodes([id], key)))
+    if (slotNodeId.value !== id) return
+    slotBoxes.value = Object.fromEntries(keys.flatMap((key, i) => (boxes[i]![0] ? [[key, boxes[i]![0]]] : [])))
+  }, 80)
+}
+watch(() => [slotNodeId.value, editor.page, heights, layout.value.map(f => f.key)], measureSlot, { deep: true })
 watch([() => editor.selectedIds, () => editor.canvasAccent, activeKey], () => postEach(selectMessage))
 watch([() => editor.hoveredId, hoverKey, activeKey], () => postEach(hoverMessage))
 watch(() => editor.tool, () => broadcast(toolMessage()))
@@ -459,6 +481,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onWindowKeyDown)
   window.removeEventListener('keyup', onWindowKeyUp)
   observer?.disconnect()
+  clearTimeout(slotTimer)
 })
 </script>
 
@@ -525,6 +548,29 @@ onBeforeUnmount(() => {
           class="block size-full bg-white"
           :style="frame.key === activeKey ? { outline: `${2 / viewport.zoom}px solid var(--editor-context)` } : undefined"
         />
+        <!-- The layout's children slot: where each page's own content goes. -->
+        <div
+          v-if="slotBoxes[frame.key]"
+          class="pointer-events-none absolute flex items-center justify-center overflow-hidden rounded-md border-dashed border-(--editor-component) p-2 text-center"
+          :style="{
+            left: `${slotBoxes[frame.key]!.x}px`,
+            top: `${slotBoxes[frame.key]!.y}px`,
+            width: `${slotBoxes[frame.key]!.width}px`,
+            height: `${slotBoxes[frame.key]!.height}px`,
+            borderWidth: `${1.5 / viewport.zoom}px`,
+            borderStyle: editor.selectedIds.includes(slotNodeId!) ? 'solid' : 'dashed',
+            background: 'color-mix(in srgb, var(--editor-component) 12%, white)'
+          }"
+          data-layout-placeholder
+        >
+          <span class="flex items-center gap-1.5 text-[13px] font-medium text-(--editor-component)">
+            <UIcon
+              name="i-lucide-layout-template"
+              class="size-4 shrink-0"
+            />
+            Page content — your page appears here
+          </span>
+        </div>
       </div>
       <!-- The board's dashed "+ Variant" tile, after the last variant. -->
       <button

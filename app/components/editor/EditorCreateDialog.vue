@@ -27,9 +27,12 @@ const taken = computed(() => (isLayout.value ? editor.project?.layouts : editor.
 const problem = computed(() => nameProblem(name.value, taken.value, isLayout.value ? 'layout' : 'component'))
 /** The empty name only disables Create; a used one says why. */
 const error = computed(() => (name.value.trim() ? problem.value : ''))
-const help = computed(() => (isLayout.value
-  ? 'A shared frame around the pages that use it, such as a nav and a footer.'
-  : 'Edit it once and every instance updates. Use / for folders, e.g. Cards/Product.'))
+const help = computed(() => {
+  if (!isLayout.value) return 'Edit it once and every instance updates. Use / for folders, e.g. Cards/Product.'
+  return request.value?.nodeIds.length
+    ? 'The selected layers become the layout; the rest of the page shows in its content slot.'
+    : 'A shared frame around the pages that use it, such as a nav and a footer.'
+})
 
 watch(request, async (value) => {
   if (!value) return

@@ -4,6 +4,7 @@ import type { Command, CommandContext } from '#shared/editor/commands'
 import { editorCommands, GROUP_LABELS, pushRecent, searchCommands } from '#shared/editor/commands'
 import { siblingParent } from '#shared/editor/selection'
 import { componentCommands } from '~/composables/componentEditor'
+import { layoutCommands } from '~/composables/layoutEditor'
 
 /**
  * The `⌘K` quick actions, Framer's Quick Insert: type a component's name and
@@ -14,7 +15,8 @@ import { componentCommands } from '~/composables/componentEditor'
  * Running one closes the palette and remembers it for the empty-query list.
  * An empty query caps Insert at the common or recently inserted components,
  * so the Actions stay in view; "More components…" lists the rest. The
- * project's own components join Insert and Go to (`componentCommands`).
+ * project's own components join Insert and Go to (`componentCommands`), and
+ * its layouts Actions and Go to (`layoutCommands`).
  */
 const editor = useEditor()
 const query = ref('')
@@ -59,6 +61,14 @@ const commands = computed(() => [
         insert: id => editor.insertInstance(id),
         edit: id => editor.editComponent(id),
         create: () => editor.createComponent()
+      })
+    : []),
+  ...(editor.project
+    ? layoutCommands(editor.project, { editingId: editor.layoutId, pageLayoutId: editor.currentPage?.layoutId, fromSelection: 'nodeIds' in editor.layoutFromSelection }, {
+        create: () => editor.createLayout(),
+        createFromSelection: () => editor.createLayoutFromSelection(),
+        edit: id => editor.editLayout(id),
+        setPageLayout: id => editor.setPageLayout(id)
       })
     : [])
 ])

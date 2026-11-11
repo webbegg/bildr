@@ -35,6 +35,7 @@ import { goToLevel, leaveLevel, openLevel, pruneLevels, topLevel } from '#shared
 import { componentPrefill, uniqueName } from '#shared/editor/names'
 import { selectionAccent } from '#shared/editor/accent'
 import { insertableComponents, outsideInstance, parseInstancePayload } from './componentEditor'
+import { layoutSelection, pageSlots, parseLayoutPayload } from './layoutEditor'
 import { boardShown } from '#shared/editor/variantBoard'
 import { activeVariant, applyVariant, newVariantName, overrideInput, pasteStyleOverride, primaryStyle } from './componentVariants'
 import type { NodeOverridePatch, OverridePatch } from './componentVariants'
@@ -66,7 +67,7 @@ export interface ConfirmOptions {
 export interface CreateRequest {
   kind: EditKind
   name: string
-  /** The page nodes a component is made from, in document order. */
+  /** The page nodes a component is made from, or a layout wraps around its children slot ("Create layout from selection"), in document order. */
   nodeIds: string[]
 }
 
@@ -465,6 +466,39 @@ export function createEditor(projectId: string) {
     createRequest.value = { kind: 'layout', name: uniqueName('Layout', project.value.layouts), nodeIds: [] }
   }
 
+  /** The selected top-level page layers "Create layout from selection" takes, or why it cannot (pages without a layout only). */
+  const layoutFromSelection = computed(() => {
+    if (componentId.value || layoutId.value || !currentPage.value) return { reason: 'Leave the component or layout first' }
+    return layoutSelection(currentPage.value, selectedIds.value)
+  })
+
+  /**
+   * "Create layout from selection" (the node menu, ⌘K): opens the naming
+   * dialog; Create wraps the selected top-level layers around a children
+   * slot as a new layout, which the page gets, and opens it.
+   */
+  function createLayoutFromSelection(): void {
+    const choice = layoutFromSelection.value
+    if (!project.value || !('nodeIds' in choice)) return
+    createRequest.value = { kind: 'layout', name: uniqueName('Layout', project.value.layouts), nodeIds: choice.nodeIds }
+  }
+
+  /** Sets the current page's layout (null: none), asking first when the page would lose its layout values or own slot content. */
+  async function setPageLayout(id: string | null): Promise<void> {
+    const current = currentPage.value
+    if (!current || id === (current.layoutId ?? null)) return
+    const old = project.value?.layouts.find(l => l.id === current.layoutId)
+    const filled = old ? pageSlots(old, current).filter(s => s.filled) : []
+    const loses = !!Object.keys(current.layoutValues ?? {}).length || filled.length > 0
+    if (loses && !await confirm({
+      title: 'Change the layout?',
+      description: `${current.name} drops its layout values and its own slot content. Undo brings them back.`,
+      items: filled.map(s => `${s.slot.name}: own content`),
+      confirmLabel: 'Change layout'
+    })) return
+    await run('page_set_layout', { pageId: current.id, layoutId: id })
+  }
+
   /**
    * "Create component" (the node menu, ⌥⌘K, ⌘K, Assets "+"): opens the naming
    * dialog for the selected siblings (in document order), named after the one
@@ -488,9 +522,14 @@ export function createEditor(projectId: string) {
     const request = createRequest.value
     if (!request) return false
     if (request.kind === 'layout') {
-      const result = await run<{ layoutId: string }>('layout_create', { name: name.trim() })
+      const fromSelection = request.nodeIds.length > 0
+      const result = fromSelection
+        ? await run<{ layoutId: string }>('layout_create_from_selection', { pageId: currentPage.value?.id, nodeIds: request.nodeIds, name: name.trim() })
+        : await run<{ layoutId: string }>('layout_create', { name: name.trim() })
       if (!result) return false
       createRequest.value = null
+      // The selected layers moved into the layout: nothing on the page to come back to.
+      if (fromSelection) selectedIds.value = []
       editLayout(result.layoutId)
       return true
     }
@@ -621,10 +660,13 @@ export function createEditor(projectId: string) {
     await insert(type, target)
   }
 
-  /** Handles a drop of a raw `application/x-bildr` payload onto a parent slot. */
+  /** Handles a drop of a raw `application/x-bildr` payload onto a parent slot (a layout tile's sets the page layout). */
   async function drop(payload: string, target: DropTarget): Promise<void> {
     const instanceOf = parseInstancePayload(payload)
     if (instanceOf) return insertInstance(instanceOf, target)
+    // An Insert layout tile frames the page wherever it lands (pages only).
+    const layoutOf = parseLayoutPayload(payload)
+    if (layoutOf) return componentId.value || layoutId.value ? undefined : setPageLayout(layoutOf)
     const data = parseDragPayload(payload)
     const root = page.value?.root
     if (!data || !root) return
@@ -1064,7 +1106,7 @@ export function createEditor(projectId: string) {
   return reactive({
     projectId, project, pageId, componentId, component, layoutId, layout, editStack, createRequest, propertiesRequest, confirmRequest, canvasAccent, variantId, variant, variantBoard, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
-    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, renameVariant, variantPage, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, layoutFromSelection, createLayoutFromSelection, setPageLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, renameVariant, variantPage, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, updateStyles, previewTheme, updateTheme, undo, redo, shortcut
   })

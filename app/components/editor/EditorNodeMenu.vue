@@ -19,7 +19,8 @@ import { replaceChoiceHint, replaceChoices } from '~/composables/componentEditor
  * clipboard, a non-instance) show dimmed rather than hidden. On an
  * instance, Detach instance (⌥⌘B) and Replace with › (every component with
  * its usage count; the current one and ones that would contain themselves
- * dimmed) act on it.
+ * dimmed) act on it. Create layout from selection… takes top-level layers
+ * of a page without a layout.
  */
 defineOptions({ inheritAttrs: false })
 
@@ -109,6 +110,8 @@ const items = computed<ContextMenuItem[][]>(() => {
     [
       // Components are made from page content; in the component view, nest one with Insert instead.
       { label: 'Create component…', icon: 'i-lucide-component', kbds: ['meta', 'alt', 'k'], disabled: cannotWrap || !onPage, onSelect: () => editor.createComponent() },
+      // Top-level page layers become a layout's chrome around its children slot; the page gets the layout.
+      { label: 'Create layout from selection…', icon: 'i-lucide-layout-template', disabled: !('nodeIds' in editor.layoutFromSelection), onSelect: () => editor.createLayoutFromSelection() },
       { label: 'Edit component', icon: 'i-lucide-pencil-ruler', disabled: !isInstance, onSelect: () => node && editor.editComponent(String(node.props.component), null, { nested: true }) },
       { label: 'Detach instance', icon: 'i-lucide-unlink', kbds: ['meta', 'alt', 'b'], disabled: !isInstance, onSelect: () => editor.detachInstance(id) },
       {

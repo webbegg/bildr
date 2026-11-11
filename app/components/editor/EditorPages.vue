@@ -6,13 +6,20 @@ import { filterPages, pageRowLabel } from '#shared/editor/sidebar'
 /**
  * The Pages panel, Framer's: a "Pages" header with Add page, then a row per
  * page named by its path (`/pricing`; the home page, the first, is `Home`
- * with a house icon), filtered by the sidebar search. Double-click renames.
+ * with a house icon), filtered by the sidebar search, and a small layout
+ * badge (▭ name) on pages that use a layout. Double-click renames.
  */
 const { query = '' } = defineProps<{ query?: string }>()
 const editor = useEditor()
 const pages = computed(() => {
   const homeId = editor.project?.pages[0]?.id
-  return filterPages(editor.project?.pages ?? [], query).map(page => ({ page, home: page.id === homeId, ...pageRowLabel(page, page.id === homeId) }))
+  const layouts = editor.project?.layouts ?? []
+  return filterPages(editor.project?.pages ?? [], query).map(page => ({
+    page,
+    home: page.id === homeId,
+    layout: layouts.find(l => l.id === page.layoutId) ?? null,
+    ...pageRowLabel(page, page.id === homeId)
+  }))
 })
 
 const newName = ref('')
@@ -97,7 +104,7 @@ function menu(page: Page): DropdownMenuItem[] {
       No pages match “{{ query }}”.
     </p>
     <div
-      v-for="{ page, home, path, hint } in pages"
+      v-for="{ page, home, path, hint, layout } in pages"
       :key="page.id"
       class="group relative flex items-center px-2"
       :data-page-id="page.id"
@@ -133,6 +140,18 @@ function menu(page: Page): DropdownMenuItem[] {
           v-if="hint"
           class="truncate text-xs font-normal text-dimmed"
         >{{ hint }}</span>
+        <span
+          v-if="layout"
+          class="ms-auto flex min-w-0 shrink items-center gap-1 rounded-md bg-(--editor-component)/12 px-1.5 py-0.5 text-[11px] font-normal text-(--editor-component)"
+          :title="`Layout: ${layout.name}`"
+          :data-page-layout-badge="layout.id"
+        >
+          <UIcon
+            name="i-lucide-layout-template"
+            class="size-3 shrink-0"
+          />
+          <span class="max-w-20 truncate">{{ layout.name }}</span>
+        </span>
       </button>
       <EditorMenu
         :items="menu(page)"

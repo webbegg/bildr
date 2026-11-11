@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createProject } from '#shared/document/factory'
 import type { DocNode, Layout, Project } from '#shared/document/schema'
+import type { CommandContext } from '#shared/editor/commands'
 import {
+  childrenSlotNode,
+  layoutChoiceHint,
+  layoutCommands,
   layoutDeleteConfirm,
+  layoutSelection,
   layoutEntries,
   layoutItems,
   layoutPages,
@@ -61,8 +66,71 @@ describe('layoutDeleteConfirm', () => {
 })
 
 describe('layoutItems', () => {
-  it('offers None first, then every layout', () => {
-    expect(layoutItems(project())).toEqual([{ label: 'None', value: NO_LAYOUT }, { label: 'Main', value: 'main' }, { label: 'Blank', value: 'blank' }])
+  it('offers None first, then every layout with the number of pages using it', () => {
+    expect(layoutItems(project())).toEqual([{ label: 'None', value: NO_LAYOUT }, { label: 'Main', value: 'main', pages: 2 }, { label: 'Blank', value: 'blank', pages: 0 }])
+  })
+})
+
+describe('layoutChoiceHint', () => {
+  it('counts the pages, then what a page can set in the layout', () => {
+    const p = project()
+    expect(layoutChoiceHint(p.layouts[0]!, 2)).toBe('2 pages · 1 slot, 1 variable')
+    expect(layoutChoiceHint(p.layouts[1]!, 0)).toBe('No pages · 1 slot')
+    expect(layoutChoiceHint({ ...main(), slots: [main().slots[0]!], variables: [] }, 1)).toBe('1 page · No slots or variables')
+  })
+})
+
+describe('childrenSlotNode', () => {
+  it('finds the node of the children slot, where the page content shows', () => {
+    expect(childrenSlotNode(main())).toBe('l-main')
+    expect(childrenSlotNode({ ...main(), slots: [] })).toBeNull()
+    expect(childrenSlotNode(null)).toBeNull()
+  })
+})
+
+describe('layoutSelection', () => {
+  const page = () => ({ id: 'p', name: 'Home', slug: 'home', root: n('root', 'Page', {}, [n('nav', 'Row', {}, [n('logo', 'Text')]), n('body', 'Text'), n('foot', 'Container')]) })
+
+  it('takes top-level layers of a page without a layout, in page order', () => {
+    expect(layoutSelection(page(), ['foot', 'nav'])).toEqual({ nodeIds: ['nav', 'foot'] })
+  })
+
+  it('says why the selection cannot become a layout', () => {
+    expect(layoutSelection(page(), [])).toEqual({ reason: 'Select the layers to share, such as a nav and a footer' })
+    expect(layoutSelection(page(), ['root'])).toEqual({ reason: 'Select top-level layers of the page' })
+    expect(layoutSelection(page(), ['nav', 'logo'])).toEqual({ reason: 'Select top-level layers of the page' })
+    expect(layoutSelection({ ...page(), layoutId: 'main' }, ['nav'])).toEqual({ reason: 'The page already has a layout' })
+  })
+})
+
+describe('layoutCommands', () => {
+  const ctx = (mode: 'build' | 'data' = 'build') => ({ editor: { mode, page: { id: 'p', root: n('r', 'Page') } } }) as unknown as CommandContext
+  const actions = () => ({ create: vi.fn(), createFromSelection: vi.fn(), edit: vi.fn(), setPageLayout: vi.fn() })
+
+  it('creates a layout, from the selection when it can, and opens each layout', () => {
+    const a = actions()
+    const commands = layoutCommands(project(), { editingId: 'blank', pageLayoutId: 'main', fromSelection: false }, a)
+    expect(commands.find(c => c.id === 'layout:new')!.label).toBe('New layout')
+    commands.find(c => c.id === 'layout:new')!.run(ctx())
+    expect(a.create).toHaveBeenCalled()
+    const fromSelection = commands.find(c => c.id === 'layout:from-selection')!
+    expect([fromSelection.label, fromSelection.enabled(ctx())]).toEqual(['Create layout from selection', false])
+    expect(layoutCommands(project(), { editingId: null, pageLayoutId: undefined, fromSelection: true }, a).find(c => c.id === 'layout:from-selection')!.enabled(ctx())).toBe(true)
+
+    const edit = commands.filter(c => c.id.startsWith('layout:edit:'))
+    expect(edit.map(c => [c.label, c.enabled(ctx())])).toEqual([['Edit layout Main', true], ['Edit layout Blank', false]])
+    edit[0]!.run(ctx())
+    expect(a.edit).toHaveBeenCalledWith('main')
+  })
+
+  it('sets the page layout, the current one disabled', () => {
+    const a = actions()
+    const set = layoutCommands(project(), { editingId: null, pageLayoutId: 'main', fromSelection: false }, a).filter(c => c.id.startsWith('layout:set:'))
+    expect(set.map(c => [c.label, c.enabled(ctx())])).toEqual([['Set page layout › None', true], ['Set page layout › Main', false], ['Set page layout › Blank', true]])
+    expect(set[1]!.enabled(ctx('data'))).toBe(false)
+    set[0]!.run(ctx())
+    set[2]!.run(ctx())
+    expect(a.setPageLayout.mock.calls).toEqual([[null], ['blank']])
   })
 })
 

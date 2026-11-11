@@ -1,3 +1,6 @@
+import { findNode } from '#shared/document/tree'
+import { navigateTarget } from '#shared/editor/navigate'
+import type { NavigateTarget } from '#shared/editor/navigate'
 import type { Editor } from './useEditor'
 import { TAB_ID, callAction } from './useEditor'
 
@@ -11,7 +14,8 @@ const CONTEXT_DEBOUNCE_MS = 300
 /**
  * Keeps an open editor in sync with changes made elsewhere (HTTP, MCP, other
  * tabs) over SSE, polling the version if the stream fails, and reports the
- * editor's page and selection so agents can read them.
+ * editor's page, open component (and variant) or layout, and selection so
+ * agents can read them.
  */
 export function useProjectSync(editor: Editor): void {
   let source: EventSource | undefined
@@ -57,10 +61,28 @@ export function useProjectSync(editor: Editor): void {
       else await editor.reloadEnv().catch(() => {})
       return
     }
-    if (!editor.project?.pages.some(p => p.id === event.pageId)) await refresh()
-    if (!editor.project?.pages.some(p => p.id === event.pageId)) return
-    editor.selectPage(event.pageId)
-    editor.selectedId = event.nodeId
+    // The event names a page and one id: a node on it, or a component, variant or layout to open (see `navigateTarget`).
+    let target = resolveNavigation(event.pageId, event.nodeId)
+    if (!target) await refresh()
+    target = resolveNavigation(event.pageId, event.nodeId)
+    if (!target) return
+    editor.selectPage(target.pageId)
+    if (target.componentId) {
+      editor.editComponent(target.componentId)
+      editor.selectVariant(target.variantId)
+    } else if (target.layoutId) {
+      editor.editLayout(target.layoutId)
+    } else {
+      editor.selectedId = target.nodeId
+    }
+  }
+
+  /** The event's target in the loaded project; null while its page, or the id it names, is not loaded yet. */
+  function resolveNavigation(pageId: string, id: string | null): NavigateTarget | null {
+    const page = editor.project?.pages.find(p => p.id === pageId)
+    if (!editor.project || !page) return null
+    const target = navigateTarget(editor.project, pageId, id)
+    return target.nodeId && !findNode(page.root, target.nodeId) ? null : target
   }
 
   function startPolling(): void {
@@ -86,12 +108,12 @@ export function useProjectSync(editor: Editor): void {
     }
   })
 
-  // The component view reports the page it was opened from, without its selection (a definition node, not on that page).
-  watch(() => [editor.currentPage?.id, editor.componentId || editor.layoutId ? null : editor.selectedId] as const, ([pageId, selectedId]) => {
+  // The component and layout views report the page they were opened from, what is open on top of it, and the selection in that tree.
+  watch(() => [editor.currentPage?.id, editor.selectedId, editor.componentId, editor.layoutId, editor.componentId ? editor.variantId : null] as const, ([pageId, selectedId, componentId, layoutId, variantId]) => {
     clearTimeout(contextTimer)
     if (!pageId) return
     contextTimer = setTimeout(() => {
-      void callAction('editor_set_context', { projectId: editor.projectId, pageId, selectedId }).catch(() => {})
+      void callAction('editor_set_context', { projectId: editor.projectId, pageId, selectedId, componentId, layoutId, variantId }).catch(() => {})
     }, CONTEXT_DEBOUNCE_MS)
   })
 

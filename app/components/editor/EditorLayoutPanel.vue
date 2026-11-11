@@ -4,7 +4,7 @@ import type { DocNode, LayoutSlot, PropertyDef } from '#shared/document/schema'
 import { CHILDREN_SLOT } from '#shared/document/schema'
 import { propertyLabel } from '#shared/editor/propertyLabels'
 import { bindingLabel, propBindingAdd, STYLE_ITEM, styleAddItems, styleBindingAdd, uniqueComponentName } from '~/composables/componentEditor'
-import { slotOf, variableAddItems } from '~/composables/layoutEditor'
+import { layoutPages, slotOf, variableAddItems } from '~/composables/layoutEditor'
 
 /**
  * The panel's layout sections in the layout view. On the layout root: its
@@ -13,7 +13,8 @@ import { slotOf, variableAddItems } from '~/composables/layoutEditor'
  * give it their own content), and the variables bound to its props, with
  * "+" to turn one of its props or style keys into a variable that each page
  * sets (the binding dot's choices); the gear opens the variables modal. The
- * children slot, where the page content goes, cannot be removed.
+ * children slot, where the page content goes, cannot be removed; selected,
+ * it explains what the canvas placeholder stands for.
  */
 const { node } = defineProps<{ node: DocNode }>()
 const editor = useEditor()
@@ -23,6 +24,8 @@ const SLOT_ITEM = '__slot'
 const layout = computed(() => editor.layout)
 const isRoot = computed(() => !!layout.value && layout.value.root.id === node.id)
 const nodeSlot = computed(() => (layout.value ? slotOf(layout.value, node.id) : undefined))
+const isPageContent = computed(() => nodeSlot.value?.id === CHILDREN_SLOT)
+const pagesUsing = computed(() => (layout.value && editor.project ? layoutPages(editor.project, layout.value.id).length : 0))
 const shownSlots = computed(() => (layout.value ? layout.value.slots.filter(s => isRoot.value || s.nodeId === node.id) : []))
 const shownVariables = computed(() => (layout.value ? layout.value.variables.filter(v => isRoot.value || v.bindings.some(b => b.nodeId === node.id)) : []))
 const canBeSlot = computed(() => !isRoot.value && isContainerType(node.type) && node.type !== INSTANCE_TYPE && node.type !== SLOT_FILL_TYPE)
@@ -76,6 +79,22 @@ function renameLayout(name: string) {
 
 <template>
   <template v-if="layout">
+    <EditorStyleSection
+      v-if="isPageContent"
+      label="Page content"
+      data-layout-page-content
+    >
+      <div class="flex gap-2 rounded-lg bg-(--editor-component)/10 p-2.5 text-[11px] leading-4 text-toned">
+        <UIcon
+          name="i-lucide-layout-template"
+          class="mt-px size-3.5 shrink-0 text-(--editor-component)"
+        />
+        <p>
+          Each page using this layout shows its own content here{{ pagesUsing ? ` (${pagesUsing} page${pagesUsing === 1 ? '' : 's'} now)` : '' }}. Edit a page to change it; add the parts every page shares around this container.
+        </p>
+      </div>
+    </EditorStyleSection>
+
     <EditorStyleSection
       v-if="isRoot"
       label="Layout"

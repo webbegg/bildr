@@ -1,10 +1,10 @@
-import { componentCreate, componentDelete, componentDuplicate, componentPropertyAdd, componentPropertyRemove, componentPropertyUpdate, componentRename, componentVariantAdd, componentVariantDelete, componentVariantRename, componentVariantSetOverride, instanceDetach, instanceReplace, instanceSetSlot, instanceSetValues } from './component'
+import { componentCreate, componentDelete, componentDuplicate, componentInteractionAdd, componentInteractionRemove, componentInteractionUpdate, componentPropertyAdd, componentPropertyRemove, componentPropertyUpdate, componentRename, componentStateAdd, componentTransitionSet, componentVariantAdd, componentVariantDelete, componentVariantRename, componentVariantSetOverride, instanceDetach, instanceReplace, instanceSetSlot, instanceSetValues } from './component'
 import { connectionCreate, connectionDelete, connectionUpdate, endpointTest } from './connection'
 import { apiSourcePreview, collectionCreate, collectionDelete, collectionUpdate, fieldAdd, fieldMove, fieldRemove, fieldUpdate, publicRecordCreate, recordCreate, recordDelete, recordGet, recordList, recordUpdate } from './data'
 import type { ActionDef } from './define'
 import { editorGetContext, editorNavigate, editorSetContext } from './editor'
 import { envDelete, envList, envSet } from './env'
-import { layoutCreate, layoutDelete, layoutDuplicate, layoutRename, layoutSlotAdd, layoutSlotRemove, layoutSlotUpdate, layoutVariableAdd, layoutVariableRemove, layoutVariableUpdate, pageSetLayout, pageSetLayoutValues, pageSetSlot } from './layout'
+import { layoutCreate, layoutCreateFromSelection, layoutDelete, layoutDuplicate, layoutRename, layoutSlotAdd, layoutSlotRemove, layoutSlotUpdate, layoutVariableAdd, layoutVariableRemove, layoutVariableUpdate, pageSetLayout, pageSetLayoutValues, pageSetSlot } from './layout'
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeRename, nodeSetLocked, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
 import { pageAdd, pageDelete, pageRename } from './page'
 import { themeGet, themeUpdate } from './theme'
@@ -43,11 +43,17 @@ export const ACTIONS = [
   componentVariantDelete,
   componentVariantRename,
   componentVariantSetOverride,
+  componentStateAdd,
+  componentInteractionAdd,
+  componentInteractionUpdate,
+  componentInteractionRemove,
+  componentTransitionSet,
   instanceSetValues,
   instanceSetSlot,
   instanceDetach,
   instanceReplace,
   layoutCreate,
+  layoutCreateFromSelection,
   layoutRename,
   layoutDuplicate,
   layoutDelete,

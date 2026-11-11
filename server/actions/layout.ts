@@ -1,9 +1,10 @@
 import { z } from 'zod'
 import { SLOT_FILL_TYPE } from '#shared/document/components'
-import { createNode, createPage, newId } from '#shared/document/factory'
+import { cloneWithNewIds, createNode, createPage, newId } from '#shared/document/factory'
 import type { Operation } from '#shared/document/operations'
 import { CHILDREN_SLOT, IdSchema, PropertyBindingSchema, PropertyKindSchema, PropValueSchema } from '#shared/document/schema'
 import type { Layout, Page, Project } from '#shared/document/schema'
+import { findNode } from '#shared/document/tree'
 import { copyName } from '#shared/document/instanceEdits'
 import { nameProblem, uniqueName } from '#shared/editor/names'
 import { givenDetails, PropertyDetails, PropertyDetailsPatch } from './component'
@@ -56,6 +57,49 @@ export const layoutCreate = defineAction({
     const root = { ...createPage(name).root, children: [slotNode] }
     const layout: Layout = { id: newId('lay'), name, root, slots: [{ id: CHILDREN_SLOT, name: 'Content', nodeId: slotNode.id }], variables: [] }
     const project = await ctx.services.mutate(ctx, projectId, 'Create layout', [{ op: 'addLayout', index: Number.MAX_SAFE_INTEGER, layout }])
+    return { version: project.version, layoutId: layout.id, slotNodeId: slotNode.id }
+  }
+})
+
+export const layoutCreateFromSelection = defineAction({
+  name: 'layout_create_from_selection',
+  description: 'Turn top-level layers of a page (e.g. a nav and a footer) into a new layout around a children slot: the selected layers (with ids of their own) become the layout tree, in page order, with the slot where the rest of the page starts; the page keeps its other content, which the slot shows, and gets the layout. The page must not have a layout yet. Names are unique ignoring case; without one it is "Layout", numbered when taken. One undo step. Returns the layout id and the children slot node id.',
+  input: z.object({
+    projectId: IdSchema,
+    pageId: IdSchema,
+    nodeIds: z.array(IdSchema).min(1).describe('Top-level layers of the page (children of its root)'),
+    name: NameSchema.optional().describe('Unique ignoring case; defaults to "Layout"')
+  }),
+  run: async ({ projectId, pageId, nodeIds, name: given }, ctx) => {
+    const current = await ctx.services.loadProject(projectId)
+    const page = assertFound(current.pages.find(p => p.id === pageId), `Page "${pageId}" not found`)
+    const ids = new Set(nodeIds)
+    if (ids.has(page.root.id)) throw new ActionError('invalid', 'The page root cannot become a layout')
+    for (const id of ids) {
+      if (page.root.children.some(c => c.id === id)) continue
+      assertFound(findNode(page.root, id), `Node "${id}" not found`)
+      throw new ActionError('invalid', 'Only top-level layers of the page can become a layout')
+    }
+    if (page.layoutId !== undefined) {
+      const used = current.layouts.find(l => l.id === page.layoutId)
+      throw new ActionError('invalid', `Page "${page.name}" already uses the layout "${used?.name ?? page.layoutId}"`)
+    }
+    if (given !== undefined) assertLayoutName(current, given)
+    const name = given ?? uniqueName('Layout', current.layouts)
+
+    // The slot goes where the page content starts: after the selected layers that lead the page.
+    const selected = page.root.children.filter(c => ids.has(c.id))
+    const firstKept = page.root.children.findIndex(c => !ids.has(c.id))
+    const slotIndex = firstKept === -1 ? selected.length : firstKept
+    const slotNode = createNode('Container')
+    const chrome = selected.map(cloneWithNewIds)
+    const root = { ...createPage(name).root, children: [...chrome.slice(0, slotIndex), slotNode, ...chrome.slice(slotIndex)] }
+    const layout: Layout = { id: newId('lay'), name, root, slots: [{ id: CHILDREN_SLOT, name: 'Content', nodeId: slotNode.id }], variables: [] }
+    const project = await ctx.services.mutate(ctx, projectId, 'Create layout from selection', [
+      { op: 'addLayout', index: Number.MAX_SAFE_INTEGER, layout },
+      ...selected.map(node => ({ op: 'remove' as const, pageId, nodeId: node.id })),
+      { op: 'setPageLayout', pageId, layoutId: layout.id }
+    ])
     return { version: project.version, layoutId: layout.id, slotNodeId: slotNode.id }
   }
 })
