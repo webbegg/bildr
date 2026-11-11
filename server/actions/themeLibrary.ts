@@ -118,11 +118,12 @@ export const themeLibraryDelete = defineAction({
 
 export const themeApply = defineAction({
   name: 'theme_apply',
-  description: 'Apply a library theme to a project: its colours, font, radius and spacing density replace the project theme, as a copy (later library changes do not follow). One undoable step, "Apply theme <name>".',
+  description: 'Apply a library theme to a project: its colours, font, radius and spacing density replace the project theme, as a copy (later library changes do not follow). Its custom colours are added to (or replace same-named) project custom colours; the project\'s other custom colours stay, since styles may use them. One undoable step, "Apply theme <name>".',
   input: z.object({ projectId: IdSchema, themeId: IdSchema }),
   run: async ({ projectId, themeId }, ctx) => {
     const entry = find(await store(ctx).list(), themeId)
-    const project = await ctx.services.mutate(ctx, projectId, `Apply theme ${entry.name}`, [{ op: 'setTheme', theme: entry.theme }])
+    const { custom, ...theme } = entry.theme
+    const project = await ctx.services.mutate(ctx, projectId, `Apply theme ${entry.name}`, [{ op: 'setTheme', theme, ...(custom ? { custom } : {}) }])
     return { version: project.version, theme: project.theme }
   }
 })

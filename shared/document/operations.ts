@@ -1,10 +1,10 @@
-import { defaultTheme, ThemePatchSchema } from '../design/theme'
-import type { ThemePatch } from '../design/theme'
+import { CUSTOM_COLORS_MAX, customColorNames, CustomColorsPatchSchema, defaultTheme, ThemePatchSchema } from '../design/theme'
+import type { CustomColorsPatch, ThemePatch } from '../design/theme'
 import { isStyleTokenKey, styleTokenProblem } from '../design/tokens'
 import { getComponent, INSTANCE_TYPE, isContainerType } from './components'
 import type { PropValue } from './components'
 import { z } from 'zod'
-import { ApiPathSchema, CHILDREN_SLOT, CollectionSchema, componentProblems, ComponentDefinitionSchema, CONNECTIONS_MAX, ConnectionSchema, FieldSchema, FieldTypeSchema, instanceProblems, layoutProblems, LayoutSchema, LayoutSlotSchema, nodeTreeProblems, pageLayoutProblems, PageSchema, PropertyBindingSchema, PropertyDefSchema, propValueProblem, SlugSchema, VariantSchema } from './schema'
+import { ApiPathSchema, CHILDREN_SLOT, CollectionSchema, componentProblems, ComponentDefinitionSchema, CONNECTIONS_MAX, ConnectionSchema, FieldSchema, FieldTypeSchema, instanceProblems, layoutProblems, LayoutSchema, LayoutSlotSchema, NODE_NAME_MAX, nodeTreeProblems, pageLayoutProblems, PageSchema, ProjectSchema, PropertyBindingSchema, PropertyDefSchema, propValueProblem, SlugSchema, VariantSchema } from './schema'
 import type { ApiHeader, Collection, CollectionSource, ComponentDefinition, Connection, DocNode, Field, FieldType, Layout, LayoutSlot, Page, Project, PropertyBinding, PropertyDef, Variant } from './schema'
 import { containsNode, findNode, findParent, walk } from './tree'
 import { componentUsages } from './usages'
@@ -30,10 +30,13 @@ export type Operation
     | ({ op: 'move', nodeId: string, parentId: string, index: number } & TreeRef)
     | ({ op: 'setProps', nodeId: string, props: Record<string, PropValue | null> } & TreeRef)
     | ({ op: 'setStyle', nodeId: string, style: Record<string, string | null> } & TreeRef)
+    /** A null (or empty) name, or `locked: false` / null, removes the field. */
+    | ({ op: 'setNodeMeta', nodeId: string, name?: string | null, locked?: boolean | null } & TreeRef)
     | { op: 'addPage', index: number, page: Page }
     | { op: 'removePage', pageId: string }
     | { op: 'updatePage', pageId: string, name?: string, slug?: string }
-    | { op: 'setTheme', theme: ThemePatch }
+    /** `custom` patches the theme's custom colours by name: a hex adds or changes one, null removes it. */
+    | { op: 'setTheme', theme: ThemePatch, custom?: CustomColorsPatch }
     | { op: 'addCollection', index: number, collection: Collection }
     | { op: 'removeCollection', collectionId: string }
     | { op: 'updateCollection', collectionId: string, name?: string, slug?: string, publicRead?: boolean, publicCreate?: boolean }
@@ -167,7 +170,8 @@ function projectIds(project: Project): Set<string> {
 function assertNewTree(project: Project, node: DocNode, isRoot = false, ids = projectIds(project), parent?: DocNode, layoutFills = false): void {
   const withParent = parent !== undefined && (parent.type === INSTANCE_TYPE || layoutFills)
   const placed = withParent ? { ...parent, children: [...parent.children, node] } : node
-  const problems = [...nodeTreeProblems(node, ids, isRoot), ...instanceProblems(placed, project.components, layoutFills)]
+  const colors = customColorNames(project.theme)
+  const problems = [...nodeTreeProblems(node, ids, isRoot, colors), ...instanceProblems(placed, project.components, layoutFills, colors)]
   if (problems.length) fail('invalid', problems.join('; '))
 }
 
@@ -181,10 +185,11 @@ function getVariant(def: ComponentDefinition, variantId: string): Variant {
 
 /** Instances and definitions that the components no longer fit (bindings, values, slots, cycles). */
 function componentDocumentProblems(project: Project): string[] {
+  const colors = customColorNames(project.theme)
   return [
-    ...componentProblems(project.components).map(p => p.message),
-    ...project.pages.flatMap(page => instanceProblems(page.root, project.components, usesLayout(project, page))),
-    ...project.layouts.flatMap(layout => instanceProblems(layout.root, project.components))
+    ...componentProblems(project.components, colors).map(p => p.message),
+    ...project.pages.flatMap(page => instanceProblems(page.root, project.components, usesLayout(project, page), colors)),
+    ...project.layouts.flatMap(layout => instanceProblems(layout.root, project.components, false, colors))
   ]
 }
 
@@ -210,13 +215,29 @@ function editsLayouts(project: Project, op: Operation): boolean {
 /** Layout rules (`layoutProblems`) and each page's use of its layout; only page `pageId`'s when given. */
 function layoutDocumentProblems(project: Project, pageId?: string): string[] {
   const pages = pageId === undefined ? project.pages : project.pages.filter(p => p.id === pageId)
+  const colors = customColorNames(project.theme)
   return [
-    ...(pageId === undefined ? layoutProblems(project.layouts, project.components).map(p => p.message) : []),
+    ...(pageId === undefined ? layoutProblems(project.layouts, project.components, colors).map(p => p.message) : []),
     ...pages.flatMap((page) => {
       const layout = project.layouts.find(l => l.id === page.layoutId)
-      return [...pageLayoutProblems(page, layout).map(p => p.message), ...instanceProblems(page.root, project.components, layout !== undefined)]
+      return [...pageLayoutProblems(page, layout, colors).map(p => p.message), ...instanceProblems(page.root, project.components, layout !== undefined, colors)]
     })
   ]
+}
+
+/**
+ * Refuses to remove theme colours (`removed`) that the document still uses:
+ * on node styles, variant overrides, or values of style-bound properties.
+ * `custom` is the theme's custom colours after the removal.
+ */
+function assertUnusedColors(project: Project, removed: string[], custom: Record<string, string>): void {
+  if (!removed.length) return
+  const result = ProjectSchema.safeParse({ ...project, theme: { ...project.theme, custom } })
+  if (result.success) return
+  const messages = result.error.issues.map(i => i.message)
+  const used = removed.filter(name => messages.some(m => m.startsWith(`"${name}" is not a value of style token`)))
+  const names = (used.length ? used : removed).map(name => `"${name}"`).join(', ')
+  fail('invalid', `The theme colour${used.length > 1 ? 's' : ''} ${names} ${used.length > 1 ? 'are' : 'is'} still used: ${messages.slice(0, 3).join('; ')}. Change those styles first`)
 }
 
 function layoutInUseMessage(name: string, pages: Page[]): string {
@@ -317,7 +338,7 @@ function apply(project: Project, op: Operation): Operation {
           if (value === null) Reflect.deleteProperty(props, name)
           else props[name] = value
         }
-        const problems = instanceProblems({ ...node, props, children: [] }, project.components)
+        const problems = instanceProblems({ ...node, props, children: [] }, project.components, false, customColorNames(project.theme))
         if (problems.length) fail('invalid', problems.join('; '))
       } else {
         const def = getComponent(node.type)
@@ -341,12 +362,13 @@ function apply(project: Project, op: Operation): Operation {
     case 'setStyle': {
       const tree = getTree(project, op)
       const node = getNode(tree, op.nodeId)
+      const colors = customColorNames(project.theme)
       for (const [key, value] of Object.entries(op.style)) {
         if (value === null || value === '') {
           // An unknown key's problem is about the key, whatever the value.
           if (!isStyleTokenKey(key)) fail('invalid', styleTokenProblem(key, '')!)
         } else {
-          const problem = styleTokenProblem(key, value)
+          const problem = styleTokenProblem(key, value, colors)
           if (problem) fail('invalid', problem)
         }
       }
@@ -357,6 +379,24 @@ function apply(project: Project, op: Operation): Operation {
         else node.style[key] = value
       }
       return { op: 'setStyle', ...tree.ref, nodeId: node.id, style: previous }
+    }
+    case 'setNodeMeta': {
+      const tree = getTree(project, op)
+      const node = getNode(tree, op.nodeId)
+      const name = typeof op.name === 'string' ? op.name.trim() : op.name
+      if (name && name.length > NODE_NAME_MAX) fail('invalid', `A layer name has at most ${NODE_NAME_MAX} characters`)
+      const inverse: Extract<Operation, { op: 'setNodeMeta' }> = { op: 'setNodeMeta', ...tree.ref, nodeId: node.id }
+      if (name !== undefined) {
+        inverse.name = node.name ?? null
+        if (name) node.name = name
+        else Reflect.deleteProperty(node, 'name')
+      }
+      if (op.locked !== undefined) {
+        inverse.locked = node.locked ?? null
+        if (op.locked) node.locked = true
+        else Reflect.deleteProperty(node, 'locked')
+      }
+      return inverse
     }
     case 'addPage': {
       if (!PageSchema.safeParse(op.page).success) fail('invalid', 'Invalid page')
@@ -390,10 +430,28 @@ function apply(project: Project, op: Operation): Operation {
     }
     case 'setTheme': {
       const parsed = ThemePatchSchema.safeParse(op.theme)
-      if (!parsed.success) fail('invalid', `Invalid theme: ${parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ')}`)
-      const { colors, font, radius, spacing } = parsed.data
+      const customParsed = op.custom === undefined ? undefined : CustomColorsPatchSchema.safeParse(op.custom)
+      for (const [result, prefix] of [[parsed, ''], [customParsed, 'custom.']] as const) {
+        if (result && !result.success) fail('invalid', `Invalid theme: ${result.error.issues.map(i => `${prefix}${i.path.join('.')}: ${i.message}`).join('; ')}`)
+      }
+      const { colors, font, radius, spacing } = parsed.data!
+      const custom = customParsed?.data
       const theme = project.theme ?? defaultTheme()
       const inverse: ThemePatch = {}
+      let inverseCustom: CustomColorsPatch | undefined
+      if (custom) {
+        const next = { ...theme.custom }
+        inverseCustom = {}
+        for (const [name, value] of Object.entries(custom)) {
+          inverseCustom[name] = next[name] ?? null
+          if (value === null) Reflect.deleteProperty(next, name)
+          else next[name] = value
+        }
+        if (Object.keys(next).length > CUSTOM_COLORS_MAX) fail('invalid', `A theme has at most ${CUSTOM_COLORS_MAX} custom colours`)
+        assertUnusedColors(project, customColorNames(theme).filter(name => !(name in next)), next)
+        if (Object.keys(next).length) theme.custom = next
+        else Reflect.deleteProperty(theme, 'custom')
+      }
       if (colors) {
         inverse.colors = {}
         for (const [name, value] of Object.entries(colors) as [keyof typeof colors, string][]) {
@@ -414,7 +472,7 @@ function apply(project: Project, op: Operation): Operation {
         theme.spacing = spacing
       }
       project.theme = theme
-      return { op: 'setTheme', theme: inverse }
+      return { op: 'setTheme', theme: inverse, ...(inverseCustom ? { custom: inverseCustom } : {}) }
     }
     case 'addCollection': {
       const parsed = CollectionSchema.safeParse(op.collection)

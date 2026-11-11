@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { ButtonProps } from '@nuxt/ui'
-import { displayFallback, parseStyleKey, styleClasses } from '#shared/design/tokens'
+import { displayFallback, parseStyleKey, styleClasses, styleInline } from '#shared/design/tokens'
 import { structuralStyle } from '#shared/document/components'
 import type { DocNode } from '#shared/document/schema'
 import { hasEnvRefs } from '#shared/env/variables'
@@ -14,7 +14,9 @@ import { resolveLink } from '#shared/runtime/render'
 /**
  * Renders one document node and its children. The editor canvas and the
  * published app share this component, so what you edit is what ships.
- * Visual styling comes only from the node's design tokens; the template
+ * Visual styling comes only from the node's design tokens (colour keys
+ * holding a hex or a theme colour name render as an inline style, since they
+ * have no generated class; see `styleInline`); the template
  * adds per-type fallbacks that a token of the same key replaces: the flex
  * direction, and a Row's `wrap` prop as a `flexWrap` token. A base `display`
  * token replaces the template's display class (`flex`, `grid`, `block`), so
@@ -48,10 +50,16 @@ const p = computed(() => props.node.props)
 const text = (name: string) => bindValue(String(p.value[name] ?? ''), runtime, scope?.item)
 const link = computed(() => resolveLink(text('to'), runtime.base))
 const fromDefinition = computed(() => isDefinitionNodeId(props.node.id))
+const inline = computed(() => {
+  const style = styleInline(props.node.style)
+  return Object.keys(style).length ? style : undefined
+})
 const attrs = computed(() => ({
   'data-bildr-id': pageNodeId(props.node.id),
   'data-bildr-type': isLayoutNodeId(props.node.id) ? 'Layout' : fromDefinition.value ? 'Instance' : props.node.type,
-  'data-bildr-copy': scope?.copy ? '' : undefined
+  'data-bildr-copy': scope?.copy ? '' : undefined,
+  // Hex and theme colours; empty for token-only styles, so those render as before.
+  'style': inline.value
 }))
 // A binding the canvas shows as written (or an empty value) is no URL to load.
 const imageSrc = computed(() => (hasBindings(text('src')) || hasEnvRefs(text('src')) ? '' : text('src')))

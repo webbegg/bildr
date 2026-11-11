@@ -3,13 +3,13 @@ import type { PropValue } from '../document/components'
 import { CHILDREN_SLOT } from '../document/schema'
 import type { ComponentDefinition, DocNode, Layout, Page } from '../document/schema'
 import { resolveLayoutRefs } from './bindings'
-import { applySetters, INSTANCE_ID_SEPARATOR, propertySetters, resolveInstance } from './instances'
+import { applySetters, applyStyleSetters, INSTANCE_ID_SEPARATOR, propertySetters, resolveInstance } from './instances'
 
 /**
  * Resolves a page into the tree it renders with its layout, at render time
  * and never stored in the document. A page without `layoutId` renders its
  * own root, unchanged. Otherwise the layout's tree renders with
- * `{{ layout.NAME }}` resolved and bound props set from the page's
+ * `{{ layout.NAME }}` resolved and bound props (and style keys) set from the page's
  * `layoutValues` (else the stored variable default, else the layout node's
  * own value; see `applySetters`), the page root's children (bar
  * SlotFills) in place of the `children` slot node's children, and each
@@ -60,12 +60,14 @@ export function resolvePageWithLayout(page: Page, layouts: Layout[], components:
       if (typeof value === 'string') props[key] = resolveLayoutRefs(value, refs)
     }
     applySetters(props, setters, node.id)
+    const style = { ...node.style }
+    applyStyleSetters(style, setters, node.id)
     const place = places.get(node.id)
     const built: DocNode = {
       id: place?.id ?? `${page.root.id}${INSTANCE_ID_SEPARATOR}${LAYOUT_ID_MARKER}${node.id}`,
       type: node.type,
       props,
-      style: { ...node.style },
+      style,
       children: place?.children ?? node.children.map(build).filter(child => child !== null)
     }
     return node.type === INSTANCE_TYPE ? resolveInstance(built, components) : built

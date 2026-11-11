@@ -8,7 +8,7 @@ import { resolvePropRefs } from './bindings'
  * and never stored in the document. Starting from the definition's root
  * (the primary variant), it applies the selected variant's sparse overrides,
  * resolves `{{ prop.NAME }}` in the definition's strings, sets bound props
- * (see `applySetters`), and puts slot fills in place of the bound
+ * and style keys (see `applySetters`, `applyStyleSetters`), and puts slot fills in place of the bound
  * container's children.
  *
  * Nodes that come from the definition get the id `<instanceId>/<nodeId>`
@@ -40,8 +40,12 @@ export function isDefinitionNodeId(id: string): boolean {
 
 type Definitions = Map<string, ComponentDefinition>
 
-/** Per node id, the props that non-slot properties drive: the instance's own value (if set) and the stored default (if any). */
-export type PropertySetters = Map<string, { prop: string, value?: PropValue, fallback?: PropValue }[]>
+/**
+ * Per node id, the props (or, with `target: 'style'`, the style keys) that
+ * non-slot properties drive: the instance's own value (if set) and the
+ * stored default (if any).
+ */
+export type PropertySetters = Map<string, { prop: string, target?: 'style', value?: PropValue, fallback?: PropValue }[]>
 
 export function propertySetters(properties: PropertyDef[], values: Record<string, PropValue | undefined>): PropertySetters {
   const setters: PropertySetters = new Map()
@@ -49,7 +53,7 @@ export function propertySetters(properties: PropertyDef[], values: Record<string
     if (property.kind === 'slot') continue
     const entry = { value: values[property.id], fallback: property.default }
     if (entry.value === undefined && entry.fallback === undefined) continue
-    for (const { nodeId, prop } of property.bindings) setters.set(nodeId, [...(setters.get(nodeId) ?? []), { prop, ...entry }])
+    for (const { nodeId, prop, target } of property.bindings) setters.set(nodeId, [...(setters.get(nodeId) ?? []), { prop, ...(target ? { target } : {}), ...entry }])
   }
   return setters
 }
@@ -62,9 +66,23 @@ export function propertySetters(properties: PropertyDef[], values: Record<string
  * every instance that does not set the prop itself.
  */
 export function applySetters(props: Record<string, PropValue>, setters: PropertySetters, nodeId: string, overridden?: Record<string, PropValue>): void {
-  for (const { prop, value, fallback } of setters.get(nodeId) ?? []) {
+  for (const { prop, target, value, fallback } of setters.get(nodeId) ?? []) {
+    if (target === 'style') continue
     if (value !== undefined) props[prop] = value
     else if (fallback !== undefined && overridden?.[prop] === undefined) props[prop] = fallback
+  }
+}
+
+/**
+ * `applySetters` for style bindings: sets the bound style keys of one node
+ * in `style` (its own style with the variant's `overridden` style merged
+ * in), in the same order of precedence.
+ */
+export function applyStyleSetters(style: Record<string, string>, setters: PropertySetters, nodeId: string, overridden?: Record<string, string>): void {
+  for (const { prop, target, value, fallback } of setters.get(nodeId) ?? []) {
+    if (target !== 'style') continue
+    if (value !== undefined) style[prop] = String(value)
+    else if (fallback !== undefined && overridden?.[prop] === undefined) style[prop] = String(fallback)
   }
 }
 
@@ -99,12 +117,14 @@ function expand(instance: DocNode, definitions: Definitions, stack: string[]): D
       if (typeof value === 'string') props[key] = resolvePropRefs(value, refs)
     }
     applySetters(props, setters, node.id, override?.props)
+    const style = { ...node.style, ...override?.style }
+    applyStyleSetters(style, setters, node.id, override?.style)
     const children = fills.get(node.id) ?? node.children.map(build).filter(child => child !== null)
     const built: DocNode = {
       id: `${instance.id}${INSTANCE_ID_SEPARATOR}${node.id}`,
       type: node.type,
       props,
-      style: { ...node.style, ...override?.style },
+      style,
       children
     }
     return node.type === INSTANCE_TYPE ? expand(built, definitions, next) : built

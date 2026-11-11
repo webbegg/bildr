@@ -31,6 +31,19 @@ export function containsNode(ancestor: DocNode, id: string): boolean {
   return findNode(ancestor, id) !== undefined
 }
 
+/**
+ * Whether node `id` is locked on the canvas: it or one of its ancestors has
+ * `locked: true`. False for a missing node. A locked node stays selectable
+ * and editable from the layers and through actions.
+ */
+export function isLockedAt(root: DocNode, id: string): boolean {
+  if (root.id === id) return root.locked === true
+  for (const child of root.children) {
+    if (findNode(child, id)) return root.locked === true || isLockedAt(child, id)
+  }
+  return false
+}
+
 /** Ids from the root down to node `id`, inclusive; empty when missing. */
 export function pathTo(root: DocNode, id: string): string[] {
   if (root.id === id) return [root.id]

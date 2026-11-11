@@ -18,9 +18,10 @@ import type { DeviceId } from './styleFields'
  * `page`: an Instance is named by its component, a SlotFill by the slot it
  * fills (its Instance's slot property, or for one on the page root the
  * page layout's slot). Everything else, and an unknown component or slot,
- * shows its type.
+ * shows its type. A node's own `name` wins over all of these.
  */
 export function layerName(page: Page, node: DocNode, sources: { components: readonly ComponentDefinition[], layouts: readonly Layout[] }): string {
+  if (node.name) return node.name
   if (node.type === INSTANCE_TYPE) return sources.components.find(c => c.id === node.props.component)?.name ?? node.type
   if (node.type !== SLOT_FILL_TYPE) return node.type
   const parent = findParent(page.root, node.id)?.parent
