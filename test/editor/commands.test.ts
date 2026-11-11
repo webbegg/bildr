@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createNode, createPage } from '#shared/document/factory'
 import type { CommandContext, CommandEditor } from '#shared/editor/commands'
-import { editorCommands, filterMenuItems, matchScore, pushRecent, searchCommands, shortcutKeys, SHORTCUTS } from '#shared/editor/commands'
+import { editorCommands, filterMenuItems, matchScore, pushRecent, searchCommands, shortcutKeys, SHORTCUTS, shortcutsFor } from '#shared/editor/commands'
 import { INSERT_TOOLS } from '#shared/editor/insertTools'
 
 const cmd = (id: string, group: 'insert' | 'actions' | 'goto' | 'help', label: string, keywords: string[] = []) =>
@@ -97,6 +97,24 @@ describe('SHORTCUTS', () => {
     expect(shortcutKeys('paste')).toEqual(['meta', 'v'])
     expect(shortcutKeys('paste-style')).toEqual(['meta', 'alt', 'v'])
     expect(shortcutKeys('zoom-selection')).toEqual(['shift', '2'])
+  })
+
+  it('lists the device shortcuts of the visible frames (shortcutsFor)', () => {
+    const devices = (frames: Parameters<typeof shortcutsFor>[0]) => shortcutsFor(frames)
+      .filter(s => s.id.startsWith('device:'))
+      .map(s => [s.label, s.keys.map(k => k.join('+')).join(' ')])
+    expect(devices(['desktop', 'tablet', 'large-phone', 'mobile'])).toEqual([
+      ['Edit Desktop · 1280', 'alt+1'],
+      ['Edit Tablet · 768', 'alt+2'],
+      ['Edit Large phone · 640', 'alt+3'],
+      ['Edit Mobile · 390', 'alt+4']
+    ])
+    expect(devices(['desktop', 'mobile'])).toEqual([
+      ['Edit Desktop · 1280', 'alt+1'],
+      ['Edit Mobile · 390', 'alt+2']
+    ])
+    const all = shortcutsFor(['desktop', 'tablet', 'large-phone', 'mobile']).flatMap(s => s.keys.map(keys => keys.join('+')))
+    expect(new Set(all).size).toBe(all.length)
   })
 
   it('gives each canvas tool the letters that arm it', () => {
@@ -325,6 +343,13 @@ describe('editorCommands', () => {
       ['Edit Mobile', 'alt+4']
     ])
     expect(get('device:large-phone').enabled(ctx)).toBe(true)
+  })
+
+  it('gives a hidden frame no shortcut, and the next frame takes its digit', () => {
+    const { get } = fixture({ frames: ['desktop', 'mobile'] })
+    expect(get('device:tablet').shortcut).toBeUndefined()
+    expect(get('device:large-phone').shortcut).toBeUndefined()
+    expect(get('device:mobile').shortcut).toEqual(['alt', '2'])
   })
 
   it('opens the shortcuts sheet', () => {

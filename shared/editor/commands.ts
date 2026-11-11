@@ -46,12 +46,7 @@ export interface Shortcut {
   keys: string[][]
 }
 
-/**
- * Every editor shortcut, for the shortcuts sheet and the commands' hints.
- * Handled by `useEditor().shortcut`, the canvas (zoom, Space) and the
- * frames (Alt); this list only describes them.
- */
-export const SHORTCUTS: Shortcut[] = [
+const BEFORE_DEVICES: Shortcut[] = [
   { id: 'tool:move', label: 'Move tool', keys: [['v']] },
   { id: 'tool:hand', label: 'Hand tool (drag to pan)', keys: [['h']] },
   { id: 'tool:Container', label: 'Frame: click to insert a Container', keys: [['f'], ['a']] },
@@ -80,12 +75,30 @@ export const SHORTCUTS: Shortcut[] = [
   { id: 'redo', label: 'Redo', keys: [['meta', 'shift', 'z']] },
   { id: 'zoom-100', label: 'Zoom to 100%', keys: [['shift', '0']] },
   { id: 'zoom-fit', label: 'Zoom to fit', keys: [['shift', '1']] },
-  { id: 'zoom-selection', label: 'Zoom to selection', keys: [['shift', '2']] },
-  // The default frames; with others shown the digits shift, as the floating bar's tooltips say.
-  ...visibleFrames(DEFAULT_FRAMES).map(device => ({ id: `device:${device.id}`, label: `Edit ${deviceHint(device)}`, keys: [frameShortcut(DEFAULT_FRAMES, device.id)!] })),
+  { id: 'zoom-selection', label: 'Zoom to selection', keys: [['shift', '2']] }
+]
+
+const AFTER_DEVICES: Shortcut[] = [
   { id: 'pan', label: 'Hold to pan', keys: [['space']] },
   { id: 'measure', label: 'Hold over an element to measure', keys: [['alt']] }
 ]
+
+/**
+ * Every editor shortcut with the visible frames' ⌥ + digit (counting the
+ * shown frames left to right), for the shortcuts sheet. Handled by
+ * `useEditor().shortcut`, the canvas (zoom, Space) and the frames (Alt);
+ * this list only describes them.
+ */
+export function shortcutsFor(frames: readonly DeviceId[]): Shortcut[] {
+  const devices = visibleFrames(frames).flatMap((device) => {
+    const keys = frameShortcut(frames, device.id)
+    return keys ? [{ id: `device:${device.id}`, label: `Edit ${deviceHint(device)}`, keys: [keys] }] : []
+  })
+  return [...BEFORE_DEVICES, ...devices, ...AFTER_DEVICES]
+}
+
+/** The shortcuts with the default frames, for the commands' hints (device commands read the shown frames). */
+export const SHORTCUTS: Shortcut[] = shortcutsFor(DEFAULT_FRAMES)
 
 /** The first combo of a shortcut, for a command's hint. */
 export function shortcutKeys(id: string): string[] | undefined {
@@ -274,8 +287,9 @@ const VIEWS: { id: EditorView, label: string, icon: string }[] = [
 export function editorCommands(ctx: CommandContext): EditorCommand[] {
   const { editor } = ctx
   const always = () => true
-  const action = (id: string, label: string, icon: string, keywords: string[], enabled: EditorCommand['enabled'], run: EditorCommand['run'], shortcut = shortcutKeys(id)): EditorCommand =>
-    ({ id, group: 'actions', label, icon, keywords, shortcut, enabled, run })
+  /** `shortcut`: the combo to hint; omitted reads the registry, `null` hints none. */
+  const action = (id: string, label: string, icon: string, keywords: string[], enabled: EditorCommand['enabled'], run: EditorCommand['run'], shortcut: string[] | null = shortcutKeys(id) ?? null): EditorCommand =>
+    ({ id, group: 'actions', label, icon, keywords, shortcut: shortcut ?? undefined, enabled, run })
   return [
     ...COMPONENTS.map((c): EditorCommand => ({
       id: `insert:${c.type}`,
@@ -315,7 +329,7 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
     ...DEVICE_ORDER.map((device) => {
       const shown = editor.frames ?? DEFAULT_FRAMES
       const visible = visibleFrames(shown).includes(device)
-      return action(`device:${device.id}`, `Edit ${device.label}`, device.icon, ['device', 'breakpoint', 'frame', String(device.width)], c => visible && onCanvas(c) && c.editor.deviceId !== device.id, ({ editor }) => editor.setDevice(device.id), frameShortcut(shown, device.id))
+      return action(`device:${device.id}`, `Edit ${device.label}`, device.icon, ['device', 'breakpoint', 'frame', String(device.width)], c => visible && onCanvas(c) && c.editor.deviceId !== device.id, ({ editor }) => editor.setDevice(device.id), frameShortcut(shown, device.id) ?? null)
     }),
     ...(editor.project?.pages ?? []).map((page): EditorCommand => ({
       id: `page:${page.id}`,
