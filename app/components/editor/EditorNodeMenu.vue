@@ -115,7 +115,7 @@ const items = computed<ContextMenuItem[][]>(() => {
         label: 'Copy',
         icon: 'i-lucide-clipboard-copy',
         children: [
-          { label: 'Copy', kbds: ['meta', 'c'], disabled: isRoot, onSelect: () => editor.copy(id) },
+          { label: 'Copy', kbds: ['meta', 'c'], disabled: isRoot, onSelect: () => editor.copy(many ? undefined : id) },
           { label: 'Copy id', icon: 'i-lucide-hash', onSelect: () => copyId(id) }
         ]
       },

@@ -1,11 +1,12 @@
 /**
- * Checks and a screenshot tour of the P1 colour and binding work (not part
- * of all.mjs): the binding dot's menu (#10) on a style row, Detach to raw
+ * Checks and a screenshot tour of the P1 colour and binding work (run by
+ * all.mjs): the binding dot's menu (#10) on a style row, Detach to raw
  * value, a style property created from the dot in the component view; the
  * colour picker's Custom tab writing a raw hex and "Create colour from
  * this" (#12), with the custom colour listed in the Design view (removing
  * a used one is refused, and says so); and the Selection colours section
- * swapping a colour across the subtree (#13). Shots go to e2e/.shots/colors-p1/.
+ * swapping a colour across the subtree (#13) as one undo step
+ * (RELIABILITY-009). Shots go to e2e/.shots/colors-p1/.
  */
 import { action, check, findNode, openEditor, project, run, shot, toView, until } from './lib.mjs'
 
@@ -96,6 +97,14 @@ await run('colors-p1', async ({ page, errors }) => {
     return node.style.borderColor === 'secondary' && text.style.color === 'secondary' && other.style.color === 'muted'
   })
   check(swapped, 'swapping primary → secondary changes the border and the title, and leaves muted')
+  // RELIABILITY-009: the swap is one undo step: one undo brings back primary on both keys.
+  check((await action('history_get', { projectId: p.id })).undo === 'Update style', 'the swap is one "Update style" undo step')
+  await action('history_undo', { projectId: p.id })
+  const restored = await stored(column.nodeId)
+  const restoredTitle = findNode(restored.doc.pages[0].root, n => n.id === title.nodeId)
+  check(restored.node.style.borderColor === 'primary' && restoredTitle.style.color === 'primary', 'one undo reverts the whole swap (border and title)')
+  await action('history_redo', { projectId: p.id })
+  check(!!await until(async () => (await stored(column.nodeId)).node.style.borderColor === 'secondary'), 'redo applies the swap again')
   const outside = (await stored(card.nodeId)).node
   check(outside.style.bg === 'muted', 'nodes outside the selection keep their colours')
 
@@ -103,7 +112,7 @@ await run('colors-p1', async ({ page, errors }) => {
   await toView(page, 'Design')
   const row = page.locator('[data-custom-color-row="brand-orange"]')
   await row.waitFor()
-  check(true, 'the Design view lists the custom colour')
+  check(await row.isVisible() && (await row.innerText()).toLowerCase().includes('brand-orange'), 'the Design view lists the custom colour')
   await row.hover()
   await row.locator('[data-row-remove]').click()
   const refused = await until(async () => (await page.locator('[role=alert], li[data-state]').filter({ hasText: 'still used' }).count()) > 0)
@@ -136,6 +145,36 @@ await run('colors-p1', async ({ page, errors }) => {
   const dot = fill().locator('[data-binding-dot="bg"]')
   check(await until(async () => (await dot.getAttribute('data-bound')) === bound?.name), 'the bound row\'s dot is filled and names the property')
   await snap(page, 'component-bound')
+
+  // RELIABILITY-T8-001: a base binding is inherited at Tablet; the menu still binds md:direction, with no plain Unbind.
+  const dirRow = () => page.locator('[data-style-row="direction"]').first()
+  const dirDot = () => dirRow().locator('[data-binding-dot="direction"]')
+  const defOf = async () => (await action('project_get', { projectId: p.id })).components.find(c => c.id === componentId)
+  const bindsAt = (def, key) => def.properties.find(prop => prop.bindings.some(b => b.nodeId === defRoot.id && b.prop === key && b.target === 'style'))
+  await dirRow().hover()
+  await dirDot().click()
+  await page.locator('[role=menuitem]').filter({ hasText: 'Create property' }).click()
+  const baseDir = await until(async () => bindsAt(await defOf(), 'direction'))
+  check(!!baseDir, `Create property on Mobile binds the base key direction (${baseDir?.name})`)
+  await page.getByRole('button', { name: 'Tablet', exact: true }).click()
+  await until(async () => (await page.locator('iframe[title="Canvas"]').getAttribute('data-device')) === 'tablet')
+  await page.waitForTimeout(400)
+  check(await until(async () => (await dirDot().getAttribute('data-bound-inherited')) === 'true'), 'on Tablet the direction dot shows the base binding as inherited')
+  await dirRow().hover()
+  await dirDot().click()
+  await page.locator('[role=menuitem]').filter({ hasText: 'Create property' }).waitFor()
+  const menuTexts = await page.locator('[role=menuitem]').evaluateAll(els => els.map(el => el.textContent.trim()))
+  check(menuTexts.some(t => t.startsWith('Create property')), `the inherited row's menu offers Create property (${menuTexts.join(' | ')})`)
+  check(!menuTexts.includes('Unbind property'), 'the inherited row\'s menu offers no plain "Unbind property"')
+  check(menuTexts.includes('Unbind property on all breakpoints'), 'the inherited unbind is labelled "Unbind property on all breakpoints"')
+  await snap(page, 'inherited-menu')
+  await page.locator('[role=menuitem]').filter({ hasText: 'Create property' }).click()
+  const tabletDir = await until(async () => {
+    const def = await defOf()
+    return !!(bindsAt(def, 'md:direction') && bindsAt(def, 'direction'))
+  })
+  check(tabletDir, 'Create property on Tablet adds an md:direction binding and keeps the base one')
+  check(await until(async () => (await dirDot().getAttribute('data-bound-inherited')) === null), 'the Tablet row is then bound at its own key')
 
   check(!errors.length, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 }, { ignore: [/422 \(The theme colour "brand-orange" is still used/] })

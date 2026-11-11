@@ -21,7 +21,7 @@ import { createStylePreview } from '#shared/editor/preview'
 import type { SelectionStep } from '#shared/editor/selection'
 import { canvasMovable, drillTarget, escapeSelection, navigateSelection, nearestUnlocked, selectAllSiblings, selectionAfterDelete, siblingParent, toggleSelection, topLevelSelection } from '#shared/editor/selection'
 import type { Clip } from '#shared/editor/clipboard'
-import { copyNode, parseClip, pasteInput, pasteStylePatch, pasteTarget, serializeClip } from '#shared/editor/clipboard'
+import { clipStyle, copyNodes, newerClip, parseClip, pasteInput, pasteStylePatch, pasteTarget, serializeClip } from '#shared/editor/clipboard'
 import { resolvePageWithLayout } from '#shared/runtime/layouts'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 import type { ZoomCommand } from '#shared/editor/viewport'
@@ -648,41 +648,42 @@ export function createEditor(projectId: string) {
     return !!selectedId.value
   }
 
-  /** Copy (Cmd/Ctrl+C): node `id` (the primary selection by default) to the editor clipboard and, as JSON, the system one. */
-  function copy(id: string | null = selectedId.value): void {
-    const clip = page.value && id ? copyNode(page.value.root, id) : null
+  /** Copy (Cmd/Ctrl+C): node `id`, or the whole top-level selection by default, to the editor clipboard and, as JSON, the system one. */
+  function copy(id?: string): void {
+    const clip = page.value ? copyNodes(page.value.root, id ? [id] : selectedIds.value) : null
     if (!clip) return
     clipboard.value = clip
     void navigator.clipboard?.writeText(serializeClip(clip)).catch(() => {})
   }
 
-  /** The editor clipboard, else a clip copied in another tab (the system clipboard, which may ask for permission). */
+  /** The editor clipboard, or a newer clip in the system one (copied in another tab, `newerClip`); reading it may ask for permission. */
   async function readClip(): Promise<Clip | null> {
-    if (clipboard.value) return clipboard.value
+    let system: Clip | null = null
     try {
-      return parseClip(await navigator.clipboard.readText())
+      system = parseClip(await navigator.clipboard.readText())
     } catch {
-      return null
+      // No permission or no clipboard: the in-memory clip.
     }
+    return newerClip(clipboard.value, system)
   }
 
-  /** Paste (Cmd/Ctrl+V): inserts the copied node as it was, with new ids (one undo step), where `pasteTarget` puts it, and selects it. */
+  /** Paste (Cmd/Ctrl+V): inserts every copied node as it was, with new ids (one undo step), where `pasteTarget` puts them, and selects them. */
   async function paste(): Promise<void> {
     const clip = await readClip()
     const root = page.value?.root
     if (!clip || !root) return
     const at = outsideInstance(root, pasteTarget(root, selectedId.value, clip))
-    const result = await runOnPage<{ nodeId: string }>('node_insert', { ...at, ...pasteInput(clip) })
-    if (result) selectedId.value = result.nodeId
+    const result = await runOnPage<{ nodeIds: string[] }>('node_insert', { ...at, ...pasteInput(clip) })
+    if (result) selectedIds.value = result.nodeIds
   }
 
-  /** Paste style (Cmd/Ctrl+Alt+V): gives node `id`, or the selection, the copied node's style (one undo step through `updateStyle`). */
+  /** Paste style (Cmd/Ctrl+Alt+V): gives node `id`, or the selection, the first copied node's style (one undo step through `updateStyle`). */
   async function pasteStyle(id?: string): Promise<void> {
     const clip = await readClip()
     const root = page.value?.root
     const nodes = root && clip ? (id ? [id] : selectedIds.value).map(other => findNode(root, other)).filter(n => n !== undefined) : []
     if (!clip || !nodes.length) return
-    const style = clip.node.style
+    const style = clipStyle(clip)
     const patch = nodes.length === 1
       ? pasteStylePatch(nodes[0]!.style, style)
       : { ...Object.fromEntries(nodes.flatMap(n => Object.keys(n.style)).map(key => [key, null])), ...style }
@@ -783,6 +784,21 @@ export function createEditor(projectId: string) {
     await styles.commit(nodeIds, style, () => runOnPage('node_update_style', { ...target, style }))
   }
 
+  /**
+   * Commits a different style patch per node, as one undo step (`node_update_style`
+   * with `updates`, all or nothing), e.g. a selection colour swap. In the variant
+   * view each node is one `component_variant_set_override`, which takes one node
+   * at a time, so there it is one undo step per node.
+   */
+  async function updateStyles(updates: { nodeId: string, style: StylePatch }[]): Promise<void> {
+    if (!updates.length) return
+    if (variant.value) {
+      for (const { nodeId, style } of updates) await setOverride(nodeId, { style })
+      return
+    }
+    await runOnPage('node_update_style', updates.length === 1 ? updates[0]! : { updates })
+  }
+
   // A preview belongs to the nodes being styled.
   watch([selectedIds, () => page.value?.id], () => {
     if (stylePreview.value) styles.preview(stylePreview.value.nodeId, null)
@@ -870,7 +886,7 @@ export function createEditor(projectId: string) {
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
     reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, createLayout, selectVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
-    canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, previewTheme, updateTheme, undo, redo, shortcut
+    canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, updateStyles, previewTheme, updateTheme, undo, redo, shortcut
   })
 }
 

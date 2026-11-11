@@ -3,6 +3,7 @@ import type { DocNode } from '../document/schema'
 import { containsNode, findNode, findParent } from '../document/tree'
 import type { Breakpoint } from '../design/tokens'
 import { breakpointStyles } from './styleFields'
+import { nearestUnlocked } from './selection'
 
 /**
  * Pure drag-and-drop geometry shared by the canvas and the layers tree:
@@ -101,6 +102,21 @@ export function resolveDrop(root: DocNode, overId: string, position: DropPositio
   const location = findParent(root, overId)
   if (!location) return null
   return { parentId: location.parent.id, index: position === 'before' ? location.index : location.index + 1 }
+}
+
+/**
+ * The node a canvas drag-over reaches, from the node id of the element under
+ * the pointer (`overId`, a container placeholder's when `placeholder`). A
+ * locked node, or one inside a lock, is no drop target: its nearest unlocked
+ * ancestor takes the drop (`redirected`, so the caller measures that node's
+ * element instead, and the placeholder no longer applies). Null for a
+ * missing node or under a locked root.
+ */
+export function dropNodeAt(root: DocNode, overId: string | null | undefined, placeholder: boolean): { nodeId: string, placeholder: boolean, redirected: boolean } | null {
+  const nodeId = overId && findNode(root, overId) ? nearestUnlocked(root, overId) : null
+  if (!nodeId) return null
+  const redirected = nodeId !== overId
+  return { nodeId, placeholder: placeholder && !redirected, redirected }
 }
 
 /** Converts a drop slot into the `node_move` index, which counts after the node leaves its parent. */

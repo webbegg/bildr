@@ -7,6 +7,8 @@ import { joinSplit, layoutReset, layoutType, layoutTypeWrite, panelRows, rowAdd,
 import { previewFocusedOption } from '#shared/editor/preview'
 import type { SizeKey, SizeMode } from '#shared/editor/sizeModes'
 import { measuredSize, SIZE_MODE_LABELS, sizeMode, sizeModes, sizeModeValue } from '#shared/editor/sizeModes'
+import type { MeasuredSizes } from '#shared/editor/measuredSizes'
+import { createSizeMeasurer, EMPTY_SIZES, sizeContext } from '#shared/editor/measuredSizes'
 import type { Provenance } from '#shared/editor/styleFields'
 import { styleProvenance } from '#shared/editor/styleFields'
 
@@ -25,7 +27,8 @@ import { styleProvenance } from '#shared/editor/styleFields'
  * is Reset layout.
  * Width and Height that are unset, auto, Fit or Fill show the measured px of
  * the selection in the active frame, greyed, instead of the token (re-measured
- * when the selection, the document or the device changes).
+ * when the selection, the document or the device changes; a new selection,
+ * device or tree shows the plain placeholder until then, `createSizeMeasurer`).
  * Responsive tokens edit the editor device's breakpoint (Mobile is the base,
  * Tablet `md:`, Desktop `lg:`).
  *
@@ -171,28 +174,15 @@ const setMode = (key: SizeKey, mode: SizeMode) => setField(key, sizeModeValue(ke
 const sizeKey = (row: RowId): SizeKey => (row === 'width' ? 'w' : 'h')
 
 // The selection's boxes in the active frame (canvas px), for the greyed auto sizes.
-const measured = ref<Record<SizeKey, number[]>>({ w: [], h: [] })
-let measureRun = 0
-let measureTimer: ReturnType<typeof setTimeout> | undefined
-async function measure() {
-  const run = ++measureRun
-  const ids = [...editor.selectedIds]
-  const boxes = ids.length ? await editor.measureNodes(ids) : []
-  if (run !== measureRun) return
-  // A missing (hidden) box would make the shared size a guess.
-  const all = boxes.length === ids.length
-  measured.value = { w: all ? boxes.map(b => b.width) : [], h: all ? boxes.map(b => b.height) : [] }
-}
-// After the canvas has re-rendered the change.
-function scheduleMeasure() {
-  clearTimeout(measureTimer)
-  measureTimer = setTimeout(measure, 80)
-}
-watch([() => editor.selectedIds, () => editor.page, () => editor.deviceId, () => props.styles], scheduleMeasure, { immediate: true })
-onBeforeUnmount(() => {
-  clearTimeout(measureTimer)
-  measureRun++
+const measured = shallowRef<MeasuredSizes>(EMPTY_SIZES)
+const sizes = createSizeMeasurer(ids => editor.measureNodes(ids), (next) => {
+  measured.value = next
 })
+watch([() => editor.selectedIds, () => editor.page, () => editor.deviceId, () => props.styles], () => {
+  const ids = [...editor.selectedIds]
+  sizes.schedule(ids, sizeContext(ids, editor.deviceId, editor.page?.id))
+}, { immediate: true })
+onBeforeUnmount(() => sizes.stop())
 
 /** The W or H field: an unset, auto, Fit or Fill size shows its measured px greyed instead of the token ("Mixed" first). */
 function sizeField(row: RowId) {

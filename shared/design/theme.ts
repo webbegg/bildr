@@ -300,7 +300,10 @@ export function themeCss(theme: Theme): string {
   return [
     block(':root, :host', [
       ...THEME_COLORS.flatMap(name => shadeDeclarations(name, theme.colors[name])),
-      ...Object.entries(theme.custom ?? {}).map(([name, value]) => `${customColorVar(name)}: ${value};`),
+      // Re-checked here too (defense in depth): only a valid name and hex reach the stylesheet.
+      ...Object.entries(theme.custom ?? {})
+        .filter(([name, value]) => CUSTOM_COLOR_NAME.test(name) && STYLE_HEX.test(value))
+        .map(([name, value]) => `${customColorVar(name)}: ${value};`),
       `--font-sans: ${fontStack(theme.font)};`,
       `--ui-radius: ${theme.radius};`,
       `--spacing: ${SPACING_BASE[theme.spacing]};`

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { editorTakesKey, hasTextSelection } from '#shared/editor/clipboardKeys'
+
 definePageMeta({ layout: false })
 
 const route = useRoute()
@@ -37,6 +39,10 @@ function onKeyDown(event: KeyboardEvent) {
   }
   // The layers tree handles its own arrow keys first.
   if (event.defaultPrevented || isEditable(event.target) || inFloatingLayer(event)) return
+  // Copy and paste are the editor's from the layers tree only (the canvas sends its own), never over selected text.
+  const inLayers = !!(event.target as HTMLElement | null)?.closest?.('[data-layers]')
+  const context = { focus: inLayers ? 'layers' as const : 'other' as const, textSelected: hasTextSelection(window), hasSelection: editor.selectedIds.length > 0 }
+  if (!editorTakesKey({ key: event.key, code: event.code, meta, shift: event.shiftKey, alt: event.altKey }, context)) return
   if (editor.shortcut(event.key, event.metaKey || event.ctrlKey, event.shiftKey, allowsNavigation(event.target), { code: event.code, alt: event.altKey })) event.preventDefault()
 }
 

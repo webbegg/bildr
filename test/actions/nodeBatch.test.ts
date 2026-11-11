@@ -44,6 +44,42 @@ describe('node_update_style with nodeIds', () => {
   })
 })
 
+describe('node_update_style with updates (RELIABILITY-009)', () => {
+  it('applies a different patch per node as one undo step', async () => {
+    const { bildr, projectId, pageId, ids, root, history } = await setup()
+    const before = await root()
+    await bildr.call('node_update_style', { projectId, pageId, updates: [{ nodeId: ids[0], style: { bg: 'error' } }, { nodeId: ids[1], style: { color: 'error', mt: null } }] }, ui)
+
+    const tree = await root()
+    expect(tree.children.find(c => c.id === ids[0])!.style.bg).toBe('error')
+    expect(tree.children.find(c => c.id === ids[1])!.style.color).toBe('error')
+    expect(tree.children.find(c => c.id === ids[1])!.style.bg).toBe(before.children.find(c => c.id === ids[1])!.style.bg)
+    expect((await history()).undo).toBe('Update style')
+
+    await bildr.call('history_undo', { projectId }, ui)
+    expect(await root()).toEqual(before)
+  })
+
+  it('applies nothing when one update is refused, and is validated like style', async () => {
+    const { bildr, projectId, pageId, ids, root } = await setup()
+    const before = await root()
+    await expect(bildr.call('node_update_style', { projectId, pageId, updates: [{ nodeId: ids[0], style: { bg: 'error' } }, { nodeId: 'missing', style: { bg: 'error' } }] }, ui)).rejects.toMatchObject({ code: 'not_found' })
+    await expect(bildr.call('node_update_style', { projectId, pageId, updates: [{ nodeId: ids[0], style: { bg: 'error' } }, { nodeId: ids[1], style: { mt: '#fff' } }] }, ui)).rejects.toMatchObject({ code: 'invalid_input' })
+    await expect(bildr.call('node_update_style', { projectId, pageId, updates: [{ nodeId: ids[0], style: { bg: 'error' } }, { nodeId: ids[1], style: { bg: 'brand' } }] }, ui)).rejects.toMatchObject({ code: 'invalid' })
+    expect(await root()).toEqual(before)
+  })
+
+  it('refuses updates together with nodeId, nodeIds or style, and an empty list', async () => {
+    const { bildr, projectId, pageId, ids } = await setup()
+    const updates = [{ nodeId: ids[0], style: { bg: 'error' } }]
+    for (const extra of [{ nodeId: ids[1] }, { nodeIds: [ids[1]] }, { style: { mt: '6' } }]) {
+      await expect(bildr.call('node_update_style', { projectId, pageId, updates, ...extra }, ui)).rejects.toMatchObject({ code: 'invalid_input', message: expect.stringContaining('Give updates, or style with nodeId or nodeIds') })
+    }
+    await expect(bildr.call('node_update_style', { projectId, pageId, updates: [] }, ui)).rejects.toMatchObject({ code: 'invalid_input' })
+    await expect(bildr.call('node_update_style', { projectId, pageId, nodeId: ids[0] }, ui)).rejects.toMatchObject({ code: 'invalid_input', message: expect.stringContaining('Give updates, or style with nodeId or nodeIds') })
+  })
+})
+
 describe('node_delete with nodeIds', () => {
   it('deletes every node as one undo step, skipping nodes inside another deleted one', async () => {
     const { bildr, projectId, pageId, ids, root } = await setup()

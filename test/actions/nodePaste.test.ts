@@ -53,6 +53,51 @@ describe('node_insert exact (paste fidelity, RELIABILITY-001)', () => {
     await expect(call('node_insert', { pageId, type: 'Text', exact: true, children: [{ type: 'Text' }] })).rejects.toBeTruthy()
   })
 
+  it('inserts several nodes with nodes, in order at consecutive indexes, as one undo step (RELIABILITY-004)', async () => {
+    const { call, pageId, root } = await setup()
+    await call('node_insert', { pageId, type: 'Heading' })
+    const before = await root()
+    const result = await call<{ nodeId: string, nodeIds: string[] }>('node_insert', {
+      pageId,
+      index: 0,
+      exact: true,
+      nodes: [{ type: 'Text', props: { text: 'A' }, style: {} }, { type: 'Card', props: {}, style: { p: '6' }, children: [{ type: 'Text', props: {}, style: {} }] }]
+    })
+    const after = await root()
+    expect(after.children.map(c => c.type)).toEqual(['Text', 'Card', 'Heading'])
+    expect(result.nodeIds).toEqual([after.children[0]!.id, after.children[1]!.id])
+    expect(result.nodeId).toBe(result.nodeIds[0])
+    // exact applies to each node and its children.
+    expect(after.children[0]!.props).toEqual({ text: 'A' })
+    expect(after.children[1]!.style).toEqual({ p: '6' })
+    expect(after.children[1]!.children[0]!.props).toEqual({})
+    expect((await call<{ undo: string | null }>('history_get', {})).undo).toBe('Insert 2')
+    await call('history_undo', {})
+    expect(await root()).toEqual(before)
+  })
+
+  it('appends nodes at the end in order by default, and without exact adds the defaults to each', async () => {
+    const { call, pageId, root } = await setup()
+    await call('node_insert', { pageId, type: 'Heading' })
+    const { nodeIds } = await call<{ nodeIds: string[] }>('node_insert', { pageId, nodes: [{ type: 'Card' }, { type: 'Button' }] })
+    const after = await root()
+    expect(after.children.map(c => c.type)).toEqual(['Heading', 'Card', 'Button'])
+    expect(nodeIds).toEqual([after.children[1]!.id, after.children[2]!.id])
+    expect(after.children[1]!.style).toEqual({ gap: '3', items: 'start' })
+  })
+
+  it('validates every node of nodes like one, all or nothing, and refuses nodes with type', async () => {
+    const { call, pageId, root } = await setup()
+    const before = await root()
+    await expect(call('node_insert', { pageId, nodes: [{ type: 'Text' }, { type: 'Nope' }] })).rejects.toMatchObject({ code: 'invalid' })
+    await expect(call('node_insert', { pageId, exact: true, nodes: [{ type: 'Text' }, { type: 'Text', children: [{ type: 'Text' }] }] })).rejects.toBeTruthy()
+    await expect(call('node_insert', { pageId, nodes: [{ type: 'Text', style: { gap: 'huge' } }] })).rejects.toBeTruthy()
+    expect(await root()).toEqual(before)
+    await expect(call('node_insert', { pageId, type: 'Text', nodes: [{ type: 'Text' }] })).rejects.toMatchObject({ code: 'invalid_input', message: expect.stringContaining('Give type, or nodes') })
+    await expect(call('node_insert', { pageId })).rejects.toMatchObject({ code: 'invalid_input', message: expect.stringContaining('Give type, or nodes') })
+    await expect(call('node_insert', { pageId, nodes: [] })).rejects.toMatchObject({ code: 'invalid_input' })
+  })
+
   it('without exact, node_insert still adds the component defaults', async () => {
     const { call, pageId, root } = await setup()
     await call('node_insert', { pageId, type: 'Card', style: { p: '6' } })
