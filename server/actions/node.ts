@@ -32,7 +32,7 @@ function tokenValueSchema(token: StyleToken): z.ZodType<string> {
     values,
     z.string().regex(STYLE_HEX).describe('A #rgb, #rrggbb or #rrggbbaa hex colour'),
     z.string().regex(CUSTOM_COLOR_NAME).describe('The name of one of the project theme\'s custom colours (theme_get theme.custom)')
-  ])
+  ], { error: issue => `"${String(issue.input)}" is not a value of style token "${token.key}" (use a colour token, a #rgb, #rrggbb or #rrggbbaa hex, or a theme colour)` })
 }
 
 /** One optional key per design token and breakpoint (`cols`, `sm:cols`, `md:cols`, `lg:cols`). */

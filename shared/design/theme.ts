@@ -73,7 +73,7 @@ export const CUSTOM_COLOR_NAME_MAX = 32
 export const CustomColorNameSchema = z.string()
   .max(CUSTOM_COLOR_NAME_MAX)
   .regex(CUSTOM_COLOR_NAME, 'Colour names use lowercase letters, digits and single dashes, starting with a letter (e.g. brand, ink-2)')
-  .refine(name => !isColorTokenValue(name), { error: issue => `"${issue.input as string}" is already a colour token; pick another name` })
+  .refine(name => !isColorTokenValue(name) && !(THEME_COLORS as readonly string[]).includes(name), { error: issue => `"${issue.input as string}" is already a colour token; pick another name` })
 
 export const CustomColorValueSchema = z.string().regex(STYLE_HEX, 'Use a #rgb, #rrggbb or #rrggbbaa hex colour')
 

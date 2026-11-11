@@ -34,7 +34,23 @@ describe('hex colours through the node actions (S4b)', () => {
   })
 })
 
+describe('malformed colour values (S4b)', () => {
+  it('explains a malformed hex or unknown value on a colour key', async () => {
+    const { call, pageId, nodeId } = await setup()
+    for (const bg of ['#ab', '#abcd', 'Bogus']) {
+      await expect(call('node_update_style', { pageId, nodeId, style: { bg } })).rejects.toMatchObject({ message: expect.stringMatching(/hex/) })
+      await expect(call('node_insert', { pageId, type: 'Text', style: { bg } })).rejects.toMatchObject({ message: expect.stringMatching(/hex/) })
+    }
+  })
+})
+
 describe('theme custom colours through the actions (S4c)', () => {
+  it('refuses a semantic theme colour name as a custom colour', async () => {
+    const { call, get } = await setup()
+    await expect(call('theme_update', { custom: { neutral: '#123456' } })).rejects.toMatchObject({ code: 'invalid_input' })
+    expect('custom' in (await get()).theme).toBe(false)
+  })
+
   it('adds a custom colour with theme_update and uses it as a colour token', async () => {
     const { call, get, pageId, nodeId, style } = await setup()
     await call('theme_update', { custom: { brand: '#ff6600' } })
