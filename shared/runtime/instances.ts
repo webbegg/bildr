@@ -1,6 +1,6 @@
 import { INSTANCE_TYPE, SLOT_FILL_TYPE } from '../document/components'
 import type { PropValue } from '../document/components'
-import type { ComponentDefinition, DocNode, PropertyDef } from '../document/schema'
+import type { ComponentDefinition, DocNode, PropertyDef, VariantOverride } from '../document/schema'
 import { resolvePropRefs } from './bindings'
 
 /**
@@ -78,12 +78,19 @@ export function applySetters(props: Record<string, PropValue>, setters: Property
  * in `style` (its own style with the variant's `overridden` style merged
  * in), in the same order of precedence.
  */
-export function applyStyleSetters(style: Record<string, string>, setters: PropertySetters, nodeId: string, overridden?: Record<string, string>): void {
+export function applyStyleSetters(style: Record<string, string>, setters: PropertySetters, nodeId: string, overridden?: Record<string, string>, removed?: readonly string[]): void {
   for (const { prop, target, value, fallback } of setters.get(nodeId) ?? []) {
     if (target !== 'style') continue
     if (value !== undefined) style[prop] = String(value)
-    else if (fallback !== undefined && overridden?.[prop] === undefined) style[prop] = String(fallback)
+    else if (fallback !== undefined && overridden?.[prop] === undefined && !removed?.includes(prop)) style[prop] = String(fallback)
   }
+}
+
+/** A node's style in a variant: its own tokens with the override's merged in, less the tokens the variant removes (`unset`). */
+export function variantStyle(style: Record<string, string>, override: VariantOverride | undefined): Record<string, string> {
+  const merged = { ...style, ...override?.style }
+  for (const key of override?.unset ?? []) Reflect.deleteProperty(merged, key)
+  return merged
 }
 
 export function resolveInstance(instance: DocNode, components: ComponentDefinition[]): DocNode | null {
@@ -117,8 +124,8 @@ function expand(instance: DocNode, definitions: Definitions, stack: string[]): D
       if (typeof value === 'string') props[key] = resolvePropRefs(value, refs)
     }
     applySetters(props, setters, node.id, override?.props)
-    const style = { ...node.style, ...override?.style }
-    applyStyleSetters(style, setters, node.id, override?.style)
+    const style = variantStyle(node.style, override)
+    applyStyleSetters(style, setters, node.id, override?.style, override?.unset)
     const children = fills.get(node.id) ?? node.children.map(build).filter(child => child !== null)
     const built: DocNode = {
       id: `${instance.id}${INSTANCE_ID_SEPARATOR}${node.id}`,

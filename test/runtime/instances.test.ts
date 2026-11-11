@@ -74,6 +74,23 @@ describe('resolveInstance', () => {
     expect(find(resolveInstance(instance({ 'p-title': 'Own' }), [def])!, 'i1/title')?.props.text).toBe('Own')
   })
 
+  it('renders a token the variant removes as absent, even where the primary sets it', () => {
+    const def = card()
+    def.variants[0]!.overrides.title = { unset: ['color'] }
+    const title = find(resolveInstance(instance({ variant: 'dark' }), [def])!, 'i1/title')!
+    expect(title.style).toEqual({})
+    // The primary still renders it.
+    expect(find(resolveInstance(instance(), [def])!, 'i1/title')!.style).toEqual({ color: 'default' })
+  })
+
+  it('a removed token beats a style binding default, but not the instance value', () => {
+    const def = card()
+    def.properties.push({ id: 'p-tone', name: 'Tone', kind: 'text', default: 'muted', bindings: [{ nodeId: 'title', prop: 'color', target: 'style' }] })
+    def.variants[0]!.overrides.title = { unset: ['color'] }
+    expect(find(resolveInstance(instance({ variant: 'dark' }), [def])!, 'i1/title')!.style.color).toBeUndefined()
+    expect(find(resolveInstance(instance({ 'variant': 'dark', 'p-tone': 'primary' }), [def])!, 'i1/title')!.style.color).toBe('primary')
+  })
+
   it('merges the variant\'s sparse overrides over the primary', () => {
     const title = find(resolveInstance(instance({ variant: 'dark' }), [card()])!, 'i1/title')!
     expect(title.props.level).toBe('3')

@@ -7,6 +7,8 @@ import {
   isOverridden,
   newVariantName,
   overrideEntries,
+  overrideInput,
+  pasteStyleOverride,
   PRIMARY_VARIANT,
   resetOverrides,
   variantItems
@@ -97,6 +99,45 @@ describe('overrides of a node', () => {
   it('resets overrides with nulls, which remove them (variants stay sparse)', () => {
     expect(resetOverrides(overrideEntries(dark, 'c-title'))).toEqual({ props: { text: null }, style: { color: null } })
     expect(resetOverrides([{ kind: 'style', key: 'p', value: '8' }])).toEqual({ style: { p: null } })
+  })
+})
+
+describe('removed tokens (unset)', () => {
+  const flat: Variant = { id: 'flat', name: 'Flat', overrides: { 'c-title': { style: { text: 'xl' }, unset: ['color'] } } }
+
+  it('renders a removed token as absent, even where the primary or a style binding default sets it', () => {
+    const def = card()
+    expect(applyVariant(def.root, flat).children[0]!.style).toEqual({ text: 'xl' })
+    def.properties = [{ id: 'tone', name: 'Tone', kind: 'select', default: 'secondary', bindings: [{ nodeId: 'c-title', prop: 'color', target: 'style' }] }]
+    expect(applyVariant(def.root, flat, def.properties).children[0]!.style).toEqual({ text: 'xl' })
+  })
+
+  it('lists a removed token as overridden with an empty value, and resets it with a null', () => {
+    expect(overrideEntries(flat, 'c-title')).toEqual([
+      { kind: 'style', key: 'text', value: 'xl' },
+      { kind: 'style', key: 'color', value: '', removed: true }
+    ])
+    expect(isOverridden(flat, 'c-title', 'style', 'color')).toBe(true)
+    expect(resetOverrides(overrideEntries(flat, 'c-title'))).toEqual({ style: { text: null, color: null } })
+    expect(variantItems({ ...card(), variants: [flat] })[1]!.description).toBe('2 overrides')
+  })
+
+  it('plans a variant Paste style that fully replaces the effective style', () => {
+    const base = { color: 'muted', p: '4' }
+    // Effective in the variant: color from the primary, p overridden to 8, bg only in the variant.
+    const effective = { color: 'muted', p: '8', bg: 'muted' }
+    expect(pasteStyleOverride(base, effective, { p: '2', rounded: 'lg' })).toEqual({ style: { p: '2', rounded: 'lg', bg: null }, unset: ['color'] })
+    // The copy matching the effective style changes nothing.
+    expect(pasteStyleOverride(base, effective, effective)).toEqual({})
+    // A token the variant already removes stays removed without a second marker.
+    expect(pasteStyleOverride(base, { p: '4' }, { p: '4' })).toEqual({})
+  })
+
+  it('sends one node as the single form and several as one batch', () => {
+    expect(overrideInput([{ nodeId: 'a', style: { p: '2' } }])).toEqual({ nodeId: 'a', style: { p: '2' } })
+    expect(overrideInput([{ nodeId: 'a', style: { p: '2' } }, { nodeId: 'b', unset: ['p'] }])).toEqual({ overrides: [{ nodeId: 'a', style: { p: '2' } }, { nodeId: 'b', unset: ['p'] }] })
+    expect(overrideInput([{ nodeId: 'a' }, { nodeId: 'b', style: {} }])).toBeNull()
+    expect(overrideInput([])).toBeNull()
   })
 })
 
