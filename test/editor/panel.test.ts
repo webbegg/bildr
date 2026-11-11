@@ -46,11 +46,18 @@ describe('panel sections', () => {
 
 describe('panel rows', () => {
   const column: PanelNode = { type: 'Column', parentType: 'Page', style: { gap: '3', items: 'start' } }
+  const text: PanelNode = { type: 'Text', parentType: 'Column', style: {} }
 
   it('shows every section\'s core rows, with "Add…" slots for Fill, Border and Shadows', () => {
     expect(view(rows(column))).toEqual({
       Size: ['width', 'height'],
       Layout: ['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding'],
+      Styles: ['visible', 'opacity', 'fill+', 'border+', 'shadows+', 'radius'],
+      Typography: []
+    })
+    expect(view(rows(text))).toEqual({
+      Size: ['width', 'height'],
+      Layout: [],
       Styles: ['visible', 'opacity', 'fill+', 'border+', 'shadows+', 'radius'],
       Typography: ['fontSize', 'fontWeight', 'textAlign', 'textColor']
     })
@@ -61,8 +68,31 @@ describe('panel rows', () => {
       Size: ['maxWidth', 'minWidth', 'maxHeight', 'minHeight'],
       Layout: ['margin', 'self', 'overflow'],
       Styles: ['corners', 'display'],
-      Typography: ['letterSpacing', 'lineHeight', 'transform']
+      Typography: ['fontSize', 'fontWeight', 'textAlign', 'textColor', 'letterSpacing', 'lineHeight', 'transform']
     })
+    expect(menus(rows(text)).Typography).toEqual(['letterSpacing', 'lineHeight', 'transform'])
+  })
+
+  it('collapses a section without rows to its title and "+" (Framer\'s rule), and only those', () => {
+    const collapsed = (sections: PanelSectionRows[]) => sections.filter(s => s.collapsed).map(s => s.section)
+    expect(collapsed(rows(column))).toEqual(['Typography'])
+    expect(collapsed(rows(text))).toEqual(['Layout'])
+    expect(collapsed(rows({ type: 'Image', style: {} }))).toEqual(['Layout', 'Typography'])
+    expect(rows(column).every(s => s.collapsed === (s.rows.length === 0))).toBe(true)
+  })
+
+  it('gives typography core rows to text nodes and the page root; elsewhere they are "+" items until set', () => {
+    const typography = (node: PanelNode, added: string[] = []) => view(rows(node, 'mobile', added)).Typography
+    for (const type of ['Heading', 'Text', 'Button', 'Link', 'Input']) expect(typography({ type, style: {} })).toEqual(['fontSize', 'fontWeight', 'textAlign', 'textColor'])
+    expect(typography({ type: 'Page', root: true, style: {} })).toEqual(['fontSize', 'fontWeight', 'textAlign', 'textColor'])
+    expect(typography({ type: 'Card', style: { color: 'muted' } })).toEqual(['textColor−'])
+    expect(typography({ type: 'Image', style: {} }, ['fontSize'])).toEqual(['fontSize−'])
+    expect(rowAdd('fontSize')).toEqual({})
+  })
+
+  it('puts Layout first on the page root', () => {
+    expect(rows({ type: 'Page', root: true, style: {} }).map(s => s.section)).toEqual(['Layout', 'Size', 'Styles', 'Typography'])
+    expect(rows(column).map(s => s.section)).toEqual(['Size', 'Layout', 'Styles', 'Typography'])
   })
 
   it('shows an optional row with a value at any breakpoint, with a "−", and drops it from the menu', () => {
@@ -72,18 +102,19 @@ describe('panel rows', () => {
       Size: ['width', 'height', 'maxWidth−'],
       Layout: ['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'margin'],
       Styles: ['visible', 'opacity', 'fill−', 'border+', 'shadows+', 'radius', 'corners−'],
-      Typography: ['fontSize', 'fontWeight', 'textAlign', 'textColor', 'letterSpacing−']
+      Typography: ['letterSpacing−']
     })
     expect(menus(sections).Size).toEqual(['minWidth', 'maxHeight', 'minHeight'])
     expect(menus(sections).Layout).toEqual(['self', 'overflow'])
-    expect(menus(sections).Typography).toEqual(['lineHeight', 'transform'])
+    expect(menus(sections).Typography).toEqual(['fontSize', 'fontWeight', 'textAlign', 'textColor', 'lineHeight', 'transform'])
   })
 
   it('offers "−" only where the edited breakpoint sets the row (or it was just added)', () => {
     const style = { 'md:m': '2', 'leading': 'loose' }
     const tablet = view(rows({ ...column, style }, 'tablet', ['transform']))
     expect(tablet.Layout).toContain('margin−')
-    expect(tablet.Typography).toEqual(['fontSize', 'fontWeight', 'textAlign', 'textColor', 'lineHeight', 'transform−'])
+    expect(tablet.Typography).toEqual(['lineHeight', 'transform−'])
+    expect(view(rows({ ...text, style }, 'tablet', ['transform'])).Typography).toEqual(['fontSize', 'fontWeight', 'textAlign', 'textColor', 'lineHeight', 'transform−'])
     expect(view(rows({ ...column, style }, 'mobile')).Layout).toContain('margin')
   })
 
@@ -111,7 +142,6 @@ describe('panel rows', () => {
   })
 
   it('shows Layout on a leaf as a title with a "+" offering padding, margin, self and overflow', () => {
-    const text: PanelNode = { type: 'Text', parentType: 'Column', style: {} }
     expect(rows(text).map(s => s.section)).toEqual(['Size', 'Layout', 'Styles', 'Typography'])
     expect(view(rows(text)).Layout).toEqual([])
     expect(menus(rows(text)).Layout).toEqual(['padding', 'margin', 'self', 'overflow'])

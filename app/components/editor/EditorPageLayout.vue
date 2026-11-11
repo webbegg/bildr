@@ -5,7 +5,8 @@ import { layoutItems, layoutValue, NO_LAYOUT, pageSlots, variableField } from '~
 
 /**
  * The page settings' layout rows: the Layout the page renders in (None, or
- * one of the project's, with Edit to open it in the layout view), a field
+ * one of the project's, each a two-line item naming its slots and variables,
+ * with Edit to open it in the layout view), a field
  * per layout variable, set per page (blue when set; reset goes back to the
  * default), and per named slot an "Own content" switch: on, the page gives
  * the slot its own content; off, the layout's default shows.
@@ -14,7 +15,17 @@ const editor = useEditor()
 
 const page = computed(() => editor.currentPage)
 const layout = computed(() => editor.project?.layouts.find(l => l.id === page.value?.layoutId) ?? null)
-const items = computed(() => (editor.project ? layoutItems(editor.project) : []))
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+/** A layout choice's second line: what a page can set in it (its named slots, the children slot aside, and its variables). */
+function layoutHint(value: string): string {
+  if (value === NO_LAYOUT) return 'The page renders on its own'
+  const option = editor.project?.layouts.find(l => l.id === value)
+  if (!option) return ''
+  const slots = Math.max(0, option.slots.length - 1)
+  const variables = option.variables.length
+  return slots || variables ? [slots && count(slots, 'slot'), variables && count(variables, 'variable')].filter(Boolean).join(', ') : 'No slots or variables'
+}
+const items = computed(() => (editor.project ? layoutItems(editor.project).map(item => ({ ...item, description: layoutHint(item.value) })) : []))
 const fields = computed(() => (layout.value ? layout.value.variables.map(variable => ({ variable, field: variableField(layout.value!, variable) })) : []))
 const slots = computed(() => (layout.value && page.value ? pageSlots(layout.value, page.value) : []))
 
@@ -41,14 +52,14 @@ function setSlot(slot: LayoutSlot, filled: boolean) {
       label="Layout"
       data-page-layout
     >
-      <div class="flex min-w-0 items-center gap-1">
+      <div class="flex w-full min-w-0 items-center gap-1">
         <USelect
           :model-value="layout?.id ?? NO_LAYOUT"
           :items="items"
           aria-label="Page layout"
           size="xs"
           variant="soft"
-          :ui="{ base: 'h-[30px] rounded-lg bg-elevated text-[12px]', trailingIcon: 'size-3.5 text-dimmed' }"
+          :ui="SELECT_UI"
           class="min-w-0 flex-1"
           @update:model-value="setLayout"
         />

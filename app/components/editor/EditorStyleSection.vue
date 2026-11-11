@@ -2,21 +2,23 @@
 import type { DropdownMenuItem } from '@nuxt/ui'
 
 /**
- * A panel section with Framer's header: a bold white title that never
- * collapses, and on the right an optional "−" (`removeLabel` is its tooltip,
- * e.g. Reset layout) and a "+" opening a small menu of the group's optional
- * properties (`menu`), which emits `add` with the picked item's id. The "+"
- * is named `addLabel`, by default "Add <label> property".
+ * A panel section with Framer's header: a bold white title, and on the right
+ * an optional "−" (`removeLabel` is its tooltip, e.g. Reset layout) and a "+"
+ * opening a small menu of the group's optional properties (`menu`, two-line
+ * items when they have a `hint`), which emits `add` with the picked item's
+ * id. The "+" is named `addLabel`, by default "Add <label> property".
+ * `collapsed` (a section with nothing to show yet) renders the header only:
+ * Framer's title plus "+".
  */
 export interface SectionMenuItem {
   id: string
   label: string
   disabled?: boolean
-  /** Why a disabled item is disabled. */
+  /** The item's second line: what it adds, or why a disabled item is disabled. */
   hint?: string
 }
 
-const props = withDefaults(defineProps<{ label: string, menu?: SectionMenuItem[], removeLabel?: string, addLabel?: string }>(), { menu: () => [], removeLabel: undefined, addLabel: undefined })
+const props = withDefaults(defineProps<{ label: string, menu?: SectionMenuItem[], removeLabel?: string, addLabel?: string, collapsed?: boolean }>(), { menu: () => [], removeLabel: undefined, addLabel: undefined })
 const emit = defineEmits<{ add: [id: string], remove: [] }>()
 
 const items = computed<DropdownMenuItem[]>(() => props.menu.map(item => ({
@@ -31,6 +33,7 @@ const items = computed<DropdownMenuItem[]>(() => props.menu.map(item => ({
   <section
     class="border-b border-default"
     :data-style-section="label"
+    :data-collapsed="collapsed || undefined"
   >
     <div class="flex h-11 items-center gap-0.5 ps-4 pe-2.5">
       <h3 class="min-w-0 flex-1 truncate text-[12px] font-[550] text-highlighted">
@@ -72,7 +75,10 @@ const items = computed<DropdownMenuItem[]>(() => props.menu.map(item => ({
         </button>
       </UDropdownMenu>
     </div>
-    <div class="space-y-2 ps-4 pe-3 pb-3.5 empty:hidden">
+    <div
+      v-if="!collapsed"
+      class="space-y-2 ps-4 pe-3 pb-3.5 empty:hidden"
+    >
       <slot />
     </div>
   </section>

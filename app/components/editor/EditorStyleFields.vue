@@ -6,7 +6,7 @@ import type { LayoutType, PanelMenuItem, RowId, SplitToken } from '#shared/edito
 import { joinSplit, layoutReset, layoutType, layoutTypeWrite, panelRows, rowAdd, rowKeys, rowProvenance, rowReset, SPLIT_KEYS, splitMode } from '#shared/editor/panel'
 import { previewFocusedOption } from '#shared/editor/preview'
 import type { SizeKey, SizeMode } from '#shared/editor/sizeModes'
-import { SIZE_MODE_LABELS, sizeMode, sizeModes, sizeModeValue } from '#shared/editor/sizeModes'
+import { measuredSize, SIZE_MODE_LABELS, sizeMode, sizeModes, sizeModeValue } from '#shared/editor/sizeModes'
 import type { Provenance } from '#shared/editor/styleFields'
 import { styleProvenance } from '#shared/editor/styleFields'
 
@@ -14,13 +14,18 @@ import { styleProvenance } from '#shared/editor/styleFields'
  * Design-token controls for a node's style, in Framer's sections (Size,
  * Layout, Styles, Typography) of label-column rows: a grey label on the left
  * (drag it to scrub a number; blue when the device overrides the value, with
- * Reset override) and the control on the right. Sections never collapse: each
- * shows its core rows, Fill/Border/Shadows are "Add…" slots (× removes), and
- * a header "+" menu adds the other optional properties with a default token
- * at the edited breakpoint (Display and Individual corners only reveal their
- * control); hovering an added row shows a "−" that clears it at that
- * breakpoint (see `panelRows`). On a container the Layout header's "−" is
- * Reset layout; on a leaf Layout is a title with "+" only.
+ * Reset override) and the control on the right. Each section shows its core
+ * rows, Fill/Border/Shadows are "Add…" slots (× removes), and a header "+"
+ * menu (two-line items) adds the other optional properties with a default
+ * token at the edited breakpoint (Display, Individual corners and the
+ * typography rows of a non-text node only reveal their control); hovering an
+ * added row shows a "−" that clears it at that breakpoint (see `panelRows`).
+ * A section with no row collapses to its title and "+": Layout on a leaf,
+ * Typography on a container or Image. On a container the Layout header's "−"
+ * is Reset layout.
+ * Width and Height that are unset, auto, Fit or Fill show the measured px of
+ * the selection in the active frame, greyed, instead of the token (re-measured
+ * when the selection, the document or the device changes).
  * Responsive tokens edit the editor device's breakpoint (Mobile is the base,
  * Tablet `md:`, Desktop `lg:`).
  *
@@ -137,15 +142,62 @@ const MENU_LABELS: Partial<Record<RowId, string>> = {
   maxWidth: 'Max Width', minWidth: 'Min Width', maxHeight: 'Max Height', minHeight: 'Min Height',
   padding: 'Padding', margin: 'Margin', self: 'Align self', overflow: 'Overflow',
   display: 'Display', corners: 'Individual corners',
+  fontSize: 'Font size', fontWeight: 'Font weight', textAlign: 'Text align', textColor: 'Text color',
   letterSpacing: 'Letter spacing', lineHeight: 'Line height', transform: 'Transform'
 }
-const menuItems = (menu: PanelMenuItem[]) => menu.map(item => ({ id: item.id, label: MENU_LABELS[item.id] ?? LABELS[item.id] }))
+// The "+" items that need explaining: their second line.
+const MENU_HINTS: Partial<Record<RowId, string>> = {
+  margin: 'Space outside the edges',
+  self: 'Overrides the parent\'s Align for this one',
+  overflow: 'Clips or scrolls what doesn\'t fit',
+  display: 'Block, flex or grid, past Visible and Type',
+  corners: 'A radius per corner',
+  fontSize: 'Children inherit it',
+  fontWeight: 'Children inherit it',
+  textAlign: 'Children inherit it',
+  textColor: 'Children inherit it',
+  transform: 'Uppercase, lowercase or capitalized'
+}
+const menuItems = (menu: PanelMenuItem[]) => menu.map(item => ({ id: item.id, label: MENU_LABELS[item.id] ?? LABELS[item.id], hint: MENU_HINTS[item.id] }))
 const ADD_ICONS: Partial<Record<RowId, string>> = { fill: 'i-lucide-paint-bucket', border: 'i-lucide-square', shadows: 'i-lucide-copy' }
 const SIZE_LIMITS: Partial<Record<RowId, string>> = { maxWidth: 'maxW', minWidth: 'minW', maxHeight: 'maxH', minHeight: 'minH' }
 
 // Size: Fixed / Fit / Fill / Relative over `w` and `h`.
 const modeItems = (key: SizeKey) => sizeModes(key).map(mode => ({ value: mode, label: SIZE_MODE_LABELS[mode] }))
 const setMode = (key: SizeKey, mode: SizeMode) => setField(key, sizeModeValue(key, mode, current(key)))
+const sizeKey = (row: RowId): SizeKey => (row === 'width' ? 'w' : 'h')
+
+// The selection's boxes in the active frame (canvas px), for the greyed auto sizes.
+const measured = ref<Record<SizeKey, number[]>>({ w: [], h: [] })
+let measureRun = 0
+let measureTimer: ReturnType<typeof setTimeout> | undefined
+async function measure() {
+  const run = ++measureRun
+  const ids = [...editor.selectedIds]
+  const boxes = ids.length ? await editor.measureNodes(ids) : []
+  if (run !== measureRun) return
+  // A missing (hidden) box would make the shared size a guess.
+  const all = boxes.length === ids.length
+  measured.value = { w: all ? boxes.map(b => b.width) : [], h: all ? boxes.map(b => b.height) : [] }
+}
+// After the canvas has re-rendered the change.
+function scheduleMeasure() {
+  clearTimeout(measureTimer)
+  measureTimer = setTimeout(measure, 80)
+}
+watch([() => editor.selectedIds, () => editor.page, () => editor.deviceId, () => props.styles], scheduleMeasure, { immediate: true })
+onBeforeUnmount(() => {
+  clearTimeout(measureTimer)
+  measureRun++
+})
+
+/** The W or H field: an unset, auto, Fit or Fill size shows its measured px greyed instead of the token ("Mixed" first). */
+function sizeField(row: RowId) {
+  const key = sizeKey(row)
+  const px = isMixed(key) ? undefined : measuredSize(key, current(key), measured.value[key])
+  if (px) return { value: undefined, inherited: undefined, placeholder: px }
+  return { value: own(key), inherited: inherited(key), placeholder: ph(key, 'auto') }
+}
 
 // Layout: Type, Direction, Distribute and Align.
 const layout = computed(() => layoutType(props.type, props.styles, editor.deviceId))
@@ -234,9 +286,10 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
 <template>
   <div :data-editing-breakpoint="editor.device.breakpoint ?? 'base'">
     <EditorStyleSection
-      v-for="{ section, rows, menu, reset } in sections"
+      v-for="{ section, rows, menu, reset, collapsed } in sections"
       :key="section"
       :label="section"
+      :collapsed="collapsed"
       :menu="menuItems(menu)"
       :remove-label="reset ? 'Reset layout' : undefined"
       @add="addRow($event as RowId)"
@@ -256,15 +309,12 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
 
         <EditorScaleRow
           v-else-if="row.id === 'width' || row.id === 'height'"
-          v-bind="rowLabel(row.id)"
+          v-bind="{ ...rowLabel(row.id), ...sizeField(row.id) }"
           :label="LABELS[row.id]"
-          :token="token(row.id === 'width' ? 'w' : 'h')"
-          :value="own(row.id === 'width' ? 'w' : 'h')"
-          :inherited="inherited(row.id === 'width' ? 'w' : 'h')"
-          :placeholder="ph(row.id === 'width' ? 'w' : 'h', 'auto')"
-          :data-style-row="row.id === 'width' ? 'w' : 'h'"
-          @preview="preview(row.id === 'width' ? 'w' : 'h', $event)"
-          @commit="setField(row.id === 'width' ? 'w' : 'h', $event)"
+          :token="token(sizeKey(row.id))"
+          :data-style-row="sizeKey(row.id)"
+          @preview="preview(sizeKey(row.id), $event)"
+          @commit="setField(sizeKey(row.id), $event)"
           @reset="resetRow(row.id)"
         >
           <template #after>

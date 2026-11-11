@@ -95,10 +95,12 @@ describe('variant choices', () => {
 
   it('offers Primary and each variant to instances, Primary as an empty variant', () => {
     expect(variantItems(card())).toEqual([
-      { label: 'Primary', value: PRIMARY_VARIANT },
-      { label: 'Dark', value: 'dark' },
-      { label: 'Big', value: 'big' }
+      { label: 'Primary', value: PRIMARY_VARIANT, description: 'The component as defined' },
+      { label: 'Dark', value: 'dark', description: '3 overrides' },
+      { label: 'Big', value: 'big', description: 'Same as Primary' }
     ])
+    const one: ComponentDefinition = { ...card(), variants: [{ id: 'v', name: 'V', overrides: { 'c-root': { style: { p: '2' } } } }] }
+    expect(variantItems(one)[1]!.description).toBe('1 override')
     expect(instanceVariantValue(PRIMARY_VARIANT)).toBe('')
     expect(instanceVariantValue('dark')).toBe('dark')
   })

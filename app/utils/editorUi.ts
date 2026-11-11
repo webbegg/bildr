@@ -70,10 +70,16 @@ const MENU_CONTENT = 'bildr-chrome min-w-36 rounded-xl bg-elevated p-1 ring-whit
  */
 export const MENU_SHORTCUT = 'gap-0 ps-4 text-dimmed *:h-auto! *:min-w-0! *:rounded-none! *:bg-transparent! *:p-0! *:font-[450]! *:text-[12px]! *:text-dimmed! *:capitalize! *:ring-0! [&>*+*]:before:content-["+"]'
 
+/**
+ * A two-line item's description (Framer's title plus one explaining line):
+ * 11 px and dimmed under the title, wrapping at 240 px to two lines at most.
+ */
+const MENU_DESCRIPTION = 'max-w-60 text-[11px] leading-4 text-dimmed whitespace-normal! line-clamp-2'
+
 export const MENU_UI = {
   content: MENU_CONTENT,
   item: `${MENU_ITEM} data-highlighted:before:bg-white/8 data-[state=open]:before:bg-white/8`,
-  itemDescription: 'text-[11px]',
+  itemDescription: MENU_DESCRIPTION,
   itemTrailingKbds: MENU_SHORTCUT
 }
 
@@ -84,7 +90,7 @@ export const SELECT_UI = {
   content: MENU_CONTENT,
   item: `${MENU_ITEM} data-highlighted:not-data-disabled:before:bg-white/8`,
   itemTrailingIcon: 'size-3.5',
-  itemDescription: 'text-[11px]'
+  itemDescription: MENU_DESCRIPTION
 }
 export const SELECT_MONO_UI = { ...SELECT_UI, base: `${FIELD_MONO} ${FIELD_RING} focus-visible:outline-0` }
 /** A `variant="none"` select inside a field shell (EditorField), which draws the box. */

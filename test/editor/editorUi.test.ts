@@ -49,6 +49,14 @@ describe('the shared classes', () => {
     expect(SELECT_UI.base).toContain(FIELD)
   })
 
+  it('give two-line menu items a dimmed 11 px description of at most two lines', () => {
+    for (const ui of [MENU_UI, SELECT_UI]) {
+      expect(ui.itemDescription).toContain('text-[11px]')
+      expect(ui.itemDescription).toContain('text-dimmed')
+      expect(ui.itemDescription).toContain('line-clamp-2')
+    }
+  })
+
   it('give selects the menu popover', () => {
     expect(SELECT_UI.content).toContain(MENU_UI.content)
     expect(SELECT_UI.item).toContain('px-2.5 py-1.5 text-[12px]')

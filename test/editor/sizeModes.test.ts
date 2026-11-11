@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sizeMode, sizeModes, sizeModeValue } from '#shared/editor/sizeModes'
+import { measuredSize, sizeMode, sizeModes, sizeModeValue } from '#shared/editor/sizeModes'
 
 describe('size modes', () => {
   it('offers the modes each size token can express', () => {
@@ -38,6 +38,23 @@ describe('size modes', () => {
     expect(sizeModeValue('h', 'fit', '64')).toBe('fit')
     expect(sizeModeValue('h', 'fill', '64')).toBe('full')
     expect(sizeModeValue('h', 'relative', undefined)).toBe('screen')
+  })
+
+  it('shows the measured px, rounded, for an auto, Fit or Fill size', () => {
+    expect(measuredSize('w', undefined, [78.4])).toBe('78')
+    expect(measuredSize('w', 'auto', [77.5])).toBe('78')
+    expect(measuredSize('h', 'fit', [40])).toBe('40')
+    expect(measuredSize('w', 'full', [1199.6])).toBe('1200')
+  })
+
+  it('shows no measure for a Fixed or Relative size, without a box, or when the selected boxes differ', () => {
+    expect(measuredSize('w', '64', [256])).toBeUndefined()
+    expect(measuredSize('w', '1/2', [300])).toBeUndefined()
+    expect(measuredSize('h', 'screen', [800])).toBeUndefined()
+    expect(measuredSize('w', undefined, [])).toBeUndefined()
+    expect(measuredSize('w', 'fit', [40, 52])).toBeUndefined()
+    expect(measuredSize('w', 'fit', [40.2, 39.8])).toBe('40')
+    expect(measuredSize('w', 'fit', [Number.NaN])).toBeUndefined()
   })
 
   it('round-trips: the mode of the written token is the mode picked', () => {

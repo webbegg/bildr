@@ -41,6 +41,19 @@ const DEFAULTS: Record<SizeKey, Partial<Record<SizeMode, string>>> = {
   h: { fixed: '64', relative: 'screen' }
 }
 
+/**
+ * The greyed value of a W or H field whose size is not a number (unset,
+ * `auto`, Fit or Fill): the measured box size in px, rounded, as Framer shows
+ * it. Undefined for a Fixed or Relative size, without a measure, or when the
+ * selected nodes measure differently.
+ */
+export function measuredSize(key: SizeKey, value: string | undefined, sizes: readonly number[]): string | undefined {
+  const mode = sizeMode(key, value)
+  if (mode === 'fixed' || mode === 'relative') return undefined
+  const rounded = [...new Set(sizes.map(Math.round))]
+  return rounded.length === 1 && Number.isFinite(rounded[0]) ? String(rounded[0]) : undefined
+}
+
 /** The token a mode (one of `sizeModes`) writes: `value` when it belongs to the mode, else the mode's default. */
 export function sizeModeValue(key: SizeKey, mode: SizeMode, value: string | undefined): string {
   const fits = sizeModeValues(key, mode)
