@@ -1,5 +1,6 @@
 import type { PropValue } from '#shared/document/components'
 import type { ComponentDefinition, DocNode, PropertyDef, Variant } from '#shared/document/schema'
+import { findNode } from '#shared/document/tree'
 import type { StylePatch } from '#shared/editor/preview'
 import { applySetters, applyStyleSetters, propertySetters, variantStyle } from '#shared/runtime/instances'
 
@@ -82,6 +83,11 @@ export function isOverridden(variant: Variant | null, nodeId: string, kind: Over
  * adds reset (null), and tokens of the primary (`base`) the copy lacks
  * removed (`unset`). Empty when nothing changes.
  */
+/** A node's style in the primary variant, with the property bindings' defaults applied (the base a variant's overrides and removals are against). */
+export function primaryStyle(component: { root: DocNode, properties?: PropertyDef[] }, nodeId: string): Record<string, string> {
+  return findNode(applyVariant(component.root, null, component.properties ?? []), nodeId)?.style ?? {}
+}
+
 export function pasteStyleOverride(base: Record<string, string>, effective: Record<string, string>, copied: Record<string, string>): OverridePatch {
   const style: StylePatch = {}
   const unset: string[] = []

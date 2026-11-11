@@ -31,7 +31,7 @@ import type { DeviceId } from '#shared/editor/styleFields'
 import { DEVICES } from '#shared/editor/styleFields'
 import { canHideFrame, frameForKey, hiddenFrames, PRIMARY_FRAME, visibleFrames } from '#shared/editor/frames'
 import { insertableComponents, outsideInstance, parseInstancePayload, uniqueComponentName } from './componentEditor'
-import { activeVariant, applyVariant, overrideInput, pasteStyleOverride } from './componentVariants'
+import { activeVariant, applyVariant, overrideInput, pasteStyleOverride, primaryStyle } from './componentVariants'
 import type { NodeOverridePatch, OverridePatch } from './componentVariants'
 
 /** Identifies this editor tab on change events, so it can skip its own echoes. */
@@ -709,8 +709,8 @@ export function createEditor(projectId: string) {
     const style = clipStyle(clip)
     if (variant.value && component.value) {
       // The variant view: tokens of the primary the copy lacks are removed in the variant (unset), all nodes in one call.
-      const definition = component.value.root
-      await setOverrides(nodes.map(n => ({ nodeId: n.id, ...pasteStyleOverride(findNode(definition, n.id)?.style ?? {}, n.style, style) })))
+      const definition = component.value
+      await setOverrides(nodes.map(n => ({ nodeId: n.id, ...pasteStyleOverride(primaryStyle(definition, n.id), n.style, style) })))
       return
     }
     const patch = nodes.length === 1
