@@ -120,8 +120,11 @@ function resetRow(row: RowId) {
 }
 
 const shownRows = computed(() => new Map(sections.value.flatMap(s => s.rows).map(row => [row.id, row])))
-/** A row's label state, and the "−" of an added optional row ("×" on Fill, Border and Shadows). */
+/** The base key a row's binding dot binds: rows of one token only. */
+const bindKey = (row: RowId) => (rowKeys(row).length === 1 ? rowKeys(row)[0] : undefined)
+/** A row's label state, its binding dot, and the "−" of an added optional row ("×" on Fill, Border and Shadows). */
 const rowLabel = (row: RowId) => ({
+  bind: bindKey(row),
   provenance: rowProvenance(props.styles, row, editor.deviceId),
   device: editor.device.label,
   removable: !!shownRows.value.get(row)?.removable,

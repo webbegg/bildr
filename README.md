@@ -16,11 +16,19 @@ pnpm dev
 - Published apps: `/p/<project-slug>` and `/p/<project-slug>/<page-slug>`. They show the last published version.
 - Data is stored under `.data/`.
 
+## Nodes
+
+A node is `{ id, type, name?, locked?, props, style, children }`. Both `name` and `locked` are optional, so documents saved without them stay valid.
+
+- `name` is a layer name (at most 100 characters) shown in the layers, the canvas label and the inspector in place of the type, component or slot name. `node_rename { pageId | componentId | layoutId, nodeId, name }` sets it; an empty string or `null` removes it. One undo step, "Rename layer".
+- `locked: true` locks a node and everything inside it on the canvas: it cannot be selected or moved there, but it still can from the layers and through actions. `node_set_locked { pageId | componentId | layoutId, nodeId | nodeIds, locked }` locks or unlocks one node or several, as one undo step; unlocking removes the flag.
+
 ## Design system
 
 Every project has its own design system, built on the Tailwind and Nuxt UI theme.
 
 - **Theme** (`theme_get` / `theme_update`): the semantic colors `primary`, `secondary`, `success`, `info`, `warning`, `error` and `neutral`. Each is a Tailwind palette name (such as `indigo`) or a `#rrggbb` hex, with shades generated. The theme also sets the font, the base radius and the spacing density. Edit it in the editor's **Design** view (the view menu, ⌘K "Design system", or Assets › Design system): the controls on the right, and a live style guide in the centre (palettes, type, buttons, inputs, cards, badges, radius and spacing) rendered like the published app.
+- **Custom colours** (`theme.custom`): named colours of the project's own, name → `#rgb`, `#rrggbb` or `#rrggbbaa` (at most 50). Names are lowercase with dashes (`brand`, `ink-2`) and cannot be a colour token such as `primary` or `muted`. `theme_update { custom: { brand: "#ff6600" } }` adds or changes one, and `{ custom: { brand: null } }` removes it. A removal is refused while a style still uses the colour, and the error names where. Colour style keys take the name, for example `{ "bg": "brand" }`, rendered through the CSS variable `--bildr-color-brand`. The Design view lists them under Custom colours, where you can add, rename, edit or remove one.
 - **Theme library:** themes saved by name and shared by every project, listed in the Design view's left sidebar. Applying one copies it into the project; nothing stays linked. At most 100 themes, with names of 1–64 characters, unique ignoring case. Library changes are not undoable and never change a project.
   - `theme_library_list`
   - `theme_library_save` (`{ name, projectId }`): saves that project's current theme
@@ -29,6 +37,9 @@ Every project has its own design system, built on the Tailwind and Nuxt UI theme
   - `theme_library_delete` (`{ themeId }`)
   - `theme_apply` (`{ projectId, themeId }`): copies the theme into the project as one undo step, "Apply theme <name>"
 - **Style tokens:** a node's `style` stores one token per property, for example `{ "mt": "10", "bg": "primary", "rounded": "lg" }`. It renders as Tailwind classes (`mt-10 bg-primary rounded-lg`), in the editor and in the published HTML. The allowed keys and values live in `shared/design/tokens.ts`. `components_list` returns them, and the action schemas list them as enums.
+- **Raw colours:** the colour keys `bg`, `color` and `borderColor` also take a `#rgb`, `#rrggbb` or `#rrggbbaa` hex, or a custom colour name, for example `{ "bg": "#ff6600", "color": "brand" }`. These render as an inline style instead of a class. `node_update_style` checks a name against the project theme.
+- **Colours in the editor:** the colour picker has a Tokens tab (the theme's swatches, then its custom colours) and a Custom tab (a saturation and brightness area, hue and alpha sliders, hex and alpha fields, and an eyedropper in browsers that have one), which writes a raw hex. "Create colour from this" names the colour, adds it to the theme and uses it by name. With elements selected, the **Selection colours** section lists every colour their subtrees use, with a usage count. Picking another colour for one swaps it everywhere in them.
+- **Binding dot:** a dot before a panel row's label (on hover; filled in blue, with the property's name, when bound) opens the row's binding menu. On a style row: Pick token, and Detach to raw value (a colour token becomes its hex). In the component or layout view: Bind to property (or variable) and Create property (or variable), which binds the style key at the edited breakpoint. On a prop row: Create or Bind to a property or variable, and Insert env variable on text props.
 - **Responsive tokens:** layout tokens (Spacing, Size, Typography, Layout) also take a mobile-first breakpoint prefix `sm:`, `md:` or `lg:`. For example, `{ "cols": "1", "md:cols": "3" }` renders as `grid-cols-1 md:grid-cols-3`. Colours, borders and shadows have no breakpoint variants. In the editor, the device toggle (Mobile 390 / Tablet 768 / Desktop 1280) resizes the canvas, and the style panel edits that device's breakpoint: Mobile edits the base, Tablet `md:` and Desktop `lg:`. The panel also shows the values a device inherits from smaller ones.
 - **Inserting nodes:** `node_insert { pageId | componentId | layoutId, parentId?, index?, type, props?, style?, children?, exact? }` adds a node with the component's default props and style, plus the given ones. With `exact: true`, the node and every child get exactly the given props and style, without the defaults, so a node copied in the editor pastes unchanged (with new ids). The type, prop, style and tree checks are the same either way.
 - Every allowed class is generated when the app is built (`app/assets/css/tokens.css`, produced by `pnpm tokens:css`). The theme is applied as CSS variables, so the same classes follow each project's theme without rebuilding CSS.
@@ -140,7 +151,7 @@ A **component** is a reusable piece of a page, stored in the project's `componen
 - `component_create { pageId, nodeId | nodeIds, name }` turns a selection into a component. The node becomes the definition (several siblings are wrapped in a Container), and an instance takes its place. `/` in the name makes folders, for example `Cards/Product`. Returns `{ componentId, nodeId }`, where `nodeId` is the instance.
 - `component_rename { componentId, name }`.
 - `component_delete { componentId, force? }` is refused while instances use the component, on pages, in other components or in layouts. The error lists them, for example `"Card" is used by 1 instance: page "Home" (n_…)`. With `force: true`, the instances are deleted too and returned as `deletedInstances`.
-- `component_property_add { componentId, name, kind, default?, bindings? }` adds a property and returns its `propertyId`. `kind` is a prop kind (`text`, `number`, `boolean`, `select`, …) or `slot`. Each binding `{ nodeId, prop }` names a definition node prop that the property drives, and the kinds must match. Definition strings can also use `{{ prop.NAME }}`. A slot binds one container with `prop: "children"`; its children are the default content.
+- `component_property_add { componentId, name, kind, default?, bindings? }` adds a property and returns its `propertyId`. `kind` is a prop kind (`text`, `number`, `boolean`, `select`, …) or `slot`. Each binding `{ nodeId, prop }` names a definition node prop that the property drives, and the kinds must match. A binding `{ nodeId, prop, target: "style" }` drives a style key instead, for example `{ "nodeId": "n_title", "prop": "color", "target": "style" }`; the property must be `text` or `select`, and its values must be values of that key (a token, or for colour keys also a hex or custom colour). Definition strings can also use `{{ prop.NAME }}`. A slot binds one container with `prop: "children"`; its children are the default content.
 - `component_property_update { componentId, propertyId, name?, default?, bindings? }` (a `default` of `null` removes it) and `component_property_remove` (instance values and slot content for it go too).
 - `component_variant_add { componentId, name }` returns a `variantId`. `component_variant_set_override { componentId, variantId, nodeId, props?, style? }` overrides props and tokens of one definition node. A variant stores only what differs from the primary, so a `null` value, or the primary's own value, removes that override. `component_variant_rename { componentId, variantId, name }`. `component_variant_delete` moves its instances back to the primary.
 - Insert an instance with `node_insert { type: "Instance", props: { component } }`. `instance_set_values { pageId | componentId | layoutId, nodeId, values?, variant? }` sets property values, keyed by property id, and the variant. Values are checked against the property, and `null` removes one so the default applies.
@@ -164,7 +175,7 @@ In the editor:
 A **layout** is a page frame shared by pages, stored in the project's `layouts`: `{ id, name, root, slots, variables }`. Its `root` is a `Page` node tree with ids of its own. A page that uses it (`layoutId`) renders inside it, resolved when it renders and never copied into the page.
 
 - **Slots** `{ id, name, nodeId }` each bind one container node of the layout. The `children` slot, exactly one per layout, shows the page content. A named slot shows its node's children by default; a page can give it its own content with a `SlotFill` at the page root. A slot cannot share its node with another slot or sit inside another slot's node.
-- **Variables** have the shape of component properties (`{ id, name, kind, default?, bindings }`, never a slot). Each page sets its values in `layoutValues`, keyed by variable id, and the default applies otherwise. Bindings drive layout node props, and layout strings can use `{{ layout.NAME }}`.
+- **Variables** have the shape of component properties (`{ id, name, kind, default?, bindings }`, never a slot). Each page sets its values in `layoutValues`, keyed by variable id, and the default applies otherwise. Bindings drive layout node props, or with `target: "style"` a style key of a layout node (as for component properties), and layout strings can use `{{ layout.NAME }}`.
 
 Actions:
 
@@ -280,6 +291,7 @@ Run every script with `node e2e/all.mjs` (or `pnpm e2e`). It prints one PASS or 
 - `node e2e/data.mjs`: collections, the records table, Lists, Forms and WebMCP.
 - `node e2e/remote.mjs`: variables, a remote connection and its endpoints.
 - `node e2e/kit.mjs`: the editor widget kit on each screen.
+- `node e2e/colors-p1.mjs`: the binding dot, the colour picker, custom colours and Selection colours (not part of `all.mjs`).
 
 Each script creates its own `e2e …` projects and deletes them with `project_delete` when it ends, even when a check fails. Screenshots go to `e2e/.shots/`, which git ignores.
 

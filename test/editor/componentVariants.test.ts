@@ -60,6 +60,21 @@ describe('applyVariant', () => {
     expect(primary.children[2]!.props.text).toBe('Own sub')
     expect(def.root.children[0]!.props).toEqual({ text: 'Day', level: '2' })
   })
+
+  it('resolves style bindings in the same order, leaving the prop of the same name alone', () => {
+    const def = card()
+    def.properties = [
+      { id: 'tone', name: 'Tone', kind: 'select', default: 'secondary', bindings: [{ nodeId: 'c-title', prop: 'color', target: 'style' }] },
+      { id: 'size', name: 'Size', kind: 'select', default: 'xl', bindings: [{ nodeId: 'c-title', prop: 'text', target: 'style' }] }
+    ]
+    const primary = applyVariant(def.root, null, def.properties)
+    expect(primary.children[0]!.style).toEqual({ color: 'secondary', text: 'xl' })
+    expect(primary.children[0]!.props.text).toBe('Day')
+    // The variant overrides color, so its value wins over the stored default.
+    const variant = applyVariant(def.root, dark, def.properties)
+    expect(variant.children[0]!.style).toEqual({ color: 'primary', text: 'xl' })
+    expect(def.root.children[0]!.style).toEqual({ color: 'muted' })
+  })
 })
 
 describe('overrides of a node', () => {

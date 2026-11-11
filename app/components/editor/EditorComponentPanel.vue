@@ -3,8 +3,7 @@ import type { PropValue } from '#shared/document/components'
 import { getComponent, INSTANCE_TYPE, isContainerType, SLOT_FILL_TYPE } from '#shared/document/components'
 import type { DocNode, PropertyDef, Variant } from '#shared/document/schema'
 import type { Provenance } from '#shared/editor/styleFields'
-import { findNode } from '#shared/document/tree'
-import { propertyField, uniqueComponentName } from '~/composables/componentEditor'
+import { bindingLabel, boundProperty, propBindingAdd, propertyField, uniqueComponentName } from '~/composables/componentEditor'
 import { instanceVariantValue, newVariantName, PRIMARY_VARIANT, variantItems } from '~/composables/componentVariants'
 
 /**
@@ -48,7 +47,8 @@ function setSlot(slot: PropertyDef, value: boolean) {
 const def = computed(() => editor.component)
 const isDefRoot = computed(() => !!def.value && def.value.root.id === node.id)
 const shownProperties = computed(() => (def.value ? def.value.properties.filter(p => isDefRoot.value || p.bindings.some(b => b.nodeId === node.id)) : []))
-const bound = (prop: string) => !!def.value?.properties.some(p => p.bindings.some(b => b.nodeId === node.id && b.prop === prop))
+// A prop (or the children, for a slot); a style binding of the same name (style `text`) leaves it free.
+const bound = (prop: string) => !!def.value && !!boundProperty(def.value.properties, node.id, prop, 'prop')
 
 const addItems = computed(() => {
   if (!def.value || node.type === INSTANCE_TYPE || node.type === SLOT_FILL_TYPE) return []
@@ -58,9 +58,7 @@ const addItems = computed(() => {
 })
 
 function boundTo(property: PropertyDef): string {
-  const binding = property.bindings[0]
-  const target = binding && def.value ? findNode(def.value.root, binding.nodeId) : undefined
-  return target ? `${target.type}${binding!.prop === SLOT_PROP ? '' : ` · ${binding!.prop}`}` : 'Not bound'
+  return def.value ? bindingLabel(def.value.root, property.bindings[0]) : 'Not bound'
 }
 
 function addProperty(item: string) {
@@ -70,15 +68,8 @@ function addProperty(item: string) {
     editor.run('component_property_add', { componentId: def.value.id, name: uniqueComponentName('Content', taken), kind: 'slot', bindings: [{ nodeId: node.id, prop: SLOT_PROP }] })
     return
   }
-  const propDef = getComponent(node.type)?.props.find(p => p.name === item)
-  if (!propDef) return
-  // No stored default: the node's own value is the default, so editing it reaches every instance.
-  editor.run('component_property_add', {
-    componentId: def.value.id,
-    name: uniqueComponentName(propDef.label, taken),
-    kind: propDef.kind,
-    bindings: [{ nodeId: node.id, prop: item }]
-  })
+  const add = propBindingAdd(taken, node, item)
+  if (add) editor.run('component_property_add', { componentId: def.value.id, ...add })
 }
 
 function renameProperty(property: PropertyDef, name: string) {
@@ -144,7 +135,7 @@ function renameComponent(name: string) {
         aria-label="Variant"
         size="xs"
         variant="soft"
-        :ui="{ base: 'h-[30px] rounded-lg bg-elevated text-[12px]', trailingIcon: 'size-3.5 text-dimmed' }"
+        :ui="SELECT_UI"
         class="w-full"
         @update:model-value="setVariant"
       />

@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import { spacingBasePx, THEME_COLORS, themeOptions } from '#shared/design/theme'
 import type { Theme } from '#shared/design/theme'
+import { customColorName, customColorNameProblem } from '#shared/editor/color'
 
-/** The Design view's right panel: the project theme's controls, in the inspector's sections and rows; the style guide follows live. */
+/**
+ * The Design view's right panel: the project theme's controls, in the
+ * inspector's sections and rows; the style guide follows live. Custom
+ * colours are the theme's own named colours (also created from the colour
+ * picker's "Create colour from this"); "+" names a new one.
+ */
 const editor = useEditor()
+const toast = useToast()
 const options = themeOptions()
 
 const theme = computed(() => editor.project!.theme)
@@ -16,8 +23,22 @@ const radiusHint = computed(() => {
   return `rounded-sm = ${px}px, rounded-lg = ${2 * px}px`
 })
 
-function update(patch: Partial<Omit<Theme, 'colors'>>) {
+function update(patch: Partial<Omit<Theme, 'colors' | 'custom'>>) {
   editor.updateTheme(patch)
+}
+
+const customNames = computed(() => Object.keys(theme.value.custom ?? {}))
+
+function addCustom() {
+  const typed = window.prompt('Name the new colour (e.g. brand, ink-2)', '')
+  if (typed === null) return
+  const name = customColorName(typed)
+  const problem = customColorNameProblem(name, customNames.value)
+  if (problem) {
+    toast.add({ title: 'Colour not created', description: problem, color: 'error', icon: 'i-lucide-circle-alert' })
+    return
+  }
+  editor.run('theme_update', { custom: { [name]: '#6366f1' } })
 }
 </script>
 
@@ -29,6 +50,25 @@ function update(patch: Partial<Omit<Theme, 'colors'>>) {
         :key="name"
         :name="name"
       />
+    </EditorStyleSection>
+    <EditorStyleSection
+      label="Custom colours"
+      add-label="Add custom colour"
+      :menu="[{ id: 'add', label: 'New colour', hint: 'A named colour of your own, usable on any colour' }]"
+      data-custom-colors
+      @add="addCustom"
+    >
+      <EditorCustomColor
+        v-for="name in customNames"
+        :key="name"
+        :name="name"
+      />
+      <p
+        v-if="!customNames.length"
+        class="text-[11px] text-dimmed"
+      >
+        Use + or a colour picker's "Create colour from this" to add one.
+      </p>
     </EditorStyleSection>
     <EditorStyleSection label="Typography">
       <EditorRow label="Font">

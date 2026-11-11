@@ -1,6 +1,6 @@
 import type { PropValue } from '#shared/document/components'
 import type { ComponentDefinition, DocNode, PropertyDef, Variant } from '#shared/document/schema'
-import { applySetters, propertySetters } from '#shared/runtime/instances'
+import { applySetters, applyStyleSetters, propertySetters } from '#shared/runtime/instances'
 
 /**
  * The variants UI's pure parts. The primary variant is the definition
@@ -24,9 +24,10 @@ export const PRIMARY_VARIANT = '__primary'
 
 /**
  * The definition tree as `variant` renders it in an instance without values,
- * with the definition's ids: bound props in the runtime order (variant
- * override, else the stored default of `properties`, else the node's own
- * value). The primary (null) without stored defaults is `root` itself.
+ * with the definition's ids: bound props and style keys in the runtime order
+ * (variant override, else the stored default of `properties`, else the
+ * node's own value). The primary (null) without stored defaults is `root`
+ * itself.
  */
 export function applyVariant(root: DocNode, variant: Variant | null, properties: PropertyDef[] = []): DocNode {
   const setters = propertySetters(properties, {})
@@ -35,10 +36,12 @@ export function applyVariant(root: DocNode, variant: Variant | null, properties:
     const override = variant?.overrides[node.id]
     const props = { ...node.props, ...override?.props }
     applySetters(props, setters, node.id, override?.props)
+    const style = { ...node.style, ...override?.style }
+    applyStyleSetters(style, setters, node.id, override?.style)
     return {
       ...node,
       props,
-      style: { ...node.style, ...override?.style },
+      style,
       children: node.children.map(build)
     }
   }

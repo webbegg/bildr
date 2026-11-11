@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { getStyleToken, STYLE_TOKENS } from '#shared/design/tokens'
 import { DEFAULT_THEME } from '#shared/design/theme'
-import { breakpointLabel, breakpointStyles, colorSwatchRows, DEVICES, hasStyleAt, provenanceHighlight, provenanceHint, sectionMark, setStyleTokens, spacingItems, STYLE_SECTIONS, styleFieldControl, styleProvenance, styleSection, styleSections } from '#shared/editor/styleFields'
+import { breakpointLabel, breakpointStyles, colorSwatch, colorSwatchRows, customColorSwatches, DEVICES, hasStyleAt, provenanceHighlight, provenanceHint, sectionMark, setStyleTokens, spacingItems, STYLE_SECTIONS, styleFieldControl, styleProvenance, styleSection, styleSections } from '#shared/editor/styleFields'
 import { DRAG_MIME, draggedNodeId, nodeDragType, parseDragPayload } from '#shared/editor/dropTarget'
 
 describe('style fields', () => {
@@ -188,6 +188,25 @@ describe('colour swatches', () => {
   it('follows the theme: a hex primary paints its own colour', () => {
     const theme = { ...DEFAULT_THEME, colors: { ...DEFAULT_THEME.colors, primary: '#e11d48' } }
     expect(colorSwatchRows(getStyleToken('bg')!, theme)[0]!.swatches[0]!.color).toBe('#e11d48')
+  })
+
+  it('lists the theme\'s own colours, by name', () => {
+    const theme = { ...DEFAULT_THEME, custom: { brand: '#ff6600', ink: '#111' } }
+    expect(customColorSwatches(theme)).toEqual([
+      { value: 'brand', label: 'brand', color: '#ff6600' },
+      { value: 'ink', label: 'ink', color: '#111' }
+    ])
+    expect(customColorSwatches(DEFAULT_THEME)).toEqual([])
+  })
+
+  it('paints the current value: a token, a theme colour or a raw hex', () => {
+    const theme = { ...DEFAULT_THEME, custom: { brand: '#ff6600' } }
+    const bg = getStyleToken('bg')!
+    expect(colorSwatch(bg, theme, 'muted')?.value).toBe('muted')
+    expect(colorSwatch(bg, theme, 'brand')).toEqual({ value: 'brand', label: 'brand', color: '#ff6600' })
+    expect(colorSwatch(bg, theme, '#00ff0080')).toEqual({ value: '#00ff0080', label: '#00ff0080', color: '#00ff0080' })
+    expect(colorSwatch(bg, theme, 'gone')).toBeUndefined()
+    expect(colorSwatch(bg, theme, undefined)).toBeUndefined()
   })
 })
 

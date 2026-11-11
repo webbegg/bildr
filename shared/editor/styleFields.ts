@@ -1,4 +1,4 @@
-import { BREAKPOINTS, getStyleToken, isResponsiveToken, orderedStyleTokens, parseStyleKey, styleKey } from '../design/tokens'
+import { BREAKPOINTS, getStyleToken, isResponsiveToken, orderedStyleTokens, parseStyleKey, STYLE_HEX, styleKey } from '../design/tokens'
 import type { Breakpoint, StyleToken } from '../design/tokens'
 import { SHADES, spacingBasePx, THEME_COLORS, themeColorValue, themeNeutralColor } from '../design/theme'
 import type { NeutralColorKind, Theme, ThemeColorName } from '../design/theme'
@@ -219,8 +219,15 @@ export function colorSwatchRows(token: StyleToken, theme: Theme): ColorSwatchRow
   return [...rows.filter(r => r.swatches.length), ...(design.length ? [{ name: 'design' as const, swatches: design }] : [])]
 }
 
-/** The swatch colour of a colour token value, if the token offers it. */
+/** The theme's own colours (`theme.custom`), which every colour key takes by name. */
+export function customColorSwatches(theme: Pick<Theme, 'custom'>): ColorSwatch[] {
+  return Object.entries(theme.custom ?? {}).map(([name, color]) => ({ value: name, label: name, color }))
+}
+
+/** The swatch of a colour key's value: a token the key offers, a theme colour, or a raw hex. */
 export function colorSwatch(token: StyleToken, theme: Theme, value: string | undefined): ColorSwatch | undefined {
   if (!value) return undefined
+  if (STYLE_HEX.test(value)) return { value, label: value, color: value }
   return colorSwatchRows(token, theme).flatMap(r => r.swatches).find(s => s.value === value)
+    ?? customColorSwatches(theme).find(s => s.value === value)
 }

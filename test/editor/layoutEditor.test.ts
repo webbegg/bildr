@@ -88,4 +88,19 @@ describe('slotOf, pageSlots and variableAddItems', () => {
     expect(items.find(i => i.id === 'level')).toMatchObject({ disabled: false })
     expect(variableAddItems(main(), n('x', 'Instance', { component: 'c' }))).toEqual([])
   })
+
+  it('does not count a style binding as a bound prop of the same name', () => {
+    const layout = main()
+    layout.variables = [{ id: 'size', name: 'Size', kind: 'select', bindings: [{ nodeId: 'l-title', prop: 'text', target: 'style' }] }]
+    expect(variableAddItems(layout, layout.root.children[0]!).find(i => i.id === 'text')).toMatchObject({ disabled: false })
+  })
+})
+
+describe('variableField with a style binding', () => {
+  it('defaults to the bound style key of the layout node', () => {
+    const layout = main()
+    layout.root.children[0]!.style = { bg: 'muted' }
+    const variable = { id: 'bar', name: 'Bar', kind: 'select' as const, bindings: [{ nodeId: 'l-title', prop: 'bg', target: 'style' as const }] }
+    expect(variableField(layout, variable)).toMatchObject({ name: 'bar', kind: 'select', default: 'muted' })
+  })
 })

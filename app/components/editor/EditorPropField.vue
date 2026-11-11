@@ -11,8 +11,10 @@ import { enclosingForm, FORM_TYPE } from '#shared/runtime/form'
  * Alt-click resets) and the soft control for the prop's kind. Controls carry
  * the prop label as their accessible name; select options that need it (an
  * Action) are two-line items with a description (see `propOptions`).
+ * `bindable` (a prop of the selected node) puts the binding dot before the
+ * label: create or bind a property/variable, insert an env variable.
  */
-const props = defineProps<{ def: PropDef, value: PropValue, changed: boolean }>()
+const props = defineProps<{ def: PropDef, value: PropValue, changed: boolean, bindable?: boolean }>()
 const emit = defineEmits<{ update: [value: PropValue], reset: [] }>()
 const editor = useEditor()
 
@@ -67,13 +69,21 @@ function onLinkMode(mode: string) {
 
 <template>
   <div
-    class="grid min-h-[30px] grid-cols-[88px_minmax(0,1fr)] items-start gap-x-2"
+    class="group/row grid min-h-[30px] grid-cols-[88px_minmax(0,1fr)] items-start gap-x-2"
     :data-prop-row="def.name"
   >
     <div
-      class="flex h-[30px] min-w-0 items-center"
+      class="relative flex h-[30px] min-w-0 items-center gap-1"
       :data-field-label="def.name"
     >
+      <EditorBindingDot
+        v-if="bindable"
+        mode="prop"
+        :name="def.name"
+        :prop="def"
+        :value="value"
+        @update="emit('update', $event)"
+      />
       <EditorFieldLabel
         :label="def.label"
         :title="def.description ?? def.label"

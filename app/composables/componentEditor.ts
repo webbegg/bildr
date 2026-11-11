@@ -1,6 +1,8 @@
 import { getComponent, INSTANCE_TYPE } from '#shared/document/components'
 import type { PropDef } from '#shared/document/components'
-import type { ComponentDefinition, DocNode, Project, PropertyDef } from '#shared/document/schema'
+import { parseStyleKey } from '#shared/design/tokens'
+import { isStyleBinding } from '#shared/document/schema'
+import type { ComponentDefinition, DocNode, Project, PropertyBinding, PropertyDef } from '#shared/document/schema'
 import { findNode, findParent, walk } from '#shared/document/tree'
 import { componentUsages } from '#shared/document/usages'
 import type { ComponentUsage } from '#shared/document/usages'
@@ -97,20 +99,73 @@ export function outsideInstance(root: DocNode, target: DropTarget): DropTarget {
   return location ? { parentId: location.parent.id, index: location.index + 1 } : target
 }
 
-/** A non-slot property as a prop field of its instances: keyed by the property id, its default and options from the first bound prop. */
+/**
+ * A non-slot property as a prop field of its instances: keyed by the
+ * property id, its default and options from the first binding: a bound
+ * prop, or for a style binding the bound style key (its token scale).
+ */
 export function propertyField(def: ComponentDefinition, property: PropertyDef): PropDef {
   const binding = property.bindings[0]
   const target = binding ? findNode(def.root, binding.nodeId) : undefined
-  const targetDef = target && binding ? getComponent(target.type)?.props.find(p => p.name === binding.prop) : undefined
   const kind = property.kind === 'slot' ? 'text' : property.kind
-  return {
-    name: property.id,
-    label: property.name,
-    kind,
-    default: property.default ?? (target && binding ? target.props[binding.prop] : undefined) ?? targetDef?.default ?? '',
-    ...(targetDef?.options ? { options: targetDef.options } : {}),
-    description: `${property.name}, a property of ${def.name}`
+  const common = { name: property.id, label: property.name, kind, description: `${property.name}, a property of ${def.name}` }
+  if (binding && isStyleBinding(binding)) {
+    const token = parseStyleKey(binding.prop)?.token
+    return {
+      ...common,
+      default: property.default ?? target?.style[binding.prop] ?? '',
+      ...(token && kind === 'select' ? { options: token.values } : {})
+    }
   }
+  const targetDef = target && binding ? getComponent(target.type)?.props.find(p => p.name === binding.prop) : undefined
+  return {
+    ...common,
+    default: property.default ?? (target && binding ? target.props[binding.prop] : undefined) ?? targetDef?.default ?? '',
+    ...(targetDef?.options ? { options: targetDef.options } : {})
+  }
+}
+
+/** Whether a binding drives `key` of node `nodeId`: a prop, or with `target` `style` a style key. */
+export function bindsKey(binding: PropertyBinding, nodeId: string, key: string, target: 'prop' | 'style'): boolean {
+  return binding.nodeId === nodeId && binding.prop === key && isStyleBinding(binding) === (target === 'style')
+}
+
+/** The property (or layout variable) that drives `key` of node `nodeId`, a prop or a style key; a prop and a style key can share a name (`text`). */
+export function boundProperty(properties: PropertyDef[], nodeId: string, key: string, target: 'prop' | 'style'): PropertyDef | undefined {
+  return properties.find(p => p.bindings.some(b => bindsKey(b, nodeId, key, target)))
+}
+
+/** What a binding drives, for a tooltip: `Heading · text`, `Heading · style text`, a slot's container alone. */
+export function bindingLabel(root: DocNode, binding: PropertyBinding | undefined): string {
+  if (!binding) return 'Not bound'
+  const target = findNode(root, binding.nodeId)
+  if (!target) return 'Missing node'
+  if (isStyleBinding(binding)) return `${target.type} · style ${binding.prop}`
+  return binding.prop === 'children' ? target.type : `${target.type} · ${binding.prop}`
+}
+
+export interface BindingAdd {
+  name: string
+  kind: PropertyDef['kind']
+  bindings: PropertyBinding[]
+}
+
+/**
+ * The `component_property_add` / `layout_variable_add` fields that turn prop
+ * `prop` of `node` into a property (or variable): named after the prop, of
+ * its kind, bound to it. No stored default: the node's own value is the
+ * default, so editing it reaches every instance (or page).
+ */
+export function propBindingAdd(properties: readonly Pick<PropertyDef, 'name'>[], node: DocNode, prop: string): BindingAdd | undefined {
+  const propDef = getComponent(node.type)?.props.find(p => p.name === prop)
+  if (!propDef) return undefined
+  return { name: uniqueComponentName(propDef.label, properties), kind: propDef.kind, bindings: [{ nodeId: node.id, prop }] }
+}
+
+/** The same for style key `key` (`bg`, `md:p`) of node `nodeId`: a select property over the key's token scale, bound with `target: 'style'`. */
+export function styleBindingAdd(properties: readonly Pick<PropertyDef, 'name'>[], nodeId: string, key: string): BindingAdd {
+  const label = parseStyleKey(key)?.token.label ?? key
+  return { name: uniqueComponentName(label, properties), kind: 'select', bindings: [{ nodeId, prop: key, target: 'style' }] }
 }
 
 /** `base`, or `base 2`, `base 3`… when a component already has that name. */
