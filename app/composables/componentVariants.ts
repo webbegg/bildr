@@ -77,17 +77,17 @@ export function isOverridden(variant: Variant | null, nodeId: string, kind: Over
   return !!override?.[kind] && key in override[kind]
 }
 
-/**
- * The override a variant Paste style makes so the node's effective style
- * becomes `copied` exactly: differing tokens set, tokens only the variant
- * adds reset (null), and tokens of the primary (`base`) the copy lacks
- * removed (`unset`). Empty when nothing changes.
- */
 /** A node's style in the primary variant, with the property bindings' defaults applied (the base a variant's overrides and removals are against). */
 export function primaryStyle(component: { root: DocNode, properties?: PropertyDef[] }, nodeId: string): Record<string, string> {
   return findNode(applyVariant(component.root, null, component.properties ?? []), nodeId)?.style ?? {}
 }
 
+/**
+ * The override a variant Paste style makes so the node's effective style
+ * becomes `copied` exactly: differing tokens set, tokens only the variant
+ * adds reset (null), and tokens of the primary (`base`, see `primaryStyle`)
+ * the copy lacks removed (`unset`). Empty when nothing changes.
+ */
 export function pasteStyleOverride(base: Record<string, string>, effective: Record<string, string>, copied: Record<string, string>): OverridePatch {
   const style: StylePatch = {}
   const unset: string[] = []

@@ -32,4 +32,25 @@ describe('variant Paste style (S8a)', () => {
     const after = (await get()).components[0]!
     expect(findNode(applyVariant(after.root, after.variants[0]!, after.properties), textId)!.style).toEqual(copied)
   })
+
+  it('replaces the effective style with an own key plus a bound key at a breakpoint', async () => {
+    const bildr = createBildr(memoryStorage())
+    const created = await bildr.call<Project>('project_create', { name: 'Demo' }, mcp)
+    const projectId = created.id
+    const pageId = created.pages[0]!.id
+    const call = <T = Record<string, string>>(name: string, input: Record<string, unknown>) => bildr.call<T>(name, { projectId, ...input }, mcp)
+    const get = () => call<Project>('project_get', {})
+    const { nodeId: cardId } = await call('node_insert', { pageId, type: 'Card', children: [{ type: 'Text', props: { text: 'x' }, style: { p: '2' } }] })
+    const { componentId } = await call('component_create', { pageId, nodeId: cardId, name: 'Badge' })
+    const textId = (await get()).components[0]!.root.children[0]!.id
+    await call('component_property_add', { componentId, name: 'Tint', kind: 'text', default: 'primary', bindings: [{ nodeId: textId, prop: 'color', target: 'style' }] })
+    await call('component_property_add', { componentId, name: 'Pad', kind: 'text', default: '8', bindings: [{ nodeId: textId, prop: 'md:p', target: 'style' }] })
+    const { variantId } = await call('component_variant_add', { componentId, name: 'Dark' })
+    const def = (await get()).components[0]!
+    const shown = findNode(applyVariant(def.root, def.variants[0]!, def.properties), textId)!
+    const copied = { bg: 'error' }
+    await call('component_variant_set_override', { componentId, variantId, nodeId: textId, ...pasteStyleOverride(primaryStyle(def, textId), shown.style, copied) })
+    const after = (await get()).components[0]!
+    expect(findNode(applyVariant(after.root, after.variants[0]!, after.properties), textId)!.style).toEqual(copied)
+  })
 })
