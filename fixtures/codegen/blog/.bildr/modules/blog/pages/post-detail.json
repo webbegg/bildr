@@ -133,7 +133,7 @@
             },
             "style": {
               "fontSize": "sm",
-              "color": "red-600"
+              "color": "error"
             }
           }
         ]

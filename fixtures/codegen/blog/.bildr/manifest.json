@@ -28,7 +28,7 @@
     },
     "layers/blog/app/components/blog/PostCard.vue": {
       "owner": "managed",
-      "sha256": "9a93a933b1586c94821d5d5d5504d2029870a478db7c838ba5cbf3d0105044be",
+      "sha256": "0820ede3f29b41d1b674033a7301361247d391992ab2fb903e997a54ed56163d",
       "source": ".bildr/modules/blog/components/post-card.json"
     },
     "layers/blog/app/composables/blog/useAllPosts.ts": {
@@ -83,17 +83,17 @@
     },
     "layers/blog/app/pages/index.vue": {
       "owner": "managed",
-      "sha256": "b2cd3a8620c30d6db19f67b729b6ecf9f09a210485072ae5c30e58f2e43c72e5",
+      "sha256": "557902083f8bf8116beeb5942b4bafeaac05d7260d1942407c65082515f14987",
       "source": ".bildr/modules/blog/pages/index.json"
     },
     "layers/blog/app/pages/posts/[slug].vue": {
       "owner": "managed",
-      "sha256": "d5dbd61581a488db17474e7d429cfeb0393fd05b6e19a11a3f316cffe300eabf",
+      "sha256": "3e9818a025a0e33eafbef0d809b8bdb289eb56e7b8e84354c031a48c8c43c4fd",
       "source": ".bildr/modules/blog/pages/post-detail.json"
     },
     "layers/blog/app/pages/posts/new.vue": {
       "owner": "managed",
-      "sha256": "34e30532836d63650d83effabb616af435a198a37518939341206565a0ab9e6a",
+      "sha256": "c1a6dd32d24a9b4e51f9d4f07ce89b4c6f00fdd955299fe851b782c0914823f0",
       "source": ".bildr/modules/blog/pages/new-post.json"
     },
     "layers/blog/nuxt.config.ts": {
@@ -202,7 +202,7 @@
     },
     "layers/blog/test/api/posts.test.ts": {
       "owner": "managed",
-      "sha256": "1e949797403aa42ef00e0dbc74bea28085f76858eaf5fd9cde0bd40ca6c58c0b",
+      "sha256": "5d80191dfbc3e79f2a58cae5bb711a02240f4367af53289d08b86eaa90624655",
       "source": ".bildr/modules/blog"
     },
     "layers/blog/test/application/create-post.test.ts": {
@@ -222,16 +222,16 @@
     },
     "layers/core/app/app.config.ts": {
       "owner": "managed",
-      "sha256": "b2f689c27b44a09feecfc58c7f9de6320aa9aa870d9996f093e2ff62fc286cee",
+      "sha256": "e717d9aad1534c20604cb366c9e5dc4b62809c86592b345e5a1fa97a3e327b41",
       "source": ".bildr/bildr.json"
     },
     "layers/core/app/app.vue": {
       "owner": "managed",
-      "sha256": "bff312b129f308752f9689ab3fbc374c4790b808b0aeee525cfc491ff93fdd16"
+      "sha256": "60e46cfc3ef0e21fd7ad526326c59335b8dcb04129f6c59e24b0a754dca4f29b"
     },
     "layers/core/app/assets/css/theme.css": {
       "owner": "managed",
-      "sha256": "0d16dadabce7af76b69de4c35d6b2f22d2eaed8dee7388b874c890fb7f2f9e16",
+      "sha256": "7f1b1de4dbc02d03ca5fc4e50f101dbaa09db45b2cbc96770f2f06e53a333aa8",
       "source": ".bildr/theme.json"
     },
     "layers/core/app/data/query-client.ts": {
@@ -240,11 +240,11 @@
     },
     "layers/core/app/error.vue": {
       "owner": "managed",
-      "sha256": "c356f1b0bef13e8201b82848afcb63bf4458acd1baa535a136af3c0546b22f47"
+      "sha256": "9a21dc7d9d3da427a3f044873087c62e65d02bd503146301e0a185a31e9043f7"
     },
     "layers/core/app/layouts/main.vue": {
       "owner": "managed",
-      "sha256": "29c0e2054ecf7bbe0a21a80a02da701aae182ce75a58adefbfb647a62536ced2",
+      "sha256": "689298e5331de096e464403104c7f8df3b55d176de0921ae3e1d8ddb1f624ff8",
       "source": ".bildr/layouts/main.json"
     },
     "layers/core/app/utils/errorMessage.ts": {
@@ -253,7 +253,7 @@
     },
     "layers/core/nuxt.config.ts": {
       "owner": "managed",
-      "sha256": "1599a498c7a45c5b615915825506bd18a86dad49cbf98921fd598c66ecfda091"
+      "sha256": "fb581c3761d5ee4fa155d16f6abdecd7d0cdb45e81c086aa42ea5954120c5804"
     },
     "layers/core/server/plugins/migrate.ts": {
       "owner": "managed",
@@ -289,7 +289,7 @@
     },
     "package.json": {
       "owner": "scaffold",
-      "sha256": "b0cd727b904a00816ada5970583a7195eb16843959213db64c08de720654e03d"
+      "sha256": "184ada1fdffcc72705cc6c29a5934ddfaff8beec43cf2dcad9483b4496099b2c"
     },
     "pnpm-workspace.yaml": {
       "owner": "scaffold",

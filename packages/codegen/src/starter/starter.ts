@@ -1,3 +1,4 @@
+import { DEFAULT_THEME, THEME_COLORS, themeCss } from '../design/theme.ts'
 import { loadModel } from '../model/load.ts'
 import { ModuleNameSchema, RESERVED_MODULE_NAMES } from '../model/schemas.ts'
 import { serializeModel, stringifyModelFile } from '../model/serialize.ts'
@@ -53,16 +54,6 @@ const tsString = (value: string) => `'${value
 const packageName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'bildr-app'
 const pascal = (name: string) => name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('')
 
-const DEFAULT_THEME = {
-  colors: {
-    'primary': 'oklch(0.55 0.2 264)',
-    'on-primary': 'oklch(0.99 0 0)',
-    'surface': 'oklch(0.99 0 0)',
-    'muted': 'oklch(0.5 0.02 264)',
-    'border': 'oklch(0.9 0.01 264)'
-  },
-  fonts: { sans: '"Inter", ui-sans-serif, system-ui, sans-serif' }
-}
 
 export const starterKit = ({ name, module = 'main', bildrNuxt = BILDR_NUXT_VERSION }: StarterKitOptions): StarterKit => {
   const title = name.trim()
@@ -93,13 +84,13 @@ const initialModel = (title: string, module: string): Record<string, string> => 
       root: {
         id: 'n_root', type: 'Container', style: { display: 'flex', direction: 'column', minHeight: 'screen' },
         children: [
-          { id: 'n_header', type: 'Container', style: { borderBottom: 'border' }, children: [
+          { id: 'n_header', type: 'Container', style: { borderBottom: 'default' }, children: [
             { id: 'n_nav', type: 'Row', style: { maxWidth: '4xl', mx: 'auto', align: 'center', p: '4' }, children: [
               { id: 'n_brand', type: 'Link', props: { to: { page: 'pg_index' }, text: { $bind: 'site.name' } }, style: { fontSize: 'lg', fontWeight: 'semibold' } }
             ] }
           ] },
           { id: 'n_main', type: 'Container', style: { maxWidth: '4xl', mx: 'auto', width: 'full', grow: '1', p: '4' }, children: [] },
-          { id: 'n_footer', type: 'Container', style: { borderTop: 'border', p: '4', textAlign: 'center', fontSize: 'sm', color: 'muted' }, children: [
+          { id: 'n_footer', type: 'Container', style: { borderTop: 'default', p: '4', textAlign: 'center', fontSize: 'sm', color: 'muted' }, children: [
             { id: 'n_footer_text', type: 'Text', props: { text: { $bind: 'site.name' } } }
           ] }
         ]
@@ -142,6 +133,7 @@ const rootFiles = (title: string, module: string, bildrNuxt: string): GeneratedF
     },
     dependencies: {
       '@libsql/client': '^0.18.0',
+      '@nuxt/ui': '^4.12.0',
       '@tanstack/query-core': '^5.100.0',
       '@tanstack/query-db-collection': '^1.5.2',
       '@tanstack/vue-db': '1.0.0-rc.1.5',
@@ -153,7 +145,6 @@ const rootFiles = (title: string, module: string, bildrNuxt: string): GeneratedF
       '@bildr/nuxt': bildrNuxt,
       '@nuxt/eslint': '^1.17.0',
       '@nuxt/test-utils': '^4.4.0',
-      '@tailwindcss/vite': '^4.3.5',
       'drizzle-kit': '^0.31.11',
       'eslint': '^10.13.0',
       'tailwindcss': '^4.3.3',
@@ -248,17 +239,16 @@ test/                     use-case, adapter and API tests
 const modelDerivedFiles = (title: string, module: string): GeneratedFile[] => [
   { path: 'layers/core/nuxt.config.ts', owner: 'managed', source: '.bildr/bildr.json', content: `// ${managedFrom('.bildr/bildr.json and .bildr/datasources')}
 import { fileURLToPath } from 'node:url'
-import tailwindcss from '@tailwindcss/vite'
 
 const here = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 
 export default defineNuxtConfig({
   $meta: { name: 'core' },
+  modules: ['@nuxt/ui'],
   alias: {
     '#core': here('./shared')
   },
   css: [here('./app/assets/css/theme.css')],
-  vite: { plugins: [tailwindcss()] },
   nitro: { experimental: { tasks: true } },
   runtimeConfig: {
     db: {
@@ -270,26 +260,24 @@ export default defineNuxtConfig({
   }
 })
 ` },
-  { path: 'layers/core/app/app.config.ts', owner: 'managed', source: '.bildr/bildr.json', content: `// ${managedFrom('.bildr/bildr.json')}
+  { path: 'layers/core/app/app.config.ts', owner: 'managed', source: '.bildr/bildr.json', content: `// ${managedFrom('.bildr/bildr.json and .bildr/theme.json')}
 export default defineAppConfig({
   site: {
     name: ${tsString(title)},
     description: ${tsString(`${title}, built with bildr.`)}
+  },
+  ui: {
+    colors: {
+${THEME_COLORS.map(name => `      ${name}: ${tsString(DEFAULT_THEME.colors[name])}`).join(',\n')}
+    }
   }
 })
 ` },
   { path: 'layers/core/app/assets/css/theme.css', owner: 'managed', source: '.bildr/theme.json', content: `/* ${managedFrom('.bildr/theme.json')} */
 @import "tailwindcss";
+@import "@nuxt/ui";
 
-@theme {
-${Object.entries(DEFAULT_THEME.colors).map(([key, value]) => `  --color-${key}: ${value};`).join('\n')}
-${Object.entries(DEFAULT_THEME.fonts).map(([key, value]) => `  --font-${key}: ${value};`).join('\n')}
-}
-
-body {
-  @apply bg-surface font-sans text-gray-900;
-}
-` },
+${themeCss(DEFAULT_THEME)}` },
   { path: 'layers/core/app/layouts/main.vue', owner: 'managed', source: '.bildr/layouts/main.json', content: `${vueHeader('.bildr/layouts/main.json')}
 <script setup lang="ts">
 const { site } = useAppConfig()
@@ -297,7 +285,7 @@ const { site } = useAppConfig()
 
 <template>
   <div class="flex min-h-screen flex-col">
-    <header class="border-b border-border">
+    <header class="border-b border-default">
       <nav class="mx-auto flex max-w-4xl items-center p-4">
         <NuxtLink to="/" class="text-lg font-semibold">{{ site.name }}</NuxtLink>
       </nav>
@@ -305,7 +293,7 @@ const { site } = useAppConfig()
     <main class="mx-auto w-full max-w-4xl flex-1 p-4">
       <slot />
     </main>
-    <footer class="border-t border-border p-4 text-center text-sm text-muted">
+    <footer class="border-t border-default p-4 text-center text-sm text-muted">
       <slot name="footer">{{ site.name }}</slot>
     </footer>
   </div>

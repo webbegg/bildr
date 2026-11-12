@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ThemeSchema } from '../design/theme.ts'
 
 /**
  * The `.bildr/` model: one JSON file per artifact. The editor writes these
@@ -69,11 +70,8 @@ export const ProjectFileSchema = z.object({
   modules: z.array(ModuleNameSchema)
 })
 
-export const ThemeFileSchema = z.object({
-  ...schemaField,
-  colors: z.record(z.string().regex(/^[a-z][a-z0-9-]*$/), z.string()),
-  fonts: z.record(z.string().regex(/^[a-z][a-z0-9-]*$/), z.string())
-})
+/** The editor's `Theme` (D11): the same palette colours, font, radius and spacing the canvas paints. */
+export const ThemeFileSchema = ThemeSchema.extend(schemaField)
 
 export const DataSourceFileSchema = z.object({
   ...schemaField,

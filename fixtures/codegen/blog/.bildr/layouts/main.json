@@ -27,7 +27,7 @@
         "id": "n_header",
         "type": "Container",
         "style": {
-          "borderBottom": "border"
+          "borderBottom": "default"
         },
         "children": [
           {
@@ -68,7 +68,7 @@
                 },
                 "style": {
                   "bg": "primary",
-                  "color": "on-primary",
+                  "color": "inverted",
                   "px": "3",
                   "py": "1.5",
                   "radius": "md",
@@ -95,7 +95,7 @@
         "id": "n_footer",
         "type": "Container",
         "style": {
-          "borderTop": "border",
+          "borderTop": "default",
           "p": "4",
           "textAlign": "center",
           "fontSize": "sm",

@@ -43,6 +43,7 @@ describe('blog API', async () => {
 
   it('serves the SPA shell', async () => {
     const html = await $fetch<string>('/')
-    expect(html).toContain('<div id="__nuxt">')
+    expect(html).toMatch(/<div id="__nuxt"[ >]/)
+    expect(html).toContain('data-ssr="false"')
   })
 })

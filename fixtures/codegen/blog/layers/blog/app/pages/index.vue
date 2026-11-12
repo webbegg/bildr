@@ -16,15 +16,12 @@ const isLoading = computed(() => featured.isLoading.value || all.isLoading.value
   <section class="flex flex-col gap-6">
     <div class="flex items-center justify-between">
       <h1 class="text-3xl font-semibold">Posts</h1>
-      <label class="flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
-          :checked="preferences.showDrafts"
-          data-test="show-drafts"
-          @change="set({ showDrafts: ($event.target as HTMLInputElement).checked })"
-        >
-        Show drafts
-      </label>
+      <UCheckbox
+        :model-value="preferences.showDrafts"
+        label="Show drafts"
+        data-test="show-drafts"
+        @update:model-value="set({ showDrafts: $event === true })"
+      />
     </div>
 
     <p v-if="isLoading" class="text-muted">Loading…</p>
@@ -33,7 +30,7 @@ const isLoading = computed(() => featured.isLoading.value || all.isLoading.value
       <BlogPostCard v-for="post in posts" :key="post.id" :post="post" />
     </div>
 
-    <aside v-if="quotes.data.value.length" class="flex flex-col gap-2 border-t border-border pt-6">
+    <aside v-if="quotes.data.value.length" class="flex flex-col gap-2 border-t border-default pt-6">
       <h2 class="text-sm font-semibold uppercase text-muted">Quotes</h2>
       <blockquote v-for="quote in quotes.data.value" :key="quote.id" class="text-sm">
         “{{ quote.text }}” — {{ quote.author }}

@@ -1,13 +1,15 @@
 {
-  "$schema": "https://bildr.dev/schema/theme.v1.json",
   "colors": {
-    "primary": "oklch(0.55 0.2 264)",
-    "on-primary": "oklch(0.99 0 0)",
-    "surface": "oklch(0.99 0 0)",
-    "muted": "oklch(0.5 0.02 264)",
-    "border": "oklch(0.9 0.01 264)"
+    "primary": "indigo",
+    "secondary": "blue",
+    "success": "green",
+    "info": "blue",
+    "warning": "yellow",
+    "error": "red",
+    "neutral": "slate"
   },
-  "fonts": {
-    "sans": "\"Inter\", ui-sans-serif, system-ui, sans-serif"
-  }
+  "font": "Inter",
+  "radius": "0.375rem",
+  "spacing": "default",
+  "$schema": "https://bildr.dev/schema/theme.v1.json"
 }
