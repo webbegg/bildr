@@ -10,7 +10,7 @@ import { componentInstances, componentUsages } from '#shared/document/usages'
 import { copyName, detachParts, replacedInstance, replaceProblem } from '#shared/document/instanceEdits'
 import { nameProblem, uniqueName } from '#shared/editor/names'
 import { ActionError, defineAction } from './define'
-import { ONE_TREE, oneTree, treeOf } from './node'
+import { ONE_TREE, oneTree, refusePrototypeKeys, treeOf } from './node'
 import { assertFound } from './project'
 
 /**
@@ -382,7 +382,7 @@ export const componentVariantRename = defineAction({
 
 const OverrideFields = {
   props: z.record(z.string(), PropValueSchema.nullable()).optional().describe('Props of the node to override; null resets one'),
-  style: z.record(z.string(), z.string().nullable()).optional().describe('Design tokens of the node to override (see components_list.tokens); null resets one (a set value, or a removal)'),
+  style: z.preprocess(refusePrototypeKeys, z.record(z.string(), z.string().nullable())).optional().describe('Design tokens of the node to override (see components_list.tokens); null resets one (a set value, or a removal)'),
   unset: z.array(z.string()).optional().describe('Style keys to remove in this variant, e.g. ["bg", "max-lg:p"] (breakpoint prefixes of the project\'s breakpointBase): they render as absent even where the primary sets them; a null in style resets one. A key cannot be in both style and unset')
 }
 

@@ -64,8 +64,12 @@ function prefixedKeyProblem(key: string, value: string | null): string | undefin
 /** Keys that would reach an object's prototype; zod drops an own `__proto__` before any refinement sees it. */
 const PROTOTYPE_KEYS = ['__proto__', 'constructor', 'prototype']
 
-/** Refuses own prototype keys of a raw style object, so they are not silently dropped (S38.2). */
-function refusePrototypeKeys(raw: unknown, ctx: z.RefinementCtx): unknown {
+/**
+ * Refuses own prototype keys of a raw style object, so they are not silently
+ * dropped (S38.2); a `z.preprocess` step for every style-taking schema (node
+ * styles, variant style overrides).
+ */
+export function refusePrototypeKeys(raw: unknown, ctx: z.RefinementCtx): unknown {
   if (raw === null || typeof raw !== 'object') return raw
   for (const key of PROTOTYPE_KEYS) {
     if (Object.hasOwn(raw, key)) ctx.addIssue({ code: 'custom', message: `"${key}" is not a style token`, path: [key], input: raw })
