@@ -19,25 +19,32 @@
     "type": "Container",
     "style": {
       "display": "flex",
-      "direction": "column",
-      "minHeight": "screen"
+      "direction": "col",
+      "minH": "screen"
     },
     "children": [
       {
         "id": "n_header",
         "type": "Container",
+        "props": {
+          "tag": "header"
+        },
         "style": {
-          "borderBottom": "default"
+          "borderB": "1",
+          "borderColor": "default"
         },
         "children": [
           {
             "id": "n_nav",
             "type": "Row",
+            "props": {
+              "tag": "nav"
+            },
             "style": {
-              "maxWidth": "4xl",
+              "maxW": "4xl",
               "mx": "auto",
               "justify": "between",
-              "align": "center",
+              "items": "center",
               "p": "4"
             },
             "children": [
@@ -53,8 +60,8 @@
                   }
                 },
                 "style": {
-                  "fontSize": "lg",
-                  "fontWeight": "semibold"
+                  "text": "lg",
+                  "font": "semibold"
                 }
               },
               {
@@ -71,8 +78,8 @@
                   "color": "inverted",
                   "px": "3",
                   "py": "1.5",
-                  "radius": "md",
-                  "fontSize": "sm"
+                  "rounded": "md",
+                  "text": "sm"
                 }
               }
             ]
@@ -82,11 +89,13 @@
       {
         "id": "n_main",
         "type": "Container",
+        "props": {
+          "tag": "main"
+        },
         "style": {
-          "maxWidth": "4xl",
+          "maxW": "4xl",
           "mx": "auto",
-          "width": "full",
-          "grow": "1",
+          "w": "full",
           "p": "4"
         },
         "children": []
@@ -94,11 +103,16 @@
       {
         "id": "n_footer",
         "type": "Container",
+        "props": {
+          "tag": "footer"
+        },
         "style": {
-          "borderTop": "default",
+          "borderT": "1",
+          "borderColor": "default",
+          "mt": "auto",
           "p": "4",
-          "textAlign": "center",
-          "fontSize": "sm",
+          "align": "center",
+          "text": "sm",
           "color": "muted"
         },
         "children": [

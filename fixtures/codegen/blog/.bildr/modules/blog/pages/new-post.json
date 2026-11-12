@@ -33,9 +33,9 @@
         },
         "style": {
           "display": "flex",
-          "direction": "column",
+          "direction": "col",
           "gap": "4",
-          "maxWidth": "xl"
+          "maxW": "xl"
         },
         "interactions": [
           {
@@ -72,8 +72,8 @@
               "text": "New post"
             },
             "style": {
-              "fontSize": "3xl",
-              "fontWeight": "semibold"
+              "text": "3xl",
+              "font": "semibold"
             }
           },
           {
@@ -122,7 +122,7 @@
               }
             },
             "style": {
-              "fontSize": "sm",
+              "text": "sm",
               "color": "error"
             }
           },

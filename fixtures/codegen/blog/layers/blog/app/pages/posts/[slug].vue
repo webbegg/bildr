@@ -9,25 +9,19 @@ definePageMeta({
 })
 
 const route = useRoute('posts-slug')
-const { post, isLoading } = usePostBySlug(() => route.params.slug)
-const publish = usePublishPost()
-
+const { post, isLoading: postLoading } = usePostBySlug(() => route.params.slug)
+const { execute: publish, pending: publishPending, error: publishError } = usePublishPost()
 useSeoMeta({ title: () => post.value?.title ?? 'Post' })
 </script>
 
 <template>
-  <p v-if="isLoading" class="text-muted">Loading…</p>
-  <article v-else-if="post" class="flex flex-col gap-4">
-    <h1 class="text-3xl font-semibold" data-test="post-title">{{ post.title }}</h1>
-    <p class="whitespace-pre-line">{{ post.body }}</p>
-    <div v-if="!post.published" class="flex items-center gap-3">
-      <UButton
-        label="Publish"
-        :loading="publish.pending.value"
-        data-test="publish"
-        @click="publish.execute(post.id)"
-      />
-      <p v-if="publish.error.value" class="text-sm text-error">{{ publish.error.value }}</p>
+  <p v-if="postLoading" class="text-muted">Loading…</p>
+  <article v-else-if="post" class="gap-4 flex-col flex">
+    <h1 class="text-3xl font-semibold">{{ post.title }}</h1>
+    <p>{{ post.body }}</p>
+    <div v-if="!post.published" class="flex gap-3 items-center">
+      <UButton label="Publish" :disabled="publishPending" @click="publish(post.id)" />
+      <p v-if="publishError" class="text-error text-sm">{{ publishError }}</p>
     </div>
   </article>
   <p v-else class="text-muted">This post doesn't exist.</p>

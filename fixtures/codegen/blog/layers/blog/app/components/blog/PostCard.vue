@@ -7,20 +7,16 @@ const props = withDefaults(defineProps<{
   variant?: 'default' | 'compact'
 }>(), { variant: 'default' })
 
-const variants = {
-  default: 'gap-2 p-5',
-  compact: 'gap-1 p-3'
+const cardVariants = {
+  default: 'p-5 gap-2',
+  compact: 'p-3 gap-1'
 } as const
 </script>
 
 <template>
-  <NuxtLink
-    :to="{ name: 'posts-slug', params: { slug: props.post.slug } }"
-    class="flex flex-col rounded-lg border border-default transition-shadow hover:shadow-md active:shadow-sm"
-    :class="variants[props.variant]"
-  >
+  <NuxtLink :to="{ name: 'posts-slug', params: { slug: props.post.slug } }" class="border-default border-1 rounded-lg flex-col flex" :class="cardVariants[props.variant]">
     <h2 class="text-lg font-semibold">{{ props.post.title }}</h2>
-    <p v-if="props.variant === 'default'" class="line-clamp-2 text-muted">{{ props.post.body }}</p>
-    <span v-if="!props.post.published" class="self-start rounded bg-elevated px-2 py-0.5 text-xs">Draft</span>
+    <p v-if="props.variant !== 'compact'" class="text-muted">{{ props.post.body }}</p>
+    <p v-if="!props.post.published" class="px-2 py-0.5 bg-elevated text-xs rounded-sm self-start">Draft</p>
   </NuxtLink>
 </template>

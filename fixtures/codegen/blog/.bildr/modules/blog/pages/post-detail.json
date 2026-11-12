@@ -45,11 +45,12 @@
       "empty": "This post doesn't exist.",
       "when": {
         "$bind": "post"
-      }
+      },
+      "tag": "article"
     },
     "style": {
       "display": "flex",
-      "direction": "column",
+      "direction": "col",
       "gap": "4"
     },
     "children": [
@@ -63,8 +64,8 @@
           }
         },
         "style": {
-          "fontSize": "3xl",
-          "fontWeight": "semibold"
+          "text": "3xl",
+          "font": "semibold"
         }
       },
       {
@@ -74,9 +75,6 @@
           "text": {
             "$bind": "post.body"
           }
-        },
-        "style": {
-          "whitespace": "pre-line"
         }
       },
       {
@@ -90,7 +88,7 @@
           }
         },
         "style": {
-          "align": "center",
+          "items": "center",
           "gap": "3"
         },
         "children": [
@@ -132,7 +130,7 @@
               }
             },
             "style": {
-              "fontSize": "sm",
+              "text": "sm",
               "color": "error"
             }
           }
