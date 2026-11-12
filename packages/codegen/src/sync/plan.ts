@@ -37,6 +37,8 @@ export interface SyncReport {
   deleted: string[]
   orphaned: string[]
   removed: string[]
+  /** Manifest or reattach paths outside the project or inside `.bildr/`: ignored, never written or deleted. */
+  refused: string[]
 }
 
 export interface SyncPlan {
@@ -46,24 +48,35 @@ export interface SyncPlan {
   report: SyncReport
 }
 
-/** Refuses paths that would escape the project or touch the model. */
-export const isSafeProjectPath = (path: string): boolean =>
-  path.length > 0
-  && !path.startsWith('/')
-  && !path.includes('\\')
-  && !/^[a-zA-Z]:/.test(path)
-  && !path.split('/').some(part => part === '..' || part === '.' || part === '')
-  && path !== '.bildr' && !path.startsWith('.bildr/')
+/**
+ * Refuses paths that would escape the project or touch the model. The manifest
+ * is committed with the project, so its paths are untrusted too.
+ */
+export const isSafeProjectPath = (path: string): boolean => {
+  const parts = path.split('/')
+  return path.length > 0
+    && !path.startsWith('/')
+    && !path.includes('\\')
+    && !path.includes('\0')
+    && !parts.some(part => part === '..' || part === '.' || part === '' || part.includes(':'))
+    // Case-insensitive filesystems (macOS, Windows) treat .BILDR as .bildr.
+    && parts[0]!.toLowerCase() !== '.bildr'
+}
+
+/** Code-unit order: the same on every machine, whatever the locale. */
+const byCodeUnit = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0
 
 export const planSync = ({ generated, manifest, disk, hash, reattach = [] }: SyncInput): SyncPlan => {
   const writes: SyncPlan['writes'] = []
   const deletes: string[] = []
   const next: ManifestEntries = {}
-  const report: SyncReport = { written: [], unchanged: [], detached: [], deleted: [], orphaned: [], removed: [] }
-  const reattaching = new Set(reattach)
+  const report: SyncReport = { written: [], unchanged: [], detached: [], deleted: [], orphaned: [], removed: [], refused: [] }
+  const refused = new Set([...Object.keys(manifest), ...reattach].filter(path => !isSafeProjectPath(path)))
+  report.refused = [...refused].sort(byCodeUnit)
+  const reattaching = new Set(reattach.filter(path => !refused.has(path)))
   const seen = new Set<string>()
 
-  for (const file of [...generated].sort((a, b) => a.path.localeCompare(b.path))) {
+  for (const file of [...generated].sort((a, b) => byCodeUnit(a.path, b.path))) {
     if (!isSafeProjectPath(file.path)) throw new Error(`Unsafe path: ${file.path}`)
     if (seen.has(file.path)) throw new Error(`Generated twice: ${file.path}`)
     seen.add(file.path)
@@ -115,8 +128,8 @@ export const planSync = ({ generated, manifest, disk, hash, reattach = [] }: Syn
     }
   }
 
-  for (const path of Object.keys(manifest).sort()) {
-    if (seen.has(path)) continue
+  for (const path of Object.keys(manifest).sort(byCodeUnit)) {
+    if (seen.has(path) || refused.has(path)) continue
     const previous = manifest[path]!
     const onDisk = disk[path]
     if (previous.owner === 'scaffold') next[path] = previous
@@ -130,6 +143,6 @@ export const planSync = ({ generated, manifest, disk, hash, reattach = [] }: Syn
     }
   }
 
-  const manifestOut = Object.fromEntries(Object.keys(next).sort().map(path => [path, next[path]!]))
+  const manifestOut = Object.fromEntries(Object.keys(next).sort(byCodeUnit).map(path => [path, next[path]!]))
   return { writes, deletes, manifest: manifestOut, report }
 }
