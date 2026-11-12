@@ -5,16 +5,16 @@ const { site } = useAppConfig()
 
 <template>
   <div class="flex min-h-screen flex-col">
-    <header class="border-b border-border">
+    <header class="border-b border-default">
       <nav class="mx-auto flex max-w-4xl items-center justify-between p-4">
         <NuxtLink to="/" class="text-lg font-semibold">{{ site.name }}</NuxtLink>
-        <NuxtLink to="/posts/new" class="rounded-md bg-primary px-3 py-1.5 text-sm text-on-primary">New post</NuxtLink>
+        <NuxtLink to="/posts/new" class="rounded-md bg-primary px-3 py-1.5 text-sm text-inverted">New post</NuxtLink>
       </nav>
     </header>
     <main class="mx-auto w-full max-w-4xl flex-1 p-4">
       <slot />
     </main>
-    <footer class="border-t border-border p-4 text-center text-sm text-muted">
+    <footer class="border-t border-default p-4 text-center text-sm text-muted">
       <slot name="footer">{{ site.description }}</slot>
     </footer>
   </div>

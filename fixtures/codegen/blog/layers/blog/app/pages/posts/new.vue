@@ -15,25 +15,17 @@ const onSubmit = async () => {
 <template>
   <form class="flex max-w-xl flex-col gap-4" data-test="new-post" @submit.prevent="onSubmit">
     <h1 class="text-3xl font-semibold">New post</h1>
-    <label class="flex flex-col gap-1">
-      Title
-      <input v-model="form.title" name="title" required maxlength="120" class="rounded-md border border-border p-2">
-    </label>
-    <label class="flex flex-col gap-1">
-      Slug
-      <input v-model="form.slug" name="slug" required pattern="[a-z0-9\-]+" class="rounded-md border border-border p-2">
-    </label>
-    <label class="flex flex-col gap-1">
-      Body
-      <textarea v-model="form.body" name="body" rows="6" class="rounded-md border border-border p-2" />
-    </label>
-    <label class="flex items-center gap-2">
-      <input v-model="form.published" name="published" type="checkbox">
-      Publish now
-    </label>
-    <p v-if="createPost.error.value" class="text-sm text-red-600" data-test="error">{{ createPost.error.value }}</p>
-    <button type="submit" class="self-start rounded-md bg-primary px-4 py-2 text-on-primary disabled:opacity-50" :disabled="createPost.pending.value">
-      Create
-    </button>
+    <UFormField label="Title" name="title" required>
+      <UInput v-model="form.title" name="title" required maxlength="120" class="w-full" />
+    </UFormField>
+    <UFormField label="Slug" name="slug" required>
+      <UInput v-model="form.slug" name="slug" required pattern="[a-z0-9\-]+" class="w-full" />
+    </UFormField>
+    <UFormField label="Body" name="body">
+      <UTextarea v-model="form.body" name="body" :rows="6" class="w-full" />
+    </UFormField>
+    <UCheckbox v-model="form.published" name="published" label="Publish now" />
+    <p v-if="createPost.error.value" class="text-sm text-error" data-test="error">{{ createPost.error.value }}</p>
+    <UButton type="submit" class="self-start" label="Create" :loading="createPost.pending.value" />
   </form>
 </template>

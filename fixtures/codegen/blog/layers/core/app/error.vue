@@ -6,11 +6,11 @@ const props = defineProps<{ error: NuxtError }>()
 </script>
 
 <template>
-  <main class="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-4 p-8">
-    <h1 class="text-4xl font-semibold">{{ props.error.status }}</h1>
-    <p class="text-muted">{{ props.error.message }}</p>
-    <button class="self-start rounded-md bg-primary px-4 py-2 text-on-primary" @click="clearError({ redirect: '/' })">
-      Back home
-    </button>
-  </main>
+  <UApp>
+    <main class="mx-auto flex min-h-screen max-w-xl flex-col justify-center gap-4 p-8">
+      <h1 class="text-4xl font-semibold">{{ props.error.status }}</h1>
+      <p class="text-muted">{{ props.error.message }}</p>
+      <UButton class="self-start" label="Back home" @click="clearError({ redirect: '/' })" />
+    </main>
+  </UApp>
 </template>

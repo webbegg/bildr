@@ -21,15 +21,13 @@ useSeoMeta({ title: () => post.value?.title ?? 'Post' })
     <h1 class="text-3xl font-semibold" data-test="post-title">{{ post.title }}</h1>
     <p class="whitespace-pre-line">{{ post.body }}</p>
     <div v-if="!post.published" class="flex items-center gap-3">
-      <button
-        class="rounded-md bg-primary px-4 py-2 text-on-primary disabled:opacity-50"
-        :disabled="publish.pending.value"
+      <UButton
+        label="Publish"
+        :loading="publish.pending.value"
         data-test="publish"
         @click="publish.execute(post.id)"
-      >
-        Publish
-      </button>
-      <p v-if="publish.error.value" class="text-sm text-red-600">{{ publish.error.value }}</p>
+      />
+      <p v-if="publish.error.value" class="text-sm text-error">{{ publish.error.value }}</p>
     </div>
   </article>
   <p v-else class="text-muted">This post doesn't exist.</p>

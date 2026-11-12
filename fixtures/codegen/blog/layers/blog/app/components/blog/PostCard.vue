@@ -16,11 +16,11 @@ const variants = {
 <template>
   <NuxtLink
     :to="{ name: 'posts-slug', params: { slug: props.post.slug } }"
-    class="flex flex-col rounded-lg border border-border transition-shadow hover:shadow-md active:shadow-sm"
+    class="flex flex-col rounded-lg border border-default transition-shadow hover:shadow-md active:shadow-sm"
     :class="variants[props.variant]"
   >
     <h2 class="text-lg font-semibold">{{ props.post.title }}</h2>
     <p v-if="props.variant === 'default'" class="line-clamp-2 text-muted">{{ props.post.body }}</p>
-    <span v-if="!props.post.published" class="self-start rounded bg-gray-100 px-2 py-0.5 text-xs">Draft</span>
+    <span v-if="!props.post.published" class="self-start rounded bg-elevated px-2 py-0.5 text-xs">Draft</span>
   </NuxtLink>
 </template>

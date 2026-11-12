@@ -55,7 +55,7 @@
       "gap": "2",
       "p": "5",
       "radius": "lg",
-      "border": "border",
+      "border": "default",
       "hover:shadow": "md",
       "pressed:shadow": "sm"
     },
@@ -101,7 +101,7 @@
         "style": {
           "self": "start",
           "radius": "sm",
-          "bg": "gray-100",
+          "bg": "elevated",
           "px": "2",
           "py": "0.5",
           "fontSize": "xs"
