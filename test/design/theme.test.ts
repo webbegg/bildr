@@ -6,7 +6,7 @@ import { DEFAULT_THEME, hexShades, hexToOklch, spacingBasePx, THEME_FONTS, THEME
 import type { Theme } from '#shared/design/theme'
 
 const TAILWIND_THEME = new URL('../../node_modules/tailwindcss/theme.css', import.meta.url)
-const PALETTES_TS = new URL('../../shared/design/palettes.ts', import.meta.url)
+const PALETTES_TS = new URL('../../packages/codegen/src/design/palettes.ts', import.meta.url)
 
 const SHADES = ['50', '100', '200', '300', '400', '500', '600', '700', '800', '900', '950']
 
@@ -169,7 +169,7 @@ describe('palettes', () => {
     for (const shades of Object.values(PALETTES)) expect(Object.keys(shades)).toEqual(SHADES)
   })
 
-  it('matches the generated shared/design/palettes.ts (run `node --experimental-strip-types scripts/generate-palettes.ts` after a Tailwind update)', () => {
+  it('matches the generated packages/codegen/src/design/palettes.ts (run `node --experimental-strip-types scripts/generate-palettes.ts` after a Tailwind update)', () => {
     const source = parseTailwindPalettes(readFileSync(TAILWIND_THEME, 'utf8'))
     expect(readFileSync(PALETTES_TS, 'utf8')).toBe(palettesModule(source))
   })
