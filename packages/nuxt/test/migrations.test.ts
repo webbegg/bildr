@@ -13,7 +13,8 @@ import { readModelFiles } from '../src/node/project'
 // drizzle-kit, drizzle-orm and @libsql/client come from the golden fixture's install, as a project would have them.
 // The fixture is not part of the workspace: `pnpm --dir fixtures/codegen/blog install` once (review RELIABILITY-001).
 const fixtureModules = fileURLToPath(new URL('../../../fixtures/codegen/blog/node_modules', import.meta.url))
-const NEEDS_FIXTURE = existsSync(join(fixtureModules, 'drizzle-kit')) ? '' : ' (skipped: run `pnpm --dir fixtures/codegen/blog install` first)'
+// In CI the install is required: a missing one fails these tests instead of skipping them.
+const NEEDS_FIXTURE = existsSync(join(fixtureModules, 'drizzle-kit')) || process.env.CI ? '' : ' (skipped: run `pnpm --dir fixtures/codegen/blog install` first)'
 
 let root: string
 let dir: string

@@ -32,3 +32,23 @@ jobs:
 
       - name: Typecheck
         run: pnpm run typecheck
+
+      # The golden generated app is a standalone pnpm project (not in the workspace). The
+      # migration tests use its drizzle-kit install, and in CI they fail rather than skip without it.
+      - name: Install the golden fixture
+        run: pnpm --dir fixtures/codegen/blog install --frozen-lockfile
+
+      - name: Test
+        run: pnpm run test
+
+      - name: Fixture typecheck
+        run: pnpm --dir fixtures/codegen/blog run typecheck
+
+      - name: Fixture lint
+        run: pnpm --dir fixtures/codegen/blog run lint
+
+      - name: Fixture test
+        run: pnpm --dir fixtures/codegen/blog run test
+
+      - name: Fixture build
+        run: pnpm --dir fixtures/codegen/blog run build
