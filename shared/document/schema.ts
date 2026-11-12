@@ -8,6 +8,7 @@ import type { BreakpointBase } from '../design/tokens'
 import { ENV_NAME, ENV_NAME_HINT, ENV_REF, envRefs } from '../env/variables'
 import { getComponent, INSTANCE_TYPE, isContainerType, PAGE_ROOT_TYPE, SLOT_FILL_TYPE } from './components'
 import type { PropDef, PropKind, PropValue } from './components'
+import { RECORD_ID_KEY } from '../runtime/detail'
 
 /**
  * The bildr app document: Project → Page[] → Node tree. It is the single
@@ -869,15 +870,16 @@ export function pageLayoutProblems(page: Page, layout: Layout | undefined, color
 
 /**
  * Rules for a detail page's collection: it exists, and its URL key field,
- * when set, exists and is a text field. Renaming or removing them goes
- * through actions that update or clear the reference (see `detailCascade`).
+ * when set, is the record id (`RECORD_ID_KEY`; field keys can't be `id`)
+ * or exists and is a text field. Renaming or removing them goes through
+ * actions that update or clear the reference (see `detailCascade`).
  */
 export function pageCollectionProblems(page: Pick<Page, 'name' | 'collection'>, collections: Pick<Collection, 'name' | 'slug' | 'fields'>[]): string[] {
   if (!page.collection) return []
   const { slug, field } = page.collection
   const collection = collections.find(c => c.slug === slug)
   if (!collection) return [`Page "${page.name}" shows the unknown collection "${slug}"`]
-  if (field === undefined) return []
+  if (field === undefined || field === RECORD_ID_KEY) return []
   const def = collection.fields.find(f => f.key === field)
   if (!def) return [`Page "${page.name}": "${collection.name}" has no field "${field}" for the URL key`]
   if (def.type !== 'text') return [`Page "${page.name}": the URL key "${field}" must be a text field, not ${def.type}`]

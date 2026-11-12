@@ -6,7 +6,7 @@ import { editorGetContext, editorNavigate, editorSetContext } from './editor'
 import { envDelete, envList, envSet } from './env'
 import { layoutCreate, layoutCreateFromSelection, layoutDelete, layoutDuplicate, layoutRename, layoutSlotAdd, layoutSlotRemove, layoutSlotUpdate, layoutVariableAdd, layoutVariableRemove, layoutVariableUpdate, pageSetLayout, pageSetLayoutValues, pageSetSlot } from './layout'
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeRename, nodeSetLocked, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
-import { pageAdd, pageDelete, pageRename, pageSetCollection } from './page'
+import { pageAdd, pageCreateDetail, pageDelete, pageRename, pageSetCollection } from './page'
 import { themeGet, themeUpdate } from './theme'
 import { themeApply, themeLibraryDelete, themeLibraryDuplicate, themeLibraryList, themeLibrarySave, themeLibraryUpdate } from './themeLibrary'
 import { componentsList, historyGet, historyRedo, historyUndo, projectCreate, projectDelete, projectGet, projectList, projectPublish, projectPublishedInfo, projectRename } from './project'
@@ -23,6 +23,7 @@ export const ACTIONS = [
   pageRename,
   pageDelete,
   pageSetCollection,
+  pageCreateDetail,
   nodeInsert,
   nodeUpdateProps,
   nodeUpdateStyle,

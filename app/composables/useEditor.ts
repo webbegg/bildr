@@ -34,7 +34,6 @@ import { canHideFrame, frameForKey, hiddenFrames, primaryFrame, visibleFrames } 
 import type { EditKind, EditLevel, LevelMove } from '#shared/editor/editStack'
 import { goToLevel, leaveLevel, openLevel, pruneLevels, topLevel } from '#shared/editor/editStack'
 import { componentPrefill, uniqueName } from '#shared/editor/names'
-import { detailPageSteps } from '#shared/editor/detailPages'
 import { selectionAccent } from '#shared/editor/accent'
 import { insertableComponents, outsideInstance, parseInstancePayload } from './componentEditor'
 import { layoutSelection, pageSlots, parseLayoutPayload } from './layoutEditor'
@@ -340,17 +339,13 @@ export function createEditor(projectId: string) {
 
   /**
    * "Create detail page" (the Data view, ⌘K): adds a page bound to the
-   * collection with a Heading and a Text bound to its fields (see
-   * `detailPageSteps`), then shows it on the Canvas. Two undo steps: the
-   * page, then its content (one `node_insert` with both nodes).
+   * collection with a Heading and a Text bound to its fields
+   * (`page_create_detail`, one undo step), then shows it on the Canvas.
    */
   async function createDetailPage(collectionSlug: string): Promise<string | undefined> {
-    const target = project.value?.collections.find(c => c.slug === collectionSlug)
-    if (!target || !project.value) return undefined
-    const steps = detailPageSteps(target, project.value.pages)
-    const added = await run<{ pageId: string }>('page_add', steps.page)
+    if (!project.value?.collections.some(c => c.slug === collectionSlug)) return undefined
+    const added = await run<{ pageId: string }>('page_create_detail', { collection: collectionSlug })
     if (!added) return undefined
-    await run('node_insert', { pageId: added.pageId, nodes: steps.nodes })
     mode.value = 'build'
     sidebarPanel.value = 'pages'
     selectPage(added.pageId)

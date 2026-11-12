@@ -2,16 +2,15 @@
  * The editor side of detail pages (S34.7): which collection's record
  * `{{ item.* }}` reads at a node (`itemScope`), the link picker's
  * "Detail: <page>" entries, the insert-variable picker's item fields, the
- * URL key choices, the steps of "Create detail page", and the ⌘K commands.
+ * URL key choices, and the ⌘K commands ("Create detail page" itself is
+ * `page_create_detail`, see `newDetailPage`).
  * Pure, so the panels pass in the project parts they show.
  */
 import type { Collection, Page } from '../document/schema'
-import { slugify } from '../document/factory'
 import { findNode, pathTo } from '../document/tree'
-import { detailKeyField, detailLink, detailLinkLabel, detailPath, pageKeyField, RECORD_ID_KEY } from '../runtime/detail'
+import { detailLink, detailLinkLabel, detailPath, pageKeyField, RECORD_ID_KEY } from '../runtime/detail'
 import { LIST_TYPE, listQueryOf } from '../runtime/list'
 import type { Command } from './commands'
-import { uniqueName } from './names'
 
 type Collections = Pick<Collection, 'slug' | 'name' | 'fields'>[]
 interface DetailProject<C extends Pick<Collection, 'slug' | 'name' | 'fields'>> { pages: Pick<Page, 'slug' | 'name' | 'collection'>[], collections: C[] }
@@ -71,49 +70,12 @@ export function itemVariables(collection: Pick<Collection, 'fields'>): ItemVaria
   ]
 }
 
-/**
- * The URL key choices: the collection's text fields, then the record id.
- * A page's key names a text field or none (the default key), so the record
- * id is only a choice where it is the default: without a text `slug` field.
- */
-export function keyFieldItems(collection: Pick<Collection, 'fields'> | undefined): { label: string, value: string, disabled?: boolean, description?: string }[] {
-  const byId = detailKeyField(collection) === RECORD_ID_KEY
+/** The URL key choices: the collection's text fields, then the record id (always a choice, S38.4). */
+export function keyFieldItems(collection: Pick<Collection, 'fields'> | undefined): { label: string, value: string }[] {
   return [
     ...(collection?.fields.filter(f => f.type === 'text').map(f => ({ label: `${f.label} (${f.key})`, value: f.key })) ?? []),
-    byId ? { label: 'Record id', value: RECORD_ID_KEY } : { label: 'Record id', value: RECORD_ID_KEY, disabled: true, description: 'Only without a text field named slug' }
+    { label: 'Record id', value: RECORD_ID_KEY }
   ]
-}
-
-const TITLE_FIELDS = ['title', 'name']
-const BODY_FIELDS = ['body', 'content', 'description', 'text', 'summary', 'excerpt']
-
-/** A node `node_insert` takes in `nodes`. */
-export interface DetailNodeSpec { type: string, props: Record<string, string> }
-
-/**
- * "Create detail page" for `collection`: the page to add (named after the
- * collection, with a name and slug no page in `pages` has, bound to it with
- * its default URL key) and the nodes to put on it: a Heading bound to the
- * `title` or `name` text field (else the URL key), and a Text bound to the
- * first long text field (`body`, `content`, `description`, …, else the
- * first other text field), left out when there is none.
- */
-export function detailPageSteps(collection: Pick<Collection, 'slug' | 'name' | 'fields'>, pages: Pick<Page, 'name' | 'slug'>[]): { page: { name: string, slug: string, collection: { slug: string } }, nodes: DetailNodeSpec[] } {
-  const name = uniqueName(collection.name, pages.map(p => ({ id: p.slug, name: p.name })))
-  const base = slugify(name)
-  let slug = base
-  for (let n = 2; pages.some(p => p.slug === slug); n++) slug = `${base}-${n}`
-  const text = collection.fields.filter(f => f.type === 'text')
-  const key = pageKeyField({ collection: { slug: collection.slug } }, [collection])!
-  const title = TITLE_FIELDS.map(k => text.find(f => f.key === k)).find(f => f)?.key ?? key
-  const body = BODY_FIELDS.map(k => text.find(f => f.key === k)).find(f => f) ?? text.find(f => f.key !== title && f.key !== key)
-  return {
-    page: { name, slug, collection: { slug: collection.slug } },
-    nodes: [
-      { type: 'Heading', props: { text: itemRef(title) } },
-      ...(body ? [{ type: 'Text', props: { text: itemRef(body.key) } }] : [])
-    ]
-  }
 }
 
 export interface DetailCommandActions {

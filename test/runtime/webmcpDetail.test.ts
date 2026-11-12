@@ -24,7 +24,7 @@ function setup() {
   const modelContext: ModelContext = { registerTool: tool => void tools.set(tool.name, tool) }
   registerWebMcpTools(modelContext, { getProject: () => project, getCurrentPage: () => current, getCurrentRecord: () => record, navigate })
   const call = async (name: string, input: Record<string, unknown> = {}) => tools.get(name)!.execute(input)
-  return { call, navigate, tools }
+  return { call, navigate, tools, project }
 }
 
 describe('WebMCP on detail pages', () => {
@@ -34,6 +34,12 @@ describe('WebMCP on detail pages', () => {
       { name: 'Home', slug: 'home', url: '/p/blog/home' },
       { name: 'Post', slug: 'post', url: '/p/blog/post/:slug', collection: 'posts', keyField: 'slug' }
     ])
+  })
+
+  it('list_pages shows the record id as the key field of a page keyed by id', async () => {
+    const { call, project } = setup()
+    project.pages[1]!.collection = { slug: 'posts', field: 'id' }
+    expect(JSON.parse((await call('list_pages')).content[0]!.text)[1]).toEqual({ name: 'Post', slug: 'post', url: '/p/blog/post/:id', collection: 'posts', keyField: 'id' })
   })
 
   it('navigate_to_page takes the key of a detail page, and needs it there only', async () => {

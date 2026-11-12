@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { createPage } from '#shared/document/factory'
 import type { Collection, Page } from '#shared/document/schema'
 import { resolveBindings } from '#shared/runtime/bindings'
-import { detailKeyField, detailLink, detailPath, detailTitle, keyMatches, parseDetailLink, resolvePageRoute } from '#shared/runtime/detail'
+import { detailKeyField, detailLink, detailPath, detailTitle, keyMatches, pageKeyField, parseDetailLink, resolvePageRoute } from '#shared/runtime/detail'
 import { resolveLink } from '#shared/runtime/render'
 
 const withSlug: Pick<Collection, 'slug' | 'fields'> = { slug: 'posts', fields: [{ key: 'title', label: 'Title', type: 'text' }, { key: 'slug', label: 'Slug', type: 'text' }] }
@@ -19,6 +19,11 @@ describe('detailKeyField', () => {
     expect(detailKeyField(withSlug)).toBe('slug')
     expect(detailKeyField(withoutSlug)).toBe('id')
     expect(detailKeyField(undefined)).toBe('id')
+  })
+
+  it('keeps the record id when it is chosen, even with a text slug field', () => {
+    expect(detailKeyField(withSlug, 'id')).toBe('id')
+    expect(pageKeyField({ collection: { slug: 'posts', field: 'id' } }, [withSlug])).toBe('id')
   })
 })
 
@@ -60,6 +65,12 @@ describe('detail links', () => {
     expect(resolveLink(resolved, '/p/blog')).toEqual({ to: '/p/blog/post/hello-world', external: false })
   })
 
+  it('links by record id with the id key', () => {
+    expect(detailLink('post', 'id')).toBe('post/{{ item.id }}')
+    const resolved = resolveBindings(detailLink('post', 'id'), { item: { id: 'rec_1', slug: 'hello-world' } })
+    expect(resolveLink(resolved, '/p/blog')).toEqual({ to: '/p/blog/post/rec_1', external: false })
+  })
+
   it('keeps working on the template, where the binding stays as written', () => {
     expect(resolveLink(detailLink('post', 'id'), '/p/blog')).toEqual({ to: '/p/blog/post/{{ item.id }}', external: false })
   })
@@ -77,6 +88,7 @@ describe('detail links', () => {
     expect(detailPath(post, [withSlug])).toBe('/post/:slug')
     expect(detailPath({ ...post, collection: { slug: 'posts', field: 'title' } }, [withSlug])).toBe('/post/:title')
     expect(detailPath({ ...post, collection: { slug: 'users' } }, [withoutSlug])).toBe('/post/:id')
+    expect(detailPath({ ...post, collection: { slug: 'posts', field: 'id' } }, [withSlug])).toBe('/post/:id')
     expect(detailPath(about, [withSlug])).toBe('/about')
   })
 })

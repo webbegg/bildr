@@ -134,7 +134,7 @@ A **List** is a container bound to a collection, with the props `collection`, `l
 
 A **detail page** is a page template that renders once per record of a collection (Framer CMS-style), for example a blog post page at `/p/<site>/post/<slug>`. A page becomes one with `collection: { slug, field? }`:
 
-- `slug` is the collection's slug. `field` is the **URL key**: a text field whose value identifies the record in the URL. Without one, a text field named `slug` is used when the collection has it, else the record id.
+- `slug` is the collection's slug. `field` is the **URL key**: a text field whose value identifies the record in the URL, or `id` for the record id (also when the collection has a `slug` field). Without one, a text field named `slug` is used when the collection has it, else the record id.
 - On a detail page, `{{ item.<field> }}` bindings read the page's record everywhere on the page: its layout and component property values included. Inside a List, the List's own record wins.
 - Links to it store `<page>/{{ item.<key field> }}`, for example a Link `to` of `post/{{ item.slug }}` inside a List of posts, so each row links to its own record.
 - In a link (`to`, a Form's `redirectTo`), item values are URL-encoded, so a key such as `What is new?` or `a/b` links to `post/What%20is%20new%3F` or `post/a%2Fb`, and the page reads the exact key back. A link that is a bound value alone (`{{ item.url }}`) is kept as it is. WebMCP `navigate_to_page` encodes its `key` the same way.
@@ -144,11 +144,12 @@ A **detail page** is a page template that renders once per record of a collectio
 
 Actions:
 
-- `page_set_collection { pageId, collection: { slug, field? } | null }` makes a page a detail page, or (`null`) a plain page again. Returns `{ collection, keyField, path }`, where `path` is the pattern, for example `/post/:slug`. It refuses an unknown collection and a key field that is missing or not text. One undo step.
+- `page_set_collection { pageId, collection: { slug, field? } | null }` makes a page a detail page, or (`null`) a plain page again. Returns `{ collection, keyField, path }`, where `path` is the pattern, for example `/post/:slug`. It refuses an unknown collection and a key field that is missing or not text (`id` is always accepted). One undo step.
 - `page_add { …, collection? }` adds a page that is a detail page from the start.
+- `page_create_detail { collection, name?, slug?, index? }` adds a detail page of the collection (its id or slug) with its content, in **one** undo step: the page uses the collection's default URL key and holds a Heading bound to the record's title (the `title` or `name` text field, else the URL key) and a Text bound to its body (`body`, `content`, `description`, `text`, `summary` or `excerpt`, else another text field; left out without one). The name defaults to the collection's name and the slug to a slug of the name, each one no other page has. Returns `{ pageId, slug, nodeIds, collection, keyField, path }`. The Data view's "Create detail page" and the ⌘K command "Create detail page for <collection>" use it.
 - `record_find { collection, field?, value }` returns the record whose `field` (a text field, or `id`) equals `value`. Without `field`, it uses the collection's default URL key. Connection collections read by id through their `get` endpoint and other keys from their `list` (within the [paging](#paging) caps); API collections read from their list.
 - `editor_navigate { pageId, recordId }` shows a detail page in the editor with that record previewed on the canvas.
-- Renaming the collection's slug updates the page's reference, deleting the collection (or the connection it uses, with `force`) makes the page a plain page, and removing the key field or changing it from text drops it, so the default key applies. Each happens in the same undo step as the change that caused it.
+- Renaming the collection's slug updates the page's reference, deleting the collection (or the connection it uses, with `force`) makes the page a plain page, and removing the key field or changing it from text drops it, so the default key applies. A record id key (`id`) names no field, so field changes never touch it. Each happens in the same undo step as the change that caused it.
 - `editor_get_context` shows a detail page's path as `/post/:slug` in its outline.
 
 ### Forms and Button actions

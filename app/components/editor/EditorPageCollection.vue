@@ -6,7 +6,7 @@ import { detailKeyField, detailPath, detailTitle, RECORD_ID_KEY } from '#shared/
 /**
  * The page settings' detail page rows (S34.7): the Collection the page is a
  * template of (None, or a collection), and on a detail page its URL key (a
- * text field, or the record id where that is the default; the path pattern
+ * text field, or the record id, always a choice; the path pattern
  * below it) and the record the canvas previews (the first by default), with
  * a warning when visitors can't open it because the collection isn't public.
  */
@@ -34,9 +34,9 @@ function setCollection(value: string) {
   void editor.setPageCollection(value === NONE ? null : value)
 }
 
-// The record id is the default key, so it is set as no field.
+// Stored as chosen, the record id too, so adding a slug field later keeps the key.
 function setKey(value: string) {
-  if (collection.value) void editor.setPageCollection(collection.value.slug, value === RECORD_ID_KEY ? undefined : value)
+  if (collection.value) void editor.setPageCollection(collection.value.slug, value)
 }
 </script>
 

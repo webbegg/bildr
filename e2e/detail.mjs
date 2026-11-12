@@ -6,7 +6,9 @@
  * their record and title, not-found keys and missing keys, a jsonplaceholder
  * connection detail page by id, the public record endpoint, and WebMCP
  * `list_pages` / `navigate_to_page` / `get_page_content` through a fake
- * `document.modelContext`.
+ * `document.modelContext`. S38.4: an Entry detail page of Posts keyed by the
+ * record id although Posts has a slug field (published, preview, public
+ * read, links and WebMCP).
  */
 import { action, BASE, check, project, run, shot, until } from './lib.mjs'
 
@@ -35,7 +37,7 @@ await run('detail', async ({ page, context, errors }) => {
   // Data: Posts (internal, slug field, publicRead) and Drafts (not public).
   await call('collection_create', { name: 'Posts', fields: [{ key: 'title', type: 'text' }, { key: 'slug', type: 'text' }, { key: 'body', type: 'text' }] })
   await call('collection_update', { collection: 'posts', publicRead: true })
-  await call('record_create', { collection: 'posts', values: { title: 'Hello', slug: 'hello-world', body: 'The first post' } })
+  const hello = await call('record_create', { collection: 'posts', values: { title: 'Hello', slug: 'hello-world', body: 'The first post' } })
   await call('record_create', { collection: 'posts', values: { title: 'Second', slug: 'second', body: 'Another post' } })
   await call('collection_create', { name: 'Drafts', fields: [{ key: 'slug', type: 'text' }] })
   await call('record_create', { collection: 'drafts', values: { slug: 'secret' } })
@@ -85,6 +87,15 @@ await run('detail', async ({ page, context, errors }) => {
   const { pageId: notesPage } = await call('page_add', { name: 'Notes', slug: 'notes' })
   const { nodeId: notesList } = await call('node_insert', { pageId: notesPage, type: 'List', props: { collection: 'notes' } })
   await call('node_insert', { pageId: notesPage, parentId: notesList, type: 'Link', props: { label: 'Open {{ item.title }}', to: 'bytitle/{{ item.title }}' } })
+
+  // Entry: a detail page of Posts keyed by the record id, although Posts has a slug field.
+  const { pageId: entryId } = await call('page_add', { name: 'Entry', slug: 'entry' })
+  const byId = await call('page_set_collection', { pageId: entryId, collection: { slug: 'posts', field: 'id' } })
+  check(byId.keyField === 'id' && byId.path === '/entry/:id', `page_set_collection keys by id on a collection with a slug field (${byId.keyField}, ${byId.path})`)
+  await call('node_insert', { pageId: entryId, type: 'Heading', props: { text: 'Entry: {{ item.title }}' } })
+  const { pageId: entriesPage } = await call('page_add', { name: 'Entries', slug: 'entries' })
+  const { nodeId: entriesList } = await call('node_insert', { pageId: entriesPage, type: 'List', props: { collection: 'posts' } })
+  await call('node_insert', { pageId: entriesPage, parentId: entriesList, type: 'Link', props: { label: 'Entry {{ item.title }}', to: 'entry/{{ item.id }}' } })
 
   await call('project_publish')
 
@@ -137,6 +148,8 @@ await run('detail', async ({ page, context, errors }) => {
   const pages = JSON.parse(await live.evaluate(async () => (await window.__webmcpTools.find(t => t.name === 'list_pages').execute({})).content[0].text))
   const postEntry = pages.find(e => e.slug === 'post')
   check(postEntry?.collection === 'posts' && postEntry.keyField === 'slug' && postEntry.url === `/p/${p.slug}/post/:slug`, `WebMCP list_pages marks the detail page (${JSON.stringify(postEntry)})`)
+  const entryEntry = pages.find(e => e.slug === 'entry')
+  check(entryEntry?.collection === 'posts' && entryEntry.keyField === 'id' && entryEntry.url === `/p/${p.slug}/entry/:id`, `WebMCP list_pages shows the id key (${JSON.stringify(entryEntry)})`)
   const navigated = await live.evaluate(async () => (await window.__webmcpTools.find(t => t.name === 'navigate_to_page').execute({ slug: 'post', key: 'second' })).content[0].text)
   await live.waitForURL(`**/p/${p.slug}/post/second`)
   await live.getByRole('heading', { name: 'Second' }).waitFor()
@@ -157,6 +170,31 @@ await run('detail', async ({ page, context, errors }) => {
     check(await until(async () => (await fresh.title()) === 'Not found'), `${what} shows not found (/p/${p.slug}/${path})`)
   }
   await fresh.close()
+
+  // The id-keyed Entry page: its List links, the published and preview URLs by id, the public read with field=id.
+  const entries = await page.context().newPage()
+  await entries.goto(`${BASE}/p/${p.slug}/entries`)
+  await entries.getByText('Entry Hello').waitFor()
+  const entryLinks = await entries.locator('[data-bildr-type="Link"]').evaluateAll(els => els.map(a => a.getAttribute('href')))
+  check(entryLinks[0] === `/p/${p.slug}/entry/${hello.id}`, `the List links to the Entry page by record id (${entryLinks})`)
+  await entries.getByText('Entry Hello').click()
+  await entries.waitForURL(`**/p/${p.slug}/entry/${hello.id}`)
+  await entries.getByRole('heading', { name: 'Entry: Hello' }).waitFor()
+  check(true, 'the List link opens the record by id')
+  await entries.close()
+  const entry = await page.context().newPage()
+  await entry.goto(`${BASE}/p/${p.slug}/entry/${hello.id}`)
+  await entry.getByRole('heading', { name: 'Entry: Hello' }).waitFor()
+  check(await until(async () => (await entry.title()) === `Hello · ${p.name}`), `the published id URL shows the record (${await entry.title()})`)
+  await entry.goto(`${BASE}/p/${p.slug}/entry/hello-world`)
+  await entry.getByText('Page not found').waitFor()
+  check(true, 'the slug is not a key of the id-keyed page')
+  await entry.goto(`${BASE}/preview/${projectId}/entry/${hello.id}`)
+  await entry.getByRole('heading', { name: 'Entry: Hello' }).waitFor()
+  check(true, 'the preview id URL shows the record')
+  await entry.close()
+  const readById = await fetch(`${BASE}/api/public/${p.slug}/posts/record?key=${hello.id}&field=id`)
+  check(readById.status === 200 && (await readById.json()).record?.values.slug === 'hello-world', `the public read takes field=id (${readById.status})`)
 
   // The remote detail page, by id through the Get endpoint.
   await live.goto(`${BASE}/p/${p.slug}/jp-post/1`)

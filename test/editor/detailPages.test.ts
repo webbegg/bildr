@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createCollection, createNode, createPage } from '#shared/document/factory'
 import type { Collection, DocNode, Page } from '#shared/document/schema'
-import { detailCommands, detailLinkItems, detailPageSteps, itemScope, itemVariables, keyFieldItems } from '#shared/editor/detailPages'
+import { detailCommands, detailLinkItems, itemScope, itemVariables, keyFieldItems } from '#shared/editor/detailPages'
 
 const posts: Collection = createCollection('Posts', 'posts', [
   { key: 'title', label: 'Title', type: 'text' },
@@ -58,6 +58,13 @@ describe('detailLinkItems', () => {
     ])
   })
 
+  it('links by record id on a page keyed by id', () => {
+    const byId: Page = { ...createPage('Entry', 'entry'), collection: { slug: 'posts', field: 'id' } }
+    expect(detailLinkItems({ pages: [byId], collections }, posts)).toEqual([
+      { label: 'Detail: Entry', value: 'entry/{{ item.id }}', disabled: false, description: '/entry/:id' }
+    ])
+  })
+
   it('disables every entry without an item', () => {
     expect(detailLinkItems(project, undefined).map(i => i.disabled)).toEqual([true, true])
   })
@@ -85,33 +92,8 @@ describe('keyFieldItems', () => {
     expect(keyFieldItems(tags)).toEqual([{ label: 'Record id', value: 'id' }])
   })
 
-  it('disables Record id when a text slug field is the default key (a page key can only name a text field)', () => {
-    expect(keyFieldItems(posts).at(-1)).toEqual({ label: 'Record id', value: 'id', disabled: true, description: 'Only without a text field named slug' })
-  })
-})
-
-describe('detailPageSteps', () => {
-  it('adds a page bound to the collection with a Heading on the title and a Text on the body', () => {
-    expect(detailPageSteps(posts, [home])).toEqual({
-      page: { name: 'Posts', slug: 'posts', collection: { slug: 'posts' } },
-      nodes: [
-        { type: 'Heading', props: { text: '{{ item.title }}' } },
-        { type: 'Text', props: { text: '{{ item.body }}' } }
-      ]
-    })
-  })
-
-  it('binds the Heading to name, else the key, and leaves the Text out without another text field', () => {
-    expect(detailPageSteps(users, []).nodes).toEqual([
-      { type: 'Heading', props: { text: '{{ item.name }}' } },
-      { type: 'Text', props: { text: '{{ item.email }}' } }
-    ])
-    expect(detailPageSteps(tags, []).nodes).toEqual([{ type: 'Heading', props: { text: '{{ item.id }}' } }])
-  })
-
-  it('gives the page a name and slug no page has', () => {
-    const taken = [{ ...createPage('Posts', 'posts') }]
-    expect(detailPageSteps(posts, taken).page).toMatchObject({ name: 'Posts 2', slug: 'posts-2' })
+  it('always offers Record id, even when a text slug field is the default key', () => {
+    expect(keyFieldItems(posts).at(-1)).toEqual({ label: 'Record id', value: 'id' })
   })
 })
 

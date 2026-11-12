@@ -6,7 +6,10 @@
  * hint, the Pages badge and path hint, `editor_navigate` with a recordId,
  * the insert-variable picker's item fields, ⌘K, and the link picker's
  * "Detail: <page>" entry inside a List (disabled outside one), then Publish
- * and a click through on the published site to the record.
+ * and a click through on the published site to the record. S38: Create
+ * detail page is one undo step (one Undo removes the page entirely), and
+ * "Record id" is a URL key choice on a collection with a slug field, giving
+ * published URLs by id.
  */
 import { action, BASE, canvas, check, openEditor, project, run, shot, toView, until } from './lib.mjs'
 
@@ -18,7 +21,7 @@ await run('detail-ui', async ({ page, errors }) => {
   const doc = () => call('project_get')
 
   await call('collection_create', { name: 'Posts', fields: [{ key: 'title', type: 'text' }, { key: 'slug', type: 'text' }, { key: 'body', type: 'text' }] })
-  await call('record_create', { collection: 'posts', values: { title: 'Hello', slug: 'hello-world', body: 'The first post' } })
+  const hello = await call('record_create', { collection: 'posts', values: { title: 'Hello', slug: 'hello-world', body: 'The first post' } })
   const second = await call('record_create', { collection: 'posts', values: { title: 'Second', slug: 'second', body: 'Another post' } })
   // Home: a List of posts with a Link in it, and a Link outside it.
   const { nodeId: list } = await call('node_insert', { pageId: home.id, type: 'List', props: { collection: 'posts' } })
@@ -30,6 +33,8 @@ await run('detail-ui', async ({ page, errors }) => {
   await toView(page, 'Data')
   await page.locator('[data-detail-page-section]').waitFor()
   await shot(page, 'detail/data-create')
+  const strip = doc => JSON.stringify({ ...doc, version: undefined, updatedAt: undefined })
+  const beforeCreate = strip(await doc())
   await page.locator('[data-create-detail-page]').click()
   const created = await until(async () => (await doc()).pages.find(pg => pg.collection?.slug === 'posts' && pg.root.children.length === 2))
   check(created?.name === 'Posts' && created.slug === 'posts', `Create detail page adds "Posts" bound to the collection (${created?.name}, /${created?.slug})`)
@@ -37,6 +42,15 @@ await run('detail-ui', async ({ page, errors }) => {
   check(heading?.type === 'Heading' && heading.props.text === '{{ item.title }}' && body?.type === 'Text' && body.props.text === '{{ item.body }}', 'it holds a Heading bound to the title and a Text bound to the body')
   await page.locator('[data-view-menu]').filter({ hasText: 'Canvas' }).waitFor()
   check(true, 'Create detail page opens the page on the Canvas')
+  check((await call('history_get')).undo === 'Create detail page', 'it is one undo step, "Create detail page"')
+
+  // One Undo removes the page entirely; Redo brings it back whole.
+  await page.getByRole('button', { name: 'Undo', exact: true }).click()
+  check(await until(async () => strip(await doc()) === beforeCreate), 'one Undo removes the detail page entirely (the document is as before)')
+  await page.getByRole('button', { name: 'Redo', exact: true }).click()
+  const redone = await until(async () => (await doc()).pages.find(pg => pg.id === created.id && pg.root.children.length === 2))
+  check(redone, 'Redo brings the page back with its Heading and Text')
+  await call('editor_navigate', { pageId: created.id })
   await canvas(page).getByRole('heading', { name: 'Hello' }).waitFor()
   check(await canvas(page).getByText('The first post').count() === 1, 'the canvas previews the first record')
 
@@ -72,7 +86,7 @@ await run('detail-ui', async ({ page, errors }) => {
   // URL key: Title, then back to the default Slug.
   check((await page.getByLabel('URL key').textContent()).includes('Slug'), 'the URL key defaults to Slug')
   await page.getByLabel('URL key').click()
-  check(await page.getByRole('option', { name: 'Record id' }).getAttribute('data-disabled') !== null, 'Record id is disabled while a slug field is the default')
+  check(await page.getByRole('option', { name: 'Record id' }).getAttribute('data-disabled') === null, 'Record id is selectable although a slug field is the default')
   await page.getByRole('option', { name: 'Title (title)' }).click()
   const titled = await until(async () => (await doc()).pages.find(pg => pg.id === created.id)?.collection?.field === 'title')
   check(titled, 'the URL key select sets the key field to title')
@@ -145,8 +159,43 @@ await run('detail-ui', async ({ page, errors }) => {
   check(await page.getByText('The first post').count() === 1, 'the published List links through to the record\'s detail page')
   await shot(page, 'detail/published-ui')
 
+  // URL key "Record id" on a collection with a slug field: links and published URLs use the id.
+  await openEditor(page, projectId)
+  await call('editor_navigate', { pageId: created.id, nodeId: created.root.id })
+  await page.getByLabel('URL key').waitFor()
+  await page.getByLabel('URL key').click()
+  await page.getByRole('option', { name: 'Record id' }).click()
+  check(await until(async () => (await doc()).pages.find(pg => pg.id === created.id)?.collection?.field === 'id'), 'choosing Record id sets the key field to id')
+  await until(async () => (await page.locator('[data-page-path]').textContent())?.includes('/posts/:id'))
+  check((await page.locator('[data-page-path]').textContent()).trim() === '/posts/:id', 'the path hint reads /posts/:id')
+  check((await page.getByLabel('URL key').textContent()).includes('Record id'), 'the URL key select shows Record id')
+  await call('editor_navigate', { pageId: home.id, nodeId: listLink })
+  await page.getByLabel('Link to', { exact: true }).click()
+  // The stored slug link still shows as its own "Detail: Posts (Key slug)" entry; pick the page's current one.
+  await page.getByRole('option', { name: /Detail: Posts/ }).filter({ hasText: '/posts/:id' }).click()
+  check(await until(async () => findIn((await doc()).pages[0].root, listLink)?.props.to === 'posts/{{ item.id }}'), 'Detail: Posts now stores posts/{{ item.id }}')
+  const publishedAt = (await call('project_published_info'))?.publishedAt
+  await page.getByRole('button', { name: 'Publish', exact: true }).click()
+  check(await until(async () => (await call('project_published_info'))?.publishedAt !== publishedAt), 'Publish publishes the id-keyed page')
+  const live = await page.context().newPage()
+  await live.goto(`${BASE}/p/${p.slug}`)
+  await live.getByText('Read Hello').click()
+  await live.waitForURL(`**/p/${p.slug}/posts/${hello.id}`)
+  await live.getByRole('heading', { name: 'Hello' }).waitFor()
+  check(await live.getByText('The first post').count() === 1, `the published link opens /posts/${hello.id}, the record by id`)
+  const byId = await page.context().newPage()
+  await byId.goto(`${BASE}/p/${p.slug}/posts/${hello.id}`)
+  await byId.getByRole('heading', { name: 'Hello' }).waitFor()
+  check(true, 'a direct load of the id URL shows the record')
+  const bySlug = await page.context().newPage()
+  await bySlug.goto(`${BASE}/p/${p.slug}/posts/hello-world`)
+  await bySlug.getByText('Page not found').waitFor()
+  check(true, 'the slug URL is not found once the key is the id')
+  await Promise.all([live.close(), byId.close(), bySlug.close()])
+
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
-})
+  // The slug URL's record read answers 404 on purpose.
+}, { ignore: [/status of 404 \(Record not found\)/] })
 
 function findIn(node, id) {
   if (node.id === id) return node

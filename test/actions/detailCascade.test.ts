@@ -32,7 +32,6 @@ describe('verify: page_set_collection / page_add', () => {
       ['page_set_collection', { pageId, collection: { slug: 'nope' } }],
       ['page_set_collection', { pageId, collection: { slug: 'posts', field: 'views' } }],
       ['page_set_collection', { pageId, collection: { slug: 'posts', field: 'zzz' } }],
-      ['page_set_collection', { pageId, collection: { slug: 'posts', field: 'id' } }],
       ['page_set_collection', { pageId, collection: { slug: 'posts', field: '' } }],
       ['page_set_collection', { pageId, collection: { slug: 'posts', field: '__proto__' } }],
       ['page_set_collection', { pageId, collection: { slug: 'Posts' } }],

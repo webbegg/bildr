@@ -57,6 +57,12 @@ describe('page_set_collection', () => {
     expect(strip(await project())).toEqual(before)
   })
 
+  it('takes the record id as the URL key, even with a text slug field', async () => {
+    const { call, pageId, page } = await setup()
+    expect(await call('page_set_collection', { pageId, collection: { slug: 'posts', field: 'id' } })).toMatchObject({ collection: { slug: 'posts', field: 'id' }, keyField: 'id', path: '/post/:id' })
+    expect((await page()).collection).toEqual({ slug: 'posts', field: 'id' })
+  })
+
   it('refuses an unknown collection and a key field that is missing or not text', async () => {
     const { call, pageId } = await setup()
     await expect(call('page_set_collection', { pageId, collection: { slug: 'news' } })).rejects.toThrow('Page "Post" shows the unknown collection "news"')
@@ -109,6 +115,19 @@ describe('cascades from collection and field changes', () => {
     expect(strip(await project())).toEqual(before)
     await call('field_update', { collection: 'posts', key: 'title', label: 'Headline' })
     expect((await page()).collection).toEqual({ slug: 'posts', field: 'title' })
+  })
+
+  it('keeps the record id key when fields are renamed, retyped or removed, and follows a slug rename', async () => {
+    const { call, page, project, before } = await detail('id')
+    await call('field_update', { collection: 'posts', key: 'slug', type: 'number' })
+    expect((await page()).collection).toEqual({ slug: 'posts', field: 'id' })
+    await call('field_remove', { collection: 'posts', key: 'slug' })
+    expect((await page()).collection).toEqual({ slug: 'posts', field: 'id' })
+    await call('field_update', { collection: 'posts', key: 'title', label: 'Headline' })
+    await call('collection_update', { collection: 'posts', slug: 'articles' })
+    expect((await page()).collection).toEqual({ slug: 'articles', field: 'id' })
+    for (let i = 0; i < 4; i++) await call('history_undo')
+    expect(strip(await project())).toEqual(before)
   })
 
   it('deleting a connection clears the detail pages of its collections', async () => {

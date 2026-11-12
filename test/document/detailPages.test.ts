@@ -30,6 +30,14 @@ describe('a page bound to a collection (detail page)', () => {
     expect(messages(project)).toEqual([])
   })
 
+  it('accepts the record id as the URL key, even with a text slug field', () => {
+    const project = setup()
+    project.pages[1]!.collection = { slug: 'posts', field: 'id' }
+    expect(messages(project)).toEqual([])
+    const inverse = applyOperations(project, [{ op: 'updatePage', pageId: 'post', collection: { slug: 'posts' } }])
+    expect(inverse).toEqual([{ op: 'updatePage', pageId: 'post', collection: { slug: 'posts', field: 'id' } }])
+  })
+
   it('refuses a missing collection, a missing field and a field that is not text', () => {
     const project = setup()
     project.pages[1]!.collection = { slug: 'news' }
