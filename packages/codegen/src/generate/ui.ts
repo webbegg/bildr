@@ -5,7 +5,7 @@ import type { ActionFile, ComponentFile, EntityFile, LayoutFile, ModelNode, Page
 import type { GeneratedFile } from '../sync/plan.ts'
 import { entityNames, moduleContext } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
-import { camel, kebab, pascal, propertyPath, tsString } from './text.ts'
+import { camel, identifier, kebab, pascal, propertyPath, tsString } from './text.ts'
 
 /**
  * The UI of the app (T7c): layouts, pages and components, rendered from the
@@ -65,6 +65,9 @@ const use = (env: Env, key: string, part: string) => {
   parts.add(part)
   env.used.set(key, parts)
 }
+
+/** `file (node id)`, the prefix of every generator error. */
+const where = (env: Env, node: ModelNode | undefined) => `${env.file}${node ? ` (node ${node.id})` : ''}`
 
 const fail = (env: Env, node: ModelNode | undefined, message: string): never => {
   throw new Error(`${env.file}${node ? ` (node ${node.id})` : ''}: ${message}`)
@@ -226,7 +229,7 @@ const routeLocation = (env: Env, node: ModelNode | undefined, to: Value | undefi
   const page = pageById(env, node, to.page)
   const params = isObject(to.params) ? Object.entries(to.params) : []
   if (!params.length) return { static: page.path, code: tsString(page.path) }
-  return { code: `{ name: ${tsString(page.name)}, params: { ${params.map(([name, value]) => `${name}: ${expression(env, node, value, ctx)}`).join(', ')} } }` }
+  return { code: `{ name: ${tsString(page.name)}, params: { ${params.map(([name, value]) => `${identifier(name, where(env, node))}: ${expression(env, node, value, ctx)}`).join(', ')} } }` }
 }
 
 // ── Nodes ───────────────────────────────────────────────────────────────
@@ -260,6 +263,7 @@ const render = (env: Env, node: ModelNode, indent: string, options: RenderOption
       let inner = children(env, node, indent, options)
       const slot = options.slots?.get(node.id)
       if (slot) {
+        if (!/^[A-Za-z_][\w-]*$/.test(slot)) fail(env, node, `"${slot}" is not a slot name (letters, digits, _ and -)`)
         const name = slot === 'children' ? '' : ` name="${slot}"`
         inner = inner.length ? [`${indent}  <slot${name}>`, ...inner.map(line => `  ${line}`), `${indent}  </slot>`] : [`${indent}  <slot${name} />`]
       }
@@ -372,7 +376,7 @@ const form = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
 const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, options: RenderOptions) => {
   if (extra.length) return fail(env, node, 'a List can\'t be hidden or repeated itself yet')
   const props = node.props ?? {}
-  const as = typeof props.as === 'string' ? props.as : fail(env, node, 'a List needs `as`, the item name')
+  const as = typeof props.as === 'string' ? identifier(props.as, where(env, node)) : fail(env, node, 'a List needs `as`, the item name')
   const items = expression(env, node, props.items, 'template')
   const loading = typeof props.loading === 'string' ? loadingOf(env, props.items) : []
   const lines: string[] = []
@@ -424,7 +428,7 @@ const runAction = (env: Env, node: ModelNode, step: Record<string, Value>, ctx: 
 const setState = (env: Env, node: ModelNode, step: Record<string, Value>) => {
   const alias = env.aliases.state.get(String(step.state)) ?? fail(env, node, `state ${String(step.state)} isn't in the page's uses.state`)
   use(env, `state:${alias}`, 'set')
-  return `set${pascal(alias)}({ ${String(step.field)}: ${expression(env, node, step.value, 'template')} })`
+  return `set${pascal(alias)}({ ${identifier(String(step.field), where(env, node))}: ${expression(env, node, step.value, 'template')} })`
 }
 
 const EVENT_NAMES: Record<string, string> = { click: 'click', change: 'update:model-value', mouseenter: 'mouseenter', mouseleave: 'mouseleave' }
