@@ -8,6 +8,7 @@ import { createCollection, fieldLabel, newId, slugify } from '#shared/document/f
 import type { Operation } from '#shared/document/operations'
 import { ApiHeadersSchema, ApiPathSchema, ApiUrlSchema, CollectionSourceSchema, FieldKeySchema, FieldTypeSchema, IdSchema, PagingSchema, SlugSchema } from '#shared/document/schema'
 import type { Collection, Field, Project } from '#shared/document/schema'
+import { DETAIL_KEY_MAX, detailKeyField, RECORD_ID_KEY } from '#shared/runtime/detail'
 import { createPublicRecord } from '../utils/publicData'
 import type { PublicWriteResult } from '../utils/publicData'
 import { findConnection, publicRemoteValues } from '../utils/remote'
@@ -290,6 +291,38 @@ export const recordGet = defineAction({
     if (remote) return readRecord(remote.collection.fields, await ctx.services.remote.get(remote.project.id, remote.project.connections, remote.collection, recordId))
     const { collection, records } = await loadCollection(ctx, projectId, ref)
     return readRecord(collection.fields, records[findRecord(records, recordId, collection)]!)
+  }
+})
+
+/**
+ * The URL key field `given` (else the collection's default, see
+ * `detailKeyField`), refused unless it is the record id or a text field.
+ */
+export function keyFieldOf(collection: Collection, given: string | undefined): string {
+  const field = detailKeyField(collection, given)
+  if (field !== RECORD_ID_KEY && !collection.fields.some(f => f.key === field && f.type === 'text')) {
+    throw new ActionError('invalid', `"${field}" is not a text field of "${collection.name}"`)
+  }
+  return field
+}
+
+export const recordFind = defineAction({
+  name: 'record_find',
+  description: 'Get the record a detail page shows for a URL key: the record whose field (a text field, or "id" for the record id) equals value. Without field, the collection\'s default URL key: a text field named slug, else the id. Connection collections read by id through their get endpoint, other keys from their list (within the paging caps); API collections from their list.',
+  input: z.object({
+    projectId: IdSchema,
+    collection: CollectionRef,
+    field: z.string().min(1).max(64).optional().describe('A text field key, or "id"; defaults to slug when the collection has a text slug field, else id'),
+    value: z.string().min(1).max(DETAIL_KEY_MAX).describe('The URL key, e.g. hello-world')
+  }),
+  readOnly: true,
+  run: async ({ projectId, collection: ref, field: given, value }, ctx) => {
+    const project = await ctx.services.loadProject(projectId)
+    const collection = findCollection(project, ref)
+    const field = keyFieldOf(collection, given)
+    const record = await ctx.services.recordByKey(project.id, collection, project.connections, field, value)
+    if (!record) throw new ActionError('not_found', `No record of "${collection.name}" has ${field} "${value}"`)
+    return readRecord(collection.fields, record)
   }
 })
 

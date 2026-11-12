@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { DataRecord } from '#shared/data/records'
+import { bindingItem } from '#shared/runtime/bindings'
+import type { BindingItem } from '#shared/runtime/bindings'
 import type { Theme } from '#shared/design/theme'
 import type { ComponentDefinition, Layout, Page } from '#shared/document/schema'
 import type { EnvValues } from '#shared/env/variables'
@@ -89,6 +91,8 @@ const base = ref('')
 const components = shallowRef<ComponentDefinition[]>([])
 const layouts = shallowRef<Layout[]>([])
 const lists = shallowRef<Record<string, DataRecord[]>>({})
+/** A detail page's preview record, the page item its bindings read; null shows them as written. */
+const item = shallowRef<BindingItem | null>(null)
 const theme = shallowRef<Theme | null>(null)
 const env = shallowRef<EnvValues>({})
 useTheme(theme, env)
@@ -372,6 +376,17 @@ function track() {
   frame = requestAnimationFrame(track)
 }
 
+/**
+ * The record a detail page previews: `bildr:render.record`, a `DataRecord`
+ * (as `record_list` returns it), or null or absent for none. Read
+ * defensively, so an editor that sends none shows bindings as written.
+ */
+function previewItem(message: object): BindingItem | null {
+  const record = (message as { record?: unknown }).record as Partial<DataRecord> | null | undefined
+  if (!record || typeof record.id !== 'string' || typeof record.values !== 'object' || record.values === null) return null
+  return bindingItem({ id: record.id, createdAt: String(record.createdAt ?? ''), updatedAt: String(record.updatedAt ?? ''), values: record.values })
+}
+
 function onMessage(event: MessageEvent) {
   if (event.source !== window.parent || !isCanvasMessage<EditorToCanvas>(event.data)) return
   const message = event.data
@@ -380,6 +395,7 @@ function onMessage(event: MessageEvent) {
     if (Object.keys(previews.value).length) previews.value = settlePreviews(previews.value, message.page.root)
     base.value = message.base
     lists.value = message.lists
+    item.value = message.page.collection ? previewItem(message) : null
     components.value = message.components ?? []
     layouts.value = message.layouts ?? []
     env.value = message.env ?? {}
@@ -865,6 +881,7 @@ onBeforeUnmount(() => {
     <BildrPage
       v-else-if="shownPage"
       :page="shownPage"
+      :item="item"
       :base="base"
       :lists="lists"
       :components="components"

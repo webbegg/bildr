@@ -1,12 +1,12 @@
 import { componentCreate, componentDelete, componentDuplicate, componentInteractionAdd, componentInteractionRemove, componentInteractionUpdate, componentPropertyAdd, componentPropertyRemove, componentPropertyUpdate, componentRename, componentStateAdd, componentTransitionSet, componentVariantAdd, componentVariantDelete, componentVariantRename, componentVariantSetOverride, instanceDetach, instanceReplace, instanceSetSlot, instanceSetValues } from './component'
 import { connectionCreate, connectionDelete, connectionUpdate, endpointTest } from './connection'
-import { apiSourcePreview, collectionCreate, collectionDelete, collectionUpdate, fieldAdd, fieldMove, fieldRemove, fieldUpdate, publicRecordCreate, recordCreate, recordDelete, recordGet, recordList, recordUpdate } from './data'
+import { apiSourcePreview, collectionCreate, collectionDelete, collectionUpdate, fieldAdd, fieldMove, fieldRemove, fieldUpdate, publicRecordCreate, recordCreate, recordDelete, recordFind, recordGet, recordList, recordUpdate } from './data'
 import type { ActionDef } from './define'
 import { editorGetContext, editorNavigate, editorSetContext } from './editor'
 import { envDelete, envList, envSet } from './env'
 import { layoutCreate, layoutCreateFromSelection, layoutDelete, layoutDuplicate, layoutRename, layoutSlotAdd, layoutSlotRemove, layoutSlotUpdate, layoutVariableAdd, layoutVariableRemove, layoutVariableUpdate, pageSetLayout, pageSetLayoutValues, pageSetSlot } from './layout'
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeRename, nodeSetLocked, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './node'
-import { pageAdd, pageDelete, pageRename } from './page'
+import { pageAdd, pageDelete, pageRename, pageSetCollection } from './page'
 import { themeGet, themeUpdate } from './theme'
 import { themeApply, themeLibraryDelete, themeLibraryDuplicate, themeLibraryList, themeLibrarySave, themeLibraryUpdate } from './themeLibrary'
 import { componentsList, historyGet, historyRedo, historyUndo, projectCreate, projectDelete, projectGet, projectList, projectPublish, projectPublishedInfo, projectRename } from './project'
@@ -22,6 +22,7 @@ export const ACTIONS = [
   pageAdd,
   pageRename,
   pageDelete,
+  pageSetCollection,
   nodeInsert,
   nodeUpdateProps,
   nodeUpdateStyle,
@@ -88,6 +89,7 @@ export const ACTIONS = [
   endpointTest,
   recordList,
   recordGet,
+  recordFind,
   recordCreate,
   publicRecordCreate,
   recordUpdate,

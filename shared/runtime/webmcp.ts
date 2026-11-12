@@ -1,6 +1,8 @@
 import { takesFormRecords } from '../data/collections'
 import { INSTANCE_TYPE } from '../document/components'
 import type { ComponentDefinition, DocNode, Page } from '../document/schema'
+import type { BindingItem } from './bindings'
+import { pageKeyField } from './detail'
 import { resolveInstance } from './instances'
 import { resolvePageWithLayout } from './layouts'
 import { pageOutline } from './render'
@@ -34,6 +36,8 @@ export interface ModelContext {
 export interface WebMcpHost {
   getProject: () => VisitorProject | undefined
   getCurrentPage: () => Page | undefined
+  /** On a detail page, the record it shows (null while loading or not found); read at each call. */
+  getCurrentRecord?: () => BindingItem | null | undefined
   /** Navigates the app router to a path such as `/p/shop/pricing`. */
   navigate: (path: string) => unknown
   /** Reaches the public data endpoint; defaults to the global `fetch`. */
@@ -152,21 +156,28 @@ function tools(host: WebMcpHost): WebMcpTool[] {
   return [
     {
       name: 'list_pages',
-      description: 'List the pages of this app with their name, slug and URL.',
+      description: 'List the pages of this app with their name, slug and URL. Detail pages show one record of a collection each: they also give the collection and the key field, and their URL is a pattern such as /p/blog/post/:slug (the key goes last).',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true },
       execute: () => {
         const project = host.getProject()
-        const pages = project?.pages.map(p => ({ name: p.name, slug: p.slug, url: pageUrl(project, p) })) ?? []
+        const pages = project?.pages.map((p) => {
+          const keyField = pageKeyField(p, project.collections)
+          if (!p.collection || !keyField) return { name: p.name, slug: p.slug, url: pageUrl(project, p) }
+          return { name: p.name, slug: p.slug, url: `${pageUrl(project, p)}/:${keyField}`, collection: p.collection.slug, keyField }
+        }) ?? []
         return text(JSON.stringify(pages))
       }
     },
     {
       name: 'navigate_to_page',
-      description: 'Show another page of this app. Use a slug from list_pages.',
+      description: 'Show another page of this app. Use a slug from list_pages; a detail page also needs the key of the record to show (the value of its key field, e.g. from list_records).',
       inputSchema: {
         type: 'object',
-        properties: { slug: { type: 'string', description: 'The page slug, e.g. "pricing"' } },
+        properties: {
+          slug: { type: 'string', description: 'The page slug, e.g. "pricing"' },
+          key: { type: 'string', description: 'Detail pages only: the record key, e.g. "hello-world"' }
+        },
         required: ['slug']
       },
       execute: async (input) => {
@@ -176,13 +187,19 @@ function tools(host: WebMcpHost): WebMcpTool[] {
         if (!project || !page) {
           return text(`Unknown page "${String(input.slug)}". Valid slugs: ${pages.map(p => p.slug).join(', ')}`, true)
         }
-        await host.navigate(pageUrl(project, page))
-        return text(`Navigated to ${pageUrl(project, page)}`)
+        const key = typeof input.key === 'string' && input.key ? input.key : undefined
+        if (page.collection && !key) {
+          return text(`Page "${page.slug}" shows one record of "${page.collection.slug}": give its key (the ${pageKeyField(page, project.collections)}), e.g. from list_records`, true)
+        }
+        if (!page.collection && input.key !== undefined) return text(`Page "${page.slug}" takes no key`, true)
+        const url = key ? `${pageUrl(project, page)}/${encodeURIComponent(key)}` : pageUrl(project, page)
+        await host.navigate(url)
+        return text(`Navigated to ${url}`)
       }
     },
     {
       name: 'get_page_content',
-      description: 'Read the current page as a text outline: one line per element, links shown as "→ target".',
+      description: 'Read the current page as a text outline: one line per element, links shown as "→ target". On a detail page, the values of the record it shows.',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true },
       execute: () => {
@@ -191,7 +208,11 @@ function tools(host: WebMcpHost): WebMcpTool[] {
         const project = host.getProject()
         const components = project?.components ?? []
         const root = resolvePageWithLayout(page, project?.layouts ?? [], components)
-        return text(pageOutline({ ...page, root: asRendered(root, components)! }))
+        const item = page.collection ? host.getCurrentRecord?.() : undefined
+        const keyField = project && pageKeyField(page, project.collections)
+        const key = item && keyField ? item[keyField] : undefined
+        const path = project && keyField ? `${pageUrl(project, page)}/${key === undefined || key === null ? `:${keyField}` : encodeURIComponent(String(key))}` : undefined
+        return text(pageOutline({ ...page, root: asRendered(root, components)! }, { path, item }))
       }
     },
     ...(project ? dataTools(project, host) : [])

@@ -19,8 +19,8 @@ export interface ActionContext {
   notify: (projectId: string, version: number) => void
   /** Records that `collectionId`'s records changed; a `scope: 'data'` event, the document version stays `version`. */
   notifyData: (projectId: string, version: number, collectionId: string) => void
-  /** Asks open editors of `projectId` to show a page (and node); emitted on success, never stored. */
-  navigate: (projectId: string, pageId: string, nodeId: string | null) => void
+  /** Asks open editors of `projectId` to show a page (and node, or on a detail page a record to preview); emitted on success, never stored. */
+  navigate: (projectId: string, pageId: string, nodeId: string | null, recordId?: string) => void
 }
 
 export interface ActionDef<I extends z.ZodType = z.ZodType, O = unknown> {

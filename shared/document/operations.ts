@@ -4,8 +4,8 @@ import { isStyleTokenKey, styleTokenProblem } from '../design/tokens'
 import { getComponent, INSTANCE_TYPE, isContainerType, SLOT_FILL_TYPE } from './components'
 import type { PropValue } from './components'
 import { z } from 'zod'
-import { ApiPathSchema, CHILDREN_SLOT, CollectionSchema, componentProblems, ComponentDefinitionSchema, CONNECTIONS_MAX, ConnectionSchema, FieldSchema, FieldTypeSchema, instanceProblems, isStyleBinding, layoutProblems, LayoutSchema, LayoutSlotSchema, NODE_NAME_MAX, nodeTreeProblems, pageLayoutProblems, PageSchema, ProjectSchema, PropertyBindingSchema, PropertyDefSchema, propValueProblem, SlugSchema, styleKeyProblem, VariantSchema } from './schema'
-import type { ApiHeader, Collection, CollectionSource, ComponentDefinition, Connection, DocNode, Field, FieldType, Interaction, Layout, LayoutSlot, Page, Project, PropertyBinding, PropertyDef, Transition, Variant } from './schema'
+import { ApiPathSchema, CHILDREN_SLOT, CollectionSchema, componentProblems, ComponentDefinitionSchema, CONNECTIONS_MAX, ConnectionSchema, FieldSchema, FieldTypeSchema, instanceProblems, isStyleBinding, layoutProblems, LayoutSchema, LayoutSlotSchema, NODE_NAME_MAX, nodeTreeProblems, pageCollectionProblems, PageCollectionSchema, pageLayoutProblems, PageSchema, ProjectSchema, PropertyBindingSchema, PropertyDefSchema, propValueProblem, SlugSchema, styleKeyProblem, VariantSchema } from './schema'
+import type { ApiHeader, Collection, CollectionSource, ComponentDefinition, Connection, DocNode, Field, FieldType, Interaction, Layout, LayoutSlot, Page, PageCollection, Project, PropertyBinding, PropertyDef, Transition, Variant } from './schema'
 import { variantStyle } from '../runtime/instances'
 import { containsNode, findNode, findParent, walk } from './tree'
 import { componentUsages } from './usages'
@@ -40,7 +40,8 @@ export type Operation
     | ({ op: 'setNodeMeta', nodeId: string, name?: string | null, locked?: boolean | null } & TreeRef)
     | { op: 'addPage', index: number, page: Page }
     | { op: 'removePage', pageId: string }
-    | { op: 'updatePage', pageId: string, name?: string, slug?: string }
+    /** `collection` makes the page a detail page of that collection; null makes it a plain page again. */
+    | { op: 'updatePage', pageId: string, name?: string, slug?: string, collection?: PageCollection | null }
     /** `custom` patches the theme's custom colours by name: a hex adds or changes one, null removes it. */
     | { op: 'setTheme', theme: ThemePatch, custom?: CustomColorsPatch }
     | { op: 'addCollection', index: number, collection: Collection }
@@ -542,6 +543,13 @@ function apply(project: Project, op: Operation): Operation {
         inverse.slug = page.slug
         page.slug = op.slug
       }
+      if (op.collection !== undefined) {
+        const parsed = op.collection === null ? undefined : PageCollectionSchema.safeParse(op.collection)
+        if (parsed && !parsed.success) fail('invalid', `Invalid page collection: ${issues(parsed.error)}`)
+        inverse.collection = page.collection ?? null
+        if (parsed?.data) page.collection = parsed.data
+        else Reflect.deleteProperty(page, 'collection')
+      }
       return inverse
     }
     case 'setTheme': {
@@ -947,6 +955,14 @@ function apply(project: Project, op: Operation): Operation {
 export function applyOperations(project: Project, ops: Operation[]): Operation[] {
   const draft = structuredClone(project)
   const inverses = ops.map(op => applyOperation(draft, op)).reverse()
+  // Checked once the whole batch ran, so a batch may rename a collection and the pages showing it in either order.
+  if (ops.some(op => DETAIL_OPS.has(op.op))) {
+    const problems = draft.pages.flatMap(page => pageCollectionProblems(page, draft.collections))
+    if (problems.length) fail('invalid', problems.join('; '))
+  }
   Object.assign(project, draft)
   return inverses
 }
+
+/** Operations that can make a detail page's collection or URL key field invalid. */
+const DETAIL_OPS = new Set<Operation['op']>(['addPage', 'updatePage', 'removeCollection', 'updateCollection', 'removeField', 'updateField', 'setSource'])

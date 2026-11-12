@@ -4,6 +4,7 @@ import { queryPaged } from '#shared/data/paging'
 import type { PagedRecords } from '#shared/data/paging'
 import { newId } from '#shared/document/factory'
 import type { Collection, PublishedSnapshot } from '#shared/document/schema'
+import { DETAIL_KEY_MAX, detailKeyField, RECORD_ID_KEY } from '#shared/runtime/detail'
 import { parseListSearch, toRecordQuery } from '#shared/runtime/list'
 import type { RecordStore } from './recordStore'
 
@@ -105,6 +106,28 @@ export async function publicPagedRecords(collection: Collection, load: (offset: 
     const page = await load(offset, limit)
     return { ...page, records: page.records.map(r => readRecord(collection.fields, r)) }
   }, query.query)
+}
+
+export type PublicRecordResult
+  = | { ok: true, record: DataRecord }
+    | { ok: false, status: 400 | 404, message: string }
+
+/**
+ * One record of a `publicRead` collection by its URL key, for a published
+ * detail page: `params.field` names the key field (a text field or `id`;
+ * the collection's default without one, see `detailKeyField`), and `find`
+ * looks the record up (`recordByKey`; its failures are the caller's to turn
+ * into a generic error). The record carries the declared fields only.
+ */
+export async function publicRecordByKey(collection: Collection, key: string, params: Record<string, unknown>, find: (field: string, key: string) => Promise<DataRecord | undefined>): Promise<PublicRecordResult> {
+  const given = params.field
+  if (given !== undefined && typeof given !== 'string') return { ok: false, status: 400, message: 'Unknown key field' }
+  const field = detailKeyField(collection, given || undefined)
+  if (field !== RECORD_ID_KEY && !collection.fields.some(f => f.key === field && f.type === 'text')) return { ok: false, status: 400, message: 'Unknown key field' }
+  const notFound = { ok: false, status: 404, message: 'Record not found' } as const
+  if (!key || key.length > DETAIL_KEY_MAX) return notFound
+  const record = await find(field, key)
+  return record ? { ok: true, record: readRecord(collection.fields, record) } : notFound
 }
 
 /** Queries `stored` with the endpoint's search params (see `listSearch`). */

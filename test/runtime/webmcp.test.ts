@@ -47,7 +47,7 @@ describe('registerWebMcpTools', () => {
     expect(tools.get('get_page_content')!.annotations).toEqual({ readOnlyHint: true })
     expect(tools.get('navigate_to_page')!.inputSchema).toEqual({
       type: 'object',
-      properties: { slug: { type: 'string', description: expect.any(String) } },
+      properties: { slug: { type: 'string', description: expect.any(String) }, key: { type: 'string', description: expect.any(String) } },
       required: ['slug']
     })
   })

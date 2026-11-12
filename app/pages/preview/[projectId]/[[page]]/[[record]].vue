@@ -3,6 +3,8 @@ import type { DataRecord } from '#shared/data/records'
 import type { Project } from '#shared/document/schema'
 import type { EnvListEntry, EnvValues } from '#shared/env/variables'
 import { formSubmitRequest } from '#shared/editor/formSubmit'
+import { bindingItem } from '#shared/runtime/bindings'
+import { detailTitle, resolvePageRoute } from '#shared/runtime/detail'
 import { resolvePageWithLayout } from '#shared/runtime/layouts'
 import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/list'
 
@@ -16,6 +18,9 @@ import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/li
  * with `record_create` (any collection, not only `publicCreate` ones).
  * `{{ env.NAME }}` resolves from the public variables (`env_list`), and a
  * missing one shows as written, as in the canvas.
+ * A detail page (`/preview/<id>/<page>/<key>`) finds its record with
+ * `record_find` (any collection, publicRead or not) and renders with it as
+ * the page item; a missing key or record shows not found, as published.
  */
 definePageMeta({ layout: false })
 
@@ -25,10 +30,30 @@ const project = shallowRef<Project | null>(null)
 const loadError = ref<string | null>(null)
 const env = shallowRef<EnvValues>({})
 
-const page = computed(() => {
-  const pages = project.value?.pages ?? []
-  return route.params.page ? pages.find(p => p.slug === route.params.page) : pages[0]
+const segment = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
+const target = computed(() => resolvePageRoute(project.value?.pages ?? [], segment(route.params.page), segment(route.params.record)))
+const page = computed(() => target.value?.page)
+
+const record = shallowRef<DataRecord | null>(null)
+/** `loading` renders nothing yet; `missing` is not found. */
+const recordState = ref<'none' | 'loading' | 'found' | 'missing'>('none')
+const wantedKey = computed(() => {
+  const ref = page.value?.collection
+  return ref && target.value?.key !== undefined ? JSON.stringify([ref.slug, ref.field ?? null, target.value.key]) : undefined
 })
+watch(wantedKey, async (current) => {
+  record.value = null
+  const ref = page.value?.collection
+  const key = target.value?.key
+  if (!current || !ref || key === undefined) return (recordState.value = 'none')
+  recordState.value = 'loading'
+  const found = await callAction<DataRecord>('record_find', { projectId: projectId.value, collection: ref.slug, ...(ref.field ? { field: ref.field } : {}), value: key }).catch(() => null)
+  if (current !== wantedKey.value) return
+  record.value = found
+  recordState.value = found ? 'found' : 'missing'
+}, { immediate: true })
+const item = computed(() => (record.value ? bindingItem(record.value) : null))
+const shown = computed(() => !!page.value && (!page.value.collection || recordState.value === 'found'))
 
 /** Records of each collection a List on the page shows, by collection id (the first 500, as in the canvas). */
 const collectionRecords = shallowRef<Record<string, DataRecord[]>>({})
@@ -85,13 +110,18 @@ const badgeStyle = {
   font: '500 12px/16px Inter, system-ui, sans-serif', boxShadow: '0 4px 12px rgba(0, 0, 0, 0.25)'
 } as const
 
-useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${project.value.name} (draft)` : 'Draft preview' }))
+useHead(() => {
+  if (!shown.value || !page.value || !project.value) return { title: 'Draft preview' }
+  const name = target.value?.key === undefined ? page.value.name : detailTitle(item.value, target.value.key)
+  return { title: `${name} · ${project.value.name} (draft)` }
+})
 </script>
 
 <template>
-  <div v-if="page && project">
+  <div v-if="shown && page && project">
     <BildrPage
       :page="page"
+      :item="item"
       :base="`/preview/${projectId}`"
       :lists="lists"
       :components="project.components"
@@ -109,6 +139,11 @@ useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${p
       Draft preview
     </div>
   </div>
+  <div
+    v-else-if="recordState === 'loading'"
+    class="min-h-screen"
+    data-detail-loading
+  />
   <UError
     v-else-if="loadError || project"
     :error="{ statusCode: 404, statusMessage: loadError ?? 'Page not found' }"

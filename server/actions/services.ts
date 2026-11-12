@@ -4,10 +4,12 @@ import type { PagedRecords, Paging } from '#shared/data/paging'
 import { remoteId } from '#shared/data/remote'
 import type { DataRecord } from '#shared/data/records'
 import { defaultTheme } from '#shared/design/theme'
+import { detailCascade } from '#shared/document/detailPages'
 import { applyOperations } from '#shared/document/operations'
 import type { Operation } from '#shared/document/operations'
 import { headerValueProblem } from '#shared/document/schema'
 import type { ApiHeader, Collection, Connection, Project, PublishedSnapshot } from '#shared/document/schema'
+import { keyMatches, RECORD_ID_KEY } from '#shared/runtime/detail'
 import { allEnv, publicEnv, redact, resolveEnv, secretValues } from '#shared/env/variables'
 import { createApiFetcher } from '../utils/apiFetch'
 import type { ApiFetcher, ApiResponse } from '../utils/apiFetch'
@@ -165,6 +167,25 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
     return apiRecords(json, fetchedAt, collection, collection.source.itemsPath)
   }
 
+  /**
+   * The record of `collection` whose URL key is `key`: with `field` "id" the
+   * record id, else the value of that field. A connection collection reads by
+   * id through its get endpoint (an upstream 404 is no record); every other
+   * lookup scans the list (for a paged one, within the paging caps).
+   */
+  async function recordByKey(projectId: string, collection: Collection, connections: Connection[] | undefined, field: string, key: string): Promise<DataRecord | undefined> {
+    const { source } = collection
+    if (field === RECORD_ID_KEY && source.type === 'connection' && source.endpoints.get) {
+      try {
+        return await remote.get(projectId, connections ?? (await loadProject(projectId)).connections, collection, key)
+      } catch (error) {
+        if (error instanceof ActionError && /^Record ".*" not found|HTTP (?:404|410)\b/.test(error.message)) return undefined
+        throw error
+      }
+    }
+    return (await collectionRecords(projectId, collection, connections)).find(r => keyMatches(r, field, key))
+  }
+
   async function commit(ctx: ActionContext, project: Project, ops: Operation[]): Promise<{ project: Project, inverse: Operation[] }> {
     const inverse = applyOperations(project, ops)
     project.version += 1
@@ -184,6 +205,7 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
     loadProject,
     fetchApi,
     collectionRecords,
+    recordByKey,
 
     /**
      * Records `offset` to `offset + limit - 1` with the total and whether more
@@ -203,9 +225,15 @@ export function createServices(storage: KeyValueStorage, options: ServicesOption
       })
     },
 
-    /** Applies `ops` atomically, saves, and records one undo step named `label`. */
-    async mutate(ctx: ActionContext, projectId: string, label: string, ops: Operation[]): Promise<Project> {
-      const { project, inverse } = await commit(ctx, await loadProject(projectId), ops)
+    /**
+     * Applies `ops` atomically, saves, and records one undo step named `label`.
+     * Detail pages follow the collections and fields `ops` rename or remove
+     * in the same step (`detailCascade`).
+     */
+    async mutate(ctx: ActionContext, projectId: string, label: string, given: Operation[]): Promise<Project> {
+      const current = await loadProject(projectId)
+      const ops = [...given, ...detailCascade(current, given)]
+      const { project, inverse } = await commit(ctx, current, ops)
       const history = await loadHistory(projectId)
       history.undo = [...history.undo, { label, ops, inverse }].slice(-UNDO_LIMIT)
       history.redo = []

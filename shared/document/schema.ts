@@ -45,10 +45,22 @@ export const NodeSchema: z.ZodType<DocNode> = z.lazy(() => z.object({
 }))
 
 /**
+ * What makes a page a detail page: the collection (by slug) it renders once
+ * per record, and `field`, the text field whose value is the URL key (see
+ * `detailKeyField`: without one, a `slug` field, else the record id).
+ */
+export const PageCollectionSchema = z.object({
+  slug: SlugSchema,
+  field: z.string().regex(/^[a-z][a-zA-Z0-9_]*$/, 'Invalid field key').max(64).optional()
+})
+
+/**
  * A page may use a layout (`layoutId`): the layout's tree renders around the
  * page, its root's children (bar SlotFills) fill the layout's `children`
  * slot, and SlotFill children of the root fill its named slots.
- * `layoutValues` holds the page's value per layout variable id.
+ * `layoutValues` holds the page's value per layout variable id. With
+ * `collection`, the page is a template rendered per record at
+ * `<page>/<key>` (see `PageCollectionSchema`).
  */
 export const PageSchema = z.object({
   id: IdSchema,
@@ -57,7 +69,9 @@ export const PageSchema = z.object({
   root: NodeSchema,
   // Pages saved before layouts existed have none.
   layoutId: IdSchema.optional(),
-  layoutValues: z.record(IdSchema, PropValueSchema).optional()
+  layoutValues: z.record(IdSchema, PropValueSchema).optional(),
+  // Pages saved before detail pages existed are plain pages.
+  collection: PageCollectionSchema.optional()
 })
 
 export const PROPERTY_KINDS = ['text', 'textarea', 'number', 'boolean', 'select', 'link', 'image', 'icon', 'collection', 'field', 'slot'] as const satisfies readonly (PropKind | 'slot')[]
@@ -466,6 +480,9 @@ export const ProjectSchema = z.object({
     for (const { path, message } of pageLayoutProblems(page, layout, colors)) {
       ctx.addIssue({ code: 'custom', path: ['pages', i, ...path], message })
     }
+    for (const message of pageCollectionProblems(page, project.collections)) {
+      ctx.addIssue({ code: 'custom', path: ['pages', i, 'collection'], message })
+    }
   })
 })
 
@@ -483,6 +500,7 @@ export type ComponentDefinition = z.infer<typeof ComponentDefinitionSchema>
 export type LayoutSlot = z.infer<typeof LayoutSlotSchema>
 export type Layout = z.infer<typeof LayoutSchema>
 export type Page = z.infer<typeof PageSchema>
+export type PageCollection = z.infer<typeof PageCollectionSchema>
 export type Project = z.infer<typeof ProjectSchema>
 export type Field = z.infer<typeof FieldSchema>
 export type Collection = z.infer<typeof CollectionSchema>
@@ -839,6 +857,23 @@ export function pageLayoutProblems(page: Page, layout: Layout | undefined, color
     filled.add(slot)
   }
   return problems
+}
+
+/**
+ * Rules for a detail page's collection: it exists, and its URL key field,
+ * when set, exists and is a text field. Renaming or removing them goes
+ * through actions that update or clear the reference (see `detailCascade`).
+ */
+export function pageCollectionProblems(page: Pick<Page, 'name' | 'collection'>, collections: Pick<Collection, 'name' | 'slug' | 'fields'>[]): string[] {
+  if (!page.collection) return []
+  const { slug, field } = page.collection
+  const collection = collections.find(c => c.slug === slug)
+  if (!collection) return [`Page "${page.name}" shows the unknown collection "${slug}"`]
+  if (field === undefined) return []
+  const def = collection.fields.find(f => f.key === field)
+  if (!def) return [`Page "${page.name}": "${collection.name}" has no field "${field}" for the URL key`]
+  if (def.type !== 'text') return [`Page "${page.name}": the URL key "${field}" must be a text field, not ${def.type}`]
+  return []
 }
 
 function usedComponentIds(root: DocNode): string[] {

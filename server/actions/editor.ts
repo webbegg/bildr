@@ -3,6 +3,7 @@ import { IdSchema } from '#shared/document/schema'
 import type { DocNode, Project } from '#shared/document/schema'
 import { findNode } from '#shared/document/tree'
 import { navigateEventId } from '#shared/editor/navigate'
+import { DETAIL_KEY_MAX, detailPath, RECORD_ID_KEY } from '#shared/runtime/detail'
 import { pageOutline } from '#shared/runtime/render'
 import { ActionError, defineAction } from './define'
 import { assertFound } from './project'
@@ -75,27 +76,29 @@ export const editorGetContext = defineAction({
       variant: variant ? { id: variant.id, name: variant.name } : null,
       layout: layout ? { id: layout.id, name: layout.name } : null,
       selected: node ? { id: node.id, type: node.type, props: node.props } : null,
-      outline: page ? pageOutline(page) : null
+      outline: page ? pageOutline(page, { path: detailPath(page, project.collections) }) : null
     }
   }
 })
 
 export const editorNavigate = defineAction({
   name: 'editor_navigate',
-  description: 'Steer the open editors of the project: show a page (pageId), optionally selecting a node on it (nodeId), or open a component (componentId, optionally on one of its variants with variantId) or a layout (layoutId) in its own view, on top of pageId or, without one, the page the editor is on. Does not change the document.',
+  description: 'Steer the open editors of the project: show a page (pageId), optionally selecting a node on it (nodeId) and, on a detail page, previewing one record of its collection on the canvas (recordId, from record_list or record_find), or open a component (componentId, optionally on one of its variants with variantId) or a layout (layoutId) in its own view, on top of pageId or, without one, the page the editor is on. Does not change the document.',
   input: z.object({
     projectId: IdSchema,
     pageId: IdSchema.optional().describe('Page to show; with componentId or layoutId, the page to return to (defaults to the one the editor is on)'),
     nodeId: IdSchema.optional().describe('Node to select on that page'),
     componentId: IdSchema.optional().describe('Component to open in the component view, from project_get components'),
     variantId: IdSchema.optional().describe('With componentId: the variant to show and edit'),
-    layoutId: IdSchema.optional().describe('Layout to open in the layout view, from project_get layouts')
+    layoutId: IdSchema.optional().describe('Layout to open in the layout view, from project_get layouts'),
+    recordId: z.string().min(1).max(DETAIL_KEY_MAX).optional().describe('On a detail page: the id of the record the canvas previews')
   }),
-  run: async ({ projectId, pageId: givenPage, nodeId, componentId, variantId, layoutId }, ctx) => {
+  run: async ({ projectId, pageId: givenPage, nodeId, componentId, variantId, layoutId, recordId }, ctx) => {
     if (!givenPage && !componentId && !layoutId) throw new ActionError('invalid', 'Give pageId, componentId or layoutId')
     if (componentId && layoutId) throw new ActionError('invalid', 'Give componentId or layoutId, not both')
     if (variantId && !componentId) throw new ActionError('invalid', 'variantId needs componentId')
     if (nodeId && (componentId || layoutId)) throw new ActionError('invalid', 'nodeId selects a node on pageId; leave it out with componentId or layoutId')
+    if (recordId && (componentId || layoutId)) throw new ActionError('invalid', 'recordId previews a record on pageId; leave it out with componentId or layoutId')
     const project = await ctx.services.loadProject(projectId)
     if (componentId) {
       const def = assertFound(project.components.find(c => c.id === componentId), `Component "${componentId}" not found`)
@@ -105,9 +108,15 @@ export const editorNavigate = defineAction({
     const pageId = givenPage ?? await editorPage(ctx.services, project)
     const page = assertFound(project.pages.find(p => p.id === pageId), `Page "${pageId}" not found`)
     if (nodeId) assertFound(findNode(page.root, nodeId), `Node "${nodeId}" not found on page "${page.name}"`)
+    if (recordId) {
+      if (!page.collection) throw new ActionError('invalid', `recordId needs a detail page: "${page.name}" shows no collection`)
+      const collection = assertFound(project.collections.find(c => c.slug === page.collection!.slug), `Collection "${page.collection.slug}" not found`)
+      const record = await ctx.services.recordByKey(project.id, collection, project.connections, RECORD_ID_KEY, recordId)
+      assertFound(record, `Record "${recordId}" not found in "${collection.name}"`)
+    }
     const target = { pageId, nodeId: nodeId ?? null, componentId: componentId ?? null, layoutId: layoutId ?? null, variantId: variantId ?? null }
-    ctx.navigate(projectId, pageId, navigateEventId(target))
-    return target
+    ctx.navigate(projectId, pageId, navigateEventId(target), recordId)
+    return recordId ? { ...target, recordId } : target
   }
 })
 

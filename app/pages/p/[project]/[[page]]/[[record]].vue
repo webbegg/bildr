@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { DataRecord } from '#shared/data/records'
+import { bindingItem } from '#shared/runtime/bindings'
+import { detailKeyField, detailTitle, resolvePageRoute } from '#shared/runtime/detail'
 import { resolvePageWithLayout } from '#shared/runtime/layouts'
 import { listKey, listNodes, listQueryOf, listSearch } from '#shared/runtime/list'
 import type { VisitorSnapshot } from '#shared/runtime/visitor'
@@ -12,6 +14,11 @@ import type { VisitorSnapshot } from '#shared/runtime/visitor'
  * `publicCreate` collections, and show its (generic) message on failure.
  * `{{ env.NAME }}` resolves from the snapshot's public variables (copied at
  * publish); a secret or missing one renders empty.
+ * A detail page (`/p/<site>/<page>/<key>`) reads its record from the public
+ * record endpoint, which serves only `publicRead` collections, and renders
+ * with it as the page item; without a key, with a key no record has, or
+ * with a key on a plain page, it shows not found (the app is a SPA, so the
+ * status stays 200).
  */
 definePageMeta({ layout: false })
 
@@ -21,10 +28,37 @@ const { data, error } = await useFetch<VisitorSnapshot>(() => `/api/published/${
 
 const project = computed(() => data.value?.project)
 const env = computed(() => data.value?.env ?? {})
-const page = computed(() => {
-  const pages = project.value?.pages ?? []
-  return route.params.page ? pages.find(p => p.slug === route.params.page) : pages[0]
+const segment = (value: unknown) => (typeof value === 'string' && value ? value : undefined)
+const target = computed(() => resolvePageRoute(project.value?.pages ?? [], segment(route.params.page), segment(route.params.record)))
+const page = computed(() => target.value?.page)
+
+/** The record a detail page asks for: its collection (as published), the key and the key field. */
+const wanted = computed(() => {
+  const ref = page.value?.collection
+  const key = target.value?.key
+  if (!ref || key === undefined) return undefined
+  const collection = project.value?.collections.find(c => c.slug === ref.slug)
+  return { collection, key, field: detailKeyField(collection, ref.field) }
 })
+const record = shallowRef<DataRecord | null>(null)
+/** `loading` renders nothing yet; `missing` is not found. */
+const recordState = ref<'none' | 'loading' | 'found' | 'missing'>('none')
+const wantedKey = computed(() => wanted.value && JSON.stringify([wanted.value.collection?.slug, wanted.value.field, wanted.value.key]))
+watch(wantedKey, async (current) => {
+  record.value = null
+  const want = wanted.value
+  if (!current || !want) return (recordState.value = 'none')
+  // Collections the snapshot does not mark publicRead would only answer 404, so they are not asked.
+  if (!want.collection?.publicRead) return (recordState.value = 'missing')
+  recordState.value = 'loading'
+  const url = `/api/public/${projectSlug.value}/${want.collection.slug}/${encodeURIComponent(want.key)}?field=${encodeURIComponent(want.field)}`
+  const result = await $fetch<{ record: DataRecord }>(url).catch(() => null)
+  if (current !== wantedKey.value) return
+  record.value = result?.record ?? null
+  recordState.value = result ? 'found' : 'missing'
+}, { immediate: true })
+const item = computed(() => (record.value ? bindingItem(record.value) : null))
+const shown = computed(() => !!page.value && (!page.value.collection || recordState.value === 'found'))
 
 const lists = shallowRef<Record<string, DataRecord[]>>({})
 // Collections the snapshot does not mark publicRead would only answer 404, so they are not asked.
@@ -51,16 +85,21 @@ async function submitForm(collection: string, values: Record<string, string>): P
   }
 }
 
-useWebMcp(project, page)
+useWebMcp(project, page, item)
 useTheme(() => project.value?.theme, env)
 
-useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${project.value.name}` : 'Not found' }))
+useHead(() => {
+  if (!shown.value || !page.value || !project.value) return { title: recordState.value === 'loading' ? project.value?.name ?? '' : 'Not found' }
+  const name = target.value?.key === undefined ? page.value.name : detailTitle(item.value, target.value.key)
+  return { title: `${name} · ${project.value.name}` }
+})
 </script>
 
 <template>
   <BildrPage
-    v-if="page"
+    v-if="shown && page"
     :page="page"
+    :item="item"
     :base="`/p/${projectSlug}`"
     :lists="lists"
     :components="project?.components"
@@ -69,6 +108,11 @@ useHead(() => ({ title: page.value && project.value ? `${page.value.name} · ${p
     :env="env"
     missing-env="empty"
     class="min-h-screen"
+  />
+  <div
+    v-else-if="recordState === 'loading'"
+    class="min-h-screen"
+    data-detail-loading
   />
   <UError
     v-else

@@ -22,6 +22,8 @@ export interface NavigateEvent {
   projectId: string
   pageId: string
   nodeId: string | null
+  /** On a detail page: the record the canvas previews; absent otherwise. */
+  recordId?: string
   source?: string
 }
 
@@ -78,7 +80,7 @@ export function createBildr(storage: KeyValueStorage, actions: ActionDef[] = ACT
       services,
       notify: (projectId, version) => changes.push({ projectId, version, action: name, source: options.source }),
       notifyData: (projectId, version, collectionId) => changes.push({ projectId, version, action: name, source: options.source, scope: 'data', collectionId }),
-      navigate: (projectId, pageId, nodeId) => navigations.push({ projectId, pageId, nodeId, source: options.source })
+      navigate: (projectId, pageId, nodeId, recordId) => navigations.push({ projectId, pageId, nodeId, ...(recordId === undefined ? {} : { recordId }), source: options.source })
     }
 
     try {

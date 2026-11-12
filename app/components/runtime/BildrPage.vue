@@ -2,6 +2,7 @@
 import type { DataRecord } from '#shared/data/records'
 import type { ComponentDefinition, Layout, Page } from '#shared/document/schema'
 import type { EnvValues } from '#shared/env/variables'
+import type { BindingItem } from '#shared/runtime/bindings'
 import { resolvePageWithLayout } from '#shared/runtime/layouts'
 
 /**
@@ -9,6 +10,9 @@ import { resolvePageWithLayout } from '#shared/runtime/layouts'
  * `resolvePageWithLayout`), so the canvas, the preview and published apps
  * all show the layout around the page content. Interactive ones keep the
  * layout's instances as Instance nodes, so they react like page instances.
+ * A detail page gets its record as `item`, the root item of the page: its
+ * `{{ item.* }}` bindings read it everywhere (layout and component property
+ * values included), while a List's own item shadows it inside the List.
  */
 
 // A boolean prop left out is false, not undefined: `interactive` needs its own default.
@@ -27,7 +31,9 @@ const props = withDefaults(defineProps<{
   /** The project's layouts, for pages with a `layoutId`. */
   layouts?: Layout[]
   missingEnv?: RuntimeContext['onMissingEnv']
-}>(), { interactive: undefined })
+  /** A detail page's record (see `bindingItem`). */
+  item?: BindingItem | null
+}>(), { interactive: undefined, item: undefined })
 
 const interactive = computed(() => props.interactive ?? props.editable !== true)
 const root = computed(() => resolvePageWithLayout(props.page, props.layouts ?? [], props.components ?? [], { linked: interactive.value }))
@@ -42,6 +48,12 @@ provide(RUNTIME_KEY, reactive({
   components: computed(() => props.components),
   onMissingEnv: computed(() => props.missingEnv)
 }) as RuntimeContext)
+
+// Not a List repetition, so never a copy; Lists inside provide their own item over it.
+provide(LIST_ITEM_KEY, reactive({
+  item: computed(() => props.item ?? null),
+  copy: false
+}) as ListItemContext)
 </script>
 
 <template>

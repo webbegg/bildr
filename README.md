@@ -13,7 +13,8 @@ pnpm dev
 ```
 
 - Editor: <http://localhost:3000/> lists your projects. Open one to edit it at `/editor/<projectId>`.
-- Published apps: `/p/<project-slug>` and `/p/<project-slug>/<page-slug>`. They show the last published version.
+- Published apps: `/p/<project-slug>` and `/p/<project-slug>/<page-slug>`, and `/p/<project-slug>/<page-slug>/<key>` for a [detail page](#detail-pages). They show the last published version.
+- The draft preview: `/preview/<projectId>`, `/preview/<projectId>/<page-slug>` and `/preview/<projectId>/<page-slug>/<key>`. It shows the project as it is now.
 - Data is stored under `.data/`.
 
 ## Nodes
@@ -58,7 +59,7 @@ Apps can show and collect data. As with everything else, each step is an action,
 - Actions:
   - schema: `collection_create`, `collection_update`, `collection_delete`, `field_add`, `field_update`, `field_move`, `field_remove`
   - connections: `connection_create`, `connection_update`, `connection_delete`, `endpoint_test` (see [Remote connections](#remote-connections))
-  - records: `record_list` (filter by field equality, sort, limit, offset), `record_get`, `record_create`, `record_update`, `record_delete`
+  - records: `record_list` (filter by field equality, sort, limit, offset), `record_get`, `record_find` (by a URL key, see [Detail pages](#detail-pages)), `record_create`, `record_update`, `record_delete`
 
 ### API sources
 
@@ -123,7 +124,27 @@ Each project has one set of variables, stored outside the project document. They
 
 ### Lists and bindings
 
-A **List** is a container bound to a collection, with the props `collection`, `limit`, `sortField`, `sortDir`, `filterField` and `filterValue`. It renders its children once per record. Any string prop inside it can use `{{ item.<field> }}` bindings, for example a Text `{{ item.name }}`, an Image `src` of `{{ item.image }}`, or a Link `to` of `/menu/{{ item.slug }}`. In the canvas, a List shows the collection's current records, or placeholder rows while it is empty.
+A **List** is a container bound to a collection, with the props `collection`, `limit`, `sortField`, `sortDir`, `filterField` and `filterValue`. It renders its children once per record. Any string prop inside it can use `{{ item.<field> }}` bindings, for example a Text `{{ item.name }}`, an Image `src` of `{{ item.image }}`, or a Link `to` of `post/{{ item.slug }}` (a link to a [detail page](#detail-pages)). In the canvas, a List shows the collection's current records, or placeholder rows while it is empty.
+
+### Detail pages
+
+A **detail page** is a page template that renders once per record of a collection (Framer CMS-style), for example a blog post page at `/p/<site>/post/<slug>`. A page becomes one with `collection: { slug, field? }`:
+
+- `slug` is the collection's slug. `field` is the **URL key**: a text field whose value identifies the record in the URL. Without one, a text field named `slug` is used when the collection has it, else the record id.
+- On a detail page, `{{ item.<field> }}` bindings read the page's record everywhere on the page: its layout and component property values included. Inside a List, the List's own record wins.
+- Links to it store `<page>/{{ item.<key field> }}`, for example a Link `to` of `post/{{ item.slug }}` inside a List of posts, so each row links to its own record.
+- The page title is `<record title> · <project>`, where the record title is its `title` field, else its `name` field, else the key.
+- A detail page opened without a key, or with a key no record has, shows "Page not found". So does a plain page with an extra segment, for example `/p/<site>/about/x`. The app is a single-page app, so the HTTP status stays 200.
+- Published apps read the record from the public record endpoint, so the collection must be `publicRead` there. The draft preview reads it with `record_find`, for any collection.
+
+Actions:
+
+- `page_set_collection { pageId, collection: { slug, field? } | null }` makes a page a detail page, or (`null`) a plain page again. Returns `{ collection, keyField, path }`, where `path` is the pattern, for example `/post/:slug`. It refuses an unknown collection and a key field that is missing or not text. One undo step.
+- `page_add { …, collection? }` adds a page that is a detail page from the start.
+- `record_find { collection, field?, value }` returns the record whose `field` (a text field, or `id`) equals `value`. Without `field`, it uses the collection's default URL key. Connection collections read by id through their `get` endpoint and other keys from their `list` (within the [paging](#paging) caps); API collections read from their list.
+- `editor_navigate { pageId, recordId }` shows a detail page in the editor with that record previewed on the canvas.
+- Renaming the collection's slug updates the page's reference, deleting the collection (or the connection it uses, with `force`) makes the page a plain page, and removing the key field or changing it from text drops it, so the default key applies. Each happens in the same undo step as the change that caused it.
+- `editor_get_context` shows a detail page's path as `/post/:slug` in its outline.
 
 ### Forms and Button actions
 
@@ -143,6 +164,7 @@ Published apps read and write data through `/api/public/<project-slug>/<collecti
   - A collection holds at most 5,000 records.
   - Each IP address gets 10 writes and 120 reads per minute per project. The counters live in memory, so they reset on restart and are not shared between processes.
   - `X-Forwarded-For` is ignored, because any client can send it. Behind a reverse proxy, all visitors share the proxy's one budget.
+- `GET /api/public/<project-slug>/<collection-slug>/<key>?field=<field>` returns one record of a `publicRead` collection, `{ record }`, with the declared fields only and no source details. It is for [detail pages](#detail-pages). `field` is a text field or `id`; without it, the collection's default URL key applies. An unknown key answers `404`, a `field` that is not a text field `400`, and a failed remote read a generic `502`. It is GET only (other methods answer `405`) and shares the read rate limit.
 - Errors are generic. The details only go to the server log.
 - `/api/published/<project-slug>`, which the published app loads, leaves out the connections, and the URL, headers, items path, endpoints, id path and field paths of API and connection collections. The public `GET` resolves them on the server from the stored snapshot and the current variables. Its `env` holds the public variables only.
 
@@ -237,15 +259,15 @@ bildr serves MCP over Streamable HTTP at `/mcp`. Every action except the editor'
 claude mcp add --transport http bildr http://localhost:3000/mcp
 ```
 
-Open the project in the editor so you can watch the agent work. The agent can call `editor_get_context` to see the page and node you have selected, and `editor_navigate` to show you a page, or to open a component or layout (`{ componentId, variantId? }` or `{ layoutId }`). The context also reports the component, variant or layout you are editing.
+Open the project in the editor so you can watch the agent work. The agent can call `editor_get_context` to see the page and node you have selected, and `editor_navigate` to show you a page, or to open a component or layout (`{ componentId, variantId? }` or `{ layoutId }`). On a detail page, `{ pageId, recordId }` also previews that record. The context also reports the component, variant or layout you are editing.
 
 ## WebMCP on published apps
 
 Published apps (`/p/<project-slug>`) register [WebMCP](https://github.com/webmachinelearning/webmcp) tools, so an agent running in the browser can use the app. bildr looks for `document.modelContext` first, then `navigator.modelContext` (older drafts). If neither exists, nothing happens. The tools:
 
-- `list_pages` (read-only) lists every page with its `name`, `slug` and `url`.
-- `navigate_to_page` `{ slug }` shows another page. An unknown slug returns an error that lists the valid slugs.
-- `get_page_content` (read-only) returns the current page as a text outline, one line per element, with links shown as `→ target`. Component instances appear as they render (their definition, values and slot content).
+- `list_pages` (read-only) lists every page with its `name`, `slug` and `url`. A detail page also has its `collection` and `keyField`, and its `url` is a pattern such as `/p/blog/post/:slug`.
+- `navigate_to_page` `{ slug, key? }` shows another page. A detail page needs `key`, the record's URL key; a plain page refuses one. An unknown slug returns an error that lists the valid slugs.
+- `get_page_content` (read-only) returns the current page as a text outline, one line per element, with links shown as `→ target`. Component instances appear as they render (their definition, values and slot content). On a detail page, bindings show the current record's values (Lists keep their own).
 
 - `list_records` (read-only) `{ collection, limit?, filter?, sort? }` lists records of a `publicRead` collection through the public `GET` endpoint. `filter` is an object of field values to match, and `sort` is a field key, prefixed with `-` for descending (for example `"-price"`). The tool description lists the readable collections and their fields. It is registered only when at least one collection is `publicRead`.
 - `submit_form` `{ collection, values }` adds a record to an internal `publicCreate` collection through the public `POST` endpoint, and returns its result (`{ "id": "…" }`) or its generic error. It is registered only when at least one collection qualifies.
