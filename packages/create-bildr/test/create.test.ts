@@ -87,10 +87,12 @@ describe('parseArgs', () => {
     expect(parseArgs(['my-app'])).toEqual({ dir: 'my-app', name: 'My App', module: 'main' })
     expect(parseArgs(['crm', '--name', 'Acme CRM', '--module', 'sales'])).toEqual({ dir: 'crm', name: 'Acme CRM', module: 'sales' })
     expect(parseArgs(['--name=Shop', 'shop'])).toEqual({ dir: 'shop', name: 'Shop', module: 'main' })
+    // --bildr: where to install @bildr/nuxt from (a local link until it is published).
+    expect(parseArgs(['shop', '--bildr', 'link:/src/bildr/packages/nuxt'])).toEqual({ dir: 'shop', name: 'Shop', module: 'main', bildr: 'link:/src/bildr/packages/nuxt' })
   })
 
   it('explains the usage when the directory is missing or an option is unknown', () => {
-    expect(() => parseArgs([])).toThrow('Usage: pnpm create bildr <directory> [--name "Project name"] [--module main]')
+    expect(() => parseArgs([])).toThrow('Usage: pnpm create bildr <directory> [--name "Project name"] [--module main] [--bildr <@bildr/nuxt version or link:path>]')
     expect(() => parseArgs(['x', '--force'])).toThrow('Unknown option --force')
   })
 })

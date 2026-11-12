@@ -75,6 +75,13 @@ describe('starterKit', () => {
     expect(starterKit({ name: 'Bob\'s "Shop"' }).files.find(entry => entry.path === 'layers/core/app/app.config.ts')!.content).toContain('name: \'Bob\\\'s "Shop"\'')
   })
 
+  it('ships the dev-only bildr module, from npm by default or from a given spec', () => {
+    const pkg = (options: Parameters<typeof starterKit>[0]) => JSON.parse(starterKit(options).files.find(file => file.path === 'package.json')!.content)
+    expect(pkg({ name: 'X' }).devDependencies['@bildr/nuxt']).toBe('^0.1.0')
+    expect(pkg({ name: 'X', bildrNuxt: 'link:/src/bildr/packages/nuxt' }).devDependencies['@bildr/nuxt']).toBe('link:/src/bildr/packages/nuxt')
+    expect(kit.files.find(file => file.path === 'nuxt.config.ts')!.content).toContain('\'@bildr/nuxt\'')
+  })
+
   it('refuses reserved or invalid module names and empty project names', () => {
     expect(() => starterKit({ name: 'X', module: 'app' })).toThrow('"app" is reserved')
     expect(() => starterKit({ name: 'X', module: 'Bad Name' })).toThrow('kebab-case')
@@ -108,7 +115,7 @@ describe('detectStarterKit', () => {
     expect(result.reasons).toEqual([
       'No .bildr/bildr.json: this is not a bildr project',
       'No layers/core: the starter kit\'s core layer is missing',
-      'Missing dependencies: zod, drizzle-orm, @libsql/client, @tanstack/vue-db, @tanstack/query-db-collection'
+      'Missing dependencies: zod, drizzle-orm, @libsql/client, @tanstack/vue-db, @tanstack/query-db-collection, @bildr/nuxt'
     ])
     expect(result.hint).toBe('bildr only runs on projects created from its starter kit. Create one with: pnpm create bildr <name>')
   })
