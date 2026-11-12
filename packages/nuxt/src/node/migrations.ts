@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { applyRenames, isDestructive, planRenames, schemaIds, unappliable, withoutAdditions } from '@bildr/codegen/migrate'
+import { applyRenames, dropIndexesFirst, isDestructive, planRenames, schemaIds, unappliable, withoutAdditions } from '@bildr/codegen/migrate'
 import type { SchemaIds, Snapshot } from '@bildr/codegen/migrate'
 import type { Model } from '@bildr/codegen/model'
 import type { GeneratedFile } from '@bildr/codegen/sync'
@@ -158,11 +158,11 @@ export const migrateProject = async (root: string, model: Model, sources: Record
   if (renames.conflicts.length) return { kind: 'failed', error: renames.conflicts.join('; '), statements: renames.sql }
   const renamed = applyRenames(previous, renames.renames)
   const middle = withoutAdditions(current, renamed)
-  const statements = [
+  const statements = dropIndexesFirst([
     ...renames.sql,
     ...await api.generateSQLiteMigration(renamed, middle),
     ...await api.generateSQLiteMigration(middle, current)
-  ]
+  ])
   rmSync(join(root, PENDING_FILE), { force: true })
   if (!statements.length) return { kind: 'none' }
   const refused = unappliable(statements)

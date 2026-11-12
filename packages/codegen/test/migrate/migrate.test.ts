@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { applyRenames, isDestructive, planRenames, renamesBetween, renameSql, schemaIds, unappliable, withoutAdditions } from '../../src/migrate/index'
+import { applyRenames, dropIndexesFirst, isDestructive, planRenames, renamesBetween, renameSql, schemaIds, unappliable, withoutAdditions } from '../../src/migrate/index'
 import type { SchemaIds, Snapshot } from '../../src/migrate/index'
 import { loadModel } from '../../src/model/load'
 import { fixtureModelFiles, fixtureRoot } from '../model/fixture'
@@ -83,19 +83,58 @@ describe('planRenames', () => {
     expect(columns.body!.default).toBeUndefined()
   })
 
-  it('refuses a rename onto a name a removed field or table still holds (verification B2)', () => {
-    const plan = planRenames(post({ fld_body: 'body' }), post({ fld_body: 'title' }), fixtureSnapshot())
-    expect(plan.conflicts).toEqual(['Column blog_posts.title still exists: remove it in one change, then rename blog_posts.body to title in the next'])
+  it('moves a removed field\'s or entity\'s name out of the way when a rename takes it: drizzle-kit then drops it behind the gate (verification B2)', () => {
+    const plan = planRenames(post({ fld_title: 'title', fld_body: 'body' }), post({ fld_body: 'title' }), fixtureSnapshot())
+    expect(plan.conflicts).toEqual([])
+    expect(plan.sql).toEqual([
+      'ALTER TABLE `blog_posts` RENAME COLUMN `title` TO `__bildr_replaced_0`;',
+      'ALTER TABLE `blog_posts` RENAME COLUMN `body` TO `title`;'
+    ])
     const table = planRenames(
       { tables: { ent_post: { table: 'blog_posts', columns: {} }, ent_old: { table: 'blog_old', columns: {} } } },
       { tables: { ent_post: { table: 'blog_old', columns: {} } } },
       { tables: { blog_posts: fixtureSnapshot().tables.blog_posts!, blog_old: { ...fixtureSnapshot().tables.blog_posts!, name: 'blog_old' } } }
     )
-    expect(table.conflicts).toEqual(['Table blog_old still exists: remove it in one change, then rename blog_posts to blog_old in the next'])
+    expect(table.sql).toEqual(['ALTER TABLE `blog_old` RENAME TO `__bildr_replaced_0`;', 'ALTER TABLE `blog_posts` RENAME TO `blog_old`;'])
+  })
+
+  it('refuses a rename onto a name bildr has no id for (a column added by hand)', () => {
+    const plan = planRenames(post({ fld_body: 'body' }), post({ fld_body: 'title' }), fixtureSnapshot())
+    expect(plan.conflicts).toEqual(['Column blog_posts.title exists but isn\'t in the model: remove it by hand, then rename blog_posts.body to title'])
+  })
+
+  it('moves a removed field\'s column out of the way when a new field takes its name, so the new field never inherits its data (verification A2)', () => {
+    const plan = planRenames(post({ fld_body: 'body' }), post({ fld_other: 'body' }), fixtureSnapshot())
+    expect(plan.conflicts).toEqual([])
+    expect(plan.sql).toEqual(['ALTER TABLE `blog_posts` RENAME COLUMN `body` TO `__bildr_replaced_0`;'])
+    expect(Object.keys(applyRenames(fixtureSnapshot(), plan.renames).tables.blog_posts!.columns)).toContain('__bildr_replaced_0')
+  })
+
+  it('does the same for a removed entity\'s table taken by a new entity', () => {
+    const plan = planRenames({ tables: { ent_post: { table: 'blog_posts', columns: {} } } }, { tables: { ent_new: { table: 'blog_posts', columns: {} } } }, fixtureSnapshot())
+    expect(plan.sql).toEqual(['ALTER TABLE `blog_posts` RENAME TO `__bildr_replaced_0`;'])
   })
 
   it('ignores renames of names the previous snapshot doesn\'t have (a hand-edited migrations folder)', () => {
     expect(planRenames(post({ fld_x: 'gone' }), post({ fld_x: 'other' }), fixtureSnapshot()).sql).toEqual([])
+  })
+})
+
+describe('dropIndexesFirst', () => {
+  it('runs every DROP INDEX before the rest, so a swapped table never meets the other\'s index name (verification N1)', () => {
+    expect(dropIndexesFirst([
+      'ALTER TABLE `a` RENAME TO `b`;',
+      'DROP INDEX `a_code_unique`;',
+      'CREATE UNIQUE INDEX `b_code_unique` ON `b` (`code`);',
+      'DROP INDEX `b_code_unique`;',
+      'CREATE UNIQUE INDEX `a_code_unique` ON `a` (`code`);'
+    ])).toEqual([
+      'DROP INDEX `a_code_unique`;',
+      'DROP INDEX `b_code_unique`;',
+      'ALTER TABLE `a` RENAME TO `b`;',
+      'CREATE UNIQUE INDEX `b_code_unique` ON `b` (`code`);',
+      'CREATE UNIQUE INDEX `a_code_unique` ON `a` (`code`);'
+    ])
   })
 })
 

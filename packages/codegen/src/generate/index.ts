@@ -1,3 +1,4 @@
+import { schemaIds } from '../migrate/index.ts'
 import type { Model } from '../model/load.ts'
 import { STARTER_CORE_FILES, STARTER_ROOT_FILES } from '../starter/core-files.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
@@ -19,10 +20,39 @@ export const SCAFFOLD_ROOT_FILES = new Set(['nuxt.config.ts', 'tsconfig.json', '
 const byPath = (a: GeneratedFile, b: GeneratedFile) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0
 
 /**
+ * Names the model allows but the app can't have: two entities of a module with
+ * one plural (both name the same exports and files), or two stored entities on
+ * one table (one would silently take over the other's rows).
+ */
+const checkCollisions = (model: Model) => {
+  const nameOf = new Map<string, string>()
+  for (const [module, { entities }] of Object.entries(model.modules)) {
+    const byPlural = new Map<string, string>()
+    for (const entity of entities) {
+      nameOf.set(entity.id, entity.name)
+      const other = byPlural.get(entity.plural)
+      if (other) throw new Error(`${[other, entity.name].sort().join(' and ')} both use the plural ${entity.plural} in module ${module}: plurals name code and tables, so they must differ`)
+      byPlural.set(entity.plural, entity.name)
+    }
+  }
+  const byTable = new Map<string, string>()
+  for (const [id, { table }] of Object.entries(schemaIds(model).tables)) {
+    const other = byTable.get(table)
+    if (other) throw new Error(`${[nameOf.get(other)!, nameOf.get(id)!].sort().join(' and ')} would share the table ${table}: give one of them another table or plural`)
+    byTable.set(table, id)
+  }
+}
+
+/**
  * Every managed file of a project (T7d): the static core layer and root
  * configs, plus everything the model generates. The input of a sync.
  */
-export const generate = (model: Model): GeneratedFile[] => [
+export const generate = (model: Model): GeneratedFile[] => {
+  checkCollisions(model)
+  return generateAll(model)
+}
+
+const generateAll = (model: Model): GeneratedFile[] => [
   ...Object.entries(STARTER_CORE_FILES).map(([path, content]) => ({ path, content, owner: 'managed' as const })),
   ...Object.entries(STARTER_ROOT_FILES).filter(([path]) => !SCAFFOLD_ROOT_FILES.has(path)).map(([path, content]) => ({ path, content, owner: 'managed' as const })),
   ...generateProject(model),
