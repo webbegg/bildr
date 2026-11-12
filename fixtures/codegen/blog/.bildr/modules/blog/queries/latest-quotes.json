@@ -4,8 +4,21 @@
   "name": "latestQuotes",
   "label": "Latest quotes",
   "from": "ent_quote",
-  "params": [{ "name": "limit", "type": "integer", "default": 3 }],
-  "orderBy": [{ "field": "id", "direction": "asc" }],
-  "limit": { "$param": "limit" },
+  "params": [
+    {
+      "name": "limit",
+      "type": "integer",
+      "default": 3
+    }
+  ],
+  "orderBy": [
+    {
+      "field": "id",
+      "direction": "asc"
+    }
+  ],
+  "limit": {
+    "$param": "limit"
+  },
   "result": "many"
 }

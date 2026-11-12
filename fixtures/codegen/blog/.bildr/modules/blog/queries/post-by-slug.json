@@ -4,7 +4,19 @@
   "name": "postBySlug",
   "label": "Post by slug",
   "from": "ent_post",
-  "params": [{ "name": "slug", "type": "text", "reactive": true }],
-  "where": { "op": "eq", "field": "slug", "value": { "$param": "slug" } },
+  "params": [
+    {
+      "name": "slug",
+      "type": "text",
+      "reactive": true
+    }
+  ],
+  "where": {
+    "op": "eq",
+    "field": "slug",
+    "value": {
+      "$param": "slug"
+    }
+  },
   "result": "one"
 }

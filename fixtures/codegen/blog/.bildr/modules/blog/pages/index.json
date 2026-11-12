@@ -4,37 +4,169 @@
   "name": "index",
   "path": "/",
   "layout": "lay_main",
-  "seo": { "title": "Blog" },
+  "seo": {
+    "title": "Blog"
+  },
   "uses": {
-    "state": [{ "as": "preferences", "state": "st_preferences" }],
+    "state": [
+      {
+        "as": "preferences",
+        "state": "st_preferences"
+      }
+    ],
     "queries": [
-      { "as": "featured", "query": "q_featured_posts", "args": { "limit": 6 } },
-      { "as": "all", "query": "q_all_posts" },
-      { "as": "quotes", "query": "q_latest_quotes", "args": { "limit": 3 } }
+      {
+        "as": "featured",
+        "query": "q_featured_posts",
+        "args": {
+          "limit": 6
+        }
+      },
+      {
+        "as": "all",
+        "query": "q_all_posts"
+      },
+      {
+        "as": "quotes",
+        "query": "q_latest_quotes",
+        "args": {
+          "limit": 3
+        }
+      }
     ],
     "computed": [
-      { "as": "posts", "if": { "$bind": "preferences.showDrafts" }, "then": { "$bind": "all" }, "else": { "$bind": "featured" } }
+      {
+        "as": "posts",
+        "if": {
+          "$bind": "preferences.showDrafts"
+        },
+        "then": {
+          "$bind": "all"
+        },
+        "else": {
+          "$bind": "featured"
+        }
+      }
     ]
   },
   "root": {
-    "id": "n_page", "type": "Page", "style": { "display": "flex", "direction": "column", "gap": "6" },
+    "id": "n_page",
+    "type": "Page",
+    "style": {
+      "display": "flex",
+      "direction": "column",
+      "gap": "6"
+    },
     "children": [
       {
-        "id": "n_head", "type": "Row", "style": { "justify": "between", "align": "center" },
+        "id": "n_head",
+        "type": "Row",
+        "style": {
+          "justify": "between",
+          "align": "center"
+        },
         "children": [
-          { "id": "n_h1", "type": "Heading", "props": { "level": 1, "text": "Posts" }, "style": { "fontSize": "3xl", "fontWeight": "semibold" } },
-          { "id": "n_toggle", "type": "Checkbox", "props": { "label": "Show drafts", "value": { "$bind": "preferences.showDrafts" } }, "interactions": [{ "on": "change", "do": [{ "kind": "setState", "state": "st_preferences", "field": "showDrafts", "value": { "$event": "checked" } }] }] }
+          {
+            "id": "n_h1",
+            "type": "Heading",
+            "props": {
+              "level": 1,
+              "text": "Posts"
+            },
+            "style": {
+              "fontSize": "3xl",
+              "fontWeight": "semibold"
+            }
+          },
+          {
+            "id": "n_toggle",
+            "type": "Checkbox",
+            "props": {
+              "label": "Show drafts",
+              "value": {
+                "$bind": "preferences.showDrafts"
+              }
+            },
+            "interactions": [
+              {
+                "on": "change",
+                "do": [
+                  {
+                    "kind": "setState",
+                    "state": "st_preferences",
+                    "field": "showDrafts",
+                    "value": {
+                      "$event": "checked"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
         ]
       },
       {
-        "id": "n_list", "type": "List", "props": { "items": { "$bind": "posts" }, "as": "post", "empty": "No posts yet.", "loading": "Loading…" },
-        "style": { "display": "grid", "gap": "4", "sm:cols": "2" },
-        "children": [{ "id": "n_card", "type": "Instance", "props": { "component": "cmp_post_card", "values": { "prop_post": { "$bind": "post" } } } }]
+        "id": "n_list",
+        "type": "List",
+        "props": {
+          "items": {
+            "$bind": "posts"
+          },
+          "as": "post",
+          "empty": "No posts yet.",
+          "loading": "Loading…"
+        },
+        "style": {
+          "display": "grid",
+          "gap": "4",
+          "sm:cols": "2"
+        },
+        "children": [
+          {
+            "id": "n_card",
+            "type": "Instance",
+            "props": {
+              "component": "cmp_post_card",
+              "values": {
+                "prop_post": {
+                  "$bind": "post"
+                }
+              }
+            }
+          }
+        ]
       },
       {
-        "id": "n_quotes", "type": "List", "props": { "items": { "$bind": "quotes" }, "as": "quote", "hideWhenEmpty": true },
-        "style": { "display": "flex", "direction": "column", "gap": "2", "borderTop": "border", "pt": "6" },
-        "children": [{ "id": "n_quote", "type": "Text", "props": { "text": { "$template": "“{quote.text}” — {quote.author}" } }, "style": { "fontSize": "sm" } }]
+        "id": "n_quotes",
+        "type": "List",
+        "props": {
+          "items": {
+            "$bind": "quotes"
+          },
+          "as": "quote",
+          "hideWhenEmpty": true
+        },
+        "style": {
+          "display": "flex",
+          "direction": "column",
+          "gap": "2",
+          "borderTop": "border",
+          "pt": "6"
+        },
+        "children": [
+          {
+            "id": "n_quote",
+            "type": "Text",
+            "props": {
+              "text": {
+                "$template": "“{quote.text}” — {quote.author}"
+              }
+            },
+            "style": {
+              "fontSize": "sm"
+            }
+          }
+        ]
       }
     ]
   }

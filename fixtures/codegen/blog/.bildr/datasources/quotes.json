@@ -7,6 +7,11 @@
     "baseUrl": "NUXT_DATASOURCES_QUOTES_BASE_URL",
     "apiKey": "NUXT_DATASOURCES_QUOTES_API_KEY"
   },
-  "defaults": { "baseUrl": "https://dummyjson.com" },
-  "auth": { "type": "bearer", "secret": "apiKey" }
+  "defaults": {
+    "baseUrl": "https://dummyjson.com"
+  },
+  "auth": {
+    "type": "bearer",
+    "secret": "apiKey"
+  }
 }

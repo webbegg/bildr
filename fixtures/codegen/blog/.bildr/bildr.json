@@ -6,5 +6,7 @@
   "name": "Blog",
   "description": "A blog built with bildr.",
   "defaultModule": "blog",
-  "modules": ["blog"]
+  "modules": [
+    "blog"
+  ]
 }

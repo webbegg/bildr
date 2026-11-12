@@ -4,9 +4,26 @@
   "name": "featuredPosts",
   "label": "Featured posts",
   "from": "ent_post",
-  "params": [{ "name": "limit", "type": "integer", "default": 6 }],
-  "where": { "op": "eq", "field": "published", "value": true },
-  "orderBy": [{ "field": "publishedAt", "direction": "desc" }],
-  "limit": { "$param": "limit" },
+  "params": [
+    {
+      "name": "limit",
+      "type": "integer",
+      "default": 6
+    }
+  ],
+  "where": {
+    "op": "eq",
+    "field": "published",
+    "value": true
+  },
+  "orderBy": [
+    {
+      "field": "publishedAt",
+      "direction": "desc"
+    }
+  ],
+  "limit": {
+    "$param": "limit"
+  },
   "result": "many"
 }

@@ -3,6 +3,10 @@
   "id": "ds_main",
   "name": "main",
   "kind": "sqlite",
-  "env": { "url": "NUXT_DB_URL" },
-  "defaults": { "url": "file:.data/app.db" }
+  "env": {
+    "url": "NUXT_DB_URL"
+  },
+  "defaults": {
+    "url": "file:.data/app.db"
+  }
 }

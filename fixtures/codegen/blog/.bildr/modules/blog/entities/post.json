@@ -6,12 +6,46 @@
   "idStrategy": "uuid",
   "timestamps": true,
   "fields": [
-    { "id": "fld_title", "name": "title", "type": "text", "required": true, "min": 1, "max": 120 },
-    { "id": "fld_slug", "name": "slug", "type": "text", "required": true, "unique": true, "pattern": "^[a-z0-9-]+$", "patternMessage": "Use lowercase letters, numbers and dashes" },
-    { "id": "fld_body", "name": "body", "type": "text", "default": "" },
-    { "id": "fld_published", "name": "published", "type": "boolean", "default": false },
-    { "id": "fld_published_at", "name": "publishedAt", "type": "datetime", "nullable": true, "readonly": true }
+    {
+      "id": "fld_title",
+      "name": "title",
+      "type": "text",
+      "required": true,
+      "min": 1,
+      "max": 120
+    },
+    {
+      "id": "fld_slug",
+      "name": "slug",
+      "type": "text",
+      "required": true,
+      "unique": true,
+      "pattern": "^[a-z0-9-]+$",
+      "patternMessage": "Use lowercase letters, numbers and dashes"
+    },
+    {
+      "id": "fld_body",
+      "name": "body",
+      "type": "text",
+      "default": ""
+    },
+    {
+      "id": "fld_published",
+      "name": "published",
+      "type": "boolean",
+      "default": false
+    },
+    {
+      "id": "fld_published_at",
+      "name": "publishedAt",
+      "type": "datetime",
+      "nullable": true,
+      "readonly": true
+    }
   ],
   "relations": [],
-  "client": { "sync": "eager", "limit": 500 }
+  "client": {
+    "sync": "eager",
+    "limit": 500
+  }
 }
