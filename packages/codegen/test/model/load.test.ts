@@ -32,6 +32,10 @@ describe('fileKind', () => {
     expect(fileKind('.bildr/modules/blog/pages/index.json')).toBe('page')
     expect(fileKind('.bildr/modules/blog/other/x.json')).toBeUndefined()
     expect(fileKind('.bildr/.cache/health.json')).toBeUndefined()
+    // Only normalized paths: `.`/`..` segments, empty segments and leftovers of atomic writes are not model files.
+    for (const path of ['.bildr/modules/../entities/x.json', '.bildr/modules/./entities/x.json', '.bildr/modules/../module.json', '.bildr//theme.json', '.bildr/datasources/./main.json', '.bildr/modules/blog/entities/post.json.tmp']) {
+      expect(fileKind(path), path).toBeUndefined()
+    }
   })
 })
 

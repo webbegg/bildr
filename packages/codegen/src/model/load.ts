@@ -92,6 +92,8 @@ const SCHEMAS: Record<FileKind, z.ZodType> = {
 
 /** The kind of a `.bildr/` file from its path, or undefined for files that aren't part of the model (like `.cache/`). */
 export const fileKind = (path: string): FileKind | undefined => {
+  // Only normalized paths: `modules/../x` would be written outside the folder its kind implies.
+  if (path.split('/').some(part => part === '' || part === '.' || part === '..')) return undefined
   if (path === PROJECT_FILE) return 'project'
   if (path === THEME_FILE) return 'theme'
   if (path === MANIFEST_FILE) return 'manifest'

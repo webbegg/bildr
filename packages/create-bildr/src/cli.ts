@@ -30,7 +30,7 @@ export const parseArgs = (argv: string[]): CliArgs => {
     const [key, inline] = arg.slice(2).split(/=(.*)/s, 2) as [string, string | undefined]
     if (!(OPTIONS as readonly string[]).includes(key)) throw new Error(`Unknown option --${key}\n${USAGE}`)
     const value = inline ?? argv[++i]
-    if (value === undefined) throw new Error(`--${key} needs a value\n${USAGE}`)
+    if (value === undefined || value.trim() === '') throw new Error(`--${key} needs a value\n${USAGE}`)
     options[key] = value
   }
   const dir = positional[0]

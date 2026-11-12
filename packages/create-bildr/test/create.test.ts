@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { loadModel } from '@bildr/codegen/model'
 import { detectStarterKit } from '@bildr/codegen/starter'
@@ -55,6 +56,15 @@ describe('createProject', () => {
     ])
   })
 
+  it('links the local @bildr/nuxt by default while it is unpublished, so the project installs', () => {
+    const dir = join(root, 'acme')
+    createProject(dir, { name: 'Acme' })
+    const spec = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).devDependencies['@bildr/nuxt'] as string
+    expect(spec).toBe(`link:${fileURLToPath(new URL('../../nuxt', import.meta.url)).replace(/\/$/, '')}`)
+    createProject(join(root, 'given'), { name: 'Given', bildrNuxt: '^9.9.9' })
+    expect(JSON.parse(readFileSync(join(root, 'given/package.json'), 'utf8')).devDependencies['@bildr/nuxt']).toBe('^9.9.9')
+  })
+
   it('creates into an empty existing directory, refuses a non-empty one', () => {
     const empty = join(root, 'empty')
     mkdirSync(empty)
@@ -89,6 +99,12 @@ describe('parseArgs', () => {
     expect(parseArgs(['--name=Shop', 'shop'])).toEqual({ dir: 'shop', name: 'Shop', module: 'main' })
     // --bildr: where to install @bildr/nuxt from (a local link until it is published).
     expect(parseArgs(['shop', '--bildr', 'link:/src/bildr/packages/nuxt'])).toEqual({ dir: 'shop', name: 'Shop', module: 'main', bildr: 'link:/src/bildr/packages/nuxt' })
+  })
+
+  it('refuses empty option values instead of silently using defaults', () => {
+    expect(() => parseArgs(['shop', '--bildr='])).toThrow('--bildr needs a value')
+    expect(() => parseArgs(['shop', '--bildr', ''])).toThrow('--bildr needs a value')
+    expect(() => parseArgs(['shop', '--module='])).toThrow('--module needs a value')
   })
 
   it('explains the usage when the directory is missing or an option is unknown', () => {

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -92,6 +92,40 @@ describe('model API', () => {
   it('requires JSON and limits the body size', async () => {
     expect((await request(`/__bildr/api/file?path=${pagePath}`, { method: 'PUT', body: '{}', headers: { 'content-type': 'text/plain' } })).status).toBe(415)
     expect((await request(`/__bildr/api/file?path=${pagePath}`, { method: 'PUT', body: 'x'.repeat(3_000_000), headers: { 'content-type': 'application/json' } })).status).toBe(413)
+  })
+})
+
+describe('write safety (T3b verification)', () => {
+  const entity = () => readFileSync(join(__dirname, '../../../fixtures/codegen/blog/.bildr/modules/blog/entities/quote.json'), 'utf8')
+  const put = (path: string, body: string) => request(`/__bildr/api/file?path=${encodeURIComponent(path)}`, { method: 'PUT', body, headers: { 'content-type': 'application/json' } })
+
+  it('refuses . and .. segments so an accepted write always keeps the model loadable', async () => {
+    for (const path of ['.bildr/modules/../entities/quote.json', '.bildr/modules/./entities/quote.json', '.bildr/modules/../module.json']) {
+      expect((await put(path, entity())).status, path).toBe(400)
+    }
+    expect(existsSync(join(dir, '.bildr/entities'))).toBe(false)
+    expect(existsSync(join(dir, '.bildr/modules/entities'))).toBe(false)
+    expect((await (await request('/__bildr/api/model')).json()).ok).toBe(true)
+  })
+
+  it('never writes through a symlinked .bildr folder that points outside the project', async () => {
+    mkdirSync(join(root, 'outside'))
+    symlinkSync(join(root, 'outside'), join(dir, '.bildr/modules/main/entities'))
+    expect((await put('.bildr/modules/main/entities/quote.json', entity())).status).toBe(400)
+    expect(readdirSync(join(root, 'outside'))).toEqual([])
+  })
+
+  it('leaves no .tmp file behind when the final rename fails', async () => {
+    mkdirSync(join(dir, '.bildr/modules/main/entities/quote.json'), { recursive: true })
+    expect((await put('.bildr/modules/main/entities/quote.json', entity())).status).toBe(500)
+    expect(existsSync(join(dir, '.bildr/modules/main/entities/quote.json.tmp'))).toBe(false)
+  })
+
+  it('answers a broken manifest with a JSON error instead of throwing', async () => {
+    writeFileSync(join(dir, '.bildr/manifest.json'), '{not json')
+    const response = await request('/__bildr/api/drift')
+    expect(response.status).toBe(500)
+    expect((await response.json()).ok).toBe(false)
   })
 })
 
