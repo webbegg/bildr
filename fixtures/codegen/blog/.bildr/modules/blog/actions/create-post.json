@@ -1,0 +1,21 @@
+{
+  "$schema": "https://bildr.dev/schema/action.v1.json",
+  "id": "act_create_post",
+  "name": "createPost",
+  "label": "Create post",
+  "http": { "method": "POST", "path": "/posts" },
+  "input": { "entity": "ent_post", "pick": ["id", "title", "slug", "body", "published"] },
+  "output": { "entity": "ent_post" },
+  "errors": [
+    { "type": "slug_taken", "status": 409, "message": "The slug \"{slug}\" is already used by another post.", "data": { "slug": "text" } }
+  ],
+  "steps": [
+    { "kind": "validate" },
+    { "kind": "assert", "unless": { "repository": "repo_post", "op": "findBySlug", "args": { "slug": { "$input": "slug" } } }, "error": "slug_taken", "errorData": { "slug": { "$input": "slug" } } },
+    { "kind": "repository", "repository": "repo_post", "op": "create", "set": { "publishedAt": { "if": { "$input": "published" }, "then": { "$now": true }, "else": null } } }
+  ],
+  "client": {
+    "optimistic": { "kind": "insert", "entity": "ent_post" },
+    "invalidates": ["ent_post"]
+  }
+}

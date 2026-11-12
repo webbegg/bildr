@@ -1,0 +1,10 @@
+{
+  "$schema": "https://bildr.dev/schema/query.v1.json",
+  "id": "q_all_posts",
+  "name": "allPosts",
+  "label": "All posts",
+  "from": "ent_post",
+  "params": [],
+  "orderBy": [{ "field": "createdAt", "direction": "desc" }],
+  "result": "many"
+}

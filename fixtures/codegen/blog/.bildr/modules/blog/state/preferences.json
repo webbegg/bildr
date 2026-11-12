@@ -1,0 +1,11 @@
+{
+  "$schema": "https://bildr.dev/schema/state.v1.json",
+  "id": "st_preferences",
+  "name": "preferences",
+  "label": "Blog preferences",
+  "persist": "localStorage",
+  "shape": "single",
+  "fields": [
+    { "id": "fld_show_drafts", "name": "showDrafts", "type": "boolean", "default": false }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "$schema": "https://bildr.dev/schema/module.v1.json",
+  "id": "mod_blog",
+  "name": "blog",
+  "label": "Blog",
+  "dependsOn": []
+}

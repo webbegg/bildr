@@ -1,0 +1,21 @@
+{
+  "$schema": "https://bildr.dev/schema/component.v1.json",
+  "id": "cmp_post_card",
+  "name": "PostCard",
+  "properties": [
+    { "id": "prop_post", "name": "post", "kind": "entity", "entity": "ent_post", "pick": ["title", "slug", "body", "published"], "required": true }
+  ],
+  "variants": [
+    { "id": "var_compact", "name": "compact", "overrides": { "n_card": { "style": { "gap": "1", "p": "3" } }, "n_excerpt": { "props": { "hidden": true } } } }
+  ],
+  "root": {
+    "id": "n_card", "type": "Link",
+    "props": { "to": { "page": "pg_post_detail", "params": { "slug": { "$bind": "post.slug" } } } },
+    "style": { "display": "flex", "direction": "column", "gap": "2", "p": "5", "radius": "lg", "border": "border", "hover:shadow": "md", "pressed:shadow": "sm" },
+    "children": [
+      { "id": "n_title", "type": "Heading", "props": { "level": 2, "text": { "$bind": "post.title" } }, "style": { "fontSize": "lg", "fontWeight": "semibold" } },
+      { "id": "n_excerpt", "type": "Text", "props": { "text": { "$bind": "post.body" } }, "style": { "lineClamp": "2", "color": "muted" } },
+      { "id": "n_draft", "type": "Text", "props": { "text": "Draft", "visible": { "not": { "$bind": "post.published" } } }, "style": { "self": "start", "radius": "sm", "bg": "gray-100", "px": "2", "py": "0.5", "fontSize": "xs" } }
+    ]
+  }
+}
