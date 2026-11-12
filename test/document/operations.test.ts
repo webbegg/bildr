@@ -7,7 +7,7 @@ import type { Project } from '#shared/document/schema'
 import { DEFAULT_THEME } from '#shared/design/theme'
 
 function setup(): { project: Project, pageId: string, rootId: string } {
-  const project = createProject('Demo')
+  const project = createProject('Demo', 'mobile')
   const page = project.pages[0]!
   return { project, pageId: page.id, rootId: page.root.id }
 }

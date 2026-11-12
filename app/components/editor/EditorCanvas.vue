@@ -397,7 +397,7 @@ function renderMessage(key: string | null): EditorToCanvas | null {
   const page = variant ? editor.variantPage(variant.variantId) : editor.page
   if (!page) return null
   return {
-    type: 'bildr:render', page, base: `/p/${editor.project.slug}`, theme: editor.theme, view, lists: editor.lists, env: editor.publicEnv, components: editor.project.components, layouts: editor.project.layouts,
+    type: 'bildr:render', page, base: `/p/${editor.project.slug}`, breakpointBase: editor.project.breakpointBase, theme: editor.theme, view, lists: editor.lists, env: editor.publicEnv, components: editor.project.components, layouts: editor.project.layouts,
     ...(!variant && page.collection ? { record: editor.previewRecord } : {}),
     ...(variant ? { variant: { id: variant.variantId, label: variant.label } } : {})
   }

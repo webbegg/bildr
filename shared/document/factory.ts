@@ -1,4 +1,5 @@
 import { defaultTheme } from '../design/theme'
+import type { BreakpointBase } from '../design/tokens'
 import { getComponent, PAGE_ROOT_TYPE } from './components'
 import type { PropValue } from './components'
 import type { ApiHeader, Collection, CollectionSource, Connection, DocNode, Field, Page, Project } from './schema'
@@ -38,7 +39,8 @@ export function createPage(name: string, slug = slugify(name)): Page {
   }
 }
 
-export function createProject(name: string): Project {
+/** A new project: desktop-first unless `base` asks for mobile-first (S37). */
+export function createProject(name: string, base: BreakpointBase = 'desktop'): Project {
   const now = new Date().toISOString()
   return {
     id: newId('prj'),
@@ -51,6 +53,7 @@ export function createProject(name: string): Project {
     connections: [],
     components: [],
     layouts: [],
+    breakpointBase: base,
     createdAt: now,
     updatedAt: now
   }

@@ -34,7 +34,7 @@ describe('document schema', () => {
   })
 
   it('rejects style values that are not design tokens', () => {
-    const project = createProject('My App')
+    const project = createProject('My App', 'mobile')
     const text = createNode('Text')
     text.style = { padding: '16px' }
     project.pages[0]!.root.children.push(text)

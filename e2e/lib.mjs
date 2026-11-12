@@ -69,9 +69,15 @@ export async function action(name, input = {}) {
   return body
 }
 
-/** Creates a project (named with an `e2e` prefix) that `cleanup` deletes. */
-export async function project(name) {
-  const doc = await action('project_create', { name: `e2e ${name} ${Date.now()}` })
+/**
+ * Creates a project (named with an `e2e` prefix) that `cleanup` deletes.
+ * Mobile-first by default: the scripts before S37 (breakpoints-p2, design,
+ * canvas-p2, ...) were written for mobile-first projects, whose Primary is
+ * Mobile and whose overrides are `sm:`/`md:`/`lg:`. Pass `'desktop'` for a
+ * desktop-first one, what `project_create` makes by default.
+ */
+export async function project(name, base = 'mobile') {
+  const doc = await action('project_create', { name: `e2e ${name} ${Date.now()}`, base })
   created.push({ id: doc.id, slug: doc.slug })
   return doc
 }

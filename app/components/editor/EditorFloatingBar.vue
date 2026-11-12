@@ -62,7 +62,7 @@ const pressed = (on: boolean) => (on ? 'bg-white/10 text-highlighted' : '')
       v-for="device in editor.visibleDevices"
       :key="device.id"
       :text="deviceHint(device)"
-      :kbds="frameShortcut(editor.frames, device.id)"
+      :kbds="frameShortcut(editor.frames, device.id, editor.breakpointBase)"
       :content="{ side: 'top' }"
     >
       <EditorButton

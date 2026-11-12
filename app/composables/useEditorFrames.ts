@@ -1,4 +1,6 @@
-import { DEFAULT_FRAMES, hideFrame, parseFrames, serializeFrames, showFrame } from '#shared/editor/frames'
+import type { Ref } from 'vue'
+import type { BreakpointBase } from '#shared/design/tokens'
+import { hideFrame, parseFrames, serializeFrames, showFrame } from '#shared/editor/frames'
 import type { DeviceId } from '#shared/editor/styleFields'
 
 /** The localStorage key of a project's visible frames. */
@@ -8,25 +10,29 @@ export function framesStorageKey(projectId: string): string {
 
 /**
  * A project's visible device frames, an editor preference kept in
- * localStorage per project (not in the document). The Primary is never
- * hidden; bad stored data falls back to the defaults.
+ * localStorage per project (not in the document). The Primary of the
+ * project's breakpoint `base` is never hidden; without a stored preference
+ * (or with bad data) a project shows its base's defaults: Desktop only
+ * desktop-first, every frame but Large phone mobile-first.
  */
-export function useEditorFrames(projectId: string) {
+export function useEditorFrames(projectId: string, base: Ref<BreakpointBase>) {
   const key = framesStorageKey(projectId)
-  const shown = ref<DeviceId[]>(import.meta.client ? parseFrames(localStorage.getItem(key)) : [...DEFAULT_FRAMES])
+  const stored = ref<string | null>(import.meta.client ? localStorage.getItem(key) : null)
+  const shown = computed<DeviceId[]>(() => parseFrames(stored.value, base.value))
 
   function save(next: DeviceId[]): void {
-    shown.value = next
+    const raw = serializeFrames(next)
+    stored.value = raw
     try {
-      localStorage.setItem(key, serializeFrames(next))
+      localStorage.setItem(key, raw)
     } catch {
       // Storage full or blocked: the frames still change for this session.
     }
   }
 
   return {
-    shown: readonly(shown),
-    show: (id: DeviceId) => save(showFrame(shown.value, id)),
-    hide: (id: DeviceId) => save(hideFrame(shown.value, id))
+    shown,
+    show: (id: DeviceId) => save(showFrame(shown.value, id, base.value)),
+    hide: (id: DeviceId) => save(hideFrame(shown.value, id, base.value))
   }
 }

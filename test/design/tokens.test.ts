@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { allTokenClasses, BREAKPOINTS, displayFallback, getStyleToken, isResponsiveToken, isStyleTokenKey, parseStyleKey, STYLE_TOKENS, styleClasses, styleKey, styleTokenProblem, tokenSafelistCss } from '#shared/design/tokens'
+import { allTokenClasses, breakpointsOf, displayFallback, getStyleToken, isResponsiveToken, isStyleTokenKey, parseStyleKey, STYLE_TOKENS, styleClasses, styleKey, styleTokenProblem, tokenSafelistCss } from '#shared/design/tokens'
 
 const TOKENS_CSS = new URL('../../app/assets/css/tokens.css', import.meta.url)
 
@@ -55,7 +55,7 @@ describe('style token registry', () => {
 
 describe('responsive style keys', () => {
   it('parses a breakpoint prefix onto a base token', () => {
-    expect(BREAKPOINTS).toEqual(['sm', 'md', 'lg'])
+    expect(breakpointsOf('mobile')).toEqual(['sm', 'md', 'lg'])
     expect(parseStyleKey('cols')).toEqual({ token: getStyleToken('cols'), breakpoint: undefined })
     expect(parseStyleKey('md:cols')).toEqual({ token: getStyleToken('cols'), breakpoint: 'md' })
     expect(parseStyleKey('lg:mt')).toEqual({ token: getStyleToken('mt'), breakpoint: 'lg' })
@@ -96,7 +96,7 @@ describe('responsive style keys', () => {
 
   it('generates the variant classes in the safelist', () => {
     expect(allTokenClasses()).toEqual(expect.arrayContaining(['md:grid-cols-3', 'sm:mt-10', 'lg:col-span-full', 'md:text-2xl', 'lg:self-center']))
-    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:}grid-cols-{1,2,3,4,5,6,12}");')
+    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:,max-lg:,max-md:,max-sm:}grid-cols-{1,2,3,4,5,6,12}");')
   })
 })
 
@@ -159,7 +159,7 @@ describe('Framer + menu tokens', () => {
     expect(styleClasses({ 'textTransform': 'uppercase', 'leading': 'loose', 'md:tracking': 'wide' })).toBe('md:tracking-wide leading-loose uppercase')
     expect(styleTokenProblem('md:textTransform', 'capitalize')).toBeUndefined()
     expect(styleTokenProblem('tracking', '2')).toBe('"2" is not a value of style token "tracking"')
-    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:}{uppercase,lowercase,capitalize,normal-case}");')
+    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:,max-lg:,max-md:,max-sm:}{uppercase,lowercase,capitalize,normal-case}");')
   })
 })
 
@@ -172,7 +172,7 @@ describe('display token', () => {
     expect(styleTokenProblem('display', 'inline')).toBe('"inline" is not a value of style token "display"')
     expect(allTokenClasses()).toEqual(expect.arrayContaining(['hidden', 'md:flex', 'lg:hidden', 'sm:grid']))
     expect(allTokenClasses()).not.toContain('-hidden')
-    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:}{hidden,block,flex,grid}");')
+    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:,max-lg:,max-md:,max-sm:}{hidden,block,flex,grid}");')
   })
 
   it('replaces the template display class only when set at the base', () => {

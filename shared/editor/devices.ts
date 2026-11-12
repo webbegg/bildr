@@ -3,17 +3,24 @@
  * their Alt/Option + digit shortcuts, and the pan that brings a device's frame
  * into view without changing the zoom.
  */
+import type { BreakpointBase } from '../design/tokens'
 import type { Device, DeviceId } from './styleFields'
-import { DEVICES } from './styleFields'
+import { devicesFor } from './styleFields'
 import type { Rect, Size, Viewport } from './viewport'
 import { frameOrder } from './viewport'
 
 /**
- * Every device, widest first, as the frames sit: Desktop, Tablet, Large phone,
- * then the Primary Mobile. The editor shows the visible ones
+ * Every device of a `base` project, widest first, as the frames sit:
+ * Desktop, Tablet, Large phone, then Mobile (the Primary is Mobile
+ * mobile-first, Desktop desktop-first). The editor shows the visible ones
  * (`visibleFrames` in ./frames), and ⌥ + digit follows those.
  */
-export const DEVICE_ORDER: Device[] = frameOrder(DEVICES)
+export function deviceOrder(base: BreakpointBase): Device[] {
+  return frameOrder(devicesFor(base))
+}
+
+/** The device order of a mobile-first project. */
+export const DEVICE_ORDER: Device[] = deviceOrder('mobile')
 
 /** A device's shortcut in `order` as `UKbd` values, e.g. `['alt', '2']` for Tablet. */
 export function deviceShortcut(id: DeviceId, order: readonly Pick<Device, 'id'>[] = DEVICE_ORDER): string[] {

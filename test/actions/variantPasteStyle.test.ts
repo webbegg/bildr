@@ -35,7 +35,7 @@ describe('variant Paste style (S8a)', () => {
 
   it('replaces the effective style with an own key plus a bound key at a breakpoint', async () => {
     const bildr = createBildr(memoryStorage())
-    const created = await bildr.call<Project>('project_create', { name: 'Demo' }, mcp)
+    const created = await bildr.call<Project>('project_create', { name: 'Demo', base: 'mobile' }, mcp)
     const projectId = created.id
     const pageId = created.pages[0]!.id
     const call = <T = Record<string, string>>(name: string, input: Record<string, unknown>) => bildr.call<T>(name, { projectId, ...input }, mcp)

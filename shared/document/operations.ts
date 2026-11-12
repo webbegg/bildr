@@ -219,7 +219,8 @@ function assertNewTree(project: Project, node: DocNode, isRoot = false, ids = pr
   const withParent = parent !== undefined && (parent.type === INSTANCE_TYPE || layoutFills)
   const placed = withParent ? { ...parent, children: [...parent.children, node] } : node
   const colors = customColorNames(project.theme)
-  const problems = [...nodeTreeProblems(node, ids, isRoot, colors), ...instanceProblems(placed, project.components, layoutFills, colors)]
+  const base = project.breakpointBase
+  const problems = [...nodeTreeProblems(node, ids, isRoot, colors, base), ...instanceProblems(placed, project.components, layoutFills, colors, base)]
   if (problems.length) fail('invalid', problems.join('; '))
 }
 
@@ -288,10 +289,11 @@ function getVariant(def: ComponentDefinition, variantId: string): Variant {
 /** Instances and definitions that the components no longer fit (bindings, values, slots, cycles). */
 function componentDocumentProblems(project: Project): string[] {
   const colors = customColorNames(project.theme)
+  const base = project.breakpointBase
   return [
-    ...componentProblems(project.components, colors).map(p => p.message),
-    ...project.pages.flatMap(page => instanceProblems(page.root, project.components, usesLayout(project, page), colors)),
-    ...project.layouts.flatMap(layout => instanceProblems(layout.root, project.components, false, colors))
+    ...componentProblems(project.components, colors, base).map(p => p.message),
+    ...project.pages.flatMap(page => instanceProblems(page.root, project.components, usesLayout(project, page), colors, base)),
+    ...project.layouts.flatMap(layout => instanceProblems(layout.root, project.components, false, colors, base))
   ]
 }
 
@@ -318,11 +320,12 @@ function editsLayouts(project: Project, op: Operation): boolean {
 function layoutDocumentProblems(project: Project, pageId?: string): string[] {
   const pages = pageId === undefined ? project.pages : project.pages.filter(p => p.id === pageId)
   const colors = customColorNames(project.theme)
+  const base = project.breakpointBase
   return [
-    ...(pageId === undefined ? layoutProblems(project.layouts, project.components, colors).map(p => p.message) : []),
+    ...(pageId === undefined ? layoutProblems(project.layouts, project.components, colors, base).map(p => p.message) : []),
     ...pages.flatMap((page) => {
       const layout = project.layouts.find(l => l.id === page.layoutId)
-      return [...pageLayoutProblems(page, layout, colors).map(p => p.message), ...instanceProblems(page.root, project.components, layout !== undefined, colors)]
+      return [...pageLayoutProblems(page, layout, colors, base).map(p => p.message), ...instanceProblems(page.root, project.components, layout !== undefined, colors, base)]
     })
   ]
 }
@@ -446,7 +449,7 @@ function apply(project: Project, op: Operation): Operation {
           if (!node.children.some(c => c.id === fillId && c.type === SLOT_FILL_TYPE)) fail('not_found', `SlotFill "${fillId}" not found under Instance "${node.id}"`)
         }
         const fills = op.slots ? node.children.map(c => ({ ...c, props: c.id in slots ? { ...c.props, slot: slots[c.id]! } : c.props, children: [] })) : []
-        const problems = instanceProblems({ ...node, props, children: fills }, project.components, false, customColorNames(project.theme))
+        const problems = instanceProblems({ ...node, props, children: fills }, project.components, false, customColorNames(project.theme), project.breakpointBase)
         if (problems.length) fail('invalid', problems.join('; '))
       } else if (op.slots) {
         fail('invalid', `"${node.type}" is not an Instance, so it has no slot fills`)
@@ -485,7 +488,7 @@ function apply(project: Project, op: Operation): Operation {
           // An unknown key's problem is about the key, whatever the value.
           if (!isStyleTokenKey(key)) fail('invalid', styleTokenProblem(key, '')!)
         } else {
-          const problem = styleTokenProblem(key, value, colors)
+          const problem = styleTokenProblem(key, value, colors, project.breakpointBase)
           if (problem) fail('invalid', problem)
         }
       }
@@ -805,7 +808,7 @@ function apply(project: Project, op: Operation): Operation {
       const inverse: Extract<Operation, { op: 'setOverride' }> = { op: 'setOverride', componentId: def.id, variantId: variant.id, nodeId: node.id }
       for (const key of op.unset ?? []) {
         if (op.style && key in op.style) fail('invalid', `"${key}" cannot be both set and removed`)
-        const problem = styleKeyProblem(key)
+        const problem = styleKeyProblem(key, project.breakpointBase)
         if (problem) fail('invalid', problem)
       }
       if (op.props) {

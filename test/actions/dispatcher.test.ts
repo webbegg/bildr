@@ -11,7 +11,8 @@ async function setup() {
   const bildr = createBildr(memoryStorage())
   const events: ChangeEvent[] = []
   bildr.onChange(e => events.push(e))
-  const project = await bildr.call<Project>('project_create', { name: 'Demo' }, ui)
+  // Mobile-first: these tests use sm:, md:, lg: keys.
+  const project = await bildr.call<Project>('project_create', { name: 'Demo', base: 'mobile' }, ui)
   const page = project.pages[0]!
   return { bildr, events, project, projectId: project.id, pageId: page.id, rootId: page.root.id }
 }
@@ -193,7 +194,7 @@ describe('action dispatcher', () => {
     expect(updateStyle.properties['md:bg']).toBeUndefined()
 
     const { tokens } = await bildr.call<{ tokens: { key: string, group: string, values: string[] }[] }>('components_list', {}, ui)
-    expect(tokens.find(t => t.key === 'mt')).toMatchObject({ group: 'Spacing', values: expect.arrayContaining(['10']), breakpoints: ['sm', 'md', 'lg'] })
+    expect(tokens.find(t => t.key === 'mt')).toMatchObject({ group: 'Spacing', values: expect.arrayContaining(['10']), breakpoints: ['sm', 'md', 'lg', 'max-lg', 'max-md', 'max-sm'] })
     expect(tokens.find(t => t.key === 'bg')).toMatchObject({ breakpoints: [] })
   })
 })

@@ -69,7 +69,7 @@ function onMessage(event: MessageEvent) {
   const shown = source.value
   if (!shown || !editor.project || !editor.theme) return
   if (message.type === 'bildr:ready') {
-    post({ type: 'bildr:render', page: shown.page, base: `/p/${editor.project.slug}`, theme: editor.theme, view: 'page', lists: {}, env: editor.publicEnv, components: shown.components, layouts: [] })
+    post({ type: 'bildr:render', page: shown.page, base: `/p/${editor.project.slug}`, breakpointBase: editor.project.breakpointBase, theme: editor.theme, view: 'page', lists: {}, env: editor.publicEnv, components: shown.components, layouts: [] })
     post({ type: 'bildr:dark', dark: editor.previewDark })
     post({ type: 'bildr:select', nodeId: null, nodeIds: [] })
   } else if (message.type === 'bildr:size') {

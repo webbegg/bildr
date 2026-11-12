@@ -383,7 +383,7 @@ export const componentVariantRename = defineAction({
 const OverrideFields = {
   props: z.record(z.string(), PropValueSchema.nullable()).optional().describe('Props of the node to override; null resets one'),
   style: z.record(z.string(), z.string().nullable()).optional().describe('Design tokens of the node to override (see components_list.tokens); null resets one (a set value, or a removal)'),
-  unset: z.array(z.string()).optional().describe('Style keys to remove in this variant, e.g. ["bg", "md:p"]: they render as absent even where the primary sets them; a null in style resets one. A key cannot be in both style and unset')
+  unset: z.array(z.string()).optional().describe('Style keys to remove in this variant, e.g. ["bg", "max-lg:p"] (breakpoint prefixes of the project\'s breakpointBase): they render as absent even where the primary sets them; a null in style resets one. A key cannot be in both style and unset')
 }
 
 export const componentVariantSetOverride = defineAction({
@@ -525,7 +525,7 @@ export const instanceReplace = defineAction({
       : [{ tree, node: instance }]
     const problem = replaceProblem(current, usages.map(u => u.tree), to.id)
     if (problem) throw new ActionError('invalid', problem)
-    const ops = usages.flatMap(u => replaceOps(u.tree, u.node, replacedInstance(u.node, from, to, current.components)))
+    const ops = usages.flatMap(u => replaceOps(u.tree, u.node, replacedInstance(u.node, from, to, current.components, current.breakpointBase)))
     const project = await ctx.services.mutate(ctx, projectId, all ? 'Replace all instances' : 'Replace instance', ops)
     return { version: project.version, replaced: usages.map(u => u.node.id).reverse() }
   }

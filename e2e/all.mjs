@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
-const SCRIPTS = ['shell', 'design', 'design-system', 'data', 'remote', 'paging', 'kit', 'panel-p1', 'colors-p1', 'menu-p1', 'canvas-p2', 'breakpoints-p2', 'components', 'layouts-p2', 'interactions', 'detail', 'detail-ui', 'load-more']
+const SCRIPTS = ['shell', 'design', 'design-system', 'data', 'remote', 'paging', 'kit', 'panel-p1', 'colors-p1', 'menu-p1', 'canvas-p2', 'breakpoints-p2', 'desktop-base', 'components', 'layouts-p2', 'interactions', 'detail', 'detail-ui', 'load-more']
 
 function runScript(name) {
   return new Promise((resolve) => {

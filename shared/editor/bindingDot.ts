@@ -1,5 +1,5 @@
-import type { Breakpoint } from '../design/tokens'
-import { BREAKPOINTS, parseStyleKey, styleKey, styleTokenProblem } from '../design/tokens'
+import type { BreakpointBase } from '../design/tokens'
+import { baseOfBreakpoint, cascadeTo, parseStyleKey, styleKey, styleTokenProblem } from '../design/tokens'
 import type { PropValue } from '../document/components'
 import type { PropertyDef, Project } from '../document/schema'
 import { isStyleBinding } from '../document/schema'
@@ -36,11 +36,12 @@ export function propertyValues(project: Project, owner: { componentId: string } 
 /**
  * The properties "Bind to property" offers for style key `key`: text and
  * select ones whose every value (`valuesOf`) is a string valid for the key
- * (`colors`: the theme's own colour names, for colour keys).
+ * (`colors`: the theme's own colour names, for colour keys; `base`: the
+ * project's breakpoint base).
  */
-export function styleBindCandidates(properties: readonly PropertyDef[], key: string, valuesOf: (property: PropertyDef) => PropValue[], colors: readonly string[] = []): PropertyDef[] {
+export function styleBindCandidates(properties: readonly PropertyDef[], key: string, valuesOf: (property: PropertyDef) => PropValue[], colors: readonly string[] = [], base: BreakpointBase = 'mobile'): PropertyDef[] {
   return properties.filter(p => (p.kind === 'text' || p.kind === 'select')
-    && valuesOf(p).every(value => typeof value === 'string' && !styleTokenProblem(key, value, colors)))
+    && valuesOf(p).every(value => typeof value === 'string' && !styleTokenProblem(key, value, colors, base)))
 }
 
 /**
@@ -66,19 +67,16 @@ export interface StyleBindingDot {
 
 /**
  * What the dot of node `nodeId`'s style `key` (e.g. `md:p`) shows. Following
- * the renderer's mobile-first cascade (`breakpoints` smallest first), the
- * edited key, then each smaller breakpoint's key and the base key: the first
+ * the renderer's cascade (`cascadeTo` the key's breakpoint), the edited key,
+ * then each earlier level's key and the base key: the first
  * that is bound decides, unless a key before it holds a value of the node's
  * own `style`, which overrides the binding there. An inherited row still
  * offers Bind and Create for the edited key, and no plain Unbind.
  */
-export function styleBindingDot(properties: readonly PropertyDef[], nodeId: string, style: Readonly<Record<string, string>>, key: string, breakpoints: readonly Breakpoint[] = BREAKPOINTS): StyleBindingDot {
+export function styleBindingDot(properties: readonly PropertyDef[], nodeId: string, style: Readonly<Record<string, string>>, key: string): StyleBindingDot {
   const bindHere: BindingDotAction[] = [{ kind: 'bind', key }, { kind: 'create', key }]
   const parsed = parseStyleKey(key)
-  const at = parsed?.breakpoint ? breakpoints.indexOf(parsed.breakpoint) : -1
-  const cascade = parsed && at >= 0
-    ? [key, ...breakpoints.slice(0, at).reverse().map(b => styleKey(parsed.token.key, b)), parsed.token.key]
-    : [key]
+  const cascade = parsed ? cascadeTo(parsed.breakpoint).reverse().map(b => styleKey(parsed.token.key, b)) : [key]
   for (const k of cascade) {
     const property = properties.find(p => p.bindings.some(b => b.nodeId === nodeId && b.prop === k && isStyleBinding(b)))
     if (property && k === key) return { state: 'own', property, boundKey: k, actions: [{ kind: 'unbind', key: k, property, scope: 'key' }] }
@@ -95,9 +93,10 @@ export function variantOverridden(override: { props?: Record<string, unknown>, s
   return override.style?.[key] !== undefined || !!override.unset?.includes(key)
 }
 
-/** An unbind's menu label: `Unbind property`, or for an inherited binding the breakpoints it also unbinds. */
+/** An unbind's menu label: `Unbind property`, or for an inherited binding the breakpoints it also unbinds (`from md up`, `from max-lg down`). */
 export function unbindLabel(action: Extract<BindingDotAction, { kind: 'unbind' }>, noun: string): string {
   if (action.scope === 'key') return `Unbind ${noun}`
   const breakpoint = parseStyleKey(action.key)?.breakpoint
-  return breakpoint ? `Unbind ${noun} from ${breakpoint} up` : `Unbind ${noun} on all breakpoints`
+  if (!breakpoint) return `Unbind ${noun} on all breakpoints`
+  return `Unbind ${noun} from ${breakpoint} ${baseOfBreakpoint(breakpoint) === 'desktop' ? 'down' : 'up'}`
 }

@@ -7,8 +7,9 @@
 import { uniqueCollectionName } from '../data/collections'
 import { COMPONENTS } from '../document/components'
 import type { DocNode } from '../document/schema'
-import { DEVICE_ORDER, deviceHint } from './devices'
-import { DEFAULT_FRAMES, frameShortcut, visibleFrames } from './frames'
+import type { BreakpointBase } from '../design/tokens'
+import { deviceHint, deviceOrder } from './devices'
+import { DEFAULT_FRAMES, defaultFrames, frameShortcut, visibleFrames } from './frames'
 import type { SelectionStep } from './selection'
 import { siblingParent, topLevelSelection } from './selection'
 import type { DeviceId } from './styleFields'
@@ -91,9 +92,9 @@ const AFTER_DEVICES: Shortcut[] = [
  * `useEditor().shortcut`, the canvas (zoom, Space) and the frames (Alt);
  * this list only describes them.
  */
-export function shortcutsFor(frames: readonly DeviceId[]): Shortcut[] {
-  const devices = visibleFrames(frames).flatMap((device) => {
-    const keys = frameShortcut(frames, device.id)
+export function shortcutsFor(frames: readonly DeviceId[], base: BreakpointBase = 'mobile'): Shortcut[] {
+  const devices = visibleFrames(frames, base).flatMap((device) => {
+    const keys = frameShortcut(frames, device.id, base)
     return keys ? [{ id: `device:${device.id}`, label: `Edit ${deviceHint(device)}`, keys: [keys] }] : []
   })
   return [...BEFORE_DEVICES, ...devices, ...AFTER_DEVICES]
@@ -234,6 +235,8 @@ export interface CommandEditor {
   deviceId: DeviceId
   /** The visible frames (an editor preference); the defaults when absent. */
   frames?: readonly DeviceId[]
+  /** The project's breakpoint base (which device is the Primary); mobile-first when absent. */
+  breakpointBase?: BreakpointBase
   insert: (type: string) => unknown
   group: () => unknown
   autoLayout: () => unknown
@@ -328,10 +331,11 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
     action('settings:delete-project', 'Delete project…', 'i-lucide-trash-2', ['remove', 'project', 'settings', 'danger'], c => !!c.editor.project, ({ editor }) => {
       editor.mode = 'settings'
     }),
-    ...DEVICE_ORDER.map((device) => {
-      const shown = editor.frames ?? DEFAULT_FRAMES
-      const visible = visibleFrames(shown).includes(device)
-      return action(`device:${device.id}`, `Edit ${device.label}`, device.icon, ['device', 'breakpoint', 'frame', String(device.width)], c => visible && onCanvas(c) && c.editor.deviceId !== device.id, ({ editor }) => editor.setDevice(device.id), frameShortcut(shown, device.id) ?? null)
+    ...deviceOrder(editor.breakpointBase ?? 'mobile').map((device) => {
+      const base = editor.breakpointBase ?? 'mobile'
+      const shown = editor.frames ?? defaultFrames(base)
+      const visible = visibleFrames(shown, base).some(d => d.id === device.id)
+      return action(`device:${device.id}`, `Edit ${device.label}`, device.icon, ['device', 'breakpoint', 'frame', String(device.width)], c => visible && onCanvas(c) && c.editor.deviceId !== device.id, ({ editor }) => editor.setDevice(device.id), frameShortcut(shown, device.id, base) ?? null)
     }),
     ...(editor.project?.pages ?? []).map((page): EditorCommand => ({
       id: `page:${page.id}`,

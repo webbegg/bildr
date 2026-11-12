@@ -1,5 +1,5 @@
-import { BREAKPOINTS, getStyleToken, isResponsiveToken, orderedStyleTokens, parseStyleKey, STYLE_HEX, styleKey } from '../design/tokens'
-import type { Breakpoint, StyleToken } from '../design/tokens'
+import { cascadeTo, getStyleToken, isResponsiveToken, orderedStyleTokens, parseStyleKey, STYLE_HEX, styleKey } from '../design/tokens'
+import type { Breakpoint, BreakpointBase, StyleToken } from '../design/tokens'
 import { SHADES, spacingBasePx, THEME_COLORS, themeColorValue, themeNeutralColor } from '../design/theme'
 import type { NeutralColorKind, Theme, ThemeColorName } from '../design/theme'
 
@@ -80,32 +80,61 @@ export interface Device {
   label: string
   /** The canvas width in CSS px; media queries in the canvas follow it. */
   width: number
-  /** The breakpoint the style panel edits on this device; undefined is the base (mobile-first). */
+  /** The breakpoint the style panel edits on this device; undefined is the base (the project's Primary). */
   breakpoint: Breakpoint | undefined
   icon: string
 }
 
-export const DEVICES: Device[] = [
-  { id: 'mobile', label: 'Mobile', width: 390, breakpoint: undefined, icon: 'i-lucide-smartphone' },
-  // Hidden by default (shared/editor/frames.ts); the frame bar's "+" shows it.
-  { id: 'large-phone', label: 'Large phone', width: 640, breakpoint: 'sm', icon: 'i-lucide-tablet-smartphone' },
-  { id: 'tablet', label: 'Tablet', width: 768, breakpoint: 'md', icon: 'i-lucide-tablet' },
-  { id: 'desktop', label: 'Desktop', width: 1280, breakpoint: 'lg', icon: 'i-lucide-monitor' }
-]
+const DEVICE_INFO: Record<DeviceId, Omit<Device, 'breakpoint'>> = {
+  'mobile': { id: 'mobile', label: 'Mobile', width: 390, icon: 'i-lucide-smartphone' },
+  'large-phone': { id: 'large-phone', label: 'Large phone', width: 640, icon: 'i-lucide-tablet-smartphone' },
+  'tablet': { id: 'tablet', label: 'Tablet', width: 768, icon: 'i-lucide-tablet' },
+  'desktop': { id: 'desktop', label: 'Desktop', width: 1280, icon: 'i-lucide-monitor' }
+}
+
+const DEVICE_LEVELS: Record<BreakpointBase, [DeviceId, Breakpoint | undefined][]> = {
+  mobile: [['mobile', undefined], ['large-phone', 'sm'], ['tablet', 'md'], ['desktop', 'lg']],
+  desktop: [['desktop', undefined], ['tablet', 'max-lg'], ['large-phone', 'max-md'], ['mobile', 'max-sm']]
+}
+
+const DEVICE_SETS: Record<BreakpointBase, Device[]> = {
+  mobile: DEVICE_LEVELS.mobile.map(([id, breakpoint]) => ({ ...DEVICE_INFO[id], breakpoint })),
+  desktop: DEVICE_LEVELS.desktop.map(([id, breakpoint]) => ({ ...DEVICE_INFO[id], breakpoint }))
+}
+
+/**
+ * The devices of a project of `base` in cascade order (`levels`), the
+ * Primary (the base style) first: Mobile, Large phone (`sm`), Tablet (`md`),
+ * Desktop (`lg`) for a mobile-first project; Desktop, Tablet (`max-lg`),
+ * Large phone (`max-md`), Mobile (`max-sm`) for a desktop-first one.
+ */
+export function devicesFor(base: BreakpointBase): Device[] {
+  return DEVICE_SETS[base]
+}
+
+/** The devices of a mobile-first project (`devicesFor('mobile')`). */
+export const DEVICES: Device[] = devicesFor('mobile')
+
+/** The device's entry for a project of `base`: its breakpoint differs per base. */
+export function deviceOf(device: DeviceId, base: BreakpointBase = 'mobile'): Device {
+  return devicesFor(base).find(d => d.id === device)!
+}
 
 export interface InheritedToken {
   value: string
-  /** The smaller breakpoint the value comes from; undefined is the base. */
+  /** The level the value comes from (a smaller one mobile-first, a wider one desktop-first); undefined is the base. */
   from: Breakpoint | undefined
 }
 
 /**
  * A style seen from one breakpoint, keyed by base token: the tokens set at that
  * breakpoint, and for the others the value that applies there from the nearest
- * smaller breakpoint (mobile-first).
+ * level before it in its cascade (`cascadeTo`). Keys of the other base's
+ * prefixes are ignored.
  */
 export function breakpointStyles(style: Record<string, string>, breakpoint: Breakpoint | undefined): { own: Record<string, string>, inherited: Record<string, InheritedToken> } {
-  const rank = (b: Breakpoint | undefined) => (b ? BREAKPOINTS.indexOf(b) + 1 : 0)
+  const cascade = cascadeTo(breakpoint)
+  const target = cascade.length - 1
   const own: Record<string, string> = {}
   const inherited: Record<string, InheritedToken> = {}
   const best: Record<string, number> = {}
@@ -113,9 +142,10 @@ export function breakpointStyles(style: Record<string, string>, breakpoint: Brea
     const parsed = parseStyleKey(key)
     if (!parsed) continue
     const base = parsed.token.key
-    const at = rank(parsed.breakpoint)
-    if (at === rank(breakpoint)) own[base] = value
-    else if (at < rank(breakpoint) && at >= (best[base] ?? -1)) {
+    const at = cascade.indexOf(parsed.breakpoint)
+    if (at < 0) continue
+    if (at === target) own[base] = value
+    else if (at >= (best[base] ?? -1)) {
       best[base] = at
       inherited[base] = { value, from: parsed.breakpoint }
     }
@@ -124,11 +154,11 @@ export function breakpointStyles(style: Record<string, string>, breakpoint: Brea
   return { own, inherited }
 }
 
-const deviceBreakpoint = (device: DeviceId) => DEVICES.find(d => d.id === device)!.breakpoint
+const deviceBreakpoint = (device: DeviceId, base: BreakpointBase) => deviceOf(device, base).breakpoint
 
-/** The device a breakpoint edits, e.g. `Tablet` for `md`, `Large phone` for `sm`. */
-export function breakpointLabel(breakpoint: Breakpoint | undefined): string {
-  return DEVICES.find(d => d.breakpoint === breakpoint)?.label ?? breakpoint!
+/** The device a breakpoint edits in a `base` project, e.g. `Tablet` for `md` or `max-lg`, the Primary for the base. */
+export function breakpointLabel(breakpoint: Breakpoint | undefined, base: BreakpointBase = 'mobile'): string {
+  return devicesFor(base).find(d => d.breakpoint === breakpoint)?.label ?? breakpoint!
 }
 
 /** Where the value of a base token at a device comes from; `key` is what a reset clears. */
@@ -137,11 +167,12 @@ export type Provenance
     | { state: 'inherited', value: string, from: Breakpoint | undefined }
     | { state: 'unset' }
 
-export function styleProvenance(style: Record<string, string>, base: string, device: DeviceId): Provenance {
+/** `breakpoints` is the project's breakpoint base, which maps the device to its level. */
+export function styleProvenance(style: Record<string, string>, base: string, device: DeviceId, breakpoints: BreakpointBase = 'mobile'): Provenance {
   const token = getStyleToken(base)
   if (!token) return { state: 'unset' }
   // Tokens without breakpoint variants apply to every device from the base key.
-  const breakpoint = isResponsiveToken(token) ? deviceBreakpoint(device) : undefined
+  const breakpoint = isResponsiveToken(token) ? deviceBreakpoint(device, breakpoints) : undefined
   const { own, inherited } = breakpointStyles(style, breakpoint)
   if (own[base] !== undefined) return { state: 'set', key: styleKey(base, breakpoint), value: own[base] }
   const from = inherited[base]
@@ -156,19 +187,19 @@ export function provenanceHighlight(provenance: Provenance): 'override' | undefi
   return provenance.state === 'set' ? 'override' : undefined
 }
 
-/** Where an inherited value comes from, for a tooltip, e.g. `From Mobile: 10`. */
-export function provenanceHint(provenance: Provenance): string | undefined {
-  return provenance.state === 'inherited' ? `From ${breakpointLabel(provenance.from)}: ${provenance.value}` : undefined
+/** Where an inherited value comes from, for a tooltip, e.g. `From Mobile: 10` (`From Desktop: 4` desktop-first). */
+export function provenanceHint(provenance: Provenance, base: BreakpointBase = 'mobile'): string | undefined {
+  return provenance.state === 'inherited' ? `From ${breakpointLabel(provenance.from, base)}: ${provenance.value}` : undefined
 }
 
 /** A collapsed section's dot: `set` if the device sets one of its tokens; inheriting gets no dot. */
-export function sectionMark(style: Record<string, string>, section: StyleSection, device: DeviceId): 'set' | undefined {
-  return SECTION_KEYS[section].some(key => styleProvenance(style, key, device).state === 'set') ? 'set' : undefined
+export function sectionMark(style: Record<string, string>, section: StyleSection, device: DeviceId, base: BreakpointBase = 'mobile'): 'set' | undefined {
+  return SECTION_KEYS[section].some(key => styleProvenance(style, key, device, base).state === 'set') ? 'set' : undefined
 }
 
-/** Whether the node writes any token at exactly the device's breakpoint (the base for Mobile). */
-export function hasStyleAt(style: Record<string, string>, device: DeviceId): boolean {
-  const breakpoint = deviceBreakpoint(device)
+/** Whether the node writes any token at exactly the device's breakpoint (the base for the Primary). */
+export function hasStyleAt(style: Record<string, string>, device: DeviceId, base: BreakpointBase = 'mobile'): boolean {
+  const breakpoint = deviceBreakpoint(device, base)
   return Object.keys(style).some((key) => {
     const parsed = parseStyleKey(key)
     return !!parsed && parsed.breakpoint === breakpoint

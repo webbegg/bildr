@@ -28,8 +28,9 @@ import { listKey, listNodes, listQueryOf, listRecords } from '#shared/runtime/li
 import type { ZoomCommand } from '#shared/editor/viewport'
 import { previewWindowFeatures } from '#shared/editor/viewport'
 import type { DeviceId } from '#shared/editor/styleFields'
-import { DEVICES } from '#shared/editor/styleFields'
-import { canHideFrame, frameForKey, hiddenFrames, PRIMARY_FRAME, visibleFrames } from '#shared/editor/frames'
+import { deviceOf } from '#shared/editor/styleFields'
+import type { BreakpointBase } from '#shared/design/tokens'
+import { canHideFrame, frameForKey, hiddenFrames, primaryFrame, visibleFrames } from '#shared/editor/frames'
 import type { EditKind, EditLevel, LevelMove } from '#shared/editor/editStack'
 import { goToLevel, leaveLevel, openLevel, pruneLevels, topLevel } from '#shared/editor/editStack'
 import { componentPrefill, uniqueName } from '#shared/editor/names'
@@ -156,16 +157,18 @@ export function createEditor(projectId: string) {
   const quickOpen = ref(false)
   /** The last zoom asked for outside the canvas (quick actions); the canvas applies each new one. */
   const zoomRequest = shallowRef<{ command: ZoomCommand } | null>(null)
-  /** The canvas width, and the breakpoint the style panel edits (Mobile is the base, mobile-first). */
+  /** The project's breakpoint base (S37): which device is the Primary and which prefixes the panel writes; mobile-first until the project loads. */
+  const breakpointBase = computed<BreakpointBase>(() => project.value?.breakpointBase ?? 'mobile')
+  /** The canvas width, and the breakpoint the style panel edits (the Primary edits the base); the first load starts on the project's Primary. */
   const deviceId = ref<DeviceId>('mobile')
-  const device = computed(() => DEVICES.find(d => d.id === deviceId.value)!)
+  const device = computed(() => deviceOf(deviceId.value, breakpointBase.value))
   /** The last device frame asked to be shown (the floating bar's switch, ⌥ + digit, ⌘K); the canvas pans each new one into view. */
   const frameRequest = shallowRef<{ deviceId: DeviceId } | null>(null)
   /** The visible frames (a per-project editor preference): canvas frames, Layers rows, the device switch and ⌥ + digit follow them. */
-  const visibility = useEditorFrames(projectId)
+  const visibility = useEditorFrames(projectId, breakpointBase)
   const frames = computed<readonly DeviceId[]>(() => visibility.shown.value)
-  const visibleDevices = computed(() => visibleFrames(frames.value))
-  const hiddenDevices = computed(() => hiddenFrames(frames.value))
+  const visibleDevices = computed(() => visibleFrames(frames.value, breakpointBase.value))
+  const hiddenDevices = computed(() => hiddenFrames(frames.value, breakpointBase.value))
   /** An uncommitted theme previewed in the canvas, e.g. while a colour picker drags. */
   const themeDraft = shallowRef<Theme | null>(null)
   /** An uncommitted style patch the canvas shows on one node, e.g. while a field scrubs. */
@@ -359,6 +362,8 @@ export function createEditor(projectId: string) {
       callAction<Project>('project_get', { projectId }),
       callAction<{ undo: string | null, redo: string | null }>('history_get', { projectId })
     ])
+    // The first load edits the project's Primary (Desktop in a desktop-first project).
+    if (!project.value) deviceId.value = primaryFrame(next.breakpointBase)
     project.value = next
     history.value = nextHistory
     if (!envLoaded) await reloadEnv()
@@ -722,9 +727,9 @@ export function createEditor(projectId: string) {
 
   /** Hides a frame (never the Primary); hiding the edited one goes back to the Primary. */
   function hideFrame(id: DeviceId): void {
-    if (!canHideFrame(id)) return
+    if (!canHideFrame(id, breakpointBase.value)) return
     visibility.hide(id)
-    if (deviceId.value === id) setDevice(PRIMARY_FRAME)
+    if (deviceId.value === id) setDevice(primaryFrame(breakpointBase.value))
   }
 
   /** Picks a canvas tool: Move, Hand, or an insert tool to arm. */
@@ -918,7 +923,7 @@ export function createEditor(projectId: string) {
 
   /** Copy (Cmd/Ctrl+C): node `id`, or the whole top-level selection by default, to the editor clipboard and, as JSON, the system one. */
   function copy(id?: string): void {
-    const clip = page.value ? copyNodes(page.value.root, id ? [id] : selectedIds.value) : null
+    const clip = page.value ? copyNodes(page.value.root, id ? [id] : selectedIds.value, Date.now(), breakpointBase.value) : null
     if (!clip) return
     clipboard.value = clip
     void navigator.clipboard?.writeText(serializeClip(clip)).catch(() => {})
@@ -942,8 +947,20 @@ export function createEditor(projectId: string) {
     const root = page.value?.root
     if (!clip || !root) return
     const at = outsideInstance(root, pasteTarget(root, selectedId.value, clip))
-    const result = await runOnPage<{ nodeIds: string[] }>('node_insert', { ...at, ...pasteInput(clip) })
+    const input = convertedClip(() => pasteInput(clip, breakpointBase.value))
+    if (!input) return
+    const result = await runOnPage<{ nodeIds: string[] }>('node_insert', { ...at, ...input })
     if (result) selectedIds.value = result.nodeIds
+  }
+
+  /** A clip's paste input or style for this project's base (converted from another base), or a toast and undefined when it cannot be converted. */
+  function convertedClip<T>(convert: () => T): T | undefined {
+    try {
+      return convert()
+    } catch (error) {
+      toast.add({ title: 'Cannot paste', description: (error as Error).message, color: 'error', icon: 'i-lucide-circle-alert' })
+      return undefined
+    }
   }
 
   /** Paste style (Cmd/Ctrl+Alt+V): gives node `id`, or the selection, the first copied node's style (one undo step through `updateStyle`). */
@@ -952,7 +969,8 @@ export function createEditor(projectId: string) {
     const root = page.value?.root
     const nodes = root && clip ? (id ? [id] : selectedIds.value).map(other => findNode(root, other)).filter(n => n !== undefined) : []
     if (!clip || !nodes.length) return
-    const style = clipStyle(clip)
+    const style = convertedClip(() => clipStyle(clip, breakpointBase.value))
+    if (!style) return
     if (variant.value && component.value) {
       // The variant view: tokens of the primary the copy lacks are removed in the variant (unset), all nodes in one call.
       const definition = component.value
@@ -1217,7 +1235,7 @@ export function createEditor(projectId: string) {
     // The Canvas view's shortcuts would act on a page the Data and Settings views do not show.
     if (mode.value !== 'build' && !(meta && (lower === 'z' || lower === 'y'))) return false
     const armed = toolForKey({ key, meta, shift })
-    const deviceKey = frameForKey(frames.value, { code, alt, meta, shift })
+    const deviceKey = frameForKey(frames.value, { code, alt, meta, shift }, breakpointBase.value)
     if (deviceKey) setDevice(deviceKey)
     else if (meta && !shift && lower === 'f') searchRequest.value++
     else if (!meta && !shift && lower === 'i') insertOpen.value = true
@@ -1248,7 +1266,7 @@ export function createEditor(projectId: string) {
   }
 
   return reactive({
-    projectId, project, pageId, componentId, component, layoutId, layout, editStack, createRequest, propertiesRequest, confirmRequest, canvasAccent, variantId, variant, variantBoard, interactionId, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
+    projectId, project, pageId, componentId, component, layoutId, layout, editStack, createRequest, propertiesRequest, confirmRequest, canvasAccent, variantId, variant, variantBoard, interactionId, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, breakpointBase, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
     detailCollection, detailRecords, previewRecord, reloadDetailRecords, setPreviewRecord, setPageCollection, createDetailPage,
     reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, layoutFromSelection, createLayoutFromSelection, setPageLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, addState, addInteraction, updateInteraction, removeInteraction, setTransition, previewInteractions, renameVariant, variantPage, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,

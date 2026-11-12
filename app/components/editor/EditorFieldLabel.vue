@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import type { Provenance } from '#shared/editor/styleFields'
 import { provenanceHighlight, provenanceHint } from '#shared/editor/styleFields'
+import { EDITOR_KEY } from '~/composables/useEditor'
 
 /**
  * A row label with its provenance, the Framer way: a grey caption, and only
  * an override (a value set at the edited breakpoint) is highlighted, in blue;
  * an inherited value looks unset, its tooltip saying where it comes from
- * ("From Mobile: 10"). Clicking an override opens a "Reset override" menu;
+ * ("From Mobile: 10", or "From Desktop: 4" in a desktop-first project). Clicking an override opens a "Reset override" menu;
  * Alt-clicking it resets at once. The Settings tab reuses it for props, with
  * `resetLabel` "Reset to default".
  */
@@ -25,7 +26,9 @@ watch(() => props.provenance.state, () => {
 })
 
 const override = computed(() => provenanceHighlight(props.provenance) === 'override')
-const plainTitle = computed(() => provenanceHint(props.provenance) ?? props.title)
+// The project's breakpoint base names the Primary a value is inherited from.
+const editor = inject(EDITOR_KEY, null)
+const plainTitle = computed(() => provenanceHint(props.provenance, editor?.breakpointBase) ?? props.title)
 
 let altPressed = false
 function onOpen(value: boolean) {

@@ -88,10 +88,10 @@ function commitRename() {
   editor.renameNode(props.node.id, draft.value)
 }
 
-const hidden = computed(() => visibilityAt(props.node.style, editor.deviceId).hidden)
-const badge = computed(() => hiddenBadge(props.node.style, editor.deviceId, editor.frames))
+const hidden = computed(() => visibilityAt(props.node.style, editor.deviceId, editor.breakpointBase).hidden)
+const badge = computed(() => hiddenBadge(props.node.style, editor.deviceId, editor.frames, editor.breakpointBase))
 function toggleVisibility() {
-  editor.updateStyle(props.node.id, visibilityToggle(props.node.style, editor.deviceId, naturalDisplay(props.node), editor.frames))
+  editor.updateStyle(props.node.id, visibilityToggle(props.node.style, editor.deviceId, naturalDisplay(props.node), editor.frames, editor.breakpointBase))
 }
 
 // Keyboard steps and canvas clicks can select a row that is scrolled away.

@@ -3,8 +3,8 @@ import { cloneWithNewIds, createNode } from '#shared/document/factory'
 import { getComponent } from '#shared/document/components'
 import type { PropValue } from '#shared/document/components'
 import type { TreeRef } from '#shared/document/operations'
-import { CUSTOM_COLOR_NAME, STYLE_HEX, STYLE_TOKENS, styleKey, variantsOf } from '#shared/design/tokens'
-import type { StyleToken } from '#shared/design/tokens'
+import { baseOfBreakpoint, CUSTOM_COLOR_NAME, STYLE_HEX, STYLE_TOKENS, styleKey, variantsOf } from '#shared/design/tokens'
+import type { Breakpoint, StyleToken } from '#shared/design/tokens'
 import { IdSchema, NODE_NAME_MAX, PropValueSchema } from '#shared/document/schema'
 import type { DocNode } from '#shared/document/schema'
 import { containsNode, findNode, findParent } from '#shared/document/tree'
@@ -35,18 +35,24 @@ function tokenValueSchema(token: StyleToken): z.ZodType<string> {
   ], { error: issue => `"${String(issue.input)}" is not a value of style token "${token.key}" (use a colour token, a #rgb, #rrggbb or #rrggbbaa hex, or a theme colour)` })
 }
 
-/** One optional key per design token and breakpoint (`cols`, `sm:cols`, `md:cols`, `lg:cols`). */
+/** Where a breakpoint's value applies: `from the md breakpoint up` (mobile-first), `below the max-lg breakpoint` (desktop-first). */
+const appliesAt = (b: Breakpoint) => (baseOfBreakpoint(b) === 'desktop' ? `below the ${b.slice(4)} breakpoint (desktop-first projects)` : `from the ${b} breakpoint up (mobile-first projects)`)
+
+/** One optional key per design token and breakpoint of both bases (`cols`, `sm:cols` … `lg:cols`, `max-lg:cols` … `max-sm:cols`). */
 function styleTokensSchema(wrap: (values: z.ZodType<string>, token: StyleToken) => z.ZodType) {
   return z.object(Object.fromEntries(STYLE_TOKENS.flatMap(t => variantsOf(t).map(b => [
     styleKey(t.key, b),
     wrap(tokenValueSchema(t), t).optional().describe(b
-      ? `${t.label} from the ${b} breakpoint up: Tailwind class ${b}:${t.prefix ? `${t.prefix}-` : ''}<value>`
+      ? `${t.label} ${appliesAt(b)}: Tailwind class ${b}:${t.prefix ? `${t.prefix}-` : ''}<value>`
       : `${t.label}: Tailwind class ${t.prefix ? `${t.prefix}-` : ''}<value>`)
   ])))).strict()
 }
 
+/** How the breakpoint prefixes work, for the style descriptions. */
+const BREAKPOINT_HINT = 'Layout tokens (Spacing, Size, Typography, Layout) also take a breakpoint prefix, and each project takes only those of its breakpointBase (project_get): a desktop-first project (the default for new projects) stores the Desktop value as the base and overrides narrower sizes with max-lg: (below 1024 px, Tablet), max-md: (below 768, Large phone) and max-sm: (below 640, Mobile), e.g. { "cols": "3", "max-md:cols": "1" } renders class="grid-cols-3 max-md:grid-cols-1"; a mobile-first project stores the Mobile value as the base and overrides wider sizes with sm:, md: and lg: (from 640, 768 and 1024 px up), e.g. { "cols": "1", "md:cols": "3" } renders class="grid-cols-1 md:grid-cols-3". A prefix of the other base is refused.'
+
 const StyleSchema = styleTokensSchema(values => values)
-  .describe('Design tokens, e.g. { "mt": "10", "bg": "primary", "rounded": "lg" } renders class="mt-10 bg-primary rounded-lg". Layout tokens (Spacing, Size, Typography, Layout) also take a mobile-first breakpoint prefix sm:, md: or lg:, e.g. { "cols": "1", "md:cols": "3" } renders class="grid-cols-1 md:grid-cols-3". Colour tokens (bg, color, borderColor) also take a #rgb, #rrggbb or #rrggbbaa hex, or the name of a theme custom colour, e.g. { "bg": "#ff6600", "color": "brand" }, rendered as an inline style. See components_list.tokens') as z.ZodType<Record<string, string>>
+  .describe(`Design tokens, e.g. { "mt": "10", "bg": "primary", "rounded": "lg" } renders class="mt-10 bg-primary rounded-lg". ${BREAKPOINT_HINT} Colour tokens (bg, color, borderColor) also take a #rgb, #rrggbb or #rrggbbaa hex, or the name of a theme custom colour, e.g. { "bg": "#ff6600", "color": "brand" }, rendered as an inline style. See components_list.tokens`) as z.ZodType<Record<string, string>>
 const StyleUpdateSchema = styleTokensSchema(values => values.nullable())
   .describe('Design tokens to set; null removes a token') as z.ZodType<Record<string, string | null>>
 
@@ -169,7 +175,7 @@ export const nodeUpdateProps = defineAction({
 
 export const nodeUpdateStyle = defineAction({
   name: 'node_update_style',
-  description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). Colour tokens (bg, color, borderColor) also take a #rgb, #rrggbb or #rrggbbaa hex or a theme custom colour name (theme_get theme.custom), e.g. { "bg": "#ff6600" }. Tokens listing breakpoints also take a mobile-first prefix, e.g. { "md:cols": "3" } applies from the md breakpoint up. A null value removes the token. With nodeIds the same tokens go to every node, as one undo step (all or nothing). With updates (instead of nodeId, nodeIds and style), each node gets its own tokens, e.g. [{ "nodeId": "a", "style": { "bg": "error" } }, { "nodeId": "b", "style": { "color": "error" } }], also as one undo step (all or nothing), e.g. to swap a colour across a selection.',
+  description: 'Set design tokens of a node, e.g. { "mt": "10", "bg": "primary" } (keys and values from components_list.tokens). Colour tokens (bg, color, borderColor) also take a #rgb, #rrggbb or #rrggbbaa hex or a theme custom colour name (theme_get theme.custom), e.g. { "bg": "#ff6600" }. Tokens listing breakpoints also take a breakpoint prefix of the project\'s breakpointBase (project_get): desktop-first projects (the default) override narrower sizes, e.g. { "max-lg:cols": "2" } applies below 1024 px (Tablet) and { "max-md:cols": "1" } below 768; mobile-first ones override wider sizes, e.g. { "md:cols": "3" } applies from the md breakpoint (768 px) up. A prefix of the other base is refused with the right ones named. A null value removes the token. With nodeIds the same tokens go to every node, as one undo step (all or nothing). With updates (instead of nodeId, nodeIds and style), each node gets its own tokens, e.g. [{ "nodeId": "a", "style": { "bg": "error" } }, { "nodeId": "b", "style": { "color": "error" } }], also as one undo step (all or nothing), e.g. to swap a colour across a selection.',
   input: z.object({
     ...Target,
     ...Nodes,

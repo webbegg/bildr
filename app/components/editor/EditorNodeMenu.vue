@@ -95,7 +95,7 @@ const items = computed<ContextMenuItem[][]>(() => {
   const wrapIds = many ? [...editor.selectedIds].sort((a, b) => (findParent(root, a)?.index ?? 0) - (findParent(root, b)?.index ?? 0)) : [id]
   const cannotWrap = isRoot || (many && !siblingParent(root, wrapIds))
   const node = findNode(root, id)
-  const hidden = node ? visibilityAt(node.style, editor.deviceId).hidden : false
+  const hidden = node ? visibilityAt(node.style, editor.deviceId, editor.breakpointBase).hidden : false
   const lockIds = many ? editor.selectedIds.filter(other => other !== root.id) : [id]
   const unlock = lockIds.length > 0 && lockIds.every(other => findNode(root, other)?.locked === true)
   const isInstance = node?.type === INSTANCE_TYPE
@@ -168,7 +168,7 @@ const items = computed<ContextMenuItem[][]>(() => {
         label: hidden ? 'Show here' : 'Hide here',
         icon: hidden ? 'i-lucide-eye' : 'i-lucide-eye-off',
         disabled: isRoot || !node,
-        onSelect: () => node && editor.updateStyle(id, visibilityToggle(node.style, editor.deviceId, naturalDisplay(node), editor.frames))
+        onSelect: () => node && editor.updateStyle(id, visibilityToggle(node.style, editor.deviceId, naturalDisplay(node), editor.frames, editor.breakpointBase))
       }
     ],
     [

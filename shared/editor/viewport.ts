@@ -4,7 +4,7 @@
  * i.e. the CSS transform `translate(x, y) scale(zoom)` with origin 0 0.
  */
 import type { Breakpoint } from '../design/tokens'
-import { BREAKPOINTS } from '../design/tokens'
+import { cascadeTo } from '../design/tokens'
 import type { EditorToCanvas } from './protocol'
 import type { DeviceId } from './styleFields'
 
@@ -35,13 +35,15 @@ const SCREEN_SIZES = [['h', 'height'], ['min-h', 'min-height'], ['max-h', 'max-h
 
 /**
  * CSS sending the `screen` height tokens inside `scope` to `variable` in a
- * frame at `breakpoint`. A rule yields to the same property set at a larger
- * active breakpoint, as Tailwind's later variants do.
+ * frame at `breakpoint`. A rule yields to the same property set at a later
+ * active level of the cascade (`cascadeTo`), as Tailwind's later variants
+ * do. The yields match whole class names (at the start of the attribute or
+ * after a space), so `md:h-` never matches `max-md:h-`.
  */
 export function viewportUnitRules(breakpoint: Breakpoint | undefined, scope: string, variable: string): string[] {
-  const levels = [undefined, ...BREAKPOINTS.slice(0, breakpoint ? BREAKPOINTS.indexOf(breakpoint) + 1 : 0)]
+  const levels = cascadeTo(breakpoint)
   return levels.flatMap((level, i) => SCREEN_SIZES.map(([prefix, property]) => {
-    const yields = levels.slice(i + 1).map(larger => `:not([class*="${larger}:${prefix}-"])`).join('')
+    const yields = levels.slice(i + 1).map(later => `:not([class^="${later}:${prefix}-"]):not([class*=" ${later}:${prefix}-"])`).join('')
     return `${scope} .${level ? `${level}\\:` : ''}${prefix}-screen${yields} { ${property}: var(${variable}) }`
   }))
 }

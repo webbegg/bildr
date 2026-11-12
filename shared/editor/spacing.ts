@@ -1,11 +1,13 @@
-import { BREAKPOINTS, styleKey } from '../design/tokens'
+import { cascadeTo, styleKey } from '../design/tokens'
 import type { Breakpoint } from '../design/tokens'
 
 /**
  * The spacing box: which key a side's value comes from, and which keys an
  * edit writes. bildr stores spacing the Tailwind way, as all-sides
  * (`m`), axis (`my`, `mx`) and side (`mt`) tokens; within one breakpoint the
- * narrowest wins, and a larger breakpoint wins over every key below it.
+ * narrowest wins, and a later level of the cascade (`cascadeTo`: a larger
+ * breakpoint mobile-first, a narrower `max-*` desktop-first) wins over every
+ * key before it.
  */
 
 export type SpacingBox = 'm' | 'p'
@@ -30,14 +32,14 @@ export interface SpacingSideValue {
   key: string
   /** Its base key: the side's own (`mt`) or a shorthand (`my`, `m`). */
   via: string
-  /** `set` at the edited breakpoint, or `inherited` from a smaller one. */
+  /** `set` at the edited breakpoint, or `inherited` from a level before it. */
   state: 'set' | 'inherited'
 }
 
 /** The value a side has at a breakpoint, and where it comes from; undefined when nothing sets it. */
 export function spacingSide(style: Record<string, string>, box: SpacingBox, side: Side, breakpoint: Breakpoint | undefined): SpacingSideValue | undefined {
-  const ranks: (Breakpoint | undefined)[] = [undefined, ...BREAKPOINTS]
-  for (let at = ranks.indexOf(breakpoint); at >= 0; at--) {
+  const ranks = cascadeTo(breakpoint)
+  for (let at = ranks.length - 1; at >= 0; at--) {
     for (const via of [sideKey(box, side), axisKey(box, side), box]) {
       const key = styleKey(via, ranks[at])
       const value = style[key]

@@ -4,8 +4,14 @@
  * This list drives validation, the style panel, the action (and MCP) schemas,
  * and the generated Tailwind safelist (`app/assets/css/tokens.css`).
  *
- * A key can carry a breakpoint prefix (mobile-first, as in Tailwind):
- * `{ cols: '1', 'md:cols': '3' }` renders as `grid-cols-1 md:grid-cols-3`.
+ * A key can carry a breakpoint prefix, as in Tailwind. Each project has a
+ * breakpoint base (`Project.breakpointBase`): a mobile-first project stores
+ * the Mobile value as the base and overrides wider sizes with `sm:`, `md:`
+ * and `lg:` (`{ cols: '1', 'md:cols': '3' }` renders as
+ * `grid-cols-1 md:grid-cols-3`); a desktop-first one stores the Desktop value
+ * and overrides narrower sizes with `max-lg:` (below 1024 px), `max-md:`
+ * (below 768) and `max-sm:` (below 640). Each project takes only its own
+ * prefixes; `levels` is the cascade order of both.
  *
  * Colour keys (`kind: 'color'`) also take a raw hex (`#rgb`, `#rrggbb`,
  * `#rrggbbaa`) or a colour the project theme names (`theme.custom`, e.g.
@@ -15,9 +21,56 @@
  * value never needs a media query.
  */
 
-export const BREAKPOINTS = ['sm', 'md', 'lg'] as const
+export const BREAKPOINT_BASES = ['mobile', 'desktop'] as const
 
-export type Breakpoint = typeof BREAKPOINTS[number]
+/** Which device a project's base (unprefixed) style is for; see `levels`. */
+export type BreakpointBase = typeof BREAKPOINT_BASES[number]
+
+const MOBILE_BREAKPOINTS = ['sm', 'md', 'lg'] as const
+const DESKTOP_BREAKPOINTS = ['max-lg', 'max-md', 'max-sm'] as const
+
+/** Every breakpoint prefix of both bases, mobile-first ones first. */
+export const ALL_BREAKPOINTS = [...MOBILE_BREAKPOINTS, ...DESKTOP_BREAKPOINTS] as const
+
+export type Breakpoint = typeof ALL_BREAKPOINTS[number]
+
+/** The prefixes a project of `base` uses, in cascade order (each overrides the ones before it). */
+export function breakpointsOf(base: BreakpointBase): readonly Breakpoint[] {
+  return base === 'desktop' ? DESKTOP_BREAKPOINTS : MOBILE_BREAKPOINTS
+}
+
+/**
+ * The cascade of a base, `undefined` being the base style: mobile is base,
+ * sm, md, lg (min-width queries, wider wins); desktop is base, max-lg,
+ * max-md, max-sm (max-width queries, narrower wins). Tailwind v4 emits the
+ * variants in this order, so a later level overrides the earlier ones.
+ */
+export function levels(base: BreakpointBase): (Breakpoint | undefined)[] {
+  return [undefined, ...breakpointsOf(base)]
+}
+
+/** The base whose prefixes include `breakpoint`. */
+export function baseOfBreakpoint(breakpoint: Breakpoint): BreakpointBase {
+  return (DESKTOP_BREAKPOINTS as readonly string[]).includes(breakpoint) ? 'desktop' : 'mobile'
+}
+
+/**
+ * The levels a value at `breakpoint` cascades from, the base first and
+ * `breakpoint` last: its own family only (`[undefined]` for the base).
+ */
+export function cascadeTo(breakpoint: Breakpoint | undefined): (Breakpoint | undefined)[] {
+  if (!breakpoint) return [undefined]
+  const all = levels(baseOfBreakpoint(breakpoint))
+  return all.slice(0, all.indexOf(breakpoint) + 1)
+}
+
+/** `sm:, md: or lg:`: the prefixes a base takes, for messages. */
+export function breakpointPrefixHint(base: BreakpointBase): string {
+  const [a, b, c] = breakpointsOf(base)
+  return `${a}:, ${b}: or ${c}:`
+}
+
+const baseName = (base: BreakpointBase) => (base === 'desktop' ? 'desktop-first' : 'mobile-first')
 
 export const STYLE_TOKEN_GROUPS = ['Spacing', 'Size', 'Color', 'Typography', 'Border', 'Effects', 'Layout'] as const
 
@@ -153,7 +206,7 @@ export function getStyleToken(key: string): StyleToken | undefined {
   return BY_KEY.get(key)
 }
 
-/** The style key of a token at a breakpoint: `cols` for the base, `md:cols` for `md`. */
+/** The style key of a token at a breakpoint: `cols` for the base, `md:cols` for `md`, `max-lg:cols` for `max-lg`. */
 export function styleKey(base: string, breakpoint: Breakpoint | undefined): string {
   return breakpoint ? `${breakpoint}:${base}` : base
 }
@@ -163,9 +216,13 @@ function splitKey(key: string): { breakpoint?: string, base: string } {
   return at < 0 ? { base: key } : { breakpoint: key.slice(0, at), base: key.slice(at + 1) }
 }
 
-const isBreakpoint = (value: string | undefined): value is Breakpoint => (BREAKPOINTS as readonly string[]).includes(value ?? '')
+const isBreakpoint = (value: string | undefined): value is Breakpoint => (ALL_BREAKPOINTS as readonly string[]).includes(value ?? '')
 
-/** The base token and breakpoint of a style key, or undefined when either is unknown. */
+/**
+ * The base token and breakpoint of a style key, or undefined when either is
+ * unknown. Both bases' prefixes parse; `styleTokenProblem` checks that a
+ * project uses its own.
+ */
 export function parseStyleKey(key: string): { token: StyleToken, breakpoint: Breakpoint | undefined } | undefined {
   const { breakpoint, base } = splitKey(key)
   const token = BY_KEY.get(base)
@@ -194,14 +251,18 @@ function inlineColor(token: StyleToken, value: string): string | undefined {
 }
 
 /**
- * Returns a problem message for an unknown key or breakpoint, or a value
- * outside the token's scale. Colour keys also take a hex or one of
- * `customColors`, the names of the project theme's own colours.
+ * Returns a problem message for an unknown key or breakpoint, a breakpoint
+ * of the other base (`base` is the project's), or a value outside the
+ * token's scale. Colour keys also take a hex or one of `customColors`, the
+ * names of the project theme's own colours.
  */
-export function styleTokenProblem(key: string, value: string, customColors: readonly string[] = []): string | undefined {
+export function styleTokenProblem(key: string, value: string, customColors: readonly string[] = [], base: BreakpointBase = 'mobile'): string | undefined {
   const { breakpoint } = splitKey(key)
   if (breakpoint !== undefined && !isBreakpoint(breakpoint)) {
-    return `Unknown breakpoint "${breakpoint}" in style token "${key}" (use sm:, md: or lg:)`
+    return `Unknown breakpoint "${breakpoint}" in style token "${key}" (use ${breakpointPrefixHint(base)})`
+  }
+  if (breakpoint !== undefined && baseOfBreakpoint(breakpoint) !== base) {
+    return `Breakpoint "${breakpoint}" in style token "${key}" is for ${baseName(baseOfBreakpoint(breakpoint))} projects; this project is ${baseName(base)} (use ${breakpointPrefixHint(base)})`
   }
   const token = parseStyleKey(key)?.token
   if (!token) {
@@ -213,9 +274,68 @@ export function styleTokenProblem(key: string, value: string, customColors: read
   return STYLE_HEX.test(value) || customColors.includes(value) ? undefined : `"${value}" is not a value of style token "${key}"${COLOR_HINT}`
 }
 
-/** The breakpoints a token can be set at, `undefined` being the base (mobile-first) value. */
-export function variantsOf(token: StyleToken): (Breakpoint | undefined)[] {
-  return isResponsiveToken(token) ? [undefined, ...BREAKPOINTS] : [undefined]
+/**
+ * The breakpoints a token can be set at in a project of `base` (cascade
+ * order), `undefined` being the base value; without `base`, every prefix of
+ * both bases (what the renderer and the safelist cover).
+ */
+export function variantsOf(token: StyleToken, base?: BreakpointBase): (Breakpoint | undefined)[] {
+  if (!isResponsiveToken(token)) return [undefined]
+  return base ? levels(base) : [undefined, ...ALL_BREAKPOINTS]
+}
+
+/** Whether `key` is a style key a project of `base` may hold: a known token at one of its own levels. */
+export function isStyleKeyOf(key: string, base: BreakpointBase): boolean {
+  const parsed = parseStyleKey(key)
+  return !!parsed && (parsed.breakpoint === undefined || baseOfBreakpoint(parsed.breakpoint) === base)
+}
+
+const DEVICE_BANDS = 4
+
+/**
+ * A style rewritten from one base to the other, keeping the value of each
+ * of the four width bands (below 640, 640–767, 768–1023, 1024 and up), which
+ * both bases split the same way. Within one base it is returned unchanged.
+ * A token the target cascade cannot express (set at the source's narrower
+ * or wider levels only, unset where the target's base is) is refused with a
+ * `problem`; so are keys of neither base.
+ */
+export function convertStyleBase(style: Record<string, string>, from: BreakpointBase, to: BreakpointBase): { style: Record<string, string> } | { problem: string } {
+  if (from === to) return { style }
+  const out: Record<string, string> = {}
+  const byToken = new Map<string, { token: StyleToken, keys: [Breakpoint | undefined, string, string][] }>()
+  for (const [key, value] of Object.entries(style)) {
+    const parsed = parseStyleKey(key)
+    if (!parsed || !isStyleKeyOf(key, from)) return { problem: styleTokenProblem(key, value, [], from) ?? `Unknown style token "${key}"` }
+    const entry = byToken.get(parsed.token.key) ?? { token: parsed.token, keys: [] }
+    entry.keys.push([parsed.breakpoint, key, value])
+    byToken.set(parsed.token.key, entry)
+  }
+  // Band i is narrowest first: the mobile levels in order, the desktop ones reversed.
+  const bandsOf = (base: BreakpointBase) => (base === 'mobile' ? levels(base) : [...levels(base)].reverse())
+  const source = bandsOf(from)
+  const target = bandsOf(to)
+  for (const { token, keys } of byToken.values()) {
+    const at = (b: Breakpoint | undefined) => keys.find(([k]) => k === b)?.[2]
+    // The value per band from the source cascade (mobile: the nearest level at or below; desktop: at or above).
+    const bands: (string | undefined)[] = []
+    for (let i = 0; i < DEVICE_BANDS; i++) {
+      const chain = from === 'mobile' ? source.slice(0, i + 1).reverse() : source.slice(i)
+      bands.push(chain.map(at).find(v => v !== undefined))
+    }
+    // Write the target cascade from its base: a level whose value differs from the one it inherits.
+    const order = to === 'mobile' ? [0, 1, 2, 3] : [3, 2, 1, 0]
+    let inherited: string | undefined
+    for (const band of order) {
+      const value = bands[band]
+      if (value === undefined && inherited !== undefined) {
+        return { problem: `Style token "${keys[0]![1]}" has no base value, so it cannot be converted to a ${baseName(to)} project` }
+      }
+      if (value !== undefined && value !== inherited) out[styleKey(token.key, target[band])] = value
+      inherited = value
+    }
+  }
+  return { style: out }
 }
 
 export interface OrderedStyleToken {
@@ -231,7 +351,7 @@ export interface OrderedStyleToken {
 
 /**
  * A style's valid tokens ordered by base key in registry order, then base,
- * sm, md, lg. Colour keys holding a hex or a theme colour name come with
+ * sm, md, lg, max-lg, max-md, max-sm. Colour keys holding a hex or a theme colour name come with
  * their `inline` declaration and no class.
  */
 export function orderedStyleTokens(style: Record<string, string>): OrderedStyleToken[] {
@@ -262,7 +382,7 @@ export function allTokenClasses(): string[] {
 
 /** The contents of `app/assets/css/tokens.css`: one Tailwind `@source inline` per token. */
 export function tokenSafelistCss(): string {
-  const variants = `{,${BREAKPOINTS.map(b => `${b}:`).join(',')}}`
+  const variants = `{,${ALL_BREAKPOINTS.map(b => `${b}:`).join(',')}}`
   const lines = STYLE_TOKENS.map((t) => {
     const values = t.values.length === 1 ? t.values[0] : `{${t.values.join(',')}}`
     return `@source inline("${isResponsiveToken(t) ? variants : ''}${t.prefix ? `${t.prefix}-` : ''}${values}");`

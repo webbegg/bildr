@@ -7,7 +7,7 @@ import { shortcutsFor } from '#shared/editor/commands'
  */
 const open = defineModel<boolean>('open', { default: false })
 const editor = useEditor()
-const shortcuts = computed(() => shortcutsFor(editor.frames))
+const shortcuts = computed(() => shortcutsFor(editor.frames, editor.breakpointBase))
 </script>
 
 <template>

@@ -18,7 +18,8 @@ function badge(tint: Partial<PropertyDef> = {}): ComponentDefinition {
 }
 
 function project(def: ComponentDefinition, children: DocNode[] = []) {
-  const p = createProject('P')
+  // Mobile-first: these fixtures use sm:, md:, lg: keys.
+  const p = createProject('P', 'mobile')
   p.components = [def]
   p.pages[0]!.root.children = children
   return p
@@ -83,7 +84,7 @@ describe('style bindings: layout variables (S4d)', () => {
   }
 
   it('checks defaults and page values against the bound style key', () => {
-    const p = createProject('P')
+    const p = createProject('P', 'mobile')
     p.layouts = [main()]
     p.pages[0]!.layoutId = 'main'
     expect(problems(p)).toEqual([])

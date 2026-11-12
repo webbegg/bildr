@@ -1,16 +1,16 @@
 import { parseStyleKey, styleKey } from '../design/tokens'
-import type { Breakpoint } from '../design/tokens'
+import type { Breakpoint, BreakpointBase } from '../design/tokens'
 import { INSTANCE_TYPE, isFlexType, SLOT_FILL_TYPE } from '../document/components'
 import type { ComponentDefinition, DocNode, Layout, Page } from '../document/schema'
 import { findNode, findParent, pathTo } from '../document/tree'
 import type { DropTarget } from './dropTarget'
-import { DEVICES, styleProvenance } from './styleFields'
+import { devicesFor, styleProvenance } from './styleFields'
 import type { Device, DeviceId } from './styleFields'
 import { DEFAULT_FRAMES } from './frames'
 
-/** The devices the layers eye works over, mobile-first: the shown frames, plus `device` (the edited one). */
-function eyeDevices(device: DeviceId, shown: readonly DeviceId[]): Device[] {
-  return DEVICES.filter(d => d.id === device || !d.breakpoint || shown.includes(d.id))
+/** The devices the layers eye works over in cascade order (the Primary first): the shown frames, plus `device` (the edited one). */
+function eyeDevices(device: DeviceId, shown: readonly DeviceId[], base: BreakpointBase): Device[] {
+  return devicesFor(base).filter(d => d.id === device || !d.breakpoint || shown.includes(d.id))
 }
 
 /**
@@ -110,18 +110,18 @@ export interface Visibility {
   value?: string
 }
 
-/** Whether a node shows on a device, from its `display` tokens read mobile-first. */
-export function visibilityAt(style: Record<string, string>, device: DeviceId): Visibility {
-  const p = styleProvenance(style, 'display', device)
+/** Whether a node shows on a device, from its `display` tokens read down the `base` project's cascade. */
+export function visibilityAt(style: Record<string, string>, device: DeviceId, base: BreakpointBase = 'mobile'): Visibility {
+  const p = styleProvenance(style, 'display', device, base)
   if (p.state === 'unset') return { hidden: false, source: undefined }
   const source = p.state === 'set' ? parseStyleKey(p.key)?.breakpoint : p.from
   return { hidden: p.value === 'hidden', source, value: p.value }
 }
 
-/** The other shown devices' breakpoints a node is hidden at (`base` for Mobile), e.g. `md`; null when none, or when hidden here. */
-export function hiddenBadge(style: Record<string, string>, device: DeviceId, shown: readonly DeviceId[] = DEFAULT_FRAMES): string | null {
-  if (visibilityAt(style, device).hidden) return null
-  const others = eyeDevices(device, shown).filter(d => d.id !== device && visibilityAt(style, d.id).hidden)
+/** The other shown devices' breakpoints a node is hidden at (`base` for the Primary), e.g. `md`; null when none, or when hidden here. */
+export function hiddenBadge(style: Record<string, string>, device: DeviceId, shown: readonly DeviceId[] = DEFAULT_FRAMES, base: BreakpointBase = 'mobile'): string | null {
+  if (visibilityAt(style, device, base).hidden) return null
+  const others = eyeDevices(device, shown, base).filter(d => d.id !== device && visibilityAt(style, d.id, base).hidden)
   return others.length ? others.map(d => d.breakpoint ?? 'base').join(' ') : null
 }
 
@@ -137,22 +137,24 @@ export function naturalDisplay(node: Pick<DocNode, 'type' | 'props'>): string {
 
 /**
  * The style patch of the layers eye on a device: it hides or shows the node on
- * that device only. Display tokens apply mobile-first, so hiding on Mobile
- * also writes the display Tablet had, keeping wider frames as they were; and
- * an override that the toggle no longer needs is removed, so hide then show
- * gives the original style back. `natural` is the node's `naturalDisplay`.
- * The wider device is the next shown frame (`shown`, the visible frames).
+ * that device only. Display tokens cascade from the Primary (mobile-first:
+ * Mobile, then wider; desktop-first: Desktop, then narrower), so hiding on
+ * one device also writes the display the next device in the cascade had,
+ * keeping it as it was; and an override that the toggle no longer needs is
+ * removed, so hide then show gives the original style back. `natural` is the
+ * node's `naturalDisplay`. The next device is the next shown frame in the
+ * cascade (`shown`, the visible frames; `base`, the project's breakpoint base).
  */
-export function visibilityToggle(style: Record<string, string>, device: DeviceId, natural: string, shown: readonly DeviceId[] = DEFAULT_FRAMES): Record<string, string | null> {
-  const devices = eyeDevices(device, shown)
+export function visibilityToggle(style: Record<string, string>, device: DeviceId, natural: string, shown: readonly DeviceId[] = DEFAULT_FRAMES, base: BreakpointBase = 'mobile'): Record<string, string | null> {
+  const devices = eyeDevices(device, shown, base)
   const index = devices.findIndex(d => d.id === device)
   const key = styleKey('display', devices[index]!.breakpoint)
   const next = devices[index + 1]
-  const displayAt = (s: Record<string, string>, id: DeviceId) => visibilityAt(s, id).value ?? natural
+  const displayAt = (s: Record<string, string>, id: DeviceId) => visibilityAt(s, id, base).value ?? natural
   const without = (s: Record<string, string>, k: string) => Object.fromEntries(Object.entries(s).filter(([other]) => other !== k))
 
   const patch: Record<string, string | null> = {}
-  if (visibilityAt(style, device).hidden) patch[key] = visibilityAt(without(style, key), device).hidden ? natural : null
+  if (visibilityAt(style, device, base).hidden) patch[key] = visibilityAt(without(style, key), device, base).hidden ? natural : null
   else patch[key] = 'hidden'
   if (!next) return patch
 

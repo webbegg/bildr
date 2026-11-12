@@ -2,8 +2,8 @@ import { parseStyleKey, styleKey } from '../design/tokens'
 import { isContainerType, isFlexType } from '../document/components'
 import { spacingSide } from './spacing'
 import type { Side, SpacingBox } from './spacing'
-import { DEVICES, styleProvenance } from './styleFields'
-import type { Breakpoint } from '../design/tokens'
+import { deviceOf, styleProvenance } from './styleFields'
+import type { Breakpoint, BreakpointBase } from '../design/tokens'
 import type { DeviceId, Provenance } from './styleFields'
 
 /**
@@ -98,17 +98,17 @@ export function panelSection(key: string): PanelSection | undefined {
   return base ? PANEL_SECTIONS.find(s => sectionKeys(s).includes(base)) : undefined
 }
 
-const breakpointOf = (device: DeviceId) => DEVICES.find(d => d.id === device)!.breakpoint
+const breakpointOf = (device: DeviceId, base: BreakpointBase) => deviceOf(device, base).breakpoint
 
 export type LayoutType = 'stack' | 'grid'
 
 /** Whether a type has the Type row: the flex stacks and the Grid (a Card lays out an inner stack, a List follows its layout prop). */
 const typed = (type: string) => type === 'Grid' || (isFlexType(type) && type !== 'Card')
 
-/** Stack or Grid at the device: the `display` token that applies (grid or flex), else the type's own layout. */
-export function layoutType(type: string, style: Record<string, string>, device: DeviceId): LayoutType | undefined {
+/** Stack or Grid at the device (of a `base` project): the `display` token that applies (grid or flex), else the type's own layout. */
+export function layoutType(type: string, style: Record<string, string>, device: DeviceId, base: BreakpointBase = 'mobile'): LayoutType | undefined {
   if (!typed(type)) return undefined
-  const display = styleProvenance(style, 'display', device)
+  const display = styleProvenance(style, 'display', device, base)
   const value = display.state === 'unset' ? undefined : display.value
   return value === 'grid' ? 'grid' : value === 'flex' ? 'stack' : type === 'Grid' ? 'grid' : 'stack'
 }
@@ -118,13 +118,13 @@ export function layoutType(type: string, style: Record<string, string>, device: 
  * columns unless some apply), Stack is `display: flex`; an override that the
  * breakpoint below already gives is dropped instead.
  */
-export function layoutTypeWrite(type: string, style: Record<string, string>, device: DeviceId, next: LayoutType): Record<string, string | null> {
-  if (layoutType(type, style, device) === next) return {}
-  const breakpoint = breakpointOf(device)
+export function layoutTypeWrite(type: string, style: Record<string, string>, device: DeviceId, next: LayoutType, base: BreakpointBase = 'mobile'): Record<string, string | null> {
+  if (layoutType(type, style, device, base) === next) return {}
+  const breakpoint = breakpointOf(device, base)
   const key = styleKey('display', breakpoint)
   const below = Object.fromEntries(Object.entries(style).filter(([other]) => other !== key))
-  const patch: Record<string, string | null> = { [key]: layoutType(type, below, device) === next ? null : next === 'grid' ? 'grid' : 'flex' }
-  if (next === 'grid' && type !== 'Grid' && styleProvenance(style, 'cols', device).state === 'unset') patch[styleKey('cols', breakpoint)] = '2'
+  const patch: Record<string, string | null> = { [key]: layoutType(type, below, device, base) === next ? null : next === 'grid' ? 'grid' : 'flex' }
+  if (next === 'grid' && type !== 'Grid' && styleProvenance(style, 'cols', device, base).state === 'unset') patch[styleKey('cols', breakpoint)] = '2'
   return patch
 }
 
@@ -163,6 +163,8 @@ export interface PanelSectionRows {
 
 export interface PanelView {
   device: DeviceId
+  /** The project's breakpoint base, which maps the device to its level; mobile-first when absent. */
+  base?: BreakpointBase
   /** Rows the user added this session, before or without a token. */
   added?: readonly RowId[]
   /** Base keys whose values differ across the selected nodes. */
@@ -179,10 +181,10 @@ const sectionOrder = (node: PanelNode): readonly PanelSection[] => (node.root ? 
 
 /** The rendered sections for a node, their rows in Framer's order, and their "+" menus. */
 export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] {
-  const { device, added = [], mixed = [] } = view
+  const { device, base = 'mobile', added = [], mixed = [] } = view
   const sets = (...keys: string[]) => Object.keys(node.style).some(key => keys.includes(baseKey(key) ?? ''))
   const container = isContainerType(node.type)
-  const layout = layoutType(node.type, node.style, device)
+  const layout = layoutType(node.type, node.style, device, base)
   const stack = layout ? layout === 'stack' : isFlexType(node.type)
   const grid = layout ? layout === 'grid' : GRID_TYPES.includes(node.type)
   // Visible and Type manage hiding, the natural display and (for typed stacks) grid or flex.
@@ -233,7 +235,7 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
   const valued = (row: RowId) => (row === 'display' ? setsDisplay : sets(...rowKeys(row)))
   const has = (row: RowId) => added.includes(row) || rowKeys(row).some(key => mixed.includes(key)) || valued(row)
   const shown = (row: RowId) => applies[row] && (kind(row) !== 'menu' || has(row))
-  const removable = (row: RowId) => kind(row) !== 'core' && (rowProvenance(node.style, row, device).state === 'set' || (added.includes(row) && !valued(row)))
+  const removable = (row: RowId) => kind(row) !== 'core' && (rowProvenance(node.style, row, device, base).state === 'set' || (added.includes(row) && !valued(row)))
   const inSection = (section: PanelSection) => ROW_IDS.filter(row => def(row).section === section)
 
   return sectionOrder(node).map((section) => {
@@ -263,8 +265,8 @@ export function rowReset(style: Record<string, string>, row: RowId, breakpoint: 
 }
 
 /** A row's provenance on a device: set if any of its keys is set there, else inherited if one applies. */
-export function rowProvenance(style: Record<string, string>, row: RowId, device: DeviceId): Provenance {
-  const all = rowKeys(row).map(key => styleProvenance(style, key, device))
+export function rowProvenance(style: Record<string, string>, row: RowId, device: DeviceId, base: BreakpointBase = 'mobile'): Provenance {
+  const all = rowKeys(row).map(key => styleProvenance(style, key, device, base))
   return all.find(p => p.state === 'set') ?? all.find(p => p.state === 'inherited') ?? { state: 'unset' }
 }
 
@@ -273,9 +275,9 @@ export function rowProvenance(style: Record<string, string>, row: RowId, device:
  * the device's breakpoint, and the Type row's grid or flex display there
  * (hiding stays the Visible row's).
  */
-export function layoutReset(style: Record<string, string>, device: DeviceId): Record<string, null> {
+export function layoutReset(style: Record<string, string>, device: DeviceId, base: BreakpointBase = 'mobile'): Record<string, null> {
   const set = [...sectionKeys('Layout'), 'display'].flatMap((key) => {
-    const p = styleProvenance(style, key, device)
+    const p = styleProvenance(style, key, device, base)
     return p.state === 'set' && (key !== 'display' || ['grid', 'flex'].includes(p.value)) ? [p.key] : []
   })
   return Object.fromEntries(set.map(key => [key, null]))

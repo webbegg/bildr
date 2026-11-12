@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { STYLE_TOKENS, variantsOf } from '#shared/design/tokens'
+import { BREAKPOINT_BASES, breakpointsOf, STYLE_TOKENS, variantsOf } from '#shared/design/tokens'
 import { COMPONENTS } from '#shared/document/components'
 import { createProject } from '#shared/document/factory'
 import { IdSchema } from '#shared/document/schema'
@@ -16,10 +16,13 @@ export const projectList = defineAction({
 
 export const projectCreate = defineAction({
   name: 'project_create',
-  description: 'Create a new project with one empty "Home" page. Returns the full project document.',
-  input: z.object({ name: z.string().min(1).max(100).describe('Project name') }),
-  run: async ({ name }, ctx) => {
-    const project = createProject(name)
+  description: 'Create a new project with one empty "Home" page. Returns the full project document. New projects are desktop-first (breakpointBase "desktop"): the base style is the Desktop one and narrower sizes override it with max-lg: (below 1024 px), max-md: (below 768) and max-sm: (below 640). base "mobile" makes a mobile-first project instead (base style for Mobile, overrides sm:, md:, lg: from 640, 768 and 1024 px up). The base cannot be changed later.',
+  input: z.object({
+    name: z.string().min(1).max(100).describe('Project name'),
+    base: z.enum(BREAKPOINT_BASES).optional().describe('The breakpoint base: "desktop" (default; overrides max-lg:, max-md:, max-sm:) or "mobile" (overrides sm:, md:, lg:)')
+  }),
+  run: async ({ name, base }, ctx) => {
+    const project = createProject(name, base)
     let n = 1
     while (await ctx.services.projects.getBySlug(project.slug)) project.slug = `${createProject(name).slug}-${++n}`
     await ctx.services.projects.save(project)
@@ -53,7 +56,7 @@ export const projectDelete = defineAction({
 
 export const projectGet = defineAction({
   name: 'project_get',
-  description: 'Get the full project document: pages, each with a root node tree of { id, type, name?, locked?, props, style, children }. name is a layer name set with node_rename; locked (node_set_locked) keeps a node and its descendants from being selected or moved on the canvas. Colour style keys may hold a token, a #rgb, #rrggbb or #rrggbbaa hex, or a theme custom colour name (theme.custom).',
+  description: 'Get the full project document: pages, each with a root node tree of { id, type, name?, locked?, props, style, children }. name is a layer name set with node_rename; locked (node_set_locked) keeps a node and its descendants from being selected or moved on the canvas. Colour style keys may hold a token, a #rgb, #rrggbb or #rrggbbaa hex, or a theme custom colour name (theme.custom). breakpointBase says which breakpoint prefixes the style keys take: "mobile" (sm:, md:, lg:, from 640, 768 and 1024 px up) or "desktop" (max-lg:, max-md:, max-sm:, below 1024, 768 and 640 px).',
   input: z.object({ projectId: IdSchema }),
   readOnly: true,
   run: async ({ projectId }, { services }) => services.loadProject(projectId)
@@ -66,31 +69,36 @@ function motion({ interactions, transition }: { interactions?: Interaction[], tr
 
 export const componentsList = defineAction({
   name: 'components_list',
-  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and default style; plus the design tokens a node style can use (key, label, group, allowed values, and the breakpoints whose prefix it takes, e.g. md:cols; colour tokens list alsoAccepts: they also take a #rgb, #rrggbb or #rrggbbaa hex or a theme custom colour name). With projectId, also userComponents: the project\'s own components (id, name, properties, variants with their state, interactions and transition when set, and the primary\'s interactions and the component transition), inserted as node_insert { type: "Instance", props: { component: id } }.',
+  description: 'List the components that can be inserted, with their props (name, kind, default, options), whether they accept children, and default style; plus the design tokens a node style can use (key, label, group, allowed values, and the breakpoints whose prefix it takes, e.g. md:cols or max-lg:cols; colour tokens list alsoAccepts: they also take a #rgb, #rrggbb or #rrggbbaa hex or a theme custom colour name). breakpointBases lists the prefixes of each base: a project takes only those of its own breakpointBase. With projectId, also breakpointBase (the project\'s) with each token\'s breakpoints limited to it, and userComponents: the project\'s own components (id, name, properties, variants with their state, interactions and transition when set, and the primary\'s interactions and the component transition), inserted as node_insert { type: "Instance", props: { component: id } }.',
   input: z.object({ projectId: IdSchema.optional().describe('Also list this project\'s own components') }),
   readOnly: true,
-  run: async ({ projectId }, { services }) => ({
-    components: COMPONENTS,
-    ...(projectId === undefined
-      ? {}
-      : {
-          userComponents: (await services.loadProject(projectId)).components.map(c => ({
-            id: c.id,
-            name: c.name,
-            properties: c.properties.map(p => ({ id: p.id, name: p.name, kind: p.kind, ...(p.default === undefined ? {} : { default: p.default }) })),
-            ...motion(c),
-            variants: c.variants.map(v => ({ id: v.id, name: v.name, ...(v.state ? { state: v.state } : {}), ...motion(v) }))
-          }))
-        }),
-    tokens: STYLE_TOKENS.map(token => ({
-      key: token.key,
-      label: token.label,
-      group: token.group,
-      values: token.values,
-      breakpoints: variantsOf(token).filter(b => b !== undefined),
-      ...(token.kind === 'color' ? { alsoAccepts: ['#rgb, #rrggbb or #rrggbbaa hex', 'a theme custom colour name (theme_get theme.custom)'] } : {})
-    }))
-  })
+  run: async ({ projectId }, { services }) => {
+    const project = projectId === undefined ? undefined : await services.loadProject(projectId)
+    return {
+      components: COMPONENTS,
+      ...(project === undefined
+        ? {}
+        : {
+            breakpointBase: project.breakpointBase,
+            userComponents: project.components.map(c => ({
+              id: c.id,
+              name: c.name,
+              properties: c.properties.map(p => ({ id: p.id, name: p.name, kind: p.kind, ...(p.default === undefined ? {} : { default: p.default }) })),
+              ...motion(c),
+              variants: c.variants.map(v => ({ id: v.id, name: v.name, ...(v.state ? { state: v.state } : {}), ...motion(v) }))
+            }))
+          }),
+      breakpointBases: Object.fromEntries(BREAKPOINT_BASES.map(base => [base, breakpointsOf(base)])),
+      tokens: STYLE_TOKENS.map(token => ({
+        key: token.key,
+        label: token.label,
+        group: token.group,
+        values: token.values,
+        breakpoints: variantsOf(token, project?.breakpointBase).filter(b => b !== undefined),
+        ...(token.kind === 'color' ? { alsoAccepts: ['#rgb, #rrggbb or #rrggbbaa hex', 'a theme custom colour name (theme_get theme.custom)'] } : {})
+      }))
+    }
+  }
 })
 
 export const historyGet = defineAction({

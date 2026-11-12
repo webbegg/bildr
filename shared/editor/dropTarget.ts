@@ -1,7 +1,7 @@
 import { isContainerType, structuralStyle } from '../document/components'
 import type { DocNode } from '../document/schema'
 import { containsNode, findNode, findParent } from '../document/tree'
-import type { Breakpoint } from '../design/tokens'
+import type { Breakpoint, BreakpointBase } from '../design/tokens'
 import { breakpointStyles } from './styleFields'
 import { nearestUnlocked } from './selection'
 
@@ -51,16 +51,25 @@ export function draggedNodeId(types: readonly string[]): string | undefined {
 /** Tailwind's breakpoint widths in CSS px, smallest first. */
 export const BREAKPOINT_WIDTHS: readonly [Breakpoint, number][] = [['sm', 640], ['md', 768], ['lg', 1024]]
 
-/** The largest breakpoint a viewport `width` reaches; undefined below `sm` (the base). */
-export function breakpointAt(width: number): Breakpoint | undefined {
+/** Desktop-first: the narrowest `max-*` breakpoint a viewport `width` is below, narrowest first. */
+const MAX_WIDTHS: readonly [Breakpoint, number][] = [['max-sm', 640], ['max-md', 768], ['max-lg', 1024]]
+
+/**
+ * The breakpoint whose style applies last at a viewport `width` in a `base`
+ * project: mobile-first, the largest one it reaches (undefined below `sm`,
+ * the base); desktop-first, the narrowest `max-*` it is below (undefined from
+ * 1024, the base).
+ */
+export function breakpointAt(width: number, base: BreakpointBase = 'mobile'): Breakpoint | undefined {
+  if (base === 'desktop') return MAX_WIDTHS.find(([, below]) => width < below)?.[0]
   return BREAKPOINT_WIDTHS.filter(([, min]) => width >= min).at(-1)?.[0]
 }
 
 /**
  * Whether `parent` lays its children out side by side at `breakpoint`: a Grid,
  * a List in its row or grid layout, or a flex container whose effective
- * `direction` there (its own token or the nearest smaller one, else its
- * structural direction) is a row.
+ * `direction` there (its own token or the nearest one before it in its
+ * cascade, else its structural direction) is a row.
  */
 export function laysOutInRow(parent: DocNode, breakpoint: Breakpoint | undefined): boolean {
   if (parent.type === 'Grid') return true

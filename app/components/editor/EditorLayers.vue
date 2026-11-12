@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { canHideFrame, frameRange } from '#shared/editor/frames'
+import { canHideFrame, frameCaption } from '#shared/editor/frames'
 import { layerKeyAction } from '#shared/editor/layers'
 import { filterLayers } from '#shared/editor/sidebar'
 import { PRIMARY_FRAME_HINT } from '#shared/editor/viewport'
@@ -7,7 +7,8 @@ import { PRIMARY_FRAME_HINT } from '#shared/editor/viewport'
 /**
  * The layers tree. Its root rows are the visible frames, Framer-style, in
  * frame order with their width range (`Tablet 1023—768`) and a Primary tag on
- * Mobile; clicking one edits that device, and the page tree sits under the
+ * the project's Primary (`Primary` on Mobile mobile-first, `Primary · 1024+`
+ * on Desktop desktop-first); clicking one edits that device, and the page tree sits under the
  * edited one. Hovering a frame row other than the Primary shows an eye that
  * hides the frame. While the tree has focus, ArrowUp/ArrowDown step through
  * the visible rows, ArrowLeft collapses a row or goes to its parent, and
@@ -73,7 +74,7 @@ function onKeyDown(event: KeyboardEvent) {
           data-frame-row-name
         >{{ device.label }}</span>
         <button
-          v-if="canHideFrame(device.id)"
+          v-if="canHideFrame(device.id, editor.breakpointBase)"
           type="button"
           tabindex="-1"
           class="flex h-full w-4 shrink-0 items-center justify-center rounded-sm text-dimmed opacity-0 group-hover:opacity-100 hover:text-highlighted"
@@ -89,7 +90,7 @@ function onKeyDown(event: KeyboardEvent) {
         <span
           class="shrink-0 text-[10px] text-dimmed tabular-nums"
           data-frame-row-range
-        >{{ device.breakpoint ? frameRange(device) : 'Primary' }}</span>
+        >{{ frameCaption(device, editor.breakpointBase) }}</span>
       </div>
       <div
         v-if="device.id === editor.deviceId"

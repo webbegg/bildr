@@ -220,8 +220,8 @@ describe('viewportUnitRules', () => {
 
   it('lets a larger active breakpoint win, as Tailwind orders its variants', () => {
     const rules = viewportUnitRules('md', '[data-v]', '--vh')
-    expect(rules).toContain('[data-v] .h-screen:not([class*="sm:h-"]):not([class*="md:h-"]) { height: var(--vh) }')
-    expect(rules).toContain('[data-v] .sm\\:h-screen:not([class*="md:h-"]) { height: var(--vh) }')
+    expect(rules).toContain('[data-v] .h-screen:not([class^="sm:h-"]):not([class*=" sm:h-"]):not([class^="md:h-"]):not([class*=" md:h-"]) { height: var(--vh) }')
+    expect(rules).toContain('[data-v] .sm\\:h-screen:not([class^="md:h-"]):not([class*=" md:h-"]) { height: var(--vh) }')
     expect(rules).toContain('[data-v] .md\\:min-h-screen { min-height: var(--vh) }')
     expect(rules).toHaveLength(9)
     expect(rules.some(rule => rule.includes('lg'))).toBe(false)

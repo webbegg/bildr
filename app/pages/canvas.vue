@@ -3,6 +3,7 @@ import type { DataRecord } from '#shared/data/records'
 import { bindingItem } from '#shared/runtime/bindings'
 import type { BindingItem } from '#shared/runtime/bindings'
 import type { Theme } from '#shared/design/theme'
+import type { BreakpointBase } from '#shared/design/tokens'
 import type { ComponentDefinition, Layout, Page } from '#shared/document/schema'
 import type { EnvValues } from '#shared/env/variables'
 import type { BoardVariant, CanvasToEditor, CanvasView, EditorToCanvas, SpacingOverlay } from '#shared/editor/protocol'
@@ -88,6 +89,10 @@ definePageMeta({ layout: false })
 
 const page = shallowRef<Page | null>(null)
 const base = ref('')
+/** The project's breakpoint base: with the frame width (fixed, the device's), the breakpoint this frame edits and renders. */
+const breakpointBase = ref<BreakpointBase>('mobile')
+/** This frame's breakpoint: its handles write there, drops and `screen` heights follow it. */
+const frameBreakpoint = () => breakpointAt(window.innerWidth, breakpointBase.value)
 const components = shallowRef<ComponentDefinition[]>([])
 const layouts = shallowRef<Layout[]>([])
 const lists = shallowRef<Record<string, DataRecord[]>>({})
@@ -123,7 +128,7 @@ function applyViewportRules() {
     style.id = 'bildr-canvas-viewport'
     document.head.appendChild(style)
   }
-  const css = viewportUnitRules(breakpointAt(window.innerWidth), '[data-canvas-viewport]', VIEWPORT_VAR).join('\n')
+  const css = viewportUnitRules(frameBreakpoint(), '[data-canvas-viewport]', VIEWPORT_VAR).join('\n')
   if (style.textContent !== css) style.textContent = css
 }
 const root = useTemplateRef<HTMLDivElement>('root')
@@ -394,6 +399,10 @@ function onMessage(event: MessageEvent) {
     page.value = message.page
     if (Object.keys(previews.value).length) previews.value = settlePreviews(previews.value, message.page.root)
     base.value = message.base
+    if ((message.breakpointBase ?? 'mobile') !== breakpointBase.value) {
+      breakpointBase.value = message.breakpointBase ?? 'mobile'
+      applyViewportRules()
+    }
     lists.value = message.lists
     item.value = message.page.collection ? previewItem(message) : null
     components.value = message.components ?? []
@@ -573,7 +582,7 @@ function dropHitAt(el: Element | null, point: Point, draggedId: string | undefin
   const overEl = over ?? el?.closest?.('[data-bildr-id]')
   const overId = over?.getAttribute('data-bildr-placeholder') ?? overEl?.getAttribute('data-bildr-id')
   // The canvas is as wide as the editor's device, so its width gives the breakpoint that applies.
-  return reorderTarget(root, { id: overId, placeholder: !!over }, point, breakpointAt(window.innerWidth), draggedId, (nodeId, redirected) => {
+  return reorderTarget(root, { id: overId, placeholder: !!over }, point, frameBreakpoint(), draggedId, (nodeId, redirected) => {
     const nodeEl = redirected ? firstCopy(nodeId) : overEl
     return nodeEl?.getBoundingClientRect() ?? null
   })
@@ -609,7 +618,7 @@ function onGestureDown(event: PointerEvent) {
   const base = { nodeId: id, pageId: page.value?.id, state: startGesture(event.pointerId, start, !!hit) }
   if (hit && 'handle' in hit) {
     const box = editableBox.value
-    const drag = { handle: hit.handle, width: box.width, height: box.height, breakpoint: breakpointAt(window.innerWidth), basePx: spacingBasePx(theme.value?.spacing ?? 'default'), fill: fillSize(id) }
+    const drag = { handle: hit.handle, width: box.width, height: box.height, breakpoint: frameBreakpoint(), basePx: spacingBasePx(theme.value?.spacing ?? 'default'), fill: fillSize(id) }
     gesture = { kind: 'resize', ...base, drag, patch: {}, cursor: handleCursor(hit.handle) }
   } else if (hit && spacing.value) {
     const s = spacing.value
@@ -689,7 +698,7 @@ function onGestureMove(event: PointerEvent) {
   const style = findNode(root, g.nodeId)?.style ?? {}
   const patch = g.kind === 'resize'
     ? resizePatch(g.drag, delta, event.shiftKey)
-    : spacingDragPatch(style, g.target, g.startPx, delta, { breakpoint: breakpointAt(window.innerWidth), basePx: spacingBasePx(theme.value?.spacing ?? 'default'), shift: event.shiftKey })
+    : spacingDragPatch(style, g.target, g.startPx, delta, { breakpoint: frameBreakpoint(), basePx: spacingBasePx(theme.value?.spacing ?? 'default'), shift: event.shiftKey })
   showPatch(g, patch, at)
 }
 
@@ -782,7 +791,7 @@ function insertAt(event: MouseEvent): { hit: InsertHit, indicator: Indicator } |
   const id = reachableAt(event.target)
   const node = root && id && view.value === 'page' ? findNode(root, id) : undefined
   if (!root || !node) return null
-  const breakpoint = breakpointAt(window.innerWidth)
+  const breakpoint = frameBreakpoint()
   const childRects = node.children.map(child => firstCopy(child.id)?.getBoundingClientRect() ?? new DOMRect())
   const hit = insertTargetAt(root, node.id, { x: event.clientX, y: event.clientY }, childRects, breakpoint)
   const markEl = hit && firstCopy(hit.mark.nodeId)

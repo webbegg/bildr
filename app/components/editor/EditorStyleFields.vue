@@ -61,7 +61,7 @@ const emit = defineEmits<{
 const editor = useEditor()
 
 const token = (key: string) => getStyleToken(key)!
-const provenance = (key: string) => styleProvenance(props.styles, key, editor.deviceId)
+const provenance = (key: string) => styleProvenance(props.styles, key, editor.deviceId, editor.breakpointBase)
 const own = (key: string) => {
   const p = provenance(key)
   return p.state === 'set' ? p.value : undefined
@@ -119,7 +119,7 @@ const natural = computed(() => naturalDisplay({ type: props.type, props: {} }))
 const added = ref<RowId[]>([])
 const sections = computed(() => panelRows(
   { type: props.type, parentType: props.parentType, root: props.root, style: props.styles, natural: natural.value },
-  { device: editor.deviceId, added: added.value, mixed: props.mixed }
+  { device: editor.deviceId, base: editor.breakpointBase, added: added.value, mixed: props.mixed }
 ))
 
 /** A "+" menu pick or an "Add…" slot: the row's default token at the device, one undo step. */
@@ -132,7 +132,7 @@ function addRow(row: RowId) {
 function resetLayout() {
   const layoutRows = sections.value.find(s => s.section === 'Layout')?.rows.map(r => r.id) ?? []
   added.value = added.value.filter(row => !layoutRows.includes(row))
-  update(layoutReset(props.styles, editor.deviceId))
+  update(layoutReset(props.styles, editor.deviceId, editor.breakpointBase))
 }
 
 /** Reset override, or an optional row's "−": its keys set at this breakpoint; unset everywhere, it goes back to the menu or "Add…". */
@@ -153,7 +153,7 @@ const bindKey = (row: RowId) => (rowKeys(row).length === 1 ? rowKeys(row)[0] : u
 /** A row's label state, its binding dot, and the "−" of an added optional row ("×" on Fill, Border and Shadows). */
 const rowLabel = (row: RowId) => ({
   bind: bindKey(row),
-  provenance: rowProvenance(props.styles, row, editor.deviceId),
+  provenance: rowProvenance(props.styles, row, editor.deviceId, editor.breakpointBase),
   device: editor.device.label,
   removable: !!shownRows.value.get(row)?.removable,
   removeIcon: ADD_ICONS[row] ? 'i-lucide-x' : 'i-lucide-minus',
@@ -218,13 +218,13 @@ function sizeField(row: RowId) {
 }
 
 // Layout: Type, Direction, Distribute and Align.
-const layout = computed(() => layoutType(props.type, props.styles, editor.deviceId))
+const layout = computed(() => layoutType(props.type, props.styles, editor.deviceId, editor.breakpointBase))
 const typeProvenance = computed((): Provenance => {
   const p = provenance('display')
   return p.state !== 'unset' && ['grid', 'flex'].includes(p.value) ? p : { state: 'unset' }
 })
 const TYPE_ITEMS = [{ value: 'stack', label: 'Stack' }, { value: 'grid', label: 'Grid' }]
-const setType = (next: string) => update(layoutTypeWrite(props.type, props.styles, editor.deviceId, next as LayoutType))
+const setType = (next: string) => update(layoutTypeWrite(props.type, props.styles, editor.deviceId, next as LayoutType, editor.breakpointBase))
 
 const direction = computed(() => current('direction') ?? structuralStyle(props.type).direction ?? 'row')
 const DIRECTION_ITEMS = [{ value: 'row', label: 'Horizontal', icon: 'i-lucide-move-horizontal' }, { value: 'col', label: 'Vertical', icon: 'i-lucide-move-vertical' }]
@@ -240,11 +240,11 @@ const WRAP_ITEMS = [{ value: 'wrap', label: 'Yes' }, { value: 'nowrap', label: '
 const wrapFallback = computed(() => (props.type === 'Row' && editor.selectedNodes.length > 0 && editor.selectedNodes.every(n => n.props.wrap) ? 'wrap' : 'nowrap'))
 
 // Styles: Visible reads and writes `display` at the device, like the layers eye.
-const visible = computed(() => !visibilityAt(props.styles, editor.deviceId).hidden)
+const visible = computed(() => !visibilityAt(props.styles, editor.deviceId, editor.breakpointBase).hidden)
 const VISIBLE_ITEMS = [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }]
 function setVisible(next: string) {
   if ((next === 'yes') === visible.value) return
-  update(visibilityToggle(props.styles, editor.deviceId, layout.value === 'grid' ? 'grid' : natural.value, editor.frames))
+  update(visibilityToggle(props.styles, editor.deviceId, layout.value === 'grid' ? 'grid' : natural.value, editor.frames, editor.breakpointBase))
 }
 
 // Border width: all sides, or per side (Framer's split toggle); the radius corners are a "+" row.

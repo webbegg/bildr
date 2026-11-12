@@ -5,6 +5,7 @@ import type { PropValue } from './components'
 import { newId } from './factory'
 import type { TreeRef } from './operations'
 import { instanceProblems } from './schema'
+import type { BreakpointBase } from '../design/tokens'
 import type { ComponentDefinition, DocNode, Project } from './schema'
 import { walk } from './tree'
 
@@ -76,9 +77,10 @@ export function detachParts(instance: DocNode, components: ComponentDefinition[]
  * and style: property values move to the `to` property of the same name
  * (ignoring case) and kind when `to` accepts the value, the variant to the
  * one of the same name, and slot content to the slot of the same name.
- * Everything else is dropped.
+ * Everything else is dropped. `base` is the project's breakpoint base, which
+ * style-bound values are checked with.
  */
-export function replacedInstance(instance: DocNode, from: ComponentDefinition, to: ComponentDefinition, components: ComponentDefinition[]): DocNode {
+export function replacedInstance(instance: DocNode, from: ComponentDefinition, to: ComponentDefinition, components: ComponentDefinition[], base: BreakpointBase = 'mobile'): DocNode {
   const props: Record<string, PropValue> = { component: to.id }
   const variant = from.variants.find(v => v.id === instance.props.variant)
   const sameVariant = variant && to.variants.find(v => key(v.name) === key(variant.name))
@@ -89,7 +91,7 @@ export function replacedInstance(instance: DocNode, from: ComponentDefinition, t
     const match = to.properties.find(p => p.kind === property.kind && key(p.name) === key(property.name))
     if (!match || match.id in props) continue
     const trial: DocNode = { id: instance.id, type: INSTANCE_TYPE, props: { component: to.id, [match.id]: value }, style: {}, children: [] }
-    if (!instanceProblems(trial, components).length) props[match.id] = value
+    if (!instanceProblems(trial, components, false, [], base).length) props[match.id] = value
   }
   const children: DocNode[] = []
   for (const fill of instance.children) {

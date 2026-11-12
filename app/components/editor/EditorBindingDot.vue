@@ -51,7 +51,7 @@ const actionOf = <K extends BindingDotAction['kind']>(kind: K) => dot.value?.act
 /** The style value every selected node shows at the device; undefined when unset or mixed. */
 const shared = computed(() => {
   const values = new Set(nodes.value.map((n) => {
-    const p = styleProvenance(n.style, props.name, editor.deviceId)
+    const p = styleProvenance(n.style, props.name, editor.deviceId, editor.breakpointBase)
     return p.state === 'unset' ? undefined : p.value
   }))
   return values.size === 1 ? [...values][0] : undefined
@@ -103,7 +103,7 @@ const candidates = computed(() => {
   if (!o || !project) return []
   if (props.mode === 'prop') return o.list.filter(p => p.kind !== 'slot' && p.kind === props.prop?.kind)
   const ownerRef = o.kind === 'component' ? { componentId: editor.component!.id } : { layoutId: editor.layout!.id }
-  return styleBindCandidates(o.list, key.value, p => propertyValues(project, ownerRef, p), customColorNames(project.theme))
+  return styleBindCandidates(o.list, key.value, p => propertyValues(project, ownerRef, p), customColorNames(project.theme), project.breakpointBase)
 })
 
 const TEXT_KINDS = new Set(['text', 'textarea', 'image'])

@@ -7,8 +7,14 @@
  * the system clipboard (another tab's) wins over the in-memory one
  * (`newerClip`). A paste inserts every node with `nodes` and `exact: true`
  * (`pasteInput`), one undo step, so no component default the source lacks
- * comes back.
+ * comes back. A clip records the breakpoint base of the project it was
+ * copied from (`base`; none in clips from before S37, which were all
+ * mobile-first): a paste into a project of the other base converts its
+ * styles band by band (`convertStyleBase`), or is refused when a style
+ * cannot be expressed there.
  */
+import { BREAKPOINT_BASES, convertStyleBase } from '../design/tokens'
+import type { BreakpointBase } from '../design/tokens'
 import type { PropValue } from '../document/components'
 import type { DocNode } from '../document/schema'
 import { findNode, findParent, walk } from '../document/tree'
@@ -35,6 +41,8 @@ export interface Clip {
   nodes: ClipNode[]
   /** When it was copied (ms since the epoch); 0 for a clip from an older editor. */
   copiedAt: number
+  /** The breakpoint base of the project it was copied from; absent (mobile-first) in older clips. */
+  base?: BreakpointBase
 }
 
 function toClipNode(node: DocNode): ClipNode {
@@ -46,19 +54,19 @@ function toClipNode(node: DocNode): ClipNode {
  * root or a missing node) and their subtrees, in document order; null when
  * none is left.
  */
-export function copyNodes(root: DocNode, ids: readonly string[], copiedAt = Date.now()): Clip | null {
+export function copyNodes(root: DocNode, ids: readonly string[], copiedAt = Date.now(), base?: BreakpointBase): Clip | null {
   const top = new Set(topLevelSelection(root, ids))
   const nodes: DocNode[] = []
   walk(root, (node) => {
     if (top.has(node.id)) nodes.push(node)
   })
   if (!nodes.length) return null
-  return { kind: CLIP_KIND, sourceIds: nodes.map(node => node.id), nodes: nodes.map(toClipNode), copiedAt }
+  return { kind: CLIP_KIND, sourceIds: nodes.map(node => node.id), nodes: nodes.map(toClipNode), copiedAt, ...(base ? { base } : {}) }
 }
 
 /** A copy of node `id` and its subtree; null for the root (it can't be pasted) or a missing node. */
-export function copyNode(root: DocNode, id: string, copiedAt = Date.now()): Clip | null {
-  return copyNodes(root, [id], copiedAt)
+export function copyNode(root: DocNode, id: string, copiedAt = Date.now(), base?: BreakpointBase): Clip | null {
+  return copyNodes(root, [id], copiedAt, base)
 }
 
 /** The clip as JSON text; it also carries the first node as `sourceId` and `node`, the single-node format older editors read. */
@@ -85,12 +93,13 @@ export function parseClip(text: string): Clip | null {
     return null
   }
   if (!isRecord(data) || data.kind !== CLIP_KIND) return null
-  const { sourceIds, nodes, copiedAt } = data
+  const { sourceIds, nodes, copiedAt, base } = data
   if (Array.isArray(nodes) || Array.isArray(sourceIds) || copiedAt !== undefined) {
     const valid = Array.isArray(nodes) && nodes.length > 0 && nodes.every(isClipNode)
       && Array.isArray(sourceIds) && sourceIds.length === nodes.length && sourceIds.every(id => typeof id === 'string')
       && typeof copiedAt === 'number' && Number.isFinite(copiedAt)
-    return valid ? { kind: CLIP_KIND, sourceIds: sourceIds as string[], nodes, copiedAt } : null
+      && (base === undefined || (BREAKPOINT_BASES as readonly unknown[]).includes(base))
+    return valid ? { kind: CLIP_KIND, sourceIds: sourceIds as string[], nodes, copiedAt, ...(base ? { base: base as BreakpointBase } : {}) } : null
   }
   if (typeof data.sourceId !== 'string' || !isClipNode(data.node)) return null
   return { kind: CLIP_KIND, sourceIds: [data.sourceId], nodes: [data.node], copiedAt: 0 }
@@ -124,13 +133,25 @@ export function newerClip(memory: Clip | null, system: Clip | null): Clip | null
  * copied props and style, without the component defaults the sources no
  * longer have. One insert, so one undo step.
  */
-export function pasteInput(clip: Clip): { nodes: ClipNode[], exact: true } {
-  return { nodes: clip.nodes, exact: true }
+export function pasteInput(clip: Clip, base: BreakpointBase = 'mobile'): { nodes: ClipNode[], exact: true } {
+  const from = clip.base ?? 'mobile'
+  return { nodes: from === base ? clip.nodes : clip.nodes.map(node => convertNode(node, from, base)), exact: true }
 }
 
-/** The style Paste style gives: the first copied node's. */
-export function clipStyle(clip: Clip): Record<string, string> {
-  return clip.nodes[0]!.style
+/** A clip node with its subtree's styles converted between bases; throws with a message when one cannot be. */
+function convertNode(node: ClipNode, from: BreakpointBase, to: BreakpointBase): ClipNode {
+  return { ...node, style: convertedStyle(node.style, from, to), children: node.children.map(child => convertNode(child, from, to)) }
+}
+
+function convertedStyle(style: Record<string, string>, from: BreakpointBase, to: BreakpointBase): Record<string, string> {
+  const converted = convertStyleBase(style, from, to)
+  if ('problem' in converted) throw new Error(`Cannot paste here: ${converted.problem.charAt(0).toLowerCase()}${converted.problem.slice(1)}`)
+  return converted.style
+}
+
+/** The style Paste style gives: the first copied node's, converted to a `base` project; throws like `pasteInput`. */
+export function clipStyle(clip: Clip, base: BreakpointBase = 'mobile'): Record<string, string> {
+  return convertedStyle(clip.nodes[0]!.style, clip.base ?? 'mobile', base)
 }
 
 /**

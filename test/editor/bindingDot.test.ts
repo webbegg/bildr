@@ -106,8 +106,9 @@ describe('styleBindingDot (RELIABILITY-012, RELIABILITY-T8-001)', () => {
     expect(styleBindingDot([bound], 'n', { 'p': '4', 'lg:p': '8' }, 'md:p').state).toBe('inherited')
   })
 
-  it('honours the breakpoint order it is given', () => {
-    expect(styleBindingDot([bound], 'n', { 'lg:p': '8' }, 'md:p', ['sm', 'lg', 'md']).state).toBe('none')
+  it('follows the key\'s own cascade, desktop-first too (S37)', () => {
+    expect(styleBindingDot([bound], 'n', { 'max-lg:p': '8' }, 'max-md:p').state).toBe('none')
+    expect(styleBindingDot([bound], 'n', { 'max-sm:p': '8' }, 'max-md:p').state).toBe('inherited')
   })
 
   it('finds nothing for another node, a prop binding or an unbound key', () => {
