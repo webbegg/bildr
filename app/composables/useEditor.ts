@@ -33,6 +33,7 @@ import { canHideFrame, frameForKey, hiddenFrames, PRIMARY_FRAME, visibleFrames }
 import type { EditKind, EditLevel, LevelMove } from '#shared/editor/editStack'
 import { goToLevel, leaveLevel, openLevel, pruneLevels, topLevel } from '#shared/editor/editStack'
 import { componentPrefill, uniqueName } from '#shared/editor/names'
+import { detailPageSteps } from '#shared/editor/detailPages'
 import { selectionAccent } from '#shared/editor/accent'
 import { insertableComponents, outsideInstance, parseInstancePayload } from './componentEditor'
 import { layoutSelection, pageSlots, parseLayoutPayload } from './layoutEditor'
@@ -279,6 +280,79 @@ export function createEditor(projectId: string) {
     listCollections.value.map(c => (c.source.type === 'internal' ? c.id : [c.id, c.source, c.fields])),
     listCollections.value.some(c => c.source.type === 'connection') ? project.value?.connections : null
   ]), () => void reloadListRecords().catch(() => {}))
+
+  /** On a detail page (not in the component or layout view), the collection it is a template of. */
+  const detailCollection = computed(() => {
+    const slug = !componentId.value && !layoutId.value ? currentPage.value?.collection?.slug : undefined
+    return slug ? project.value?.collections.find(c => c.slug === slug) ?? null : null
+  })
+  /** The records the page inspector's Preview record offers (the detail collection's first 100). */
+  const detailRecords = shallowRef<DataRecord[]>([])
+  /** The record each detail page previews, by page id, as last chosen (in memory only); unset, the first record. */
+  const previewRecordIds = ref<Record<string, string>>({})
+  /** A chosen record that is not among `detailRecords` (e.g. from `editor_navigate`), read on its own. */
+  const previewRecordExtra = shallowRef<DataRecord | null>(null)
+  /** The record the canvas shows a detail page with: the chosen one, else the first; null without records or off a detail page. */
+  const previewRecord = computed<DataRecord | null>(() => {
+    const page = currentPage.value
+    if (!detailCollection.value || !page) return null
+    const chosen = previewRecordIds.value[page.id]
+    if (chosen) {
+      const found = detailRecords.value.find(r => r.id === chosen) ?? (previewRecordExtra.value?.id === chosen ? previewRecordExtra.value : null)
+      if (found) return found
+    }
+    return detailRecords.value[0] ?? null
+  })
+
+  let detailLoad = 0
+  /** Loads the detail collection's records for the preview record picker. */
+  async function reloadDetailRecords(): Promise<void> {
+    const load = ++detailLoad
+    const shown = detailCollection.value
+    const result = shown ? await callAction<{ records: DataRecord[] }>('record_list', { projectId, collection: shown.id, limit: 100 }) : { records: [] }
+    if (load === detailLoad) detailRecords.value = result.records
+  }
+
+  watch(() => JSON.stringify(detailCollection.value ? [detailCollection.value.id, detailCollection.value.source, detailCollection.value.fields] : null), () => void reloadDetailRecords().catch(() => {
+    detailRecords.value = []
+  }))
+
+  /** Previews record `recordId` on detail page `forPage` (the current page by default); a record past the loaded ones is read on its own. */
+  async function setPreviewRecord(recordId: string, forPage = currentPage.value?.id): Promise<void> {
+    if (!forPage) return
+    previewRecordIds.value = { ...previewRecordIds.value, [forPage]: recordId }
+    const page = project.value?.pages.find(p => p.id === forPage)
+    const shown = project.value?.collections.find(c => c.slug === page?.collection?.slug)
+    if (!shown || detailRecords.value.some(r => r.id === recordId)) return
+    const record = await callAction<DataRecord>('record_get', { projectId, collection: shown.id, recordId }).catch(() => null)
+    if (record) previewRecordExtra.value = record
+  }
+
+  /** Makes the current page a detail page of collection `slug` with URL key `field` (default key without one), or a plain page with null. */
+  async function setPageCollection(slug: string | null, field?: string): Promise<void> {
+    const current = currentPage.value
+    if (!current) return
+    await run('page_set_collection', { pageId: current.id, collection: slug ? { slug, ...(field ? { field } : {}) } : null })
+  }
+
+  /**
+   * "Create detail page" (the Data view, ⌘K): adds a page bound to the
+   * collection with a Heading and a Text bound to its fields (see
+   * `detailPageSteps`), then shows it on the Canvas. Two undo steps: the
+   * page, then its content (one `node_insert` with both nodes).
+   */
+  async function createDetailPage(collectionSlug: string): Promise<string | undefined> {
+    const target = project.value?.collections.find(c => c.slug === collectionSlug)
+    if (!target || !project.value) return undefined
+    const steps = detailPageSteps(target, project.value.pages)
+    const added = await run<{ pageId: string }>('page_add', steps.page)
+    if (!added) return undefined
+    await run('node_insert', { pageId: added.pageId, nodes: steps.nodes })
+    mode.value = 'build'
+    sidebarPanel.value = 'pages'
+    selectPage(added.pageId)
+    return added.pageId
+  }
 
   async function reload(): Promise<void> {
     const [next, nextHistory] = await Promise.all([
@@ -1176,6 +1250,7 @@ export function createEditor(projectId: string) {
   return reactive({
     projectId, project, pageId, componentId, component, layoutId, layout, editStack, createRequest, propertiesRequest, confirmRequest, canvasAccent, variantId, variant, variantBoard, interactionId, currentPage, treeRef, selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard, history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, deviceId, device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, page, selected, selectedNodes, nodeName, theme,
     collectionId, collection, connectionId, connection, records, recordsTotal, recordsHasMore, recordsLimit, recordsError, recordId, importRequest, variablesRequest, listCollections, lists, env, publicEnv,
+    detailCollection, detailRecords, previewRecord, reloadDetailRecords, setPreviewRecord, setPageCollection, createDetailPage,
     reload, reloadEnv, runEnv, run, runOnPage, reloadRecords, loadMoreRecords, reloadListRecords, runData, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, layoutFromSelection, createLayoutFromSelection, setPageLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, addState, addInteraction, updateInteraction, removeInteraction, setTransition, previewInteractions, renameVariant, variantPage, setOverride, insertInstance, createComponent, addPage, insert, openPreview, publish, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, updateStyles, previewTheme, updateTheme, undo, redo, shortcut

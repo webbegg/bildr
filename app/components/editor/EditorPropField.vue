@@ -3,6 +3,8 @@ import type { PropDef, PropValue } from '#shared/document/components'
 import type { Provenance } from '#shared/editor/styleFields'
 import { takesFormRecords } from '#shared/data/collections'
 import { propOptions } from '#shared/editor/propGroups'
+import { detailLinkItems, itemScope } from '#shared/editor/detailPages'
+import { detailLinkLabel, parseDetailLink } from '#shared/runtime/detail'
 import { enclosingForm, FORM_TYPE } from '#shared/runtime/form'
 import { useBinding } from '~/composables/useBinding'
 
@@ -15,7 +17,10 @@ import { useBinding } from '~/composables/useBinding'
  * `bindable` (a prop of the selected node) puts the binding dot before the
  * label: create or bind a property/variable, insert an env variable; bound,
  * the property's chip `◇ Title ×` replaces the control. A text field shows
- * `def.placeholder` (an instance field gets its property's).
+ * `def.placeholder` (an instance field gets its property's). A link offers
+ * the pages, External URL, and "Detail: <page>" per detail page, which
+ * stores `<page>/{{ item.<key> }}`: enabled inside a List of its collection
+ * or on that detail page, disabled with a hint elsewhere.
  */
 const props = defineProps<{ def: PropDef, value: PropValue, changed: boolean, bindable?: boolean }>()
 const emit = defineEmits<{ update: [value: PropValue], reset: [] }>()
@@ -33,16 +38,30 @@ const EXTERNAL = '__external'
 const text = computed(() => String(props.value ?? ''))
 const pageSlugs = computed(() => editor.project?.pages.map(p => p.slug) ?? [])
 const externalChosen = ref(false)
+// The detail page a stored link opens, shown as its "Detail: <page>" entry.
+const detailStored = computed(() => (editor.project ? parseDetailLink(text.value, editor.project.pages) : undefined))
 const linkMode = computed(() => {
   if (externalChosen.value) return EXTERNAL
   if (!text.value) return NONE
+  if (detailStored.value) return text.value
   return pageSlugs.value.includes(text.value) ? text.value : EXTERNAL
 })
-const linkItems = computed(() => [
-  { label: 'None', value: NONE },
-  ...(editor.project?.pages.map(p => ({ label: `${p.name} (/${p.slug})`, value: p.slug })) ?? []),
-  { label: 'External URL', value: EXTERNAL }
-])
+// The record `{{ item.* }}` reads at the selected node (a List's, else the detail page's).
+const scope = computed(() => (editor.project && editor.page && !editor.component && !editor.layout ? itemScope(editor.project, editor.page, editor.selected?.id) : undefined))
+const linkItems = computed(() => {
+  const details = editor.project ? detailLinkItems(editor.project, scope.value) : []
+  // A stored detail link with another key field than the page's current one stays listed as itself.
+  const stored = detailStored.value && !details.some(d => d.value === text.value)
+    ? [{ label: detailLinkLabel(detailStored.value.page), value: text.value, description: `Key ${detailStored.value.field}` }]
+    : []
+  return [
+    { label: 'None', value: NONE },
+    ...(editor.project?.pages.filter(p => !p.collection).map(p => ({ label: `${p.name} (/${p.slug})`, value: p.slug })) ?? []),
+    ...details,
+    ...stored,
+    { label: 'External URL', value: EXTERNAL }
+  ]
+})
 
 // A value no option has (e.g. after a delete) stays listed as missing.
 const withMissing = (items: { label: string, value: string }[]) =>

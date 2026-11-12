@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { envRef, insertAt } from '#shared/env/insert'
+import { itemScope, itemVariables } from '#shared/editor/detailPages'
 
 /**
  * The braces button inside a text field: a menu of the project's variables
@@ -8,7 +9,10 @@ import { envRef, insertAt } from '#shared/env/insert'
  * with the new text (the parent commits it), then puts focus and the caret
  * back after the ref. The field is the nearest input or textarea around the
  * button. Secrets only resolve on the server, so `secrets` enables them
- * (API URLs and headers); elsewhere they are listed but disabled.
+ * (API URLs and headers); elsewhere they are listed but disabled. On the
+ * Canvas, where the selected node reads a record (inside a List, or on a
+ * detail page), the record's fields come first as `{{ item.<field> }}`,
+ * with its id and timestamps.
  */
 const props = defineProps<{ secrets?: boolean }>()
 const emit = defineEmits<{ insert: [text: string] }>()
@@ -24,10 +28,14 @@ function field(): HTMLInputElement | HTMLTextAreaElement | null {
 }
 
 function pick(name: string) {
+  insert(envRef(name))
+}
+
+function insert(ref: string) {
   const el = field()
   if (!el) return
   const value = el.value
-  const result = insertAt(value, el.selectionStart ?? value.length, el.selectionEnd ?? value.length, envRef(name))
+  const result = insertAt(value, el.selectionStart ?? value.length, el.selectionEnd ?? value.length, ref)
   caret = result.caret
   emit('insert', result.text)
 }
@@ -51,11 +59,18 @@ function manage() {
 const SECRET_HINT = 'Secrets only work in API URLs and headers'
 const NAME_UI = { itemLabel: 'font-mono text-[12px]' }
 
+// The record `{{ item.* }}` reads at the selected node; secrets fields are server-side (API sources), never on the Canvas.
+const scope = computed(() => (!props.secrets && editor.mode === 'build' && editor.project && editor.page && !editor.component && !editor.layout ? itemScope(editor.project, editor.page, editor.selected?.id) : undefined))
+
 const items = computed<DropdownMenuItem[][]>(() => {
+  const record: DropdownMenuItem[] = scope.value
+    ? [{ label: scope.value.name, type: 'label' as const }, ...itemVariables(scope.value).map(v => ({ label: v.name, icon: 'i-lucide-database', description: v.label, ui: NAME_UI, onSelect: () => insert(v.ref) }))]
+    : []
   const variables: DropdownMenuItem[] = editor.env.map(v => v.secret
     ? { label: v.name, icon: 'i-lucide-lock', slot: 'secret' as const, description: props.secrets ? undefined : SECRET_HINT, disabled: !props.secrets, ui: NAME_UI, onSelect: () => pick(v.name) }
     : { label: v.name, icon: 'i-lucide-braces', description: v.value || undefined, ui: NAME_UI, onSelect: () => pick(v.name) })
   return [
+    ...(record.length ? [record] : []),
     variables.length ? variables : [{ label: 'No variables yet', disabled: true }],
     [{ label: 'Manage variables…', icon: 'i-lucide-settings-2', onSelect: manage }]
   ]

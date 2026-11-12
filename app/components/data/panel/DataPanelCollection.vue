@@ -2,13 +2,35 @@
 import type { Collection } from '#shared/document/schema'
 import { useDataSidebarTab } from '../DataCollections.vue'
 
-/** The collection panel: its name, slug and public flags, then the API source of a synced collection or a connection collection's endpoints. Fields opens the sidebar's Fields tab. */
+/**
+ * The collection panel: its name, slug and public flags, its detail page
+ * ("Detail page: <name>", which opens it on the Canvas, or "Create detail
+ * page"), then the API source of a synced collection or a connection
+ * collection's endpoints. Fields opens the sidebar's Fields tab.
+ */
 const props = defineProps<{ collection: Collection }>()
 const editor = useEditor()
 const sidebarTab = useDataSidebarTab()
 const apiSource = computed(() => (props.collection.source.type === 'api' ? props.collection.source : null))
 const connectionSource = computed(() => (props.collection.source.type === 'connection' ? props.collection.source : null))
 const editingMapping = ref(false)
+const detailPages = computed(() => editor.project?.pages.filter(p => p.collection?.slug === props.collection.slug) ?? [])
+const creating = ref(false)
+
+function openPage(pageId: string) {
+  editor.mode = 'build'
+  editor.sidebarPanel = 'pages'
+  editor.selectPage(pageId)
+}
+
+async function createDetailPage() {
+  creating.value = true
+  try {
+    await editor.createDetailPage(props.collection.slug)
+  } finally {
+    creating.value = false
+  }
+}
 
 function update(patch: Record<string, unknown>) {
   return editor.run('collection_update', { collection: props.collection.id, ...patch })
@@ -110,6 +132,51 @@ function update(patch: Record<string, unknown>) {
           <span class="truncate">{{ editor.project?.connections.find(c => c.id === connectionSource!.connectionId)?.name }}</span>
         </button>
       </EditorRow>
+    </EditorStyleSection>
+
+    <EditorStyleSection
+      label="Detail page"
+      data-detail-page-section
+    >
+      <EditorRow
+        v-for="page in detailPages"
+        :key="page.id"
+        label="Detail page"
+        :title="`Detail page: ${page.name}`"
+        name="detailPage"
+      >
+        <button
+          type="button"
+          class="flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 text-[12px] text-muted hover:bg-white/4 hover:text-highlighted"
+          :title="`Open ${page.name} on the Canvas`"
+          :aria-label="`Detail page: ${page.name}`"
+          :data-open-detail-page="page.id"
+          @click="openPage(page.id)"
+        >
+          <UIcon
+            name="i-lucide-file-text"
+            class="size-3.5 shrink-0"
+          />
+          <span class="truncate">{{ page.name }}</span>
+          <UIcon
+            name="i-lucide-arrow-up-right"
+            class="ms-auto size-3.5 shrink-0"
+          />
+        </button>
+      </EditorRow>
+      <template v-if="!detailPages.length">
+        <EditorButton
+          icon="i-lucide-file-plus"
+          label="Create detail page"
+          block
+          :loading="creating"
+          data-create-detail-page
+          @click="createDetailPage"
+        />
+        <p class="pt-1.5 text-[11px] text-dimmed">
+          A page rendered once per record, with a title and body bound to its fields.
+        </p>
+      </template>
     </EditorStyleSection>
 
     <DataPanelEndpoints

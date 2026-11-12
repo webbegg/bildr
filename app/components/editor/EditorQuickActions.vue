@@ -3,6 +3,7 @@ import type { CommandPaletteGroup, CommandPaletteItem } from '@nuxt/ui'
 import type { Command, CommandContext } from '#shared/editor/commands'
 import { editorCommands, GROUP_LABELS, pushRecent, searchCommands } from '#shared/editor/commands'
 import { siblingParent } from '#shared/editor/selection'
+import { detailCommands } from '#shared/editor/detailPages'
 import { componentCommands } from '~/composables/componentEditor'
 import { layoutCommands } from '~/composables/layoutEditor'
 
@@ -16,7 +17,9 @@ import { layoutCommands } from '~/composables/layoutEditor'
  * An empty query caps Insert at the common or recently inserted components,
  * so the Actions stay in view; "More components…" lists the rest. The
  * project's own components join Insert and Go to (`componentCommands`), and
- * its layouts Actions and Go to (`layoutCommands`).
+ * its layouts Actions and Go to (`layoutCommands`), and its collections
+ * "Create detail page for <collection>" and "Set page collection ›"
+ * (`detailCommands`).
  */
 const editor = useEditor()
 const query = ref('')
@@ -70,6 +73,12 @@ const commands = computed(() => [
         createFromSelection: () => editor.createLayoutFromSelection(),
         edit: id => editor.editLayout(id),
         setPageLayout: id => editor.setPageLayout(id)
+      })
+    : []),
+  ...(editor.project
+    ? detailCommands<CommandContext>(editor.project.collections, { pageCollection: editor.currentPage?.collection?.slug, onPage: editor.mode === 'build' && !!editor.page && !editor.componentId && !editor.layoutId }, {
+        create: slug => editor.createDetailPage(slug),
+        setCollection: slug => editor.setPageCollection(slug)
       })
     : [])
 ])

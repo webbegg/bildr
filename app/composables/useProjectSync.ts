@@ -6,7 +6,7 @@ import { TAB_ID, callAction } from './useEditor'
 
 type SyncEvent
   = | { kind: 'change', projectId: string, version: number, source?: string, action?: string, scope?: 'data', collectionId?: string }
-    | { kind: 'navigate', projectId: string, pageId: string, nodeId: string | null }
+    | { kind: 'navigate', projectId: string, pageId: string, nodeId: string | null, recordId?: string }
 
 const POLL_MS = 1500
 const CONTEXT_DEBOUNCE_MS = 300
@@ -50,6 +50,7 @@ export function useProjectSync(editor: Editor): void {
       // and the canvas Lists' records whatever tab changed them.
       if (event.source !== TAB_ID && editor.mode === 'data' && event.collectionId === editor.collection?.id) await editor.reloadRecords().catch(() => {})
       if (editor.listCollections.some(c => c.id === event.collectionId)) await editor.reloadListRecords().catch(() => {})
+      if (editor.detailCollection?.id === event.collectionId) await editor.reloadDetailRecords().catch(() => {})
       return
     }
     // Deleted here or elsewhere: the editor has nothing left to show.
@@ -74,6 +75,8 @@ export function useProjectSync(editor: Editor): void {
       editor.editLayout(target.layoutId)
     } else {
       editor.selectedId = target.nodeId
+      // On a detail page, the record the canvas previews.
+      if (event.recordId) await editor.setPreviewRecord(event.recordId, target.pageId)
     }
   }
 
@@ -95,6 +98,7 @@ export function useProjectSync(editor: Editor): void {
       // Record changes do not move the version, so the Data mode re-reads them.
       if (editor.mode === 'data') await editor.reloadRecords().catch(() => {})
       if (editor.listCollections.length) await editor.reloadListRecords().catch(() => {})
+      if (editor.detailCollection) await editor.reloadDetailRecords().catch(() => {})
     }, POLL_MS)
   }
 

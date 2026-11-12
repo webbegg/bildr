@@ -2,24 +2,32 @@
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { Page } from '#shared/document/schema'
 import { filterPages, pageRowLabel } from '#shared/editor/sidebar'
+import { detailPath } from '#shared/runtime/detail'
 
 /**
  * The Pages panel, Framer's: a "Pages" header with Add page, then a row per
  * page named by its path (`/pricing`; the home page, the first, is `Home`
  * with a house icon), filtered by the sidebar search, and a small layout
- * badge (▭ name) on pages that use a layout. Double-click renames.
+ * badge (▭ name) on pages that use a layout. A detail page reads as its path
+ * pattern (`/post/:slug`) with a collection badge. Double-click renames.
  */
 const { query = '' } = defineProps<{ query?: string }>()
 const editor = useEditor()
 const pages = computed(() => {
   const homeId = editor.project?.pages[0]?.id
   const layouts = editor.project?.layouts ?? []
-  return filterPages(editor.project?.pages ?? [], query).map(page => ({
-    page,
-    home: page.id === homeId,
-    layout: layouts.find(l => l.id === page.layoutId) ?? null,
-    ...pageRowLabel(page, page.id === homeId)
-  }))
+  const collections = editor.project?.collections ?? []
+  return filterPages(editor.project?.pages ?? [], query).map((page) => {
+    const label = pageRowLabel(page, page.id === homeId)
+    return {
+      page,
+      home: page.id === homeId,
+      layout: layouts.find(l => l.id === page.layoutId) ?? null,
+      collection: page.collection ? collections.find(c => c.slug === page.collection!.slug) ?? null : null,
+      ...label,
+      path: page.collection ? detailPath(page, collections) : label.path
+    }
+  })
 })
 
 const newName = ref('')
@@ -104,7 +112,7 @@ function menu(page: Page): DropdownMenuItem[] {
       No pages match “{{ query }}”.
     </p>
     <div
-      v-for="{ page, home, path, hint, layout } in pages"
+      v-for="{ page, home, path, hint, layout, collection } in pages"
       :key="page.id"
       class="group relative flex items-center px-2"
       :data-page-id="page.id"
@@ -131,7 +139,7 @@ function menu(page: Page): DropdownMenuItem[] {
         @dblclick="startRename(page)"
       >
         <UIcon
-          :name="home ? 'i-lucide-house' : 'i-lucide-file'"
+          :name="home ? 'i-lucide-house' : page.collection ? 'i-lucide-file-text' : 'i-lucide-file'"
           class="size-4 shrink-0"
           :class="page.id === editor.page?.id ? 'text-highlighted' : 'text-dimmed'"
         />
@@ -141,8 +149,21 @@ function menu(page: Page): DropdownMenuItem[] {
           class="truncate text-xs font-normal text-dimmed"
         >{{ hint }}</span>
         <span
+          v-if="collection"
+          class="ms-auto flex min-w-0 shrink items-center gap-1 rounded-md bg-(--editor-selection)/12 px-1.5 py-0.5 text-[11px] font-normal text-(--editor-selection)"
+          :title="`Detail page of ${collection.name}`"
+          :data-page-collection-badge="collection.slug"
+        >
+          <UIcon
+            name="i-lucide-database"
+            class="size-3 shrink-0"
+          />
+          <span class="max-w-20 truncate">{{ collection.name }}</span>
+        </span>
+        <span
           v-if="layout"
-          class="ms-auto flex min-w-0 shrink items-center gap-1 rounded-md bg-(--editor-component)/12 px-1.5 py-0.5 text-[11px] font-normal text-(--editor-component)"
+          :class="collection ? '' : 'ms-auto'"
+          class="flex min-w-0 shrink items-center gap-1 rounded-md bg-(--editor-component)/12 px-1.5 py-0.5 text-[11px] font-normal text-(--editor-component)"
           :title="`Layout: ${layout.name}`"
           :data-page-layout-badge="layout.id"
         >

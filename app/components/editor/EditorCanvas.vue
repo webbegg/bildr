@@ -398,6 +398,7 @@ function renderMessage(key: string | null): EditorToCanvas | null {
   if (!page) return null
   return {
     type: 'bildr:render', page, base: `/p/${editor.project.slug}`, theme: editor.theme, view, lists: editor.lists, env: editor.publicEnv, components: editor.project.components, layouts: editor.project.layouts,
+    ...(!variant && page.collection ? { record: editor.previewRecord } : {}),
     ...(variant ? { variant: { id: variant.variantId, label: variant.label } } : {})
   }
 }
@@ -519,7 +520,7 @@ function onMessage(event: MessageEvent) {
   else if (id && message.type === 'bildr:space') spaceHeld.value = message.down
 }
 
-watch(() => [editor.page, editor.theme, editor.lists, editor.publicEnv, editor.project?.components, editor.project?.layouts, board.value], render, { deep: true })
+watch(() => [editor.page, editor.theme, editor.lists, editor.previewRecord, editor.publicEnv, editor.project?.components, editor.project?.layouts, board.value], render, { deep: true })
 
 /** In the layout view, the children slot's node; its placeholder boxes per frame key, in frame pixels. */
 const slotNodeId = computed(() => (view === 'page' && editor.layout ? childrenSlotNode(editor.layout) : null))

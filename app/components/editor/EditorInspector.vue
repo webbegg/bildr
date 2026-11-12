@@ -14,7 +14,8 @@ import { isOverridden } from '~/composables/componentVariants'
  * identity, breadcrumb and quick actions, then the component's prop sections
  * (Content, Behaviour, Appearance, Advanced; Behaviour first on an actionable
  * node such as a Button or Link), then its style sections. The page root
- * leads with its Page section, then Layout (see `panelRows`). The
+ * leads with its Page section (name, slug, layout, and the detail page's
+ * collection, URL key and preview record), then Layout (see `panelRows`). The
  * styles edit the breakpoint of the canvas frame picked last (or the floating
  * bar's device switch), which a caption names, in the override blue off the
  * Primary Mobile. With several nodes selected the head reads "N selected" and
@@ -211,6 +212,7 @@ function renamePage(field: 'name' | 'slug', value: string) {
             />
           </EditorRow>
           <EditorPageLayout />
+          <EditorPageCollection />
         </EditorStyleSection>
 
         <EditorComponentPanel :node="node" />

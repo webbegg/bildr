@@ -41,7 +41,9 @@ import type { StylePatch } from './preview'
  * `bildr:render` carries the project's component definitions (`components`),
  * which Instance nodes render from, and its `layouts`, which wrap the page. It also carries the public variables (`env`), which the canvas
  * resolves `{{ env.NAME }}` with in props and theme colours; a missing one
- * shows as written.
+ * shows as written. On a detail page, `record` is the record the page
+ * previews (the page inspector's Preview record); its `{{ item.* }}`
+ * bindings read it outside Lists. Null or absent shows them as written.
  *
  * The variant board (`variantBoard.ts`) shows one frame per variant of the
  * component being edited, each its own canvas: `bildr:render.variant` names
@@ -71,7 +73,7 @@ export type CanvasView = 'page' | 'tokens'
 export interface BoardVariant { id: string | null, label: string }
 
 export type EditorToCanvas
-  = | { type: 'bildr:render', page: Page, base: string, theme: Theme, view: CanvasView, lists: Record<string, DataRecord[]>, env: EnvValues, components: ComponentDefinition[], layouts: Layout[], variant?: BoardVariant }
+  = | { type: 'bildr:render', page: Page, base: string, theme: Theme, view: CanvasView, lists: Record<string, DataRecord[]>, env: EnvValues, components: ComponentDefinition[], layouts: Layout[], variant?: BoardVariant, record?: DataRecord | null }
     | { type: 'bildr:select', nodeId: string | null, nodeIds: string[], accent?: string }
     | { type: 'bildr:hover', nodeId: string | null }
     | { type: 'bildr:preview', nodeId: string, style: StylePatch | null }
