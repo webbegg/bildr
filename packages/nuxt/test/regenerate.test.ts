@@ -26,9 +26,14 @@ const editPage = (edit: (page: { root: { children: Array<Record<string, unknown>
   writeFileSync(join(dir, pageModel), JSON.stringify(page, null, 2))
 }
 
+// The fixture is not part of the workspace: `pnpm --dir fixtures/codegen/blog install` once (review RELIABILITY-001).
+const fixtureModules = fileURLToPath(new URL('../../../fixtures/codegen/blog/node_modules', import.meta.url))
+const hasFixtureInstall = existsSync(join(fixtureModules, 'drizzle-kit'))
+const withDrizzle = hasFixtureInstall ? it : it.skip
+
 /** A stored entity (needs drizzle-kit: linked from the golden fixture's install). */
 const addNote = () => {
-  symlinkSync(fileURLToPath(new URL('../../../fixtures/codegen/blog/node_modules', import.meta.url)), join(dir, 'node_modules'), 'dir')
+  symlinkSync(fixtureModules, join(dir, 'node_modules'), 'dir')
   const write = (path: string, value: unknown) => {
     mkdirSync(join(dir, path, '..'), { recursive: true })
     writeFileSync(join(dir, path), JSON.stringify(value, null, 2))
@@ -87,7 +92,7 @@ describe('regenerate', { timeout: 60_000 }, () => {
     expect(read(pageFile)).toBe('<template>mine</template>\n')
   })
 
-  it('writes the migration for a new entity together with its generated schema', async () => {
+  withDrizzle('writes the migration for a new entity together with its generated schema', async () => {
     addNote()
     const result = await regenerate(dir)
     expect(result).toMatchObject({ ok: true, migration: { kind: 'written', tag: '0000_bildr' } })
@@ -95,7 +100,7 @@ describe('regenerate', { timeout: 60_000 }, () => {
     expect(read('layers/main/server/infrastructure/db/schema.ts')).toContain('sqliteTable(\'main_notes\'')
   })
 
-  it('applies the migration it wrote to the app database, without waiting for a server reload', async () => {
+  withDrizzle('applies the migration it wrote to the app database, without waiting for a server reload', async () => {
     addNote()
     const url = `file:${join(dir, '.data/app.db')}`
     expect(await regenerate(dir, { databaseUrl: url })).toMatchObject({ ok: true, migration: { kind: 'written', tag: '0000_bildr', applied: true } })
@@ -108,7 +113,7 @@ describe('regenerate', { timeout: 60_000 }, () => {
     }
   })
 
-  it('says so when a migration fails to apply, and takes it out of the journal', async () => {
+  withDrizzle('says so when a migration fails to apply, and takes it out of the journal', async () => {
     addNote()
     mkdirSync(join(dir, 'blocked'))
     const result = await regenerate(dir, { databaseUrl: `file:${join(dir, 'blocked')}` })
@@ -125,7 +130,7 @@ describe('regenerate', { timeout: 60_000 }, () => {
   })
 })
 
-describe('createRegenerator', { timeout: 60_000 }, () => {
+describe.skipIf(!hasFixtureInstall)('createRegenerator (needs `pnpm --dir fixtures/codegen/blog install`)', { timeout: 60_000 }, () => {
   it('runs one regeneration at a time, so two overlapping runs never write the same migration twice', async () => {
     addNote()
     const regenerator = createRegenerator(dir)

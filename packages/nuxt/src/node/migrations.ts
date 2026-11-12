@@ -7,6 +7,7 @@ import { applyRenames, describeLosses, dropIndexesFirst, isDestructive, planRena
 import type { SchemaIds, Snapshot } from '@bildr/codegen/migrate'
 import type { Model } from '@bildr/codegen/model'
 import type { GeneratedFile } from '@bildr/codegen/sync'
+import { resolvesInside } from './project.ts'
 import { readManifest, sha256, writeAtomically } from './sync.ts'
 
 /**
@@ -75,7 +76,8 @@ const imports = {}
 for (const [index, file] of files.entries()) {
   for (const [name, value] of Object.entries(await import(pathToFileURL(file).href))) imports[index + ':' + name] = value
 }
-process.stdout.write(JSON.stringify(await api.generateSQLiteDrizzleJson(imports, prevId)))
+// Framed on its own line: a schema may print while it loads.
+process.stdout.write('\\nBILDR_SNAPSHOT ' + JSON.stringify(await api.generateSQLiteDrizzleJson(imports, prevId)) + '\\n')
 `
 
 /** Applies pending migrations with drizzle's own migrator, as the app's boot plugin does. */
@@ -83,7 +85,9 @@ const APPLY_SCRIPT = `
 import { mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, resolve } from 'node:path'
-const [root, url, migrationsFolder] = process.argv.slice(1)
+const [root, migrationsFolder] = process.argv.slice(1)
+// From the environment, not argv: other local users can read a process's arguments.
+const url = process.env.BILDR_DATABASE_URL
 const require = createRequire(root + '/package.json')
 const { createClient } = require('@libsql/client')
 const { drizzle } = require('drizzle-orm/libsql')
@@ -101,24 +105,46 @@ try {
 `
 
 const run = promisify(execFile)
-const node = (script: string, root: string, args: string[]) => run(process.execPath, ['--input-type=module', '--no-warnings', '-e', script, root, ...args], { cwd: root, maxBuffer: 64 * 1024 * 1024 })
+const DEFAULT_TIMEOUT_MS = 120_000
+
+/** Runs a script in a child Node process; a run past `timeoutMs` is killed, so it can't stall the regeneration queue. */
+const node = async (script: string, root: string, args: string[], options: { timeoutMs: number, what: string, env?: Record<string, string> }) => {
+  try {
+    return await run(process.execPath, ['--input-type=module', '--no-warnings', '-e', script, root, ...args], {
+      cwd: root,
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: options.timeoutMs,
+      killSignal: 'SIGKILL',
+      env: { ...process.env, ...options.env }
+    })
+  } catch (error) {
+    if ((error as { killed?: boolean }).killed) {
+      throw new Error(`${options.what} did not finish within ${options.timeoutMs / 1000}s (does the schema keep something open while it loads?)`, { cause: error })
+    }
+    throw error
+  }
+}
 
 /** Stages the schemas as content-addressed files under `.bildr/.cache/` (imports resolve from the project) and snapshots them. */
-const snapshotOf = async (root: string, sources: Record<string, string>, prevId: string): Promise<Snapshot> => {
+const snapshotOf = async (root: string, sources: Record<string, string>, prevId: string, timeoutMs: number): Promise<Snapshot> => {
   mkdirSync(join(root, STAGING_DIR), { recursive: true })
   const files = Object.values(sources).map((content) => {
     const target = join(root, STAGING_DIR, `${sha256(content)}.ts`)
     if (!existsSync(target)) writeAtomically(target, content)
     return target
   })
-  return JSON.parse((await node(SNAPSHOT_SCRIPT, root, [prevId, ...files])).stdout) as Snapshot
+  const { stdout } = await node(SNAPSHOT_SCRIPT, root, [prevId, ...files], { timeoutMs, what: 'The schema snapshot' })
+  const framed = stdout.split('\n').reverse().find(line => line.startsWith('BILDR_SNAPSHOT '))
+  if (!framed) throw new Error('The schema snapshot printed no result')
+  return JSON.parse(framed.slice('BILDR_SNAPSHOT '.length)) as Snapshot
 }
 
 /** Runs the project's pending migrations against `databaseUrl`; throws with the database's message. */
-export const applyMigrations = async (root: string, databaseUrl: string) => {
+export const applyMigrations = async (root: string, databaseUrl: string, timeoutMs = DEFAULT_TIMEOUT_MS) => {
   try {
-    await node(APPLY_SCRIPT, root, [databaseUrl, join(root, MIGRATIONS_DIR)])
+    await node(APPLY_SCRIPT, root, [join(root, MIGRATIONS_DIR)], { timeoutMs, what: 'Applying the migrations', env: { BILDR_DATABASE_URL: databaseUrl } })
   } catch (error) {
+    if (/did not finish within/.test((error as Error).message)) throw error
     const stderr = (error as { stderr?: string }).stderr ?? ''
     throw new Error(/BILDR_ERROR (.*)/.exec(stderr)?.[1] ?? (stderr.trim().slice(0, 500) || (error as Error).message), { cause: error })
   }
@@ -139,10 +165,17 @@ export interface MigrateOptions {
   /** The app database: apply the migration as soon as it is written. */
   databaseUrl?: string
   now?: number
+  /** Limit for each child process (snapshot, apply). Default 120 s. */
+  timeoutMs?: number
 }
 
 /** Plans the next migration and writes it (and applies it), holds it as pending when destructive, or refuses it. */
 export const migrateProject = async (root: string, model: Model, sources: Record<string, string>, options: MigrateOptions = {}): Promise<MigrationResult> => {
+  // Same boundary as the file sync: a committed symlink can't send migration or cache writes elsewhere.
+  for (const folder of [MIGRATIONS_DIR, '.bildr/.cache']) {
+    if (!resolvesInside(root, join(root, folder))) throw new Error(`${folder} resolves outside the project (symlink): bildr won't write migrations there`)
+  }
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
   const api = createRequire(join(root, 'package.json'))('drizzle-kit/api') as DrizzleKitApi
   const journalText = readText(root, JOURNAL)
   const journal = journalText === undefined ? undefined : JSON.parse(journalText) as Journal
@@ -151,7 +184,7 @@ export const migrateProject = async (root: string, model: Model, sources: Record
     ? readJson<Snapshot>(root, snapshotPath(last.idx)) ?? (() => { throw new Error(`Missing ${snapshotPath(last.idx)}: the migrations folder is incomplete`) })()
     : { ...await api.generateSQLiteDrizzleJson({}), id: ORIGIN, prevId: ORIGIN }
   const ids = schemaIds(model)
-  const current = await snapshotOf(root, sources, previous.id as string)
+  const current = await snapshotOf(root, sources, previous.id as string, timeoutMs)
 
   // No ids map for the previous migration (written by hand or before bildr kept one): no renames to resolve.
   const renames = planRenames((last && readJson<SchemaIds>(root, idsPath(last.idx))) ?? ids, ids, previous)
@@ -192,7 +225,7 @@ export const migrateProject = async (root: string, model: Model, sources: Record
   if (!options.databaseUrl) return { kind: 'written', tag, statements }
 
   try {
-    await applyMigrations(root, options.databaseUrl)
+    await applyMigrations(root, options.databaseUrl, timeoutMs)
     return { kind: 'written', tag, statements, applied: true }
   } catch (error) {
     // The database refused it (its transaction rolled back): take it out again, so the journal matches the database.
