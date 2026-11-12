@@ -12,9 +12,10 @@
     "lint": "eslint .",
     "test": "vitest run",
     "tokens:css": "node --experimental-strip-types scripts/generate-token-css.ts",
-    "typecheck": "nuxt typecheck"
+    "typecheck": "nuxt typecheck && pnpm --filter './packages/**' typecheck"
   },
   "dependencies": {
+    "@bildr/codegen": "workspace:*",
     "@iconify-json/lucide": "^1.2.147",
     "@iconify-json/simple-icons": "^1.2.100",
     "@modelcontextprotocol/sdk": "^1.32.2",

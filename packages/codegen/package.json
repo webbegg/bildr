@@ -1,0 +1,16 @@
+{
+  "name": "@bildr/codegen",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The bildr model (.bildr/ files) and the generator that turns it into a clean-architecture Nuxt app. Pure TypeScript: no Vue, Nitro or fs.",
+  "type": "module",
+  "exports": {
+    "./model": "./src/model/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  }
+}

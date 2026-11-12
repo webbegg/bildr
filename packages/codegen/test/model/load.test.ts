@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileKind, loadModel } from '../../shared/model/load'
+import { fileKind, loadModel } from '../../src/model/load'
 import { fixtureModelFiles } from './fixture'
 
 const load = (files: Record<string, string>) => loadModel(files)
