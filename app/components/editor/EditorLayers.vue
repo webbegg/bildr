@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { canHideFrame, frameCaption } from '#shared/editor/frames'
-import { layerKeyAction } from '#shared/editor/layers'
+import { layerFrames, layerKeyAction } from '#shared/editor/layers'
 import { filterLayers } from '#shared/editor/sidebar'
 import { PRIMARY_FRAME_HINT } from '#shared/editor/viewport'
 
@@ -15,10 +15,18 @@ import { PRIMARY_FRAME_HINT } from '#shared/editor/viewport'
  * ArrowRight expands it. Right-click opens the node menu. A sidebar search
  * shows only the matching rows and their ancestors, expanded. The rows
  * aren't tab stops (the tree is), so the focus ring is the tree's.
+ * With a single visible frame there are no frame rows: the page tree is the
+ * top of the tree and edits that frame's device.
  */
 const { query = '' } = defineProps<{ query?: string }>()
 const editor = useEditor()
 const filter = computed(() => (editor.page ? filterLayers(editor.page.root, query) : null))
+const frames = computed(() => layerFrames(editor.visibleDevices, editor.deviceId))
+
+// Without frame rows to pick a device, the tree (eye, edits) works on the only frame.
+watch(() => frames.value.device, (device) => {
+  if (device !== editor.deviceId) editor.setDevice(device)
+}, { immediate: true })
 
 function onKeyDown(event: KeyboardEvent) {
   const root = editor.page?.root
@@ -43,7 +51,25 @@ function onKeyDown(event: KeyboardEvent) {
     @mouseleave="editor.hoveredId = null"
   >
     <div
-      v-for="device in editor.visibleDevices"
+      v-if="!frames.rows.length"
+      role="none"
+    >
+      <p
+        v-if="filter && !filter.size"
+        class="px-1.5 py-1 text-xs text-dimmed"
+      >
+        No layers match “{{ query }}”.
+      </p>
+      <EditorLayerItem
+        v-else-if="editor.page"
+        :node="editor.page.root"
+        :depth="0"
+        :indent="frames.indent"
+        :filter="filter"
+      />
+    </div>
+    <div
+      v-for="device in frames.rows"
       :key="device.id"
       role="none"
     >
@@ -106,7 +132,7 @@ function onKeyDown(event: KeyboardEvent) {
           v-else-if="editor.page"
           :node="editor.page.root"
           :depth="0"
-          :indent="1"
+          :indent="frames.indent"
           :filter="filter"
         />
       </div>

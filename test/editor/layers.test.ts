@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { createNode, createPage } from '#shared/document/factory'
 import type { ComponentDefinition, DocNode, Layout, Page } from '#shared/document/schema'
 import { findNode } from '#shared/document/tree'
-import { collapsedAncestors, hiddenBadge, layerKeyAction, layerName, naturalDisplay, siblingMove, siblingMoves, visibilityAt, visibilityToggle, visibleLayers } from '#shared/editor/layers'
+import { collapsedAncestors, hiddenBadge, layerFrames, layerKeyAction, layerName, naturalDisplay, siblingMove, siblingMoves, visibilityAt, visibilityToggle, visibleLayers } from '#shared/editor/layers'
+import { devicesFor } from '#shared/editor/styleFields'
 
 function fixture() {
   const page = createPage('Home')
@@ -13,6 +14,24 @@ function fixture() {
   page.root.children.push(heading, card)
   return { root: page.root, card, a, b, heading }
 }
+
+describe('layerFrames', () => {
+  const [desktop, tablet] = devicesFor('desktop')
+  const mobile = devicesFor('mobile')[0]!
+
+  it('shows no frame rows for a single visible frame: the page tree is the top of the tree, on that device', () => {
+    expect(layerFrames([desktop!], 'desktop')).toEqual({ rows: [], indent: 0, device: 'desktop' })
+    expect(layerFrames([mobile], 'mobile')).toEqual({ rows: [], indent: 0, device: 'mobile' })
+  })
+
+  it('edits the only frame even when the edited device is another one', () => {
+    expect(layerFrames([desktop!], 'tablet').device).toBe('desktop')
+  })
+
+  it('shows a root row per visible frame from two frames, with the page tree one level in under the edited one', () => {
+    expect(layerFrames([desktop!, tablet!], 'tablet')).toEqual({ rows: [desktop, tablet], indent: 1, device: 'tablet' })
+  })
+})
 
 describe('visibleLayers', () => {
   it('lists the rows top to bottom, skipping the children of collapsed rows', () => {

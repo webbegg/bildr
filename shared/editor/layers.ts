@@ -40,6 +40,17 @@ export function layerName(page: Page, node: DocNode, sources: { components: read
   return layout?.slots.find(s => s.id === node.props.slot)?.name ?? node.type
 }
 
+/**
+ * The layers tree's frame rows: with two or more visible frames, a root row
+ * per frame and the page tree one level in under the edited `device`; with a
+ * single frame, no frame row (only noise then), so the page tree is the top of
+ * the tree and works on that frame's device.
+ */
+export function layerFrames<T extends { id: DeviceId }>(visible: readonly T[], device: DeviceId): { rows: T[], indent: 0 | 1, device: DeviceId } {
+  if (visible.length === 1) return { rows: [], indent: 0, device: visible[0]!.id }
+  return { rows: [...visible], indent: 1, device }
+}
+
 /** Row ids top to bottom; the children of a collapsed row are hidden. */
 export function visibleLayers(root: DocNode, collapsed: ReadonlySet<string>): string[] {
   const ids: string[] = []

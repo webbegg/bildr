@@ -1,11 +1,14 @@
 /**
  * Desktop-first projects (S37; run by all.mjs): a project made from the
  * projects page is desktop-first and opens with the Desktop frame only, the
- * Primary (`Primary · 1024+`); the frame bar's "+" adds Tablet, which edits
+ * Primary (`Primary · 1024+`), and with that single frame Layers shows no
+ * device row, the page row on top; the frame bar's "+" adds Tablet (the
+ * Desktop and Tablet rows appear in Layers), which edits
  * `max-lg:` keys: text alignment set there is stored as `max-lg:align`
  * (checked with project_get), shows on the canvas's Tablet frame and not on
  * Desktop, and the published app centres the text at 800 px but not at
- * 1280 px. Shots go to e2e/.shots/desktop-base/.
+ * 1280 px. Hiding Tablet from its Layers row removes the device rows again.
+ * Shots go to e2e/.shots/desktop-base/.
  */
 import { action, BASE, canvas, check, run, shot, track, until } from './lib.mjs'
 
@@ -32,6 +35,8 @@ await run('desktop-base', async ({ page, context, errors }) => {
   const frames = () => page.locator('[data-frame]').evaluateAll(els => els.map(el => el.getAttribute('data-frame')))
   const rows = () => page.locator('[data-frame-row]').evaluateAll(els => els.map(el => el.getAttribute('data-frame-row')))
   const rangeOf = id => page.locator(`[data-frame-row="${id}"] [data-frame-row-range]`).innerText()
+  const rootId = created.pages[0].root.id
+  const topRow = () => page.locator('[data-layers] [role="treeitem"]').first().evaluate(el => ({ id: el.getAttribute('data-layer-id'), level: el.getAttribute('aria-level'), pad: el.style.paddingLeft }))
   const switches = () => page.locator('[data-device-switch]').evaluateAll(els => els.map(el => el.getAttribute('data-device-switch')))
   const editing = id => page.locator(`[data-device-switch="${id}"]`).getAttribute('aria-pressed').then(v => v === 'true')
   const menuItem = label => page.locator('[role^=menuitem]').filter({ hasText: new RegExp(`^\\s*${label}\\s*$`) })
@@ -44,9 +49,17 @@ await run('desktop-base', async ({ page, context, errors }) => {
   check(await editing('desktop'), 'the editor starts on Desktop, the Primary')
   check(await page.locator('iframe[title="Canvas"]').getAttribute('data-device') === 'desktop', 'the active canvas is the Desktop frame')
   await page.getByRole('tab', { name: 'Layers' }).click()
-  check(JSON.stringify(await rows()) === '["desktop"]', `the Layers root rows are Desktop only (${await rows()})`)
-  check(await rangeOf('desktop') === 'Primary · 1024+', `the Desktop row reads "Primary · 1024+" (${await rangeOf('desktop')})`)
+  await page.locator(`[data-layer-id="${text}"]`).waitFor()
+  check(JSON.stringify(await rows()) === '[]', `with one frame Layers shows no device row (${await rows()})`)
+  const single = await topRow()
+  check(single.id === rootId && single.level === '1' && single.pad === '4px', `the page row is the top of the Layers tree, unindented (${JSON.stringify(single)})`)
+  check(await page.locator('[data-layers]').getByText('Desktop', { exact: true }).count() === 0, 'no "Desktop" row in Layers')
+  // The tree still works: a row click selects the node on Desktop.
+  await page.locator(`[data-layer-id="${text}"]`).click()
+  check(!!await until(async () => await page.locator(`[data-layer-id="${text}"]`).getAttribute('aria-selected') === 'true'), 'a layer row click selects it with one frame')
+  check(await editing('desktop'), 'and the tree edits Desktop, the only frame')
   await shot(page, 'desktop-base/desktop-only')
+  await shot(page, 'desktop-base/layers-single')
 
   // "+" adds Tablet, which becomes the edited frame, 768 wide.
   await page.locator('[data-frame="desktop"] [data-frame-add] button').click()
@@ -54,7 +67,11 @@ await run('desktop-base', async ({ page, context, errors }) => {
   await menuItem('Tablet 768').click()
   check(!!await until(async () => JSON.stringify(await frames()) === '["desktop","tablet"]'), `"+" adds the Tablet frame (${await frames()})`)
   check(!!await until(async () => JSON.stringify(await rows()) === '["desktop","tablet"]'), `Tablet joins the Layers rows (${await rows()})`)
+  check(await rangeOf('desktop') === 'Primary · 1024+', `the Desktop row reads "Primary · 1024+" (${await rangeOf('desktop')})`)
   check(await rangeOf('tablet') === '1023—768', `the Tablet row reads "1023—768" (${await rangeOf('tablet')})`)
+  const multi = await page.locator(`[data-frame-row="tablet"] + [role="group"] [data-layer-id="${rootId}"]`).evaluate(el => el.getAttribute('aria-level')).catch(() => null)
+  check(multi === '2', `the page tree sits one level in under the edited Tablet row (${multi})`)
+  await shot(page, 'desktop-base/layers-multi')
   check(!!await until(() => editing('tablet')), 'the added Tablet frame is the edited one')
   const tablet = page.frameLocator('iframe[data-device="tablet"]')
   const desktop = page.frameLocator('iframe[data-device="desktop"]')
@@ -104,6 +121,16 @@ await run('desktop-base', async ({ page, context, errors }) => {
   const at1280 = await publishedAlign(1280)
   check(at1280 !== 'center', `the published app keeps the Desktop alignment at 1280 px (${at1280})`)
   await shot(live, 'desktop-base/published-1280')
+  await live.close()
+
+  // Hiding Tablet from its Layers row: back to one frame, no device rows.
+  await page.bringToFront()
+  await page.locator('[data-frame-row="tablet"]').hover()
+  await page.locator('[data-frame-row="tablet"] [data-frame-row-hide]').click()
+  check(!!await until(async () => JSON.stringify(await rows()) === '[]'), `hiding Tablet removes the device rows (${await rows()})`)
+  const again = await topRow()
+  check(again.id === rootId && again.level === '1', `the page row is on top again (${JSON.stringify(again)})`)
+  check(!!await until(() => editing('desktop')), 'and Desktop is edited')
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 })
