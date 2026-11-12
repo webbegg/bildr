@@ -4,12 +4,15 @@ import { basename, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createProject } from './create.ts'
 
-const USAGE = 'Usage: pnpm create bildr <directory> [--name "Project name"] [--module main]'
+const USAGE = 'Usage: pnpm create bildr <directory> [--name "Project name"] [--module main] [--bildr <@bildr/nuxt version or link:path>]'
+const OPTIONS = ['name', 'module', 'bildr'] as const
 
 export interface CliArgs {
   dir: string
   name: string
   module: string
+  /** Dependency spec for @bildr/nuxt; the starter kit's default when absent. */
+  bildr?: string
 }
 
 const titleFromDir = (dir: string) => basename(resolve(dir)).split(/[-_\s]+/).filter(Boolean)
@@ -25,21 +28,21 @@ export const parseArgs = (argv: string[]): CliArgs => {
       continue
     }
     const [key, inline] = arg.slice(2).split(/=(.*)/s, 2) as [string, string | undefined]
-    if (key !== 'name' && key !== 'module') throw new Error(`Unknown option --${key}\n${USAGE}`)
+    if (!(OPTIONS as readonly string[]).includes(key)) throw new Error(`Unknown option --${key}\n${USAGE}`)
     const value = inline ?? argv[++i]
     if (value === undefined) throw new Error(`--${key} needs a value\n${USAGE}`)
     options[key] = value
   }
   const dir = positional[0]
   if (!dir || positional.length > 1) throw new Error(USAGE)
-  return { dir, name: options.name ?? titleFromDir(dir), module: options.module ?? 'main' }
+  return { dir, name: options.name ?? titleFromDir(dir), module: options.module ?? 'main', ...(options.bildr ? { bildr: options.bildr } : {}) }
 }
 
 const main = () => {
   try {
     const args = parseArgs(process.argv.slice(2))
     const dir = resolve(args.dir)
-    const { files } = createProject(dir, { name: args.name, module: args.module })
+    const { files } = createProject(dir, { name: args.name, module: args.module, ...(args.bildr ? { bildrNuxt: args.bildr } : {}) })
     const cd = relative(process.cwd(), dir) || '.'
     console.log(`Created ${args.name} (${files.length} files) in ${dir}\n\nNext:\n  cd ${cd}\n  pnpm install\n  pnpm dev`)
   } catch (error) {

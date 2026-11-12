@@ -4,7 +4,8 @@ export default defineNuxtConfig({
   compatibilityDate: '2026-11-01',
   // Apps, not websites: a client-rendered SPA. Nitro still serves the API.
   ssr: false,
-  modules: ['@nuxt/eslint'],
+  // @bildr/nuxt is dev only: `nuxt dev` serves the editor at /__bildr; builds never include it.
+  modules: ['@nuxt/eslint', '@bildr/nuxt'],
   devtools: { enabled: true },
   experimental: { typedPages: true }
 })

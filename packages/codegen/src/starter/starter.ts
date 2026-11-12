@@ -19,7 +19,11 @@ export interface StarterKitOptions {
   name: string
   /** First feature module (kebab-case). Default `main`. */
   module?: string
+  /** Dependency spec for `@bildr/nuxt` (a version, or `link:<path>` while it is unpublished). Default `^0.1.0`. */
+  bildrNuxt?: string
 }
+
+export const BILDR_NUXT_VERSION = '^0.1.0'
 
 export interface StarterKit {
   /** `.bildr/…` path → text, in canonical form. The manifest is not included: the first sync writes it. */
@@ -60,7 +64,7 @@ const DEFAULT_THEME = {
   fonts: { sans: '"Inter", ui-sans-serif, system-ui, sans-serif' }
 }
 
-export const starterKit = ({ name, module = 'main' }: StarterKitOptions): StarterKit => {
+export const starterKit = ({ name, module = 'main', bildrNuxt = BILDR_NUXT_VERSION }: StarterKitOptions): StarterKit => {
   const title = name.trim()
   if (!title) throw new Error('Give the project a name')
   if (!ModuleNameSchema.safeParse(module).success) throw new Error(`Module name "${module}": use lowercase letters, digits and dashes (kebab-case)`)
@@ -69,7 +73,7 @@ export const starterKit = ({ name, module = 'main' }: StarterKitOptions): Starte
   const model = initialModel(title, module)
   const files: GeneratedFile[] = [
     ...Object.entries(STARTER_CORE_FILES).map(([path, content]) => ({ path, content, owner: 'managed' as const })),
-    ...rootFiles(title, module),
+    ...rootFiles(title, module, bildrNuxt),
     ...modelDerivedFiles(title, module)
   ]
   return { model, files: files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0) }
@@ -120,7 +124,7 @@ const initialModel = (title: string, module: string): Record<string, string> => 
 
 const SCAFFOLD_ROOT = new Set(['nuxt.config.ts', 'tsconfig.json', '.gitignore', 'pnpm-workspace.yaml', 'app/README.md', 'server/README.md'])
 
-const rootFiles = (title: string, module: string): GeneratedFile[] => [
+const rootFiles = (title: string, module: string, bildrNuxt: string): GeneratedFile[] => [
   ...Object.entries(STARTER_ROOT_FILES).map(([path, content]) => ({ path, content, owner: SCAFFOLD_ROOT.has(path) ? 'scaffold' as const : 'managed' as const })),
   { path: 'package.json', owner: 'scaffold', content: `${JSON.stringify({
     name: packageName(title),
@@ -146,6 +150,7 @@ const rootFiles = (title: string, module: string): GeneratedFile[] => [
       'zod': '^4.6.7'
     },
     devDependencies: {
+      '@bildr/nuxt': bildrNuxt,
       '@nuxt/eslint': '^1.17.0',
       '@nuxt/test-utils': '^4.4.0',
       '@tailwindcss/vite': '^4.3.5',

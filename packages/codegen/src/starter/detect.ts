@@ -4,7 +4,7 @@
  * pointer to `pnpm create bildr`. Pure: the caller reads the files.
  */
 
-export const STARTER_KIT_DEPENDENCIES = ['nuxt', 'zod', 'drizzle-orm', '@libsql/client', '@tanstack/vue-db', '@tanstack/query-db-collection'] as const
+export const STARTER_KIT_DEPENDENCIES = ['nuxt', 'zod', 'drizzle-orm', '@libsql/client', '@tanstack/vue-db', '@tanstack/query-db-collection', '@bildr/nuxt'] as const
 
 export const STARTER_KIT_HINT = 'bildr only runs on projects created from its starter kit. Create one with: pnpm create bildr <name>'
 
