@@ -4,7 +4,7 @@
  * `md:`), then Publish and `/p/<slug>`, which renders the text with the
  * theme colour.
  */
-import { action, BASE, canvas, check, openEditor, project, run, shot, toView, until } from './lib.mjs'
+import { action, BASE, canvas, check, openEditor, project, run, seedFrames, shot, toView, until } from './lib.mjs'
 
 /** The computed style property of the first element matching `selector` in a frame or page. */
 const computed = (scope, selector, prop) => scope.locator(selector).first().evaluate((el, p) => getComputedStyle(el)[p], prop)
@@ -13,6 +13,8 @@ const themeOf = async projectId => (await action('theme_get', { projectId })).th
 
 await run('design', async ({ page, context, errors }) => {
   const p = await project('design')
+  // The Tablet edit needs its frame (a project opens with its Primary only).
+  await seedFrames(page, p.id)
   const pageId = p.pages[0].id
   const box = await action('node_insert', { projectId: p.id, pageId, type: 'Container', style: { bg: 'primary', p: '4' } })
   const text = await action('node_insert', { projectId: p.id, pageId, parentId: box.nodeId, type: 'Text', props: { text: 'Designed by e2e' } })

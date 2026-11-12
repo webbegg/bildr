@@ -83,7 +83,7 @@ describe('SHORTCUTS', () => {
 
   it('lists every editor shortcut once', () => {
     expect([...combos].sort()).toEqual([
-      'a', 'alt', 'alt+1', 'alt+2', 'alt+3', 'b', 'c', 'delete', 'enter', 'escape', 'f', 'h', 'i', 'meta+alt+b', 'meta+alt+k', 'meta+alt+v', 'meta+c', 'meta+d', 'meta+f', 'meta+g', 'meta+k', 'meta+l', 'meta+p', 'meta+r', 'meta+shift+z', 'meta+v', 'meta+z',
+      'a', 'alt', 'alt+1', 'b', 'c', 'delete', 'enter', 'escape', 'f', 'h', 'i', 'meta+alt+b', 'meta+alt+k', 'meta+alt+v', 'meta+c', 'meta+d', 'meta+f', 'meta+g', 'meta+k', 'meta+l', 'meta+p', 'meta+r', 'meta+shift+z', 'meta+v', 'meta+z',
       'r', 'shift+0', 'shift+1', 'shift+2', 'shift+a', 'shift+enter', 'shift+tab', 'space', 't', 'tab', 'v'
     ])
   })
@@ -330,7 +330,7 @@ describe('editorCommands', () => {
   })
 
   it('edits another device frame, with Alt + 1–3, on the Canvas only', () => {
-    const { ctx, editor, get } = fixture()
+    const { ctx, editor, get } = fixture({ frames: ['desktop', 'tablet', 'mobile'] })
     expect(['device:desktop', 'device:tablet', 'device:mobile'].map(id => [get(id).label, get(id).shortcut?.join('+')])).toEqual([
       ['Edit Desktop', 'alt+1'],
       ['Edit Tablet', 'alt+2'],

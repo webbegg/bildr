@@ -4,7 +4,7 @@
  * insert a Text with ⌘K and the Insert panel, edit its text, the inspector
  * header, undo, the device switch (⌥2 and the frame labels) and Publish.
  */
-import { action, BASE, canvas, check, findNode, openEditor, project, run, shot, track, until } from './lib.mjs'
+import { action, BASE, canvas, check, findNode, openEditor, project, run, seedFrames, shot, track, until } from './lib.mjs'
 
 const texts = doc => doc.pages.flatMap((p) => {
   const found = []
@@ -18,6 +18,8 @@ const texts = doc => doc.pages.flatMap((p) => {
 
 await run('shell', async ({ page, errors }) => {
   const p = await project('shell')
+  // The device switch needs Desktop and Tablet next to Mobile (a project opens with its Primary only).
+  await seedFrames(page, p.id)
 
   // Projects page.
   await page.goto(`${BASE}/`)

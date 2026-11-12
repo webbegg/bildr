@@ -3,9 +3,9 @@
  * change): the canvas frames, the Layers root rows, the floating bar's device
  * switch and the ⌥ + digit shortcuts all follow the visible frames. The
  * Primary (the device of the project's base style: Mobile mobile-first,
- * Desktop desktop-first) is always shown. A mobile-first project starts with
- * every frame but Large phone (`sm`); a desktop-first one starts with Desktop
- * only, and the frame bar's "+" adds the others as they are needed. Lists of
+ * Desktop desktop-first) is always shown. Every project starts with its
+ * Primary only (Mobile mobile-first, Desktop desktop-first), and the frame
+ * bar's "+" adds the others as they are needed. Lists of
  * shown ids are kept in frame order (widest first). Every helper takes the
  * project's breakpoint base, mobile-first by default.
  */
@@ -22,12 +22,9 @@ export function primaryFrame(base: BreakpointBase = 'mobile'): DeviceId {
 /** The Primary of a mobile-first project. */
 export const PRIMARY_FRAME: DeviceId = primaryFrame('mobile')
 
-const MOBILE_HIDDEN_BY_DEFAULT: readonly DeviceId[] = ['large-phone']
-
-/** The frames a project shows until its preference says otherwise. */
+/** The frames a project shows until its preference says otherwise: its Primary only. */
 export function defaultFrames(base: BreakpointBase = 'mobile'): DeviceId[] {
-  if (base === 'desktop') return [primaryFrame(base)]
-  return deviceOrder(base).map(d => d.id).filter(id => !MOBILE_HIDDEN_BY_DEFAULT.includes(id))
+  return [primaryFrame(base)]
 }
 
 /** The default frames of a mobile-first project. */

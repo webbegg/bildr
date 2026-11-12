@@ -31,7 +31,7 @@ describe('devices and frames per base (S37)', () => {
     expect(primaryFrame(DESKTOP)).toBe('desktop')
     expect(primaryFrame(MOBILE)).toBe('mobile')
     expect(defaultFrames(DESKTOP)).toEqual(['desktop'])
-    expect(defaultFrames(MOBILE)).toEqual(['desktop', 'tablet', 'mobile'])
+    expect(defaultFrames(MOBILE)).toEqual(['mobile'])
     expect(ids(visibleFrames(defaultFrames(DESKTOP), DESKTOP))).toEqual(['desktop'])
     expect(ids(hiddenFrames(defaultFrames(DESKTOP), DESKTOP))).toEqual(['tablet', 'large-phone', 'mobile'])
     expect(visibleFrames(['desktop'], DESKTOP)[0]!.breakpoint).toBeUndefined()

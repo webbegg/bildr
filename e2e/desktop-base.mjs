@@ -9,8 +9,9 @@
  * Desktop, and the published app centres the text at 800 px but not at
  * 1280 px. Hiding Tablet from its Layers row removes the device rows again.
  * New project's Starting device (S38.1) is Desktop by default; choosing
- * Mobile makes a mobile-first project, with Mobile its Primary frame, which
- * the test then deletes. The canvas's floating bar has no device buttons
+ * Mobile makes a mobile-first project, with Mobile its Primary frame and
+ * its only one (no device rows in Layers; "+" offers the other devices),
+ * which the test then deletes. The canvas's floating bar has no device buttons
  * (Move, Hand │ theme, Zoom): devices are chosen on the frames. Shots go to
  * e2e/.shots/desktop-base/.
  */
@@ -164,7 +165,14 @@ await run('desktop-base', async ({ page, context, errors }) => {
   const mobileLabel = await page.locator('[data-frame="mobile"] [data-frame-label]').getAttribute('aria-label')
   check(/^Mobile \d+ \(Primary\)$/.test(mobileLabel ?? ''), `the Mobile frame is the Primary (${mobileLabel})`)
   check(!!await until(() => editing('mobile')), 'the editor starts on Mobile, the Primary')
-  check(!(await frames()).includes('large-phone'), `a mobile-first project keeps its default frames (${await frames()})`)
+  // Every project starts with one frame: a new Mobile project shows only Mobile, and Layers no device row.
+  check(JSON.stringify(await frames()) === '["mobile"]', `a new Mobile project opens with only the Mobile frame (${await frames()})`)
+  await page.getByRole('tab', { name: 'Layers' }).click()
+  await page.locator(`[data-layer-id="${mobile.pages[0].root.id}"]`).waitFor()
+  check(JSON.stringify(await rows()) === '[]', `and Layers shows no device row (${await rows()})`)
+  await page.locator('[data-frame="mobile"] [data-frame-add] button').click()
+  for (const option of ['Desktop 1280', 'Tablet 768', 'Large phone 640']) check(await menuItem(option).count() === 1, `its "+" offers ${option}`)
+  await page.keyboard.press('Escape')
   await shot(page, 'desktop-base/mobile-project')
   await action('project_delete', { projectId: mobile.id, confirm: mobile.slug })
   const gone = await action('project_get', { projectId: mobile.id }).then(() => false, e => /404/.test(e.message))

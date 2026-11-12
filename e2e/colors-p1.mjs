@@ -10,7 +10,7 @@
  * undo step and Paste style removes the primary's tokens the copy lacks
  * (S8, RELIABILITY-002). Shots go to e2e/.shots/colors-p1/.
  */
-import { action, BASE, check, findNode, openEditor, project, run, shot, toView, until } from './lib.mjs'
+import { action, BASE, check, findNode, openEditor, project, run, seedFrames, shot, toView, until } from './lib.mjs'
 
 const snap = async (page, name) => {
   await page.waitForTimeout(300)
@@ -28,6 +28,8 @@ await run('colors-p1', async ({ context, page, errors }) => {
   // Paste style reads the system clipboard (a newer clip from another tab wins).
   await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE })
   const p = await project('colors p1')
+  // The Tablet binding checks need its frame (a project opens with its Primary only).
+  await seedFrames(page, p.id)
   const { pages } = await action('project_get', { projectId: p.id })
   const pageId = pages[0].id
   const column = await action('node_insert', { projectId: p.id, pageId, type: 'Column', style: { bg: 'primary', borderColor: 'primary', border: '1' } })

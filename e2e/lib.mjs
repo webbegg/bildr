@@ -150,6 +150,22 @@ export function canvas(page) {
   return page.frameLocator('iframe[title="Canvas"]')
 }
 
+/** Desktop, Tablet and Mobile: the frames the scripts written before every project started with one frame expect. */
+export const THREE_FRAMES = ['desktop', 'tablet', 'mobile']
+
+/**
+ * Seeds a project's visible frames, the editor preference in localStorage
+ * (`bildr:frames:<projectId>`), before the page's next loads, unless one is
+ * saved already (so frames the script shows or hides later are kept). Every
+ * project opens with its Primary only; call this before `openEditor` for a
+ * script that needs more frames from the start.
+ */
+export async function seedFrames(page, projectId, frames = THREE_FRAMES) {
+  await page.addInitScript(([key, value]) => {
+    if (localStorage.getItem(key) === null) localStorage.setItem(key, value)
+  }, [`bildr:frames:${projectId}`, JSON.stringify(frames)])
+}
+
 /** Opens a project's editor and waits until the canvas renders its page. */
 export async function openEditor(page, id) {
   await page.goto(`${BASE}/editor/${id}`)

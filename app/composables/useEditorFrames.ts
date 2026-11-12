@@ -12,8 +12,8 @@ export function framesStorageKey(projectId: string): string {
  * A project's visible device frames, an editor preference kept in
  * localStorage per project (not in the document). The Primary of the
  * project's breakpoint `base` is never hidden; without a stored preference
- * (or with bad data) a project shows its base's defaults: Desktop only
- * desktop-first, every frame but Large phone mobile-first.
+ * (or with bad data) a project shows its Primary only: Desktop
+ * desktop-first, Mobile mobile-first.
  */
 export function useEditorFrames(projectId: string, base: Ref<BreakpointBase>) {
   const key = framesStorageKey(projectId)

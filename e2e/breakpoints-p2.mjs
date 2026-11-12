@@ -1,6 +1,8 @@
 /**
  * Checks of breakpoints in the Layers tree and show/hide frames (#21, S7; run
- * by all.mjs): the Layers root rows are the visible frames with their width
+ * by all.mjs): a mobile-first project opens with the Mobile frame only and
+ * no device rows, and the frame bar's "+" adds Tablet and Desktop; then
+ * the Layers root rows are the visible frames with their width
  * ranges and the Primary tag, the page tree under the edited one; clicking a
  * row edits that device; the frame bar's "+" adds Large phone (640, `sm`),
  * whose frame is 640 wide and whose canvas edits write `sm:` keys; ⌥ + digit
@@ -30,8 +32,24 @@ await run('breakpoints-p2', async ({ page }) => {
   const frames = () => page.locator('[data-frame]').evaluateAll(els => els.map(el => el.getAttribute('data-frame')))
   const menuItem = label => page.locator('[role^=menuitem]').filter({ hasText: new RegExp(`^\\s*${label}\\s*$`) })
 
+  // Every project opens with its Primary only: Mobile, and no device rows in Layers.
+  check(JSON.stringify(await frames()) === '["mobile"]', `a mobile-first project opens with the Mobile frame only (${await frames()})`)
+  check(JSON.stringify(await rows()) === '[]', `with one frame Layers shows no device row (${await rows()})`)
+  await page.locator('[data-frame="mobile"] [data-frame-add] button').click()
+  for (const option of ['Desktop 1280', 'Tablet 768', 'Large phone 640']) check(await menuItem(option).count() === 1, `"+" offers ${option}`)
+  await menuItem('Tablet 768').click()
+  check(!!await until(async () => JSON.stringify(await frames()) === '["tablet","mobile"]'), `"+" adds the Tablet frame (${await frames()})`)
+  await page.locator('[data-frame="tablet"] [data-frame-add] button').click()
+  await menuItem('Desktop 1280').click()
+  check(!!await until(async () => JSON.stringify(await frames()) === '["desktop","tablet","mobile"]'), `"+" adds the Desktop frame (${await frames()})`)
+  await row('mobile').click()
+  check(!!await until(() => editing('mobile')), 'clicking the Mobile row edits Mobile again')
+  // Each added frame is panned into view; fit all three, as the editor fits the frames it opens with.
+  await page.locator('[data-canvas-stage]').hover({ position: { x: 10, y: 10 } })
+  await page.keyboard.press('Shift+Digit1')
+
   // S7a: the visible frames are root rows, in frame order, with their ranges and the Primary tag.
-  check(JSON.stringify(await rows()) === '["desktop","tablet","mobile"]', `the Layers root rows are the default frames (${await rows()})`)
+  check(JSON.stringify(await rows()) === '["desktop","tablet","mobile"]', `the Layers root rows are the shown frames (${await rows()})`)
   check(await rangeOf('desktop') === '1024+', `Desktop shows its range (${await rangeOf('desktop')})`)
   check(await rangeOf('tablet') === '1023—768', `Tablet shows "1023—768" (${await rangeOf('tablet')})`)
   check(await rangeOf('mobile') === 'Primary', `Mobile carries the Primary tag (${await rangeOf('mobile')})`)
@@ -46,7 +64,7 @@ await run('breakpoints-p2', async ({ page }) => {
   check(!!await until(async () => await treeUnder('tablet').count() === 1 && await treeUnder('mobile').count() === 0), 'the page tree moves under Tablet')
 
   // S7b: "+" adds Large phone back; it becomes the edited frame, 640 wide.
-  check(JSON.stringify(await frames()) === '["desktop","tablet","mobile"]', `the canvas shows the default frames (${await frames()})`)
+  check(JSON.stringify(await frames()) === '["desktop","tablet","mobile"]', `the canvas shows the shown frames (${await frames()})`)
   await page.locator('[data-frame="desktop"] [data-frame-add] button').click()
   await menuItem('Large phone 640').click()
   check(!!await until(async () => JSON.stringify(await rows()) === '["desktop","tablet","large-phone","mobile"]'), `"+" adds Large phone as a root row (${await rows()})`)
