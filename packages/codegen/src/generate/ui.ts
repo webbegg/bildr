@@ -5,7 +5,7 @@ import type { ActionFile, ComponentFile, EntityFile, LayoutFile, ModelNode, Page
 import type { GeneratedFile } from '../sync/plan.ts'
 import { entityNames, moduleContext } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
-import { camel, kebab, pascal, tsString } from './text.ts'
+import { camel, kebab, pascal, propertyPath, tsString } from './text.ts'
 
 /**
  * The UI of the app (T7c): layouts, pages and components, rendered from the
@@ -87,6 +87,11 @@ const plainRoot = (prefix: string, onUse: () => void = () => {}): Root => ({
 })
 
 const bindPath = (env: Env, node: ModelNode | undefined, path: string, ctx: Ctx) => {
+  try {
+    propertyPath(path, `${env.file}${node ? ` (node ${node.id})` : ''}`)
+  } catch (error) {
+    throw new Error((error as Error).message, { cause: error })
+  }
   const [root, ...members] = path.split('.')
   const entry = env.roots.get(root!)
   if (!entry) return fail(env, node, `"${path}" doesn't refer to anything this file uses`)
@@ -108,7 +113,7 @@ const expression = (env: Env, node: ModelNode | undefined, value: Value | undefi
   if ('not' in value) return `!${expression(env, node, value.not, ctx)}`
   if (typeof value.$route === 'string') {
     env.needs.add('route')
-    return `route.params.${value.$route}`
+    return `route.params.${propertyPath(value.$route, `${env.file}${node ? ` (node ${node.id})` : ''}`)}`
   }
   if (value.$form === true) {
     env.needs.add('form')
@@ -116,7 +121,7 @@ const expression = (env: Env, node: ModelNode | undefined, value: Value | undefi
   }
   if (typeof value.$form === 'string') {
     env.needs.add('form')
-    return `form.${value.$form}`
+    return `form.${propertyPath(value.$form, `${env.file}${node ? ` (node ${node.id})` : ''}`)}`
   }
   if (value.$event === 'checked') return '$event === true'
   if (typeof value.$template === 'string') {

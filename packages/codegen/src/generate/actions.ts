@@ -5,7 +5,7 @@ import { allFields, datasourceOf, entityById, entityNames, moduleContext, reposi
 import type { Field, ModuleContext } from './context.ts'
 import { importLine } from './imports.ts'
 import type { ImportName } from './imports.ts'
-import { camel, docText, file, header, kebab, pascal, tsLiteral, tsString } from './text.ts'
+import { camel, docText, file, header, kebab, pascal, propertyPath, tsLiteral, tsString } from './text.ts'
 
 /**
  * Business logic (T6): each Action becomes a use-case (server/application),
@@ -87,8 +87,8 @@ const nowCount = (value: unknown): number => {
 /** Compiles a model value expression to TS. `input` names what `$input.x` reads from; `$now` reads `at` when declared. */
 const compile = (value: Value | undefined, scope: { input: (name: string) => string, at: boolean }): string => {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
-    if ('$input' in value) return scope.input(String(value.$input))
-    if ('$var' in value) return String(value.$var)
+    if ('$input' in value) return scope.input(propertyPath(String(value.$input), '$input'))
+    if ('$var' in value) return propertyPath(String(value.$var), '$var')
     if ('$now' in value) return scope.at ? 'at' : 'now()'
     if ('if' in value && 'then' in value) return `${compile(value.if, scope)} ? ${compile(value.then, scope)} : ${compile(value.else ?? null, scope)}`
   }
@@ -96,7 +96,7 @@ const compile = (value: Value | undefined, scope: { input: (name: string) => str
 }
 
 const setEntries = (set: Record<string, Value> | undefined, scope: Parameters<typeof compile>[1]) =>
-  Object.entries(set ?? {}).map(([key, value]) => `${key}: ${compile(value, scope)}`)
+  Object.entries(set ?? {}).map(([key, value]) => `${/^[A-Za-z_$][\w$]*$/.test(key) ? key : tsString(key)}: ${compile(value, scope)}`)
 
 const errorsOf = (context: ModuleContext) => {
   const seen = new Map<string, ActionFile['errors'][number]>()

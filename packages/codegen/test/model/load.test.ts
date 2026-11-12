@@ -63,6 +63,16 @@ describe('loadModel on the golden fixture', () => {
 })
 
 describe('loadModel problems', () => {
+  it('reports a project file that is valid JSON but not an object, instead of throwing (review RELIABILITY-003)', () => {
+    for (const text of ['null', '42', '[]', '"x"']) {
+      const files = fixtureModelFiles()
+      files['.bildr/bildr.json'] = text
+      const result = loadModel(files)
+      expect(result.ok, text).toBe(false)
+      expect(!result.ok && result.problems[0]!.path, text).toBe('.bildr/bildr.json')
+    }
+  })
+
   it('reports invalid JSON and schema errors with the file path', () => {
     const files = fixtureModelFiles()
     files['.bildr/theme.json'] = '{ nope'

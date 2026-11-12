@@ -28,6 +28,12 @@ export type Value = z.infer<typeof ValueSchema>
 
 export const EXPRESSION_KEYS = ['$bind', '$param', '$input', '$route', '$form', '$now', '$var', '$event', '$template'] as const
 
+/** A dot-separated path of identifiers (`post.title`): the only form an expression path takes, because generated code reads it as property access. */
+export const PROPERTY_PATH = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*$/
+
+/** Expressions whose string value is a path (`$template` holds `{path}` parts instead). */
+export const PATH_EXPRESSIONS = ['$bind', '$param', '$input', '$route', '$form', '$var'] as const
+
 // ── UI trees ────────────────────────────────────────────────────────────
 
 export const INTERACTION_EVENTS = ['click', 'change', 'submit', 'mouseenter', 'mouseleave', 'appear'] as const
