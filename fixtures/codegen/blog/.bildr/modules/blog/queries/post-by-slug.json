@@ -3,6 +3,7 @@
   "id": "q_post_by_slug",
   "name": "postBySlug",
   "label": "Post by slug",
+  "description": "the one post whose slug matches, or undefined.",
   "from": "ent_post",
   "params": [
     {

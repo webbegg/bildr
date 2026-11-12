@@ -7,10 +7,10 @@ describe('restQuoteRepository', () => {
     const calls: unknown[] = []
     const http: QuoteHttp = async <T>(path: string, options?: unknown) => {
       calls.push({ path, options })
-      return { quotes: [{ id: 1, quote: 'Hi', author: 'Ada' }], total: 40 } as T
+      return { quotes: [{ id: 1, quote: 'text', author: 'author' }], total: 40 } as T
     }
     const page = await restQuoteRepository(http).list({ limit: 10, offset: 20 })
     expect(calls).toEqual([{ path: '/quotes', options: { query: { limit: 10, skip: 20 } } }])
-    expect(page).toEqual({ items: [{ id: 1, text: 'Hi', author: 'Ada' }], total: 40 })
+    expect(page).toEqual({ items: [{ id: 1, text: 'text', author: 'author' }], total: 40 })
   })
 })

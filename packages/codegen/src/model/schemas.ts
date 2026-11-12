@@ -160,7 +160,8 @@ export const EntityFileSchema = z.object({
   timestamps: z.boolean(),
   fields: z.array(FieldSchema).min(1),
   relations: z.array(z.looseObject({ name: CamelNameSchema, to: ArtifactIdSchema, kind: z.enum(['one', 'many']) })),
-  client: z.object({ sync: z.enum(['eager', 'on-demand']), limit: z.int().min(1).max(10_000).optional(), staleTime: z.int().min(0).optional() })
+  // limit: rows an eager collection loads; the list route accepts at most 500 (core PageRequest).
+  client: z.object({ sync: z.enum(['eager', 'on-demand']), limit: z.int().min(1).max(500).optional(), staleTime: z.int().min(0).optional() })
 })
 
 export const REPOSITORY_OPERATIONS = ['list', 'get', 'create', 'update', 'delete'] as const
@@ -194,6 +195,8 @@ export const QueryFileSchema = z.object({
   id: ArtifactIdSchema,
   name: CamelNameSchema,
   label: z.string().min(1),
+  /** What the query returns, in words; becomes the composable's doc comment. */
+  description: z.string().max(500).optional(),
   from: ArtifactIdSchema,
   params: z.array(ParamSchema),
   where: z.object({ op: z.enum(CONDITION_OPS), field: CamelNameSchema, value: ValueSchema }).optional(),

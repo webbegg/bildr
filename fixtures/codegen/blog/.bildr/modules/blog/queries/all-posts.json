@@ -3,6 +3,7 @@
   "id": "q_all_posts",
   "name": "allPosts",
   "label": "All posts",
+  "description": "drafts included, newest first.",
   "from": "ent_post",
   "params": [],
   "orderBy": [
