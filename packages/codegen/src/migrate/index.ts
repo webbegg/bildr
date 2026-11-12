@@ -53,6 +53,21 @@ export const renamesBetween = (previous: SchemaIds, current: SchemaIds): Renames
   return renames
 }
 
+/**
+ * The renames `snapshot` (the previous schema) still needs: the old name is
+ * there and the new one isn't. A run that wrote its migration but died before
+ * saving the ids map then doesn't rename twice.
+ */
+export const effectiveRenames = (renames: Renames, snapshot: Snapshot): Renames => {
+  const tables = renames.tables.filter(({ from, to }) => snapshot.tables[from] && !snapshot.tables[to])
+  const oldName = new Map(tables.map(({ from, to }) => [to, from]))
+  const columns = renames.columns.filter(({ table, from, to }) => {
+    const columnsBefore = snapshot.tables[oldName.get(table) ?? table]?.columns
+    return !!columnsBefore?.[from] && !columnsBefore[to]
+  })
+  return { tables, columns }
+}
+
 const IDENTIFIER = /^[A-Za-z_][\w]*$/
 const quote = (name: string) => {
   if (!IDENTIFIER.test(name)) throw new Error(`Unsafe SQL identifier: ${name}`)

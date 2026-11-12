@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { applyRenames, isDestructive, renamesBetween, renameSql, schemaIds, withoutAdditions } from '../../src/migrate/index'
+import { applyRenames, effectiveRenames, isDestructive, renamesBetween, renameSql, schemaIds, withoutAdditions } from '../../src/migrate/index'
 import type { SchemaIds, Snapshot } from '../../src/migrate/index'
 import { loadModel } from '../../src/model/load'
 import { fixtureModelFiles, fixtureRoot } from '../model/fixture'
@@ -52,6 +52,19 @@ describe('renamesBetween and renameSql', () => {
 
   it('refuses names that would break the SQL', () => {
     expect(() => renameSql({ tables: [{ from: 'a`; DROP TABLE x; --', to: 'b' }], columns: [] })).toThrow(/Unsafe SQL identifier/)
+  })
+})
+
+describe('effectiveRenames', () => {
+  it('keeps only renames the previous snapshot still needs, so a run that died before saving the ids map never renames twice', () => {
+    const snapshot = fixtureSnapshot()
+    const renames = {
+      tables: [{ from: 'blog_posts', to: 'blog_articles' }, { from: 'gone', to: 'other' }],
+      columns: [{ table: 'blog_articles', from: 'slug', to: 'handle' }, { table: 'blog_articles', from: 'missing', to: 'x' }]
+    }
+    expect(effectiveRenames(renames, snapshot)).toEqual({ tables: [{ from: 'blog_posts', to: 'blog_articles' }], columns: [{ table: 'blog_articles', from: 'slug', to: 'handle' }] })
+    const done = applyRenames(snapshot, effectiveRenames(renames, snapshot))
+    expect(effectiveRenames(renames, done)).toEqual({ tables: [], columns: [] })
   })
 })
 
