@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -58,6 +58,15 @@ describe('applySync', () => {
     const plan: SyncPlan = { writes: [{ path: 'a.ts', content: 'A' }, { path: 'b.ts', content: 'B' }], deletes: [], manifest: {}, report: emptyReport }
     expect(() => applySync(dir, plan, failing)).toThrow('EACCES')
     expect(readFileSync(join(dir, '.bildr/manifest.json'), 'utf8')).toBe(before)
+  })
+
+  it('never writes through a symlinked folder that points outside the project', () => {
+    mkdirSync(join(root, 'outside'))
+    rmSync(join(dir, 'layers/main/app/pages'), { recursive: true })
+    symlinkSync(join(root, 'outside'), join(dir, 'layers/main/app/pages'))
+    const plan: SyncPlan = { writes: [{ path: 'layers/main/app/pages/index.vue', content: 'x' }], deletes: [], manifest: {}, report: emptyReport }
+    expect(() => applySync(dir, plan)).toThrow('Unsafe path: layers/main/app/pages/index.vue (resolves outside the project)')
+    expect(readdirSync(join(root, 'outside'))).toEqual([])
   })
 
   it('refuses to write or delete outside the project', () => {

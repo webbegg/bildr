@@ -1,8 +1,7 @@
-import { renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { MANIFEST_FILE, fileKind, loadModel, serializeModel } from '@bildr/codegen/model'
-import { nodeIo, readManifest, sha256, hashFiles } from '../node/sync.ts'
-import { readModelFiles } from '../node/project.ts'
+import { hashFiles, readManifest, sha256, writeAtomically } from '../node/sync.ts'
+import { readModelFiles, resolvesInside } from '../node/project.ts'
 import { cookieValue, isLoopbackAddress, isLoopbackHost, isSameOriginWrite, tokensMatch } from './guard.ts'
 import { editorPage } from './page.ts'
 
@@ -32,7 +31,16 @@ const json = (status: number, body: unknown, headers: Record<string, string> = {
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', ...headers } })
 const fail = (status: number, message: string) => json(status, { ok: false, message })
 
-export const createBildrHandler = ({ root, token }: HandlerOptions) => async (request: Request, context: RequestContext = {}): Promise<Response> => {
+export const createBildrHandler = (options: HandlerOptions) => async (request: Request, context: RequestContext = {}): Promise<Response> => {
+  try {
+    return await route(options, request, context)
+  } catch (error) {
+    // Never crash the dev server: a broken manifest or an fs error becomes a JSON error.
+    return fail(500, (error as Error).message)
+  }
+}
+
+const route = async ({ root, token }: HandlerOptions, request: Request, context: RequestContext): Promise<Response> => {
   const url = new URL(request.url)
   const host = request.headers.get('host')
   if (!isLoopbackAddress(context.remoteAddress) || !isLoopbackHost(host)) return fail(403, 'The bildr editor only answers local requests')
@@ -93,9 +101,9 @@ const writeModelFile = async (root: string, path: string | null, request: Reques
   const files = { ...readModelFiles(root), [path]: text }
   const result = loadModel(files)
   if (!result.ok) return json(422, { ok: false, problems: result.problems })
-  const canonical = serializeModel(result.model)[path]!
   const target = join(root, path)
-  nodeIo.writeFile(`${target}.tmp`, canonical)
-  renameSync(`${target}.tmp`, target)
+  if (!resolvesInside(join(root, '.bildr'), target)) return fail(400, `${path} resolves outside .bildr/ (symlink)`)
+  const canonical = serializeModel(result.model)[path]!
+  writeAtomically(target, canonical)
   return json(200, { ok: true, sha256: sha256(canonical) })
 }

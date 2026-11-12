@@ -75,9 +75,14 @@ export default defineNuxtModule<ModuleOptions>({
         if (!file || String(file).startsWith('.cache')) return
         clearTimeout(timer)
         timer = setTimeout(() => {
-          const result = loadModel(readModelFiles(root))
-          if (result.ok) logger.success('bildr model is valid')
-          else logger.warn(['bildr model has problems:', ...result.problems.map(problem => `  - ${problem.path}: ${problem.message}`)].join('\n'))
+          try {
+            const result = loadModel(readModelFiles(root))
+            if (result.ok) logger.success('bildr model is valid')
+            else logger.warn(['bildr model has problems:', ...result.problems.map(problem => `  - ${problem.path}: ${problem.message}`)].join('\n'))
+          } catch (error) {
+            // A file can vanish or be unreadable mid-change; never take nuxt dev down for it.
+            logger.warn(`bildr could not read the model: ${(error as Error).message}`)
+          }
         }, 150)
       })
     }
