@@ -3,27 +3,19 @@ import { describe, expect, it } from 'vitest'
 import { createPost } from '../../server/application/actions/create-post'
 import { memoryPostRepository } from '../../server/infrastructure/repositories/post.memory'
 
-const input = { id: '7c1e3b0a-2f4d-4d8e-9b1a-0c2d3e4f5a6b', title: 'First', slug: 'first' }
+const input = { id: '00000000-0000-4000-8000-000000000001', title: 'title', slug: 'slug', body: 'body', published: true }
 
 describe('createPost', () => {
-  it('creates a draft with timestamps', async () => {
+  it('succeeds', async () => {
     const posts = memoryPostRepository()
     const result = await createPost({ posts })(input)
     expect(result.ok).toBe(true)
-    if (!result.ok) return
-    expect(result.value).toMatchObject({ slug: 'first', published: false, publishedAt: null, body: '' })
-    expect(await posts.get(input.id)).toEqual(result.value)
   })
 
-  it('sets publishedAt when created published', async () => {
-    const result = await createPost({ posts: memoryPostRepository() })({ ...input, published: true })
-    expect(result.ok && result.value.publishedAt).toBeTruthy()
-  })
-
-  it('refuses a slug that is already taken', async () => {
+  it('fails with slug_taken', async () => {
     const posts = memoryPostRepository()
     await createPost({ posts })(input)
-    const result = await createPost({ posts })({ ...input, id: '7c1e3b0a-2f4d-4d8e-9b1a-0c2d3e4f5a6c' })
-    expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: 'slug_taken', slug: 'first' }) })
+    const result = await createPost({ posts })({ ...input, id: '00000000-0000-4000-8000-000000000002' })
+    expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: 'slug_taken' }) })
   })
 })

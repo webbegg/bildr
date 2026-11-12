@@ -212,6 +212,8 @@ export const ActionFileSchema = z.object({
   id: ArtifactIdSchema,
   name: CamelNameSchema,
   label: z.string().min(1),
+  /** The business rule in words; becomes the use-case's doc comment. */
+  description: z.string().max(500).optional(),
   http: z.object({ method: z.enum(['POST', 'PATCH', 'PUT', 'DELETE']), path: z.string().regex(/^\/[\w\-/:]*$/) }),
   input: z.looseObject({ entity: ArtifactIdSchema.optional(), pick: z.array(CamelNameSchema).optional(), params: z.array(ParamSchema).optional() }),
   output: z.object({ entity: ArtifactIdSchema }).optional(),

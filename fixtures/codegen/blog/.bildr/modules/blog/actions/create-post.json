@@ -3,6 +3,7 @@
   "id": "act_create_post",
   "name": "createPost",
   "label": "Create post",
+  "description": "Create a post. Rule: the slug must be unique.",
   "http": {
     "method": "POST",
     "path": "/posts"

@@ -3,6 +3,7 @@
   "id": "act_publish_post",
   "name": "publishPost",
   "label": "Publish post",
+  "description": "Publish a post. Publishing twice keeps the first publication date.",
   "http": {
     "method": "POST",
     "path": "/posts/:id/publish"
