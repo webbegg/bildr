@@ -10,7 +10,8 @@
     "./starter": "./src/starter/index.ts",
     "./generate": "./src/generate/index.ts",
     "./design": "./src/design/index.ts",
-    "./env": "./src/env/index.ts"
+    "./env": "./src/env/index.ts",
+    "./migrate": "./src/migrate/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
