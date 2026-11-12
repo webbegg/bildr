@@ -1,5 +1,8 @@
+import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { MANIFEST_FILE, fileKind, loadModel, serializeModel } from '@bildr/codegen/model'
+import { PENDING_FILE } from '../node/migrations.ts'
+import type { MigrationOutcome } from '../node/regenerate.ts'
 import { hashFiles, readManifest, sha256, writeAtomically } from '../node/sync.ts'
 import { readModelFiles, resolvesInside } from '../node/project.ts'
 import { cookieValue, isLoopbackAddress, isLoopbackHost, isSameOriginWrite, tokensMatch } from './guard.ts'
@@ -20,6 +23,8 @@ export interface HandlerOptions {
   root: string
   /** Per-session secret, printed in the dev server log. */
   token: string
+  /** Runs the pending destructive migration whose hash the user confirmed (through the module's one-at-a-time regenerator). */
+  confirmMigration?: (hash: string) => Promise<MigrationOutcome>
 }
 
 export interface RequestContext {
@@ -40,7 +45,7 @@ export const createBildrHandler = (options: HandlerOptions) => async (request: R
   }
 }
 
-const route = async ({ root, token }: HandlerOptions, request: Request, context: RequestContext): Promise<Response> => {
+const route = async ({ root, token, confirmMigration }: HandlerOptions, request: Request, context: RequestContext): Promise<Response> => {
   const url = new URL(request.url)
   const host = request.headers.get('host')
   if (!isLoopbackAddress(context.remoteAddress) || !isLoopbackHost(host)) return fail(403, 'The bildr editor only answers local requests')
@@ -69,7 +74,29 @@ const route = async ({ root, token }: HandlerOptions, request: Request, context:
   if (path === `${BASE}/api/model` && request.method === 'GET') return json(200, loadModel(readModelFiles(root)))
   if (path === `${BASE}/api/drift` && request.method === 'GET') return json(200, drift(root))
   if (path === `${BASE}/api/file` && request.method === 'PUT') return writeModelFile(root, url.searchParams.get('path'), request)
+  if (path === `${BASE}/api/migrations/pending` && request.method === 'GET') return json(200, { pending: pendingMigration(root) })
+  if (path === `${BASE}/api/migrations/confirm` && request.method === 'POST' && confirmMigration) return confirm(confirmMigration, request)
   return fail(404, 'Not found')
+}
+
+/** The destructive migration waiting for confirmation, or null. */
+const pendingMigration = (root: string): unknown => {
+  const target = join(root, PENDING_FILE)
+  return existsSync(target) ? JSON.parse(readFileSync(target, 'utf8')) : null
+}
+
+/** Confirms the pending destructive migration by its hash; a stale hash (the plan changed since) leaves it pending. */
+const confirm = async (confirmMigration: (hash: string) => Promise<MigrationOutcome>, request: Request) => {
+  if (!(request.headers.get('content-type') ?? '').startsWith('application/json')) return fail(415, 'Send { "hash": "…" } as application/json')
+  let body: unknown
+  try {
+    body = JSON.parse(await request.text())
+  } catch {
+    return fail(400, 'Invalid JSON')
+  }
+  const hash = (body as { hash?: unknown } | null)?.hash
+  if (typeof hash !== 'string' || !hash) return fail(400, 'Give the hash of the pending migration')
+  return json(200, { ok: true, migration: await confirmMigration(hash) })
 }
 
 /** Generated files whose disk content no longer matches what bildr wrote. */

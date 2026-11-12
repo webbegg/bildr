@@ -26,7 +26,7 @@ const SCHEMA_PATH = /^layers\/[^/]+\/server\/infrastructure\/db\/schema\.ts$/
 
 export type MigrationResult
   = | { kind: 'none' }
-    | { kind: 'written', tag: string, statements: string[] }
+    | { kind: 'written', tag: string, statements: string[], /** Set when the caller applied it: true, or false with the error. */ applied?: boolean, error?: string }
     | { kind: 'pending', hash: string, destructive: string[], statements: string[] }
 
 interface Journal {
@@ -70,6 +70,34 @@ process.stdout.write(JSON.stringify(await api.generateSQLiteDrizzleJson(imports,
 `
 
 const run = promisify(execFile)
+
+/** Applies pending migrations with drizzle's own migrator, as the app's boot plugin does, in a child process with the project's dependencies. */
+const APPLY_SCRIPT = `
+import { mkdirSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, resolve } from 'node:path'
+const [root, url, migrationsFolder] = process.argv.slice(1)
+const require = createRequire(root + '/package.json')
+const { createClient } = require('@libsql/client')
+const { drizzle } = require('drizzle-orm/libsql')
+const { migrate } = require('drizzle-orm/libsql/migrator')
+if (url.startsWith('file:')) mkdirSync(dirname(resolve(root, url.slice('file:'.length))), { recursive: true })
+const client = createClient({ url })
+try {
+  await migrate(drizzle(client), { migrationsFolder })
+} finally {
+  client.close()
+}
+`
+
+export const applyMigrations = async (root: string, databaseUrl: string) => {
+  try {
+    await run(process.execPath, ['--input-type=module', '--no-warnings', '-e', APPLY_SCRIPT, root, databaseUrl, join(root, MIGRATIONS_DIR)], { cwd: root })
+  } catch (error) {
+    const stderr = (error as { stderr?: string }).stderr?.trim()
+    throw new Error(stderr ? stderr.split('\n').filter(line => /error/i.test(line)).slice(0, 3).join(' ') || stderr.slice(0, 500) : (error as Error).message, { cause: error })
+  }
+}
 
 /** Stages the schemas as content-addressed files under `.bildr/.cache/` (imports resolve from the project) and snapshots them. */
 const snapshotOf = async (root: string, sources: Record<string, string>, prevId: string): Promise<Snapshot> => {
