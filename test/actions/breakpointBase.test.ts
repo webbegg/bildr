@@ -47,6 +47,67 @@ describe('desktop-first projects over the actions (S37)', () => {
     expect(listed.tokens.find(t => t.key === 'cols')!.breakpoints).toEqual(['max-lg', 'max-md', 'max-sm'])
   })
 
+  describe('refusals of mobile prefixes change nothing', () => {
+    const refused = { code: 'invalid', message: expect.stringContaining('max-lg:, max-md: or max-sm:') }
+
+    async function withComponent() {
+      const ctx = await setup()
+      const { nodeId: cardId } = await ctx.call<{ nodeId: string }>('node_insert', { pageId: ctx.pageId, type: 'Card', children: [{ type: 'Text', props: { text: 'New' } }] })
+      const { componentId } = await ctx.call<{ componentId: string }>('component_create', { pageId: ctx.pageId, nodeId: cardId, name: 'Badge' })
+      const def = (await ctx.call<Project>('project_get', {})).components[0]!
+      return { ...ctx, componentId, def }
+    }
+
+    it('component_property_update rebinding to md:p', async () => {
+      const { call, componentId, def } = await withComponent()
+      const { propertyId } = await call<{ propertyId: string }>('component_property_add', { componentId, name: 'Pad', kind: 'text', bindings: [{ nodeId: def.root.id, prop: 'p', target: 'style' }] })
+      const before = await call<Project>('project_get', {})
+      const attempt = call('component_property_update', { componentId, propertyId, bindings: [{ nodeId: def.root.id, prop: 'md:p', target: 'style' }] })
+      await expect(attempt).rejects.toMatchObject(refused)
+      expect(await call<Project>('project_get', {})).toEqual(before)
+    })
+
+    it('layout_variable_update rebinding to md:p', async () => {
+      const { call } = await setup()
+      const { layoutId } = await call<{ layoutId: string }>('layout_create', { name: 'Main' })
+      const { nodeId: barId } = await call<{ nodeId: string }>('node_insert', { layoutId, type: 'Container', index: 0 })
+      const { variableId } = await call<{ variableId: string }>('layout_variable_add', { layoutId, name: 'Pad', kind: 'text', bindings: [{ nodeId: barId, prop: 'p', target: 'style' }] })
+      const before = await call<Project>('project_get', {})
+      await expect(call('layout_variable_update', { layoutId, variableId, bindings: [{ nodeId: barId, prop: 'md:p', target: 'style' }] })).rejects.toMatchObject(refused)
+      expect(await call<Project>('project_get', {})).toEqual(before)
+    })
+
+    it('component_variant_set_override with one bad override of a batch', async () => {
+      const { call, componentId, def } = await withComponent()
+      const { variantId } = await call<{ variantId: string }>('component_variant_add', { componentId, name: 'Roomy' })
+      const before = await call<Project>('project_get', {})
+      await expect(call('component_variant_set_override', { componentId, variantId, overrides: [
+        { nodeId: def.root.children[0]!.id, style: { 'max-md:p': '4' } },
+        { nodeId: def.root.id, style: { 'lg:p': '2' } }
+      ] })).rejects.toMatchObject(refused)
+      expect(await call<Project>('project_get', {})).toEqual(before)
+    })
+
+    it('node_insert exact with one bad node', async () => {
+      const { call, pageId } = await setup()
+      const before = await call<Project>('project_get', {})
+      await expect(call('node_insert', { pageId, nodes: [{ type: 'Text', props: {}, style: { 'max-sm:mt': '2' }, children: [] }, { type: 'Text', props: {}, style: { 'sm:mt': '4' }, children: [] }], exact: true }))
+        .rejects.toMatchObject(refused)
+      expect(await call<Project>('project_get', {})).toEqual(before)
+    })
+
+    it('says a bad binding with a default once', async () => {
+      const { call, componentId, def } = await withComponent()
+      const problem = 'Breakpoint "md" in style token "md:p" is for mobile-first projects; this project is desktop-first (use max-lg:, max-md: or max-sm:)'
+      await expect(call('component_property_add', { componentId, name: 'Pad', kind: 'text', default: '4', bindings: [{ nodeId: def.root.id, prop: 'md:p', target: 'style' }] }))
+        .rejects.toMatchObject({ code: 'invalid', message: `Property "Pad": ${problem}` })
+      const { layoutId } = await call<{ layoutId: string }>('layout_create', { name: 'Main' })
+      const { nodeId: barId } = await call<{ nodeId: string }>('node_insert', { layoutId, type: 'Container', index: 0 })
+      await expect(call('layout_variable_add', { layoutId, name: 'Bar', kind: 'text', default: '4', bindings: [{ nodeId: barId, prop: 'md:p', target: 'style' }] }))
+        .rejects.toMatchObject({ code: 'invalid', message: `Variable "Bar": ${problem}` })
+    })
+  })
+
   it('pastes a copy from a mobile project into a desktop one with its styles converted', async () => {
     const mobile = await setup('mobile')
     const { nodeId } = await mobile.call<{ nodeId: string }>('node_insert', { pageId: mobile.pageId, type: 'Card', style: { 'p': '4', 'md:p': '8' }, children: [{ type: 'Text', style: { 'text': 'sm', 'lg:text': 'xl' } }] })

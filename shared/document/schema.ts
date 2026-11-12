@@ -607,11 +607,12 @@ function nodeIndex(root: DocNode): Map<string, DocNode> {
  * An unbound property only has its kind to go by; `select` then accepts any
  * string. Slot properties take no value. A style binding takes a string
  * that is a value of its style key (`colors` being the theme's own colour
- * names).
+ * names). A style key unknown or of the other base is skipped: its binding
+ * reports it, once.
  */
 function propertyValueProblem(property: PropertyDef, value: PropValue, nodes: Map<string, DocNode>, colors: readonly string[], base: BreakpointBase): string | undefined {
   if (property.kind === 'slot') return `"${property.id}" is a slot and takes no value`
-  const styleKeys = property.bindings.filter(isStyleBinding).map(b => b.prop).filter(isStyleTokenKey)
+  const styleKeys = property.bindings.filter(isStyleBinding).map(b => b.prop).filter(key => isStyleKeyOf(key, base))
   for (const key of styleKeys) {
     if (typeof value !== 'string') return `"${property.id}" must be a string`
     const problem = styleTokenProblem(key, value, colors, base)

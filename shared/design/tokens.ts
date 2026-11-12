@@ -293,12 +293,27 @@ export function isStyleKeyOf(key: string, base: BreakpointBase): boolean {
 const DEVICE_BANDS = 4
 
 /**
+ * The sides (or corners) each shorthand-or-side token sets. Two tokens that
+ * share one overlap: Tailwind lets a later breakpoint of either win over the
+ * other (`md:p-4` beats `pl-8`), so their order depends on the base.
+ */
+const TOKEN_SIDES: Record<string, string> = {
+  m: 'trbl', mx: 'rl', my: 'tb', mt: 't', mr: 'r', mb: 'b', ml: 'l',
+  p: 'TRBL', px: 'RL', py: 'TB', pt: 'T', pr: 'R', pb: 'B', pl: 'L',
+  border: '1234', borderT: '1', borderR: '2', borderB: '3', borderL: '4',
+  rounded: 'wxyz', roundedTl: 'w', roundedTr: 'x', roundedBr: 'y', roundedBl: 'z'
+}
+
+const overlap = (a: string, b: string) => [...(TOKEN_SIDES[a] ?? '')].some(side => TOKEN_SIDES[b]?.includes(side))
+
+/**
  * A style rewritten from one base to the other, keeping the value of each
  * of the four width bands (below 640, 640–767, 768–1023, 1024 and up), which
  * both bases split the same way. Within one base it is returned unchanged.
  * A token the target cascade cannot express (set at the source's narrower
  * or wider levels only, unset where the target's base is) is refused with a
- * `problem`; so are keys of neither base.
+ * `problem`; so are keys of neither base, and two overlapping tokens
+ * (`p` and `pl`) when either is set at a breakpoint, whose winner would flip.
  */
 export function convertStyleBase(style: Record<string, string>, from: BreakpointBase, to: BreakpointBase): { style: Record<string, string> } | { problem: string } {
   if (from === to) return { style }
@@ -310,6 +325,15 @@ export function convertStyleBase(style: Record<string, string>, from: Breakpoint
     const entry = byToken.get(parsed.token.key) ?? { token: parsed.token, keys: [] }
     entry.keys.push([parsed.breakpoint, key, value])
     byToken.set(parsed.token.key, entry)
+  }
+  const tokens = [...byToken.values()]
+  for (const [i, a] of tokens.entries()) {
+    for (const b of tokens.slice(i + 1)) {
+      const responsive = [a, b].some(({ keys }) => keys.some(([breakpoint]) => breakpoint !== undefined))
+      if (responsive && overlap(a.token.key, b.token.key)) {
+        return { problem: `Style tokens "${a.token.key}" and "${b.token.key}" overlap and one of them changes per breakpoint, so they cannot be converted to a ${baseName(to)} project` }
+      }
+    }
   }
   // Band i is narrowest first: the mobile levels in order, the desktop ones reversed.
   const bandsOf = (base: BreakpointBase) => (base === 'mobile' ? levels(base) : [...levels(base)].reverse())

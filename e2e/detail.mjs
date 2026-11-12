@@ -91,7 +91,8 @@ await run('detail', async ({ page, context, errors }) => {
   /**
    * The Notes List links open each tricky key, and each detail URL shows it.
    * One load of the List, then back with history: every full load of the dev
-   * server fetches hundreds of modules, and too many exhaust Chromium.
+   * server fetches hundreds of modules, and too many in one tab (about 24)
+   * exhaust Chromium, so the direct loads go to a fresh tab, closed after.
    */
   async function checkTrickyKeys(base, suffix, label) {
     await page.goto(`${BASE}${base}/notes`)
@@ -104,11 +105,13 @@ await run('detail', async ({ page, context, errors }) => {
       await page.goBack()
       await page.getByText(`Open ${title}`, { exact: true }).waitFor()
     }
+    const fresh = await page.context().newPage()
     for (const title of tricky) {
-      await page.goto(`${BASE}${base}/bytitle/${encodeURIComponent(title)}`)
-      await page.getByRole('heading', { name: `Note: ${title}`, exact: true }).waitFor()
-      check(await until(async () => (await page.title()) === `${title} · ${p.name}${suffix}`), `${label}: the detail URL of "${title}" shows it (${await page.title()})`)
+      await fresh.goto(`${BASE}${base}/bytitle/${encodeURIComponent(title)}`)
+      await fresh.getByRole('heading', { name: `Note: ${title}`, exact: true }).waitFor()
+      check(await until(async () => (await fresh.title()) === `${title} · ${p.name}${suffix}`), `${label}: the detail URL of "${title}" shows it (${await fresh.title()})`)
     }
+    await fresh.close()
   }
 
   // The published app, with a fake WebMCP host.
@@ -146,12 +149,14 @@ await run('detail', async ({ page, context, errors }) => {
   const keyless = await live.evaluate(async () => (await window.__webmcpTools.find(t => t.name === 'navigate_to_page').execute({ slug: 'post' })))
   check(keyless.isError === true && keyless.content[0].text.includes('give its key'), 'WebMCP navigate_to_page refuses a detail page without a key')
 
-  // Not found: an unknown key, no key, a key on a plain page, and a collection without publicRead.
+  // Not found: an unknown key, no key, a key on a plain page, and a collection without publicRead (in a fresh tab, see checkTrickyKeys).
+  const fresh = await page.context().newPage()
   for (const [path, what] of [['post/nope', 'an unknown key'], ['post', 'a detail page without a key'], ['home/extra', 'a plain page with an extra segment'], ['post/hello-world/extra', 'a detail page with an extra segment'], ['home/a/b/c', 'a path of many segments']]) {
-    await live.goto(`${BASE}/p/${p.slug}/${path}`)
-    await live.getByText('Page not found').waitFor()
-    check(await until(async () => (await live.title()) === 'Not found'), `${what} shows not found (/p/${p.slug}/${path})`)
+    await fresh.goto(`${BASE}/p/${p.slug}/${path}`)
+    await fresh.getByText('Page not found').waitFor()
+    check(await until(async () => (await fresh.title()) === 'Not found'), `${what} shows not found (/p/${p.slug}/${path})`)
   }
+  await fresh.close()
 
   // The remote detail page, by id through the Get endpoint.
   await live.goto(`${BASE}/p/${p.slug}/jp-post/1`)
@@ -197,12 +202,14 @@ await run('detail', async ({ page, context, errors }) => {
   await live.goto(`${BASE}/preview/${projectId}/post/second`)
   await live.getByRole('heading', { name: 'Second' }).waitFor()
   check(await until(async () => (await live.title()) === `Second · ${p.name} (draft)`), `the preview detail page shows the record and title (${await live.title()})`)
-  await live.goto(`${BASE}/preview/${projectId}/post/nope`)
-  await live.getByText('Page not found').waitFor()
+  const missing = await page.context().newPage()
+  await missing.goto(`${BASE}/preview/${projectId}/post/nope`)
+  await missing.getByText('Page not found').waitFor()
   check(true, 'the preview shows not found for an unknown key')
-  await live.goto(`${BASE}/preview/${projectId}/post/second/extra`)
-  await live.getByText('Page not found').waitFor()
+  await missing.goto(`${BASE}/preview/${projectId}/post/second/extra`)
+  await missing.getByText('Page not found').waitFor()
   check(true, 'the preview shows not found for an extra segment')
+  await missing.close()
   await checkTrickyKeys(`/preview/${projectId}`, ' (draft)', 'preview')
   await live.goto(`${BASE}/preview/${projectId}`)
   await live.getByText('Read Second').waitFor()
