@@ -67,6 +67,7 @@ export function hasBindings(value: string): boolean {
 export function resolveBindings(value: string, scope: BindingScope): string {
   if (!value.includes('{{')) return value
   const start = value.length - value.trimStart().length
+  const encode = scope.link === true && !externalLink(value.trimStart(), scope.env)
   return value.replace(ANY_BINDING, (ref, kind: string | undefined, key: string, propName: string | undefined, offset: number) => {
     if (propName !== undefined) return propRef(ref, propName, scope.prop)
     if (kind === 'env') {
@@ -78,8 +79,18 @@ export function resolveBindings(value: string, scope: BindingScope): string {
     const item = scope.item
     const resolved = item && Object.hasOwn(item, key) ? item[key] : undefined
     const text = resolved === undefined || resolved === null ? '' : String(resolved)
-    return scope.link && offset !== start ? encodeURIComponent(text) : text
+    return encode && offset !== start ? encodeURIComponent(text) : text
   })
+}
+
+const EXTERNAL_LINK = /^(?:https?:|mailto:|tel:)/i
+const LEADING_ENV = /^\{\{\s*env\.([A-Za-z_]\w*)\s*\}\}/
+
+/** Links out (a URL scheme, possibly from a leading env ref) keep bound values as they are. */
+function externalLink(value: string, env: Record<string, string> | undefined): boolean {
+  if (EXTERNAL_LINK.test(value)) return true
+  const name = LEADING_ENV.exec(value)?.[1]
+  return name !== undefined && env !== undefined && Object.hasOwn(env, name) && EXTERNAL_LINK.test(env[name]!.trimStart())
 }
 
 export function bindingItem(record: DataRecord): BindingItem {

@@ -22,12 +22,19 @@ describe('detail links encode the bound key', () => {
   it('keeps a link that is a bound value as it is, so a record URL still links out', () => {
     expect(resolveLink(bindValue('{{ item.url }}', published, { url: 'https://x.com/a?b=1' }, { link: true }), '/p/site')).toEqual({ to: 'https://x.com/a?b=1', external: true })
     expect(resolveLink(bindValue(' {{ item.url }}', published, { url: 'https://x.com/' }, { link: true }), '/p/site')?.to).toBe('https://x.com/')
-    expect(bindValue('https://x.com/search?q={{ item.q }}', published, { q: 'a&b' }, { link: true })).toBe('https://x.com/search?q=a%26b')
+  })
+
+  it('leaves bound values in external links as they are', () => {
+    expect(bindValue('https://maps.example/{{ item.path }}', published, { path: 'es/madrid' }, { link: true })).toBe('https://maps.example/es/madrid')
+    expect(bindValue('mailto:{{ item.email }}', published, { email: 'a@b.com' }, { link: true })).toBe('mailto:a@b.com')
+    expect(bindValue('tel:{{ item.phone }}', published, { phone: '+34 600' }, { link: true })).toBe('tel:+34 600')
+    expect(bindValue('HTTPS://x.com/search?q={{ item.q }}', published, { q: 'a b' }, { link: true })).toBe('HTTPS://x.com/search?q=a b')
   })
 
   it('leaves text bindings and env refs unencoded', () => {
     expect(resolveBindings('Read {{ item.title }}', { item: { title: 'What is new?' } })).toBe('Read What is new?')
-    expect(resolveBindings('{{ env.BASE }}/{{ item.id }}', { item: { id: 'a b' }, env: { BASE: 'https://x.com/a b' }, link: true })).toBe('https://x.com/a b/a%20b')
+    expect(resolveBindings('{{ env.BASE }}/{{ item.id }}', { item: { id: 'a b' }, env: { BASE: 'https://x.com/a b' }, link: true })).toBe('https://x.com/a b/a b')
+    expect(resolveBindings('{{ env.SECTION }}/{{ item.id }}', { item: { id: 'a b' }, env: { SECTION: 'post' }, link: true })).toBe('post/a%20b')
   })
 
   it('decodes back to the exact key: the route param the router decodes finds the record', () => {
