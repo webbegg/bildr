@@ -216,6 +216,12 @@ importers:
         specifier: ^4.6.7
         version: 4.6.7
 
+  packages/create-bildr:
+    dependencies:
+      '@bildr/codegen':
+        specifier: workspace:*
+        version: link:../codegen
+
 packages:
 
   '@alloc/quick-lru@5.2.0':

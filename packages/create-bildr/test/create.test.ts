@@ -1,0 +1,77 @@
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { loadModel } from '@bildr/codegen/model'
+import { detectStarterKit } from '@bildr/codegen/starter'
+import { planSync } from '@bildr/codegen/sync'
+import { parseArgs } from '../src/cli'
+import { createProject } from '../src/create'
+
+const hash = (content: string) => createHash('sha256').update(content).digest('hex')
+
+describe('createProject', () => {
+  let root: string
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'create-bildr-'))
+  })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  it('writes the starter kit, the model and the manifest last', () => {
+    const dir = join(root, 'acme')
+    const result = createProject(dir, { name: 'Acme' })
+    const read = (path: string) => existsSync(join(dir, path)) ? readFileSync(join(dir, path), 'utf8') : undefined
+
+    expect(detectStarterKit(read)).toEqual({ ok: true })
+    expect(result.files).toContain('layers/core/server/utils/db.ts')
+    expect(result.files.at(-1)).toBe('.bildr/manifest.json')
+
+    const model = loadModel(Object.fromEntries(result.files.filter(path => path.startsWith('.bildr/')).map(path => [path, read(path)!])))
+    expect(model.ok ? [] : model.problems).toEqual([])
+    if (!model.ok) return
+    const manifest = model.model.manifest!.files
+    // Every written file is recorded with its real hash, so a later sync of the same kit is a no-op.
+    for (const [path, entry] of Object.entries(manifest)) expect(entry.sha256, path).toBe(hash(read(path)!))
+    expect(Object.keys(manifest)).not.toContain('.bildr/bildr.json')
+  })
+
+  it('creates into an empty existing directory, refuses a non-empty one', () => {
+    const empty = join(root, 'empty')
+    mkdirSync(empty)
+    expect(() => createProject(empty, { name: 'X' })).not.toThrow()
+    const busy = join(root, 'busy')
+    mkdirSync(busy)
+    writeFileSync(join(busy, 'keep.txt'), 'mine')
+    expect(() => createProject(busy, { name: 'X' })).toThrow(`${busy} is not empty: bildr creates new projects only`)
+    expect(readFileSync(join(busy, 'keep.txt'), 'utf8')).toBe('mine')
+  })
+
+  it('re-syncing the created kit changes nothing', () => {
+    const dir = join(root, 'acme')
+    createProject(dir, { name: 'Acme', module: 'sales' })
+    const manifest = JSON.parse(readFileSync(join(dir, '.bildr/manifest.json'), 'utf8')).files
+    const files = Object.keys(manifest)
+    const plan = planSync({
+      generated: files.map(path => ({ path, content: readFileSync(join(dir, path), 'utf8'), owner: manifest[path].owner })),
+      manifest,
+      disk: Object.fromEntries(files.map(path => [path, hash(readFileSync(join(dir, path), 'utf8'))])),
+      hash
+    })
+    expect(plan.writes).toEqual([])
+    expect(plan.deletes).toEqual([])
+  })
+})
+
+describe('parseArgs', () => {
+  it('reads the directory, --name and --module', () => {
+    expect(parseArgs(['my-app'])).toEqual({ dir: 'my-app', name: 'My App', module: 'main' })
+    expect(parseArgs(['crm', '--name', 'Acme CRM', '--module', 'sales'])).toEqual({ dir: 'crm', name: 'Acme CRM', module: 'sales' })
+    expect(parseArgs(['--name=Shop', 'shop'])).toEqual({ dir: 'shop', name: 'Shop', module: 'main' })
+  })
+
+  it('explains the usage when the directory is missing or an option is unknown', () => {
+    expect(() => parseArgs([])).toThrow('Usage: pnpm create bildr <directory> [--name "Project name"] [--module main]')
+    expect(() => parseArgs(['x', '--force'])).toThrow('Unknown option --force')
+  })
+})
