@@ -146,13 +146,49 @@ describe('migrateProject', { timeout: 60_000 }, () => {
     expect(await applyAndQuery('select title, body from main_notes')).toEqual([{ title: 'B', body: 'T' }])
   })
 
-  it('refuses a rename onto a name a removed field still holds, writing nothing (verification B2)', async () => {
-    writeNote([title, { id: 'fld_body', name: 'body', type: 'text' }])
-    await migrate()
+  it('renames onto a removed field\'s name in one gated plan: the removed data is dropped only on confirmation (verification B2)', async () => {
+    writeNote([{ ...title, required: false }, { id: 'fld_body', name: 'body', type: 'text' }])
+    await migrate({ databaseUrl: databaseUrl() })
+    await applyAndQuery('insert into main_notes (id, title, body) values (\'n1\', \'T\', \'B\')')
     writeNote([{ id: 'fld_body', name: 'title', type: 'text' }])
-    expect(await migrate()).toMatchObject({ kind: 'failed', error: expect.stringMatching(/Column main_notes\.title still exists/) })
-    expect(journal().entries).toHaveLength(1)
-    expect(existsSync(join(dir, PENDING_FILE))).toBe(false)
+    const pending = await migrate({ databaseUrl: databaseUrl() })
+    expect(pending).toMatchObject({ kind: 'pending', destructive: ['ALTER TABLE `main_notes` DROP COLUMN `__bildr_replaced_0`;'] })
+    expect(await applyAndQuery('select title, body from main_notes')).toEqual([{ title: 'T', body: 'B' }])
+    await migrate({ databaseUrl: databaseUrl(), confirm: pending.kind === 'pending' ? pending.hash : '' })
+    expect(await applyAndQuery('select * from main_notes')).toEqual([{ id: 'n1', title: 'B' }])
+  })
+
+  it('gives a new field that reuses a removed field\'s name an empty column, never the old data (verification A2)', async () => {
+    writeNote([title, { id: 'fld_body', name: 'body', type: 'text' }])
+    await migrate({ databaseUrl: databaseUrl() })
+    await applyAndQuery('insert into main_notes (id, title, body) values (\'n1\', \'T\', \'secret\')')
+    writeNote([title, { id: 'fld_notes', name: 'body', type: 'text' }])
+    const pending = await migrate({ databaseUrl: databaseUrl() })
+    expect(pending).toMatchObject({ kind: 'pending' })
+    await migrate({ databaseUrl: databaseUrl(), confirm: pending.kind === 'pending' ? pending.hash : '' })
+    expect(await applyAndQuery('select * from main_notes')).toEqual([{ id: 'n1', title: 'T', body: null }])
+  })
+
+  it('swaps the tables of two entities that both have unique fields (verification N1)', async () => {
+    const code = (unique: boolean): Field => ({ id: 'fld_code', name: 'code', type: 'text', unique })
+    const writeEntity = (id: string, plural: string, extra: Field[] = []) => {
+      write(`.bildr/modules/main/entities/${id}.json`, { id: `ent_${id}`, name: pascalName(id), plural, idStrategy: 'uuid', timestamps: false, fields: [code(true), ...extra], relations: [], client: { sync: 'eager', limit: 500 } })
+      write(`.bildr/modules/main/repositories/${id}.json`, { id: `repo_${id}`, entity: `ent_${id}`, datasource: 'ds_main', operations: ['list', 'get', 'create'], finders: [], list: { orderBy: [] }, expose: { list: true } })
+    }
+    const pascalName = (id: string) => id.charAt(0).toUpperCase() + id.slice(1)
+    writeEntity('note', 'notes')
+    writeEntity('post', 'posts')
+    await migrate({ databaseUrl: databaseUrl() })
+    await applyAndQuery('insert into main_notes (id, code) values (\'n\', \'N\')')
+    await applyAndQuery('insert into main_posts (id, code) values (\'p\', \'P\')')
+    writeEntity('note', 'posts')
+    writeEntity('post', 'notes')
+    expect(await migrate({ databaseUrl: databaseUrl() })).toMatchObject({ kind: 'written', applied: true })
+    expect(await applyAndQuery('select code from main_notes')).toEqual([{ code: 'P' }])
+    expect(await applyAndQuery('select code from main_posts')).toEqual([{ code: 'N' }])
+    // The next change migrates cleanly too.
+    writeEntity('note', 'posts', [{ id: 'fld_extra', name: 'extra', type: 'text' }])
+    expect(await migrate({ databaseUrl: databaseUrl() })).toMatchObject({ kind: 'written', applied: true })
   })
 
   it('creates a table per module when two modules have entities with the same plural (verification B3)', async () => {
