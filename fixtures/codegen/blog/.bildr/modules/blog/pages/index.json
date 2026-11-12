@@ -52,9 +52,12 @@
   "root": {
     "id": "n_page",
     "type": "Page",
+    "props": {
+      "tag": "section"
+    },
     "style": {
       "display": "flex",
-      "direction": "column",
+      "direction": "col",
       "gap": "6"
     },
     "children": [
@@ -63,7 +66,7 @@
         "type": "Row",
         "style": {
           "justify": "between",
-          "align": "center"
+          "items": "center"
         },
         "children": [
           {
@@ -74,8 +77,8 @@
               "text": "Posts"
             },
             "style": {
-              "fontSize": "3xl",
-              "fontWeight": "semibold"
+              "text": "3xl",
+              "font": "semibold"
             }
           },
           {
@@ -144,13 +147,15 @@
             "$bind": "quotes"
           },
           "as": "quote",
-          "hideWhenEmpty": true
+          "hideWhenEmpty": true,
+          "tag": "aside"
         },
         "style": {
           "display": "flex",
-          "direction": "column",
+          "direction": "col",
           "gap": "2",
-          "borderTop": "default",
+          "borderT": "1",
+          "borderColor": "default",
           "pt": "6"
         },
         "children": [
@@ -163,7 +168,7 @@
               }
             },
             "style": {
-              "fontSize": "sm"
+              "text": "sm"
             }
           }
         ]

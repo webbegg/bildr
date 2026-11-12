@@ -51,13 +51,12 @@
     },
     "style": {
       "display": "flex",
-      "direction": "column",
+      "direction": "col",
       "gap": "2",
       "p": "5",
-      "radius": "lg",
-      "border": "default",
-      "hover:shadow": "md",
-      "pressed:shadow": "sm"
+      "rounded": "lg",
+      "border": "1",
+      "borderColor": "default"
     },
     "children": [
       {
@@ -70,8 +69,8 @@
           }
         },
         "style": {
-          "fontSize": "lg",
-          "fontWeight": "semibold"
+          "text": "lg",
+          "font": "semibold"
         }
       },
       {
@@ -83,7 +82,6 @@
           }
         },
         "style": {
-          "lineClamp": "2",
           "color": "muted"
         }
       },
@@ -100,11 +98,11 @@
         },
         "style": {
           "self": "start",
-          "radius": "sm",
+          "rounded": "sm",
           "bg": "elevated",
           "px": "2",
           "py": "0.5",
-          "fontSize": "xs"
+          "text": "xs"
         }
       }
     ]

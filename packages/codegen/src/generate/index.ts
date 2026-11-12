@@ -3,3 +3,4 @@
 export { generateActions } from './actions.ts'
 export { generateData } from './data.ts'
 export { generateProject } from './project.ts'
+export { generateUi } from './ui.ts'

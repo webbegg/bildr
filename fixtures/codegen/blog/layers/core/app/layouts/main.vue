@@ -4,18 +4,20 @@ const { site } = useAppConfig()
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col">
-    <header class="border-b border-default">
-      <nav class="mx-auto flex max-w-4xl items-center justify-between p-4">
+  <div class="min-h-screen flex-col flex">
+    <header class="border-default border-b-1">
+      <nav class="flex mx-auto p-4 max-w-4xl items-center justify-between">
         <NuxtLink to="/" class="text-lg font-semibold">{{ site.name }}</NuxtLink>
-        <NuxtLink to="/posts/new" class="rounded-md bg-primary px-3 py-1.5 text-sm text-inverted">New post</NuxtLink>
+        <NuxtLink to="/posts/new" class="px-3 py-1.5 bg-primary text-inverted text-sm rounded-md">New post</NuxtLink>
       </nav>
     </header>
-    <main class="mx-auto w-full max-w-4xl flex-1 p-4">
+    <main class="mx-auto p-4 w-full max-w-4xl">
       <slot />
     </main>
-    <footer class="border-t border-default p-4 text-center text-sm text-muted">
-      <slot name="footer">{{ site.description }}</slot>
+    <footer class="mt-auto p-4 text-muted border-default text-sm text-center border-t-1">
+      <slot name="footer">
+        <p>{{ site.description }}</p>
+      </slot>
     </footer>
   </div>
 </template>
