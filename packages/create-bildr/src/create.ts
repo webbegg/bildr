@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { MANIFEST_FILE, SCHEMA_URL, stringifyModelFile } from '@bildr/codegen/model'
 import { GENERATOR_VERSION, starterKit } from '@bildr/codegen/starter'
@@ -20,7 +20,10 @@ export interface CreateResult {
  * that claims files it didn't write.
  */
 export const createProject = (dir: string, options: StarterKitOptions): CreateResult => {
-  if (existsSync(dir) && readdirSync(dir).length > 0) throw new Error(`${dir} is not empty: bildr creates new projects only`)
+  if (existsSync(dir)) {
+    if (!statSync(dir).isDirectory()) throw new Error(`${dir} exists and is not a directory`)
+    if (readdirSync(dir).length > 0) throw new Error(`${dir} is not empty: bildr creates new projects only`)
+  }
   const kit = starterKit(options)
   const plan = planSync({ generated: kit.files, manifest: {}, disk: {}, hash: sha256 })
 

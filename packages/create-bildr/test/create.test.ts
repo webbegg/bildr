@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -34,6 +34,25 @@ describe('createProject', () => {
     // Every written file is recorded with its real hash, so a later sync of the same kit is a no-op.
     for (const [path, entry] of Object.entries(manifest)) expect(entry.sha256, path).toBe(hash(read(path)!))
     expect(Object.keys(manifest)).not.toContain('.bildr/bildr.json')
+  })
+
+  it('writes exactly the golden starter tree', () => {
+    const dir = join(root, 'acme')
+    createProject(dir, { name: 'Acme' })
+    const list = (base: string, prefix = ''): string[] => readdirSync(join(base, prefix), { withFileTypes: true })
+      .flatMap(entry => entry.isDirectory() ? list(base, join(prefix, entry.name)) : [join(prefix, entry.name)])
+    expect(list(dir).sort((a, b) => a < b ? -1 : a > b ? 1 : 0)).toEqual([
+      '.bildr/bildr.json', '.bildr/datasources/main.json', '.bildr/layouts/main.json', '.bildr/manifest.json',
+      '.bildr/modules/main/module.json', '.bildr/modules/main/pages/index.json', '.bildr/theme.json',
+      '.env.example', '.gitignore', 'README.md', 'app/README.md', 'drizzle.config.ts', 'eslint.config.mjs',
+      'layers/core/app/app.config.ts', 'layers/core/app/app.vue', 'layers/core/app/assets/css/theme.css',
+      'layers/core/app/data/query-client.ts', 'layers/core/app/error.vue', 'layers/core/app/layouts/main.vue',
+      'layers/core/app/utils/errorMessage.ts', 'layers/core/nuxt.config.ts', 'layers/core/server/plugins/migrate.ts',
+      'layers/core/server/utils/db.ts', 'layers/core/server/utils/http-error.ts', 'layers/core/server/utils/remote.ts',
+      'layers/core/shared/kernel/ids.ts', 'layers/core/shared/kernel/page.ts', 'layers/core/shared/kernel/result.ts',
+      'layers/main/app/pages/index.vue', 'layers/main/nuxt.config.ts', 'layers/main/shared/domain/errors.ts',
+      'nuxt.config.ts', 'package.json', 'pnpm-workspace.yaml', 'server/README.md', 'tsconfig.json', 'vitest.config.ts'
+    ])
   })
 
   it('creates into an empty existing directory, refuses a non-empty one', () => {
