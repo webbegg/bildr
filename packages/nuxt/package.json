@@ -1,0 +1,18 @@
+{
+  "name": "@bildr/nuxt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The bildr visual editor as a dev-only Nuxt module: `nuxt dev` serves it at /__bildr on starter-kit projects.",
+  "type": "module",
+  "exports": {
+    ".": "./src/module.ts"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "dependencies": {
+    "@bildr/codegen": "workspace:*",
+    "@nuxt/kit": "^4.6.3",
+    "h3": "^1.15.11"
+  }
+}
