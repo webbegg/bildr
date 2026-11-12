@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { applyRenames, dropIndexesFirst, isDestructive, planRenames, renamesBetween, renameSql, schemaIds, unappliable, withoutAdditions } from '../../src/migrate/index'
+import { applyRenames, describeLosses, dropIndexesFirst, isDestructive, planRenames, renamesBetween, renameSql, schemaIds, unappliable, withoutAdditions } from '../../src/migrate/index'
 import type { SchemaIds, Snapshot } from '../../src/migrate/index'
 import { loadModel } from '../../src/model/load'
 import { fixtureModelFiles, fixtureRoot } from '../model/fixture'
@@ -63,7 +63,8 @@ describe('planRenames', () => {
     expect(plan).toEqual({
       renames: { tables: [], columns: [{ table: 'blog_posts', from: 'slug', to: 'handle' }] },
       sql: ['ALTER TABLE `blog_posts` RENAME COLUMN `slug` TO `handle`;'],
-      conflicts: []
+      conflicts: [],
+      replaced: {}
     })
   })
 
@@ -117,6 +118,23 @@ describe('planRenames', () => {
 
   it('ignores renames of names the previous snapshot doesn\'t have (a hand-edited migrations folder)', () => {
     expect(planRenames(post({ fld_x: 'gone' }), post({ fld_x: 'other' }), fixtureSnapshot()).sql).toEqual([])
+  })
+})
+
+describe('describeLosses', () => {
+  it('says what confirming loses, by the names the user knows', () => {
+    expect(describeLosses([
+      'ALTER TABLE `main_notes` DROP COLUMN `body`;',
+      'ALTER TABLE `main_notes` DROP COLUMN `__bildr_replaced_0`;',
+      'DROP TABLE `main_old`;',
+      'CREATE TABLE `__new_main_posts` (\n\t`id` text PRIMARY KEY NOT NULL\n);\n',
+      'DROP TABLE `main_posts`;'
+    ], { __bildr_replaced_0: 'the data of main_notes.title (a removed field)' })).toEqual([
+      'the data of main_notes.body',
+      'the data of main_notes.title (a removed field)',
+      'the table main_old',
+      'a rebuild of main_posts to change its columns: values that don\'t fit the new types or constraints are lost or refused'
+    ])
   })
 })
 

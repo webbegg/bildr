@@ -60,6 +60,8 @@ export interface RenamePlan {
   sql: string[]
   /** Renames onto a name held by a table or column bildr has no id for (added by hand): refused. */
   conflicts: string[]
+  /** The names moved aside to be dropped: temporary name → what it was, in the user's words. */
+  replaced: Record<string, string>
 }
 
 const TEMPORARY = (index: number) => `__bildr_rename_${index}`
@@ -136,7 +138,25 @@ export const planRenames = (previous: SchemaIds, current: SchemaIds, snapshot: S
     ...replacedColumns.map(({ table, from, to }) => columnSql(table)(from, to)),
     ...[...byTable].flatMap(([table, renames]) => renameStatements(renames, columnSql(table), counter))
   ]
-  return { renames: { tables: [...replacedTables, ...tables], columns: [...replacedColumns, ...columns] }, sql, conflicts }
+  const replaced = Object.fromEntries([
+    ...replacedTables.map(({ from, to }) => [to, `the table ${from} (a removed entity)`]),
+    ...replacedColumns.map(({ table, from, to }) => [to, `the data of ${table}.${from} (a removed field)`])
+  ])
+  return { renames: { tables: [...replacedTables, ...tables], columns: [...replacedColumns, ...columns] }, sql, conflicts, replaced }
+}
+
+/** What a destructive plan loses, by the names the user knows (moved-aside names resolved), one line per loss. */
+export const describeLosses = (destructive: string[], replaced: Record<string, string>): string[] => {
+  const rebuilt = new Set(destructive.flatMap(statement => /`__new_([^`]+)`/.exec(statement)?.[1] ?? []))
+  const named = (name: string, otherwise: string) => replaced[name] ?? otherwise
+  return [...new Set(destructive.flatMap((statement) => {
+    const column = /^ALTER TABLE `([^`]+)` DROP COLUMN `([^`]+)`/.exec(statement)
+    if (column) return [named(column[2]!, `the data of ${column[1]}.${column[2]}`)]
+    const table = /^\s*DROP TABLE `([^`]+)`/.exec(statement)
+    if (table) return rebuilt.has(table[1]!) ? [] : [named(table[1]!, `the table ${table[1]}`)]
+    const rebuild = /`__new_([^`]+)`/.exec(statement)
+    return rebuild ? [`a rebuild of ${rebuild[1]} to change its columns: values that don't fit the new types or constraints are lost or refused`] : []
+  }))]
 }
 
 /**

@@ -152,10 +152,29 @@ describe('migrateProject', { timeout: 60_000 }, () => {
     await applyAndQuery('insert into main_notes (id, title, body) values (\'n1\', \'T\', \'B\')')
     writeNote([{ id: 'fld_body', name: 'title', type: 'text' }])
     const pending = await migrate({ databaseUrl: databaseUrl() })
-    expect(pending).toMatchObject({ kind: 'pending', destructive: ['ALTER TABLE `main_notes` DROP COLUMN `__bildr_replaced_0`;'] })
+    expect(pending).toMatchObject({
+      kind: 'pending',
+      destructive: ['ALTER TABLE `main_notes` DROP COLUMN `__bildr_replaced_0`;'],
+      // What the user agrees to lose, by the names they know.
+      losing: ['the data of main_notes.title (a removed field)']
+    })
     expect(await applyAndQuery('select title, body from main_notes')).toEqual([{ title: 'T', body: 'B' }])
     await migrate({ databaseUrl: databaseUrl(), confirm: pending.kind === 'pending' ? pending.hash : '' })
     expect(await applyAndQuery('select * from main_notes')).toEqual([{ id: 'n1', title: 'B' }])
+  })
+
+  it('names a removed entity\'s table when a new entity takes it, and leaves the new table empty', async () => {
+    writeNote([title])
+    await migrate({ databaseUrl: databaseUrl() })
+    await applyAndQuery('insert into main_notes (id, title) values (\'n1\', \'T\')')
+    rmSync(join(dir, '.bildr/modules/main/entities/note.json'))
+    rmSync(join(dir, '.bildr/modules/main/repositories/note.json'))
+    write('.bildr/modules/main/entities/memo.json', { id: 'ent_memo', name: 'Memo', plural: 'notes', idStrategy: 'uuid', timestamps: false, fields: [title], relations: [], client: { sync: 'eager', limit: 500 } })
+    write('.bildr/modules/main/repositories/memo.json', { id: 'repo_memo', entity: 'ent_memo', datasource: 'ds_main', operations: ['list', 'get', 'create'], finders: [], list: { orderBy: [] }, expose: { list: true } })
+    const pending = await migrate({ databaseUrl: databaseUrl() })
+    expect(pending).toMatchObject({ kind: 'pending', destructive: ['DROP TABLE `__bildr_replaced_0`;'], losing: ['the table main_notes (a removed entity)'] })
+    await migrate({ databaseUrl: databaseUrl(), confirm: pending.kind === 'pending' ? pending.hash : '' })
+    expect(await applyAndQuery('select * from main_notes')).toEqual([])
   })
 
   it('gives a new field that reuses a removed field\'s name an empty column, never the old data (verification A2)', async () => {
