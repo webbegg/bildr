@@ -38,7 +38,7 @@
     },
     "layers/blog/app/composables/blog/useBlogPreferences.ts": {
       "owner": "managed",
-      "sha256": "c6e80339c58b48d45e42b217d1b1894b3533c6e203082228d2d5b576d3566469",
+      "sha256": "b80027052960678dc6e22258fd2b6c4744c75573ea43409695a168fa1063453a",
       "source": ".bildr/modules/blog/state/preferences.json"
     },
     "layers/blog/app/composables/blog/useCreatePost.ts": {
@@ -217,7 +217,7 @@
     },
     "layers/blog/test/infrastructure/quote.rest.test.ts": {
       "owner": "managed",
-      "sha256": "8f9cd37873c6a49ee74cbe25ca0dc2a8fb406ad75ad4a8422c0862be42dd48ed",
+      "sha256": "987984af842a77ee1d20b9ba8d69a5dce7256de0d2ba681146265aa2c6e067cb",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/core/app/app.config.ts": {

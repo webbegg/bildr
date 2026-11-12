@@ -3,6 +3,7 @@
   "id": "q_featured_posts",
   "name": "featuredPosts",
   "label": "Featured posts",
+  "description": "published posts, newest first, at most `limit`.",
   "from": "ent_post",
   "params": [
     {

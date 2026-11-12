@@ -5,7 +5,7 @@ import { type BlogPreferences, BlogPreferencesSchema, blogPreferencesCollection 
 
 /** State "Blog preferences": one persisted row with defaults, plus a typed setter. */
 export const useBlogPreferences = () => {
-  const { data } = useLiveQuery(q => q.from({ prefs: blogPreferencesCollection }).findOne())
+  const { data } = useLiveQuery(q => q.from({ row: blogPreferencesCollection }).findOne())
   const preferences = computed<BlogPreferences>(() => data.value ?? BlogPreferencesSchema.parse({ id: 'blog' }))
   const set = (patch: Partial<Omit<BlogPreferences, 'id'>>) => {
     if (blogPreferencesCollection.has('blog')) blogPreferencesCollection.update('blog', draft => Object.assign(draft, patch))

@@ -52,6 +52,7 @@ describe('loadModel on the golden fixture', () => {
     expect(blog.entities.map(entity => entity.name)).toEqual(['Post', 'Quote'])
     expect(blog.repositories).toHaveLength(2)
     expect(blog.queries.map(query => query.name)).toEqual(['allPosts', 'featuredPosts', 'latestQuotes', 'postBySlug'])
+    expect(blog.queries.find(query => query.name === 'featuredPosts')!.description).toBe('published posts, newest first, at most `limit`.')
     expect(blog.actions.map(action => action.name)).toEqual(['createPost', 'publishPost'])
     expect(blog.state.map(state => state.name)).toEqual(['preferences'])
     expect(blog.components.map(component => component.name)).toEqual(['PostCard'])

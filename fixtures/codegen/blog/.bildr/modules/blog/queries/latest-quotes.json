@@ -3,6 +3,7 @@
   "id": "q_latest_quotes",
   "name": "latestQuotes",
   "label": "Latest quotes",
+  "description": "the first `limit` quotes from the quotes data source.",
   "from": "ent_quote",
   "params": [
     {
