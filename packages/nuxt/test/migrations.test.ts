@@ -23,17 +23,23 @@ beforeEach(() => {
 })
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
-type Field = { id: string, name: string, type: string, required?: boolean, default?: unknown }
-const writeNote = (fields: Field[]) => {
-  const write = (path: string, value: unknown) => {
-    mkdirSync(join(dir, path, '..'), { recursive: true })
-    writeFileSync(join(dir, path), JSON.stringify(value, null, 2))
-  }
-  write('.bildr/modules/main/entities/note.json', { id: 'ent_note', name: 'Note', plural: 'notes', idStrategy: 'uuid', timestamps: false, fields, relations: [], client: { sync: 'eager', limit: 500 } })
-  write('.bildr/modules/main/repositories/note.json', { id: 'repo_note', entity: 'ent_note', datasource: 'ds_main', operations: ['list', 'get', 'create'], finders: [], list: { orderBy: [] }, expose: { list: true } })
+type Field = { id: string, name: string, type: string, required?: boolean, default?: unknown, unique?: boolean }
+const write = (path: string, value: unknown) => {
+  mkdirSync(join(dir, path, '..'), { recursive: true })
+  writeFileSync(join(dir, path), JSON.stringify(value, null, 2))
+}
+const writeNote = (fields: Field[], module = 'main', id = 'note') => {
+  write(`.bildr/modules/${module}/entities/note.json`, { id: `ent_${id}`, name: 'Note', plural: 'notes', idStrategy: 'uuid', timestamps: false, fields, relations: [], client: { sync: 'eager', limit: 500 } })
+  write(`.bildr/modules/${module}/repositories/note.json`, { id: `repo_${id}`, entity: `ent_${id}`, datasource: 'ds_main', operations: ['list', 'get', 'create'], finders: [], list: { orderBy: [] }, expose: { list: true } })
+}
+const addModule = (name: string) => {
+  write(`.bildr/modules/${name}/module.json`, { id: `mod_${name}`, name, label: name, dependsOn: [] })
+  const project = JSON.parse(readFileSync(join(dir, '.bildr/bildr.json'), 'utf8'))
+  write('.bildr/bildr.json', { ...project, modules: [...project.modules, name] })
 }
 
-const migrate = async (options: { confirm?: string } = {}) => {
+const databaseUrl = () => `file:${join(dir, 'app.db')}`
+const migrate = async (options: { confirm?: string, databaseUrl?: string } = {}) => {
   const loaded = loadModel(readModelFiles(dir))
   if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems))
   return migrateProject(dir, loaded.model, schemaSources(dir, generate(loaded.model)), options)
@@ -73,7 +79,12 @@ describe('migrateProject', { timeout: 60_000 }, () => {
     expect(first).toMatchObject({ kind: 'written', tag: '0000_bildr' })
     expect(sqlOf('0000_bildr')).toContain('CREATE TABLE `main_notes`')
     expect(journal().entries.map(entry => entry.tag)).toEqual(['0000_bildr'])
-    expect(readdirSync(join(migrationsDir(), 'meta')).sort()).toEqual(['0000_snapshot.json', '_journal.json', 'bildr.json'])
+    expect(readdirSync(join(migrationsDir(), 'meta')).sort()).toEqual(['0000_snapshot.json', '_bildr_ids_0000.json', '_journal.json'])
+    // Each migration's ids map sits next to its snapshot; drizzle-kit skips `_` files in meta/ and reads the snapshot as its own.
+    expect(JSON.parse(readFileSync(join(migrationsDir(), 'meta/_bildr_ids_0000.json'), 'utf8')).tables.ent_note.columns).toEqual({ fld_id: 'id', fld_title: 'title' })
+    const api = createRequire(join(dir, 'package.json'))('drizzle-kit/api') as { generateSQLiteMigration: (a: unknown, b: unknown) => Promise<string[]> }
+    const snapshot = JSON.parse(readFileSync(join(migrationsDir(), 'meta/0000_snapshot.json'), 'utf8'))
+    expect(await api.generateSQLiteMigration(snapshot, snapshot)).toEqual([])
     expect(await migrate()).toEqual({ kind: 'none' })
     expect(await applyAndQuery('select name from pragma_table_info(\'main_notes\') order by cid')).toEqual([{ name: 'id' }, { name: 'title' }])
   })
@@ -101,5 +112,68 @@ describe('migrateProject', { timeout: 60_000 }, () => {
     expect(confirmed).toMatchObject({ kind: 'written', tag: '0003_bildr' })
     expect(existsSync(join(dir, PENDING_FILE))).toBe(false)
     expect(await applyAndQuery('select * from main_notes')).toEqual([{ id: 'n1', heading: 'Hello' }])
+  })
+
+  it('never writes a required field added without a default: SQLite refuses it on any table (verification B1)', async () => {
+    writeNote([title])
+    await migrate({ databaseUrl: databaseUrl() })
+    writeNote([title, { id: 'fld_n', name: 'n', type: 'text', required: true }])
+    expect(await migrate({ databaseUrl: databaseUrl() })).toMatchObject({ kind: 'failed', error: 'main_notes.n is required: give the field a default value, so existing rows get one' })
+    expect(journal().entries).toHaveLength(1)
+  })
+
+  it('reverts a migration that fails to apply, so the next ones still run (verification B1)', async () => {
+    writeNote([{ id: 'fld_code', name: 'code', type: 'text' }])
+    await migrate({ databaseUrl: databaseUrl() })
+    await applyAndQuery('insert into main_notes (id, code) values (\'n1\', \'same\'), (\'n2\', \'same\')')
+    writeNote([{ id: 'fld_code', name: 'code', type: 'text', unique: true }])
+    expect(await migrate({ databaseUrl: databaseUrl() })).toMatchObject({ kind: 'failed', tag: '0001_bildr', error: expect.stringMatching(/UNIQUE/) })
+    expect(journal().entries.map(entry => entry.tag)).toEqual(['0000_bildr'])
+    expect(existsSync(join(migrationsDir(), '0001_bildr.sql'))).toBe(false)
+    expect(existsSync(join(migrationsDir(), 'meta/0001_snapshot.json'))).toBe(false)
+    expect(existsSync(join(migrationsDir(), 'meta/_bildr_ids_0001.json'))).toBe(false)
+    writeNote([{ id: 'fld_code', name: 'code', type: 'text' }, { id: 'fld_body', name: 'body', type: 'text' }])
+    expect(await migrate({ databaseUrl: databaseUrl() })).toMatchObject({ kind: 'written', tag: '0001_bildr', applied: true })
+  })
+
+  it('keeps each field\'s data when two field names swap (verification B2)', async () => {
+    const body: Field = { id: 'fld_body', name: 'body', type: 'text' }
+    writeNote([{ ...title, required: false }, body])
+    await migrate()
+    await applyAndQuery('insert into main_notes (id, title, body) values (\'n1\', \'T\', \'B\')')
+    writeNote([{ ...title, required: false, name: 'body' }, { ...body, name: 'title' }])
+    expect(await migrate()).toMatchObject({ kind: 'written' })
+    expect(await applyAndQuery('select title, body from main_notes')).toEqual([{ title: 'B', body: 'T' }])
+  })
+
+  it('refuses a rename onto a name a removed field still holds, writing nothing (verification B2)', async () => {
+    writeNote([title, { id: 'fld_body', name: 'body', type: 'text' }])
+    await migrate()
+    writeNote([{ id: 'fld_body', name: 'title', type: 'text' }])
+    expect(await migrate()).toMatchObject({ kind: 'failed', error: expect.stringMatching(/Column main_notes\.title still exists/) })
+    expect(journal().entries).toHaveLength(1)
+    expect(existsSync(join(dir, PENDING_FILE))).toBe(false)
+  })
+
+  it('creates a table per module when two modules have entities with the same plural (verification B3)', async () => {
+    addModule('blog')
+    writeNote([title])
+    writeNote([title], 'blog', 'blog_note')
+    const result = await migrate()
+    expect(result.kind === 'written' && result.statements.filter(statement => statement.startsWith('CREATE TABLE')).map(statement => statement.split('`')[1])).toEqual(['blog_notes', 'main_notes'])
+  })
+
+  it('binds a confirmation to the migration it was shown for: an old hash never confirms a later plan', async () => {
+    const body: Field = { id: 'fld_body', name: 'body', type: 'text' }
+    writeNote([title, body])
+    await migrate()
+    writeNote([title])
+    const first = await migrate()
+    if (first.kind !== 'pending') throw new Error('expected a pending drop')
+    await migrate({ confirm: first.hash })
+    writeNote([title, body])
+    await migrate()
+    writeNote([title])
+    expect(await migrate({ confirm: first.hash })).toMatchObject({ kind: 'pending' })
   })
 })

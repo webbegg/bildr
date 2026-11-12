@@ -53,20 +53,63 @@ export const renamesBetween = (previous: SchemaIds, current: SchemaIds): Renames
   return renames
 }
 
-/**
- * The renames `snapshot` (the previous schema) still needs: the old name is
- * there and the new one isn't. A run that wrote its migration but died before
- * saving the ids map then doesn't rename twice.
- */
-export const effectiveRenames = (renames: Renames, snapshot: Snapshot): Renames => {
-  const tables = renames.tables.filter(({ from, to }) => snapshot.tables[from] && !snapshot.tables[to])
-  const oldName = new Map(tables.map(({ from, to }) => [to, from]))
-  const columns = renames.columns.filter(({ table, from, to }) => {
-    const columnsBefore = snapshot.tables[oldName.get(table) ?? table]?.columns
-    return !!columnsBefore?.[from] && !columnsBefore[to]
-  })
-  return { tables, columns }
+export interface RenamePlan {
+  /** The renames to apply to the previous snapshot (simultaneous: swaps are fine there). */
+  renames: Renames
+  /** The statements, with temporary names when a new name is another renamed column's or table's old one. */
+  sql: string[]
+  /** Renames onto a name something that is going away still holds: refused, the user splits the change. */
+  conflicts: string[]
 }
+
+const TEMPORARY = (index: number) => `__bildr_rename_${index}`
+
+/** Statements for one group of simultaneous renames: direct, or through temporary names when one's target is another's source (swaps, chains). */
+const renameStatements = (renames: Array<{ from: string, to: string }>, statement: (from: string, to: string) => string, counter: { next: number }) => {
+  const sources = new Set(renames.map(({ from }) => from))
+  if (!renames.some(({ to }) => sources.has(to))) return renames.map(({ from, to }) => statement(from, to))
+  const temporary = renames.map(() => TEMPORARY(counter.next++))
+  return [...renames.map(({ from }, index) => statement(from, temporary[index]!)), ...renames.map(({ to }, index) => statement(temporary[index]!, to))]
+}
+
+/**
+ * The renames between two ids maps that the previous snapshot can take:
+ * sources it doesn't have are ignored (a hand-edited migrations folder), and
+ * a target held by a table or column that isn't renamed away is a conflict.
+ */
+export const planRenames = (previous: SchemaIds, current: SchemaIds, snapshot: Snapshot): RenamePlan => {
+  const raw = renamesBetween(previous, current)
+  const conflicts: string[] = []
+  const tables = raw.tables.filter(({ from }) => snapshot.tables[from])
+  const tableSources = new Set(tables.map(({ from }) => from))
+  for (const { from, to } of tables) {
+    if (snapshot.tables[to] && !tableSources.has(to)) conflicts.push(`Table ${to} still exists: remove it in one change, then rename ${from} to ${to} in the next`)
+  }
+  const oldTable = new Map(tables.map(({ from, to }) => [to, from]))
+  const columns = raw.columns.filter(({ table, from }) => snapshot.tables[oldTable.get(table) ?? table]?.columns[from])
+  const byTable = new Map<string, Array<{ from: string, to: string }>>()
+  for (const { table, from, to } of columns) byTable.set(table, [...(byTable.get(table) ?? []), { from, to }])
+  for (const [table, renames] of byTable) {
+    const before = snapshot.tables[oldTable.get(table) ?? table]!.columns
+    const sources = new Set(renames.map(({ from }) => from))
+    for (const { from, to } of renames) {
+      if (before[to] && !sources.has(to)) conflicts.push(`Column ${table}.${to} still exists: remove it in one change, then rename ${table}.${from} to ${to} in the next`)
+    }
+  }
+  const counter = { next: 0 }
+  const sql = [
+    ...renameStatements(tables, (from, to) => `ALTER TABLE ${quote(from)} RENAME TO ${quote(to)};`, counter),
+    ...[...byTable].flatMap(([table, renames]) => renameStatements(renames, (from, to) => `ALTER TABLE ${quote(table)} RENAME COLUMN ${quote(from)} TO ${quote(to)};`, counter))
+  ]
+  return { renames: { tables, columns }, sql, conflicts }
+}
+
+/** Statements SQLite refuses whatever the data: a NOT NULL column added without a default. */
+export const unappliable = (statements: string[]): string[] => statements.flatMap((statement) => {
+  const match = /^ALTER TABLE `([^`]+)` ADD `([^`]+)` (.*)$/s.exec(statement.trim())
+  if (!match || !/\bNOT NULL\b/i.test(match[3]!) || /\bDEFAULT\b/i.test(match[3]!)) return []
+  return [`${match[1]}.${match[2]} is required: give the field a default value, so existing rows get one`]
+})
 
 const IDENTIFIER = /^[A-Za-z_][\w]*$/
 const quote = (name: string) => {
