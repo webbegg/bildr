@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { applyRenames, describeLosses, dropIndexesFirst, isDestructive, planRenames, renamesBetween, renameSql, schemaIds, unappliable, withoutAdditions } from '../../src/migrate/index'
+import { applyRenames, describeLosses, dropIndexesFirst, isDestructive, planRenames, renamesBetween, renameSql, schemaIds, unappliable, withAdditionsOnly, withoutAdditions } from '../../src/migrate/index'
 import type { SchemaIds, Snapshot } from '../../src/migrate/index'
 import { loadModel } from '../../src/model/load'
 import { fixtureModelFiles, fixtureRoot } from '../model/fixture'
@@ -188,6 +188,28 @@ describe('snapshot transforms', () => {
     expect(step.tables.blog_posts!.columns.views).toBeUndefined()
     expect(step.tables.blog_posts!.indexes.blog_posts_views_unique).toBeUndefined()
     expect(step.tables.blog_posts!.indexes.blog_posts_slug_unique).toBeDefined()
+  })
+
+  it('withAdditionsOnly is the base plus new tables, new columns and their indexes: nothing dropped or changed', () => {
+    const base = fixtureSnapshot()
+    base.tables.blog_old = { ...base.tables.blog_posts!, name: 'blog_old' }
+    const current = fixtureSnapshot()
+    delete current.tables.blog_posts!.columns.body
+    current.tables.blog_posts!.columns.title = { ...current.tables.blog_posts!.columns.title!, type: 'integer' }
+    current.tables.blog_posts!.columns.views = { name: 'views', type: 'integer', primaryKey: false, notNull: false, autoincrement: false }
+    current.tables.blog_posts!.indexes.blog_posts_views_unique = { name: 'blog_posts_views_unique', columns: ['views'], isUnique: true }
+    current.tables.blog_posts!.indexes.blog_posts_title_unique = { name: 'blog_posts_title_unique', columns: ['title'], isUnique: true }
+    current.tables.blog_tags = { ...current.tables.blog_posts!, name: 'blog_tags' }
+    const step = withAdditionsOnly(base, current)
+    expect(Object.keys(step.tables).sort()).toEqual(['blog_old', 'blog_posts', 'blog_tags'])
+    expect(step.tables.blog_posts!.columns.body).toEqual(base.tables.blog_posts!.columns.body)
+    expect(step.tables.blog_posts!.columns.title).toEqual(base.tables.blog_posts!.columns.title)
+    expect(step.tables.blog_posts!.columns.views).toEqual(current.tables.blog_posts!.columns.views)
+    expect(step.tables.blog_posts!.indexes.blog_posts_views_unique).toBeDefined()
+    // An index on an existing column waits with the rest: a unique one can be refused by existing rows.
+    expect(step.tables.blog_posts!.indexes.blog_posts_title_unique).toBeUndefined()
+    expect(step.tables.blog_tags).toEqual(current.tables.blog_tags)
+    expect(step.id).toBe(current.id)
   })
 })
 

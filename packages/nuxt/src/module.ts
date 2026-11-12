@@ -83,6 +83,7 @@ export default defineNuxtModule<ModuleOptions>({
       else if (migration.kind === 'failed') logger.warn(`bildr did not migrate the database${migration.tag ? ` (${migration.tag} was refused and taken out again)` : ''}: ${migration.error}`)
       else if (migration.kind === 'error') logger.warn(`bildr could not plan the database migration, the database keeps its schema: ${migration.message}`)
       else if (migration.kind === 'pending') {
+        if (migration.written) logger.success(`bildr wrote migration ${migration.written.tag} with the changes that lose nothing${migration.written.applied ? ' and applied it' : ' (applied when the server starts)'}`)
         logger.warn([
           'bildr holds a migration that would lose data until you confirm it:',
           ...migration.losing.map(loss => `  - ${loss}`),

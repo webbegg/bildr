@@ -14,6 +14,8 @@ import type { Model } from '../model/load.ts'
 /** Where each stored entity and field lives in the database: entity id → table, field id → column. */
 export interface SchemaIds {
   tables: Record<string, { table: string, columns: Record<string, string> }>
+  /** Names moved aside (`__bildr_replaced_N`) still in this migration's schema, waiting to be dropped: name → what it was, in the user's words. */
+  replaced?: Record<string, string>
 }
 
 export const schemaIds = (model: Model): SchemaIds => {
@@ -235,6 +237,30 @@ export const withoutAdditions = (current: Snapshot, base: Snapshot): Snapshot =>
     const indexes = Object.fromEntries(Object.entries(table.indexes).filter(([, index]) => index.columns.every(column => columns[column])))
     return [[key, { ...table, columns, indexes }]]
   }))
+  return { ...clone(current), tables }
+}
+
+/**
+ * `base` plus only what `current` adds: new tables, new columns and indexes on
+ * new columns. Nothing is dropped or changed (a changed column or an index on
+ * an existing column can lose or refuse data), so migrating base → this never
+ * loses data and can run while the rest waits for confirmation.
+ */
+export const withAdditionsOnly = (base: Snapshot, current: Snapshot): Snapshot => {
+  const tables = clone(base.tables)
+  for (const [key, table] of Object.entries(clone(current.tables))) {
+    const before = tables[key]
+    if (!before) {
+      tables[key] = table
+      continue
+    }
+    const added = Object.entries(table.columns).filter(([column]) => !before.columns[column])
+    for (const [column, entry] of added) before.columns[column] = entry
+    const addedNames = new Set(added.map(([column]) => column))
+    for (const [name, index] of Object.entries(table.indexes)) {
+      if (!before.indexes[name] && index.columns.every(column => addedNames.has(column))) before.indexes[name] = index
+    }
+  }
   return { ...clone(current), tables }
 }
 

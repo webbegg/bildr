@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { applyRenames, describeLosses, dropIndexesFirst, isDestructive, planRenames, schemaIds, unappliable, withoutAdditions } from '@bildr/codegen/migrate'
+import { applyRenames, describeLosses, dropIndexesFirst, isDestructive, planRenames, schemaIds, unappliable, withAdditionsOnly, withoutAdditions } from '@bildr/codegen/migrate'
 import type { SchemaIds, Snapshot } from '@bildr/codegen/migrate'
 import type { Model } from '@bildr/codegen/model'
 import type { GeneratedFile } from '@bildr/codegen/sync'
@@ -32,7 +32,16 @@ const JOURNAL = `${MIGRATIONS_DIR}/meta/_journal.json`
 export type MigrationResult
   = | { kind: 'none' }
     | { kind: 'written', tag: string, statements: string[], /** Set when a database URL was given: the migration ran. */ applied?: true }
-    | { kind: 'pending', hash: string, destructive: string[], /** What confirming loses, in the user's words. */ losing: string[], statements: string[] }
+    | {
+      kind: 'pending'
+      hash: string
+      destructive: string[]
+      /** What confirming loses, in the user's words. */
+      losing: string[]
+      statements: string[]
+      /** The part that loses nothing (renames, additions), written (and applied) at once so the app's code can use it. */
+      written?: { tag: string, statements: string[], applied?: true }
+    }
     /** Nothing written (or written and reverted, then `tag` is set): the model change needs another step, or the database refused it. */
     | { kind: 'failed', error: string, statements: string[], tag?: string }
 
@@ -189,35 +198,68 @@ export const migrateProject = async (root: string, model: Model, sources: Record
   // No ids map for the previous migration (written by hand or before bildr kept one): no renames to resolve.
   const renames = planRenames((last && readJson<SchemaIds>(root, idsPath(last.idx))) ?? ids, ids, previous)
   if (renames.conflicts.length) return { kind: 'failed', error: renames.conflicts.join('; '), statements: renames.sql }
+  // Moved-aside names from an earlier migration that are still waiting to be dropped keep their description.
+  const replaced = { ...(last && readJson<SchemaIds>(root, idsPath(last.idx)))?.replaced, ...renames.replaced }
   const renamed = applyRenames(previous, renames.renames)
-  const middle = withoutAdditions(current, renamed)
-  const statements = dropIndexesFirst([
-    ...renames.sql,
-    ...await api.generateSQLiteMigration(renamed, middle),
-    ...await api.generateSQLiteMigration(middle, current)
-  ])
+  // Two prompt-free drizzle-kit diffs: removals and changes, then additions.
+  const diff = async (from: Snapshot, to: Snapshot) => {
+    const middle = withoutAdditions(to, from)
+    return [...await api.generateSQLiteMigration(from, middle), ...await api.generateSQLiteMigration(middle, to)]
+  }
+  const statements = dropIndexesFirst([...renames.sql, ...await diff(renamed, current)])
   rmSync(join(root, PENDING_FILE), { force: true })
   if (!statements.length) return { kind: 'none' }
   const refused = unappliable(statements)
   if (refused.length) return { kind: 'failed', error: refused.join('; '), statements }
 
-  // Bound to the position: a hash shown for one plan never confirms a later one.
-  const hash = sha256(JSON.stringify([previous.id, statements]))
-  const destructive = statements.filter(isDestructive)
-  if (destructive.length && options.confirm !== hash) {
-    const losing = describeLosses(destructive, renames.replaced)
-    mkdirSync(join(root, '.bildr/.cache'), { recursive: true })
-    writeAtomically(join(root, PENDING_FILE), `${JSON.stringify({ hash, destructive, losing, statements }, null, 2)}\n`)
-    return { kind: 'pending', hash, destructive, losing, statements }
+  let base = previous
+  let rest = statements
+  let written: { tag: string, statements: string[], applied?: true } | undefined
+  if (rest.some(isDestructive) && !confirms(options.confirm, previous, rest)) {
+    // What loses nothing runs now, so the synced app code can use it; only the rest waits for confirmation.
+    const safe = withAdditionsOnly(renamed, current)
+    const safeStatements = dropIndexesFirst([...renames.sql, ...await api.generateSQLiteMigration(renamed, safe)])
+    if (safeStatements.length) {
+      const result = await writeMigration(root, journalText, safe, safeStatements, { ...ids, ...stillIn(safe, replaced) }, options, timeoutMs)
+      if (result.kind === 'failed') return result
+      written = { tag: result.tag, statements: safeStatements, ...(result.applied ? { applied: true as const } : {}) }
+      base = safe
+      rest = dropIndexesFirst(await diff(safe, current))
+    }
   }
 
+  // Bound to the position: a hash shown for one plan never confirms a later one.
+  const hash = planHash(base, rest)
+  const destructive = rest.filter(isDestructive)
+  if (destructive.length && options.confirm !== hash) {
+    const losing = describeLosses(destructive, replaced)
+    mkdirSync(join(root, '.bildr/.cache'), { recursive: true })
+    writeAtomically(join(root, PENDING_FILE), `${JSON.stringify({ hash, destructive, losing, statements: rest }, null, 2)}\n`)
+    return { kind: 'pending', hash, destructive, losing, statements: rest, ...(written ? { written } : {}) }
+  }
+  return writeMigration(root, readText(root, JOURNAL), current, rest, { ...ids, ...stillIn(current, replaced) }, options, timeoutMs)
+}
+
+const planHash = (previous: Snapshot, statements: string[]) => sha256(JSON.stringify([previous.id, statements]))
+const confirms = (confirm: string | undefined, previous: Snapshot, statements: string[]) => confirm !== undefined && confirm === planHash(previous, statements)
+
+/** The moved-aside names `snapshot` still has (the ids map keeps their description until they are dropped). */
+const stillIn = (snapshot: Snapshot, replaced: Record<string, string>): Pick<SchemaIds, 'replaced'> => {
+  const names = new Set(Object.values(snapshot.tables).flatMap(table => [table.name, ...Object.keys(table.columns)]))
+  const kept = Object.fromEntries(Object.entries(replaced).filter(([name]) => names.has(name)))
+  return Object.keys(kept).length ? { replaced: kept } : {}
+}
+
+/** Writes the next migration (and applies it when a database URL is given); a refused one is taken out again. */
+const writeMigration = async (root: string, journalText: string | undefined, snapshot: Snapshot, statements: string[], ids: SchemaIds, options: MigrateOptions, timeoutMs: number): Promise<Extract<MigrationResult, { kind: 'written' | 'failed' }>> => {
+  const journal = journalText === undefined ? undefined : JSON.parse(journalText) as Journal
   // Order: SQL, snapshot and its ids map, then the journal: what the migrator reads.
   const idx = journal?.entries.length ?? 0
   const tag = `${String(idx).padStart(4, '0')}_bildr`
   const files = [`${MIGRATIONS_DIR}/${tag}.sql`, snapshotPath(idx), idsPath(idx)]
   mkdirSync(join(root, MIGRATIONS_DIR, 'meta'), { recursive: true })
   writeAtomically(join(root, files[0]!), statements.join('\n--> statement-breakpoint\n'))
-  writeAtomically(join(root, files[1]!), `${JSON.stringify(current, null, 2)}\n`)
+  writeAtomically(join(root, files[1]!), `${JSON.stringify(snapshot, null, 2)}\n`)
   writeAtomically(join(root, files[2]!), `${JSON.stringify(ids, null, 2)}\n`)
   const next: Journal = journal ? { ...journal, entries: [...journal.entries] } : { version: '7', dialect: 'sqlite', entries: [] }
   next.entries.push({ idx, version: '6', when: options.now ?? Date.now(), tag, breakpoints: true })
