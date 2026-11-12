@@ -51,7 +51,7 @@ describe('createProject', () => {
       'layers/core/app/utils/errorMessage.ts', 'layers/core/nuxt.config.ts', 'layers/core/server/plugins/migrate.ts',
       'layers/core/server/utils/db.ts', 'layers/core/server/utils/http-error.ts', 'layers/core/server/utils/remote.ts',
       'layers/core/shared/kernel/ids.ts', 'layers/core/shared/kernel/page.ts', 'layers/core/shared/kernel/result.ts',
-      'layers/main/app/pages/index.vue', 'layers/main/nuxt.config.ts', 'layers/main/shared/domain/errors.ts',
+      'layers/main/app/pages/index.vue', 'layers/main/nuxt.config.ts', 'layers/main/server/utils/main.ts', 'layers/main/shared/domain/errors.ts',
       'nuxt.config.ts', 'package.json', 'pnpm-workspace.yaml', 'server/README.md', 'tsconfig.json', 'vitest.config.ts'
     ])
   })
