@@ -113,13 +113,25 @@ export default defineNuxtModule<ModuleOptions>({
     let watcher: FSWatcher | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
     const modelDir = join(root, '.bildr')
+    // A watcher that can't start or fails later (inotify limits, the folder removed) turns live
+    // regeneration off with a warning; it never takes nuxt dev down.
+    const stopWatching = (error: Error) => {
+      logger.warn(`bildr stopped watching .bildr/ (${error.message}); restart nuxt dev to regenerate on changes again`)
+      watcher?.close()
+      watcher = undefined
+    }
     if (existsSync(modelDir)) {
-      watcher = watch(modelDir, { recursive: true }, (_event, file) => {
-        // Never the manifest or temp files a sync writes: that would loop.
-        if (!isModelChange(file === null ? undefined : String(file))) return
-        clearTimeout(timer)
-        timer = setTimeout(() => void sync(), 150)
-      })
+      try {
+        watcher = watch(modelDir, { recursive: true }, (_event, file) => {
+          // Never the manifest or temp files a sync writes: that would loop.
+          if (!isModelChange(file === null ? undefined : String(file))) return
+          clearTimeout(timer)
+          timer = setTimeout(() => void sync(), 150)
+        })
+        watcher.on('error', stopWatching)
+      } catch (error) {
+        stopWatching(error as Error)
+      }
     }
     nuxt.hook('close', () => {
       clearTimeout(timer)

@@ -11,7 +11,9 @@ import { migrateProject, PENDING_FILE, schemaSources } from '../src/node/migrati
 import { readModelFiles } from '../src/node/project'
 
 // drizzle-kit, drizzle-orm and @libsql/client come from the golden fixture's install, as a project would have them.
+// The fixture is not part of the workspace: `pnpm --dir fixtures/codegen/blog install` once (review RELIABILITY-001).
 const fixtureModules = fileURLToPath(new URL('../../../fixtures/codegen/blog/node_modules', import.meta.url))
+const NEEDS_FIXTURE = existsSync(join(fixtureModules, 'drizzle-kit')) ? '' : ' (skipped: run `pnpm --dir fixtures/codegen/blog install` first)'
 
 let root: string
 let dir: string
@@ -67,7 +69,7 @@ const applyAndQuery = async (sql: string) => {
 const title: Field = { id: 'fld_title', name: 'title', type: 'text', required: true }
 
 // Each plan snapshots the schema in a child Node process that loads drizzle-kit: allow for a busy machine.
-describe('migrateProject', { timeout: 60_000 }, () => {
+describe.skipIf(!!NEEDS_FIXTURE)(`migrateProject${NEEDS_FIXTURE}`, { timeout: 60_000 }, () => {
   it('writes nothing for a project without stored entities', async () => {
     expect(await migrate()).toEqual({ kind: 'none' })
     expect(existsSync(join(migrationsDir(), 'meta/_journal.json'))).toBe(false)
@@ -216,6 +218,33 @@ describe('migrateProject', { timeout: 60_000 }, () => {
     writeNote([title], 'blog', 'blog_note')
     const result = await migrate()
     expect(result.kind === 'written' && result.statements.filter(statement => statement.startsWith('CREATE TABLE')).map(statement => statement.split('`')[1])).toEqual(['blog_notes', 'main_notes'])
+  })
+
+  it('stops a schema whose import never finishes, instead of stalling every later regeneration (review RESILIENCE-002)', async () => {
+    writeNote([title])
+    const loaded = loadModel(readModelFiles(dir))
+    if (!loaded.ok) throw new Error('model')
+    const hanging = { 'layers/main/server/infrastructure/db/schema.ts': 'setInterval(() => {}, 1000)\nexport {}\n' }
+    await expect(migrateProject(dir, loaded.model, hanging, { timeoutMs: 1500 })).rejects.toThrow(/did not finish within 1\.5s/)
+  })
+
+  it('keeps working when a schema prints to stdout while it loads (review RESILIENCE-004)', async () => {
+    writeNote([title])
+    const loaded = loadModel(readModelFiles(dir))
+    if (!loaded.ok) throw new Error('model')
+    const sources = schemaSources(dir, generate(loaded.model))
+    const noisy = Object.fromEntries(Object.entries(sources).map(([path, content]) => [path, `console.log('hello from the schema')\n${content}`]))
+    expect(await migrateProject(dir, loaded.model, noisy)).toMatchObject({ kind: 'written', tag: '0000_bildr' })
+  })
+
+  it('refuses to write migrations through a symlink that leaves the project (review RISK-003)', async () => {
+    const outside = join(root, 'outside')
+    mkdirSync(outside)
+    mkdirSync(join(dir, 'server/database'), { recursive: true })
+    symlinkSync(outside, join(dir, 'server/database/migrations'), 'dir')
+    writeNote([title])
+    await expect(migrate()).rejects.toThrow(/resolves outside the project/)
+    expect(readdirSync(outside)).toEqual([])
   })
 
   it('binds a confirmation to the migration it was shown for: an old hash never confirms a later plan', async () => {
