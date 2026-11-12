@@ -13,11 +13,12 @@ const fixtureModel = (): Model => {
   return result.model
 }
 
-/** The project-level files of the core layer (T7b): theme, app config, Nuxt config. */
+/** The project-level files (T7b, T7d): theme, app config, core Nuxt config, the root vitest config. */
 const PROJECT_FILES = [
   'layers/core/app/app.config.ts',
   'layers/core/app/assets/css/theme.css',
-  'layers/core/nuxt.config.ts'
+  'layers/core/nuxt.config.ts',
+  'vitest.config.ts'
 ]
 
 const content = (model: Model, path: string) => generateProject(model).find(file => file.path === path)!.content
@@ -80,6 +81,12 @@ describe('generateProject rules', () => {
     const model = fixtureModel()
     model.datasources = model.datasources.filter(source => source.kind === 'sqlite')
     expect(content(model, 'layers/core/nuxt.config.ts')).toContain('    datasources: {}\n')
+  })
+
+  it('mirrors every module\'s domain alias in vitest.config.ts', () => {
+    const model = fixtureModel()
+    model.modules.shop = { ...model.modules.blog! }
+    expect(content(model, 'vitest.config.ts')).toContain('      \'#blog/domain\': here(\'./layers/blog/shared/domain\'),\n      \'#shop/domain\': here(\'./layers/shop/shared/domain\')\n')
   })
 
   it('refuses a second sqlite data source and a missing one', () => {

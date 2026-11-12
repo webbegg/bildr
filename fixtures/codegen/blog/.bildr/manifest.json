@@ -200,11 +200,6 @@
       "sha256": "bded347e89b6f9be6eabdee27f3f407db7e03926f4c70d7613a1008f77b98e48",
       "source": ".bildr/modules/blog/entities/quote.json"
     },
-    "layers/blog/test/api/posts.test.ts": {
-      "owner": "managed",
-      "sha256": "5d80191dfbc3e79f2a58cae5bb711a02240f4367af53289d08b86eaa90624655",
-      "source": ".bildr/modules/blog"
-    },
     "layers/blog/test/application/create-post.test.ts": {
       "owner": "managed",
       "sha256": "ae40fc42e68b157ebe291572c7c73b6cf6b42a09aa32eccf5a601c22d85a5e24",
@@ -317,7 +312,7 @@
     },
     "vitest.config.ts": {
       "owner": "managed",
-      "sha256": "3a16447882df1cbfa31508e36340a1e76e2d51312f4fd6f225eb960f166865de"
+      "sha256": "4674c7931927ab4a44cbff7bb70391a8d20424275ef00a7fd6cda29526248a60"
     }
   }
 }
