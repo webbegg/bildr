@@ -4,9 +4,9 @@ import type { FSWatcher } from 'node:fs'
 import { join } from 'node:path'
 import { addDevServerHandler, defineNuxtModule, useLogger } from '@nuxt/kit'
 import { defineEventHandler, sendWebResponse, toWebRequest } from 'h3'
-import { loadModel } from '@bildr/codegen/model'
 import { detectStarterKit } from '@bildr/codegen/starter'
-import { projectReader, readModelFiles } from './node/project.ts'
+import { projectReader } from './node/project.ts'
+import { isModelChange, regenerate } from './node/regenerate.ts'
 import { BASE, createBildrHandler } from './server/handler.ts'
 
 /**
@@ -66,24 +66,36 @@ export default defineNuxtModule<ModuleOptions>({
     ;(nuxt.hooks as unknown as { hook: (name: string, fn: (tabs: DevtoolsTab[]) => void) => void })
       .hook('devtools:customTabs', tabs => tabs.push({ name: 'bildr', title: 'bildr', icon: 'carbon:paint-brush', view: { type: 'iframe', src: editorPath } }))
 
-    // Report model problems as soon as a .bildr/ file changes (hand edits, git pulls).
+    // Regenerate the app from .bildr/: once now (edits made while nuxt dev was off), then on
+    // every model change (editor saves, hand edits, git pulls). Hand-edited files are kept.
+    const sync = () => {
+      try {
+        const result = regenerate(root)
+        if (!result.ok && 'problems' in result) {
+          logger.warn(['bildr model has problems, the app was not regenerated:', ...result.problems.map(problem => `  - ${problem.path}: ${problem.message}`)].join('\n'))
+        } else if (!result.ok) {
+          logger.warn(`bildr can't generate this model yet, the app was not regenerated: ${result.error}`)
+        } else {
+          const { written, deleted, detached } = result.report
+          if (written.length || deleted.length) logger.success(`bildr regenerated ${written.length} file(s)${deleted.length ? `, removed ${deleted.length}` : ''}`)
+          if (detached.length) logger.info(['bildr kept your edits to these generated files (detached):', ...detached.map(path => `  - ${path}`)].join('\n'))
+        }
+      } catch (error) {
+        // A file can vanish or be unreadable mid-change; never take nuxt dev down for it.
+        logger.warn(`bildr could not regenerate the app: ${(error as Error).message}`)
+      }
+    }
+    sync()
+
     let watcher: FSWatcher | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
     const modelDir = join(root, '.bildr')
     if (existsSync(modelDir)) {
       watcher = watch(modelDir, { recursive: true }, (_event, file) => {
-        if (!file || String(file).startsWith('.cache')) return
+        // Never the manifest or temp files a sync writes: that would loop.
+        if (!isModelChange(file === null ? undefined : String(file))) return
         clearTimeout(timer)
-        timer = setTimeout(() => {
-          try {
-            const result = loadModel(readModelFiles(root))
-            if (result.ok) logger.success('bildr model is valid')
-            else logger.warn(['bildr model has problems:', ...result.problems.map(problem => `  - ${problem.path}: ${problem.message}`)].join('\n'))
-          } catch (error) {
-            // A file can vanish or be unreadable mid-change; never take nuxt dev down for it.
-            logger.warn(`bildr could not read the model: ${(error as Error).message}`)
-          }
-        }, 150)
+        timer = setTimeout(sync, 150)
       })
     }
     nuxt.hook('close', () => {
