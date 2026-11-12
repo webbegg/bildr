@@ -90,7 +90,10 @@ const renameStatements = (renames: Array<{ from: string, to: string }>, statemen
 export const planRenames = (previous: SchemaIds, current: SchemaIds, snapshot: Snapshot): RenamePlan => {
   const raw = renamesBetween(previous, current)
   const conflicts: string[] = []
-  const replacedCounter = { next: 0 }
+  // Past the names already moved aside: an earlier one may still wait for its confirmed drop.
+  const taken = Object.values(snapshot.tables).flatMap(table => [table.name, ...Object.keys(table.columns)])
+    .flatMap(name => /^__bildr_replaced_(\d+)$/.exec(name)?.[1] ?? []).map(Number)
+  const replacedCounter = { next: taken.length ? Math.max(...taken) + 1 : 0 }
 
   // Tables of removed entities whose name a current entity takes.
   const currentTables = new Set(Object.values(current.tables).map(({ table }) => table))
