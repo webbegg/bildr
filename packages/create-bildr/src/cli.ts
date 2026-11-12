@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs'
 import { basename, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createProject } from './create.ts'
@@ -47,4 +48,13 @@ const main = () => {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main()
+/** Run as a program, also through the symlink a package manager installs as the bin. */
+const isEntry = () => {
+  try {
+    return Boolean(process.argv[1]) && realpathSync(process.argv[1]!) === realpathSync(fileURLToPath(import.meta.url))
+  } catch {
+    return false
+  }
+}
+
+if (isEntry()) main()

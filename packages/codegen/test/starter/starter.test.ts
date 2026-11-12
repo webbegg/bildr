@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { loadModel } from '../../src/model/load'
-import { STARTER_CORE_FILES, detectStarterKit, starterKit } from '../../src/starter/index'
+import { STARTER_CORE_FILES, STARTER_ROOT_FILES, detectStarterKit, starterKit } from '../../src/starter/index'
 import { isSafeProjectPath, planSync } from '../../src/sync/plan'
 import { fixtureRoot } from '../model/fixture'
 
@@ -29,6 +29,26 @@ describe('starterKit', () => {
       expect(kit.files.find(file => file.path === path)?.content, path).toBe(fixtureFile(path))
     }
     expect(Object.keys(STARTER_CORE_FILES)).toContain('layers/core/server/plugins/migrate.ts')
+  })
+
+  it('ships the static root files byte for byte as in the golden fixture', () => {
+    for (const path of Object.keys(STARTER_ROOT_FILES)) expect(kit.files.find(file => file.path === path)?.content, path).toBe(fixtureFile(path))
+    expect(Object.keys(STARTER_ROOT_FILES).sort()).toEqual(['.gitignore', 'app/README.md', 'drizzle.config.ts', 'eslint.config.mjs', 'nuxt.config.ts', 'pnpm-workspace.yaml', 'server/README.md', 'tsconfig.json'])
+  })
+
+  it('names with </script>, \\r or {{ }} never break or run in generated code', () => {
+    const LS = String.fromCharCode(0x2028)
+    const lineBreaks = new RegExp(`[\r${LS}]`)
+    for (const name of ['<script>x</script>', 'a\rb', '{{ 1+1 }}', `a${LS}b`]) {
+      const files = starterKit({ name }).files
+      const page = files.find(file => file.path === 'layers/main/app/pages/index.vue')!.content
+      const config = files.find(file => file.path === 'layers/core/app/app.config.ts')!.content
+      expect(page, name).not.toContain('</script>x')
+      // The name may appear inside script strings (rendered as escaped text), never as template markup.
+      expect(page.slice(page.indexOf('<template>')), name).not.toContain('{{ 1+1 }}')
+      expect(config, name).not.toMatch(lineBreaks)
+      expect(page, name).not.toMatch(lineBreaks)
+    }
   })
 
   it('has everything a Nuxt app needs, with the right owners', () => {
