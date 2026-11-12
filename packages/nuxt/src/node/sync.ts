@@ -9,9 +9,11 @@ import { resolvesInside } from './project.ts'
 
 /**
  * The fs side of the sync engine (decision D1). `planSync` decides; this file
- * applies the plan: writes and deletes first, the manifest last and atomically,
- * so a run that fails partway leaves the previous manifest and the next run
- * recovers (a file already holding the new content counts as managed).
+ * applies the plan: writes and deletes first, the manifest last and atomically.
+ * A run that fails partway is rolled back (files restored, new ones removed),
+ * so disk matches the previous manifest again (S6). Without the rollback, the
+ * next sync, which in nuxt dev follows the next model change, would take the
+ * files that did land for hand edits and detach them.
  */
 
 export const sha256 = (content: string | Buffer) => createHash('sha256').update(content).digest('hex')
@@ -64,15 +66,43 @@ export const writeManifest = (root: string, files: ManifestEntries, io: SyncIo =
   writeAtomically(join(root, MANIFEST_FILE), stringifyModelFile({ $schema: `${SCHEMA_URL}/manifest.v1.json`, generatorVersion: GENERATOR_VERSION, files }), io)
 }
 
-/** Applies a sync plan to the project. Every path is checked before anything is touched. */
+/** Applies a sync plan to the project. Every path is checked before anything is touched; a failure rolls back what was done. */
 export const applySync = (root: string, plan: SyncPlan, io: SyncIo = nodeIo) => {
   for (const path of [...plan.writes.map(write => write.path), ...plan.deletes]) {
     if (!isSafeProjectPath(path)) throw new Error(`Unsafe path: ${path}`)
     if (!resolvesInside(root, join(root, path))) throw new Error(`Unsafe path: ${path} (resolves outside the project)`)
   }
-  for (const write of plan.writes) io.writeFile(join(root, write.path), write.content)
-  for (const path of plan.deletes) io.remove(join(root, path))
-  writeManifest(root, plan.manifest, io)
+  // What each touched file held before (undefined: it didn't exist), newest last.
+  const undo: Array<{ target: string, previous: Buffer | undefined }> = []
+  const remember = (target: string) => undo.push({ target, previous: existsSync(target) ? readFileSync(target) : undefined })
+  try {
+    for (const write of plan.writes) {
+      const target = join(root, write.path)
+      remember(target)
+      io.writeFile(target, write.content)
+    }
+    for (const path of plan.deletes) {
+      const target = join(root, path)
+      remember(target)
+      io.remove(target)
+    }
+    writeManifest(root, plan.manifest, io)
+  } catch (error) {
+    rollBack(undo)
+    throw error
+  }
+}
+
+/** Best effort: restore every touched file, newest first; a file that can't be restored is left as is (the next sync detaches it). */
+const rollBack = (undo: Array<{ target: string, previous: Buffer | undefined }>) => {
+  for (const { target, previous } of [...undo].reverse()) {
+    try {
+      if (previous === undefined) rmSync(target, { force: true })
+      else writeFileSync(target, previous)
+    } catch {
+      // Keep restoring the others.
+    }
+  }
 }
 
 /** Plans and applies one sync of `generated` onto the project. */
