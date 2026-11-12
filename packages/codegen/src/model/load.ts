@@ -3,11 +3,11 @@ import {
   ActionFileSchema, ComponentFileSchema, DataSourceFileSchema, EntityFileSchema, EXPRESSION_KEYS, FixturesFileSchema,
   LayoutFileSchema, ManifestFileSchema, ModuleFileSchema, PageFileSchema, ProjectFileSchema, QueryFileSchema,
   RepositoryFileSchema, StateFileSchema, ThemeFileSchema
-} from './schemas'
+} from './schemas.ts'
 import type {
   ActionFile, ComponentFile, DataSourceFile, EntityFile, FixturesFile, LayoutFile, ManifestFile, ModelNode, ModuleFile,
   PageFile, ProjectFile, QueryFile, RepositoryFile, StateFile, ThemeFile, Value
-} from './schemas'
+} from './schemas.ts'
 
 /** The model version this bildr reads and writes. Older files are migrated on load, newer ones refused. */
 export const CURRENT_SCHEMA_VERSION = 1

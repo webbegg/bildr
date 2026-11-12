@@ -1,4 +1,4 @@
-import type { ManifestFile } from '../model/schemas'
+import type { ManifestFile } from '../model/schemas.ts'
 
 /**
  * The sync engine's decisions, without side effects (decision D1: detect and
