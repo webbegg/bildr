@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
+import type { BreakpointBase } from '#shared/design/tokens'
 import type { Project, ProjectSummary } from '#shared/document/schema'
 import { matches } from '#shared/editor/sidebar'
 
@@ -7,7 +8,9 @@ import { matches } from '#shared/editor/sidebar'
  * The projects page, Framer's: a slim top bar (wordmark, search, New project)
  * over a grid of project cards on the canvas colour, each with its slug, last
  * update, a Published badge and a `…` menu (Delete project…). It wears the
- * dark editor chrome, like the editor page.
+ * dark editor chrome, like the editor page. New project asks for a name and
+ * the starting device: Desktop (a desktop-first project, the default) or
+ * Mobile (mobile-first), `project_create {base}`.
  */
 useSeoMeta({ title: 'Projects · bildr' })
 
@@ -28,17 +31,21 @@ const shown = computed(() => (projects.value ?? []).filter(p => matches(query.va
 
 const createOpen = ref(false)
 const name = ref('')
+const base = ref<BreakpointBase>('desktop')
 const creating = ref(false)
+const BASES: { value: BreakpointBase, label: string }[] = [{ value: 'desktop', label: 'Desktop' }, { value: 'mobile', label: 'Mobile' }]
 
 watch(createOpen, (open) => {
-  if (open) name.value = ''
+  if (!open) return
+  name.value = ''
+  base.value = 'desktop'
 })
 
 async function create() {
   if (!name.value.trim()) return
   creating.value = true
   try {
-    const project = await callAction<Project>('project_create', { name: name.value.trim() })
+    const project = await callAction<Project>('project_create', { name: name.value.trim(), base: base.value })
     await navigateTo(`/editor/${project.id}`)
   } catch (error) {
     toast.add({ title: 'Could not create the project', description: actionErrorMessage(error), color: 'error' })
@@ -207,6 +214,19 @@ onBeforeUnmount(() => document.documentElement.classList.remove('bildr-editor'))
             placeholder="New project name"
             aria-label="Project name"
             autofocus
+          />
+        </EditorFormRow>
+        <EditorFormRow
+          label="Starting device"
+          help="The device you design first; the other sizes override it."
+          class="mt-3"
+        >
+          <EditorSegmented
+            :model-value="base"
+            :items="BASES"
+            aria-label="Starting device"
+            data-new-project-base
+            @update:model-value="base = $event as BreakpointBase"
           />
         </EditorFormRow>
       </form>

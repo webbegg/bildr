@@ -64,6 +64,9 @@ await run('kit', async ({ page, context, errors }) => {
   await page.locator('[data-new-project]').click()
   await darkDialog(page, 'New project')
   await soft(page.getByLabel('Project name'), 'New project')
+  // The starting device is a segmented control: the soft field is its track, not the buttons in it.
+  const track = await page.locator('[data-new-project-base]').evaluate(el => ({ height: getComputedStyle(el).height, bg: getComputedStyle(el).backgroundColor }))
+  check(track.height === '30px' && !transparent(track.bg) && !white(track.bg), `New project starting device: a 30px soft track (${track.height}, ${track.bg})`)
   await page.keyboard.press('Escape')
 
   // The Design view's theme editor, then the canvas view: the page rename, ⌘K and the shortcuts sheet.

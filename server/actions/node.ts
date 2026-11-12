@@ -3,7 +3,7 @@ import { cloneWithNewIds, createNode } from '#shared/document/factory'
 import { getComponent } from '#shared/document/components'
 import type { PropValue } from '#shared/document/components'
 import type { TreeRef } from '#shared/document/operations'
-import { baseOfBreakpoint, CUSTOM_COLOR_NAME, STYLE_HEX, STYLE_TOKENS, styleKey, variantsOf } from '#shared/design/tokens'
+import { ALL_BREAKPOINTS, baseOfBreakpoint, breakpointPrefixHint, breakpointsOf, CUSTOM_COLOR_NAME, getStyleToken, isResponsiveToken, parseStyleKey, STYLE_HEX, STYLE_TOKENS, styleTokenProblem } from '#shared/design/tokens'
 import type { Breakpoint, StyleToken } from '#shared/design/tokens'
 import { IdSchema, NODE_NAME_MAX, PropValueSchema } from '#shared/document/schema'
 import type { DocNode } from '#shared/document/schema'
@@ -35,25 +35,58 @@ function tokenValueSchema(token: StyleToken): z.ZodType<string> {
   ], { error: issue => `"${String(issue.input)}" is not a value of style token "${token.key}" (use a colour token, a #rgb, #rrggbb or #rrggbbaa hex, or a theme colour)` })
 }
 
-/** Where a breakpoint's value applies: `from the md breakpoint up` (mobile-first), `below the max-lg breakpoint` (desktop-first). */
-const appliesAt = (b: Breakpoint) => (baseOfBreakpoint(b) === 'desktop' ? `below the ${b.slice(4)} breakpoint (desktop-first projects)` : `from the ${b} breakpoint up (mobile-first projects)`)
+/**
+ * The keys a breakpoint prefix may go on: `<breakpoint>:<responsive token>`
+ * of either base (`md:cols`, `max-lg:cols`). Which base a project takes is
+ * checked when the edit applies, so the error can name the project's prefixes.
+ */
+const PREFIXED_KEY = `^(?:${ALL_BREAKPOINTS.join('|')}):(?:${STYLE_TOKENS.filter(isResponsiveToken).map(t => t.key).join('|')})$`
 
-/** One optional key per design token and breakpoint of both bases (`cols`, `sm:cols` … `lg:cols`, `max-lg:cols` … `max-sm:cols`). */
-function styleTokensSchema(wrap: (values: z.ZodType<string>, token: StyleToken) => z.ZodType) {
-  return z.object(Object.fromEntries(STYLE_TOKENS.flatMap(t => variantsOf(t).map(b => [
-    styleKey(t.key, b),
-    wrap(tokenValueSchema(t), t).optional().describe(b
-      ? `${t.label} ${appliesAt(b)}: Tailwind class ${b}:${t.prefix ? `${t.prefix}-` : ''}<value>`
-      : `${t.label}: Tailwind class ${t.prefix ? `${t.prefix}-` : ''}<value>`)
-  ])))).strict()
+const PREFIX_HINT = `${breakpointPrefixHint('desktop')} in desktop-first projects, ${breakpointPrefixHint('mobile')} in mobile-first projects; see project_get breakpointBase`
+
+const DESKTOP_PREFIXES = breakpointsOf('desktop').map(b => `${b}:`).join('/')
+const MOBILE_PREFIXES = breakpointsOf('mobile').map(b => `${b}:`).join('/')
+
+/** The problem of a style key outside the unprefixed ones (and of its value, unless null), whatever the project base. */
+function prefixedKeyProblem(key: string, value: string | null): string | undefined {
+  const at = key.indexOf(':')
+  if (at < 0) return `Unknown style token "${key}"`
+  const breakpoint = key.slice(0, at)
+  if (!(ALL_BREAKPOINTS as readonly string[]).includes(breakpoint)) return `Unknown breakpoint "${breakpoint}" in style token "${key}" (use ${PREFIX_HINT})`
+  const base = baseOfBreakpoint(breakpoint as Breakpoint)
+  if (value === null) return parseStyleKey(key) ? undefined : styleTokenProblem(key, '', [], base)
+  return styleTokenProblem(key, value, [], base)
+}
+
+/**
+ * The unprefixed design tokens as properties listing their values, and the
+ * prefixed ones as one `patternProperties` entry: listing every prefixed key
+ * of both bases made `tools/list` half as big again (S38.2). Prefixed keys
+ * are still checked against their token's values here.
+ */
+function styleTokensSchema(wrap: (values: z.ZodType<string>, token: StyleToken) => z.ZodType, nullable: boolean) {
+  const prefixedValue = { type: nullable ? ['string', 'null'] : 'string', description: `A responsive token: the key of a Spacing, Size, Typography or Layout token with a breakpoint prefix, prefix with ${DESKTOP_PREFIXES} in desktop-first projects, ${MOBILE_PREFIXES} in mobile-first projects (see project_get breakpointBase), e.g. "max-md:cols" or "md:cols"; it takes the values of the unprefixed key${nullable ? ', or null to remove it' : ''}` }
+  return z.object(Object.fromEntries(STYLE_TOKENS.map(t => [
+    t.key,
+    wrap(tokenValueSchema(t), t).optional().describe(`${t.label}: Tailwind class ${t.prefix ? `${t.prefix}-` : ''}<value>${isResponsiveToken(t) ? '; takes breakpoint prefixes' : ''}`)
+  ])))
+    .catchall(nullable ? z.string().nullable() : z.string())
+    .superRefine((style, ctx) => {
+      for (const [key, value] of Object.entries(style as Record<string, string | null | undefined>)) {
+        if (value === undefined || getStyleToken(key)) continue
+        const problem = prefixedKeyProblem(key, value)
+        if (problem) ctx.addIssue({ code: 'custom', message: problem, path: [key], input: value })
+      }
+    })
+    .meta({ patternProperties: { [PREFIXED_KEY]: prefixedValue }, additionalProperties: false })
 }
 
 /** How the breakpoint prefixes work, for the style descriptions. */
 const BREAKPOINT_HINT = 'Layout tokens (Spacing, Size, Typography, Layout) also take a breakpoint prefix, and each project takes only those of its breakpointBase (project_get): a desktop-first project (the default for new projects) stores the Desktop value as the base and overrides narrower sizes with max-lg: (below 1024 px, Tablet), max-md: (below 768, Large phone) and max-sm: (below 640, Mobile), e.g. { "cols": "3", "max-md:cols": "1" } renders class="grid-cols-3 max-md:grid-cols-1"; a mobile-first project stores the Mobile value as the base and overrides wider sizes with sm:, md: and lg: (from 640, 768 and 1024 px up), e.g. { "cols": "1", "md:cols": "3" } renders class="grid-cols-1 md:grid-cols-3". A prefix of the other base is refused.'
 
-const StyleSchema = styleTokensSchema(values => values)
+const StyleSchema = styleTokensSchema(values => values, false)
   .describe(`Design tokens, e.g. { "mt": "10", "bg": "primary", "rounded": "lg" } renders class="mt-10 bg-primary rounded-lg". ${BREAKPOINT_HINT} Colour tokens (bg, color, borderColor) also take a #rgb, #rrggbb or #rrggbbaa hex, or the name of a theme custom colour, e.g. { "bg": "#ff6600", "color": "brand" }, rendered as an inline style. See components_list.tokens`) as z.ZodType<Record<string, string>>
-const StyleUpdateSchema = styleTokensSchema(values => values.nullable())
+const StyleUpdateSchema = styleTokensSchema(values => values.nullable(), true)
   .describe('Design tokens to set; null removes a token') as z.ZodType<Record<string, string | null>>
 
 const NodeSpecSchema: z.ZodType<NodeSpec> = z.lazy(() => z.object({

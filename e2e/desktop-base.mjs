@@ -8,7 +8,9 @@
  * (checked with project_get), shows on the canvas's Tablet frame and not on
  * Desktop, and the published app centres the text at 800 px but not at
  * 1280 px. Hiding Tablet from its Layers row removes the device rows again.
- * Shots go to e2e/.shots/desktop-base/.
+ * New project's Starting device (S38.1) is Desktop by default; choosing
+ * Mobile makes a mobile-first project, with Mobile its Primary frame, which
+ * the test then deletes. Shots go to e2e/.shots/desktop-base/.
  */
 import { action, BASE, canvas, check, run, shot, track, until } from './lib.mjs'
 
@@ -131,6 +133,35 @@ await run('desktop-base', async ({ page, context, errors }) => {
   const again = await topRow()
   check(again.id === rootId && again.level === '1', `the page row is on top again (${JSON.stringify(again)})`)
   check(!!await until(() => editing('desktop')), 'and Desktop is edited')
+
+  // Starting device Mobile on the projects page: a mobile-first project.
+  await page.goto(`${BASE}/`)
+  await page.locator('[data-new-project]').click()
+  const baseChoice = page.locator('[data-new-project-base]')
+  await baseChoice.waitFor()
+  const pressed = () => baseChoice.locator('button[aria-pressed="true"]').getAttribute('aria-label')
+  check(await pressed() === 'Desktop', `New project starts on Desktop (${await pressed()})`)
+  const mobileName = `e2e mobile base ${Date.now()}`
+  await page.getByLabel('Project name').fill(mobileName)
+  await baseChoice.getByRole('button', { name: 'Mobile', exact: true }).click()
+  check(!!await until(async () => await pressed() === 'Mobile'), 'Mobile can be chosen as the starting device')
+  await shot(page, 'desktop-base/new-project-mobile')
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await page.waitForURL(url => /\/editor\/[\w-]+$/.test(url.pathname) && !url.pathname.endsWith(projectId))
+  const mobileId = page.url().split('/').pop()
+  const mobile = await action('project_get', { projectId: mobileId })
+  track(mobile.id, mobile.slug)
+  check(mobile.name === mobileName && mobile.breakpointBase === 'mobile', `Starting device Mobile makes a mobile-first project (${mobile.breakpointBase})`)
+  await page.locator('[data-view-menu]').waitFor()
+  await page.locator('[data-frame="mobile"]').waitFor()
+  const mobileLabel = await page.locator('[data-frame="mobile"] [data-frame-label]').getAttribute('aria-label')
+  check(/^Mobile \d+ \(Primary\)$/.test(mobileLabel ?? ''), `the Mobile frame is the Primary (${mobileLabel})`)
+  check(!!await until(() => editing('mobile')), 'the editor starts on Mobile, the Primary')
+  check(!(await frames()).includes('large-phone'), `a mobile-first project keeps its default frames (${await frames()})`)
+  await shot(page, 'desktop-base/mobile-project')
+  await action('project_delete', { projectId: mobile.id, confirm: mobile.slug })
+  const gone = await action('project_get', { projectId: mobile.id }).then(() => false, e => /404/.test(e.message))
+  check(gone, 'the mobile-first project is deleted')
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 })

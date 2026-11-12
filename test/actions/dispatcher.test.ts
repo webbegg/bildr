@@ -189,8 +189,9 @@ describe('action dispatcher', () => {
     const bg = schema('node_insert').properties.style!.properties.bg!.anyOf! as (JsonSchema & { pattern?: string })[]
     expect(bg[0]!.enum).toContain('primary-500')
     expect(bg.slice(1).map(s => s.pattern)).toEqual(['^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$', '^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$'])
-    expect(schema('node_insert').properties.style!.properties['md:cols']!.enum).toEqual(['1', '2', '3', '4', '5', '6', '12'])
-    expect(updateStyle.properties['lg:mt']!.anyOf![0]!.enum).toContain('auto')
+    // Prefixed keys go through one pattern, taking the unprefixed key's values (S38.2).
+    expect(schema('node_insert').properties.style!.properties['md:cols']).toBeUndefined()
+    expect(Object.keys((updateStyle as JsonSchema & { patternProperties: Record<string, unknown> }).patternProperties)).toHaveLength(1)
     expect(updateStyle.properties['md:bg']).toBeUndefined()
 
     const { tokens } = await bildr.call<{ tokens: { key: string, group: string, values: string[] }[] }>('components_list', {}, ui)
