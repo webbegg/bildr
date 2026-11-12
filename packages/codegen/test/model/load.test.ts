@@ -134,6 +134,16 @@ describe('loadModel problems', () => {
     expect(problems(files)).toEqual(['.bildr/modules/blog/module.json: dependsOn: Module dependency cycle: blog → shop → blog'])
   })
 
+  it('refuses module names that collide with Nuxt aliases or the core layer', () => {
+    const files = fixtureModelFiles()
+    files['.bildr/modules/app/module.json'] = JSON.stringify({ id: 'mod_app', name: 'app', label: 'App', dependsOn: [] })
+    files['.bildr/modules/core/module.json'] = JSON.stringify({ id: 'mod_core', name: 'core', label: 'Core', dependsOn: [] })
+    expect(problems(files)).toEqual([
+      '.bildr/modules/app/module.json: name: "app" is reserved (Nuxt aliases and the core layer use it)',
+      '.bildr/modules/core/module.json: name: "core" is reserved (Nuxt aliases and the core layer use it)'
+    ])
+  })
+
   it('never stores secret values in data sources', () => {
     expect(problems(edit('.bildr/datasources/quotes.json', { 'defaults.apiKey': 'sk-live-123' })))
       .toEqual(['.bildr/datasources/quotes.json: defaults.apiKey: "apiKey" is a secret: set it with NUXT_DATASOURCES_QUOTES_API_KEY, never in the model'])
