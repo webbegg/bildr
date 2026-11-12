@@ -9,6 +9,13 @@ import { resolveBindings } from '#shared/runtime/bindings'
 import { INSTANCE_ID_SEPARATOR } from '#shared/runtime/instances'
 import { animatedProperties, createInteractionMachine, cssTransition, hasClick, hasInteractivity, initialMachineState, renderedVariant, rootElementType, transitionFor } from '#shared/runtime/interactions'
 
+/** A Load more List's button: shown while `more`, disabled while `loading`, with a generic message after a failed read. */
+export interface ListMoreState {
+  more: boolean
+  loading: boolean
+  failed: boolean
+}
+
 export interface RuntimeContext {
   /** Path prefix that page-slug links resolve under, e.g. `/p/shop`. */
   base: string
@@ -25,6 +32,13 @@ export interface RuntimeContext {
    * collection: the canvas shows a hint, published apps render nothing.
    */
   lists: Record<string, DataRecord[]>
+  /**
+   * Lists with Load more (keyed like `lists`): whether more records follow
+   * and how the last read went. Absent in the canvas, which shows `limit` records.
+   */
+  listMore?: Record<string, ListMoreState>
+  /** Reads the next page of a Load more List (by `listKey`) and appends it. */
+  loadMore?: (key: string) => void
   /**
    * Adds a record from a Form (published apps); rejects with a message to show.
    * Absent in the canvas, where forms never submit.

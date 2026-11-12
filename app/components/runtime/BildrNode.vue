@@ -43,6 +43,8 @@ import { resolveLink } from '#shared/runtime/render'
  * `useInstanceInteractions`); definition nodes then animate variant changes
  * with an inline `transition`. Nested instances of a definition render as
  * instances of their own there, so they keep their own state.
+ * A List with `loadMore` shows a Load more button under its records in
+ * published apps and the preview while more follow (`runtime.listMore`).
  */
 const props = defineProps<{
   node: DocNode
@@ -148,11 +150,15 @@ const LIST_LAYOUTS: Record<string, string> = { stack: 'flex-col', grid: '', row:
 const list = computed(() => {
   if (props.node.type !== 'List') return null
   const query = listQueryOf(p.value)
-  const records = query.collection ? runtime.lists[listKey(query)] : undefined
+  const key = listKey(query)
+  const records = query.collection ? runtime.lists[key] : undefined
   const layout = String(p.value.layout ?? '') in LIST_LAYOUTS ? String(p.value.layout) : 'stack'
   const items: (BindingItem | null)[] = records?.length ? records.map(bindingItem) : runtime.editable ? [null] : []
   const hint = !query.collection ? 'Choose a collection for this List' : !records ? `No collection "${query.collection}"` : null
-  return { layout, items, hint, placeholder: !records?.length }
+  // Load more: published apps and the preview only; the canvas shows `limit` records.
+  const state = !runtime.editable && query.loadMore && runtime.loadMore ? runtime.listMore?.[key] : undefined
+  const more = state && (state.more || state.failed) ? state : null
+  return { key, layout, items, hint, placeholder: !records?.length, more }
 })
 </script>
 
@@ -304,6 +310,26 @@ const list = computed(() => {
         :class="{ 'opacity-60': list.placeholder }"
       />
     </BildrListItem>
+    <!-- Under the records whatever the layout: a full row of a grid, its own line in a row. -->
+    <div
+      v-if="list.more"
+      class="col-span-full flex w-full basis-full flex-col items-center gap-2 self-stretch"
+      data-bildr-load-more
+    >
+      <UButton
+        label="Load more"
+        :loading="list.more.loading"
+        :disabled="list.more.loading"
+        @click="runtime.loadMore?.(list.key)"
+      />
+      <p
+        v-if="list.more.failed && !list.more.loading"
+        role="alert"
+        class="text-sm text-error"
+      >
+        Could not load more, try again later
+      </p>
+    </div>
     <BildrDropHint
       v-if="dropParent"
       :parent-id="node.id"

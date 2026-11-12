@@ -34,6 +34,15 @@ describe('listQueryOf', () => {
     expect(listKey(a)).toBe(listKey(b))
     expect(listKey(a)).not.toBe(listKey(c))
   })
+
+  it('keeps a Load more List apart from a plain List of the same query, so loading more grows only it', () => {
+    const plain = listQueryOf(createNode('List', { collection: 'menu', limit: 3 }).props)
+    const more = listQueryOf(createNode('List', { collection: 'menu', limit: 3, loadMore: true }).props)
+    expect(plain.loadMore).toBe(false)
+    expect(more.loadMore).toBe(true)
+    expect(listKey(more)).not.toBe(listKey(plain))
+    expect(listKey(plain)).toBe('["menu",3,"","asc","",""]')
+  })
 })
 
 describe('listRecords', () => {
@@ -63,6 +72,12 @@ describe('listSearch and parseListSearch', () => {
     expect(parseListSearch(Object.fromEntries(new URLSearchParams(search)))).toEqual({
       query: { limit: 5, offset: 0, sortField: 'price', sortDir: 'desc', filter: { vegan: 'true' } }
     })
+  })
+
+  it('adds the offset of a later page', () => {
+    const q = listQueryOf(createNode('List', { collection: 'menu', limit: 3 }).props)
+    expect(listSearch(q, 6)).toBe('limit=3&offset=6')
+    expect(listSearch(q, 0)).toBe('limit=3')
   })
 
   it('defaults to the cap and caps larger limits at 100', () => {

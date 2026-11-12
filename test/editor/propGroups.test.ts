@@ -54,7 +54,7 @@ describe('Settings prop groups', () => {
 
   it('puts data and form props under Behaviour and layout under Appearance', () => {
     expect(groups('List')).toEqual([
-      ['Behaviour', ['collection', 'limit', 'sortField', 'sortDir', 'filterField', 'filterValue']],
+      ['Behaviour', ['collection', 'limit', 'sortField', 'sortDir', 'filterField', 'filterValue', 'loadMore']],
       ['Appearance', ['layout']]
     ])
     expect(groups('Form')).toEqual([

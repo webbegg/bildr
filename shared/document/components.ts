@@ -174,6 +174,7 @@ export const COMPONENTS: ComponentDef[] = [
       { name: 'sortDir', label: 'Sort direction', kind: 'select', default: 'asc', options: ['asc', 'desc'] },
       { name: 'filterField', label: 'Filter field', kind: 'text', default: '', description: 'Only records whose field equals the filter value.' },
       { name: 'filterValue', label: 'Filter value', kind: 'text', default: '' },
+      { name: 'loadMore', label: 'Load more', kind: 'boolean', default: false, description: 'Published apps and the preview show a Load more button under the List that reads the next limit records.' },
       { name: 'layout', label: 'Layout', kind: 'select', default: 'stack', options: ['stack', 'grid', 'row'], description: 'grid uses the cols token.' }
     ],
     defaultStyle: { gap: '3', items: 'start' }

@@ -8,12 +8,12 @@ describe('List component', () => {
     const list = getComponent('List')!
     expect(list.icon).toBe('i-lucide-list')
     expect(isContainerType('List')).toBe(true)
-    expect(list.props.map(p => p.name)).toEqual(['collection', 'limit', 'sortField', 'sortDir', 'filterField', 'filterValue', 'layout'])
+    expect(list.props.map(p => p.name)).toEqual(['collection', 'limit', 'sortField', 'sortDir', 'filterField', 'filterValue', 'loadMore', 'layout'])
   })
 
   it('starts unbound, showing 10 records stacked in ascending order', () => {
     expect(createNode('List').props).toEqual({
-      collection: '', limit: 10, sortField: '', sortDir: 'asc', filterField: '', filterValue: '', layout: 'stack'
+      collection: '', limit: 10, sortField: '', sortDir: 'asc', filterField: '', filterValue: '', loadMore: false, layout: 'stack'
     })
     expect(getComponent('List')!.props.find(p => p.name === 'sortDir')!.options).toEqual(['asc', 'desc'])
     expect(getComponent('List')!.props.find(p => p.name === 'layout')!.options).toEqual(['stack', 'grid', 'row'])

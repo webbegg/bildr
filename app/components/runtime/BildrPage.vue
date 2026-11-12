@@ -23,6 +23,9 @@ const props = withDefaults(defineProps<{
   /** Instances run their states and interactions; defaults to not `editable` (the preview and published apps). */
   interactive?: boolean
   lists?: Record<string, DataRecord[]>
+  /** Load more Lists' state and their next-page read (published apps and the preview). */
+  listMore?: RuntimeContext['listMore']
+  loadMore?: RuntimeContext['loadMore']
   submitForm?: RuntimeContext['submitForm']
   /** Public variables for `{{ env.NAME }}`. */
   env?: EnvValues
@@ -43,6 +46,8 @@ provide(RUNTIME_KEY, reactive({
   editable: computed(() => props.editable === true),
   interactive,
   lists: computed(() => props.lists ?? {}),
+  listMore: computed(() => props.listMore),
+  loadMore: computed(() => props.loadMore),
   submitForm: computed(() => props.submitForm),
   env: computed(() => props.env),
   components: computed(() => props.components),

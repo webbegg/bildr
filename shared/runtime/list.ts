@@ -21,6 +21,8 @@ export interface ListQuery {
   sortDir: 'asc' | 'desc'
   filterField: string
   filterValue: string
+  /** Published apps and the preview show a Load more button that reads the next `limit` records. */
+  loadMore: boolean
 }
 
 /** A query in its URL form, before it is checked against a collection's fields. */
@@ -44,29 +46,36 @@ export function listQueryOf(props: Record<string, PropValue>): ListQuery {
     sortField: text('sortField').trim(),
     sortDir: props.sortDir === 'desc' ? 'desc' : 'asc',
     filterField: text('filterField').trim(),
-    filterValue: text('filterValue')
+    filterValue: text('filterValue'),
+    loadMore: props.loadMore === true
   }
 }
 
-/** Identifies a List's result set: Lists with the same query share it. */
+/**
+ * Identifies a List's result set: Lists with the same query share it. A
+ * Load more List has its own, so loading more grows only Load more Lists;
+ * the key stays the same as pages are added.
+ */
 export function listKey(query: ListQuery): string {
-  return JSON.stringify([query.collection, query.limit, query.sortField, query.sortDir, query.filterField, query.filterValue])
+  const key: unknown[] = [query.collection, query.limit, query.sortField, query.sortDir, query.filterField, query.filterValue]
+  return JSON.stringify(query.loadMore ? [...key, 'loadMore'] : key)
 }
 
-function searchOf(query: ListQuery): ListSearch {
+function searchOf(query: ListQuery, offset = 0): ListSearch {
   return {
     limit: query.limit,
-    offset: 0,
+    offset,
     sortField: query.sortField,
     sortDir: query.sortDir,
     filter: query.filterField && query.filterValue !== '' ? { [query.filterField]: query.filterValue } : {}
   }
 }
 
-/** URL search params for the public endpoint, e.g. `limit=5&sort=price&dir=desc&filter[vegan]=true`. */
-export function listSearch(query: ListQuery): string {
-  const search = searchOf(query)
+/** URL search params for the public endpoint, e.g. `limit=5&sort=price&dir=desc&filter[vegan]=true`; a later page adds its `offset`. */
+export function listSearch(query: ListQuery, offset = 0): string {
+  const search = searchOf(query, offset)
   const params = new URLSearchParams({ limit: String(search.limit) })
+  if (search.offset > 0) params.set('offset', String(search.offset))
   if (search.sortField) {
     params.set('sort', search.sortField)
     params.set('dir', search.sortDir)
@@ -124,9 +133,14 @@ export function toRecordQuery(collection: Collection, search: ListSearch): { que
 
 /** The records a List shows, read with the collection's fields; none when its query does not fit the collection. */
 export function listRecords(collection: Collection, records: DataRecord[], query: ListQuery): DataRecord[] {
-  const result = toRecordQuery(collection, searchOf(query))
-  if ('problem' in result) return []
-  return queryRecords(records.map(r => readRecord(collection.fields, r)), result.query).records
+  return listPage(collection, records, query, query.limit).records
+}
+
+/** The first `count` records of a List's query and how many match; none when its query does not fit the collection. */
+export function listPage(collection: Collection, records: DataRecord[], query: ListQuery, count: number): { total: number, records: DataRecord[] } {
+  const result = toRecordQuery(collection, { ...searchOf(query), limit: count })
+  if ('problem' in result) return { total: 0, records: [] }
+  return queryRecords(records.map(r => readRecord(collection.fields, r)), result.query)
 }
 
 /** Every List under `root`, nested ones included, and those inside component instances (ids `<instance>/<node>`). */

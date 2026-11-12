@@ -4,6 +4,8 @@ import { bindingItem } from '#shared/runtime/bindings'
 import { detailKeyField, detailTitle, resolvePageRoute } from '#shared/runtime/detail'
 import { resolvePageWithLayout } from '#shared/runtime/layouts'
 import { listKey, listNodes, listQueryOf, listSearch } from '#shared/runtime/list'
+import { mergePage, nextPageSearch } from '#shared/runtime/loadMore'
+import type { ListPage, LoadedList } from '#shared/runtime/loadMore'
 import type { VisitorSnapshot } from '#shared/runtime/visitor'
 
 /**
@@ -19,6 +21,8 @@ import type { VisitorSnapshot } from '#shared/runtime/visitor'
  * with it as the page item; without a key, with a key no record has, or
  * with a key on a plain page, it shows not found (the app is a SPA, so the
  * status stays 200).
+ * A List with `loadMore` reads its next page from the same endpoint
+ * (`offset` = the records loaded, same limit, sort and filter) and appends it.
  */
 definePageMeta({ layout: false })
 
@@ -60,7 +64,16 @@ watch(wantedKey, async (current) => {
 const item = computed(() => (record.value ? bindingItem(record.value) : null))
 const shown = computed(() => !!page.value && (!page.value.collection || recordState.value === 'found'))
 
-const lists = shallowRef<Record<string, DataRecord[]>>({})
+/** Records loaded per List query (`listKey`), and whether more follow. */
+const loaded = shallowRef<Record<string, LoadedList>>({})
+const lists = computed(() => Object.fromEntries(Object.entries(loaded.value).map(([key, list]) => [key, list.records])))
+/** Load more reads in flight or failed, by `listKey`. */
+const moreStatus = ref<Record<string, 'idle' | 'loading' | 'failed'>>({})
+const listMore = computed(() => Object.fromEntries(Object.entries(loaded.value).map(([key, list]) => [key, {
+  more: list.more,
+  loading: moreStatus.value[key] === 'loading',
+  failed: moreStatus.value[key] === 'failed'
+}])))
 // Collections the snapshot does not mark publicRead would only answer 404, so they are not asked.
 const queries = computed(() => {
   const readable = new Set(project.value?.collections.filter(c => c.publicRead).map(c => c.slug))
@@ -70,11 +83,26 @@ const queries = computed(() => {
 watch(queries, async (current) => {
   const entries = await Promise.all(current.map(async (query) => {
     const url = `/api/public/${projectSlug.value}/${query.collection}?${listSearch(query)}`
-    const result = await $fetch<{ records: DataRecord[] }>(url).catch(() => null)
-    return result ? [[listKey(query), result.records] as const] : []
+    const result = await $fetch<ListPage>(url).catch(() => null)
+    return result ? [[listKey(query), mergePage(undefined, result)] as const] : []
   }))
-  if (current === queries.value) lists.value = Object.fromEntries(entries.flat())
+  if (current !== queries.value) return
+  moreStatus.value = {}
+  loaded.value = Object.fromEntries(entries.flat())
 }, { immediate: true })
+
+async function loadMore(key: string): Promise<void> {
+  const query = queries.value.find(q => listKey(q) === key)
+  const before = loaded.value[key]
+  if (!query?.loadMore || !before?.more || moreStatus.value[key] === 'loading') return
+  moreStatus.value = { ...moreStatus.value, [key]: 'loading' }
+  const url = `/api/public/${projectSlug.value}/${query.collection}?${nextPageSearch(query, before)}`
+  const page = await $fetch<ListPage>(url).catch(() => null)
+  // The page's Lists were read again meanwhile: this page belongs to the old records.
+  if (loaded.value[key] !== before) return
+  moreStatus.value = { ...moreStatus.value, [key]: page ? 'idle' : 'failed' }
+  if (page) loaded.value = { ...loaded.value, [key]: mergePage(before, page) }
+}
 
 async function submitForm(collection: string, values: Record<string, string>): Promise<void> {
   try {
@@ -102,6 +130,8 @@ useHead(() => {
     :item="item"
     :base="`/p/${projectSlug}`"
     :lists="lists"
+    :list-more="listMore"
+    :load-more="loadMore"
     :components="project?.components"
     :layouts="project?.layouts"
     :submit-form="submitForm"

@@ -124,7 +124,7 @@ Each project has one set of variables, stored outside the project document. They
 
 ### Lists and bindings
 
-A **List** is a container bound to a collection, with the props `collection`, `limit`, `sortField`, `sortDir`, `filterField` and `filterValue`. It renders its children once per record. Any string prop inside it can use `{{ item.<field> }}` bindings, for example a Text `{{ item.name }}`, an Image `src` of `{{ item.image }}`, or a Link `to` of `post/{{ item.slug }}` (a link to a [detail page](#detail-pages)). In the canvas, a List shows the collection's current records, or placeholder rows while it is empty.
+A **List** is a container bound to a collection, with the props `collection`, `limit`, `sortField`, `sortDir`, `filterField`, `filterValue` and `loadMore`. It renders its children once per record. With `loadMore`, published apps and the draft preview show a **Load more** button under the List while more records follow: each click reads the next `limit` records (same sort and filter, from the public endpoint's `offset`, at most 100 a page and within the paging caps) and appends them, until a page brings nothing new. The canvas always shows `limit` records. Any string prop inside it can use `{{ item.<field> }}` bindings, for example a Text `{{ item.name }}`, an Image `src` of `{{ item.image }}`, or a Link `to` of `post/{{ item.slug }}` (a link to a [detail page](#detail-pages)). In the canvas, a List shows the collection's current records, or placeholder rows while it is empty.
 
 ### Detail pages
 
