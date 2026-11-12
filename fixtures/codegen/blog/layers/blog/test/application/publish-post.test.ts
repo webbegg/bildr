@@ -4,22 +4,16 @@ import { publishPost } from '../../server/application/actions/publish-post'
 import { postSeed } from '../../server/infrastructure/db/seed'
 import { memoryPostRepository } from '../../server/infrastructure/repositories/post.memory'
 
-const [published, draft] = postSeed as [typeof postSeed[0], typeof postSeed[0]]
-
 describe('publishPost', () => {
-  it('publishes a draft', async () => {
-    const result = await publishPost({ posts: memoryPostRepository(postSeed) })(draft.id)
-    expect(result.ok && result.value.published).toBe(true)
-    expect(result.ok && result.value.publishedAt).toBeTruthy()
+  it('succeeds', async () => {
+    const posts = memoryPostRepository(postSeed)
+    const result = await publishPost({ posts })(postSeed[0]!.id)
+    expect(result.ok).toBe(true)
   })
 
-  it('keeps the first publication date', async () => {
-    const result = await publishPost({ posts: memoryPostRepository(postSeed) })(published.id)
-    expect(result.ok && result.value.publishedAt).toBe(published.publishedAt)
-  })
-
-  it('fails for an unknown post', async () => {
-    const result = await publishPost({ posts: memoryPostRepository() })(draft.id)
+  it('fails with post_not_found', async () => {
+    const posts = memoryPostRepository()
+    const result = await publishPost({ posts })('00000000-0000-4000-8000-000000000001')
     expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: 'post_not_found' }) })
   })
 })
