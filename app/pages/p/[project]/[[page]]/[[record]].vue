@@ -55,8 +55,9 @@ watch(wantedKey, async (current) => {
   // Collections the snapshot does not mark publicRead would only answer 404, so they are not asked.
   if (!want.collection?.publicRead) return (recordState.value = 'missing')
   recordState.value = 'loading'
-  const url = `/api/public/${projectSlug.value}/${want.collection.slug}/${encodeURIComponent(want.key)}?field=${encodeURIComponent(want.field)}`
-  const result = await $fetch<{ record: DataRecord }>(url).catch(() => null)
+  // The key travels as a query value, so `?`, `#` and `/` in it reach the server as they are.
+  const url = `/api/public/${projectSlug.value}/${want.collection.slug}/record`
+  const result = await $fetch<{ record: DataRecord }>(url, { query: { key: want.key, field: want.field } }).catch(() => null)
   if (current !== wantedKey.value) return
   record.value = result?.record ?? null
   recordState.value = result ? 'found' : 'missing'

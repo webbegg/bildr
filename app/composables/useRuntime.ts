@@ -57,8 +57,8 @@ export interface RuntimeContext {
  * record (outside a List the canvas shows them as written, published apps
  * empty) and env ones from the runtime's public variables, in one pass.
  */
-export function bindValue(value: string, runtime: Pick<RuntimeContext, 'editable' | 'env' | 'onMissingEnv'>, item?: BindingItem | null): string {
-  const scope = { env: runtime.env, onMissingEnv: runtime.onMissingEnv }
+export function bindValue(value: string, runtime: Pick<RuntimeContext, 'editable' | 'env' | 'onMissingEnv'>, item?: BindingItem | null, options: { link?: boolean } = {}): string {
+  const scope = { env: runtime.env, onMissingEnv: runtime.onMissingEnv, link: options.link }
   if (item) return resolveBindings(value, { item, ...scope })
   if (!runtime.editable) return resolveBindings(value, scope)
   return runtime.env ? resolveEnv(value, runtime.env, { onMissing: runtime.onMissingEnv ?? 'keep' }) : value

@@ -1,5 +1,5 @@
 /**
- * Every method but GET (`[key].get.ts`): a published app's records cannot be
+ * Every method but GET (`record.get.ts`): a published app's records cannot be
  * changed or deleted from outside. HEAD is not served either, so a HEAD
  * never starts an API fetch.
  */

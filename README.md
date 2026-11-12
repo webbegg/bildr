@@ -133,8 +133,9 @@ A **detail page** is a page template that renders once per record of a collectio
 - `slug` is the collection's slug. `field` is the **URL key**: a text field whose value identifies the record in the URL. Without one, a text field named `slug` is used when the collection has it, else the record id.
 - On a detail page, `{{ item.<field> }}` bindings read the page's record everywhere on the page: its layout and component property values included. Inside a List, the List's own record wins.
 - Links to it store `<page>/{{ item.<key field> }}`, for example a Link `to` of `post/{{ item.slug }}` inside a List of posts, so each row links to its own record.
+- In a link (`to`, a Form's `redirectTo`), item values are URL-encoded, so a key such as `What is new?` or `a/b` links to `post/What%20is%20new%3F` or `post/a%2Fb`, and the page reads the exact key back. A link that is a bound value alone (`{{ item.url }}`) is kept as it is. WebMCP `navigate_to_page` encodes its `key` the same way.
 - The page title is `<record title> · <project>`, where the record title is its `title` field, else its `name` field, else the key.
-- A detail page opened without a key, or with a key no record has, shows "Page not found". So does a plain page with an extra segment, for example `/p/<site>/about/x`. The app is a single-page app, so the HTTP status stays 200.
+- A detail page opened without a key, or with a key no record has, shows "Page not found". So does a plain page with an extra segment, for example `/p/<site>/about/x`, and any longer path, for example `/p/<site>/post/hello/x`. The app is a single-page app, so the HTTP status stays 200.
 - Published apps read the record from the public record endpoint, so the collection must be `publicRead` there. The draft preview reads it with `record_find`, for any collection.
 
 Actions:
@@ -164,7 +165,7 @@ Published apps read and write data through `/api/public/<project-slug>/<collecti
   - A collection holds at most 5,000 records.
   - Each IP address gets 10 writes and 120 reads per minute per project. The counters live in memory, so they reset on restart and are not shared between processes.
   - `X-Forwarded-For` is ignored, because any client can send it. Behind a reverse proxy, all visitors share the proxy's one budget.
-- `GET /api/public/<project-slug>/<collection-slug>/<key>?field=<field>` returns one record of a `publicRead` collection, `{ record }`, with the declared fields only and no source details. It is for [detail pages](#detail-pages). `field` is a text field or `id`; without it, the collection's default URL key applies. An unknown key answers `404`, a `field` that is not a text field `400`, and a failed remote read a generic `502`. It is GET only (other methods answer `405`) and shares the read rate limit.
+- `GET /api/public/<project-slug>/<collection-slug>/record?key=<key>&field=<field>` returns one record of a `publicRead` collection, `{ record }`, with the declared fields only and no source details. It is for [detail pages](#detail-pages). `key` is the URL key, URL-encoded as a query value, so keys holding `?`, `#`, `&` or `/` read as they are. `field` is a text field or `id`; without it, the collection's default URL key applies. An unknown or missing key answers `404`, a `field` that is not a text field `400`, and a failed remote read a generic `502`. It is GET only (other methods answer `405`) and shares the read rate limit.
 - Errors are generic. The details only go to the server log.
 - `/api/published/<project-slug>`, which the published app loads, leaves out the connections, and the URL, headers, items path, endpoints, id path and field paths of API and connection collections. The public `GET` resolves them on the server from the stored snapshot and the current variables. Its `env` holds the public variables only.
 

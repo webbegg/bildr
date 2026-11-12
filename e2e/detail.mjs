@@ -75,7 +75,41 @@ await run('detail', async ({ page, context, errors }) => {
   check(set.keyField === 'id' && set.path === '/jp-post/:id', `page_set_collection on a collection without slug keys by id (${set.keyField}, ${set.path})`)
   const jp1 = await (await fetch(`${API}/posts/1`)).json()
 
+  // Keys that are not URL-safe: Notes keyed by title, listed on a Notes page that links to each.
+  const tricky = ['What is new?', 'Part #2', 'a/b']
+  await call('collection_create', { name: 'Notes', fields: [{ key: 'title', type: 'text' }] })
+  await call('collection_update', { collection: 'notes', publicRead: true })
+  for (const title of tricky) await call('record_create', { collection: 'notes', values: { title } })
+  const { pageId: byTitle } = await call('page_add', { name: 'By title', slug: 'bytitle', collection: { slug: 'notes', field: 'title' } })
+  await call('node_insert', { pageId: byTitle, type: 'Heading', props: { text: 'Note: {{ item.title }}' } })
+  const { pageId: notesPage } = await call('page_add', { name: 'Notes', slug: 'notes' })
+  const { nodeId: notesList } = await call('node_insert', { pageId: notesPage, type: 'List', props: { collection: 'notes' } })
+  await call('node_insert', { pageId: notesPage, parentId: notesList, type: 'Link', props: { label: 'Open {{ item.title }}', to: 'bytitle/{{ item.title }}' } })
+
   await call('project_publish')
+
+  /**
+   * The Notes List links open each tricky key, and each detail URL shows it.
+   * One load of the List, then back with history: every full load of the dev
+   * server fetches hundreds of modules, and too many exhaust Chromium.
+   */
+  async function checkTrickyKeys(base, suffix, label) {
+    await page.goto(`${BASE}${base}/notes`)
+    await page.getByText('Open Part #2').waitFor()
+    for (const title of tricky) {
+      await page.getByText(`Open ${title}`, { exact: true }).click()
+      await page.waitForURL(url => url.pathname === `${base}/bytitle/${encodeURIComponent(title)}`)
+      await page.getByRole('heading', { name: `Note: ${title}`, exact: true }).waitFor()
+      check(true, `${label}: the List link of "${title}" opens it`)
+      await page.goBack()
+      await page.getByText(`Open ${title}`, { exact: true }).waitFor()
+    }
+    for (const title of tricky) {
+      await page.goto(`${BASE}${base}/bytitle/${encodeURIComponent(title)}`)
+      await page.getByRole('heading', { name: `Note: ${title}`, exact: true }).waitFor()
+      check(await until(async () => (await page.title()) === `${title} · ${p.name}${suffix}`), `${label}: the detail URL of "${title}" shows it (${await page.title()})`)
+    }
+  }
 
   // The published app, with a fake WebMCP host.
   await context.addInitScript(fakeModelContext)
@@ -113,7 +147,7 @@ await run('detail', async ({ page, context, errors }) => {
   check(keyless.isError === true && keyless.content[0].text.includes('give its key'), 'WebMCP navigate_to_page refuses a detail page without a key')
 
   // Not found: an unknown key, no key, a key on a plain page, and a collection without publicRead.
-  for (const [path, what] of [['post/nope', 'an unknown key'], ['post', 'a detail page without a key'], ['home/extra', 'a plain page with an extra segment']]) {
+  for (const [path, what] of [['post/nope', 'an unknown key'], ['post', 'a detail page without a key'], ['home/extra', 'a plain page with an extra segment'], ['post/hello-world/extra', 'a detail page with an extra segment'], ['home/a/b/c', 'a path of many segments']]) {
     await live.goto(`${BASE}/p/${p.slug}/${path}`)
     await live.getByText('Page not found').waitFor()
     check(await until(async () => (await live.title()) === 'Not found'), `${what} shows not found (/p/${p.slug}/${path})`)
@@ -127,18 +161,36 @@ await run('detail', async ({ page, context, errors }) => {
   await live.getByText('Page not found').waitFor({ timeout: 20_000 })
   check(true, 'an unknown jsonplaceholder id shows not found')
 
+  // Keys with ?, # and /: the record read, the detail URL, the List links, and WebMCP.
+  await live.goto(`${BASE}/p/${p.slug}/notes`)
+  await live.getByText('Open Part #2').waitFor()
+  const noteLinks = await live.locator('[data-bildr-type="Link"]').evaluateAll(els => els.map(a => a.getAttribute('href')))
+  check(noteLinks.join() === tricky.map(t => `/p/${p.slug}/bytitle/${encodeURIComponent(t)}`).join(), `List links encode their key (${noteLinks})`)
+  for (const title of tricky) {
+    const response = await fetch(`${BASE}/api/public/${p.slug}/notes/record?key=${encodeURIComponent(title)}&field=title`)
+    const read = response.ok ? await response.json() : null
+    check(response.status === 200 && read?.record.values.title === title, `the record read finds "${title}" (${response.status})`)
+  }
+  await checkTrickyKeys(`/p/${p.slug}`, '', 'published')
+  const cut = await fetch(`${BASE}/api/public/${p.slug}/notes/record?key=${encodeURIComponent('What is new')}&field=title`)
+  check(cut.status === 404, `a key is never cut at an encoded ? (${cut.status})`)
+  await live.evaluate(async () => window.__webmcpTools.find(t => t.name === 'navigate_to_page').execute({ slug: 'bytitle', key: 'Part #2' }))
+  await live.getByRole('heading', { name: 'Note: Part #2', exact: true }).waitFor()
+  check(new URL(live.url()).pathname === `/p/${p.slug}/bytitle/Part%20%232`, `WebMCP navigate_to_page encodes the key the same way (${live.url()})`)
+
   // The public record endpoint: GET only, publicRead only, 404 for unknown keys, declared fields only.
-  const endpoint = `${BASE}/api/public/${p.slug}/posts`
-  const one = await fetch(`${endpoint}/hello-world?field=slug`)
+  const endpoint = `${BASE}/api/public/${p.slug}/posts/record`
+  const one = await fetch(`${endpoint}?key=hello-world&field=slug`)
   const body = await one.json()
-  check(one.status === 200 && body.record?.values.title === 'Hello' && Object.keys(body.record).sort().join() === 'createdAt,id,updatedAt,values', `GET /api/public/<p>/<c>/<key> answers the record (${one.status})`)
-  check((await fetch(`${endpoint}/nope`)).status === 404, 'an unknown key answers 404')
-  check((await fetch(`${BASE}/api/public/${p.slug}/drafts/secret`)).status === 404, 'a collection without publicRead answers 404')
+  check(one.status === 200 && body.record?.values.title === 'Hello' && Object.keys(body.record).sort().join() === 'createdAt,id,updatedAt,values', `GET /api/public/<p>/<c>/record?key= answers the record (${one.status})`)
+  check((await fetch(`${endpoint}?key=nope`)).status === 404, 'an unknown key answers 404')
+  check((await fetch(endpoint)).status === 404, 'no key answers 404')
+  check((await fetch(`${BASE}/api/public/${p.slug}/drafts/record?key=secret`)).status === 404, 'a collection without publicRead answers 404')
   for (const method of ['DELETE', 'PUT', 'PATCH', 'POST']) {
-    const response = await fetch(`${endpoint}/hello-world`, { method })
+    const response = await fetch(`${endpoint}?key=hello-world`, { method })
     check(response.status === 405 && response.headers.get('allow') === 'GET', `${method} on a record answers 405`)
   }
-  const remote = await (await fetch(`${BASE}/api/public/${p.slug}/jp-posts/2`)).json()
+  const remote = await (await fetch(`${BASE}/api/public/${p.slug}/jp-posts/record?key=2`)).json()
   check(remote.record?.id === '2' && !JSON.stringify(remote).includes('typicode'), 'the remote record comes without source details')
 
   // The draft preview: record_find, the same not-found rules, the draft title.
@@ -148,6 +200,10 @@ await run('detail', async ({ page, context, errors }) => {
   await live.goto(`${BASE}/preview/${projectId}/post/nope`)
   await live.getByText('Page not found').waitFor()
   check(true, 'the preview shows not found for an unknown key')
+  await live.goto(`${BASE}/preview/${projectId}/post/second/extra`)
+  await live.getByText('Page not found').waitFor()
+  check(true, 'the preview shows not found for an extra segment')
+  await checkTrickyKeys(`/preview/${projectId}`, ' (draft)', 'preview')
   await live.goto(`${BASE}/preview/${projectId}`)
   await live.getByText('Read Second').waitFor()
   check(true, 'the preview still opens the first page without a segment')

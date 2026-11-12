@@ -336,7 +336,7 @@ describe('published apps', () => {
     }
     const root = fileURLToPath(new URL('../../server/api/public', import.meta.url))
     const files = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter(f => f.endsWith('.ts')).sort()
-    expect(files).toEqual(['[projectSlug]/[collectionSlug].get.ts', '[projectSlug]/[collectionSlug].post.ts', '[projectSlug]/[collectionSlug].ts', '[projectSlug]/[collectionSlug]/[key].get.ts', '[projectSlug]/[collectionSlug]/[key].ts'])
+    expect(files).toEqual(['[projectSlug]/[collectionSlug].get.ts', '[projectSlug]/[collectionSlug].post.ts', '[projectSlug]/[collectionSlug].ts', '[projectSlug]/[collectionSlug]/record.get.ts', '[projectSlug]/[collectionSlug]/record.ts'])
     const source = (file: string) => readFileSync(join(root, file), 'utf8')
     expect(source(files[2]!)).toContain('statusCode: 405')
     expect(source(files[4]!)).toContain('statusCode: 405')

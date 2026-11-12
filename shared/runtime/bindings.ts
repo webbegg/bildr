@@ -24,6 +24,14 @@ export interface BindingScope {
   onMissingEnv?: 'keep' | 'empty'
   /** The component properties by name; without them (or for a name missing from them) prop refs stay as written. */
   prop?: Record<string, PropValue>
+  /**
+   * The value is a link (`to`, `redirectTo`): item values are URL-encoded
+   * (`encodeURIComponent`), so a detail link `post/{{ item.title }}` stays one
+   * valid path segment whatever the key holds (`?`, `#`, `/`, spaces). A
+   * binding that starts the link (`{{ item.url }}`) is kept as it is, so a
+   * record's URL still links out. Env and prop refs are never encoded.
+   */
+  link?: boolean
 }
 
 const BINDING = /\{\{\s*item\.([A-Za-z_]\w*)\s*\}\}/g
@@ -58,7 +66,8 @@ export function hasBindings(value: string): boolean {
  */
 export function resolveBindings(value: string, scope: BindingScope): string {
   if (!value.includes('{{')) return value
-  return value.replace(ANY_BINDING, (ref, kind: string | undefined, key: string, propName: string | undefined) => {
+  const start = value.length - value.trimStart().length
+  return value.replace(ANY_BINDING, (ref, kind: string | undefined, key: string, propName: string | undefined, offset: number) => {
     if (propName !== undefined) return propRef(ref, propName, scope.prop)
     if (kind === 'env') {
       const env = scope.env
@@ -68,7 +77,8 @@ export function resolveBindings(value: string, scope: BindingScope): string {
     }
     const item = scope.item
     const resolved = item && Object.hasOwn(item, key) ? item[key] : undefined
-    return resolved === undefined || resolved === null ? '' : String(resolved)
+    const text = resolved === undefined || resolved === null ? '' : String(resolved)
+    return scope.link && offset !== start ? encodeURIComponent(text) : text
   })
 }
 

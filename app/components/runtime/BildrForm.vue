@@ -30,7 +30,7 @@ async function onSubmit(event: Event) {
     sending.value = false
   }
   toast.add({ title: text('successMessage') || 'Thanks!', color: 'success', icon: 'i-lucide-check' })
-  const link = resolveLink(text('redirectTo'), runtime.base)
+  const link = resolveLink(bindValue(String(props.node.props.redirectTo ?? ''), runtime, scope?.item, { link: true }), runtime.base)
   if (link?.external) window.location.assign(link.to)
   else if (link) await navigateTo(link.to)
   else if (props.node.props.resetOnSuccess !== false) form.reset()

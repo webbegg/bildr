@@ -62,7 +62,8 @@ const motionTransition = useMotionTransition(() => props.node.id)
 
 const p = computed(() => props.node.props)
 const text = (name: string) => bindValue(String(p.value[name] ?? ''), runtime, scope?.item)
-const link = computed(() => resolveLink(text('to'), runtime.base))
+// Item values in a link are URL-encoded, so a detail link's key stays one valid path segment.
+const link = computed(() => resolveLink(bindValue(String(p.value.to ?? ''), runtime, scope?.item, { link: true }), runtime.base))
 const fromDefinition = computed(() => isDefinitionNodeId(props.node.id))
 const inline = computed(() => {
   const style: Record<string, string> = styleInline(props.node.style)
@@ -316,11 +317,14 @@ const list = computed(() => {
       class="col-span-full flex w-full basis-full flex-col items-center gap-2 self-stretch"
       data-bildr-load-more
     >
+      <!-- Never `disabled` (nor UButton's `loading`, which disables it) while loading: that would drop the keyboard focus to the body. `loadMore` ignores clicks while a read is in flight. -->
       <UButton
         label="Load more"
-        :loading="list.more.loading"
-        :disabled="list.more.loading"
-        @click="runtime.loadMore?.(list.key)"
+        :icon="list.more.loading ? 'i-lucide-loader-circle' : undefined"
+        :ui="{ leadingIcon: 'animate-spin' }"
+        :aria-disabled="list.more.loading || undefined"
+        :aria-busy="list.more.loading || undefined"
+        @click="list.more.loading || runtime.loadMore?.(list.key)"
       />
       <p
         v-if="list.more.failed && !list.more.loading"

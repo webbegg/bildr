@@ -35,6 +35,8 @@ async function checkPosts(page, url, label) {
   await page.keyboard.press('Enter')
   const six = !!(await until(async () => (await titles(page, 'More:')).length === 6))
   check(six, `${label}: Enter on the focused button loads 3 more (${(await titles(page, 'More:')).length})`)
+  const focused = await until(() => page.evaluate(() => (document.activeElement?.closest('[data-bildr-load-more]') && document.activeElement.textContent.trim() === 'Load more' && !document.activeElement.getAttribute('aria-busy')) || false))
+  check(!!focused, `${label}: the keyboard focus stays on the Load more button once the load finishes (${await page.evaluate(() => document.activeElement?.tagName)})`)
   const seven = await loadTo(page, 'More:', 7)
   const shown = await titles(page, 'More:')
   check(seven && shown.join() === [1, 2, 3, 4, 5, 6, 7].map(n => `More: Post ${n}`).join(), `${label}: the next click loads the last one, in order without repeats (${shown})`)

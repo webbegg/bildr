@@ -37,7 +37,7 @@ export function pageOutline(page: Page, { path, item }: OutlineOptions = {}): st
   const lines = [`Page "${page.name}" (${path ?? `/${page.slug}`})`]
   const bound = (node: DocNode, scope: BindingItem | null | undefined): DocNode => {
     if (!scope) return node
-    const props = Object.fromEntries(Object.entries(node.props).map(([key, value]) => [key, typeof value === 'string' ? resolveBindings(value, { item: scope }) : value]))
+    const props = Object.fromEntries(Object.entries(node.props).map(([key, value]) => [key, typeof value === 'string' ? resolveBindings(value, { item: scope, link: key === 'to' }) : value]))
     return { ...node, props }
   }
   const visit = (raw: DocNode, depth: number, scope: BindingItem | null | undefined) => {

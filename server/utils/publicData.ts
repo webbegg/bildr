@@ -114,12 +114,16 @@ export type PublicRecordResult
 
 /**
  * One record of a `publicRead` collection by its URL key, for a published
- * detail page: `params.field` names the key field (a text field or `id`;
- * the collection's default without one, see `detailKeyField`), and `find`
- * looks the record up (`recordByKey`; its failures are the caller's to turn
- * into a generic error). The record carries the declared fields only.
+ * detail page, from the endpoint's query (`getQuery`): `params.key` is the
+ * key, as it is (a query value, so `?`, `#`, `&` and `/` survive encoded;
+ * missing or repeated is not found), `params.field` names the key field (a
+ * text field or `id`; the collection's default without one, see
+ * `detailKeyField`), and `find` looks the record up (`recordByKey`; its
+ * failures are the caller's to turn into a generic error). The record
+ * carries the declared fields only.
  */
-export async function publicRecordByKey(collection: Collection, key: string, params: Record<string, unknown>, find: (field: string, key: string) => Promise<DataRecord | undefined>): Promise<PublicRecordResult> {
+export async function publicRecordByKey(collection: Collection, params: Record<string, unknown>, find: (field: string, key: string) => Promise<DataRecord | undefined>): Promise<PublicRecordResult> {
+  const key = typeof params.key === 'string' ? params.key : ''
   const given = params.field
   if (given !== undefined && typeof given !== 'string') return { ok: false, status: 400, message: 'Unknown key field' }
   const field = detailKeyField(collection, given || undefined)

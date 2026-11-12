@@ -15,7 +15,8 @@ const mcp = { caller: 'mcp' as const, source: 'mcp' }
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 const resolve: Resolver = async () => [{ address: '93.184.216.34', family: 4 }]
 
-async function setup() {
+/** `titles`: more posts, each with that title and slug. */
+async function setup(titles: string[] = []) {
   const transport: Transport = async (url) => {
     if (url.pathname === '/v1/posts/7') return json({ id: 7, title: 'Remote seven', meta: { internal: 'x' } })
     if (url.pathname === '/v1/posts/down') return json({ error: 'boom at 10.0.0.5' }, 500)
@@ -27,6 +28,7 @@ async function setup() {
   await call('collection_create', { name: 'Posts', fields: [{ key: 'title', type: 'text' }, { key: 'slug', type: 'text' }, { key: 'views', type: 'number' }] })
   await call('collection_create', { name: 'Drafts', fields: [{ key: 'slug', type: 'text' }] })
   const hello = await call<DataRecord>('record_create', { collection: 'posts', values: { title: 'Hello', slug: 'hello-world', views: 3 } })
+  for (const title of titles) await call('record_create', { collection: 'posts', values: { title, slug: title } })
   await call('record_create', { collection: 'drafts', values: { slug: 'secret' } })
   const { connection } = await call<{ connection: Connection }>('connection_create', { name: 'API', baseUrl: 'https://api.example.com/v1' })
   await call<{ collection: Collection }>('collection_create', {
@@ -38,13 +40,14 @@ async function setup() {
   await call('collection_update', { collection: 'remote', publicRead: true })
   await call('project_publish')
   const snapshot = (await bildr.services.getPublished('blog'))!
-  /** What the endpoint answers for `/api/public/blog/<slug>/<key>?<params>`. */
-  const read = (slug: string, key: string, params: Record<string, unknown> = {}) => {
+  /** What the endpoint answers for `/api/public/blog/<slug>/record?<query>` (the query as `getQuery` parses it). */
+  const query = (slug: string, params: Record<string, unknown>) => {
     const collection = publicCollection(snapshot, slug)
     if (!collection) return Promise.resolve({ ok: false, status: 404, message: 'Collection not found' })
-    return publicRecordByKey(collection, key, params, (field, value) => bildr.services.recordByKey(snapshot.project.id, collection, snapshot.project.connections, field, value))
+    return publicRecordByKey(collection, params, (field, value) => bildr.services.recordByKey(snapshot.project.id, collection, snapshot.project.connections, field, value))
   }
-  return { read, hello }
+  const read = (slug: string, key: string, params: Record<string, unknown> = {}) => query(slug, { key, ...params })
+  return { read, query, hello }
 }
 
 describe('the public record endpoint', () => {
@@ -78,18 +81,46 @@ describe('the public record endpoint', () => {
   })
 })
 
+describe('the public record endpoint key and field', () => {
+  it('takes the key from the query, so ?, #, & and / in a key reach the lookup as they are', async () => {
+    const keys = ['What is new?', 'Part #2', 'Tea & cake', 'a/b', 'post-1?junk', '100%']
+    const { query } = await setup(keys)
+    for (const title of keys) {
+      expect(await query('posts', { key: title, field: 'title' })).toMatchObject({ ok: true, record: { values: { title } } })
+      expect(await query('posts', { key: title })).toMatchObject({ ok: true, record: { values: { slug: title } } })
+    }
+    expect(await query('posts', { key: 'post-1', field: 'title' })).toEqual({ ok: false, status: 404, message: 'Record not found' })
+  })
+
+  it('answers 404 without a key or with a repeated one, and 400 for a repeated field', async () => {
+    const { query } = await setup()
+    const notFound = { ok: false, status: 404, message: 'Record not found' }
+    expect(await query('posts', {})).toEqual(notFound)
+    expect(await query('posts', { key: '' })).toEqual(notFound)
+    expect(await query('posts', { key: ['hello-world', 'second'] })).toEqual(notFound)
+    expect(await query('posts', { key: 'hello-world', field: '' })).toMatchObject({ ok: true })
+    expect(await query('posts', { key: 'hello-world', field: ['slug', 'title'] })).toEqual({ ok: false, status: 400, message: 'Unknown key field' })
+  })
+})
+
 describe('the public record route', () => {
   const root = fileURLToPath(new URL('../../server/api/public/[projectSlug]/[collectionSlug]', import.meta.url))
   const source = (file: string) => readFileSync(join(root, file), 'utf8')
 
-  it('serves GET only: every other method answers 405', () => {
-    expect(readdirSync(root).sort()).toEqual(['[key].get.ts', '[key].ts'])
-    expect(source('[key].ts')).toContain('statusCode: 405')
-    expect(source('[key].ts')).toContain('setResponseHeader(event, \'allow\', \'GET\')')
+  it('serves GET only at /record: every other method answers 405', () => {
+    expect(readdirSync(root).sort()).toEqual(['record.get.ts', 'record.ts'])
+    expect(source('record.ts')).toContain('statusCode: 405')
+    expect(source('record.ts')).toContain('setResponseHeader(event, \'allow\', \'GET\')')
+  })
+
+  it('reads the key and field from the query, never from the path', () => {
+    const get = source('record.get.ts')
+    expect(get).toContain('getQuery(event)')
+    expect(get).not.toContain('getRouterParam(event, \'key\'')
   })
 
   it('spends the read budget before any lookup, and answers lookup failures with a generic 502', () => {
-    const get = source('[key].get.ts')
+    const get = source('record.get.ts')
     expect(get.indexOf('limitPublicRequest(event, \'read\'')).toBeGreaterThan(0)
     expect(get.indexOf('limitPublicRequest(event, \'read\'')).toBeLessThan(get.indexOf('publicCollection('))
     expect(get.indexOf('limitPublicRequest(event, \'read\'')).toBeLessThan(get.indexOf('recordByKey('))
