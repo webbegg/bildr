@@ -1,15 +1,12 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { HAND_TOOL, INSERT_TOOLS, MOVE_TOOL, toolHint } from '#shared/editor/insertTools'
-import { deviceHint } from '#shared/editor/devices'
-import { frameShortcut } from '#shared/editor/frames'
 
 /**
  * The canvas's floating bar, Framer-style, centred at the bottom: Move (V)
- * and Hand (H) tools, the device switch over the visible frames (Desktop ⌥1,
- * Tablet ⌥2, Mobile ⌥3 by default: the frame being edited, panned into
- * view), the canvas light/dark preview
- * and the zoom menu. The insert tools have no buttons; their letters arm
+ * and Hand (H) tools, the canvas light/dark preview and the zoom menu. Devices
+ * are chosen on the canvas frames (their bar, "+", ⌥ + digit and ⌘K), not
+ * here. The insert tools have no buttons; their letters arm
  * them, and the bar then shows a hint chip.
  */
 const { zoom, zoomItems } = defineProps<{ zoom: number, zoomItems: DropdownMenuItem[][] }>()
@@ -52,27 +49,6 @@ const pressed = (on: boolean) => (on ? 'bg-white/10 text-highlighted' : '')
         :aria-pressed="editor.tool === tool.id"
         :data-tool="tool.id"
         @click="editor.setTool(tool.id)"
-      />
-    </UTooltip>
-    <span
-      class="mx-1 h-5 w-px bg-white/10"
-      aria-hidden="true"
-    />
-    <UTooltip
-      v-for="device in editor.visibleDevices"
-      :key="device.id"
-      :text="deviceHint(device)"
-      :kbds="frameShortcut(editor.frames, device.id, editor.breakpointBase)"
-      :content="{ side: 'top' }"
-    >
-      <EditorButton
-        variant="ghost"
-        :icon="device.icon"
-        :class="pressed(editor.deviceId === device.id)"
-        :aria-label="device.label"
-        :aria-pressed="editor.deviceId === device.id"
-        :data-device-switch="device.id"
-        @click="editor.setDevice(device.id)"
       />
     </UTooltip>
     <span

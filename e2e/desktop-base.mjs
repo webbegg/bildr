@@ -10,7 +10,9 @@
  * 1280 px. Hiding Tablet from its Layers row removes the device rows again.
  * New project's Starting device (S38.1) is Desktop by default; choosing
  * Mobile makes a mobile-first project, with Mobile its Primary frame, which
- * the test then deletes. Shots go to e2e/.shots/desktop-base/.
+ * the test then deletes. The canvas's floating bar has no device buttons
+ * (Move, Hand │ theme, Zoom): devices are chosen on the frames. Shots go to
+ * e2e/.shots/desktop-base/.
  */
 import { action, BASE, canvas, check, run, shot, track, until } from './lib.mjs'
 
@@ -39,15 +41,20 @@ await run('desktop-base', async ({ page, context, errors }) => {
   const rangeOf = id => page.locator(`[data-frame-row="${id}"] [data-frame-row-range]`).innerText()
   const rootId = created.pages[0].root.id
   const topRow = () => page.locator('[data-layers] [role="treeitem"]').first().evaluate(el => ({ id: el.getAttribute('data-layer-id'), level: el.getAttribute('aria-level'), pad: el.style.paddingLeft }))
-  const switches = () => page.locator('[data-device-switch]').evaluateAll(els => els.map(el => el.getAttribute('data-device-switch')))
-  const editing = id => page.locator(`[data-device-switch="${id}"]`).getAttribute('aria-pressed').then(v => v === 'true')
+  const editing = id => page.locator('iframe[title="Canvas"]').getAttribute('data-device').then(v => v === id)
+  const bar = page.locator('[data-floating-bar]')
   const menuItem = label => page.locator('[role^=menuitem]').filter({ hasText: new RegExp(`^\\s*${label}\\s*$`) })
 
   // Only the Desktop frame, marked Primary, and it is the edited one.
   check(JSON.stringify(await frames()) === '["desktop"]', `the canvas shows the Desktop frame only (${await frames()})`)
   const label = await page.locator('[data-frame="desktop"] [data-frame-label]').getAttribute('aria-label')
   check(label === 'Desktop 1280 (Primary)', `the Desktop frame bar is the Primary (${label})`)
-  check(JSON.stringify(await switches()) === '["desktop"]', `the floating bar switches Desktop only (${await switches()})`)
+  // Devices are chosen on the canvas frames: the floating bar has no device buttons.
+  const barButtons = await bar.locator('button').evaluateAll(els => els.map(el => el.getAttribute('aria-label')))
+  check(await bar.locator('[data-device-switch]').count() === 0 && !barButtons.some(l => /^(Desktop|Tablet|Large phone|Mobile)$/.test(l ?? '')), `the floating bar has no device buttons (${barButtons})`)
+  check(await bar.locator('[data-tool]').count() === 2 && await bar.locator('[data-preview-theme]').count() === 1 && await bar.locator('[data-zoom-menu]').count() === 1, 'the floating bar keeps Move, Hand, the theme toggle and zoom')
+  check(await bar.locator('span[aria-hidden="true"].w-px').count() === 1, 'one divider, between the tools and the theme and zoom')
+  await bar.screenshot({ path: new URL('./.shots/desktop-base/floating-bar.png', import.meta.url).pathname })
   check(await editing('desktop'), 'the editor starts on Desktop, the Primary')
   check(await page.locator('iframe[title="Canvas"]').getAttribute('data-device') === 'desktop', 'the active canvas is the Desktop frame')
   await page.getByRole('tab', { name: 'Layers' }).click()

@@ -26,8 +26,7 @@ await run('breakpoints-p2', async ({ page }) => {
   const row = id => page.locator(`[data-frame-row="${id}"]`)
   const rangeOf = id => row(id).locator('[data-frame-row-range]').innerText()
   const treeUnder = id => page.locator(`[data-frame-row="${id}"] + [role="group"] [data-layer-id="${text}"]`)
-  const switches = () => page.locator('[data-device-switch]').evaluateAll(els => els.map(el => el.getAttribute('data-device-switch')))
-  const editing = id => page.locator(`[data-device-switch="${id}"]`).getAttribute('aria-pressed').then(v => v === 'true')
+  const editing = id => page.locator('iframe[title="Canvas"]').getAttribute('data-device').then(v => v === id)
   const frames = () => page.locator('[data-frame]').evaluateAll(els => els.map(el => el.getAttribute('data-frame')))
   const menuItem = label => page.locator('[role^=menuitem]').filter({ hasText: new RegExp(`^\\s*${label}\\s*$`) })
 
@@ -47,13 +46,12 @@ await run('breakpoints-p2', async ({ page }) => {
   check(!!await until(async () => await treeUnder('tablet').count() === 1 && await treeUnder('mobile').count() === 0), 'the page tree moves under Tablet')
 
   // S7b: "+" adds Large phone back; it becomes the edited frame, 640 wide.
-  check(JSON.stringify(await switches()) === '["desktop","tablet","mobile"]', 'the floating bar switches the default frames')
+  check(JSON.stringify(await frames()) === '["desktop","tablet","mobile"]', `the canvas shows the default frames (${await frames()})`)
   await page.locator('[data-frame="desktop"] [data-frame-add] button').click()
   await menuItem('Large phone 640').click()
   check(!!await until(async () => JSON.stringify(await rows()) === '["desktop","tablet","large-phone","mobile"]'), `"+" adds Large phone as a root row (${await rows()})`)
   check(await rangeOf('large-phone') === '767—640', `Large phone shows "767—640" (${await rangeOf('large-phone')})`)
   check(JSON.stringify(await frames()) === '["desktop","tablet","large-phone","mobile"]', `the canvas shows its frame in order (${await frames()})`)
-  check(JSON.stringify(await switches()) === '["desktop","tablet","large-phone","mobile"]', 'the floating bar switch follows')
   check(!!await until(() => editing('large-phone')), 'the added frame is the edited one')
   const frame = canvas(page)
   check(await frame.locator('body').evaluate(() => window.innerWidth) === 640, 'the Large phone canvas is 640 wide')
@@ -89,7 +87,6 @@ await run('breakpoints-p2', async ({ page }) => {
   await menuItem('Hide Tablet').click()
   check(!!await until(async () => !(await frames()).includes('tablet')), 'Hide Tablet removes its frame')
   check(JSON.stringify(await rows()) === '["desktop","large-phone","mobile"]', `and its Layers row (${await rows()})`)
-  check(JSON.stringify(await switches()) === '["desktop","large-phone","mobile"]', 'and its device switch')
   await openEditor(page, p.id)
   await page.getByRole('tab', { name: 'Layers' }).click()
   check(!!await until(async () => JSON.stringify(await rows()) === '["desktop","large-phone","mobile"]'), `after a reload Tablet stays hidden and Large phone shown (${await rows()})`)

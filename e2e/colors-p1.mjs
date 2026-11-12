@@ -169,7 +169,7 @@ await run('colors-p1', async ({ context, page, errors }) => {
   await closeProperties(page)
   const baseDir = await until(async () => bindsAt(await defOf(), 'direction'))
   check(!!baseDir, `Create property on Mobile binds the base key direction (${baseDir?.name})`)
-  await page.getByRole('button', { name: 'Tablet', exact: true }).click()
+  await page.locator('[data-frame="tablet"] [data-frame-label]').click()
   await until(async () => (await page.locator('iframe[title="Canvas"]').getAttribute('data-device')) === 'tablet')
   await page.waitForTimeout(400)
   check(await until(async () => (await dirDot().getAttribute('data-bound-inherited')) === 'true'), 'on Tablet the direction dot shows the base binding as inherited')

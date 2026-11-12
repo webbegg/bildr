@@ -54,7 +54,7 @@ await run('design', async ({ page, context, errors }) => {
 
   // A responsive style on Tablet.
   await toView(page, 'Canvas')
-  await page.getByRole('button', { name: 'Tablet', exact: true }).click()
+  await page.locator('[data-frame="tablet"] [data-frame-label]').click()
   await until(async () => (await page.locator('iframe[title="Canvas"]').getAttribute('data-device')) === 'tablet')
   await canvas(page).locator(`[data-bildr-id="${text.nodeId}"]`).click()
   await page.locator('[data-inspector-head]').filter({ hasText: text.nodeId }).waitFor()

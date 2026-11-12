@@ -2,7 +2,7 @@
  * The editor shell: the projects page (dark chrome, search, New project, open,
  * delete from a card's menu with the typed slug), then the editor: add a page,
  * insert a Text with ⌘K and the Insert panel, edit its text, the inspector
- * header, undo, the device switch (⌥2 and the Tablet button) and Publish.
+ * header, undo, the device switch (⌥2 and the frame labels) and Publish.
  */
 import { action, BASE, canvas, check, findNode, openEditor, project, run, shot, track, until } from './lib.mjs'
 
@@ -118,17 +118,18 @@ await run('shell', async ({ page, errors }) => {
   })
   check(undone, 'Undo reverts the text edit')
 
-  // Device switch: ⌥2 from the editor, then the floating bar's buttons.
+  // Device switch: ⌥2 from the editor, then the frames' labels (the floating bar has no device buttons).
+  const activeFrame = () => page.locator('iframe[title="Canvas"]').getAttribute('data-device')
   await page.locator('[data-view-menu]').focus()
   await page.keyboard.press('Alt+Digit2')
-  const tabletByKey = await until(async () => (await page.locator('[data-device-switch="tablet"]').getAttribute('aria-pressed')) === 'true')
-  const frame = await page.locator('iframe[title="Canvas"]').getAttribute('data-device')
-  check(tabletByKey && frame === 'tablet', `⌥2 switches to Tablet (Canvas frame: ${frame})`)
-  await page.locator('[data-device-switch="desktop"]').click()
-  await until(async () => (await page.locator('iframe[title="Canvas"]').getAttribute('data-device')) === 'desktop')
-  await page.getByRole('button', { name: 'Tablet', exact: true }).click()
-  const tabletByButton = await until(async () => (await page.locator('iframe[title="Canvas"]').getAttribute('data-device')) === 'tablet')
-  check(tabletByButton, 'the Tablet button switches the edited frame back to Tablet')
+  const tabletByKey = await until(async () => (await activeFrame()) === 'tablet')
+  check(tabletByKey, `⌥2 switches to Tablet (Canvas frame: ${await activeFrame()})`)
+  check(await page.locator('[data-floating-bar] [data-device-switch]').count() === 0, 'the floating bar has no device buttons')
+  await page.locator('[data-frame="desktop"] [data-frame-label]').click()
+  await until(async () => (await activeFrame()) === 'desktop')
+  await page.locator('[data-frame="tablet"] [data-frame-label]').click()
+  const tabletByLabel = await until(async () => (await activeFrame()) === 'tablet')
+  check(tabletByLabel, 'the Tablet frame label switches the edited frame back to Tablet')
 
   await page.getByRole('button', { name: 'Publish', exact: true }).click()
   const info = await until(() => action('project_published_info', { projectId: p.id }))
