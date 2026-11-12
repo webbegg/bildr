@@ -6,7 +6,8 @@ import { addDevServerHandler, defineNuxtModule, useLogger } from '@nuxt/kit'
 import { defineEventHandler, sendWebResponse, toWebRequest } from 'h3'
 import { detectStarterKit } from '@bildr/codegen/starter'
 import { projectReader } from './node/project.ts'
-import { isModelChange, regenerate } from './node/regenerate.ts'
+import { createRegenerator, isModelChange } from './node/regenerate.ts'
+import type { MigrationOutcome } from './node/regenerate.ts'
 import { BASE, createBildrHandler } from './server/handler.ts'
 
 /**
@@ -47,7 +48,16 @@ export default defineNuxtModule<ModuleOptions>({
     }
 
     const token = randomBytes(24).toString('hex')
-    const handle = createBildrHandler({ root, token })
+    // The app's database, as its runtimeConfig resolves it in dev (NUXT_DB_URL overrides the generated default).
+    const databaseUrl = process.env.NUXT_DB_URL ?? (nuxt.options.runtimeConfig as { db?: { url?: string } }).db?.url
+    const regenerator = createRegenerator(root, databaseUrl ? { databaseUrl } : {})
+    const confirmMigration = async (hash: string): Promise<MigrationOutcome> => {
+      const result = await regenerator.run({ confirm: hash })
+      if (!result.ok) return { kind: 'error', message: 'error' in result ? result.error : 'The model has problems' }
+      logMigration(result.migration)
+      return result.migration
+    }
+    const handle = createBildrHandler({ root, token, confirmMigration })
     addDevServerHandler({
       route: BASE,
       handler: {
@@ -68,9 +78,21 @@ export default defineNuxtModule<ModuleOptions>({
 
     // Regenerate the app from .bildr/: once now (edits made while nuxt dev was off), then on
     // every model change (editor saves, hand edits, git pulls). Hand-edited files are kept.
-    const sync = () => {
+    const logMigration = (migration: MigrationOutcome) => {
+      if (migration.kind === 'written' && migration.applied === false) logger.warn(`bildr wrote migration ${migration.tag} but could not apply it: ${migration.error ?? 'unknown error'}`)
+      else if (migration.kind === 'written') logger.success(`bildr wrote migration ${migration.tag}${migration.applied ? ' and applied it' : ' (applied when the server starts)'}`)
+      else if (migration.kind === 'error') logger.warn(`bildr could not plan the database migration, the database keeps its schema: ${migration.message}`)
+      else if (migration.kind === 'pending') {
+        logger.warn([
+          'bildr holds a migration that would lose data until you confirm it:',
+          ...migration.destructive.map(statement => `  ${statement.split('\n')[0]}`),
+          `Confirm it in the bildr editor (or POST ${BASE}/api/migrations/confirm with {"hash":"${migration.hash}"}).`
+        ].join('\n'))
+      }
+    }
+    const sync = async () => {
       try {
-        const result = regenerate(root)
+        const result = await regenerator.run()
         if (!result.ok && 'problems' in result) {
           logger.warn(['bildr model has problems, the app was not regenerated:', ...result.problems.map(problem => `  - ${problem.path}: ${problem.message}`)].join('\n'))
         } else if (!result.ok) {
@@ -79,13 +101,14 @@ export default defineNuxtModule<ModuleOptions>({
           const { written, deleted, detached } = result.report
           if (written.length || deleted.length) logger.success(`bildr regenerated ${written.length} file(s)${deleted.length ? `, removed ${deleted.length}` : ''}`)
           if (detached.length) logger.info(['bildr kept your edits to these generated files (detached):', ...detached.map(path => `  - ${path}`)].join('\n'))
+          logMigration(result.migration)
         }
       } catch (error) {
         // A file can vanish or be unreadable mid-change; never take nuxt dev down for it.
         logger.warn(`bildr could not regenerate the app: ${(error as Error).message}`)
       }
     }
-    sync()
+    void sync()
 
     let watcher: FSWatcher | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -95,7 +118,7 @@ export default defineNuxtModule<ModuleOptions>({
         // Never the manifest or temp files a sync writes: that would loop.
         if (!isModelChange(file === null ? undefined : String(file))) return
         clearTimeout(timer)
-        timer = setTimeout(sync, 150)
+        timer = setTimeout(() => void sync(), 150)
       })
     }
     nuxt.hook('close', () => {
