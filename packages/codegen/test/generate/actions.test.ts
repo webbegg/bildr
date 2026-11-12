@@ -53,6 +53,11 @@ describe('generateActions rules', () => {
     const files = generateActions(model)
     expect(files.find(file => file.path.endsWith('domain/errors.ts'))!.content).toContain('export type BlogError = never\n')
     expect(files.find(file => file.path.endsWith('utils/blog.ts'))!.content).toContain('export const blogErrorStatus: ErrorStatusMap = {}\n')
+    // A module with nothing to wire: no blank line inside an empty object.
+    model.modules.blog!.repositories = []
+    const empty = generateActions(model).find(file => file.path.endsWith('utils/blog.ts'))!.content
+    expect(empty).toContain('  return {}\n')
+    expect(empty).not.toContain('{\n\n')
   })
 
   it('refuses steps it cannot generate yet with the action and step', () => {
