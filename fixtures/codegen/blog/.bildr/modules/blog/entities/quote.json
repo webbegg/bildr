@@ -6,10 +6,29 @@
   "idStrategy": "external",
   "timestamps": false,
   "fields": [
-    { "id": "fld_q_id", "name": "id", "type": "integer", "required": true },
-    { "id": "fld_q_text", "name": "text", "type": "text", "required": true },
-    { "id": "fld_q_author", "name": "author", "type": "text", "required": true }
+    {
+      "id": "fld_q_id",
+      "name": "id",
+      "type": "integer",
+      "required": true
+    },
+    {
+      "id": "fld_q_text",
+      "name": "text",
+      "type": "text",
+      "required": true
+    },
+    {
+      "id": "fld_q_author",
+      "name": "author",
+      "type": "text",
+      "required": true
+    }
   ],
   "relations": [],
-  "client": { "sync": "eager", "limit": 30, "staleTime": 300000 }
+  "client": {
+    "sync": "eager",
+    "limit": 30,
+    "staleTime": 300000
+  }
 }

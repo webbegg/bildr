@@ -3,11 +3,28 @@
   "id": "repo_quote",
   "entity": "ent_quote",
   "datasource": "ds_quotes",
-  "operations": ["list"],
+  "operations": [
+    "list"
+  ],
   "rest": {
-    "list": { "method": "GET", "path": "/quotes", "itemsPath": "quotes", "totalPath": "total" },
-    "paging": { "style": "offset", "limitParam": "limit", "offsetParam": "skip" },
-    "fieldMap": { "id": "id", "text": "quote", "author": "author" }
+    "list": {
+      "method": "GET",
+      "path": "/quotes",
+      "itemsPath": "quotes",
+      "totalPath": "total"
+    },
+    "paging": {
+      "style": "offset",
+      "limitParam": "limit",
+      "offsetParam": "skip"
+    },
+    "fieldMap": {
+      "id": "id",
+      "text": "quote",
+      "author": "author"
+    }
   },
-  "expose": { "list": true }
+  "expose": {
+    "list": true
+  }
 }

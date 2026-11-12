@@ -3,28 +3,115 @@
   "id": "lay_main",
   "name": "main",
   "slots": [
-    { "id": "children", "name": "children", "nodeId": "n_main" },
-    { "id": "footer", "name": "footer", "nodeId": "n_footer" }
+    {
+      "id": "children",
+      "name": "children",
+      "nodeId": "n_main"
+    },
+    {
+      "id": "footer",
+      "name": "footer",
+      "nodeId": "n_footer"
+    }
   ],
   "root": {
-    "id": "n_root", "type": "Container", "style": { "display": "flex", "direction": "column", "minHeight": "screen" },
+    "id": "n_root",
+    "type": "Container",
+    "style": {
+      "display": "flex",
+      "direction": "column",
+      "minHeight": "screen"
+    },
     "children": [
       {
-        "id": "n_header", "type": "Container", "style": { "borderBottom": "border" },
+        "id": "n_header",
+        "type": "Container",
+        "style": {
+          "borderBottom": "border"
+        },
         "children": [
           {
-            "id": "n_nav", "type": "Row", "style": { "maxWidth": "4xl", "mx": "auto", "justify": "between", "align": "center", "p": "4" },
+            "id": "n_nav",
+            "type": "Row",
+            "style": {
+              "maxWidth": "4xl",
+              "mx": "auto",
+              "justify": "between",
+              "align": "center",
+              "p": "4"
+            },
             "children": [
-              { "id": "n_brand", "type": "Link", "props": { "to": { "page": "pg_index" }, "text": { "$bind": "site.name" } }, "style": { "fontSize": "lg", "fontWeight": "semibold" } },
-              { "id": "n_new", "type": "Link", "props": { "to": { "page": "pg_new_post" }, "text": "New post" }, "style": { "bg": "primary", "color": "on-primary", "px": "3", "py": "1.5", "radius": "md", "fontSize": "sm" } }
+              {
+                "id": "n_brand",
+                "type": "Link",
+                "props": {
+                  "to": {
+                    "page": "pg_index"
+                  },
+                  "text": {
+                    "$bind": "site.name"
+                  }
+                },
+                "style": {
+                  "fontSize": "lg",
+                  "fontWeight": "semibold"
+                }
+              },
+              {
+                "id": "n_new",
+                "type": "Link",
+                "props": {
+                  "to": {
+                    "page": "pg_new_post"
+                  },
+                  "text": "New post"
+                },
+                "style": {
+                  "bg": "primary",
+                  "color": "on-primary",
+                  "px": "3",
+                  "py": "1.5",
+                  "radius": "md",
+                  "fontSize": "sm"
+                }
+              }
             ]
           }
         ]
       },
-      { "id": "n_main", "type": "Container", "style": { "maxWidth": "4xl", "mx": "auto", "width": "full", "grow": "1", "p": "4" }, "children": [] },
       {
-        "id": "n_footer", "type": "Container", "style": { "borderTop": "border", "p": "4", "textAlign": "center", "fontSize": "sm", "color": "muted" },
-        "children": [{ "id": "n_footer_text", "type": "Text", "props": { "text": { "$bind": "site.description" } } }]
+        "id": "n_main",
+        "type": "Container",
+        "style": {
+          "maxWidth": "4xl",
+          "mx": "auto",
+          "width": "full",
+          "grow": "1",
+          "p": "4"
+        },
+        "children": []
+      },
+      {
+        "id": "n_footer",
+        "type": "Container",
+        "style": {
+          "borderTop": "border",
+          "p": "4",
+          "textAlign": "center",
+          "fontSize": "sm",
+          "color": "muted"
+        },
+        "children": [
+          {
+            "id": "n_footer_text",
+            "type": "Text",
+            "props": {
+              "text": {
+                "$bind": "site.description"
+              }
+            }
+          }
+        ]
       }
     ]
   }

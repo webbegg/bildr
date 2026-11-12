@@ -5,6 +5,11 @@
   "label": "All posts",
   "from": "ent_post",
   "params": [],
-  "orderBy": [{ "field": "createdAt", "direction": "desc" }],
+  "orderBy": [
+    {
+      "field": "createdAt",
+      "direction": "desc"
+    }
+  ],
   "result": "many"
 }
