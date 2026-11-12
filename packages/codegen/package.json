@@ -8,7 +8,8 @@
     "./model": "./src/model/index.ts",
     "./sync": "./src/sync/index.ts",
     "./starter": "./src/starter/index.ts",
-    "./generate": "./src/generate/index.ts"
+    "./generate": "./src/generate/index.ts",
+    "./design": "./src/design/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
