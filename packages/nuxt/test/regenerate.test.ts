@@ -28,7 +28,8 @@ const editPage = (edit: (page: { root: { children: Array<Record<string, unknown>
 
 // The fixture is not part of the workspace: `pnpm --dir fixtures/codegen/blog install` once (review RELIABILITY-001).
 const fixtureModules = fileURLToPath(new URL('../../../fixtures/codegen/blog/node_modules', import.meta.url))
-const hasFixtureInstall = existsSync(join(fixtureModules, 'drizzle-kit'))
+// In CI the install is required: a missing one fails these tests instead of skipping them.
+const hasFixtureInstall = existsSync(join(fixtureModules, 'drizzle-kit')) || !!process.env.CI
 const withDrizzle = hasFixtureInstall ? it : it.skip
 
 /** A stored entity (needs drizzle-kit: linked from the golden fixture's install). */
