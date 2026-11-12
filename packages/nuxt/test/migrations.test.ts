@@ -117,6 +117,29 @@ describe.skipIf(!!NEEDS_FIXTURE)(`migrateProject${NEEDS_FIXTURE}`, { timeout: 60
     expect(await applyAndQuery('select * from main_notes')).toEqual([{ id: 'n1', heading: 'Hello' }])
   })
 
+  it('applies additions and renames at once and holds only what loses data (review follow-up)', async () => {
+    const body: Field = { id: 'fld_body', name: 'body', type: 'text' }
+    writeNote([title, body])
+    await migrate({ databaseUrl: databaseUrl() })
+    await applyAndQuery('insert into main_notes (id, title, body) values (\'n1\', \'T\', \'B\')')
+    writeNote([{ ...title, name: 'heading' }, { id: 'fld_extra', name: 'extra', type: 'text' }])
+    const pending = await migrate({ databaseUrl: databaseUrl() })
+    expect(pending).toMatchObject({
+      kind: 'pending',
+      written: { tag: '0001_bildr', applied: true },
+      statements: ['ALTER TABLE `main_notes` DROP COLUMN `body`;'],
+      destructive: ['ALTER TABLE `main_notes` DROP COLUMN `body`;'],
+      losing: ['the data of main_notes.body']
+    })
+    expect(sqlOf('0001_bildr')).toBe('ALTER TABLE `main_notes` RENAME COLUMN `title` TO `heading`;\n--> statement-breakpoint\nALTER TABLE `main_notes` ADD `extra` text;')
+    // The synced app code can query its new and renamed columns while the drop waits.
+    expect(await applyAndQuery('select heading, extra, body from main_notes')).toEqual([{ heading: 'T', extra: null, body: 'B' }])
+    const confirmed = await migrate({ databaseUrl: databaseUrl(), confirm: pending.kind === 'pending' ? pending.hash : '' })
+    expect(confirmed).toMatchObject({ kind: 'written', tag: '0002_bildr', applied: true })
+    expect(await applyAndQuery('select * from main_notes')).toEqual([{ id: 'n1', heading: 'T', extra: null }])
+    expect(await migrate({ databaseUrl: databaseUrl() })).toEqual({ kind: 'none' })
+  })
+
   it('never writes a required field added without a default: SQLite refuses it on any table (verification B1)', async () => {
     writeNote([title])
     await migrate({ databaseUrl: databaseUrl() })
@@ -159,9 +182,15 @@ describe.skipIf(!!NEEDS_FIXTURE)(`migrateProject${NEEDS_FIXTURE}`, { timeout: 60
       kind: 'pending',
       destructive: ['ALTER TABLE `main_notes` DROP COLUMN `__bildr_replaced_0`;'],
       // What the user agrees to lose, by the names they know.
-      losing: ['the data of main_notes.title (a removed field)']
+      losing: ['the data of main_notes.title (a removed field)'],
+      // The renames ran at once: the app reads `title` from the renamed field; the removed data waits aside.
+      written: { tag: '0001_bildr', applied: true }
     })
-    expect(await applyAndQuery('select title, body from main_notes')).toEqual([{ title: 'T', body: 'B' }])
+    expect(await applyAndQuery('select title, __bildr_replaced_0 as old from main_notes')).toEqual([{ title: 'B', old: 'T' }])
+    // Planned again (any later regeneration), the held plan still names the loss in the user's words.
+    const again = await migrate({ databaseUrl: databaseUrl() })
+    expect(again).toMatchObject({ kind: 'pending', hash: pending.kind === 'pending' ? pending.hash : '', losing: ['the data of main_notes.title (a removed field)'] })
+    expect(again).not.toHaveProperty('written')
     await migrate({ databaseUrl: databaseUrl(), confirm: pending.kind === 'pending' ? pending.hash : '' })
     expect(await applyAndQuery('select * from main_notes')).toEqual([{ id: 'n1', title: 'B' }])
   })
