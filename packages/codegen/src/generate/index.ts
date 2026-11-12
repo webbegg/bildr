@@ -2,3 +2,4 @@
 // one would treat every file it doesn't emit as "no longer generated" (see planSync).
 export { generateActions } from './actions.ts'
 export { generateData } from './data.ts'
+export { generateProject } from './project.ts'

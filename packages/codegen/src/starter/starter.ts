@@ -1,5 +1,7 @@
-import { DEFAULT_THEME, THEME_COLORS, themeCss } from '../design/theme.ts'
+import { DEFAULT_THEME } from '../design/theme.ts'
+import { generateProject } from '../generate/project.ts'
 import { loadModel } from '../model/load.ts'
+import type { Model } from '../model/load.ts'
 import { ModuleNameSchema, RESERVED_MODULE_NAMES } from '../model/schemas.ts'
 import { serializeModel, stringifyModelFile } from '../model/serialize.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
@@ -54,7 +56,6 @@ const tsString = (value: string) => `'${value
 const packageName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'bildr-app'
 const pascal = (name: string) => name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('')
 
-
 export const starterKit = ({ name, module = 'main', bildrNuxt = BILDR_NUXT_VERSION }: StarterKitOptions): StarterKit => {
   const title = name.trim()
   if (!title) throw new Error('Give the project a name')
@@ -65,14 +66,15 @@ export const starterKit = ({ name, module = 'main', bildrNuxt = BILDR_NUXT_VERSI
   const files: GeneratedFile[] = [
     ...Object.entries(STARTER_CORE_FILES).map(([path, content]) => ({ path, content, owner: 'managed' as const })),
     ...rootFiles(title, module, bildrNuxt),
+    ...generateProject(model.loaded),
     ...modelDerivedFiles(title, module)
   ]
-  return { model, files: files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0) }
+  return { model: model.files, files: files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0) }
 }
 
 // ── The initial .bildr/ model ──────────────────────────────────────────
 
-const initialModel = (title: string, module: string): Record<string, string> => {
+const initialModel = (title: string, module: string): { files: Record<string, string>, loaded: Model } => {
   const raw: Record<string, unknown> = {
     '.bildr/bildr.json': { schemaVersion: 1, generatorVersion: GENERATOR_VERSION, starterKit: STARTER_KIT_VERSION, name: title, defaultModule: module, modules: [module] },
     '.bildr/theme.json': DEFAULT_THEME,
@@ -108,7 +110,7 @@ const initialModel = (title: string, module: string): Record<string, string> => 
   const files = Object.fromEntries(Object.entries(raw).map(([path, value]) => [path, stringifyModelFile(value)]))
   const result = loadModel(files)
   if (!result.ok) throw new Error(`Starter model is invalid: ${result.problems.map(problem => `${problem.path}: ${problem.message}`).join('; ')}`)
-  return serializeModel(result.model)
+  return { files: serializeModel(result.model), loaded: result.model }
 }
 
 // ── Root files ─────────────────────────────────────────────────────────
@@ -236,48 +238,8 @@ test/                     use-case, adapter and API tests
 
 // ── Files derived from the model (the generators take these over in T5–T7) ──
 
+// The core nuxt.config, app.config and theme come from generateProject (T7b).
 const modelDerivedFiles = (title: string, module: string): GeneratedFile[] => [
-  { path: 'layers/core/nuxt.config.ts', owner: 'managed', source: '.bildr/bildr.json', content: `// ${managedFrom('.bildr/bildr.json and .bildr/datasources')}
-import { fileURLToPath } from 'node:url'
-
-const here = (path: string) => fileURLToPath(new URL(path, import.meta.url))
-
-export default defineNuxtConfig({
-  $meta: { name: 'core' },
-  modules: ['@nuxt/ui'],
-  alias: {
-    '#core': here('./shared')
-  },
-  css: [here('./app/assets/css/theme.css')],
-  nitro: { experimental: { tasks: true } },
-  runtimeConfig: {
-    db: {
-      url: 'file:.data/app.db',
-      migrationsDir: 'server/database/migrations'
-    },
-    // Data sources. Values come from NUXT_DATASOURCES_* env vars; see .env.example.
-    datasources: {}
-  }
-})
-` },
-  { path: 'layers/core/app/app.config.ts', owner: 'managed', source: '.bildr/bildr.json', content: `// ${managedFrom('.bildr/bildr.json and .bildr/theme.json')}
-export default defineAppConfig({
-  site: {
-    name: ${tsString(title)},
-    description: ${tsString(`${title}, built with bildr.`)}
-  },
-  ui: {
-    colors: {
-${THEME_COLORS.map(name => `      ${name}: ${tsString(DEFAULT_THEME.colors[name])}`).join(',\n')}
-    }
-  }
-})
-` },
-  { path: 'layers/core/app/assets/css/theme.css', owner: 'managed', source: '.bildr/theme.json', content: `/* ${managedFrom('.bildr/theme.json')} */
-@import "tailwindcss";
-@import "@nuxt/ui";
-
-${themeCss(DEFAULT_THEME)}` },
   { path: 'layers/core/app/layouts/main.vue', owner: 'managed', source: '.bildr/layouts/main.json', content: `${vueHeader('.bildr/layouts/main.json')}
 <script setup lang="ts">
 const { site } = useAppConfig()
