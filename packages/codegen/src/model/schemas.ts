@@ -117,10 +117,19 @@ export const ManifestFileSchema = z.object({
 
 // ── Module files ───────────────────────────────────────────────────────
 
+/**
+ * A module becomes `layers/<name>` with the aliases `#<name>/domain`, so names
+ * Nuxt aliases already use (`#app`, `#build`, `#imports`, …) or the core layer's
+ * name are refused.
+ */
+export const RESERVED_MODULE_NAMES = ['app', 'build', 'components', 'core', 'head', 'imports', 'internal', 'layers', 'nitro', 'shared', 'vue'] as const
+
 export const ModuleFileSchema = z.object({
   ...schemaField,
   id: ArtifactIdSchema,
-  name: ModuleNameSchema,
+  name: ModuleNameSchema.refine(name => !(RESERVED_MODULE_NAMES as readonly string[]).includes(name), {
+    error: issue => `"${issue.input as string}" is reserved (Nuxt aliases and the core layer use it)`
+  }),
   label: z.string().min(1).max(100),
   dependsOn: z.array(ModuleNameSchema)
 })

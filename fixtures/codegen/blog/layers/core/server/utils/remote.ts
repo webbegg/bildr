@@ -18,7 +18,7 @@ export const useRemote = (name: DataSourceName): RemoteClient => {
       if (value !== undefined) url.searchParams.set(key, String(value))
     }
     const response = await fetch(url, { headers })
-    if (!response.ok) throw createError({ status: 502, message: `Data source "${name}" answered ${response.status}.` })
+    if (!response.ok) throw createError({ status: 502, message: `Data source "${String(name)}" answered ${response.status}.` })
     return await response.json() as T
   }
 }
