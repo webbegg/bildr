@@ -55,7 +55,22 @@ function prefixedKeyProblem(key: string, value: string | null): string | undefin
   if (!(ALL_BREAKPOINTS as readonly string[]).includes(breakpoint)) return `Unknown breakpoint "${breakpoint}" in style token "${key}" (use ${PREFIX_HINT})`
   const base = baseOfBreakpoint(breakpoint as Breakpoint)
   if (value === null) return parseStyleKey(key) ? undefined : styleTokenProblem(key, '', [], base)
-  return styleTokenProblem(key, value, [], base)
+  const problem = styleTokenProblem(key, value, [], base)
+  const token = parseStyleKey(key)?.token
+  // A colour token's problem already names the hex and theme forms.
+  return problem && token && token.kind !== 'color' && !token.values.includes(value) ? `${problem} (use one of ${token.values.join(', ')})` : problem
+}
+
+/** Keys that would reach an object's prototype; zod drops an own `__proto__` before any refinement sees it. */
+const PROTOTYPE_KEYS = ['__proto__', 'constructor', 'prototype']
+
+/** Refuses own prototype keys of a raw style object, so they are not silently dropped (S38.2). */
+function refusePrototypeKeys(raw: unknown, ctx: z.RefinementCtx): unknown {
+  if (raw === null || typeof raw !== 'object') return raw
+  for (const key of PROTOTYPE_KEYS) {
+    if (Object.hasOwn(raw, key)) ctx.addIssue({ code: 'custom', message: `"${key}" is not a style token`, path: [key], input: raw })
+  }
+  return raw
 }
 
 /**
@@ -66,7 +81,7 @@ function prefixedKeyProblem(key: string, value: string | null): string | undefin
  */
 function styleTokensSchema(wrap: (values: z.ZodType<string>, token: StyleToken) => z.ZodType, nullable: boolean) {
   const prefixedValue = { type: nullable ? ['string', 'null'] : 'string', description: `A responsive token: the key of a Spacing, Size, Typography or Layout token with a breakpoint prefix, prefix with ${DESKTOP_PREFIXES} in desktop-first projects, ${MOBILE_PREFIXES} in mobile-first projects (see project_get breakpointBase), e.g. "max-md:cols" or "md:cols"; it takes the values of the unprefixed key${nullable ? ', or null to remove it' : ''}` }
-  return z.object(Object.fromEntries(STYLE_TOKENS.map(t => [
+  return z.preprocess(refusePrototypeKeys, z.object(Object.fromEntries(STYLE_TOKENS.map(t => [
     t.key,
     wrap(tokenValueSchema(t), t).optional().describe(`${t.label}: Tailwind class ${t.prefix ? `${t.prefix}-` : ''}<value>${isResponsiveToken(t) ? '; takes breakpoint prefixes' : ''}`)
   ])))
@@ -78,7 +93,7 @@ function styleTokensSchema(wrap: (values: z.ZodType<string>, token: StyleToken) 
         if (problem) ctx.addIssue({ code: 'custom', message: problem, path: [key], input: value })
       }
     })
-    .meta({ patternProperties: { [PREFIXED_KEY]: prefixedValue }, additionalProperties: false })
+    .meta({ patternProperties: { [PREFIXED_KEY]: prefixedValue }, additionalProperties: false }))
 }
 
 /** How the breakpoint prefixes work, for the style descriptions. */

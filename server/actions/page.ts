@@ -35,19 +35,20 @@ export const pageAdd = defineAction({
 
 export const pageCreateDetail = defineAction({
   name: 'page_create_detail',
-  description: `Add a detail page of a collection with its content, in one undo step: the page, bound to the collection with its default URL key, holds a Heading bound to the record's title (the title or name text field, else the URL key) and a Text bound to its body (body, content, description, text, summary or excerpt, else another text field; left out without one). The name defaults to the collection name and the slug to a slug of the name, each one no page has. ${DETAIL_HINT} Returns the pageId, slug, nodeIds (the Heading, then the Text), keyField and path, e.g. /posts/:slug.`,
+  description: `Add a detail page of a collection with its content, in one undo step: the page, bound to the collection with field as its URL key (its default key without one), holds a Heading bound to the record's title (the title or name text field, else the URL key) and a Text bound to its body (body, content, description, text, summary or excerpt, else another text field; left out without one). The name defaults to the collection name and the slug to a slug of the name, each one no page has. ${DETAIL_HINT} Returns the pageId, slug, nodeIds (the Heading, then the Text), keyField and path, e.g. /posts/:slug.`,
   input: z.object({
     projectId: IdSchema,
     collection: z.string().min(1).max(64).describe('Collection id or slug, from project_get collections'),
+    field: CollectionInput.shape.field,
     name: z.string().min(1).max(100).optional(),
     slug: SlugSchema.optional(),
     index: z.number().int().nonnegative().optional().describe('Position in the page list; defaults to the end')
   }),
-  run: async ({ projectId, collection: ref, name, slug, index }, ctx) => {
+  run: async ({ projectId, collection: ref, field, name, slug, index }, ctx) => {
     const current = await ctx.services.loadProject(projectId)
     const collection = current.collections.find(c => c.id === ref) ?? current.collections.find(c => c.slug === ref)
     if (!collection) throw new ActionError('not_found', `Collection "${ref}" not found`)
-    const page = newDetailPage(collection, current.pages, { name, slug })
+    const page = newDetailPage(collection, current.pages, { name, slug, field })
     const project = await ctx.services.mutate(ctx, projectId, 'Create detail page', [
       { op: 'addPage', index: index ?? Number.MAX_SAFE_INTEGER, page }
     ])

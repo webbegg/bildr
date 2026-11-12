@@ -81,6 +81,19 @@ describe('the compact style schema (S38.2)', () => {
     await expect(call('node_wrap', { nodeId, style: { 'max-sm:p': 4 } })).rejects.toMatchObject({ code: 'invalid_input' })
   })
 
+  it('names the allowed values of a wrong prefixed value', async () => {
+    const { call, nodeId } = await setup()
+    await expect(call('node_update_style', { nodeId, style: { 'max-lg:cols': '9' } })).rejects.toMatchObject({
+      code: 'invalid_input',
+      message: expect.stringMatching(/"max-lg:cols".*1.*2.*3.*12/s)
+    })
+    const mobile = await setup('mobile')
+    await expect(mobile.call('node_update_style', { nodeId: mobile.nodeId, style: { 'sm:m': '9zz' } })).rejects.toMatchObject({
+      code: 'invalid_input',
+      message: expect.stringMatching(/"9zz" is not a value of style token "sm:m" \(use one of .*auto/)
+    })
+  })
+
   it('refuses unknown keys, breakpoints and values clearly', async () => {
     const { call, nodeId } = await setup()
     const refused = async (style: Record<string, unknown>, message: string) => {

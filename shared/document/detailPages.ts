@@ -11,14 +11,15 @@ const BODY_FIELDS = ['body', 'content', 'description', 'text', 'summary', 'excer
 const itemRef = (field: string) => `{{ item.${field} }}`
 
 /**
- * The content of a new detail page of `collection`: a Heading bound to the
- * `title` or `name` text field (else the URL key), and a Text bound to the
- * first long text field (`body`, `content`, `description`, …, else the
- * first other text field), left out when there is none.
+ * The content of a new detail page of `collection` keyed by `field` (its
+ * default URL key without one): a Heading bound to the `title` or `name`
+ * text field (else the URL key), and a Text bound to the first long text
+ * field (`body`, `content`, `description`, …, else the first other text
+ * field), left out when there is none.
  */
-export function detailPageContent(collection: Pick<Collection, 'slug' | 'fields'>): DocNode[] {
+export function detailPageContent(collection: Pick<Collection, 'slug' | 'fields'>, field?: string): DocNode[] {
   const text = collection.fields.filter(f => f.type === 'text')
-  const key = pageKeyField({ collection: { slug: collection.slug } }, [collection])!
+  const key = pageKeyField({ collection: { slug: collection.slug, field } }, [collection])!
   const title = TITLE_FIELDS.map(k => text.find(f => f.key === k)).find(f => f)?.key ?? key
   const body = BODY_FIELDS.map(k => text.find(f => f.key === k)).find(f => f) ?? text.find(f => f.key !== title && f.key !== key)
   return [
@@ -29,12 +30,13 @@ export function detailPageContent(collection: Pick<Collection, 'slug' | 'fields'
 
 /**
  * A new detail page of `collection` (`page_create_detail`, the Data view's
- * "Create detail page"), bound to it with its default URL key and holding
+ * "Create detail page"), bound to it with the URL key `field` (its default
+ * one without it; checked when the page is added) and holding
  * `detailPageContent`. Without `name`, it is named after the collection with
  * a name no page in `pages` has; without `slug`, its slug is one of the name
  * that no page has.
  */
-export function newDetailPage(collection: Pick<Collection, 'slug' | 'name' | 'fields'>, pages: Pick<Page, 'name' | 'slug'>[], given: { name?: string, slug?: string } = {}): Page {
+export function newDetailPage(collection: Pick<Collection, 'slug' | 'name' | 'fields'>, pages: Pick<Page, 'name' | 'slug'>[], given: { name?: string, slug?: string, field?: string } = {}): Page {
   const name = given.name ?? uniqueName(collection.name, pages.map(p => ({ id: p.slug, name: p.name })))
   let slug = given.slug
   if (!slug) {
@@ -42,8 +44,8 @@ export function newDetailPage(collection: Pick<Collection, 'slug' | 'name' | 'fi
     slug = base
     for (let n = 2; pages.some(p => p.slug === slug); n++) slug = `${base}-${n}`
   }
-  const page: Page = { ...createPage(name, slug), collection: { slug: collection.slug } }
-  page.root.children = detailPageContent(collection)
+  const page: Page = { ...createPage(name, slug), collection: given.field === undefined ? { slug: collection.slug } : { slug: collection.slug, field: given.field } }
+  page.root.children = detailPageContent(collection, given.field)
   return page
 }
 

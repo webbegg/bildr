@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createBildr } from '../../server/actions/runtime'
 import { ACTIONS } from '../../server/actions/registry'
-import type { Project } from '#shared/document/schema'
+import type { Collection, Connection, Project } from '#shared/document/schema'
 import { memoryStorage } from '../helpers'
 
 const mcp = { caller: 'mcp' as const, source: 'mcp' }
@@ -78,6 +78,50 @@ describe('page_create_detail', () => {
     expect(content(doc, tags.pageId)).toEqual([{ type: 'Heading', text: '{{ item.id }}' }])
     expect(tags).toMatchObject({ keyField: 'id', path: '/tags/:id' })
     expect(content(doc, docs.pageId)).toEqual([{ type: 'Heading', text: '{{ item.slug }}' }, { type: 'Text', text: '{{ item.content }}' }])
+  })
+
+  it('takes the collection id', async () => {
+    const { call, project } = await setup()
+    const posts = (await project()).collections.find(c => c.slug === 'posts')!
+    expect(await call<Created>('page_create_detail', { collection: posts.id })).toMatchObject({ slug: 'posts', keyField: 'slug', path: '/posts/:slug' })
+  })
+
+  it('gives a collection with no text fields a Heading on the record id at /<page>/:id', async () => {
+    const { call, project } = await setup()
+    await call('collection_create', { name: 'Nums', fields: [{ key: 'n', type: 'number' }] })
+    const created = await call<Created>('page_create_detail', { collection: 'nums' })
+    expect(created).toMatchObject({ keyField: 'id', path: '/nums/:id' })
+    expect(content(await project(), created.pageId)).toEqual([{ type: 'Heading', text: '{{ item.id }}' }])
+  })
+
+  it('keys a connection collection by the record id', async () => {
+    const { call } = await setup()
+    const { connection } = await call<{ connection: Connection }>('connection_create', { name: 'API', baseUrl: 'https://api.example.com/v1' })
+    await call<{ collection: Collection }>('collection_create', { name: 'Remote', source: { type: 'connection', connectionId: connection.id, endpoints: { get: { method: 'GET', path: '/p/{id}' } } }, fields: [{ key: 'title', type: 'text' }] })
+    expect(await call<Created>('page_create_detail', { collection: 'remote' })).toMatchObject({ keyField: 'id', path: '/remote/:id' })
+  })
+
+  it('takes a field as the URL key, the record id included, in one undo step', async () => {
+    const { call, project } = await setup()
+    const before = strip(await project())
+    const byId = await call<Created & { collection: unknown }>('page_create_detail', { collection: 'posts', field: 'id' })
+    expect(byId).toMatchObject({ collection: { slug: 'posts', field: 'id' }, keyField: 'id', path: '/posts/:id' })
+    expect(content(await project(), byId.pageId)).toEqual([{ type: 'Heading', text: '{{ item.title }}' }, { type: 'Text', text: '{{ item.body }}' }])
+    await call('history_undo')
+    expect(strip(await project())).toEqual(before)
+    await call('collection_create', { name: 'Notes', fields: [{ key: 'handle', type: 'text' }, { key: 'slug', type: 'text' }] })
+    const notes = await call<Created>('page_create_detail', { collection: 'notes', field: 'handle' })
+    expect(notes).toMatchObject({ keyField: 'handle', path: '/notes/:handle' })
+    expect(content(await project(), notes.pageId)).toEqual([{ type: 'Heading', text: '{{ item.handle }}' }, { type: 'Text', text: '{{ item.slug }}' }])
+  })
+
+  it('refuses a URL key that is not a text field, leaving storage untouched', async () => {
+    const { call, snap } = await setup()
+    const before = await snap()
+    for (const field of ['views', 'zzz', '', '__proto__']) {
+      await expect(call('page_create_detail', { collection: 'posts', field }), field).rejects.toMatchObject({ code: expect.stringMatching(/^invalid/) })
+    }
+    expect(await snap()).toBe(before)
   })
 
   it('refuses an unknown collection and a taken slug, leaving storage untouched', async () => {
