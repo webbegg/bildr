@@ -4,6 +4,8 @@ import betterTailwindcss from 'eslint-plugin-better-tailwindcss'
 import { getDefaultAttributes } from 'eslint-plugin-better-tailwindcss/api/defaults'
 
 export default withNuxt(
+  // Codegen golden fixtures are standalone Nuxt projects with their own lint config.
+  { ignores: ['fixtures/**'] },
   betterTailwindcss.configs['correctness-error'],
   {
     settings: {

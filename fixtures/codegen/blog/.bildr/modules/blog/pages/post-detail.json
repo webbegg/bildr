@@ -1,0 +1,28 @@
+{
+  "$schema": "https://bildr.dev/schema/page.v1.json",
+  "id": "pg_post_detail",
+  "name": "posts-slug",
+  "path": "/posts/:slug",
+  "layout": "lay_main",
+  "params": [{ "name": "slug", "validate": { "field": "fld_slug" } }],
+  "seo": { "title": { "$bind": "post.title", "fallback": "Post" } },
+  "uses": {
+    "queries": [{ "as": "post", "query": "q_post_by_slug", "args": { "slug": { "$route": "slug" } } }],
+    "actions": [{ "as": "publish", "action": "act_publish_post" }]
+  },
+  "root": {
+    "id": "n_page", "type": "Page", "props": { "loading": "Loading…", "empty": "This post doesn't exist.", "when": { "$bind": "post" } },
+    "style": { "display": "flex", "direction": "column", "gap": "4" },
+    "children": [
+      { "id": "n_title", "type": "Heading", "props": { "level": 1, "text": { "$bind": "post.title" } }, "style": { "fontSize": "3xl", "fontWeight": "semibold" } },
+      { "id": "n_body", "type": "Text", "props": { "text": { "$bind": "post.body" } }, "style": { "whitespace": "pre-line" } },
+      {
+        "id": "n_actions", "type": "Row", "props": { "visible": { "not": { "$bind": "post.published" } } }, "style": { "align": "center", "gap": "3" },
+        "children": [
+          { "id": "n_publish", "type": "Button", "props": { "text": "Publish", "disabled": { "$bind": "publish.pending" } }, "interactions": [{ "on": "click", "do": [{ "kind": "runAction", "action": "act_publish_post", "args": { "id": { "$bind": "post.id" } } }] }] },
+          { "id": "n_error", "type": "Text", "props": { "text": { "$bind": "publish.error" }, "visible": { "$bind": "publish.error" } }, "style": { "fontSize": "sm", "color": "red-600" } }
+        ]
+      }
+    ]
+  }
+}

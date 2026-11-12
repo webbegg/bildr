@@ -1,0 +1,11 @@
+{
+  "$schema": "https://bildr.dev/schema/repository.v1.json",
+  "id": "repo_post",
+  "entity": "ent_post",
+  "datasource": "ds_main",
+  "table": "blog_posts",
+  "operations": ["list", "get", "create", "update", "delete"],
+  "finders": [{ "by": "fld_slug" }],
+  "list": { "orderBy": [{ "field": "createdAt", "direction": "desc" }] },
+  "expose": { "list": true }
+}

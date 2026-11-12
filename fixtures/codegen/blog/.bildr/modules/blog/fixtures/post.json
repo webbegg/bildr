@@ -1,0 +1,26 @@
+{
+  "$schema": "https://bildr.dev/schema/fixtures.v1.json",
+  "entity": "ent_post",
+  "rows": [
+    {
+      "id": "0b6f6a52-1c7a-4c1e-9a52-7a0e2f3d9a01",
+      "title": "Hello bildr",
+      "slug": "hello-bildr",
+      "body": "This post was seeded from the model fixtures.",
+      "published": true,
+      "publishedAt": "2026-11-01T09:00:00.000Z",
+      "createdAt": "2026-11-01T09:00:00.000Z",
+      "updatedAt": "2026-11-01T09:00:00.000Z"
+    },
+    {
+      "id": "0b6f6a52-1c7a-4c1e-9a52-7a0e2f3d9a02",
+      "title": "A draft",
+      "slug": "a-draft",
+      "body": "Not published yet.",
+      "published": false,
+      "publishedAt": null,
+      "createdAt": "2026-11-02T09:00:00.000Z",
+      "updatedAt": "2026-11-02T09:00:00.000Z"
+    }
+  ]
+}

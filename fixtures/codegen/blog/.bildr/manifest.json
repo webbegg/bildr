@@ -1,0 +1,323 @@
+{
+  "$schema": "https://bildr.dev/schema/manifest.v1.json",
+  "generatorVersion": "0.1.0",
+  "files": {
+    ".env.example": {
+      "owner": "scaffold",
+      "sha256": "47b61a21ec6a1127b6820eb63d8664036a188a32efa299ba652a58f99ef29908"
+    },
+    ".gitignore": {
+      "owner": "scaffold",
+      "sha256": "7665ce51438181d9f2dd1b2a894a15bb083766c6b28ab57b2fd93964e59c5187"
+    },
+    "README.md": {
+      "owner": "scaffold",
+      "sha256": "da44b1428413fec90ccc75e4284917a171d94ba624ca2400c0bfb253adb80df3"
+    },
+    "app/README.md": {
+      "owner": "scaffold",
+      "sha256": "88e8bd3a1305506437ac3db5fcd56020547785dd971e719eb0fbc84bba511295"
+    },
+    "drizzle.config.ts": {
+      "owner": "managed",
+      "sha256": "4077a30845ccba723f3db8d9ac1e50e6d4c66089044b3c5b126402beca0d119a"
+    },
+    "eslint.config.mjs": {
+      "owner": "managed",
+      "sha256": "9b61bc4d075ce2c53d3dd1eead7facf08b708982fe24c0ebce2f391eb0522812"
+    },
+    "layers/blog/app/components/blog/PostCard.vue": {
+      "owner": "managed",
+      "sha256": "9a93a933b1586c94821d5d5d5504d2029870a478db7c838ba5cbf3d0105044be",
+      "source": ".bildr/modules/blog/components/post-card.json"
+    },
+    "layers/blog/app/composables/blog/useAllPosts.ts": {
+      "owner": "managed",
+      "sha256": "8d06a0d4b988739124a9df97d49e19f5cc25740f2188d39bd81c920a21555ad1",
+      "source": ".bildr/modules/blog/queries/all-posts.json"
+    },
+    "layers/blog/app/composables/blog/useBlogPreferences.ts": {
+      "owner": "managed",
+      "sha256": "c6e80339c58b48d45e42b217d1b1894b3533c6e203082228d2d5b576d3566469",
+      "source": ".bildr/modules/blog/state/preferences.json"
+    },
+    "layers/blog/app/composables/blog/useCreatePost.ts": {
+      "owner": "managed",
+      "sha256": "8ecaa0570a017863fef6c20c9c7532985a2648a8062acbe029252ee83277d96b",
+      "source": ".bildr/modules/blog/actions/create-post.json"
+    },
+    "layers/blog/app/composables/blog/useFeaturedPosts.ts": {
+      "owner": "managed",
+      "sha256": "a329df95b70026d1ccb0d68ae4f21653463d5172c9028d0e8851d6c58e327eb1",
+      "source": ".bildr/modules/blog/queries/featured-posts.json"
+    },
+    "layers/blog/app/composables/blog/useLatestQuotes.ts": {
+      "owner": "managed",
+      "sha256": "4988102b0d10fd31e4dd77654025b618de1e655200b1e66fcb2314df870c9e94",
+      "source": ".bildr/modules/blog/queries/latest-quotes.json"
+    },
+    "layers/blog/app/composables/blog/usePostBySlug.ts": {
+      "owner": "managed",
+      "sha256": "574987fd80e1cb6de55c68b34c4af9c1dd38ad319ad58cb079748e4dca62d256",
+      "source": ".bildr/modules/blog/queries/post-by-slug.json"
+    },
+    "layers/blog/app/composables/blog/usePublishPost.ts": {
+      "owner": "managed",
+      "sha256": "927be72e1c9a329bb1d87a51ab04d960a5a070676341bbfb083e10ef0b2b89c5",
+      "source": ".bildr/modules/blog/actions/publish-post.json"
+    },
+    "layers/blog/app/data/posts.collection.ts": {
+      "owner": "managed",
+      "sha256": "28965e9c665194450de67e9647de5d4e60e71608ff71c926aabf04542e773efb",
+      "source": ".bildr/modules/blog/entities/post.json"
+    },
+    "layers/blog/app/data/preferences.collection.ts": {
+      "owner": "managed",
+      "sha256": "c479d6f367a2002610cc64e32a085e33e02eac64c93df7c1df29b4c43b70969d",
+      "source": ".bildr/modules/blog/state/preferences.json"
+    },
+    "layers/blog/app/data/quotes.collection.ts": {
+      "owner": "managed",
+      "sha256": "cffb30adcc63e1b5cd42da706b1f25a7446ec59b9fd9b9a2cde92c7d67d70671",
+      "source": ".bildr/modules/blog/entities/quote.json"
+    },
+    "layers/blog/app/pages/index.vue": {
+      "owner": "managed",
+      "sha256": "b2cd3a8620c30d6db19f67b729b6ecf9f09a210485072ae5c30e58f2e43c72e5",
+      "source": ".bildr/modules/blog/pages/index.json"
+    },
+    "layers/blog/app/pages/posts/[slug].vue": {
+      "owner": "managed",
+      "sha256": "d5dbd61581a488db17474e7d429cfeb0393fd05b6e19a11a3f316cffe300eabf",
+      "source": ".bildr/modules/blog/pages/post-detail.json"
+    },
+    "layers/blog/app/pages/posts/new.vue": {
+      "owner": "managed",
+      "sha256": "34e30532836d63650d83effabb616af435a198a37518939341206565a0ab9e6a",
+      "source": ".bildr/modules/blog/pages/new-post.json"
+    },
+    "layers/blog/nuxt.config.ts": {
+      "owner": "managed",
+      "sha256": "ec4125d6e184ed69e56163902d5be5f75a2448f5ba0d47cc0c86bf4463fc0e6d",
+      "source": ".bildr/modules/blog/module.json"
+    },
+    "layers/blog/server/api/blog/posts/[id]/publish.post.ts": {
+      "owner": "managed",
+      "sha256": "4b2dce9c29c24ee5665e28f8730f91f443ea6f4211e11d56eecc2590be3134be",
+      "source": ".bildr/modules/blog/actions/publish-post.json"
+    },
+    "layers/blog/server/api/blog/posts/index.get.ts": {
+      "owner": "managed",
+      "sha256": "d275e722fec6bc87b53796f42e5198a09f24870f21094427222abc58984b1249",
+      "source": ".bildr/modules/blog/repositories/post.json"
+    },
+    "layers/blog/server/api/blog/posts/index.post.ts": {
+      "owner": "managed",
+      "sha256": "c3b270ff5d6b250fe6041cf366a2af025b886dec08a51f605a33b9c00a1530f9",
+      "source": ".bildr/modules/blog/actions/create-post.json"
+    },
+    "layers/blog/server/api/blog/quotes/index.get.ts": {
+      "owner": "managed",
+      "sha256": "80ac23923da2b05b00e7ffcfc26e8002c128202da6a6e610a089475751a264be",
+      "source": ".bildr/modules/blog/repositories/quote.json"
+    },
+    "layers/blog/server/application/actions/create-post.ts": {
+      "owner": "managed",
+      "sha256": "5bc385739304d11415c75007ff1a13560787a5daf85e1c9c07cad86b0e3c786e",
+      "source": ".bildr/modules/blog/actions/create-post.json"
+    },
+    "layers/blog/server/application/actions/publish-post.ts": {
+      "owner": "managed",
+      "sha256": "e2c0362b06e4eb0f0722a09d71859510c382fc0b981fbdf944139db1fe345b97",
+      "source": ".bildr/modules/blog/actions/publish-post.json"
+    },
+    "layers/blog/server/application/ports/post-repository.ts": {
+      "owner": "managed",
+      "sha256": "0fb113644b69f01ca75b3eecc7fa31be5e94032eeb2f283a33c1ad526a1ab9c8",
+      "source": ".bildr/modules/blog/repositories/post.json"
+    },
+    "layers/blog/server/application/ports/quote-repository.ts": {
+      "owner": "managed",
+      "sha256": "169d44fd6a5686fae6f265b32da560f37b940ec195f108f671ce4ad1d4514a75",
+      "source": ".bildr/modules/blog/repositories/quote.json"
+    },
+    "layers/blog/server/application/queries/list-posts.ts": {
+      "owner": "managed",
+      "sha256": "89909b7cc127eb370da1117918a03c36dd78b1a21ec186ee981b9c99eadbb953",
+      "source": ".bildr/modules/blog/repositories/post.json"
+    },
+    "layers/blog/server/application/queries/list-quotes.ts": {
+      "owner": "managed",
+      "sha256": "338374ba17ea670e7db19ec1619b9f1447a5f4670a0f9714929a9c46c69059e9",
+      "source": ".bildr/modules/blog/repositories/quote.json"
+    },
+    "layers/blog/server/infrastructure/db/schema.ts": {
+      "owner": "managed",
+      "sha256": "0af02d070fa891ed5e76961e59e23347bcfc0b4e77179e9a6465495f71c1fe31",
+      "source": ".bildr/modules/blog/entities"
+    },
+    "layers/blog/server/infrastructure/db/seed.ts": {
+      "owner": "managed",
+      "sha256": "75ebe45ec197e07f5a567c45ab3363b54fdc49a8e043cff33ed9d6c9f8ef62ba",
+      "source": ".bildr/modules/blog/fixtures"
+    },
+    "layers/blog/server/infrastructure/repositories/post.drizzle.ts": {
+      "owner": "managed",
+      "sha256": "28353f1d7507c490a619324b7292272a5148992771ed2627e0448891e55a0129",
+      "source": ".bildr/modules/blog/repositories/post.json"
+    },
+    "layers/blog/server/infrastructure/repositories/post.memory.ts": {
+      "owner": "managed",
+      "sha256": "387f8ccb8edc54b8f4e1142bfdc523141037deb3e464a91e8e71c24eac784135",
+      "source": ".bildr/modules/blog/repositories/post.json"
+    },
+    "layers/blog/server/infrastructure/repositories/quote.rest.ts": {
+      "owner": "managed",
+      "sha256": "c31f45f594bc0d006837f65c56bad4e894c5fe70e2c949e40d9326e7a5991e46",
+      "source": ".bildr/modules/blog/repositories/quote.json"
+    },
+    "layers/blog/server/tasks/blog/seed.ts": {
+      "owner": "managed",
+      "sha256": "0a816e2bfcf939e9f0b1ab2ac5b49fe6651c62da0b7cdb62ae067859da0cf983",
+      "source": ".bildr/modules/blog/fixtures"
+    },
+    "layers/blog/server/utils/blog.ts": {
+      "owner": "managed",
+      "sha256": "f1a2ce1612820eb27f087ec009fd4bbcf1a13f9cb6666fea796cbf9b351a0f89",
+      "source": ".bildr/modules/blog"
+    },
+    "layers/blog/shared/domain/errors.ts": {
+      "owner": "managed",
+      "sha256": "eec9cda8c90cd209fa9dea089593e668a09b034597464fc0ae1cb28d3df0ca12"
+    },
+    "layers/blog/shared/domain/post.ts": {
+      "owner": "managed",
+      "sha256": "82a78b9a58e71be9db4fdaa6d3fdf4f2ae2c1fa09a8593fed0e9db0d9a7dae22",
+      "source": ".bildr/modules/blog/entities/post.json"
+    },
+    "layers/blog/shared/domain/quote.ts": {
+      "owner": "managed",
+      "sha256": "bded347e89b6f9be6eabdee27f3f407db7e03926f4c70d7613a1008f77b98e48",
+      "source": ".bildr/modules/blog/entities/quote.json"
+    },
+    "layers/blog/test/api/posts.test.ts": {
+      "owner": "managed",
+      "sha256": "1e949797403aa42ef00e0dbc74bea28085f76858eaf5fd9cde0bd40ca6c58c0b",
+      "source": ".bildr/modules/blog"
+    },
+    "layers/blog/test/application/create-post.test.ts": {
+      "owner": "managed",
+      "sha256": "4d8c4664c7ba07838c992d9905c82f49aa184aea4761e197937e11b64f275c71",
+      "source": ".bildr/modules/blog/actions/create-post.json"
+    },
+    "layers/blog/test/application/publish-post.test.ts": {
+      "owner": "managed",
+      "sha256": "60018759713b16d06c6846d2f45d10e57a1eb56c3ad856fc40df9f8297de598a",
+      "source": ".bildr/modules/blog/actions/publish-post.json"
+    },
+    "layers/blog/test/infrastructure/quote.rest.test.ts": {
+      "owner": "managed",
+      "sha256": "8f9cd37873c6a49ee74cbe25ca0dc2a8fb406ad75ad4a8422c0862be42dd48ed",
+      "source": ".bildr/modules/blog/repositories/quote.json"
+    },
+    "layers/core/app/app.config.ts": {
+      "owner": "managed",
+      "sha256": "b2f689c27b44a09feecfc58c7f9de6320aa9aa870d9996f093e2ff62fc286cee",
+      "source": ".bildr/bildr.json"
+    },
+    "layers/core/app/app.vue": {
+      "owner": "managed",
+      "sha256": "bff312b129f308752f9689ab3fbc374c4790b808b0aeee525cfc491ff93fdd16"
+    },
+    "layers/core/app/assets/css/theme.css": {
+      "owner": "managed",
+      "sha256": "0d16dadabce7af76b69de4c35d6b2f22d2eaed8dee7388b874c890fb7f2f9e16",
+      "source": ".bildr/theme.json"
+    },
+    "layers/core/app/data/query-client.ts": {
+      "owner": "managed",
+      "sha256": "5edda13ce52d11b72868c1f092512d685d48c1e2968682ae00550155b9ecbc42"
+    },
+    "layers/core/app/error.vue": {
+      "owner": "managed",
+      "sha256": "c356f1b0bef13e8201b82848afcb63bf4458acd1baa535a136af3c0546b22f47"
+    },
+    "layers/core/app/layouts/main.vue": {
+      "owner": "managed",
+      "sha256": "29c0e2054ecf7bbe0a21a80a02da701aae182ce75a58adefbfb647a62536ced2",
+      "source": ".bildr/layouts/main.json"
+    },
+    "layers/core/app/utils/errorMessage.ts": {
+      "owner": "managed",
+      "sha256": "c8bf20933f1d98cd9e3ce2d12b1358c76b86990b03480529bda930107dc8a345"
+    },
+    "layers/core/nuxt.config.ts": {
+      "owner": "managed",
+      "sha256": "1599a498c7a45c5b615915825506bd18a86dad49cbf98921fd598c66ecfda091"
+    },
+    "layers/core/server/plugins/migrate.ts": {
+      "owner": "managed",
+      "sha256": "eeb999abf2658a90f3d1bb7b741e8aafae009ee23f3c65277ed22d9873770b3c"
+    },
+    "layers/core/server/utils/db.ts": {
+      "owner": "managed",
+      "sha256": "22f71aee0ff8de686bc4c2769474ff7ce49daf4f6e4ba1c22b1029312732f53f"
+    },
+    "layers/core/server/utils/http-error.ts": {
+      "owner": "managed",
+      "sha256": "b672493508e278d3111f59e58cfbad5fc53fb9c4329f933107a11421e130ea70"
+    },
+    "layers/core/server/utils/remote.ts": {
+      "owner": "managed",
+      "sha256": "f280bb0b4922b7253478532444106fd408a1219544f9c7f005f7c5b173bbcb6e"
+    },
+    "layers/core/shared/kernel/ids.ts": {
+      "owner": "managed",
+      "sha256": "46d4793ee11b30cc7be9362313b8d9079c70fdf976ca321521f72bbf0c43f812"
+    },
+    "layers/core/shared/kernel/page.ts": {
+      "owner": "managed",
+      "sha256": "4e8a4ea19917ea6a6f50c2e4cca90e1ad63bef130899104e9573d809946d4958"
+    },
+    "layers/core/shared/kernel/result.ts": {
+      "owner": "managed",
+      "sha256": "9fd03dbf0883e94baa5469b2671b3543b9c16a308617fa5994ad4277423e4eb3"
+    },
+    "nuxt.config.ts": {
+      "owner": "scaffold",
+      "sha256": "cee141cc55ad07e243f5d0e194677e4796b687b2585ae17ad8efaad3e24f03d4"
+    },
+    "package.json": {
+      "owner": "scaffold",
+      "sha256": "dbd99585d6fbea591f8c1de0871a98dbe5eb52836e32f91196b0c8ea80262a69"
+    },
+    "pnpm-workspace.yaml": {
+      "owner": "scaffold",
+      "sha256": "a3b8490d60908c9a17f9b4d497f9b4ea5de4316ca8559a714adf7a72ebccf0da"
+    },
+    "server/README.md": {
+      "owner": "scaffold",
+      "sha256": "bd116be5ea74949ece380eb414ae2b99f6f2348a91c945cab42691d85162e307"
+    },
+    "server/database/migrations/0000_damp_dakota_north.sql": {
+      "owner": "scaffold",
+      "sha256": "465a4d5eacf50bde2adafbc179d15811c6c61f5dd30f0020ccc078b9e24a93f7"
+    },
+    "server/database/migrations/meta/0000_snapshot.json": {
+      "owner": "scaffold",
+      "sha256": "e547a87ce758851fe81e5a888d3afd70a0a92958272610b793543711ddd21ff9"
+    },
+    "server/database/migrations/meta/_journal.json": {
+      "owner": "scaffold",
+      "sha256": "ff33d2dc99d0e3837eeee27658a7efac76942617e529340d3c80435adc7a5d5b"
+    },
+    "tsconfig.json": {
+      "owner": "scaffold",
+      "sha256": "665bfd2725ef0790a0173aacdd820037c4420f3df365ae3873953f8c953b9b08"
+    },
+    "vitest.config.ts": {
+      "owner": "managed",
+      "sha256": "3a16447882df1cbfa31508e36340a1e76e2d51312f4fd6f225eb960f166865de"
+    }
+  }
+}

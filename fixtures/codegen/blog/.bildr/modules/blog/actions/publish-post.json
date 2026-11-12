@@ -1,0 +1,21 @@
+{
+  "$schema": "https://bildr.dev/schema/action.v1.json",
+  "id": "act_publish_post",
+  "name": "publishPost",
+  "label": "Publish post",
+  "http": { "method": "POST", "path": "/posts/:id/publish" },
+  "input": { "params": [{ "name": "id", "type": "uuid", "from": "route" }] },
+  "output": { "entity": "ent_post" },
+  "errors": [
+    { "type": "post_not_found", "status": 404, "message": "Post not found.", "data": { "id": "text" } }
+  ],
+  "steps": [
+    { "kind": "load", "as": "post", "repository": "repo_post", "op": "get", "args": { "id": { "$input": "id" } }, "orError": "post_not_found", "errorData": { "id": { "$input": "id" } } },
+    { "kind": "return", "if": { "$var": "post.published" }, "value": { "$var": "post" } },
+    { "kind": "repository", "repository": "repo_post", "op": "update", "id": { "$input": "id" }, "from": { "$var": "post" }, "set": { "published": true, "publishedAt": { "$now": true } } }
+  ],
+  "client": {
+    "optimistic": { "kind": "update", "entity": "ent_post", "key": { "$input": "id" }, "unless": "published", "set": { "published": true, "publishedAt": { "$now": true } } },
+    "invalidates": ["ent_post"]
+  }
+}

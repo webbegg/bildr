@@ -1,0 +1,12 @@
+{
+  "$schema": "https://bildr.dev/schema/datasource.v1.json",
+  "id": "ds_quotes",
+  "name": "quotes",
+  "kind": "rest",
+  "env": {
+    "baseUrl": "NUXT_DATASOURCES_QUOTES_BASE_URL",
+    "apiKey": "NUXT_DATASOURCES_QUOTES_API_KEY"
+  },
+  "defaults": { "baseUrl": "https://dummyjson.com" },
+  "auth": { "type": "bearer", "secret": "apiKey" }
+}
