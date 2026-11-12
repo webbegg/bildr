@@ -105,6 +105,7 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['shop', '--bildr='])).toThrow('--bildr needs a value')
     expect(() => parseArgs(['shop', '--bildr', ''])).toThrow('--bildr needs a value')
     expect(() => parseArgs(['shop', '--module='])).toThrow('--module needs a value')
+    expect(() => parseArgs(['shop', '--bildr', '  '])).toThrow('--bildr needs a value')
   })
 
   it('explains the usage when the directory is missing or an option is unknown', () => {
