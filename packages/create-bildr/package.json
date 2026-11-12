@@ -1,0 +1,16 @@
+{
+  "name": "create-bildr",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Create a new bildr project from the starter kit: pnpm create bildr <directory>",
+  "type": "module",
+  "bin": {
+    "create-bildr": "./src/cli.ts"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "dependencies": {
+    "@bildr/codegen": "workspace:*"
+  }
+}
