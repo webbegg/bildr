@@ -11,15 +11,14 @@
  * same page afterwards (the only write since), not by a fixed wait.
  * Shots go to e2e/.shots/canvas-p2/.
  */
-import { action, canvas, check, findNode, openEditor, project, run, seedFrames, shot, until } from './lib.mjs'
+import { action, canvas, check, findNode, openEditor, project, run, shot, until } from './lib.mjs'
 
 const SPACING = ['0', '0.5', '1', '1.5', '2', '2.5', '3', '4', '5', '6', '8', '10', '12', '16', '20', '24', '32']
 const WIDTHS = ['0', '4', '8', '12', '16', '20', '24', '32', '40', '48', '56', '64', '72', '80', '96']
 
 await run('canvas-p2', async ({ page, errors }) => {
+  // A new project opens with its Primary frame only, at that frame's fit zoom: the drags below are screen px.
   const p = await project('canvas p2')
-  // The drag distances below assume the zoom of three frames side by side (a project opens with its Primary only).
-  await seedFrames(page, p.id)
   const { pages } = await action('project_get', { projectId: p.id })
   const pageId = pages[0].id
   const column = await action('node_insert', { projectId: p.id, pageId, type: 'Column', style: { p: '4', gap: '2' } })

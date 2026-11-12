@@ -108,8 +108,28 @@ export interface ResizeDrag {
   breakpoint: Breakpoint | undefined
   /** Px per scale unit (the project's `--spacing`). */
   basePx: number
-  /** The parent's content box in px, the size Fill (`full`) resolves to; without it, `full` is no candidate. */
-  fill?: { width: number, height: number }
+  /**
+   * The px size Fill (`full`) renders the node at, per axis, given only where
+   * the parent's size is definite there (see `fillSizes`); an axis without it
+   * has no `full` candidate, so a drag there always writes a fixed step.
+   */
+  fill?: { width?: number, height?: number }
+}
+
+export interface Size { width: number, height: number }
+
+/**
+ * The sizes Fill can snap to, from the node measured at `100%` and at `50%`
+ * of each axis (one axis at a time): where the parent's size is definite the
+ * two differ, and `full` renders at the `100%` size; where it is indefinite
+ * (an auto-height Column) both resolve to the auto size, so Fill would show
+ * no change and is left out.
+ */
+export function fillSizes(full: Size, half: Size): ResizeDrag['fill'] {
+  const fill: NonNullable<ResizeDrag['fill']> = {}
+  if (Math.abs(full.width - half.width) >= 0.5) fill.width = full.width
+  if (Math.abs(full.height - half.height) >= 0.5) fill.height = full.height
+  return fill
 }
 
 /** The fill stop of a size scale, measured as the parent's content size. */
@@ -120,8 +140,11 @@ const FILL = 'full'
  * the pointer has moved along (past the scrub dead zone), the candidate
  * nearest the start size plus the travel (a left or top handle grows as it
  * moves out), Shift by 4 candidates from the start's. The candidates are the
- * scale's numbers and Fill (`full`, at the parent's content size, when
- * `fill` is given), so a Fit size becomes a fixed one or Fill. A snap never
+ * scale's numbers and Fill (`full`, at the size it renders, only on an axis
+ * `fill` gives: a parent of definite size), so a Fit size becomes a fixed one
+ * or Fill. `delta` is in canvas px: the canvas iframe is scaled by the
+ * editor's zoom transform, so its pointer coordinates are already divided by
+ * the zoom (once), and the size follows the pointer at any zoom. A snap never
  * goes against the drag: a candidate smaller than the start on an outward
  * drag (or larger on an inward one) leaves the axis unpatched, e.g. an
  * outward drag of a node wider than the scale and its parent.

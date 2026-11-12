@@ -21,7 +21,7 @@ import { gestureTargetGone, startGesture, stepGesture } from '#shared/editor/ges
 import type { ReorderHit } from '#shared/editor/reorder'
 import { canDragNode, isNoopMove, REORDER_THRESHOLD, reorderTarget } from '#shared/editor/reorder'
 import type { Axis, HandleId, Insets, Point, ResizeDrag, SpacingHandle, SpacingTarget } from '#shared/editor/handles'
-import { changedPatch, gapRects, handleCursor, handlePoint, HANDLES, hitPoint, hitRadius, paddingRects, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '#shared/editor/handles'
+import { changedPatch, fillSizes, gapRects, handleCursor, handlePoint, HANDLES, hitPoint, hitRadius, paddingRects, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '#shared/editor/handles'
 import { editorTakesKey, hasTextSelection } from '#shared/editor/clipboardKeys'
 import { FRAME_MIN_HEIGHT, viewportUnitRules, wheelPixels, zoomShortcut } from '#shared/editor/viewport'
 import type { NodeBox } from '#shared/editor/autoLayout'
@@ -596,12 +596,25 @@ function dropAt(event: DragEvent): { target: DropTarget, indicator: Indicator } 
   return hit ? { target: hit.target, indicator: indicatorAt(hit.rect, hit.position, hit.horizontal) } : null
 }
 
-/** The size Fill (`full`) resolves to for node `id`: its element's parent's content box. */
-function fillSize(id: string): { width: number, height: number } | undefined {
-  const parent = firstCopy(id)?.parentElement
-  if (!parent) return undefined
-  const { width, height } = contentOf(parent)
-  return { width, height }
+/**
+ * The sizes Fill (`full`) can snap node `id` to (`fillSizes`): its element measured with the axis at `100%` and at
+ * `50%`, one axis at a time (a width change can rewrap text and change an auto height), then restored, before the next
+ * paint. A percentage of an indefinite parent size (an auto-height Column) renders as auto, so Fill is left out there.
+ */
+function fillSize(id: string): ResizeDrag['fill'] {
+  const el = firstCopy(id) as HTMLElement | null
+  if (!el?.style) return undefined
+  const sizeAt = (prop: 'width' | 'height', value: string) => {
+    const before = el.style.getPropertyValue(prop)
+    const priority = el.style.getPropertyPriority(prop)
+    el.style.setProperty(prop, value, 'important')
+    const size = el.getBoundingClientRect()[prop]
+    el.style.setProperty(prop, before, priority)
+    return size
+  }
+  const full = { width: sizeAt('width', '100%'), height: sizeAt('height', '100%') }
+  const half = { width: sizeAt('width', '50%'), height: sizeAt('height', '50%') }
+  return fillSizes(full, half)
 }
 
 /** A press in the active frame: on a handle it starts a resize or spacing drag, on the selection a pending drag-to-reorder. */

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SHIFT_STOPS } from '#shared/editor/scale'
-import { changedPatch, gapRects, handleCursor, handlePoint, HANDLES, hitHandle, hitPoint, hitRadius, nearestStop, paddingDragKey, paddingRects, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '#shared/editor/handles'
+import { changedPatch, fillSizes, gapRects, handleCursor, handlePoint, HANDLES, hitHandle, hitPoint, hitRadius, nearestStop, paddingDragKey, paddingRects, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '#shared/editor/handles'
 
 const rect = { x: 100, y: 50, width: 200, height: 80 }
 
@@ -131,6 +131,66 @@ describe('resizePatch', () => {
     expect(resizePatch({ ...drag, width: 800, fill: { width: 800, height: 600 } }, { dx: -40, dy: 0 }, false)).toEqual({ w: 'full' })
     // H snaps to the parent's height the same way.
     expect(resizePatch({ ...drag, handle: 's', height: 300, fill: { width: 800, height: 600 } }, { dx: 0, dy: 280 }, false)).toEqual({ h: 'full' })
+  })
+
+  it('without a Fill size for an axis, Fill is no candidate there: a fixed step follows the pointer', () => {
+    // A 64px-high node dragged down to 236: h-56 (224), never `full`, even with a width-only Fill.
+    expect(resizePatch({ ...drag, handle: 's', fill: { width: 800 } }, { dx: 0, dy: 172 }, false)).toEqual({ h: '56' })
+  })
+})
+
+describe('fillSizes', () => {
+  it('gives the 100% size of an axis whose parent size is definite (100% and 50% differ)', () => {
+    expect(fillSizes({ width: 600, height: 400 }, { width: 300, height: 200 })).toEqual({ width: 600, height: 400 })
+  })
+
+  it('leaves out an axis whose parent size is indefinite (100% and 50% both resolve to auto)', () => {
+    expect(fillSizes({ width: 600, height: 24 }, { width: 300, height: 24 })).toEqual({ width: 600 })
+    expect(fillSizes({ width: 0, height: 0 }, { width: 0, height: 0 })).toEqual({})
+  })
+})
+
+/**
+ * A Text (24px high, 300px wide) in a Column that is auto height (3 Texts, gap 8px: 88px of content)
+ * but has a definite width (600px). The canvas iframe is scaled by the editor's CSS transform, so its
+ * pointer coordinates are already document px: a screen drag of `s` px at zoom `z` moves `s / z`.
+ */
+describe('resize drag inside an auto-height parent, at any zoom', () => {
+  const text = { handle: 's' as const, width: 300, height: 24, breakpoint: undefined, basePx: 4 }
+  // What the canvas measures with the Text at 100% and at 50%: the height stays auto (24), the width resolves.
+  const fill = fillSizes({ width: 600, height: 24 }, { width: 300, height: 24 })
+  const drag = { ...text, fill }
+  const screen = (px: number, zoom: number) => px / zoom
+
+  it('a 50px south drag at the one-frame zoom (0.81) gives a fixed height step, not Fill', () => {
+    // 24 + 61.7 = 85.7px: h-20 (80px) and h-24 (96px) are the steps around it; h-full would render 24px.
+    expect(resizePatch(drag, { dx: 0, dy: screen(50, 0.81) }, false)).toEqual({ h: '20' })
+  })
+
+  it('follows the pointer in document px at zoom 1, 0.5 and 2', () => {
+    // 24 + 40 = 64 → h-16 (64); 24 + 100 = 124 → h-32 (128); 24 + 25 = 49 → h-12 (48).
+    expect(resizePatch(drag, { dx: 0, dy: screen(40, 1) }, false)).toEqual({ h: '16' })
+    expect(resizePatch(drag, { dx: 0, dy: screen(50, 0.5) }, false)).toEqual({ h: '32' })
+    expect(resizePatch(drag, { dx: 0, dy: screen(50, 2) }, false)).toEqual({ h: '12' })
+  })
+
+  it('the width snaps to steps too, and to Fill only near the definite parent width', () => {
+    const east = { ...drag, handle: 'e' as const }
+    // 300 + 50/0.81 = 361.7 → w-96 (384, the nearest step; Fill is 600).
+    expect(resizePatch(east, { dx: screen(50, 0.81), dy: 0 }, false)).toEqual({ w: '96' })
+    // 300 + 120/0.5 = 540 → Fill (600) is nearer than w-96 (384).
+    expect(resizePatch(east, { dx: screen(120, 0.5), dy: 0 }, false)).toEqual({ w: 'full' })
+    // 300 - 40/2 = 280 → w-72 (288).
+    expect(resizePatch(east, { dx: screen(-40, 2), dy: 0 }, false)).toEqual({ w: '72' })
+  })
+
+  it('in a parent with a definite height, Fill is the parent height and a drag near it snaps there', () => {
+    // The Column is h-128 (512px, 40px padding: 432px of content).
+    const definite = { ...text, fill: fillSizes({ width: 600, height: 432 }, { width: 300, height: 216 }) }
+    // 24 + 380/0.81 = 493 → Fill (432) beats h-96 (384).
+    expect(resizePatch(definite, { dx: 0, dy: screen(380, 0.81) }, false)).toEqual({ h: 'full' })
+    // 24 + 50/0.81 = 85.7 → still h-20.
+    expect(resizePatch(definite, { dx: 0, dy: screen(50, 0.81) }, false)).toEqual({ h: '20' })
   })
 })
 
