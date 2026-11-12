@@ -108,6 +108,14 @@ describe('write safety (T3b verification)', () => {
     expect((await (await request('/__bildr/api/model')).json()).ok).toBe(true)
   })
 
+  it('refuses encoded and doubled non-normalized paths', async () => {
+    for (const raw of ['.bildr/modules/%2e%2e/entities/quote.json', '.bildr%2Fmodules%2F.%2e%2Fentities%2Fquote.json', encodeURIComponent('.bildr//modules/main/entities/quote.json'), encodeURIComponent('.bildr/modules/main/entities/quote.json/.'), encodeURIComponent('.bildr\\modules\\main\\entities\\quote.json')]) {
+      const response = await request(`/__bildr/api/file?path=${raw}`, { method: 'PUT', body: entity(), headers: { 'content-type': 'application/json' } })
+      expect(response.status, raw).toBe(400)
+    }
+    expect((await (await request('/__bildr/api/model')).json()).ok).toBe(true)
+  })
+
   it('never writes through a symlinked .bildr folder that points outside the project', async () => {
     mkdirSync(join(root, 'outside'))
     symlinkSync(join(root, 'outside'), join(dir, '.bildr/modules/main/entities'))
