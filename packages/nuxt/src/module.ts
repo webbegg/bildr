@@ -85,7 +85,7 @@ export default defineNuxtModule<ModuleOptions>({
       else if (migration.kind === 'pending') {
         logger.warn([
           'bildr holds a migration that would lose data until you confirm it:',
-          ...migration.destructive.map(statement => `  ${statement.split('\n')[0]}`),
+          ...migration.losing.map(loss => `  - ${loss}`),
           `Confirm it in the bildr editor (or POST ${BASE}/api/migrations/confirm with {"hash":"${migration.hash}"}).`
         ].join('\n'))
       }

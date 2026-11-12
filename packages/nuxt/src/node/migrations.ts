@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
-import { applyRenames, dropIndexesFirst, isDestructive, planRenames, schemaIds, unappliable, withoutAdditions } from '@bildr/codegen/migrate'
+import { applyRenames, describeLosses, dropIndexesFirst, isDestructive, planRenames, schemaIds, unappliable, withoutAdditions } from '@bildr/codegen/migrate'
 import type { SchemaIds, Snapshot } from '@bildr/codegen/migrate'
 import type { Model } from '@bildr/codegen/model'
 import type { GeneratedFile } from '@bildr/codegen/sync'
@@ -31,7 +31,7 @@ const JOURNAL = `${MIGRATIONS_DIR}/meta/_journal.json`
 export type MigrationResult
   = | { kind: 'none' }
     | { kind: 'written', tag: string, statements: string[], /** Set when a database URL was given: the migration ran. */ applied?: true }
-    | { kind: 'pending', hash: string, destructive: string[], statements: string[] }
+    | { kind: 'pending', hash: string, destructive: string[], /** What confirming loses, in the user's words. */ losing: string[], statements: string[] }
     /** Nothing written (or written and reverted, then `tag` is set): the model change needs another step, or the database refused it. */
     | { kind: 'failed', error: string, statements: string[], tag?: string }
 
@@ -172,9 +172,10 @@ export const migrateProject = async (root: string, model: Model, sources: Record
   const hash = sha256(JSON.stringify([previous.id, statements]))
   const destructive = statements.filter(isDestructive)
   if (destructive.length && options.confirm !== hash) {
+    const losing = describeLosses(destructive, renames.replaced)
     mkdirSync(join(root, '.bildr/.cache'), { recursive: true })
-    writeAtomically(join(root, PENDING_FILE), `${JSON.stringify({ hash, destructive, statements }, null, 2)}\n`)
-    return { kind: 'pending', hash, destructive, statements }
+    writeAtomically(join(root, PENDING_FILE), `${JSON.stringify({ hash, destructive, losing, statements }, null, 2)}\n`)
+    return { kind: 'pending', hash, destructive, losing, statements }
   }
 
   // Order: SQL, snapshot and its ids map, then the journal: what the migrator reads.
