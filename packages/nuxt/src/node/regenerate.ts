@@ -5,7 +5,7 @@ import { schemaIds } from '@bildr/codegen/migrate'
 import { loadModel } from '@bildr/codegen/model'
 import type { Model, ModelProblem } from '@bildr/codegen/model'
 import type { SyncReport } from '@bildr/codegen/sync'
-import { applyMigrations, migrateProject, MIGRATIONS_DIR, schemaSources } from './migrations.ts'
+import { migrateProject, MIGRATIONS_DIR, schemaSources } from './migrations.ts'
 import type { MigrationResult } from './migrations.ts'
 import { readModelFiles } from './project.ts'
 import { syncProject } from './sync.ts'
@@ -50,14 +50,6 @@ export const regenerate = async (root: string, options: RegenerateOptions = {}):
   if (needsMigrations(root, loaded.model)) {
     try {
       migration = await migrateProject(root, loaded.model, schemaSources(root, files), options)
-      if (migration.kind === 'written' && options.databaseUrl) {
-        try {
-          await applyMigrations(root, options.databaseUrl)
-          migration = { ...migration, applied: true }
-        } catch (error) {
-          migration = { ...migration, applied: false, error: (error as Error).message }
-        }
-      }
     } catch (error) {
       const message = (error as Error).message
       migration = { kind: 'error', message: /drizzle-kit/.test(message) ? message : `${message} (is drizzle-kit installed?)` }

@@ -108,11 +108,12 @@ describe('regenerate', { timeout: 60_000 }, () => {
     }
   })
 
-  it('says so when a written migration fails to apply', async () => {
+  it('says so when a migration fails to apply, and takes it out of the journal', async () => {
     addNote()
     mkdirSync(join(dir, 'blocked'))
     const result = await regenerate(dir, { databaseUrl: `file:${join(dir, 'blocked')}` })
-    expect(result).toMatchObject({ ok: true, migration: { kind: 'written', tag: '0000_bildr', applied: false, error: expect.any(String) } })
+    expect(result).toMatchObject({ ok: true, migration: { kind: 'failed', tag: '0000_bildr', error: expect.any(String) } })
+    expect(existsSync(join(dir, 'server/database/migrations/meta/_journal.json'))).toBe(false)
   })
 
   it('still regenerates the app when the migration can\'t be planned, and says why', async () => {

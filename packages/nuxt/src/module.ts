@@ -79,8 +79,8 @@ export default defineNuxtModule<ModuleOptions>({
     // Regenerate the app from .bildr/: once now (edits made while nuxt dev was off), then on
     // every model change (editor saves, hand edits, git pulls). Hand-edited files are kept.
     const logMigration = (migration: MigrationOutcome) => {
-      if (migration.kind === 'written' && migration.applied === false) logger.warn(`bildr wrote migration ${migration.tag} but could not apply it: ${migration.error ?? 'unknown error'}`)
-      else if (migration.kind === 'written') logger.success(`bildr wrote migration ${migration.tag}${migration.applied ? ' and applied it' : ' (applied when the server starts)'}`)
+      if (migration.kind === 'written') logger.success(`bildr wrote migration ${migration.tag}${migration.applied ? ' and applied it' : ' (applied when the server starts)'}`)
+      else if (migration.kind === 'failed') logger.warn(`bildr did not migrate the database${migration.tag ? ` (${migration.tag} was refused and taken out again)` : ''}: ${migration.error}`)
       else if (migration.kind === 'error') logger.warn(`bildr could not plan the database migration, the database keeps its schema: ${migration.message}`)
       else if (migration.kind === 'pending') {
         logger.warn([

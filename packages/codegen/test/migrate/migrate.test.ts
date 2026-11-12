@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { applyRenames, effectiveRenames, isDestructive, renamesBetween, renameSql, schemaIds, withoutAdditions } from '../../src/migrate/index'
+import { applyRenames, isDestructive, planRenames, renamesBetween, renameSql, schemaIds, unappliable, withoutAdditions } from '../../src/migrate/index'
 import type { SchemaIds, Snapshot } from '../../src/migrate/index'
 import { loadModel } from '../../src/model/load'
 import { fixtureModelFiles, fixtureRoot } from '../model/fixture'
@@ -55,16 +55,54 @@ describe('renamesBetween and renameSql', () => {
   })
 })
 
-describe('effectiveRenames', () => {
-  it('keeps only renames the previous snapshot still needs, so a run that died before saving the ids map never renames twice', () => {
-    const snapshot = fixtureSnapshot()
-    const renames = {
-      tables: [{ from: 'blog_posts', to: 'blog_articles' }, { from: 'gone', to: 'other' }],
-      columns: [{ table: 'blog_articles', from: 'slug', to: 'handle' }, { table: 'blog_articles', from: 'missing', to: 'x' }]
-    }
-    expect(effectiveRenames(renames, snapshot)).toEqual({ tables: [{ from: 'blog_posts', to: 'blog_articles' }], columns: [{ table: 'blog_articles', from: 'slug', to: 'handle' }] })
-    const done = applyRenames(snapshot, effectiveRenames(renames, snapshot))
-    expect(effectiveRenames(renames, done)).toEqual({ tables: [], columns: [] })
+describe('planRenames', () => {
+  const post = (columns: Record<string, string>, table = 'blog_posts'): SchemaIds => ({ tables: { ent_post: { table, columns } } })
+
+  it('renames directly when the new names are free', () => {
+    const plan = planRenames(post({ fld_slug: 'slug' }), post({ fld_slug: 'handle' }), fixtureSnapshot())
+    expect(plan).toEqual({
+      renames: { tables: [], columns: [{ table: 'blog_posts', from: 'slug', to: 'handle' }] },
+      sql: ['ALTER TABLE `blog_posts` RENAME COLUMN `slug` TO `handle`;'],
+      conflicts: []
+    })
+  })
+
+  it('swaps two columns through temporary names, so each keeps its data (verification B2)', () => {
+    const plan = planRenames(post({ fld_title: 'title', fld_body: 'body' }), post({ fld_title: 'body', fld_body: 'title' }), fixtureSnapshot())
+    expect(plan.conflicts).toEqual([])
+    expect(plan.sql).toEqual([
+      'ALTER TABLE `blog_posts` RENAME COLUMN `title` TO `__bildr_rename_0`;',
+      'ALTER TABLE `blog_posts` RENAME COLUMN `body` TO `__bildr_rename_1`;',
+      'ALTER TABLE `blog_posts` RENAME COLUMN `__bildr_rename_0` TO `body`;',
+      'ALTER TABLE `blog_posts` RENAME COLUMN `__bildr_rename_1` TO `title`;'
+    ])
+    // The old body column (the one with the '' default) is now called title, and the other way round.
+    const columns = applyRenames(fixtureSnapshot(), plan.renames).tables.blog_posts!.columns
+    expect(columns.title).toMatchObject({ name: 'title', default: '\'\'' })
+    expect(columns.body).toMatchObject({ name: 'body' })
+    expect(columns.body!.default).toBeUndefined()
+  })
+
+  it('refuses a rename onto a name a removed field or table still holds (verification B2)', () => {
+    const plan = planRenames(post({ fld_body: 'body' }), post({ fld_body: 'title' }), fixtureSnapshot())
+    expect(plan.conflicts).toEqual(['Column blog_posts.title still exists: remove it in one change, then rename blog_posts.body to title in the next'])
+    const table = planRenames(
+      { tables: { ent_post: { table: 'blog_posts', columns: {} }, ent_old: { table: 'blog_old', columns: {} } } },
+      { tables: { ent_post: { table: 'blog_old', columns: {} } } },
+      { tables: { blog_posts: fixtureSnapshot().tables.blog_posts!, blog_old: { ...fixtureSnapshot().tables.blog_posts!, name: 'blog_old' } } }
+    )
+    expect(table.conflicts).toEqual(['Table blog_old still exists: remove it in one change, then rename blog_posts to blog_old in the next'])
+  })
+
+  it('ignores renames of names the previous snapshot doesn\'t have (a hand-edited migrations folder)', () => {
+    expect(planRenames(post({ fld_x: 'gone' }), post({ fld_x: 'other' }), fixtureSnapshot()).sql).toEqual([])
+  })
+})
+
+describe('unappliable', () => {
+  it('names the statements SQLite refuses on any table: a NOT NULL column added without a default (verification B1)', () => {
+    expect(unappliable(['ALTER TABLE `main_notes` ADD `n` text NOT NULL;'])).toEqual(['main_notes.n is required: give the field a default value, so existing rows get one'])
+    expect(unappliable(['ALTER TABLE `main_notes` ADD `n` text DEFAULT \'x\' NOT NULL;', 'ALTER TABLE `main_notes` ADD `m` text;'])).toEqual([])
   })
 })
 
