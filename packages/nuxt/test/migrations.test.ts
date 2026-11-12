@@ -140,6 +140,37 @@ describe.skipIf(!!NEEDS_FIXTURE)(`migrateProject${NEEDS_FIXTURE}`, { timeout: 60
     expect(await migrate({ databaseUrl: databaseUrl() })).toEqual({ kind: 'none' })
   })
 
+  it('moves a second removed field aside while the first still waits for confirmation (verification of the follow-up)', async () => {
+    const body: Field = { id: 'fld_body', name: 'body', type: 'text' }
+    writeNote([title, body])
+    await migrate({ databaseUrl: databaseUrl() })
+    await applyAndQuery('insert into main_notes (id, title, body) values (\'n1\', \'T\', \'B\')')
+    writeNote([title, { id: 'fld_b2', name: 'body', type: 'text' }])
+    expect(await migrate({ databaseUrl: databaseUrl() })).toMatchObject({ kind: 'pending' })
+    writeNote([{ id: 'fld_t2', name: 'title', type: 'text' }, { id: 'fld_b2', name: 'body', type: 'text' }])
+    const pending = await migrate({ databaseUrl: databaseUrl() })
+    expect(pending).toMatchObject({ kind: 'pending', losing: expect.arrayContaining(['the data of main_notes.body (a removed field)', 'the data of main_notes.title (a removed field)']) })
+    expect(pending.kind === 'pending' && pending.losing).toHaveLength(2)
+    expect(pending.kind === 'pending' && pending.destructive).toHaveLength(2)
+    expect(await applyAndQuery('select __bildr_replaced_0 as b, __bildr_replaced_1 as t from main_notes')).toEqual([{ b: 'B', t: 'T' }])
+    await migrate({ databaseUrl: databaseUrl(), confirm: pending.kind === 'pending' ? pending.hash : '' })
+    expect(await applyAndQuery('select * from main_notes')).toEqual([{ id: 'n1', title: null, body: null }])
+  })
+
+  it('moves a second replaced entity\'s table aside while the first still waits for confirmation', async () => {
+    const entity = (id: string) => {
+      write(`.bildr/modules/main/entities/note.json`, { id: `ent_${id}`, name: 'Note', plural: 'notes', idStrategy: 'uuid', timestamps: false, fields: [title], relations: [], client: { sync: 'eager', limit: 500 } })
+      write(`.bildr/modules/main/repositories/note.json`, { id: `repo_${id}`, entity: `ent_${id}`, datasource: 'ds_main', operations: ['list', 'get', 'create'], finders: [], list: { orderBy: [] }, expose: { list: true } })
+    }
+    entity('a')
+    await migrate({ databaseUrl: databaseUrl() })
+    entity('b')
+    expect(await migrate({ databaseUrl: databaseUrl() })).toMatchObject({ kind: 'pending' })
+    entity('c')
+    const pending = await migrate({ databaseUrl: databaseUrl() })
+    expect(pending).toMatchObject({ kind: 'pending', destructive: ['DROP TABLE `__bildr_replaced_0`;', 'DROP TABLE `__bildr_replaced_1`;'] })
+  })
+
   it('never writes a required field added without a default: SQLite refuses it on any table (verification B1)', async () => {
     writeNote([title])
     await migrate({ databaseUrl: databaseUrl() })
