@@ -1,6 +1,6 @@
 import type { z } from 'zod'
 import {
-  ActionFileSchema, ComponentFileSchema, DataSourceFileSchema, EntityFileSchema, EXPRESSION_KEYS, FixturesFileSchema,
+  ActionFileSchema, ComponentFileSchema, DataSourceFileSchema, EntityFileSchema, EXPRESSION_KEYS, FixturesFileSchema, PATH_EXPRESSIONS, PROPERTY_PATH,
   LayoutFileSchema, ManifestFileSchema, ModuleFileSchema, PageFileSchema, ProjectFileSchema, QueryFileSchema,
   RepositoryFileSchema, StateFileSchema, ThemeFileSchema
 } from './schemas.ts'
@@ -136,7 +136,11 @@ export const loadModel = (files: Record<string, string>, options: LoadOptions = 
   }
   if (problems.length) return { ok: false, problems }
 
-  const version = (raw[PROJECT_FILE] as { schemaVersion?: unknown }).schemaVersion
+  const project = raw[PROJECT_FILE]
+  if (project !== undefined && (typeof project !== 'object' || project === null || Array.isArray(project))) {
+    return { ok: false, problems: [{ path: PROJECT_FILE, message: 'The project file must be a JSON object' }] }
+  }
+  const version = (project as { schemaVersion?: unknown } | undefined)?.schemaVersion
   if (typeof version === 'number' && version > supported) {
     return { ok: false, problems: [{ path: PROJECT_FILE, message: `schemaVersion ${version} is newer than this bildr supports (${supported}). Update bildr.` }] }
   }
@@ -145,7 +149,11 @@ export const loadModel = (files: Record<string, string>, options: LoadOptions = 
     for (let from = version; from < supported; from++) {
       const migrate = migrations[from]
       if (!migrate) return { ok: false, problems: [{ path: PROJECT_FILE, message: `No migration from schemaVersion ${from} to ${from + 1}` }] }
-      current = migrate(current)
+      try {
+        current = migrate(current)
+      } catch (error) {
+        return { ok: false, problems: [{ path: PROJECT_FILE, message: `Migrating from schemaVersion ${from} failed: ${(error as Error).message}` }] }
+      }
     }
   }
 
@@ -334,6 +342,16 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
     if (Array.isArray(value)) return value.forEach((item, index) => checkValue(item, `${where}.${index}`, path))
     for (const key of Object.keys(value)) {
       if (key.startsWith('$') && !(EXPRESSION_KEYS as readonly string[]).includes(key)) report(path, `${where}.${key}`, `Unknown expression "${key}"`)
+    }
+    // Paths become property access in generated code: nothing else gets through.
+    for (const key of PATH_EXPRESSIONS) {
+      const path_ = value[key]
+      if (typeof path_ === 'string' && !PROPERTY_PATH.test(path_)) report(path, `${where}.${key}`, `"${path_}" is not a property path (letters, digits, _ and $, separated by dots)`)
+    }
+    if (typeof value.$template === 'string') {
+      for (const [, part] of value.$template.matchAll(/\{([^}]*)\}/g)) {
+        if (!PROPERTY_PATH.test(part!)) report(path, `${where}.$template`, `"${part}" is not a property path (letters, digits, _ and $, separated by dots)`)
+      }
     }
     if (typeof value.page === 'string' && !byKind.page.has(value.page)) report(path, `${where}.page`, `Unknown page "${value.page}"`)
     for (const [key, item] of Object.entries(value)) if (key !== 'page') checkValue(item, `${where}.${key}`, path)
