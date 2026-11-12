@@ -1,3 +1,3 @@
-export * from './schemas'
-export * from './load'
-export * from './serialize'
+export * from './schemas.ts'
+export * from './load.ts'
+export * from './serialize.ts'

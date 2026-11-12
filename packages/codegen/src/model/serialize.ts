@@ -1,5 +1,5 @@
-import { MANIFEST_FILE, PROJECT_FILE, THEME_FILE } from './load'
-import type { Model, ModuleModel } from './load'
+import { MANIFEST_FILE, PROJECT_FILE, THEME_FILE } from './load.ts'
+import type { Model, ModuleModel } from './load.ts'
 
 /** The canonical text of a model file: two-space JSON plus a trailing newline. Key order is the schema order `loadModel` produced. */
 export const stringifyModelFile = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
