@@ -2,8 +2,8 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { describe, expect, it } from 'vitest'
-import { loadModel } from '../../shared/model/load'
-import { serializeModel, stringifyModelFile } from '../../shared/model/serialize'
+import { loadModel } from '../../src/model/load'
+import { serializeModel, stringifyModelFile } from '../../src/model/serialize'
 import { fixtureModelFiles, fixtureRoot } from './fixture'
 
 const loaded = () => {

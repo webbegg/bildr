@@ -166,6 +166,9 @@ importers:
 
   .:
     dependencies:
+      '@bildr/codegen':
+        specifier: workspace:*
+        version: link:packages/codegen
       '@iconify-json/lucide':
         specifier: ^1.2.147
         version: 1.2.147
@@ -206,6 +209,12 @@ importers:
       vue-tsc:
         specifier: ^3.3.13
         version: 3.3.13(typescript@6.0.3)
+
+  packages/codegen:
+    dependencies:
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
 
 packages:
 
