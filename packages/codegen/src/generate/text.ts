@@ -49,6 +49,12 @@ export const regexLiteral = (pattern: string) => {
   return `/${body}/`
 }
 
+/** `name` as code, or an error: a model string used as a variable, member or key name must be an identifier. */
+export const identifier = (name: string, where: string) => {
+  if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw new Error(`${where}: "${name}" is not an identifier (letters, digits, _ and $)`)
+  return name
+}
+
 /** `path` as code, or an error: model paths never become anything but property access. */
 export const propertyPath = (path: string, where: string) => {
   if (!PROPERTY_PATH.test(path)) throw new Error(`${where}: "${path}" is not a property path (letters, digits, _ and $, separated by dots)`)

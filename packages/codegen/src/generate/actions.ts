@@ -5,7 +5,7 @@ import { allFields, datasourceOf, entityById, entityNames, moduleContext, reposi
 import type { Field, ModuleContext } from './context.ts'
 import { importLine } from './imports.ts'
 import type { ImportName } from './imports.ts'
-import { camel, docText, file, header, kebab, pascal, propertyPath, tsLiteral, tsString } from './text.ts'
+import { camel, docText, file, header, identifier, kebab, pascal, propertyPath, tsLiteral, tsString } from './text.ts'
 
 /**
  * Business logic (T6): each Action becomes a use-case (server/application),
@@ -158,15 +158,17 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
 
   const body: string[] = []
   const errorCall = (type: string, data: Record<string, Value> | undefined) => {
+    const error = action.errors.find(entry => entry.type === type)
+    if (!error) throw new Error(`${action.id}: the error "${type}" is not declared in the action's errors`)
+    identifier(errorFactory(type), `${action.id}: error`)
     usesErr = true
     if (!errorImports.some(entry => entry.name === errorFactory(type))) errorImports.push({ name: errorFactory(type) })
-    const error = action.errors.find(entry => entry.type === type)
     const values = Object.keys(error?.data ?? {}).map(key => compile(data?.[key] ?? null, scope))
     return `err(${errorFactory(type)}(${values.join(', ')}))`
   }
   const call = (step: RepositoryCall) => {
     const repository = analyzed.repositories.find(entry => entry.repository.id === step.repository)!
-    return `${repositoryVariable(repository.entity)}.${step.op}(${Object.values(step.args ?? {}).map(arg => compile(arg, scope)).join(', ')})`
+    return `${repositoryVariable(repository.entity)}.${identifier(String(step.op), `${action.id}: repository op`)}(${Object.values(step.args ?? {}).map(arg => compile(arg, scope)).join(', ')})`
   }
 
   for (const step of analyzed.steps) {
@@ -178,8 +180,9 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
     } else if (step.kind === 'assert') {
       body.push(`if (await ${call(step.unless as RepositoryCall)}) return ${errorCall(String(step.error), step.errorData as Record<string, Value>)}`)
     } else if (step.kind === 'load') {
-      body.push(`const ${String(step.as)} = await ${call(step as unknown as RepositoryCall)}`)
-      if (step.orError) body.push(`if (!${String(step.as)}) return ${errorCall(String(step.orError), step.errorData as Record<string, Value>)}`)
+      const as = identifier(String(step.as), `${action.id}: load as`)
+      body.push(`const ${as} = await ${call(step as unknown as RepositoryCall)}`)
+      if (step.orError) body.push(`if (!${as}) return ${errorCall(String(step.orError), step.errorData as Record<string, Value>)}`)
     } else if (step.kind === 'return') {
       body.push(`if (${compile(step.if as Value, scope)}) return ok(${compile(step.value as Value, scope)})`)
     } else if (step.kind === 'repository') {

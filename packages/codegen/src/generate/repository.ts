@@ -2,7 +2,7 @@ import type { EntityFile, RepositoryFile } from '../model/schemas.ts'
 import { allFields, datasourceOf, entityNames, keyOf } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
 import { importLine } from './imports.ts'
-import { file, header, pascal, snake, tsLiteral, tsString } from './text.ts'
+import { docText, file, header, pascal, snake, tsLiteral, tsString } from './text.ts'
 
 const OPERATION_ORDER = ['list', 'get', 'create', 'update', 'delete'] as const
 const has = (repository: RepositoryFile, op: RepositoryFile['operations'][number]) => repository.operations.includes(op)
@@ -281,7 +281,7 @@ export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, r
       total && `  ${property(total)}: number`,
       '}',
       '',
-      `/** ${names.port} over the "${source.name}" REST data source. Paging style: offset (${rest.paging.offsetParam}/${rest.paging.limitParam}). */`,
+      `/** ${names.port} over the "${source.name}" REST data source. Paging style: offset (${docText(String(rest.paging.offsetParam))}/${docText(String(rest.paging.limitParam))}). */`,
       `export const rest${names.port} = (http: ${names.type}Http): ${names.port} => ({`,
       '  async list({ limit, offset }) {',
       `    const response = await http<${response}>(${tsString(rest.list.path)}, { query: ${pagingQuery(rest)} })`,
