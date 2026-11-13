@@ -17,7 +17,7 @@ import { readManifest, sha256, writeAtomically } from './sync.ts'
 /** A `.bildr/` model file the editor may write: never the manifest, the cache or project files. Paths must be normalized. */
 /** NUL, other control characters and backslashes are never part of a model path (fs throws on NUL). */
 // eslint-disable-next-line no-control-regex
-const UNSAFE_PATH = /[\u0000-\u001f\\]/
+const UNSAFE_PATH = /[\u0000-\u001f\u007f\\]/
 
 export const isModelFilePath = (path: string): boolean => !UNSAFE_PATH.test(path) && path !== MANIFEST_FILE && fileKind(path) !== undefined
 

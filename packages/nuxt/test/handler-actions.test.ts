@@ -101,9 +101,11 @@ describe('action calls', () => {
 
   it('refuses a NUL in a model path with 4xx, never 500 (verification B1)', async () => {
     for (const name of ['model_file_delete', 'model_file_put', 'code_view']) {
-      const response = await act(name, { path: '.bildr/datasources/x\u0000.json', content: {} })
-      expect(response.status, name).toBeGreaterThanOrEqual(400)
-      expect(response.status, name).toBeLessThan(500)
+      for (const bad of ['\u0000', '\u007f', '\\']) {
+        const response = await act(name, { path: `.bildr/datasources/x${bad}.json`, content: {} })
+        expect(response.status, `${name} ${JSON.stringify(bad)}`).toBeGreaterThanOrEqual(400)
+        expect(response.status, `${name} ${JSON.stringify(bad)}`).toBeLessThan(500)
+      }
     }
   })
 
