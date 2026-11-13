@@ -6,6 +6,7 @@ import type { VueWrapper } from '@vue/test-utils'
 import ui from '@nuxt/ui/vue-plugin'
 import UApp from '@nuxt/ui/components/App.vue'
 import { afterEach, vi } from 'vitest'
+import { ACTIONS } from '../../nuxt/src/actions/registry.ts'
 import App from '../src/App.vue'
 import { routes } from '../src/router.ts'
 import { STATUS_KEY, createStatus } from '../src/status.ts'
@@ -40,6 +41,11 @@ export const mockActions = (handlers: Record<string, Handler>) => {
     const name = String(url).replace('/__bildr/api/actions/', '')
     const input = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
     calls.push({ name, input })
+    // The contract: every call must be one @bildr/nuxt's real registry accepts, so the mocks can't drift from it.
+    const action = ACTIONS.find(candidate => candidate.name === name)
+    if (!action) throw new Error(`The editor called ${name}, which @bildr/nuxt doesn't register`)
+    const parsed = action.input.safeParse(input)
+    if (!parsed.success) throw new Error(`The editor called ${name} with input the action refuses: ${parsed.error.message}`)
     const handler = handlers[name]
     if (!handler) return json(501, { ok: false, code: 'unavailable', message: `No handler for ${name}` })
     const out = await handler(input)

@@ -29,7 +29,9 @@ describe('Model screen', () => {
     const expected = postFile()
     expected.plural = 'articles'
     expected.fields[0]!.name = 'headline'
-    expect(put?.input.content).toBe(`${JSON.stringify(expected, null, 2)}\n`)
+    // The action takes the file's JSON object (model_file_put's zod input), not its text.
+    expect(put?.input.content).toEqual(expected)
+    expect(Object.keys(put?.input.content as object)).toEqual(Object.keys(expected))
   })
 
   it('creates a new entity at .bildr/modules/<module>/entities/<kebab-name>.json', async () => {
@@ -44,9 +46,7 @@ describe('Model screen', () => {
 
     const [put] = actions.named('model_file_put')
     expect(put?.input.path).toBe('.bildr/modules/blog/entities/blog-note.json')
-    const saved = JSON.parse(String(put?.input.content)) as Record<string, unknown>
-    expect(saved).toMatchObject({ $schema: 'https://bildr.dev/schema/entity.v1.json', id: 'ent_blog_note', name: 'BlogNote', plural: 'blogNotes', idStrategy: 'uuid' })
-    expect(String(put?.input.content).endsWith('}\n')).toBe(true)
+    expect(put?.input.content).toMatchObject({ $schema: 'https://bildr.dev/schema/entity.v1.json', id: 'ent_blog_note', name: 'BlogNote', plural: 'blogNotes', idStrategy: 'uuid' })
   })
 
   it('creates a new data source at .bildr/datasources/<name>.json', async () => {
@@ -97,6 +97,6 @@ describe('Model screen', () => {
     await click(byTestId('raw-save'))
 
     const [put] = actions.named('model_file_put')
-    expect(put?.input).toEqual({ path: POST_PATH, content: `${JSON.stringify(postFile(), null, 2)}\n` })
+    expect(put?.input).toEqual({ path: POST_PATH, content: postFile() })
   })
 })

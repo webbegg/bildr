@@ -2,7 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ActionCallError, callAction, errorMessage } from '../api.ts'
-import { KINDS, canonical, getAt, isObject, newArtifactPath, setAt, stringifyModelFile } from '../model.ts'
+import { KINDS, canonical, getAt, isObject, newArtifactPath, setAt } from '../model.ts'
 import type { FormField, KindKey } from '../model.ts'
 import type { Json, JsonObject, ModelProblem } from '../types.ts'
 import ConfirmModal from './ConfirmModal.vue'
@@ -79,7 +79,7 @@ const fieldsValue = computed<JsonObject[]>({
 })
 
 /** The file content, or the JSON parts that don't parse. */
-const build = (): { content: string } | { problems: ModelProblem[] } => {
+const build = (): { content: JsonObject } | { problems: ModelProblem[] } => {
   const value = JSON.parse(JSON.stringify(draft)) as JsonObject
   const problems: ModelProblem[] = []
   for (const field of spec.value.fields) {
@@ -96,7 +96,7 @@ const build = (): { content: string } | { problems: ModelProblem[] } => {
       problems.push({ path: field.label, message: `Invalid JSON: ${errorMessage(caught)}` })
     }
   }
-  return problems.length ? { problems } : { content: stringifyModelFile(canonical(props.kind, value)) }
+  return problems.length ? { problems } : { content: canonical(props.kind, value) }
 }
 
 const save = async () => {

@@ -239,9 +239,6 @@ export const canonical = (kind: KindKey, value: JsonObject): JsonObject => {
   return result
 }
 
-/** The canonical text of a model file (`stringifyModelFile`): two-space JSON plus a trailing newline. */
-export const stringifyModelFile = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`
-
 /** A short label for an artifact in a list. */
 export const artifactLabel = (file: Json | undefined, path: string): string => {
   if (isObject(file)) {

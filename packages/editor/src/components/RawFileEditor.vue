@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import { ActionCallError, callAction, errorMessage } from '../api.ts'
-import { stringifyModelFile } from '../model.ts'
 import type { Json, ModelProblem } from '../types.ts'
 import ProblemsList from './ProblemsList.vue'
 
@@ -30,7 +29,9 @@ const run = async (name: 'model_file_put' | 'model_file_delete') => {
   let input: Record<string, unknown> = { path: path.value }
   if (name === 'model_file_put') {
     try {
-      input = { ...input, content: stringifyModelFile(JSON.parse(content.value) as Json) }
+      const parsed = JSON.parse(content.value) as Json
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('a model file is a JSON object')
+      input = { ...input, content: parsed }
     } catch (caught) {
       error.value = { message: `Invalid JSON: ${errorMessage(caught)}`, problems: [] }
       return
