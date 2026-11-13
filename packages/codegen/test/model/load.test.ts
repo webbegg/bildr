@@ -166,6 +166,28 @@ describe('loadModel problems', () => {
     }
   })
 
+  it('keeps the repository step last: the use-case returns its result, so later steps would never run', () => {
+    const path = '.bildr/modules/blog/actions/create-post.json'
+    const steps = JSON.parse(fixtureModelFiles()[path]!).steps
+    expect(problems(edit(path, { steps: [...steps, { kind: 'return', if: true, value: null }] })))
+      .toEqual([`${path}: steps.2: A "repository" step must be the last step: the use-case returns its result`])
+    // Two repository steps: the first one is not last, so only one can ever run.
+    expect(problems(edit(path, { steps: [...steps, steps.at(-1)] })))
+      .toEqual([`${path}: steps.2: A "repository" step must be the last step: the use-case returns its result`])
+  })
+
+  it('reserves createdAt and updatedAt on entities with timestamps, keeps them free without', () => {
+    const path = '.bildr/modules/blog/entities/post.json'
+    const post = JSON.parse(fixtureModelFiles()[path]!)
+    expect(post.timestamps).toBe(true)
+    const stamps = [{ id: 'fld_post_created', name: 'createdAt', type: 'datetime', required: true }, { id: 'fld_post_updated', name: 'updatedAt', type: 'datetime', required: true }]
+    expect(problems(edit(path, { fields: [...post.fields, ...stamps] }))).toEqual([
+      `${path}: fields.5.name: "createdAt" is reserved: timestamps adds it`,
+      `${path}: fields.6.name: "updatedAt" is reserved: timestamps adds it`
+    ])
+    expect(problems(edit(path, { timestamps: false, fields: [...post.fields, ...stamps] }))).toEqual([])
+  })
+
   it('keeps the id field to the idStrategy: reserved for "uuid", required for "external"', () => {
     const post = JSON.parse(fixtureModelFiles()['.bildr/modules/blog/entities/post.json']!)
     expect(problems(edit('.bildr/modules/blog/entities/post.json', { fields: [...post.fields, { id: 'fld_post_id', name: 'id', type: 'uuid', required: true }] })))

@@ -297,6 +297,10 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       action.client.invalidates.forEach((id, index) => ref(path, `client.invalidates.${index}`, 'entity', id, 'entity'))
       // The repository step is what the use-case does and returns; without one it would only check its input.
       if (!action.steps.some(step => step.kind === 'repository')) report(path, 'steps', 'An action needs a "repository" step (create, update or delete) to do its work')
+      // It returns the use-case's result, so it must be last: one repository step per action.
+      action.steps.forEach((step, index) => {
+        if (step.kind === 'repository' && index !== action.steps.length - 1) report(path, `steps.${index}`, 'A "repository" step must be the last step: the use-case returns its result')
+      })
     }
     // The generators derive the key from idStrategy: "uuid" adds the id field, "external" uses the source's own.
     for (const entity of mod.entities) {
@@ -304,6 +308,12 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       const idField = entity.fields.findIndex(field => field.name === 'id')
       if (entity.idStrategy === 'uuid' && idField !== -1) report(path, `fields.${idField}.name`, '"id" is reserved: the id comes from idStrategy "uuid"')
       if (entity.idStrategy === 'external' && idField === -1) report(path, 'fields', 'idStrategy "external" needs an "id" field (the key its data source owns)')
+      // timestamps adds the createdAt and updatedAt columns itself.
+      if (entity.timestamps) {
+        entity.fields.forEach((field, index) => {
+          if (field.name === 'createdAt' || field.name === 'updatedAt') report(path, `fields.${index}.name`, `"${field.name}" is reserved: timestamps adds it`)
+        })
+      }
     }
     for (const fixtures of mod.fixtures) ref(at(`fixtures:${fixtures.entity}`), 'entity', 'entity', fixtures.entity, 'entity')
     for (const component of mod.components) {
