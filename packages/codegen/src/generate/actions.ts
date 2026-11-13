@@ -280,10 +280,13 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
   const wiring: string[] = []
   const placed = new Set<string>()
   const sources = { database: false, rest: [] as string[] }
+  const listed = (repository: RepositoryFile) => Boolean(repository.expose?.list && repository.operations.includes('list'))
+  // Only repositories a use-case consumes are wired: an unused adapter binding fails the project's lint.
+  const consumed = new Set(actions.flatMap(analyzed => analyzed.repositories.map(({ entity }) => entity.id)))
 
   for (const entity of context.module.entities) {
     const repository = repositoryOf(context, entity)
-    if (!repository) continue
+    if (!repository || !(listed(repository) || consumed.has(entity.id))) continue
     const names = entityNames(entity)
     const datasource = datasourceOf(context, repository)
     const adapter = datasource.kind === 'sqlite' ? `drizzle${names.port}` : `rest${names.port}`
@@ -291,7 +294,7 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
     wiring.push(`  const ${names.plural} = ${adapter}(${datasource.kind === 'sqlite' ? 'useDb()' : `useRemote(${tsString(datasource.name)})`})`)
     if (datasource.kind === 'sqlite') sources.database = true
     else if (!sources.rest.includes(datasource.name)) sources.rest.push(datasource.name)
-    if (repository.expose?.list && repository.operations.includes('list')) {
+    if (listed(repository)) {
       const useCase = `list${pascal(entity.plural)}`
       imports.push({ path: `../application/queries/list-${kebab(entity.plural)}`, name: useCase })
       entries.push(`    ${useCase}: ${useCase}({ ${names.plural} })`)

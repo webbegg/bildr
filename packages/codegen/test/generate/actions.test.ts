@@ -60,6 +60,24 @@ describe('generateActions rules', () => {
     expect(empty).not.toContain('{\n\n')
   })
 
+  it('wires only the repositories some use-case consumes, so the root has no unused binding or import', () => {
+    const model = fixtureModel()
+    const blog = model.modules.blog!
+    // Posts: a repository with no action and no exposed list. Quotes: still listed.
+    blog.actions = []
+    delete blog.repositories.find(entry => entry.id === 'repo_post')!.expose
+    const root = generateActions(model).find(file => file.path.endsWith('utils/blog.ts'))!.content
+    expect(root).not.toContain('const posts')
+    expect(root).not.toContain('drizzlePostRepository')
+    expect(root).toContain('  const quotes = restQuoteRepository(useRemote(\'quotes\'))\n')
+    expect(root).toContain('/** The blog module\'s use-cases, wired to the "quotes" data source. */\n')
+    // Nothing consumed at all: no adapter, no wiring claim.
+    delete blog.repositories.find(entry => entry.id === 'repo_quote')!.expose
+    const bare = generateActions(model).find(file => file.path.endsWith('utils/blog.ts'))!.content
+    expect(bare).not.toMatch(/Repository|^ {2}const /m)
+    expect(bare).toContain('/** The blog module\'s use-cases. */\nexport const useBlog = () => {\n  return {}\n}\n')
+  })
+
   it('refuses steps it cannot generate yet with the action and step', () => {
     const model = fixtureModel()
     model.modules.blog!.actions[0]!.steps.push({ kind: 'custom', name: 'notify' })
