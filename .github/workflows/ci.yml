@@ -60,7 +60,8 @@ jobs:
   # T11: create a project, model it through the editor on nuxt dev, install it for real,
   # build it without bildr, boot it and smoke list/detail/create in a browser.
   e2e-generated:
-    runs-on: ubuntu-latest
+    # Playwright 1.60 can't install Chromium on ubuntu-latest (26.04) yet.
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout
