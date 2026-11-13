@@ -8,8 +8,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { generate } from '@bildr/codegen/generate'
 import { loadModel } from '@bildr/codegen/model'
 import { createProject } from '../../create-bildr/src/create'
-import { HEALTH_FILE, projectDrift, readHealth, runCheck, updateHealth } from '../src/node/health'
-import type { CheckResult } from '../src/node/health'
+import { createHealthRunner, HEALTH_FILE, projectDrift, readHealth, runCheck, updateHealth } from '../src/node/health'
+import type { CheckName, CheckResult } from '../src/node/health'
 import { readModelFiles } from '../src/node/project'
 import { syncProject } from '../src/node/sync'
 
@@ -105,6 +105,102 @@ describe('health report', () => {
     const result = await runCheck(dir, 'lint')
     expect(result).toMatchObject({ name: 'lint', ok: false })
     expect(result.summary).toMatch(/nuxt dev/)
+  })
+})
+
+// T9c: checks of one project run one at a time; a check already waiting its turn is not queued twice.
+describe('createHealthRunner', () => {
+  let root: string
+  let dir: string
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'bildr-health-runner-'))
+    dir = join(root, 'app')
+    createProject(dir, { name: 'App' })
+  })
+  afterEach(() => rmSync(root, { recursive: true, force: true }))
+
+  /** A check whose runs finish when the test says so. */
+  const controlled = () => {
+    const started: CheckName[] = []
+    const finish: Array<() => void> = []
+    let active = 0
+    let maxActive = 0
+    let count = 0
+    const run = (_root: string, name: CheckName) => new Promise<CheckResult>((resolve) => {
+      started.push(name)
+      active++
+      maxActive = Math.max(maxActive, active)
+      const ok = ++count % 2 === 1
+      finish.push(() => {
+        active--
+        resolve({ ...check(name, ok), summary: `run ${count}` })
+      })
+    })
+    return { run, started, finish, maxActive: () => maxActive }
+  }
+  const settle = () => new Promise(resolve => setTimeout(resolve, 0))
+
+  it('runs checks one at a time, in order, and writes each result into the report', async () => {
+    const fake = controlled()
+    const runner = createHealthRunner(dir, { check: fake.run })
+    const first = runner.run(['lint', 'types'])
+    const second = runner.run(['tests'])
+    for (let step = 0; step < 3; step++) {
+      await settle()
+      expect(fake.started).toHaveLength(step + 1)
+      fake.finish[step]!()
+    }
+    const [results, more] = await Promise.all([first, second])
+    expect(fake.started).toEqual(['lint', 'types', 'tests'])
+    expect(fake.maxActive()).toBe(1)
+    expect(results.map(result => result.name)).toEqual(['lint', 'types'])
+    expect(more.map(result => result.name)).toEqual(['tests'])
+    expect(readHealth(dir).checks).toEqual({ lint: results[0], types: results[1], tests: more[0] })
+  })
+
+  it('coalesces a check that is already queued: it runs once and every caller gets that result', async () => {
+    const fake = controlled()
+    const runner = createHealthRunner(dir, { check: fake.run })
+    const types = runner.run(['types'])
+    await settle()
+    const lintA = runner.run(['lint'])
+    const lintB = runner.run(['lint', 'tests'])
+    fake.finish[0]!()
+    await settle()
+    fake.finish[1]!()
+    await settle()
+    fake.finish[2]!()
+    const [, [a], [b, tests]] = await Promise.all([types, lintA, lintB])
+    expect(fake.started).toEqual(['types', 'lint', 'tests'])
+    expect(b).toBe(a)
+    expect(tests!.name).toBe('tests')
+  })
+
+  it('runs a check again when it is asked for while it is already running', async () => {
+    const fake = controlled()
+    const runner = createHealthRunner(dir, { check: fake.run })
+    const first = runner.run(['lint'])
+    await settle()
+    expect(fake.started).toEqual(['lint'])
+    const second = runner.run(['lint'])
+    fake.finish[0]!()
+    await settle()
+    fake.finish[1]!()
+    const [[a], [b]] = await Promise.all([first, second])
+    expect(fake.started).toEqual(['lint', 'lint'])
+    expect(a!.summary).not.toBe(b!.summary)
+    expect(readHealth(dir).checks.lint).toEqual(b)
+  })
+
+  it('keeps running later checks after one throws', async () => {
+    const runner = createHealthRunner(dir, {
+      check: async (_root, name) => {
+        if (name === 'lint') throw new Error('boom')
+        return check(name)
+      }
+    })
+    await expect(runner.run(['lint'])).rejects.toThrow('boom')
+    expect(await runner.run(['tests'])).toEqual([check('tests')])
   })
 })
 

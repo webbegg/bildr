@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { MANIFEST_FILE, fileKind, loadModel, serializeModel } from '@bildr/codegen/model'
+import { CHECK_NAMES, readHealth } from '../node/health.ts'
+import type { CheckName, CheckResult } from '../node/health.ts'
 import { PENDING_FILE } from '../node/migrations.ts'
 import type { MigrationOutcome } from '../node/regenerate.ts'
 import { hashFiles, readManifest, sha256, writeAtomically } from '../node/sync.ts'
@@ -25,6 +27,8 @@ export interface HandlerOptions {
   token: string
   /** Runs the pending destructive migration whose hash the user confirmed (through the module's one-at-a-time regenerator). */
   confirmMigration?: (hash: string) => Promise<MigrationOutcome>
+  /** Runs Health checks on demand (through the module's one-at-a-time runner) and returns their results. */
+  runHealth?: (checks: CheckName[]) => Promise<CheckResult[]>
 }
 
 export interface RequestContext {
@@ -45,7 +49,7 @@ export const createBildrHandler = (options: HandlerOptions) => async (request: R
   }
 }
 
-const route = async ({ root, token, confirmMigration }: HandlerOptions, request: Request, context: RequestContext): Promise<Response> => {
+const route = async ({ root, token, confirmMigration, runHealth }: HandlerOptions, request: Request, context: RequestContext): Promise<Response> => {
   const url = new URL(request.url)
   const host = request.headers.get('host')
   if (!isLoopbackAddress(context.remoteAddress) || !isLoopbackHost(host)) return fail(403, 'The bildr editor only answers local requests')
@@ -76,7 +80,29 @@ const route = async ({ root, token, confirmMigration }: HandlerOptions, request:
   if (path === `${BASE}/api/file` && request.method === 'PUT') return writeModelFile(root, url.searchParams.get('path'), request)
   if (path === `${BASE}/api/migrations/pending` && request.method === 'GET') return json(200, { pending: pendingMigration(root) })
   if (path === `${BASE}/api/migrations/confirm` && request.method === 'POST' && confirmMigration) return confirm(confirmMigration, request)
+  if (path === `${BASE}/api/health` && request.method === 'GET') return json(200, readHealth(root))
+  if (path === `${BASE}/api/health/run` && request.method === 'POST') return runChecks(runHealth, request)
   return fail(404, 'Not found')
+}
+
+/** Runs the Health checks the editor asked for: `{ "checks": ["lint", …] }`, each known name at most once. */
+const runChecks = async (runHealth: HandlerOptions['runHealth'], request: Request) => {
+  if (!runHealth) return fail(501, 'Health checks can\'t run here: the bildr module gave no check runner')
+  if (!(request.headers.get('content-type') ?? '').startsWith('application/json')) return fail(415, 'Send { "checks": ["lint"] } as application/json')
+  let body: unknown
+  try {
+    body = JSON.parse(await request.text())
+  } catch {
+    return fail(400, 'Invalid JSON')
+  }
+  const checks = (body as { checks?: unknown } | null)?.checks
+  const known = CHECK_NAMES.join(', ')
+  if (!Array.isArray(checks) || checks.length === 0) return fail(400, `Give the checks to run as a non-empty list (${known})`)
+  const unknown = checks.filter(name => typeof name !== 'string' || !(CHECK_NAMES as readonly string[]).includes(name))
+  if (unknown.length) return fail(400, `Unknown check ${unknown.map(name => JSON.stringify(name)).join(', ')}: the checks are ${known}`)
+  const repeated = checks.filter((name, index) => checks.indexOf(name) !== index)
+  if (repeated.length) return fail(400, `Ask for each check once: ${[...new Set(repeated)].join(', ')} is listed more than once`)
+  return json(200, { ok: true, results: await runHealth(checks as CheckName[]) })
 }
 
 /** The destructive migration waiting for confirmation, or null. */

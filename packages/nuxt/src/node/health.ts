@@ -5,6 +5,8 @@ import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { driftReport, isSafeProjectPath } from '@bildr/codegen/sync'
 import type { DriftReport, GeneratedFile } from '@bildr/codegen/sync'
+import type { ModelProblem } from '@bildr/codegen/model'
+import { PENDING_FILE } from './migrations.ts'
 import { resolvesInside } from './project.ts'
 import { readManifest, sha256, writeAtomically } from './sync.ts'
 
@@ -27,6 +29,7 @@ const CACHE_DIR = '.bildr/.cache'
 const WORK_DIR = '.bildr/.cache/health'
 
 export type CheckName = 'lint' | 'types' | 'tests' | 'build'
+export const CHECK_NAMES: readonly CheckName[] = ['lint', 'types', 'tests', 'build']
 
 export interface CheckFinding {
   /** Relative to the project, with `/`. */
@@ -53,9 +56,12 @@ export interface CheckResult {
 
 export interface HealthReport {
   updatedAt: string
-  drift?: DriftReport
+  /** Drift after the last regeneration, or why it couldn't be computed. Kept as it was while the model is invalid. */
+  drift?: DriftReport | { error: string }
   /** The pending migration plan, or null when there is none. */
   migration?: unknown
+  /** Whether the `.bildr/` model loaded at the last regeneration. */
+  model?: { ok: true } | { ok: false, problems: ModelProblem[] }
   checks: Partial<Record<CheckName, CheckResult>>
 }
 
@@ -86,6 +92,16 @@ export const updateHealth = (root: string, patch: HealthPatch): HealthReport => 
   mkdirSync(join(root, CACHE_DIR), { recursive: true })
   writeAtomically(join(root, HEALTH_FILE), `${JSON.stringify(next, null, 2)}\n`)
   return next
+}
+
+/** The pending destructive migration plan (`PENDING_FILE`), or null when there is none or it can't be read. */
+export const readPendingMigration = (root: string): unknown => {
+  try {
+    const target = join(root, PENDING_FILE)
+    return existsSync(target) ? JSON.parse(readFileSync(target, 'utf8')) as unknown : null
+  } catch {
+    return null
+  }
 }
 
 /** Drift of the project against `generated`. Only safe paths that stay inside the project are read; anything else counts as missing. */
@@ -371,3 +387,39 @@ const build: Check = async (root, _deadline, timeoutMs) => {
 }
 
 const CHECKS: Record<CheckName, Check> = { lint, types, tests, build }
+
+// ── Runner ──
+
+export interface HealthRunnerOptions {
+  /** Runs one check; `runCheck` by default (tests inject their own). */
+  check?: (root: string, name: CheckName) => Promise<CheckResult>
+}
+
+/**
+ * The checks of one project, one at a time (two eslint or Nuxt runs at once
+ * would compete for the same scratch folders). A check already waiting its
+ * turn isn't queued again: every caller asking for it gets that run's result.
+ * A check that is already running is queued again, since the project may have
+ * changed since it started. Each result is written into the report.
+ */
+export const createHealthRunner = (root: string, options: HealthRunnerOptions = {}) => {
+  const check = options.check ?? ((projectRoot: string, name: CheckName) => runCheck(projectRoot, name))
+  let queue: Promise<unknown> = Promise.resolve()
+  const waiting = new Map<CheckName, Promise<CheckResult>>()
+  const schedule = (name: CheckName): Promise<CheckResult> => {
+    const queued = waiting.get(name)
+    if (queued) return queued
+    const next = queue.then(async () => {
+      waiting.delete(name)
+      const result = await check(root, name)
+      updateHealth(root, { checks: { [name]: result } })
+      return result
+    })
+    waiting.set(name, next)
+    queue = next.catch(() => {})
+    return next
+  }
+  return {
+    run: (checks: CheckName[]): Promise<CheckResult[]> => Promise.all(checks.map(schedule))
+  }
+}

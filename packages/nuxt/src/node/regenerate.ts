@@ -4,7 +4,9 @@ import { generate } from '@bildr/codegen/generate'
 import { schemaIds } from '@bildr/codegen/migrate'
 import { loadModel } from '@bildr/codegen/model'
 import type { Model, ModelProblem } from '@bildr/codegen/model'
-import type { SyncReport } from '@bildr/codegen/sync'
+import type { GeneratedFile, SyncReport } from '@bildr/codegen/sync'
+import { projectDrift, readPendingMigration, updateHealth } from './health.ts'
+import type { HealthPatch } from './health.ts'
 import { migrateProject, MIGRATIONS_DIR, schemaSources } from './migrations.ts'
 import type { MigrationResult } from './migrations.ts'
 import { readModelFiles } from './project.ts'
@@ -12,10 +14,14 @@ import { syncProject } from './sync.ts'
 
 export type MigrationOutcome = MigrationResult | { kind: 'error', message: string }
 
-export type RegenerateResult
-  = | { ok: true, report: SyncReport, migration: MigrationOutcome }
-    | { ok: false, problems: ModelProblem[] }
-    | { ok: false, error: string }
+export type RegenerateResult = (
+  | { ok: true, report: SyncReport, migration: MigrationOutcome }
+  | { ok: false, problems: ModelProblem[] }
+  | { ok: false, error: string }
+) & {
+  /** Why the Health report couldn't be refreshed (it never changes the rest of the result). */
+  healthError?: string
+}
 
 export interface RegenerateOptions {
   /** The hash of a pending destructive migration the user confirmed. */
@@ -39,12 +45,17 @@ const needsMigrations = (root: string, model: Model) =>
  */
 export const regenerate = async (root: string, options: RegenerateOptions = {}): Promise<RegenerateResult> => {
   const loaded = loadModel(readModelFiles(root))
-  if (!loaded.ok) return { ok: false, problems: loaded.problems }
-  let files
+  if (!loaded.ok) return withHealth(root, { ok: false, problems: loaded.problems }, () => ({ model: { ok: false, problems: loaded.problems } }))
+  let files: GeneratedFile[]
   try {
     files = generate(loaded.model)
   } catch (error) {
-    return { ok: false, error: (error as Error).message }
+    const message = (error as Error).message
+    return withHealth(root, { ok: false, error: message }, () => ({
+      model: { ok: true },
+      drift: { error: `bildr can't generate this model yet, so drift is unknown: ${message}` },
+      migration: readPendingMigration(root)
+    }))
   }
   let migration: MigrationOutcome = { kind: 'none' }
   if (needsMigrations(root, loaded.model)) {
@@ -55,7 +66,30 @@ export const regenerate = async (root: string, options: RegenerateOptions = {}):
       migration = { kind: 'error', message: /drizzle-kit/.test(message) ? message : `${message} (is drizzle-kit installed?)` }
     }
   }
-  return { ok: true, report: syncProject(root, files).report, migration }
+  const { report } = syncProject(root, files)
+  return withHealth(root, { ok: true, report, migration }, () => {
+    let drift: HealthPatch['drift']
+    try {
+      drift = projectDrift(root, files)
+    } catch (error) {
+      drift = { error: `bildr could not compute drift: ${(error as Error).message}` }
+    }
+    return { model: { ok: true }, drift, migration: readPendingMigration(root) }
+  })
+}
+
+/**
+ * Refreshes the Health report after a regeneration (RA §7: drift and pending
+ * migrations after every sync). Health never blocks: a failure here only adds
+ * `healthError` to the result.
+ */
+const withHealth = (root: string, result: RegenerateResult, patch: () => HealthPatch): RegenerateResult => {
+  try {
+    updateHealth(root, patch())
+    return result
+  } catch (error) {
+    return { ...result, healthError: (error as Error).message }
+  }
 }
 
 /**

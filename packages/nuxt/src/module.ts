@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { addDevServerHandler, defineNuxtModule, useLogger } from '@nuxt/kit'
 import { defineEventHandler, sendWebResponse, toWebRequest } from 'h3'
 import { detectStarterKit } from '@bildr/codegen/starter'
+import { createHealthRunner } from './node/health.ts'
 import { projectReader } from './node/project.ts'
 import { createRegenerator, isModelChange } from './node/regenerate.ts'
 import type { MigrationOutcome } from './node/regenerate.ts'
@@ -57,7 +58,17 @@ export default defineNuxtModule<ModuleOptions>({
       logMigration(result.migration)
       return result.migration
     }
-    const handle = createBildrHandler({ root, token, confirmMigration })
+    // Health checks (RA §7), one at a time: on demand from the editor, and the boundary lint after each sync.
+    const health = createHealthRunner(root)
+    const handle = createBildrHandler({ root, token, confirmMigration, runHealth: checks => health.run(checks) })
+    const checkBoundaries = () => {
+      health.run(['lint']).then(([lint]) => {
+        const violations = lint?.findings.filter(finding => finding.boundary).length ?? 0
+        if (violations) logger.warn(`bildr health: ${violations} boundary violation${violations === 1 ? '' : 's'} (see ${BASE} health)`)
+      }).catch((error: unknown) => {
+        logger.warn(`bildr health could not check the architecture boundaries: ${(error as Error).message}`)
+      })
+    }
     addDevServerHandler({
       route: BASE,
       handler: {
@@ -94,6 +105,7 @@ export default defineNuxtModule<ModuleOptions>({
     const sync = async () => {
       try {
         const result = await regenerator.run()
+        if (result.healthError) logger.warn(`bildr could not update the health report: ${result.healthError}`)
         if (!result.ok && 'problems' in result) {
           logger.warn(['bildr model has problems, the app was not regenerated:', ...result.problems.map(problem => `  - ${problem.path}: ${problem.message}`)].join('\n'))
         } else if (!result.ok) {
@@ -103,6 +115,7 @@ export default defineNuxtModule<ModuleOptions>({
           if (written.length || deleted.length) logger.success(`bildr regenerated ${written.length} file(s)${deleted.length ? `, removed ${deleted.length}` : ''}`)
           if (detached.length) logger.info(['bildr kept your edits to these generated files (detached):', ...detached.map(path => `  - ${path}`)].join('\n'))
           logMigration(result.migration)
+          checkBoundaries()
         }
       } catch (error) {
         // A file can vanish or be unreadable mid-change; never take nuxt dev down for it.

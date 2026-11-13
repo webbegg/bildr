@@ -4,6 +4,8 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createProject } from '../../create-bildr/src/create'
+import { readHealth } from '../src/node/health'
+import { PENDING_FILE } from '../src/node/migrations'
 import { createRegenerator, isModelChange, regenerate } from '../src/node/regenerate'
 
 let root: string
@@ -128,6 +130,62 @@ describe('regenerate', { timeout: 60_000 }, () => {
     const result = await regenerate(dir)
     expect(result).toMatchObject({ ok: true, migration: { kind: 'error', message: expect.stringMatching(/drizzle-kit/) } })
     expect(existsSync(join(dir, 'layers/main/server/infrastructure/db/schema.ts'))).toBe(true)
+  })
+})
+
+// T9c (S6, RA §7): every regeneration refreshes the Health report; Health never blocks it.
+describe('regenerate refreshes health', { timeout: 60_000 }, () => {
+  it('lists a hand-edited generated file as detached with its diff, and no pending migration', async () => {
+    writeFileSync(join(dir, pageFile), `${read(pageFile)}<!-- mine -->\n`)
+    const result = await regenerate(dir)
+    expect(result.ok && result.report.detached).toEqual([pageFile])
+    const health = readHealth(dir)
+    expect(health.model).toEqual({ ok: true })
+    expect(health.migration).toBeNull()
+    expect(health.drift).toEqual({ missingManifest: false, files: [{ path: pageFile, state: 'detached', diff: expect.stringContaining('+<!-- mine -->') }] })
+  })
+
+  it('records the pending destructive migration plan', async () => {
+    const plan = { hash: 'h1', destructive: ['DROP TABLE `t`;'], losing: ['table t'], statements: [] }
+    mkdirSync(join(dir, '.bildr/.cache'), { recursive: true })
+    writeFileSync(join(dir, PENDING_FILE), JSON.stringify(plan))
+    await regenerate(dir)
+    expect(readHealth(dir).migration).toEqual(plan)
+  })
+
+  it('records the problems of an invalid model and keeps the last drift', async () => {
+    writeFileSync(join(dir, pageFile), '<template>mine</template>\n')
+    await regenerate(dir)
+    const drift = readHealth(dir).drift
+    editPage((page) => {
+      page.root.children[0]!.id = ''
+    })
+    const result = await regenerate(dir)
+    const health = readHealth(dir)
+    expect(health.model).toEqual({ ok: false, problems: !result.ok && 'problems' in result ? result.problems : 'expected problems' })
+    expect(health.drift).toEqual(drift)
+  })
+
+  it('records that drift is unknown when the generator refuses the model', async () => {
+    editPage((page) => {
+      page.root.children.push({ id: 'n_video', type: 'Video' })
+    })
+    await regenerate(dir)
+    const health = readHealth(dir)
+    expect(health.model).toEqual({ ok: true })
+    expect(health.drift).toEqual({ error: expect.stringMatching(/Video/) })
+  })
+
+  it('still syncs when the report can\'t be written, and says why', async () => {
+    const outside = join(root, 'outside')
+    mkdirSync(outside)
+    symlinkSync(outside, join(dir, '.bildr/.cache'), 'dir')
+    editPage((page) => {
+      page.root.children[0]!.props = { level: 1, text: 'Still synced' }
+    })
+    const result = await regenerate(dir)
+    expect(result).toMatchObject({ ok: true, report: { written: [pageFile] }, healthError: expect.stringMatching(/outside the project/) })
+    expect(existsSync(join(outside, 'health.json'))).toBe(false)
   })
 })
 
