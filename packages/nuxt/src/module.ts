@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { addDevServerHandler, defineNuxtModule, useLogger } from '@nuxt/kit'
+import type { NuxtModule } from '@nuxt/schema'
 import { defineEventHandler, getRequestURL, sendWebResponse, toWebRequest } from 'h3'
 import { detectStarterKit } from '@bildr/codegen/starter'
 import { createHealthRunner } from './node/health.ts'
@@ -36,7 +37,8 @@ interface DevtoolsTab {
   view: { type: 'iframe', src: string }
 }
 
-export default defineNuxtModule<ModuleOptions>({
+// Annotated so the emitted .d.ts names the type (and keeps `bildr: { … }` typed in nuxt.config).
+const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtModule<ModuleOptions>({
   meta: { name: '@bildr/nuxt', configKey: 'bildr' },
   defaults: { enabled: true },
   setup(options, nuxt) {
@@ -161,3 +163,5 @@ export default defineNuxtModule<ModuleOptions>({
     })
   }
 })
+
+export default bildrModule

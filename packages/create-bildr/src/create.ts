@@ -9,17 +9,28 @@ import { planSync } from '@bildr/codegen/sync'
 
 const sha256 = (content: string) => createHash('sha256').update(content).digest('hex')
 
-/**
- * While `@bildr/nuxt` is unpublished (`private`), a project created from this
- * checkout links the local package so it installs; once published, the starter
- * kit's version range applies.
- */
-export const localBildrNuxt = (): string | undefined => {
-  const dir = fileURLToPath(new URL('../../nuxt/', import.meta.url)).replace(/\/$/, '')
+/** `link:` to this checkout's `packages/nuxt`, when `moduleUrl` is a module of this checkout's `packages/create-bildr`. */
+export const localBildrNuxt = (moduleUrl: string = import.meta.url): string | undefined => {
+  const dir = fileURLToPath(new URL('../../nuxt/', moduleUrl)).replace(/\/$/, '')
   const manifest = join(dir, 'package.json')
   if (!existsSync(manifest)) return undefined
-  const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string, private?: boolean }
-  return pkg.name === '@bildr/nuxt' && pkg.private ? `link:${dir}` : undefined
+  const pkg = JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string }
+  return pkg.name === '@bildr/nuxt' ? `link:${dir}` : undefined
+}
+
+/**
+ * The `@bildr/nuxt` spec a created project gets unless one is given (`--bildr`).
+ * - From this checkout's sources (`src/*.ts`, as the tests and e2e run it): a link
+ *   to the local package, so the project installs without the registry.
+ * - From the built package (`dist/*.js`, as `pnpm create bildr` runs it):
+ *   `^<create-bildr's version>`; the packages are released together.
+ */
+export const defaultBildrNuxt = (moduleUrl: string = import.meta.url): string => {
+  const local = moduleUrl.endsWith('.ts') ? localBildrNuxt(moduleUrl) : undefined
+  if (local) return local
+  // package.json is one level up from both src/ and dist/.
+  const own = JSON.parse(readFileSync(new URL('../package.json', moduleUrl), 'utf8')) as { version: string }
+  return `^${own.version}`
 }
 
 export interface CreateResult {
@@ -38,8 +49,7 @@ export const createProject = (dir: string, options: StarterKitOptions): CreateRe
     if (!statSync(dir).isDirectory()) throw new Error(`${dir} exists and is not a directory`)
     if (readdirSync(dir).length > 0) throw new Error(`${dir} is not empty: bildr creates new projects only`)
   }
-  const bildrNuxt = options.bildrNuxt ?? localBildrNuxt()
-  const kit = starterKit({ ...options, ...(bildrNuxt ? { bildrNuxt } : {}) })
+  const kit = starterKit({ ...options, bildrNuxt: options.bildrNuxt ?? defaultBildrNuxt() })
   const plan = planSync({ generated: kit.files, manifest: {}, disk: {}, hash: sha256 })
 
   const written: string[] = []

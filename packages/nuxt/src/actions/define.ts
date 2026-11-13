@@ -43,8 +43,14 @@ export const ERROR_STATUS: Record<ActionErrorCode, number> = {
 }
 
 export class ActionError extends Error {
-  constructor(readonly code: ActionErrorCode, message: string, readonly problems?: ModelProblem[]) {
+  readonly code: ActionErrorCode
+  readonly problems: ModelProblem[] | undefined
+
+  // Plain fields, not parameter properties: Node's type stripping can't run those.
+  constructor(code: ActionErrorCode, message: string, problems?: ModelProblem[]) {
     super(message)
     this.name = 'ActionError'
+    this.code = code
+    this.problems = problems
   }
 }

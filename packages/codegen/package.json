@@ -1,8 +1,13 @@
 {
   "name": "@bildr/codegen",
   "version": "0.1.0",
-  "private": true,
   "description": "The bildr model (.bildr/ files) and the generator that turns it into a clean-architecture Nuxt app. Pure TypeScript: no Vue, Nitro or fs.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/webbegg/bildr.git",
+    "directory": "packages/codegen"
+  },
   "type": "module",
   "exports": {
     "./model": "./src/model/index.ts",
@@ -13,7 +18,27 @@
     "./env": "./src/env/index.ts",
     "./migrate": "./src/migrate/index.ts"
   },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      "./model": { "types": "./dist/model/index.d.ts", "default": "./dist/model/index.js" },
+      "./sync": { "types": "./dist/sync/index.d.ts", "default": "./dist/sync/index.js" },
+      "./starter": { "types": "./dist/starter/index.d.ts", "default": "./dist/starter/index.js" },
+      "./generate": { "types": "./dist/generate/index.d.ts", "default": "./dist/generate/index.js" },
+      "./design": { "types": "./dist/design/index.d.ts", "default": "./dist/design/index.js" },
+      "./env": { "types": "./dist/env/index.d.ts", "default": "./dist/env/index.js" },
+      "./migrate": { "types": "./dist/migrate/index.d.ts", "default": "./dist/migrate/index.js" }
+    }
+  },
   "scripts": {
+    "build": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build",
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {

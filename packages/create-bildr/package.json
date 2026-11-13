@@ -1,16 +1,38 @@
 {
   "name": "create-bildr",
   "version": "0.1.0",
-  "private": true,
   "description": "Create a new bildr project from the starter kit: pnpm create bildr <directory>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/webbegg/bildr.git",
+    "directory": "packages/create-bildr"
+  },
   "type": "module",
   "bin": {
     "create-bildr": "./src/cli.ts"
   },
+  "files": [
+    "dist"
+  ],
   "engines": {
     "node": ">=22.18.0"
   },
+  "publishConfig": {
+    "access": "public",
+    "bin": {
+      "create-bildr": "./dist/cli.js"
+    }
+  },
+  "scripts": {
+    "build": "node -e \"fs.rmSync('dist', { recursive: true, force: true })\" && tsc -p tsconfig.build.json",
+    "prepack": "pnpm run build",
+    "typecheck": "tsc -p tsconfig.json"
+  },
   "dependencies": {
     "@bildr/codegen": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6"
   }
 }

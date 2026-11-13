@@ -1,0 +1,17 @@
+{
+  // The published build: ESM JS + .d.ts in dist/. The workspace keeps using src/*.ts.
+  // @bildr/codegen resolves to its built declarations (build it first), so its sources stay out of this program.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "rewriteRelativeImportExtensions": true,
+    "declaration": true,
+    "noEmit": false,
+    "rootDir": "src",
+    "outDir": "dist",
+    "paths": {
+      "@bildr/codegen/*": ["../codegen/dist/*/index.d.ts"]
+    }
+  },
+  "include": ["src"]
+}
