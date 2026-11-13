@@ -292,8 +292,9 @@ async function model(ctx) {
           lastSize = size
           quietSince = Date.now()
         }
-        const health = await action('health_get')
-        const pending = await action('migration_pending_get')
+        // New layers make Nuxt restart in a new process: a refused connection means "not settled yet".
+        const [health, pending] = await Promise.all([action('health_get'), action('migration_pending_get')]).catch(() => [])
+        if (!health || !pending) return false
         state = {
           model: health.result?.model?.ok === true,
           drift: health.result?.drift?.files?.length === 0 && health.result.drift.missingManifest === false,
