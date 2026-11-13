@@ -7,6 +7,7 @@
     "build:editor": "pnpm --filter @bildr/editor build",
     "dev": "nuxt dev",
     "e2e": "node e2e/all.mjs",
+    "e2e:generated": "node e2e/generated.mjs",
     "preview": "nuxt preview",
     "palettes": "node --experimental-strip-types scripts/generate-palettes.ts",
     "postinstall": "nuxt prepare",

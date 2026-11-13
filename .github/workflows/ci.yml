@@ -56,3 +56,40 @@ jobs:
 
       - name: Fixture build
         run: pnpm --dir fixtures/codegen/blog run build
+
+  # T11: create a project, model it through the editor on nuxt dev, install it for real,
+  # build it without bildr, boot it and smoke list/detail/create in a browser.
+  e2e-generated:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the editor
+        run: pnpm run build:editor
+
+      # The browser driver stays out of the workspace: the same playwright-core the local runs use.
+      - name: Install playwright-core and Chromium
+        run: |
+          npm install --no-save --prefix "$RUNNER_TEMP/pw" playwright-core@1.60.0
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright-core" install --with-deps chromium
+          echo "PLAYWRIGHT_CORE=$RUNNER_TEMP/pw/node_modules/playwright-core/index.mjs" >> "$GITHUB_ENV"
+          echo "CHROMIUM=$(find "$HOME/.cache/ms-playwright" -type f -name chrome -path '*chromium-*' | head -1)" >> "$GITHUB_ENV"
+
+      - name: End-to-end (generated app)
+        run: pnpm run e2e:generated --install
+        env:
+          E2E_TMP: ${{ runner.temp }}
