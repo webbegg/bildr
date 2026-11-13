@@ -12,11 +12,10 @@ on:
 
 permissions:
   contents: read
-  # npm provenance: the registry links each published version to this workflow run.
-  id-token: write
 
 jobs:
-  publish:
+  # Every check, without the npm token or an OIDC token.
+  check:
     runs-on: ubuntu-latest
 
     steps:
@@ -65,6 +64,38 @@ jobs:
 
       - name: Test
         run: pnpm run test
+
+  # Only this job can mint the OIDC token npm provenance needs, and it runs no project scripts at install.
+  publish:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # npm provenance: the registry links each published version to this workflow run.
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Build the editor
+        run: pnpm run build:editor
+
+      - name: Build the packages
+        run: pnpm run build:packages
 
       # pnpm swaps in publishConfig (dist/ exports and bin) and turns workspace:* into the real versions.
       - name: Publish
