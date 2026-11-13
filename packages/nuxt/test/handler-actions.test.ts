@@ -99,6 +99,14 @@ describe('action calls', () => {
     expect(asked).toEqual([])
   })
 
+  it('refuses a NUL in a model path with 4xx, never 500 (verification B1)', async () => {
+    for (const name of ['model_file_delete', 'model_file_put', 'code_view']) {
+      const response = await act(name, { path: '.bildr/datasources/x\u0000.json', content: {} })
+      expect(response.status, name).toBeGreaterThanOrEqual(400)
+      expect(response.status, name).toBeLessThan(500)
+    }
+  })
+
   it('answer unknown actions, bad JSON, non-JSON bodies and bad input with error codes', async () => {
     await failure(await act('nope'), 404, 'not_found')
     await failure(await act('model_get', '{ not json'), 400, 'invalid_input')

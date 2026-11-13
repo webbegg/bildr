@@ -15,7 +15,11 @@ import { readManifest, sha256, writeAtomically } from './sync.ts'
  */
 
 /** A `.bildr/` model file the editor may write: never the manifest, the cache or project files. Paths must be normalized. */
-export const isModelFilePath = (path: string): boolean => path !== MANIFEST_FILE && fileKind(path) !== undefined
+/** NUL, other control characters and backslashes are never part of a model path (fs throws on NUL). */
+// eslint-disable-next-line no-control-regex
+const UNSAFE_PATH = /[\u0000-\u001f\\]/
+
+export const isModelFilePath = (path: string): boolean => !UNSAFE_PATH.test(path) && path !== MANIFEST_FILE && fileKind(path) !== undefined
 
 export type SaveOutcome
   = | { ok: true, sha256: string }
@@ -43,6 +47,7 @@ const KEPT_KINDS = new Set(['project', 'theme', 'manifest', 'module'])
 
 /** An artifact file (data source, layout, or one under a module's folders) the editor may delete. */
 export const isDeletableModelPath = (path: string): boolean => {
+  if (UNSAFE_PATH.test(path)) return false
   const kind = fileKind(path)
   return kind !== undefined && !KEPT_KINDS.has(kind)
 }
