@@ -197,6 +197,14 @@ export const RepositoryFileSchema = z.object({
     create: RestEndpointSchema.optional(),
     update: RestEndpointSchema.optional(),
     delete: RestEndpointSchema.optional()
+  }).superRefine((rest, context) => {
+    // A lookup or write by key addresses one item: its path names the key exactly once.
+    for (const op of ['get', 'update', 'delete'] as const) {
+      const path = rest[op]?.path
+      if (path !== undefined && path.split('/').filter(segment => segment === ':id').length !== 1) {
+        context.addIssue({ code: 'custom', path: [op, 'path'], message: 'Use exactly one :id segment, like "/items/:id"' })
+      }
+    }
   }).optional(),
   expose: z.object({ list: z.boolean() }).optional()
 })

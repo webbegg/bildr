@@ -253,6 +253,7 @@ const restConfig = (repository: RepositoryFile): RestConfig & { paging: { style:
     if (!endpoint) throw new Error(`${repository.id}: the REST operation "${op}" needs rest.${op} (its endpoint, like {"path": "/items"})`)
     const params = endpoint.path.split('/').filter(segment => segment.startsWith(':'))
     if (op !== 'create' && !params.includes(':id')) throw new Error(`${repository.id}: rest.${op}.path needs an :id segment (like "/items/:id")`)
+    if (params.filter(param => param === ':id').length > 1) throw new Error(`${repository.id}: rest.${op}.path has :id more than once`)
     if (params.some(param => param !== ':id')) throw new Error(`${repository.id}: rest.${op}.path: only the :id parameter is generated yet`)
   }
   const paging = rest.paging?.style ?? 'offset'
@@ -364,8 +365,18 @@ export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFil
 
 const HTTP_OPTIONS = '{ method?: \'GET\' | \'POST\' | \'PUT\' | \'PATCH\' | \'DELETE\', query?: Record<string, string | number | undefined>, body?: unknown, optional?: boolean }'
 
-/** `/posts/:id` → a template literal with the key URL-encoded. */
-const idPath = (path: string) => `\`${path.replace(':id', '${encodeURIComponent(String(id))}')}\``
+/** `/posts/:id` → a template literal with the key as one URL-encoded segment. */
+const idPath = (path: string) => `\`${path.replace(':id', '${segment(id)}')}\``
+
+/** The generated guard: encoding keeps "/" inside the segment, but "." and ".." are resolved away by URL parsing. */
+const SEGMENT_HELPER = [
+  '/** The key as one path segment. "." and ".." would move the request to another path, so they are refused. */',
+  'const segment = (id: unknown) => {',
+  '  const value = String(id)',
+  '  if (value === \'\' || value === \'.\' || value === \'..\') throw new Error(`Not a valid id for a REST path: ${JSON.stringify(value)}`)',
+  '  return encodeURIComponent(value)',
+  '}'
+].join('\n')
 
 const methodOf = (rest: RestConfig, op: RestEndpointOp) => rest[op]?.method ?? REST_ENDPOINTS[op]
 
@@ -385,6 +396,7 @@ const restCrudRepositoryFile = (context: ModuleContext, entity: EntityFile, repo
   const variable = names.variable
   const readsRows = has(repository, 'list') || has(repository, 'get') || has(repository, 'create') || has(repository, 'update')
   const writesRows = has(repository, 'create') || has(repository, 'update')
+  const byId = has(repository, 'get') || has(repository, 'update') || has(repository, 'delete')
   const body: string[] = []
   if (has(repository, 'list')) {
     const list = rest.list!
@@ -446,6 +458,7 @@ const restCrudRepositoryFile = (context: ModuleContext, entity: EntityFile, repo
       '',
       readsRows && `const fromRow = (row: ${row}): ${names.type} => ${names.type}Schema.parse({ ${fields.map(({ field, remote }) => `${field.name}: ${member('row', remote)}`).join(', ')} })`,
       writesRows && `const toRow = (${variable}: ${names.type}): ${row} => ({ ${fields.map(({ field, remote }) => `${property(remote)}: ${variable}.${field.name}`).join(', ')} })`,
+      byId && SEGMENT_HELPER,
       '',
       `/** ${names.port} over the "${docText(source.name)}" REST data source.${has(repository, 'list') ? ` Paging style: offset (${docText(String(rest.paging.offsetParam))}/${docText(String(rest.paging.limitParam))}).` : ''} */`,
       `export const rest${names.port} = (http: ${names.type}Http): ${names.port} => ({`,
@@ -513,6 +526,17 @@ const restCrudRepositoryTestFile = (context: ModuleContext, entity: EntityFile, 
       '    const { calls, repository } = fake(undefined)',
       `    await repository.delete(${tsLiteral(id)})`,
       `    expect(calls).toEqual([{ path: ${at(rest.delete!.path)}, options: ${options('delete', [])} }])`,
+      '  })'
+    ])
+  }
+  const lookup = (['get', 'update', 'delete'] as const).find(op => has(repository, op))
+  // Only text keys can be "." or ".." (a numeric key can't, and passing one wouldn't typecheck).
+  if (lookup && typeof id === 'string') {
+    tests.push([
+      '  it(\'refuses ids that would change the path\', async () => {',
+      '    const { calls, repository } = fake(row)',
+      ...['..', '.', ''].map(bad => `    await expect(repository.${lookup}(${tsLiteral(bad)}${lookup === 'update' ? `, ${names.variable}` : ''})).rejects.toThrow('Not a valid id for a REST path')`),
+      '    expect(calls).toEqual([])',
       '  })'
     ])
   }

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { generateData } from '../../src/generate/data'
 import { loadModel } from '../../src/model/load'
 import type { Model } from '../../src/model/load'
+import { RepositoryFileSchema } from '../../src/model/schemas'
 import { fixtureModelFiles, fixtureRoot } from '../model/fixture'
 
 const fixtureModel = (): Model => {
@@ -112,7 +113,15 @@ describe('generateData rules', () => {
     quotes.rest = { ...quotes.rest, get: { path: '/quotes/:id' }, create: { path: '/quotes/add' }, update: { method: 'PATCH', path: '/quotes/:id' }, delete: { path: '/quotes/:id' } }
     const files = generateData(model)
     const adapter = files.find(file => file.path === 'layers/blog/server/infrastructure/repositories/quote.rest.ts')!.content
-    expect(adapter).toContain('http<QuoteRow | undefined>(`/quotes/${encodeURIComponent(String(id))}`, { optional: true })')
+    expect(adapter).toContain('http<QuoteRow | undefined>(`/quotes/${segment(id)}`, { optional: true })')
+    // An id is one path segment: "." or ".." would move the request elsewhere once the URL is resolved.
+    expect(adapter).toContain('if (value === \'\' || value === \'.\' || value === \'..\') throw new Error(`Not a valid id for a REST path: ${JSON.stringify(value)}`)')
+    expect(adapter).toContain('return encodeURIComponent(value)')
+    const adapterTest = () => generateData(model).find(file => file.path === 'layers/blog/test/infrastructure/quote.rest.test.ts')!.content
+    // An integer key can't be "." or ".."; a text key gets a generated test that the guard holds.
+    expect(adapterTest()).not.toContain('refuses ids that would change the path')
+    model.modules.blog!.entities.find(entity => entity.id === 'ent_quote')!.fields[0]!.type = 'text'
+    expect(adapterTest()).toContain('await expect(repository.get(\'..\')).rejects.toThrow(\'Not a valid id for a REST path\')')
     expect(adapter).toContain('http<QuoteRow | undefined>(\'/quotes/add\', { method: \'POST\', body: toRow(quote) })')
     expect(adapter).toContain('{ method: \'PATCH\', body: toRow(quote) }')
     expect(adapter).toContain('{ method: \'DELETE\' }')
@@ -132,6 +141,19 @@ describe('generateData rules', () => {
     quotes.operations = ['list', 'get']
     quotes.rest = { ...quotes.rest, get: { path: '/quotes' } }
     expect(() => generateData(model)).toThrow('repo_quote: rest.get.path needs an :id segment (like "/items/:id")')
+    quotes.rest = { ...quotes.rest, get: { path: '/quotes/:id/versions/:id' } }
+    expect(() => generateData(model)).toThrow('repo_quote: rest.get.path has :id more than once')
+  })
+
+  it('reports a lookup path without exactly one :id as a model problem (before generation)', () => {
+    const repository = (path: string) => ({ id: 'repo_x', entity: 'ent_x', datasource: 'ds_x', operations: ['get'], rest: { get: { path } } })
+    expect(RepositoryFileSchema.safeParse(repository('/x/:id')).success).toBe(true)
+    for (const path of ['/x', '/x/:id/y/:id', '/x/:idx']) {
+      const result = RepositoryFileSchema.safeParse(repository(path))
+      expect(result.success, path).toBe(false)
+      expect(result.error!.issues[0]).toMatchObject({ path: ['rest', 'get', 'path'], message: 'Use exactly one :id segment, like "/items/:id"' })
+    }
+    expect(RepositoryFileSchema.safeParse({ ...repository('/x'), operations: ['create'], rest: { create: { path: '/x' } } }).success).toBe(true)
   })
 
   it('refuses REST paging styles it cannot generate yet', () => {
