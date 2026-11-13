@@ -4,11 +4,16 @@
  * empty directory to a built, booted app that lists, shows and creates a
  * record. Standalone: it needs no running bildr server (unlike e2e/all.mjs).
  *
- *   node e2e/generated.mjs [--install] [--keep]
+ *   node e2e/generated.mjs [--install] [--packed] [--keep]
  *   pnpm e2e:generated
  *
  * Steps, in a fresh temp dir under $E2E_TMP (default: the OS temp dir):
- * 1. create   `create-bildr` writes the starter kit (S1).
+ * 0. pack     `--packed` only (T12): `pnpm pack` @bildr/codegen, @bildr/editor,
+ *             @bildr/nuxt and create-bildr (prepack builds each) and check the
+ *             packed manifests point at dist/ with real versions.
+ * 1. create   `create-bildr` writes the starter kit (S1). `--packed`: the packed
+ *             create-bildr's dist bin, with `@bildr/nuxt` from its tarball
+ *             (`--bildr file:…`) and pnpm overrides for its @bildr dependencies.
  * 2. install  `--install`: a real `pnpm install` (S1 "installs"); by default the
  *             golden fixture's node_modules is symlinked, as packages/nuxt/test does.
  * 3. model    `nuxt dev`, then the golden blog model (fixtures/codegen/blog/.bildr)
@@ -23,6 +28,7 @@
  *
  * Flags and env:
  * --install          real install instead of the symlink
+ * --packed           run against the packed packages, as published (implies --install)
  * --keep             keep the temp dir (its path is printed)
  * E2E_TMP            parent of the temp dir
  * E2E_MUTATE=a,b     break the generated app on purpose, to prove the checks catch it:
@@ -32,8 +38,8 @@
  * PASS/FAIL lines and the exit code work like e2e/lib.mjs. Every child process
  * runs in its own process group and is killed on exit, failure or Ctrl-C.
  */
-import { spawn } from 'node:child_process'
-import { existsSync, mkdtempSync, openSync, closeSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawn } from 'node:child_process'
+import { existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import { createServer as createNetServer } from 'node:net'
 import { homedir, tmpdir } from 'node:os'
@@ -47,10 +53,11 @@ const PLAYWRIGHT_CORE = process.env.PLAYWRIGHT_CORE || join(homedir(), '.t3/runt
 const CHROMIUM = process.env.CHROMIUM || join(homedir(), '.cache/ms-playwright/chromium-1194/chrome-linux/chrome')
 
 const flags = new Set(process.argv.slice(2))
-const INSTALL = flags.has('--install')
+const PACKED = flags.has('--packed')
+const INSTALL = flags.has('--install') || PACKED
 const KEEP = flags.has('--keep')
 const MUTATE = new Set((process.env.E2E_MUTATE ?? '').split(',').map(name => name.trim()).filter(Boolean))
-for (const flag of flags) if (!['--install', '--keep'].includes(flag)) throw new Error(`Unknown flag ${flag}. Usage: node e2e/generated.mjs [--install] [--keep]`)
+for (const flag of flags) if (!['--install', '--packed', '--keep'].includes(flag)) throw new Error(`Unknown flag ${flag}. Usage: node e2e/generated.mjs [--install] [--packed] [--keep]`)
 
 const MINUTE = 60_000
 const UI_TIMEOUT = 20_000
@@ -205,10 +212,62 @@ const readOr = path => existsSync(path) ? readFileSync(path, 'utf8') : undefined
  * links it, and module.json files are never deletable).
  */
 async function create(ctx) {
-  const ok = await checkRun('create-bildr', process.execPath, ['--experimental-strip-types', '--no-warnings', CLI, ctx.dir, '--name', 'Blog', '--module', 'blog'], { cwd: ctx.tmp, log: join(ctx.tmp, 'create.log'), timeout: MINUTE })
+  const args = ['--name', 'Blog', '--module', 'blog']
+  const command = PACKED
+    ? [join(ctx.packs.runner, 'node_modules/create-bildr/dist/cli.js'), ctx.dir, ...args, '--bildr', `file:${ctx.packs.tarballs['@bildr/nuxt']}`]
+    : ['--experimental-strip-types', '--no-warnings', CLI, ctx.dir, ...args]
+  const ok = await checkRun(PACKED ? 'create-bildr (packed dist/cli.js)' : 'create-bildr', process.execPath, command, { cwd: ctx.tmp, log: join(ctx.tmp, 'create.log'), timeout: MINUTE })
   if (!ok) throw new Error('create-bildr failed')
   check(existsSync(join(ctx.dir, '.bildr/bildr.json')) && existsSync(join(ctx.dir, '.bildr/manifest.json')), 'the project has .bildr/bildr.json and a manifest')
   check(existsSync(join(ctx.dir, 'layers/core/nuxt.config.ts')), 'the project has layers/core')
+  if (PACKED) usePackedDependencies(ctx)
+}
+
+// ── Packed packages (--packed, T12) ────────────────────────────────────
+
+/** Dependency order: prepack builds each, and @bildr/nuxt and create-bildr build against @bildr/codegen's dist. */
+const PACKAGES = [['@bildr/codegen', 'codegen'], ['@bildr/editor', 'editor'], ['@bildr/nuxt', 'nuxt'], ['create-bildr', 'create-bildr']]
+
+/** The package.json inside a tarball: what the registry would get. */
+const tarManifest = tarball => JSON.parse(execFileSync('tar', ['-xzOf', tarball, 'package/package.json'], { encoding: 'utf8' }))
+
+/** `pnpm pack` each package, check what would be published, and lay out a runner for the packed create-bildr. */
+async function pack(ctx) {
+  const dest = join(ctx.tmp, 'packs')
+  const tarballs = {}
+  for (const [name, dir] of PACKAGES) {
+    const log = join(ctx.tmp, `pack-${dir}.log`)
+    const ok = await checkRun(`pnpm pack ${name}`, 'pnpm', ['pack', '--pack-destination', dest], { cwd: join(REPO, 'packages', dir), log, timeout: 10 * MINUTE })
+    if (!ok) throw new Error(`pnpm pack ${name} failed`)
+    const file = readdirSync(dest).find(entry => entry.startsWith(`${name.replace('@', '').replace('/', '-')}-`) && entry.endsWith('.tgz'))
+    if (!file) throw new Error(`no tarball for ${name} in ${dest}`)
+    tarballs[name] = join(dest, file)
+  }
+  for (const [name] of PACKAGES) {
+    const manifest = tarManifest(tarballs[name])
+    const deps = Object.entries(manifest?.dependencies ?? {})
+    const entries = [...Object.values(manifest?.exports ?? {}).flatMap(value => typeof value === 'string' ? [value] : Object.values(value)), ...Object.values(manifest?.bin ?? {})]
+    check(manifest && !manifest.private && deps.every(([, spec]) => !spec.startsWith('workspace:')), `${name}: the packed package.json is public and has no workspace: dependency (${deps.map(([dep, spec]) => `${dep}@${spec}`).join(', ')})`)
+    check(entries.every(path => path === './package.json' || path.startsWith('./dist/')), `${name}: the packed exports and bin point at dist/ (${entries.join(', ')})`)
+  }
+  // The packed create-bildr runs as installed: dist/ only, @bildr/codegen from its tarball, zod from this checkout.
+  const runner = join(ctx.tmp, 'runner')
+  for (const name of ['create-bildr', '@bildr/codegen']) {
+    const target = join(runner, 'node_modules', name)
+    mkdirSync(target, { recursive: true })
+    execFileSync('tar', ['-xzf', tarballs[name], '-C', target, '--strip-components=1'])
+  }
+  symlinkSync(realpathSync(join(REPO, 'packages/codegen/node_modules/zod')), join(runner, 'node_modules/zod'), 'dir')
+  ctx.packs = { tarballs, runner }
+}
+
+/** The created project installs @bildr/nuxt's own @bildr dependencies from the tarballs too (they aren't on npm yet). */
+function usePackedDependencies(ctx) {
+  const pkg = readJson(join(ctx.dir, 'package.json'))
+  check(pkg.devDependencies?.['@bildr/nuxt'] === `file:${ctx.packs.tarballs['@bildr/nuxt']}`, `the project's @bildr/nuxt is the packed tarball (${pkg.devDependencies?.['@bildr/nuxt']})`)
+  const workspace = join(ctx.dir, 'pnpm-workspace.yaml')
+  const overrides = ['@bildr/codegen', '@bildr/editor'].map(name => `  '${name}': 'file:${ctx.packs.tarballs[name]}'`)
+  writeFileSync(workspace, `${readFileSync(workspace, 'utf8').trimEnd()}\noverrides:\n${overrides.join('\n')}\n`)
 }
 
 async function install(ctx) {
@@ -216,6 +275,11 @@ async function install(ctx) {
     console.log('mode: pnpm install (real install)')
     const ok = await checkRun('pnpm install', 'pnpm', ['install'], { cwd: ctx.dir, log: join(ctx.tmp, 'install.log'), timeout: 15 * MINUTE })
     if (!ok) throw new Error('pnpm install failed')
+    if (PACKED) {
+      const installed = join(ctx.dir, 'node_modules/@bildr/nuxt')
+      const real = existsSync(installed) ? realpathSync(installed) : ''
+      check(existsSync(join(installed, 'dist/module.js')) && !existsSync(join(installed, 'src')) && !real.startsWith(REPO), `@bildr/nuxt is installed from its tarball (${real})`)
+    }
   } else {
     console.log(`mode: symlinked node_modules → ${relative(REPO, join(FIXTURE, 'node_modules'))} (pass --install for a real install)`)
     symlinkSync(join(FIXTURE, 'node_modules'), join(ctx.dir, 'node_modules'), 'dir')
@@ -467,7 +531,7 @@ async function smoke(ctx) {
 
 // ── Main ───────────────────────────────────────────────────────────────
 
-const STEPS = [['create', create], ['install', install], ['model', model], ['standalone', standalone], ['smoke', smoke]]
+const STEPS = [...(PACKED ? [['pack', pack]] : []), ['create', create], ['install', install], ['model', model], ['standalone', standalone], ['smoke', smoke]]
 
 async function main() {
   const parent = process.env.E2E_TMP ?? tmpdir()

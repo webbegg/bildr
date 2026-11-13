@@ -1,0 +1,74 @@
+name: release
+
+# Publishes @bildr/codegen, @bildr/editor, @bildr/nuxt and create-bildr to npm when a
+# version tag is pushed (decision D13). Before the first release (see RELEASING in the README):
+# - create the `bildr` organization on npmjs.com (the @bildr scope);
+# - add an npm automation token as the repository secret NPM_TOKEN;
+# - bump `version` in the four packages/*/package.json (they release together) and push a tag `v<version>`.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+  # npm provenance: the registry links each published version to this workflow run.
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Check the tag matches the package versions
+        run: |
+          for pkg in packages/*/package.json; do
+            version=$(node -p "require('./$pkg').version")
+            if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+              echo "$pkg is $version but the tag is $GITHUB_REF_NAME"
+              exit 1
+            fi
+          done
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the editor
+        run: pnpm run build:editor
+
+      # tsc to dist/ (JS + .d.ts), in dependency order: @bildr/codegen first.
+      - name: Build the packages
+        run: pnpm run build:packages
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      # The migration tests use the golden fixture's drizzle-kit install (as in ci.yml).
+      - name: Install the golden fixture
+        run: pnpm --dir fixtures/codegen/blog install --frozen-lockfile
+
+      - name: Test
+        run: pnpm run test
+
+      # pnpm swaps in publishConfig (dist/ exports and bin) and turns workspace:* into the real versions.
+      - name: Publish
+        run: pnpm -r --filter './packages/**' publish --access public --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: true

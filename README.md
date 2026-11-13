@@ -348,4 +348,22 @@ Each script creates its own `e2e …` projects (mobile-first through `project()`
 pnpm test
 pnpm lint
 pnpm typecheck
+pnpm e2e:generated            # create, model, build, boot and smoke a generated app
+pnpm e2e:generated --packed   # the same from the packed npm tarballs (real install)
 ```
+
+## Releasing
+
+`@bildr/codegen`, `@bildr/editor`, `@bildr/nuxt` and `create-bildr` are released together by `.github/workflows/release.yml` when a `v*` tag is pushed. Nothing is published before that.
+
+Once:
+
+1. Create the `bildr` organization on npmjs.com (the `@bildr` scope).
+2. Add an npm automation token as the repository secret `NPM_TOKEN`.
+
+Each release:
+
+1. Set the same `version` in the four `packages/*/package.json`, and commit.
+2. `git tag v<version> && git push origin v<version>`.
+
+The workflow refuses a tag that differs from the package versions, runs lint, typecheck and tests, and publishes with provenance. To look at a package before releasing it: `pnpm --filter <package> pack`, then list the tarball.
