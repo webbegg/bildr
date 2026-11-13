@@ -88,7 +88,7 @@ jobs:
           npm install --no-save --prefix "$RUNNER_TEMP/pw" playwright-core@1.60.0
           "$RUNNER_TEMP/pw/node_modules/.bin/playwright-core" install --with-deps chromium
           echo "PLAYWRIGHT_CORE=$RUNNER_TEMP/pw/node_modules/playwright-core/index.mjs" >> "$GITHUB_ENV"
-          echo "CHROMIUM=$(find "$HOME/.cache/ms-playwright" -type f -name chrome -path '*chromium-*' | head -1)" >> "$GITHUB_ENV"
+          echo "CHROMIUM=$(node --input-type=module -e "const { chromium } = await import('$RUNNER_TEMP/pw/node_modules/playwright-core/index.mjs'); console.log(chromium.executablePath())")" >> "$GITHUB_ENV"
 
       - name: End-to-end (generated app)
         run: pnpm run e2e:generated --install
