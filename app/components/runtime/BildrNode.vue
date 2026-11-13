@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { mergeProps } from 'vue'
 import type { ButtonProps } from '@nuxt/ui'
-import { displayFallback, parseStyleKey, styleClasses, styleInline } from '#shared/design/tokens'
-import { CARD_DEFAULT_STYLE, CARD_STACK_KEYS, DEFAULT_HEADING_LEVEL, displayOf, HEADING_TOKENS, headingTag, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, structuralStyle, TEXT_CLASS } from '@bildr/codegen/render'
+import { displayFallback, styleClasses, styleInline } from '#shared/design/tokens'
+import {
+  CARD_DEFAULT_STYLE, childrenInStack, containerTag, DEFAULT_HEADING_LEVEL, displayOf, fallbackStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS,
+  IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, LINK_CLASS, LINK_ICON_CLASS, LINK_ICON_DISPLAY, listLayout, selfFallback, splitCardStyle, structuralStyle, TEXT_CLASS
+} from '@bildr/codegen/render'
 import type { DocNode } from '#shared/document/schema'
 import { hasEnvRefs } from '#shared/env/variables'
 import { bindingItem, hasBindings } from '#shared/runtime/bindings'
@@ -15,14 +18,16 @@ import { resolveLink } from '#shared/runtime/render'
 /**
  * Renders one document node and its children. The editor canvas and the
  * published app share this component, so what you edit is what ships.
- * The per-type render rules it shares with the generator (elements, token
- * fallbacks) live in `@bildr/codegen/render`; where the two still differ,
- * see its `KNOWN_DIVERGENCES`.
+ * The per-type render rules it shares with the generator (elements, tags,
+ * token fallbacks, the stack's `self: stretch`, a List's layout) live in
+ * `@bildr/codegen/render`; where the two still differ, see its
+ * `KNOWN_DIVERGENCES`.
  * Visual styling comes only from the node's design tokens (colour keys
  * holding a hex or a theme colour name render as an inline style, since they
  * have no generated class; see `styleInline`); the template
- * adds per-type fallbacks that a token of the same key replaces: the flex
- * direction, and a Row's `wrap` prop as a `flexWrap` token. A base `display`
+ * adds per-type fallbacks that a token of the same key replaces (`fallbackStyle`):
+ * the flex direction, a Page's min height, a Row's `wrap` prop as a `flexWrap`
+ * token and a List's `layout`. A base `display`
  * token replaces the template's display class (`flex`, `grid`, `block`), so
  * `hidden` hides the node and `md:flex` shows it again from md up; the
  * editor canvas hides it too, and the layers keep it selectable.
@@ -103,33 +108,25 @@ const rootBehaviour = computed(() => {
 // Containers of a definition take no drops: the instance is the page node.
 const dropParent = computed(() => runtime.editable && !fromDefinition.value && !props.node.children.length)
 const stacked = computed(() => ['Page', 'Container', 'Column'].includes(props.node.type))
+// Page, Container and Row render their `tag` prop (one of CONTAINER_TAGS), a div otherwise.
+const tag = computed(() => containerTag(p.value.tag) ?? 'div')
+// Whether this node's children sit in a vertical stack, so block types stretch across it.
+const stacksChildren = computed(() => childrenInStack(props.node.type, p.value))
 
-// In a stack, block-level nodes fill the width whatever the stack's `items`, so sections
-// and fields keep spanning their parent; text only does so when it sets an alignment.
-// Buttons, links and short text follow the stack's `items`. A `self` token overrides both.
-const BLOCK_TYPES = ['Container', 'Row', 'Column', 'Grid', 'List', 'Form', 'Card', 'Input']
-const selfFallback = computed((): Record<string, string> => {
-  const { type, style } = props.node
-  const aligned = Object.keys(style).some(key => parseStyleKey(key)?.token.key === 'align')
-  const fills = BLOCK_TYPES.includes(type) || (['Heading', 'Text'].includes(type) && aligned)
-  return props.inStack && fills ? { self: 'stretch' } : {}
-})
-const withFallback = (fallback: Record<string, string>) => styleClasses({ ...selfFallback.value, ...fallback, ...props.node.style })
-const rowWrap = computed((): Record<string, string> => (props.node.type === 'Row' && p.value.wrap ? { flexWrap: 'wrap' } : {}))
-const tokens = computed(() => withFallback({ ...structuralStyle(props.node.type), ...rowWrap.value }))
+// In a stack, block-level nodes fill the width whatever the stack's `items` (`selfFallback`).
+const stretch = computed(() => selfFallback(props.node.type, props.node.style, props.inStack))
+const withFallback = (fallback: Record<string, string>) => styleClasses({ ...stretch.value, ...fallback, ...props.node.style })
+const tokens = computed(() => withFallback(fallbackStyle(props.node.type, p.value)))
 const display = (fallback: string) => displayFallback(fallback, props.node.style)
 
-const level = computed(() => (text('level') in HEADING_TOKENS ? text('level') : String(DEFAULT_HEADING_LEVEL)))
+const level = computed(() => String(headingLevel(text('level')) ?? DEFAULT_HEADING_LEVEL))
 
 // The card's gap and items lay out its inner stack; every other token styles the card
-// itself. Its padding is a token too (UCard's body padding is zeroed), so `p-8`
-// replaces the default instead of adding to it. Breakpoint variants follow their base key.
+// itself (`splitCardStyle`). Its padding is a token too (UCard's body padding is zeroed),
+// so `p-8` replaces the default instead of adding to it.
 const card = computed(() => {
-  const entries = Object.entries(props.node.style)
-  const inStack = ([key]: [string, string]) => CARD_STACK_KEYS.includes(parseStyleKey(key)?.token.key ?? '')
-  const stack = Object.fromEntries(entries.filter(inStack))
-  const rest = Object.fromEntries(entries.filter(entry => !inStack(entry)))
-  return { root: styleClasses({ ...selfFallback.value, ...CARD_DEFAULT_STYLE, ...rest }), stack: styleClasses({ ...structuralStyle('Card'), ...stack }) }
+  const { root, stack } = splitCardStyle(props.node.style)
+  return { root: styleClasses({ ...stretch.value, ...CARD_DEFAULT_STYLE, ...root }), stack: styleClasses({ ...structuralStyle('Card'), ...stack }) }
 })
 const icon = (name: string) => text(name) || undefined
 
@@ -143,13 +140,13 @@ const CARD_UI = { body: 'p-0 sm:p-0' }
 
 // A List repeats its children per record of its query. In the canvas, an empty or
 // unknown collection shows the children once as a placeholder (bindings as written).
-const LIST_LAYOUTS: Record<string, string> = { stack: 'flex-col', grid: '', row: 'flex-row flex-wrap' }
+// Its `layout` (stack, grid, row) is a display and token fallbacks (`fallbackStyle`).
 const list = computed(() => {
   if (props.node.type !== 'List') return null
   const query = listQueryOf(p.value)
   const key = listKey(query)
   const records = query.collection ? runtime.lists[key] : undefined
-  const layout = String(p.value.layout ?? '') in LIST_LAYOUTS ? String(p.value.layout) : 'stack'
+  const layout = listLayout(p.value.layout)
   const items: (BindingItem | null)[] = records?.length ? records.map(bindingItem) : runtime.editable ? [null] : []
   const hint = !query.collection ? 'Choose a collection for this List' : !records ? `No collection "${query.collection}"` : null
   // Load more: published apps and the preview only; the canvas shows `limit` records.
@@ -176,22 +173,23 @@ const list = computed(() => {
     </div>
   </template>
 
-  <div
+  <component
+    :is="tag"
     v-else-if="stacked || node.type === 'Row'"
     v-bind="attrs"
-    :class="[display(displayOf(node.type)), { 'min-h-full': node.type === 'Page' }, tokens]"
+    :class="[display(displayOf(node.type)), tokens]"
   >
     <BildrNode
       v-for="child in node.children"
       :key="child.id"
       :node="child"
-      :in-stack="stacked"
+      :in-stack="stacksChildren"
     />
     <BildrDropHint
       v-if="dropParent"
       :parent-id="node.id"
     />
-  </div>
+  </component>
 
   <div
     v-else-if="node.type === 'Grid'"
@@ -255,16 +253,23 @@ const list = computed(() => {
     v-bind="attrs"
     :to="link?.to"
     :target="link?.external ? '_blank' : undefined"
-    class="underline-offset-4 hover:underline"
-    :class="[icon('icon') && ['items-center gap-1', display('inline-flex')], tokens]"
+    :class="[LINK_CLASS, icon('icon') && [LINK_ICON_CLASS, display(LINK_ICON_DISPLAY)], tokens]"
   >
     <UIcon
       v-if="icon('icon')"
       :name="icon('icon')!"
-      class="size-[1em] shrink-0"
+      :class="ICON_CLASS"
     />
     {{ text('label') }}
   </ULink>
+
+  <UCheckbox
+    v-else-if="node.type === 'Checkbox'"
+    v-bind="attrs"
+    :label="text('label')"
+    :name="text('field') || undefined"
+    :class="tokens"
+  />
 
   <UFormField
     v-else-if="node.type === 'Input'"
@@ -281,10 +286,11 @@ const list = computed(() => {
   </UFormField>
 
   <!-- A published List without records renders nothing. -->
-  <div
+  <component
+    :is="tag"
     v-else-if="list && (runtime.editable || list.items.length)"
     v-bind="attrs"
-    :class="[display(list.layout === 'grid' ? 'grid' : 'flex'), LIST_LAYOUTS[list.layout], tokens]"
+    :class="[display(displayOf(node.type, p)), tokens]"
   >
     <p
       v-if="runtime.editable && list.hint"
@@ -302,7 +308,7 @@ const list = computed(() => {
         v-for="child in node.children"
         :key="child.id"
         :node="child"
-        :in-stack="list.layout === 'stack'"
+        :in-stack="stacksChildren"
         :class="{ 'opacity-60': list.placeholder }"
       />
     </BildrListItem>
@@ -333,7 +339,7 @@ const list = computed(() => {
       v-if="dropParent"
       :parent-id="node.id"
     />
-  </div>
+  </component>
 
   <BildrForm
     v-else-if="node.type === 'Form'"

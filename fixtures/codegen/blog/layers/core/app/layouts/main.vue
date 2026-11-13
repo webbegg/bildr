@@ -5,18 +5,22 @@ const { site } = useAppConfig()
 
 <template>
   <div class="min-h-screen flex-col flex">
-    <header class="border-default border-b-1">
-      <nav class="flex mx-auto p-4 max-w-4xl items-center justify-between">
-        <NuxtLink to="/" class="text-lg font-semibold">{{ site.name }}</NuxtLink>
-        <NuxtLink to="/posts/new" class="px-3 py-1.5 bg-primary text-inverted text-sm rounded-md">New post</NuxtLink>
+    <header class="flex border-default border-b-1 flex-col self-stretch">
+      <nav class="flex mx-auto p-4 w-full max-w-4xl flex-row items-center justify-between self-stretch">
+        <ULink to="/" class="underline-offset-4 hover:underline text-lg font-semibold">{{ site.name }}</ULink>
+        <ULink to="/posts/new" class="underline-offset-4 hover:underline px-3 py-1.5 bg-primary text-inverted text-sm rounded-md">New post</ULink>
       </nav>
     </header>
-    <main class="mx-auto p-4 w-full max-w-4xl">
+    <main class="flex mx-auto p-4 w-full max-w-4xl flex-col self-stretch">
       <slot />
     </main>
-    <footer class="mt-auto p-4 text-muted border-default text-sm text-center border-t-1">
+    <footer class="flex mt-auto p-4 text-muted border-default text-sm text-center border-t-1 flex-col self-stretch">
       <slot name="footer">
-        <p>{{ site.description }}</p>
+        <p class="whitespace-pre-line">{{ site.description }}</p>
+        <ULink to="https://nuxt.com" target="_blank" class="underline-offset-4 hover:underline items-center gap-1 inline-flex self-center">
+          <UIcon name="i-lucide-external-link" class="size-[1em] shrink-0" />
+          Built with Nuxt
+        </ULink>
       </slot>
     </footer>
   </div>

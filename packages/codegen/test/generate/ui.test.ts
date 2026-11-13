@@ -64,7 +64,7 @@ describe('generateUi rules', () => {
 
   it('refuses node types and interactions it cannot generate yet', () => {
     expect(() => generateUi(withNode({ id: 'n_x', type: 'Video' }))).toThrow(/node type Video can't be generated yet/)
-    expect(() => generateUi(withNode({ id: 'n_x', type: 'Button', props: { text: 'x' }, interactions: [{ on: 'click', do: [{ kind: 'toast' }] }] })))
+    expect(() => generateUi(withNode({ id: 'n_x', type: 'Button', props: { text: 'x' }, interactions: [{ on: 'click', do: [{ kind: 'setVariant' }] }] })))
       .toThrow(/click interaction can't be generated yet/)
   })
 
@@ -74,16 +74,16 @@ describe('generateUi rules', () => {
 
   it('escapes static text and attributes so they never become markup or interpolation', () => {
     const page = indexPage(withNode({ id: 'n_x', type: 'Text', props: { text: '<b>{{ secret }}</b> & co' } }))
-    expect(page).toContain('<p>&lt;b&gt;&#123;&#123; secret }}&lt;/b&gt; &amp; co</p>')
+    expect(page).toContain('<p class="whitespace-pre-line">&lt;b&gt;&#123;&#123; secret }}&lt;/b&gt; &amp; co</p>')
     const button = indexPage(withNode({ id: 'n_x', type: 'Button', props: { text: 'Say "hi"' } }))
     expect(button).toContain('<UButton label="Say &quot;hi&quot;" />')
     const lines = indexPage(withNode({ id: 'n_x', type: 'Text', props: { text: `a\rb${String.fromCharCode(0x2028)}c` } }))
-    expect(lines).toContain('<p>a&#13;b&#8232;c</p>')
+    expect(lines).toContain('<p class="whitespace-pre-line">a&#13;b&#8232;c</p>')
   })
 
   it('renders hex colours inline and theme tokens as classes', () => {
     const page = indexPage(withNode({ id: 'n_x', type: 'Text', props: { text: 'x' }, style: { bg: '#ff0066', color: 'muted' } }))
-    expect(page).toContain('<p class="text-muted" style="background-color: #ff0066">x</p>')
+    expect(page).toContain('<p class="whitespace-pre-line text-muted" style="background-color: #ff0066">x</p>')
   })
 
   it('only declares the composable parts the template uses', () => {

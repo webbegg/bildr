@@ -4,25 +4,42 @@ import { PostSlugSchema } from '#blog/domain/post'
 
 definePageMeta({
   name: 'posts-slug',
-  layout: 'main',
+  layout: false,
   validate: route => 'slug' in route.params && PostSlugSchema.safeParse(route.params.slug).success
 })
 
 const route = useRoute('posts-slug')
+const toast = useToast()
 const { post, isLoading: postLoading } = usePostBySlug(() => route.params.slug)
 const { execute: publish, pending: publishPending, error: publishError } = usePublishPost()
 useSeoMeta({ title: () => post.value?.title ?? 'Post' })
+
+// Interaction "click": run action Publish post, then show a toast.
+const onPublishClick = async () => {
+  if (!post.value) return
+  if (await publish(post.value.id)) toast.add({ title: 'Post published', color: 'success' })
+}
 </script>
 
 <template>
-  <p v-if="postLoading" class="text-muted">Loading…</p>
-  <article v-else-if="post" class="gap-4 flex-col flex">
-    <h1 class="text-3xl font-semibold">{{ post.title }}</h1>
-    <p>{{ post.body }}</p>
-    <div v-if="!post.published" class="flex gap-3 items-center">
-      <UButton label="Publish" :disabled="publishPending" @click="publish(post.id)" />
-      <p v-if="publishError" class="text-error text-sm">{{ publishError }}</p>
-    </div>
-  </article>
-  <p v-else class="text-muted">This post doesn't exist.</p>
+  <NuxtLayout name="main">
+    <template #default>
+      <p v-if="postLoading" class="text-muted">Loading…</p>
+      <article v-else-if="post" class="gap-4 min-h-full flex-col flex">
+        <h1 class="text-3xl font-semibold tracking-tight">{{ post.title }}</h1>
+        <p class="whitespace-pre-line">{{ post.body }}</p>
+        <div v-if="!post.published" class="flex gap-3 flex-row items-center self-stretch">
+          <UButton label="Publish" icon="i-lucide-send" :disabled="publishPending" @click="onPublishClick" />
+          <p v-if="publishError" class="whitespace-pre-line text-error text-sm">{{ publishError }}</p>
+        </div>
+      </article>
+      <p v-else class="text-muted">This post doesn't exist.</p>
+    </template>
+    <template #footer>
+      <ULink to="/" class="underline-offset-4 hover:underline items-center gap-1 inline-flex">
+        <UIcon name="i-lucide-arrow-left" class="size-[1em] shrink-0" />
+        Back to all posts
+      </ULink>
+    </template>
+  </NuxtLayout>
 </template>

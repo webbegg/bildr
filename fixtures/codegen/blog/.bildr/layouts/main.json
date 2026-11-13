@@ -42,6 +42,7 @@
             },
             "style": {
               "maxW": "4xl",
+              "w": "full",
               "mx": "auto",
               "justify": "between",
               "items": "center",
@@ -123,6 +124,18 @@
               "text": {
                 "$bind": "site.description"
               }
+            }
+          },
+          {
+            "id": "n_footer_link",
+            "type": "Link",
+            "props": {
+              "href": "https://nuxt.com",
+              "text": "Built with Nuxt",
+              "icon": "i-lucide-external-link"
+            },
+            "style": {
+              "self": "center"
             }
           }
         ]

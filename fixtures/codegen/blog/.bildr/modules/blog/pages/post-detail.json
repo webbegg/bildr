@@ -99,7 +99,8 @@
               "text": "Publish",
               "disabled": {
                 "$bind": "publish.pending"
-              }
+              },
+              "icon": "i-lucide-send"
             },
             "interactions": [
               {
@@ -113,6 +114,12 @@
                         "$bind": "post.id"
                       }
                     }
+                  },
+                  {
+                    "kind": "toast",
+                    "when": "success",
+                    "title": "Post published",
+                    "color": "success"
                   }
                 ]
               }
@@ -132,6 +139,26 @@
             "style": {
               "text": "sm",
               "color": "error"
+            }
+          }
+        ]
+      },
+      {
+        "id": "n_footer_fill",
+        "type": "SlotFill",
+        "props": {
+          "slot": "footer"
+        },
+        "children": [
+          {
+            "id": "n_back",
+            "type": "Link",
+            "props": {
+              "to": {
+                "page": "pg_index"
+              },
+              "text": "Back to all posts",
+              "icon": "i-lucide-arrow-left"
             }
           }
         ]

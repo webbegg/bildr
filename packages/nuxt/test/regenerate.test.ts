@@ -60,7 +60,7 @@ describe('regenerate', { timeout: 60_000 }, () => {
     const manifest = read('.bildr/manifest.json')
     const result = await regenerate(dir)
     expect(result.ok && result.report.written).toEqual([pageFile])
-    expect(read(pageFile)).toContain('<h1 class="text-3xl font-semibold">Hello from the model</h1>')
+    expect(read(pageFile)).toContain('<h1 class="text-3xl font-semibold tracking-tight">Hello from the model</h1>')
     expect(read('.bildr/manifest.json')).not.toBe(manifest)
   })
 

@@ -10,24 +10,32 @@ useSeoMeta({ title: 'New post' })
 const onFormSubmit = async () => {
   if (await createPost({ ...form })) await navigateTo({ name: 'posts-slug', params: { slug: form.slug } })
 }
+
+// Interaction "click": go to /.
+const onCancelClick = async () => {
+  await navigateTo('/')
+}
 </script>
 
 <template>
-  <div>
-    <form class="gap-4 max-w-xl flex-col flex" @submit.prevent="onFormSubmit">
-      <h1 class="text-3xl font-semibold">New post</h1>
-      <UFormField label="Title" name="title" required>
-        <UInput v-model="form.title" name="title" required maxlength="120" class="w-full" />
+  <div class="flex min-h-full flex-col">
+    <form class="gap-4 max-w-xl flex-col self-stretch flex" @submit.prevent="onFormSubmit">
+      <h1 class="text-3xl font-semibold tracking-tight">New post</h1>
+      <UFormField label="Title" name="title" required class="self-stretch">
+        <UInput v-model="form.title" name="title" required maxlength="120" placeholder="A catchy title" class="w-full" />
       </UFormField>
-      <UFormField label="Slug" name="slug" required>
-        <UInput v-model="form.slug" name="slug" required pattern="[a-z0-9\-]+" class="w-full" />
+      <UFormField label="Slug" name="slug" required class="self-stretch">
+        <UInput v-model="form.slug" name="slug" required pattern="[a-z0-9\-]+" placeholder="my-first-post" class="w-full" />
       </UFormField>
-      <UFormField label="Body" name="body">
+      <UFormField label="Body" name="body" class="self-stretch">
         <UTextarea v-model="form.body" name="body" :rows="6" class="w-full" />
       </UFormField>
       <UCheckbox v-model="form.published" name="published" label="Publish now" />
-      <p v-if="createPostError" class="text-error text-sm">{{ createPostError }}</p>
-      <UButton type="submit" label="Create" :disabled="createPostPending" />
+      <p v-if="createPostError" class="whitespace-pre-line text-error text-sm">{{ createPostError }}</p>
+      <div class="flex gap-2 flex-row self-stretch">
+        <UButton type="submit" label="Create" icon="i-lucide-plus" :disabled="createPostPending" />
+        <UButton label="Cancel" color="neutral" variant="ghost" @click="onCancelClick" />
+      </div>
     </form>
   </div>
 </template>

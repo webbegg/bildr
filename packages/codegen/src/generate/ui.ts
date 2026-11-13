@@ -1,8 +1,12 @@
 import { customColorNames } from '../design/theme.ts'
-import { displayFallback, styleClasses, styleInline, styleTokenProblem } from '../design/tokens.ts'
+import { displayFallback, parseStyleKey, styleClasses, styleInline, styleTokenProblem } from '../design/tokens.ts'
 import type { Model } from '../model/load.ts'
 import type { ActionFile, ComponentFile, EntityFile, LayoutFile, ModelNode, PageFile, QueryFile, Value } from '../model/schemas.ts'
-import { CONTAINER_TAGS, DEFAULT_HEADING_LEVEL, displayOf, headingTag, INPUT_CONTROL_CLASS, NODE_ELEMENTS } from '../render/rules.ts'
+import {
+  CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, CONTAINER_TAGS, containerTag, DEFAULT_HEADING_LEVEL,
+  displayOf, fallbackStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, LINK_CLASS,
+  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, NODE_ELEMENTS, nodePropProblems, selfFallback, structuralStyle, TEXT_CLASS, uiStepProblems
+} from '../render/rules.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
 import { entityNames, moduleContext } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
@@ -43,21 +47,28 @@ interface Env {
   roots: Map<string, Root>
   /** Script declarations the template needs, by kind and alias: `query:featured` → `data`, `loading`… */
   used: Map<string, Set<string>>
-  needs: Set<'route' | 'site' | 'form' | 'props'>
+  needs: Set<'route' | 'site' | 'form' | 'props' | 'toast'>
   /** Script blocks of interaction handlers. */
   handlers: string[][]
   /** The Form being rendered: its action and the entity fields it edits. */
   form?: { fields: Field[] }
-  /** Component variants: node id → the style keys they override (rendered as a class map) and the variants that hide it. */
+  /** Component variants: node id → the style each variant overrides (rendered as a class map) and the variants that hide it. */
   variants?: Map<string, Variant>
+  /** The variant class map constants the template uses, in template order. */
+  variantLines: string[]
+  /** A component's slot properties: node id → slot name (the node's children are the default content). */
+  componentSlots?: Map<string, string>
+  /** Optional roots (a one-record query) read in script: those a handler `used`, and those it has `guarded` (checked first), which read without `?.`. */
+  optional: { used: Set<string>, guarded: Set<string> }
   /** Page aliases (`uses`) by artifact id: an action's alias names its `execute`, a state's its setter. */
   aliases: { actions: Map<string, string>, state: Map<string, string> }
 }
 
 interface Variant {
-  /** The class map constant, e.g. `cardVariants`. */
-  name: string
-  keys: string[]
+  /** The base of its class map constants, e.g. `card` for `cardVariants`. */
+  base: string
+  /** Every variant of the component with the style it overrides on this node (empty when none). */
+  styles: Array<[string, Record<string, string>]>
   hiddenIn: string[]
 }
 
@@ -74,11 +85,13 @@ const fail = (env: Env, node: ModelNode | undefined, message: string): never => 
   throw new Error(`${env.file}${node ? ` (node ${node.id})` : ''}: ${message}`)
 }
 
-const refRoot = (name: string, onUse: () => void, optional = false, loading?: () => string[]): Root => ({
+const refRoot = (name: string, onUse: () => void, optional?: Env['optional'], loading?: () => string[]): Root => ({
   resolve: (members, ctx) => {
     onUse()
     if (ctx === 'template') return [name, ...members].join('.')
-    return `${name}.value${members.map(member => `${optional ? '?.' : '.'}${member}`).join('')}`
+    optional?.used.add(name)
+    const chain = optional && !optional.guarded.has(name) ? '?.' : '.'
+    return `${name}.value${members.map(member => `${chain}${member}`).join('')}`
   },
   loading
 })
@@ -166,9 +179,13 @@ const openTag = (tag: string, attrs: Attr[]) => {
   return [tag, ...sorted.map(({ entry }) => entry.text)].join(' ')
 }
 
+/** HTML void elements: never closed (`<img …>`). */
+const VOID_TAGS = ['img']
+
 /** An element: self-closed when empty, one line for text, nested lines otherwise. */
 const element = (tag: string, attrs: Attr[], inner: string | string[] | undefined, indent: string): string[] => {
   const open = openTag(tag, attrs)
+  if (VOID_TAGS.includes(tag)) return [`${indent}<${open}>`]
   if (inner === undefined || (Array.isArray(inner) && !inner.length)) return [`${indent}<${open} />`]
   if (typeof inner === 'string') return [`${indent}<${open}>${inner}</${tag}>`]
   return [`${indent}<${open}>`, ...inner, `${indent}</${tag}>`]
@@ -184,24 +201,53 @@ const textContent = (env: Env, node: ModelNode, value: Value | undefined): strin
   return `{{ ${expression(env, node, value, 'template')} }}`
 }
 
+interface StyleOptions {
+  /** The display class of the type (`displayOf`); a base `display` token replaces it. */
+  display?: string
+  /** The token fallbacks of the type (render rules); a token of the same key replaces each. */
+  fallback?: Record<string, string>
+  /** Fixed classes of the type, before the tokens. */
+  classes?: string[]
+  /** The style keys this element takes (a Card splits its style between the card and its inner stack). */
+  pick?: (key: string) => boolean
+  /** The class map name's part for this element, e.g. `Stack` for `cardStackVariants`. */
+  part?: string
+}
+
 /** The node's classes, checked against the token registry: an unknown token is an error, not a silent drop. */
-const styleAttrs = (env: Env, node: ModelNode, display = ''): Attr[] => {
+const styleAttrs = (env: Env, node: ModelNode, { display = '', fallback = {}, classes: fixed = [], pick = () => true, part = '' }: StyleOptions = {}): Attr[] => {
   const style = node.style ?? {}
   const custom = customColorNames(env.model.theme)
   for (const [key, value] of Object.entries(style)) {
     const problem = styleTokenProblem(key, value, custom)
     if (problem) fail(env, node, problem)
   }
+  const mine = (entries: Record<string, string>) => Object.fromEntries(Object.entries(entries).filter(([key]) => pick(key)))
+  const full = mine({ ...fallback, ...style })
   const variant = env.variants?.get(node.id)
-  const own = Object.fromEntries(Object.entries(style).filter(([key]) => !variant?.keys.includes(key)))
-  const classes = [display ? displayFallback(display, style) : '', styleClasses(own)].filter(Boolean).join(' ')
+  const keys = [...new Set((variant?.styles ?? []).flatMap(([, override]) => Object.keys(mine(override))))]
+  const own = Object.fromEntries(Object.entries(full).filter(([key]) => !keys.includes(key)))
+  const classes = [...fixed, display ? displayFallback(display, style) : '', styleClasses(own)].filter(Boolean).join(' ')
   const inline = Object.entries(styleInline(own)).map(([property, value]) => `${property}: ${value}`).join('; ')
+  let map: string | undefined
+  if (variant && keys.length) {
+    // Variant overrides become a class map; the default entry holds what the node renders without one.
+    map = `${variant.base}${part}Variants`
+    const only = (entries: Record<string, string>) => Object.fromEntries(keys.filter(key => entries[key] !== undefined).map(key => [key, entries[key]!]))
+    const perVariant: Array<[string, string]> = [['default', styleClasses(only(full))], ...variant.styles.map(([name, override]): [string, string] => [name, styleClasses(only({ ...full, ...mine(override) }))])]
+    env.needs.add('props')
+    env.variantLines.push('', `const ${map} = {`, perVariant.map(([name, value]) => `  ${name}: ${tsString(value)}`).join(',\n'), '} as const')
+  }
   return [
     ...(classes ? [staticAttr('class', classes)] : []),
-    ...(variant?.keys.length ? [boundAttr('class', `${variant.name}[props.variant]`)] : []),
+    ...(map ? [boundAttr('class', `${map}[props.variant]`)] : []),
     ...(inline ? [staticAttr('style', inline)] : [])
   ]
 }
+
+/** A static string as an attribute, any other value bound. */
+const valueAttr = (env: Env, node: ModelNode, name: string, value: Value): Attr =>
+  typeof value === 'string' ? staticAttr(name, value) : boundAttr(name, expression(env, node, value, 'template'))
 
 /** `v-if` from `visible` and from the variants that hide the node. */
 const visibility = (env: Env, node: ModelNode): Attr[] => {
@@ -235,69 +281,129 @@ const routeLocation = (env: Env, node: ModelNode | undefined, to: Value | undefi
 
 // ── Nodes ───────────────────────────────────────────────────────────────
 
-const tagOf = (env: Env, node: ModelNode) => {
-  const tag = node.props?.tag ?? 'div'
-  if (typeof tag !== 'string' || !CONTAINER_TAGS.includes(tag)) return fail(env, node, `tag must be one of ${CONTAINER_TAGS.join(', ')}`)
-  return tag
-}
+const tagOf = (env: Env, node: ModelNode) =>
+  containerTag(node.props?.tag) ?? fail(env, node, `tag must be one of ${CONTAINER_TAGS.join(', ')}`)
 
 interface RenderOptions {
   /** Extra attributes from the parent (a List's v-for and key). */
   attrs?: Attr[]
   /** Layout slots: node id → slot name. */
   slots?: Map<string, string>
+  /** The parent lays its children out in a vertical stack (`childrenInStack`), so `selfFallback` applies. */
+  inStack?: boolean
+  /** The root of a page: its SlotFills fill the slots of the page's layout. */
+  pageRoot?: boolean
 }
 
-const children = (env: Env, node: ModelNode, indent: string, options: RenderOptions) =>
-  (node.children ?? []).flatMap(child => render(env, child, `${indent}  `, { slots: options.slots }))
+const SLOT_FILL = 'SlotFill'
+
+/** The node's children, one level deeper (`depth` more for a wrapper), laid out the way the node lays them out. */
+const children = (env: Env, node: ModelNode, indent: string, options: RenderOptions, kids = node.children ?? [], depth = 1) =>
+  kids.flatMap(child => render(env, child, `${indent}${'  '.repeat(depth)}`, { slots: options.slots, inStack: childrenInStack(node.type, node.props) }))
+
+/** The token fallbacks of a node in its parent: the type's (render rules) after the stack's `self: stretch`. */
+const fallbackOf = (node: ModelNode, options: RenderOptions, own: Record<string, string> = fallbackStyle(node.type, node.props)) =>
+  ({ ...selfFallback(node.type, node.style, options.inStack), ...own })
+
+/** A layout's or component's slot around a node's children, which stay its default content. */
+const slotted = (env: Env, node: ModelNode, inner: string[], indent: string, options: RenderOptions) => {
+  const layoutSlot = options.slots?.get(node.id)
+  const slot = layoutSlot ?? env.componentSlots?.get(node.id)
+  if (!slot) return inner
+  if (!/^[A-Za-z_][\w-]*$/.test(slot)) fail(env, node, `"${slot}" is not a slot name (letters, digits, _ and -)`)
+  const name = layoutSlot === 'children' ? '' : ` name="${slot}"`
+  return inner.length ? [`${indent}<slot${name}>`, ...inner.map(line => `  ${line}`), `${indent}</slot>`] : [`${indent}<slot${name} />`]
+}
 
 const render = (env: Env, node: ModelNode, indent: string, options: RenderOptions = {}): string[] => {
+  const problem = nodePropProblems(node.type, node.props)[0]
+  if (problem) fail(env, node, problem.message)
   const extra = [...(options.attrs ?? []), ...visibility(env, node)]
   switch (node.type) {
     case 'Page':
     case 'Container':
-    case 'Row': {
-      const tag = tagOf(env, node)
-      // Only a Row gets its display: KNOWN_DIVERGENCES container-direction, row-direction-wrap.
-      const attrs = [...extra, ...styleAttrs(env, node, node.type === 'Row' ? displayOf(node.type) : '')]
-      let inner = children(env, node, indent, options)
-      const slot = options.slots?.get(node.id)
-      if (slot) {
-        if (!/^[A-Za-z_][\w-]*$/.test(slot)) fail(env, node, `"${slot}" is not a slot name (letters, digits, _ and -)`)
-        const name = slot === 'children' ? '' : ` name="${slot}"`
-        inner = inner.length ? [`${indent}  <slot${name}>`, ...inner.map(line => `  ${line}`), `${indent}  </slot>`] : [`${indent}  <slot${name} />`]
-      }
+    case 'Row':
+    case 'Column':
+    case 'Grid': {
+      const tag = node.type === 'Column' || node.type === 'Grid' ? 'div' : tagOf(env, node)
+      const attrs = [...extra, ...styleAttrs(env, node, { display: displayOf(node.type), fallback: fallbackOf(node, options) })]
+      const kids = options.pageRoot ? (node.children ?? []).filter(child => child.type !== SLOT_FILL) : node.children
+      const inner = slotted(env, node, children(env, node, indent, options, kids), `${indent}  `, options)
       if (node.type === 'Page' && node.props?.when !== undefined) return guarded(env, node, tag, attrs, inner, indent)
       return element(tag, attrs, inner, indent)
     }
+    case 'Card':
+      return card(env, node, extra, indent, options)
     case 'Heading': {
       const level = node.props?.level ?? DEFAULT_HEADING_LEVEL
-      if (typeof level !== 'number' || level < 1 || level > 6) return fail(env, node, 'heading level must be 1–6')
-      return element(headingTag(level), [...extra, ...styleAttrs(env, node)], textContent(env, node, node.props?.text), indent)
+      if (typeof level !== 'number' || headingLevel(level) === undefined) return fail(env, node, 'heading level must be 1–6')
+      const attrs = [...extra, ...styleAttrs(env, node, { fallback: fallbackOf(node, options, HEADING_TOKENS[level]) })]
+      return element(headingTag(level), attrs, textContent(env, node, node.props?.text), indent)
     }
     case 'Text':
-      return element(NODE_ELEMENTS.Text, [...extra, ...styleAttrs(env, node)], textContent(env, node, node.props?.text), indent)
-    case 'Link': {
-      const to = routeLocation(env, node, node.props?.to, 'template')
-      const attrs = [...extra, to.static !== undefined ? staticAttr('to', to.static) : boundAttr('to', to.code), ...styleAttrs(env, node)]
-      const inner = node.children?.length ? children(env, node, indent, options) : textContent(env, node, node.props?.text)
-      return element(NODE_ELEMENTS.Link, attrs, inner, indent)
-    }
+      return element(NODE_ELEMENTS.Text, [...extra, ...styleAttrs(env, node, { classes: [TEXT_CLASS], fallback: fallbackOf(node, options) })], textContent(env, node, node.props?.text), indent)
+    case 'Image':
+      return image(env, node, extra, indent, options)
+    case 'Link':
+      return link(env, node, extra, indent, options)
     case 'Button':
-      return element(NODE_ELEMENTS.Button, [...extra, ...buttonAttrs(env, node), ...styleAttrs(env, node), ...events(env, node)], undefined, indent)
+      return element(NODE_ELEMENTS.Button, [...extra, ...buttonAttrs(env, node), ...styleAttrs(env, node, { fallback: fallbackOf(node, options) }), ...events(env, node)], undefined, indent)
     case 'Input':
-      return input(env, node, extra, indent)
+      return input(env, node, extra, indent, options)
     case 'Checkbox':
-      return checkbox(env, node, extra, indent)
+      return checkbox(env, node, extra, indent, options)
     case 'Form':
       return form(env, node, extra, indent, options)
     case 'List':
       return list(env, node, extra, indent, options)
     case 'Instance':
-      return instance(env, node, extra, indent)
+      return instance(env, node, extra, indent, options)
+    case SLOT_FILL:
+      return fail(env, node, 'a SlotFill sits under an Instance or at the root of a page with a layout')
     default:
       return fail(env, node, `node type ${node.type} can't be generated yet`)
   }
+}
+
+const isCardStackKey = (key: string) => CARD_STACK_KEYS.includes(parseStyleKey(key)?.token.key ?? '')
+
+/** A Card: a tokenized div with the canvas UCard's surface, and an inner stack that lays out its children. */
+const card = (env: Env, node: ModelNode, extra: Attr[], indent: string, options: RenderOptions) => {
+  const root = styleAttrs(env, node, { classes: [CARD_SURFACE_CLASS], fallback: fallbackOf(node, options, { ...CARD_DEFAULT_STYLE, ...CARD_SURFACE_STYLE }), pick: key => !isCardStackKey(key) })
+  const stack = styleAttrs(env, node, { classes: ['flex'], fallback: structuralStyle(node.type), pick: isCardStackKey, part: 'Stack' })
+  const inner = slotted(env, node, children(env, node, indent, options, node.children, 2), `${indent}    `, options)
+  return element('div', [...extra, ...root], element('div', stack, inner, `${indent}  `), indent)
+}
+
+const image = (env: Env, node: ModelNode, extra: Attr[], indent: string, options: RenderOptions) => {
+  const { src, alt } = node.props ?? {}
+  if (src === undefined || src === '') return fail(env, node, 'an Image needs `src`, a URL or a binding')
+  // Always bound: a static `src` would be an asset import for Vue's compiler, and a missing upload would fail the build.
+  const attrs = [...extra, boundAttr('src', expression(env, node, src, 'template')), ...(alt === undefined ? [] : [valueAttr(env, node, 'alt', alt)])]
+  return element(NODE_ELEMENTS.Image, [...attrs, ...styleAttrs(env, node, { display: displayOf(node.type), fallback: fallbackOf(node, options, IMAGE_FALLBACK_STYLE) })], undefined, indent)
+}
+
+/** `href` (an external URL, opened in a new tab) or `to` (a page): the attributes of a Link or a Button. */
+const linkAttrs = (env: Env, node: ModelNode): Attr[] => {
+  const href = node.props?.href
+  if (href !== undefined) {
+    if (typeof href !== 'string') return fail(env, node, 'href must be a URL')
+    const target = linkTarget(href)
+    return [staticAttr('to', href), ...(target ? [staticAttr('target', target)] : [])]
+  }
+  const to = routeLocation(env, node, node.props?.to, 'template')
+  return [to.static !== undefined ? staticAttr('to', to.static) : boundAttr('to', to.code)]
+}
+
+const link = (env: Env, node: ModelNode, extra: Attr[], indent: string, options: RenderOptions) => {
+  const icon = node.props?.icon
+  const classes = [LINK_CLASS, ...(icon ? [LINK_ICON_CLASS] : [])]
+  const attrs = [...extra, ...linkAttrs(env, node), ...styleAttrs(env, node, { classes, display: icon ? LINK_ICON_DISPLAY : '', fallback: fallbackOf(node, options) })]
+  const content = node.children?.length ? children(env, node, indent, options) : textContent(env, node, node.props?.text)
+  if (icon === undefined) return element(NODE_ELEMENTS.Link, attrs, content, indent)
+  const iconLine = element('UIcon', [valueAttr(env, node, 'name', icon), staticAttr('class', ICON_CLASS)], undefined, `${indent}  `)
+  const rest = content === undefined ? [] : typeof content === 'string' ? [`${indent}  ${content}`] : content
+  return element(NODE_ELEMENTS.Link, attrs, [...iconLine, ...rest], indent)
 }
 
 /** A Page shown only when its `when` data exists: loading text, the page, then the empty text. */
@@ -315,8 +421,12 @@ const buttonAttrs = (env: Env, node: ModelNode): Attr[] => {
   const props = node.props ?? {}
   const attrs: Attr[] = []
   if (props.type === 'submit') attrs.push(staticAttr('type', 'submit'))
-  if (typeof props.text === 'string') attrs.push(staticAttr('label', props.text))
-  else if (props.text !== undefined) attrs.push(boundAttr('label', expression(env, node, props.text, 'template')))
+  if (props.text !== undefined) attrs.push(valueAttr(env, node, 'label', props.text))
+  // Nuxt UI's own props, checked by `nodePropProblems`.
+  for (const [key, name] of [['color', 'color'], ['variant', 'variant'], ['size', 'size'], ['icon', 'icon'], ['trailingIcon', 'trailing-icon']] as const) {
+    if (props[key] !== undefined) attrs.push(valueAttr(env, node, name, props[key]))
+  }
+  if (props.href !== undefined) attrs.push(...linkAttrs(env, node))
   if (props.disabled !== undefined) attrs.push(boundAttr('disabled', expression(env, node, props.disabled, 'template')))
   return attrs
 }
@@ -330,24 +440,30 @@ const fieldOf = (env: Env, node: ModelNode): Field => {
 /** The browser `pattern` of a model pattern: anchors dropped (implicit), a trailing `-` in a class escaped (the `v` flag needs it). */
 const htmlPattern = (pattern: string) => pattern.replace(/^\^/, '').replace(/\$$/, '').replace(/(?<!\\)-\]/g, '\\-]')
 
-const input = (env: Env, node: ModelNode, extra: Attr[], indent: string) => {
+const input = (env: Env, node: ModelNode, extra: Attr[], indent: string, options: RenderOptions) => {
   const field = fieldOf(env, node)
-  const label = typeof node.props?.label === 'string' ? node.props.label : pascal(field.name)
+  const props = node.props ?? {}
+  const label = typeof props.label === 'string' ? props.label : pascal(field.name)
   const numeric = field.type === 'integer' || field.type === 'number'
   if (!numeric && field.type !== 'text') return fail(env, node, `a ${field.type} field has no input yet`)
+  const multiline = props.multiline === true
+  const inputType = props.inputType
+  if (inputType !== undefined && multiline) return fail(env, node, 'a multiline input has no inputType')
+  if (inputType !== undefined && numeric && inputType !== 'number') return fail(env, node, `a ${field.type} field's input has inputType number`)
   const attrs: Attr[] = [attr('model', `v-model${numeric ? '.number' : ''}="form.${field.name}"`), staticAttr('name', field.name)]
   if (field.required) attrs.push(attr('attr', 'required'))
   if (numeric) attrs.push(staticAttr('type', 'number'))
   if (!numeric && field.max !== undefined) attrs.push(staticAttr('maxlength', String(field.max)))
   if (field.pattern) attrs.push(staticAttr('pattern', htmlPattern(field.pattern)))
-  const multiline = node.props?.multiline === true
-  if (multiline && typeof node.props?.rows === 'number') attrs.push(boundAttr('rows', String(node.props.rows)))
+  if (!numeric && typeof inputType === 'string' && inputType !== 'text') attrs.push(staticAttr('type', inputType))
+  if (props.placeholder !== undefined) attrs.push(valueAttr(env, node, 'placeholder', props.placeholder))
+  if (multiline && typeof props.rows === 'number') attrs.push(boundAttr('rows', String(props.rows)))
   attrs.push(staticAttr('class', INPUT_CONTROL_CLASS))
   const control = element(multiline ? NODE_ELEMENTS.InputMultiline : NODE_ELEMENTS.InputControl, attrs, undefined, `${indent}  `)
-  return element(NODE_ELEMENTS.Input, [...extra, staticAttr('label', label), staticAttr('name', field.name), ...(field.required ? [attr('attr', 'required')] : []), ...styleAttrs(env, node)], control, indent)
+  return element(NODE_ELEMENTS.Input, [...extra, staticAttr('label', label), staticAttr('name', field.name), ...(field.required ? [attr('attr', 'required')] : []), ...styleAttrs(env, node, { fallback: fallbackOf(node, options) })], control, indent)
 }
 
-const checkbox = (env: Env, node: ModelNode, extra: Attr[], indent: string) => {
+const checkbox = (env: Env, node: ModelNode, extra: Attr[], indent: string, options: RenderOptions) => {
   const attrs: Attr[] = [...extra]
   const label = node.props?.label
   if (node.props?.field !== undefined) {
@@ -358,7 +474,7 @@ const checkbox = (env: Env, node: ModelNode, extra: Attr[], indent: string) => {
     attrs.push(boundAttr('model-value', expression(env, node, node.props.value, 'template')))
   }
   if (typeof label === 'string') attrs.push(staticAttr('label', label))
-  return element(NODE_ELEMENTS.Checkbox, [...attrs, ...styleAttrs(env, node), ...events(env, node)], undefined, indent)
+  return element(NODE_ELEMENTS.Checkbox, [...attrs, ...styleAttrs(env, node, { fallback: fallbackOf(node, options) }), ...events(env, node)], undefined, indent)
 }
 
 const form = (env: Env, node: ModelNode, extra: Attr[], indent: string, options: RenderOptions) => {
@@ -369,8 +485,8 @@ const form = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
   const fields = ids.map(id => entity.fields.find(field => field.id === id) ?? fail(env, node, `unknown field ${String(id)}`))
   env.form = { fields }
   env.needs.add('form')
-  const lines = element(NODE_ELEMENTS.Form, [...extra, ...styleAttrs(env, node), ...events(env, node)], children(env, node, indent, options), indent)
-  return lines
+  const attrs = [...extra, ...styleAttrs(env, node, { display: displayOf(node.type), fallback: fallbackOf(node, options) }), ...events(env, node)]
+  return element(NODE_ELEMENTS.Form, attrs, slotted(env, node, children(env, node, indent, options), `${indent}  `, options), indent)
 }
 
 const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, options: RenderOptions) => {
@@ -388,23 +504,44 @@ const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
   const itemEnv: Env = { ...env, roots: new Map(env.roots).set(as, plainRoot(as)) }
   const repeat = [attr('for', `v-for="${as} in ${escapeAttr(items)}"`), attr('key', `:key="${as}.id"`)]
   const kids = node.children ?? []
+  const inStack = childrenInStack(node.type, props)
   const inner = kids.length === 1
-    ? render(itemEnv, kids[0]!, `${indent}  `, { attrs: repeat, slots: options.slots })
-    : [`${indent}  <template ${repeat.map(entry => entry.text).join(' ')}>`, ...kids.flatMap(child => render(itemEnv, child, `${indent}    `, { slots: options.slots })), `${indent}  </template>`]
-  lines.push(...element(tagOf(env, node), [...shown, ...styleAttrs(env, node)], inner, indent))
+    ? render(itemEnv, kids[0]!, `${indent}  `, { attrs: repeat, slots: options.slots, inStack })
+    : [`${indent}  <template ${repeat.map(entry => entry.text).join(' ')}>`, ...kids.flatMap(child => render(itemEnv, child, `${indent}    `, { slots: options.slots, inStack })), `${indent}  </template>`]
+  lines.push(...element(tagOf(env, node), [...shown, ...styleAttrs(env, node, { display: displayOf(node.type, props), fallback: fallbackOf(node, options) })], inner, indent))
   return lines
 }
 
-const instance = (env: Env, node: ModelNode, extra: Attr[], indent: string) => {
+/** The node of a tree by id. */
+const findNode = (node: ModelNode, id: string): ModelNode | undefined =>
+  node.id === id ? node : node.children?.map(child => findNode(child, id)).find(Boolean)
+
+/** `<template #name>` with a SlotFill's children, laid out the way the slot's node lays them out. */
+const fillTemplate = (env: Env, fill: ModelNode, name: string, target: ModelNode | undefined, indent: string, slots?: Map<string, string>) => [
+  `${indent}<template #${name}>`,
+  ...(fill.children ?? []).flatMap(child => render(env, child, `${indent}  `, { slots, inStack: target ? childrenInStack(target.type, target.props) : false })),
+  `${indent}</template>`
+]
+
+const instance = (env: Env, node: ModelNode, extra: Attr[], indent: string, options: RenderOptions) => {
   const context = env.context ?? fail(env, node, 'component instances need a module')
   const component = context.module.components.find(entry => entry.id === node.props?.component) ?? fail(env, node, `unknown component ${String(node.props?.component)}`)
   const values = isObject(node.props?.values) ? node.props.values : {}
   const attrs = component.properties.flatMap((property) => {
     const value = values[property.id]
-    if (value === undefined) return []
-    return [typeof value === 'string' ? staticAttr(kebab(property.name), value) : boundAttr(kebab(property.name), expression(env, node, value, 'template'))]
+    if (value === undefined || property.kind === 'slot') return []
+    return [valueAttr(env, node, kebab(property.name), value)]
   })
-  return element(`${pascal(context.name)}${component.name}`, [...extra, ...attrs, ...styleAttrs(env, node)], undefined, indent)
+  // The instance stands in the stack for its component's root.
+  const root = component.root
+  const style = styleAttrs(env, node, { fallback: selfFallback(root.type, root.style, options.inStack) })
+  const fills = (node.children ?? []).flatMap((child) => {
+    if (child.type !== SLOT_FILL) return fail(env, child, 'an Instance holds only SlotFills')
+    const property = component.properties.find(entry => entry.kind === 'slot' && entry.id === child.props?.slot)
+      ?? fail(env, child, `component ${component.name} has no slot property ${String(child.props?.slot)}`)
+    return fillTemplate(env, child, property.name, findNode(root, property.nodeId ?? ''), `${indent}  `)
+  })
+  return element(`${pascal(context.name)}${component.name}`, [...extra, ...attrs, ...style], fills, indent)
 }
 
 // ── Interactions ────────────────────────────────────────────────────────
@@ -441,29 +578,62 @@ const events = (env: Env, node: ModelNode): Attr[] => (node.interactions ?? []).
   const step = steps[0]!
   if (step.kind === 'runAction') return attr('event', `@${name}="${escapeAttr(runAction(env, node, step, 'template'))}"`)
   if (step.kind === 'setState') return attr('event', `@${name}="${escapeAttr(setState(env, node, step))}"`)
+  if (step.kind === 'toast' && step.when === undefined) return attr('event', `@${name}="${escapeAttr(toast(env, node, step, 'template'))}"`)
   return attr('event', `@${name}="${handler(env, node, interaction.on, steps)}"`)
 })
 
-/** A named script handler for a multi-step interaction: run an action, then navigate when it succeeded. */
+/** A `toast` step: Nuxt UI's `useToast`, with the title, description, colour and icon of the step. */
+const toast = (env: Env, node: ModelNode, step: Record<string, Value>, ctx: Ctx) => {
+  const problem = uiStepProblems(step)[0]
+  if (problem) fail(env, node, problem.message)
+  env.needs.add('toast')
+  const options = (['title', 'description', 'color', 'icon'] as const).filter(key => step[key] !== undefined).map(key => `${key}: ${expression(env, node, step[key], ctx)}`)
+  return `toast.add({ ${options.join(', ')} })`
+}
+
+/**
+ * A named script handler for a multi-step interaction: run an action, then
+ * the steps that follow it when it succeeded (`when: "success"`): navigate or
+ * show a toast. Without an action, the navigate and toast steps in order.
+ */
 const handler = (env: Env, node: ModelNode, on: string, steps: Array<Record<string, Value>>) => {
   const name = `on${pascal(node.id.replace(/^n_/, ''))}${pascal(on)}`
-  const [first, second] = steps
-  const navigate = (step: Record<string, Value>) => `await navigateTo(${routeLocation(env, node, step.to, 'script').code})`
-  let body: string
-  let summary: string
-  if (first?.kind === 'runAction' && !second) {
-    body = `  await ${runAction(env, node, first, 'script')}`
-    summary = `run action ${actionById(env, node, first.action).label}`
-  } else if (first?.kind === 'runAction' && second?.kind === 'navigate' && second.when === 'success' && steps.length === 2) {
-    body = `  if (await ${runAction(env, node, first, 'script')}) ${navigate(second)}`
-    summary = `run action ${actionById(env, node, first.action).label}, then go to ${pageById(env, node, String((second.to as Record<string, Value>).page)).path}`
-  } else if (first?.kind === 'navigate' && !second) {
-    body = `  ${navigate(first)}`
-    summary = `go to ${pageById(env, node, String((first.to as Record<string, Value>).page)).path}`
-  } else {
-    return fail(env, node, `this ${on} interaction can't be generated yet`)
+  const unsupported = (): never => fail(env, node, `this ${on} interaction can't be generated yet`)
+  const statement = (step: Record<string, Value>): { code: string, summary: string } => {
+    if (step.kind === 'navigate') return { code: `await navigateTo(${routeLocation(env, node, step.to, 'script').code})`, summary: `go to ${pageById(env, node, String((step.to as Record<string, Value>).page)).path}` }
+    if (step.kind === 'toast') return { code: toast(env, node, step, 'script'), summary: 'show a toast' }
+    return unsupported()
   }
-  env.handlers.push([`// Interaction "${on}": ${summary}.`, `const ${name} = async () => {`, body, '}'])
+  const [first, ...rest] = steps
+  // A one-record query the handler reads may be empty: it returns early then, and reads it without `?.` after.
+  env.optional.used.clear()
+  if (first?.kind === 'runAction') {
+    runAction(env, node, first, 'script')
+    rest.forEach(statement)
+  } else {
+    steps.forEach(statement)
+  }
+  const guards = [...env.optional.used]
+  env.optional.guarded = new Set(guards)
+  const body: string[] = guards.map(name => `  if (!${name}.value) return`)
+  const summaries: string[] = []
+  if (first?.kind === 'runAction') {
+    const run = runAction(env, node, first, 'script')
+    summaries.push(`run action ${actionById(env, node, first.action).label}`)
+    if (rest.some(step => step.when !== 'success')) unsupported()
+    const then = rest.map(statement)
+    summaries.push(...then.map(entry => entry.summary))
+    body.push(...(!then.length
+      ? [`  await ${run}`]
+      : then.length === 1 ? [`  if (await ${run}) ${then[0]!.code}`] : [`  if (await ${run}) {`, ...then.map(entry => `    ${entry.code}`), '  }']))
+  } else {
+    if (steps.some(step => step.when !== undefined)) unsupported()
+    const all = steps.map(statement)
+    summaries.push(...all.map(entry => entry.summary))
+    body.push(...all.map(entry => `  ${entry.code}`))
+  }
+  env.optional.guarded = new Set()
+  env.handlers.push([`// Interaction "${on}": ${summaries.join(', then ')}.`, `const ${name} = async () => {`, ...body, '}'])
   return name
 }
 
@@ -481,8 +651,15 @@ const sfc = (source: string, script: string[], template: string[]) => [
 ].join('\n')
 
 const newEnv = (model: Model, file: string, context?: ModuleContext): Env => ({
-  model, context, file, roots: new Map(), used: new Map(), needs: new Set(), handlers: [], aliases: { actions: new Map(), state: new Map() }
+  model, context, file, roots: new Map(), used: new Map(), needs: new Set(), handlers: [], variantLines: [], optional: { used: new Set(), guarded: new Set() }, aliases: { actions: new Map(), state: new Map() }
 })
+
+/** The script lines of the composables the template uses outside a page's declarations. */
+const composableLines = (env: Env) => [
+  ...(env.needs.has('site') ? ['const { site } = useAppConfig()'] : []),
+  ...(env.needs.has('toast') ? ['const toast = useToast()'] : [])
+]
+const handlerLines = (env: Env) => env.handlers.flatMap(lines => ['', ...lines])
 
 const siteRoot = (env: Env) => plainRoot('site', () => env.needs.add('site'))
 
@@ -492,7 +669,8 @@ const layoutFile = (model: Model, layout: LayoutFile): GeneratedFile => {
   env.roots.set('site', siteRoot(env))
   const slots = new Map(layout.slots.map(slot => [slot.nodeId, slot.name]))
   const template = render(env, layout.root, '  ', { slots })
-  const script = env.needs.has('site') ? ['const { site } = useAppConfig()'] : []
+  const script = [...composableLines(env), ...handlerLines(env)]
+  while (script[0] === '') script.shift()
   return { path: `layers/core/app/layouts/${layout.name}.vue`, owner: 'managed', source, content: sfc(source, script, template) }
 }
 
@@ -504,7 +682,10 @@ const componentFile = (context: ModuleContext, component: ComponentFile): Genera
   const imports: string[] = []
   const props: string[] = []
   const defaults: string[] = []
+  // Slot properties are slots, not props: the node they name renders a <slot> around its children.
+  env.componentSlots = new Map(component.properties.filter(property => property.kind === 'slot').map(property => [property.nodeId ?? fail(env, undefined, `slot property ${property.name} needs a nodeId`), property.name]))
   for (const property of component.properties) {
+    if (property.kind === 'slot') continue
     env.roots.set(property.name, plainRoot(`props.${property.name}`, () => env.needs.add('props')))
     let type: string
     if (property.kind === 'entity') {
@@ -518,7 +699,7 @@ const componentFile = (context: ModuleContext, component: ComponentFile): Genera
     if (property.default !== undefined) defaults.push(`${property.name}: ${expression(env, undefined, property.default, 'script')}`)
   }
 
-  // Variants: style overrides become a class map on the node, `hidden` a v-if.
+  // Variants: style overrides become a class map on the node (see `styleAttrs`), `hidden` a v-if.
   const variantMap = new Map<string, Variant>()
   const nodes = new Map<string, ModelNode>()
   const collect = (node: ModelNode) => {
@@ -529,24 +710,13 @@ const componentFile = (context: ModuleContext, component: ComponentFile): Genera
   for (const variant of component.variants) {
     for (const [id, override] of Object.entries(variant.overrides)) {
       const node = nodes.get(id) ?? fail(env, undefined, `variant ${variant.name} overrides unknown node ${id}`)
-      const entry = variantMap.get(id) ?? { name: `${camel(id.replace(/^n_/, ''))}Variants`, keys: [], hiddenIn: [] }
+      const entry = variantMap.get(id) ?? { base: camel(id.replace(/^n_/, '')), styles: component.variants.map(({ name, overrides }): [string, Record<string, string>] => [name, overrides[id]?.style ?? {}]), hiddenIn: [] }
       for (const [key, value] of Object.entries(override.props ?? {})) {
         if (key === 'hidden' && value === true) entry.hiddenIn.push(variant.name)
         else fail(env, node, `variant ${variant.name}: overriding ${key} can't be generated yet`)
       }
-      entry.keys = [...new Set([...entry.keys, ...Object.keys(override.style ?? {})])]
       variantMap.set(id, entry)
     }
-  }
-  const variantLines: string[] = []
-  for (const [id, entry] of variantMap) {
-    if (!entry.keys.length) continue
-    const node = nodes.get(id)!
-    const pick = (style: Record<string, string>) => Object.fromEntries(entry.keys.filter(key => style[key] !== undefined).map(key => [key, style[key]!]))
-    const perVariant: Array<[string, string]> = [['default', styleClasses(pick(node.style ?? {}))]]
-    for (const variant of component.variants) perVariant.push([variant.name, styleClasses(pick({ ...node.style, ...variant.overrides[id]?.style }))])
-    env.needs.add('props')
-    variantLines.push('', `const ${entry.name} = {`, perVariant.map(([name, value]) => `  ${name}: ${tsString(value)}`).join(',\n'), '} as const')
   }
   env.variants = variantMap
 
@@ -556,10 +726,13 @@ const componentFile = (context: ModuleContext, component: ComponentFile): Genera
     defaults.push('variant: \'default\'')
   }
   const declare = env.needs.has('props') ? 'const props = ' : ''
-  const define = defaults.length
-    ? `${declare}withDefaults(defineProps<{\n${props.join('\n')}\n}>(), { ${defaults.join(', ')} })`
-    : `${declare}defineProps<{\n${props.join('\n')}\n}>()`
-  const script = [...imports, ...(imports.length ? [''] : []), define, ...variantLines]
+  const define = !props.length
+    ? []
+    : defaults.length
+      ? [`${declare}withDefaults(defineProps<{\n${props.join('\n')}\n}>(), { ${defaults.join(', ')} })`]
+      : [`${declare}defineProps<{\n${props.join('\n')}\n}>()`]
+  const script = [...imports, ...(imports.length ? [''] : []), ...define, ...composableLines(env), ...env.variantLines, ...handlerLines(env)]
+  while (script[0] === '') script.shift()
   return {
     path: `layers/${context.name}/app/components/${context.name}/${component.name}.vue`,
     owner: 'managed',
@@ -593,7 +766,7 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
   const queries = (uses.queries ?? []).map(entry => ({ ...entry, file: context.module.queries.find(query => query.id === entry.query) ?? fail(env, undefined, `unknown query ${entry.query}`) }))
   for (const { as, file } of queries) {
     const one = queryNames(env, file).one
-    env.roots.set(as, refRoot(as, () => use(env, `query:${as}`, 'data'), !!one, () => {
+    env.roots.set(as, refRoot(as, () => use(env, `query:${as}`, 'data'), one ? env.optional : undefined, () => {
       use(env, `query:${as}`, 'loading')
       return [`${as}Loading`]
     }))
@@ -613,11 +786,26 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
   const computedEntries = (uses.computed ?? []) as Array<{ as: string, if?: Value, then?: Value, else?: Value }>
   for (const entry of computedEntries) {
     if (entry.if === undefined || entry.then === undefined || entry.else === undefined) fail(env, undefined, `computed ${entry.as} needs if, then and else`)
-    env.roots.set(entry.as, refRoot(entry.as, () => use(env, `computed:${entry.as}`, 'value'), false, () => [...loadingOf(env, entry.then), ...loadingOf(env, entry.else)]))
+    env.roots.set(entry.as, refRoot(entry.as, () => use(env, `computed:${entry.as}`, 'value'), undefined, () => [...loadingOf(env, entry.then), ...loadingOf(env, entry.else)]))
   }
 
   // The template first: it decides which declarations the script needs.
-  const template = render(env, page.root, '  ')
+  const layout = page.layout ? context.model.layouts.find(entry => entry.id === page.layout) ?? fail(env, undefined, `unknown layout ${page.layout}`) : undefined
+  // SlotFills at the page root fill its layout's slots: the page renders the layout itself (`layout: false`).
+  const fills = (page.root.children ?? []).filter(child => child.type === SLOT_FILL)
+  let template: string[]
+  if (!fills.length) {
+    template = render(env, page.root, '  ', { pageRoot: true })
+  } else {
+    const shell = layout ?? fail(env, fills[0], 'a SlotFill sits under an Instance or at the root of a page with a layout')
+    const body = render(env, page.root, '      ', { pageRoot: true })
+    const filled = fills.flatMap((fill) => {
+      const slot = shell.slots.find(entry => entry.id === fill.props?.slot) ?? fail(env, fill, `layout ${shell.name} has no slot ${String(fill.props?.slot)}`)
+      if (slot.name === 'children') fail(env, fill, 'the page\'s own content fills the children slot')
+      return fillTemplate(env, fill, slot.name, findNode(shell.root, slot.nodeId), '    ')
+    })
+    template = [`  <NuxtLayout name="${shell.name}">`, '    <template #default>', ...body, '    </template>', ...filled, '  </NuxtLayout>']
+  }
   const seo = Object.entries(page.seo ?? {}).filter(([, value]) => value !== undefined)
   const seoLine = seo.length
     ? `useSeoMeta({ ${seo.map(([key, value]) => `${key}: ${typeof value === 'string' ? tsString(value) : `() => ${expression(env, undefined, value, 'script')}`}`).join(', ')} })`
@@ -665,8 +853,7 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
 
   const imports: string[] = []
   const meta = [`name: ${tsString(page.name)}`]
-  const layout = page.layout ? context.model.layouts.find(entry => entry.id === page.layout) ?? fail(env, undefined, `unknown layout ${page.layout}`) : undefined
-  if (layout) meta.push(`layout: ${tsString(layout.name)}`)
+  if (layout) meta.push(`layout: ${fills.length ? 'false' : tsString(layout.name)}`)
   const validators = (page.params ?? []).filter(param => param.validate).map((param) => {
     const entity = context.module.entities.find(entry => entry.fields.some(field => field.id === param.validate!.field)) ?? fail(env, undefined, `unknown field ${param.validate!.field}`)
     const field = entity.fields.find(entry => entry.id === param.validate!.field)!
@@ -680,7 +867,7 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
 
   const setup = [
     ...(env.needs.has('route') ? [`const route = useRoute(${tsString(page.name)})`] : []),
-    ...(env.needs.has('site') ? ['const { site } = useAppConfig()'] : []),
+    ...composableLines(env),
     ...declarations,
     ...computedLines,
     ...formLines,
@@ -692,7 +879,7 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
     ...(imports.length ? [''] : []),
     metaLine,
     ...(setup.length ? ['', ...setup] : []),
-    ...env.handlers.flatMap(lines => ['', ...lines])
+    ...handlerLines(env)
   ]
   return {
     path: `layers/${context.name}/app/pages/${pagePath(page.path)}`,

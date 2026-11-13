@@ -117,7 +117,8 @@
           },
           "as": "post",
           "empty": "No posts yet.",
-          "loading": "Loading…"
+          "loading": "Loading…",
+          "layout": "grid"
         },
         "style": {
           "display": "grid",
@@ -135,7 +136,38 @@
                   "$bind": "post"
                 }
               }
-            }
+            },
+            "children": [
+              {
+                "id": "n_card_actions",
+                "type": "SlotFill",
+                "props": {
+                  "slot": "prop_actions"
+                },
+                "children": [
+                  {
+                    "id": "n_read_more",
+                    "type": "Link",
+                    "props": {
+                      "to": {
+                        "page": "pg_post_detail",
+                        "params": {
+                          "slug": {
+                            "$bind": "post.slug"
+                          }
+                        }
+                      },
+                      "text": "Read more",
+                      "icon": "i-lucide-arrow-right"
+                    },
+                    "style": {
+                      "text": "sm",
+                      "color": "primary"
+                    }
+                  }
+                ]
+              }
+            ]
           }
         ]
       },
@@ -170,6 +202,61 @@
             "style": {
               "text": "sm"
             }
+          }
+        ]
+      },
+      {
+        "id": "n_about",
+        "type": "Grid",
+        "style": {
+          "gap": "6",
+          "items": "center",
+          "cols": "1",
+          "md:cols": "3"
+        },
+        "children": [
+          {
+            "id": "n_about_image",
+            "type": "Image",
+            "props": {
+              "src": "/uploads/notebook.svg",
+              "alt": "An open notebook"
+            },
+            "style": {
+              "rounded": "lg"
+            }
+          },
+          {
+            "id": "n_about_text",
+            "type": "Column",
+            "style": {
+              "gap": "2",
+              "md:colSpan": "2"
+            },
+            "children": [
+              {
+                "id": "n_about_title",
+                "type": "Heading",
+                "props": {
+                  "level": 2,
+                  "text": "About this blog"
+                },
+                "style": {
+                  "text": "xl",
+                  "font": "semibold"
+                }
+              },
+              {
+                "id": "n_about_body",
+                "type": "Text",
+                "props": {
+                  "text": "Notes on building apps from a model.\nNew posts most weeks."
+                },
+                "style": {
+                  "color": "muted"
+                }
+              }
+            ]
           }
         ]
       }

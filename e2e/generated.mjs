@@ -692,11 +692,13 @@ async function smoke(ctx) {
     check(saved?.title === post.title && saved.body === post.body && saved.published === true, `API: GET /api/blog/posts lists the created post (${JSON.stringify(saved ?? list)?.slice(0, 300)})`)
 
     await page.goto(`${base}/`)
-    const card = page.locator(`a[href="/posts/${post.slug}"]`)
-    await visible(card.getByText(post.title), 'list page: the new post\'s card shows its title')
+    // The PostCard is a Card: its title links to the post, and so does the "Read more" link it fills its actions slot with.
+    const link = page.locator(`a[href="/posts/${post.slug}"]`)
+    const card = page.locator('div', { has: link }).filter({ hasText: post.body }).last()
+    await visible(card.getByRole('heading', { name: post.title }), 'list page: the new post\'s card shows its title')
     await visible(card.getByText(post.body), 'list page: the new post\'s card shows its body')
-    if (await card.count()) {
-      await card.first().click()
+    if (await link.count()) {
+      await link.first().click()
       check(await page.waitForURL(`**/posts/${post.slug}`, { timeout: UI_TIMEOUT }).then(() => true, () => false), 'list page: the card opens the detail page')
       await visible(page.getByRole('heading', { name: post.title }), 'detail page (from the list): the title')
     }

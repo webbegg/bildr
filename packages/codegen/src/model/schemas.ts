@@ -280,7 +280,9 @@ export const ComponentFileSchema = z.object({
     entity: ArtifactIdSchema.optional(),
     pick: z.array(CamelNameSchema).optional(),
     required: z.boolean().optional(),
-    default: ValueSchema.optional()
+    default: ValueSchema.optional(),
+    /** A `slot` property: the node whose children an Instance's SlotFill replaces (they stay its default content). */
+    nodeId: LocalIdSchema.optional()
   })),
   variants: z.array(z.object({
     id: ArtifactIdSchema,

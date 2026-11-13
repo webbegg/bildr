@@ -4,19 +4,33 @@ import type { Post } from '#blog/domain/post'
 
 const props = withDefaults(defineProps<{
   post: Pick<Post, 'title' | 'slug' | 'body' | 'published'>
+  cover?: string
   variant?: 'default' | 'compact'
-}>(), { variant: 'default' })
+}>(), { cover: '', variant: 'default' })
 
 const cardVariants = {
-  default: 'p-5 gap-2',
-  compact: 'p-3 gap-1'
+  default: 'p-5',
+  compact: 'p-3'
+} as const
+
+const cardStackVariants = {
+  default: 'gap-2',
+  compact: 'gap-1'
 } as const
 </script>
 
 <template>
-  <NuxtLink :to="{ name: 'posts-slug', params: { slug: props.post.slug } }" class="border-default border-1 rounded-lg flex-col flex" :class="cardVariants[props.variant]">
-    <h2 class="text-lg font-semibold">{{ props.post.title }}</h2>
-    <p v-if="props.variant !== 'compact'" class="text-muted">{{ props.post.body }}</p>
-    <p v-if="!props.post.published" class="px-2 py-0.5 bg-elevated text-xs rounded-sm self-start">Draft</p>
-  </NuxtLink>
+  <div class="ring ring-default bg-default rounded-lg overflow-hidden" :class="cardVariants[props.variant]">
+    <div class="flex flex-col" :class="cardStackVariants[props.variant]">
+      <img v-if="props.cover" :src="props.cover" :alt="props.post.title" class="block max-w-full rounded-md">
+      <ULink :to="{ name: 'posts-slug', params: { slug: props.post.slug } }" class="underline-offset-4 hover:underline">
+        <h2 class="text-lg font-semibold tracking-tight">{{ props.post.title }}</h2>
+      </ULink>
+      <p v-if="props.variant !== 'compact'" class="whitespace-pre-line text-muted">{{ props.post.body }}</p>
+      <p v-if="!props.post.published" class="whitespace-pre-line px-2 py-0.5 bg-elevated text-xs rounded-sm self-start">Draft</p>
+      <div class="flex gap-3 flex-row items-center self-stretch">
+        <slot name="actions" />
+      </div>
+    </div>
+  </div>
 </template>

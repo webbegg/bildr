@@ -11,18 +11,33 @@ useSeoMeta({ title: 'Blog' })
 </script>
 
 <template>
-  <section class="gap-6 flex-col flex">
-    <div class="flex items-center justify-between">
-      <h1 class="text-3xl font-semibold">Posts</h1>
+  <section class="gap-6 min-h-full flex-col flex">
+    <div class="flex flex-row items-center justify-between self-stretch">
+      <h1 class="text-3xl font-semibold tracking-tight">Posts</h1>
       <UCheckbox :model-value="preferences.showDrafts" label="Show drafts" @update:model-value="setPreferences({ showDrafts: $event === true })" />
     </div>
     <p v-if="allLoading || featuredLoading" class="text-muted">Loading…</p>
     <p v-else-if="!posts.length" class="text-muted">No posts yet.</p>
-    <div v-else class="gap-4 sm:grid-cols-2 grid">
-      <BlogPostCard v-for="post in posts" :key="post.id" :post="post" />
+    <div v-else class="gap-4 self-stretch sm:grid-cols-2 grid">
+      <BlogPostCard v-for="post in posts" :key="post.id" :post="post">
+        <template #actions>
+          <ULink :to="{ name: 'posts-slug', params: { slug: post.slug } }" class="underline-offset-4 hover:underline items-center gap-1 inline-flex text-primary text-sm">
+            <UIcon name="i-lucide-arrow-right" class="size-[1em] shrink-0" />
+            Read more
+          </ULink>
+        </template>
+      </BlogPostCard>
     </div>
-    <aside v-if="quotes.length" class="pt-6 gap-2 border-default border-t-1 flex-col flex">
-      <p v-for="quote in quotes" :key="quote.id" class="text-sm">“{{ quote.text }}” — {{ quote.author }}</p>
+    <aside v-if="quotes.length" class="pt-6 gap-2 border-default border-t-1 flex-col self-stretch flex">
+      <p v-for="quote in quotes" :key="quote.id" class="whitespace-pre-line text-sm">“{{ quote.text }}” — {{ quote.author }}</p>
     </aside>
+    <div class="grid gap-6 items-center self-stretch grid-cols-1 md:grid-cols-3">
+      <img :src="'/uploads/notebook.svg'" alt="An open notebook" class="block max-w-full rounded-lg">
+      <div class="flex gap-2 flex-col md:col-span-2">
+        <h2 class="text-xl font-semibold tracking-tight">About this blog</h2>
+        <p class="whitespace-pre-line text-muted">Notes on building apps from a model.
+New posts most weeks.</p>
+      </div>
+    </div>
   </section>
 </template>

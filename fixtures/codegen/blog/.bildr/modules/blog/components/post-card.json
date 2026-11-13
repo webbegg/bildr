@@ -15,6 +15,18 @@
         "published"
       ],
       "required": true
+    },
+    {
+      "id": "prop_cover",
+      "name": "cover",
+      "kind": "image",
+      "default": ""
+    },
+    {
+      "id": "prop_actions",
+      "name": "actions",
+      "kind": "slot",
+      "nodeId": "n_actions"
     }
   ],
   "variants": [
@@ -38,40 +50,59 @@
   ],
   "root": {
     "id": "n_card",
-    "type": "Link",
-    "props": {
-      "to": {
-        "page": "pg_post_detail",
-        "params": {
-          "slug": {
-            "$bind": "post.slug"
-          }
-        }
-      }
-    },
+    "type": "Card",
     "style": {
-      "display": "flex",
-      "direction": "col",
       "gap": "2",
-      "p": "5",
-      "rounded": "lg",
-      "border": "1",
-      "borderColor": "default"
+      "p": "5"
     },
     "children": [
       {
-        "id": "n_title",
-        "type": "Heading",
+        "id": "n_cover",
+        "type": "Image",
         "props": {
-          "level": 2,
-          "text": {
+          "src": {
+            "$bind": "cover"
+          },
+          "alt": {
             "$bind": "post.title"
+          },
+          "visible": {
+            "$bind": "cover"
           }
         },
         "style": {
-          "text": "lg",
-          "font": "semibold"
+          "rounded": "md"
         }
+      },
+      {
+        "id": "n_title_link",
+        "type": "Link",
+        "props": {
+          "to": {
+            "page": "pg_post_detail",
+            "params": {
+              "slug": {
+                "$bind": "post.slug"
+              }
+            }
+          }
+        },
+        "children": [
+          {
+            "id": "n_title",
+            "type": "Heading",
+            "props": {
+              "level": 2,
+              "text": {
+                "$bind": "post.title"
+              }
+            },
+            "style": {
+              "text": "lg",
+              "font": "semibold"
+            }
+          }
+        ]
       },
       {
         "id": "n_excerpt",
@@ -104,6 +135,15 @@
           "py": "0.5",
           "text": "xs"
         }
+      },
+      {
+        "id": "n_actions",
+        "type": "Row",
+        "style": {
+          "gap": "3",
+          "items": "center"
+        },
+        "children": []
       }
     ]
   }

@@ -131,6 +131,17 @@ describe('loadModel problems', () => {
     expect(problems(edit('.bildr/layouts/main.json', { 'root.children.0.children.0.children.0.props.to.page': 'pg_nope' }))).toEqual(['.bildr/layouts/main.json: root.children.0.children.0.children.0.props.to.page: Unknown page "pg_nope"'])
   })
 
+  it('checks node props against the render rules and toast steps for a title', () => {
+    const index = '.bildr/modules/blog/pages/index.json'
+    expect(problems(edit(index, { 'root.children.1.props.layout': 'masonry' })))
+      .toEqual([`${index}: root.children.1.props.layout: layout must be one of stack, grid, row`])
+    const toggle = 'root.children.0.children.1'
+    expect(problems(edit(index, { [`${toggle}.interactions`]: [{ on: 'change', do: [{ kind: 'toast' }] }] })))
+      .toEqual([`${index}: ${toggle}.interactions.0.do.0.title: A "toast" step needs a title`])
+    expect(problems(edit(index, { [`${toggle}.interactions`]: [{ on: 'change', do: [{ kind: 'toast', title: 'Saved', color: 'pink' }] }] })))
+      .toEqual([`${index}: ${toggle}.interactions.0.do.0.color: A toast color must be one of primary, secondary, success, info, warning, error, neutral`])
+  })
+
   it('refuses duplicate ids and names', () => {
     const files = fixtureModelFiles()
     // The later file in path order is the duplicate.

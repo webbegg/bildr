@@ -1,4 +1,5 @@
 import type { z } from 'zod'
+import { nodePropProblems, uiStepProblems } from '../render/rules.ts'
 import {
   ActionFileSchema, ComponentFileSchema, DataSourceFileSchema, EntityFileSchema, EXPRESSION_KEYS, FixturesFileSchema, PATH_EXPRESSIONS, PROPERTY_PATH,
   LayoutFileSchema, ManifestFileSchema, ModuleFileSchema, PageFileSchema, ProjectFileSchema, QueryFileSchema,
@@ -318,6 +319,16 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
     for (const fixtures of mod.fixtures) ref(at(`fixtures:${fixtures.entity}`), 'entity', 'entity', fixtures.entity, 'entity')
     for (const component of mod.components) {
       component.properties.forEach((prop, index) => prop.entity && ref(at(component.id), `properties.${index}.entity`, 'entity', prop.entity, 'entity'))
+      const nodeIds = new Set<string>()
+      const collectIds = (node: ModelNode) => {
+        nodeIds.add(node.id)
+        node.children?.forEach(collectIds)
+      }
+      collectIds(component.root)
+      component.properties.forEach((prop, index) => {
+        if (prop.kind === 'slot' && !prop.nodeId) report(at(component.id), `properties.${index}.nodeId`, 'A slot property needs the node whose children it replaces')
+        else if (prop.nodeId && !nodeIds.has(prop.nodeId)) report(at(component.id), `properties.${index}.nodeId`, `Unknown node "${prop.nodeId}"`)
+      })
       checkTree(component.root, 'root', at(component.id))
     }
     for (const page of mod.pages) {
@@ -347,8 +358,10 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       report(path, `${where}.props.component`, `Unknown component "${node.props.component}"`)
     }
     for (const [key, value] of Object.entries(node.props ?? {})) checkValue(value, `${where}.props.${key}`, path)
+    for (const problem of nodePropProblems(node.type, node.props)) report(path, `${where}.props.${problem.key}`, problem.message)
     node.interactions?.forEach((interaction, i) => interaction.do.forEach((step, j) => {
       const at = `${where}.interactions.${i}.do.${j}`
+      for (const problem of uiStepProblems(step)) report(path, `${at}.${problem.key}`, problem.message)
       if (step.kind === 'runAction' && typeof step.action === 'string' && !byKind.action.has(step.action)) report(path, `${at}.action`, `Unknown action "${step.action}"`)
       if (step.kind === 'setState' && typeof step.state === 'string' && !byKind.state.has(step.state)) report(path, `${at}.state`, `Unknown state "${step.state}"`)
       for (const [key, value] of Object.entries(step)) if (key !== 'kind') checkValue(value as Value, `${at}.${key}`, path)
