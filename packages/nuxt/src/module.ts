@@ -1,6 +1,4 @@
-import { randomBytes } from 'node:crypto'
-import { existsSync, watch } from 'node:fs'
-import type { FSWatcher } from 'node:fs'
+import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { addDevServerHandler, defineNuxtModule, useLogger } from '@nuxt/kit'
 import { defineEventHandler, getRequestURL, sendWebResponse, toWebRequest } from 'h3'
@@ -9,6 +7,9 @@ import { createHealthRunner } from './node/health.ts'
 import { projectReader } from './node/project.ts'
 import { createRegenerator, isModelChange } from './node/regenerate.ts'
 import type { MigrationOutcome } from './node/regenerate.ts'
+import { editorSession } from './node/session.ts'
+import { watchModel } from './node/watch.ts'
+import type { ModelWatcher } from './node/watch.ts'
 import { BASE, createBildrHandler, ownsPath } from './server/handler.ts'
 
 /**
@@ -19,7 +20,8 @@ import { BASE, createBildrHandler, ownsPath } from './server/handler.ts'
  * - Starter-kit projects only: anything else gets the reasons and a pointer
  *   to `pnpm create bildr`, and the app keeps running without the editor.
  * - The editor API is local-only and needs the per-session token printed in
- *   the dev server log (also used by the DevTools tab).
+ *   the dev server log (also used by the DevTools tab). It survives Nuxt
+ *   restarts within one `nuxt dev`, so open editor tabs keep working.
  */
 
 export interface ModuleOptions {
@@ -48,7 +50,9 @@ export default defineNuxtModule<ModuleOptions>({
       return
     }
 
-    const token = randomBytes(24).toString('hex')
+    const session = editorSession(root)
+    if (session.warning) logger.warn(session.warning)
+    const token = session.token
     // The app's database, as its runtimeConfig resolves it in dev (NUXT_DB_URL overrides the generated default).
     const databaseUrl = process.env.NUXT_DB_URL ?? (nuxt.options.runtimeConfig as { db?: { url?: string } }).db?.url
     const regenerator = createRegenerator(root, databaseUrl ? { databaseUrl } : {})
@@ -126,7 +130,7 @@ export default defineNuxtModule<ModuleOptions>({
     }
     void sync()
 
-    let watcher: FSWatcher | undefined
+    let watcher: ModelWatcher | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
     const modelDir = join(root, '.bildr')
     // A watcher that can't start or fails later (inotify limits, the folder removed) turns live
@@ -138,13 +142,15 @@ export default defineNuxtModule<ModuleOptions>({
     }
     if (existsSync(modelDir)) {
       try {
-        watcher = watch(modelDir, { recursive: true }, (_event, file) => {
-          // Never the manifest or temp files a sync writes: that would loop.
-          if (!isModelChange(file === null ? undefined : String(file))) return
-          clearTimeout(timer)
-          timer = setTimeout(() => void sync(), 150)
+        watcher = watchModel(modelDir, {
+          onChange: (file) => {
+            // Never the manifest or temp files a sync writes: that would loop.
+            if (!isModelChange(file)) return
+            clearTimeout(timer)
+            timer = setTimeout(() => void sync(), 150)
+          },
+          onError: stopWatching
         })
-        watcher.on('error', stopWatching)
       } catch (error) {
         stopWatching(error as Error)
       }
