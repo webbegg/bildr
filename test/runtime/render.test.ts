@@ -12,6 +12,14 @@ describe('resolveLink', () => {
     expect(resolveLink('/about', '/p/shop')).toEqual({ to: '/p/shop/about', external: false })
   })
 
+  // A browser reads `//host` and `/\host` as another origin: an open redirect.
+  it('keeps a slug with leading slashes, backslashes or whitespace on this origin', () => {
+    for (const to of ['\\evil.com', '\\\\evil.com', '//evil.com', '/\\evil.com', '/\t/evil.com', '\n//evil.com']) {
+      expect(resolveLink(to, ''), JSON.stringify(to)).toEqual({ to: '/evil.com', external: false })
+    }
+    expect(resolveLink('//evil.com', '/p/shop')).toEqual({ to: '/p/shop/evil.com', external: false })
+  })
+
   it('returns undefined for an empty link', () => {
     expect(resolveLink('', '/p/shop')).toBeUndefined()
   })

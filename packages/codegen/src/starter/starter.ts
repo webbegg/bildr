@@ -73,7 +73,7 @@ const initialModel = (title: string, module: string, database: StarterDatabase):
         id: 'n_root', type: 'Container', style: { display: 'flex', direction: 'col', minH: 'screen' },
         children: [
           { id: 'n_header', type: 'Container', props: { tag: 'header' }, style: { borderB: '1', borderColor: 'default' }, children: [
-            { id: 'n_nav', type: 'Row', props: { tag: 'nav' }, style: { maxW: '4xl', mx: 'auto', items: 'center', p: '4' }, children: [
+            { id: 'n_nav', type: 'Row', props: { tag: 'nav' }, style: { maxW: '4xl', w: 'full', mx: 'auto', items: 'center', p: '4' }, children: [
               { id: 'n_brand', type: 'Link', props: { to: { page: 'pg_index' }, text: { $bind: 'site.name' } }, style: { text: 'lg', font: 'semibold' } }
             ] }
           ] },

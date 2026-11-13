@@ -7,12 +7,16 @@ import type { BindingItem } from './bindings'
  * surfaces (MCP, WebMCP).
  */
 
-/** `to` is an absolute URL or a page slug; slugs resolve under `base` (e.g. `/p/shop`). */
+/**
+ * `to` is an absolute URL or a page slug; slugs resolve under `base` (e.g. `/p/shop`).
+ * A slug's leading slashes, backslashes and whitespace go: a browser reads
+ * `//host` and `/\host` (tabs stripped) as another origin.
+ */
 export function resolveLink(to: string, base: string): { to: string, external: boolean } | undefined {
   const value = to.trim()
   if (!value) return undefined
   if (/^(?:https?:|mailto:|tel:)/i.test(value)) return { to: value, external: true }
-  return { to: `${base}/${value.replace(/^\/+/, '')}`, external: false }
+  return { to: `${base}/${value.replace(/^[\s/\\]+/, '')}`, external: false }
 }
 
 /** A short human label for a node: its type plus its main text, if any. */

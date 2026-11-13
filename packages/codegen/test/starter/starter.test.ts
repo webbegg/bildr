@@ -62,6 +62,13 @@ describe('starterKit', () => {
     expect(kit.files.every(file => isSafeProjectPath(file.path))).toBe(true)
   })
 
+  // The header stacks its children (flex-col, stretch): a centred nav without `w-full` would shrink to its brand.
+  it('lines the header nav up with the main column', () => {
+    const layout = kit.files.find(file => file.path === 'layers/core/app/layouts/main.vue')!.content
+    const classes = (tag: string) => (layout.match(new RegExp(`<${tag}[^>]*class="([^"]*)"`))?.[1] ?? '').split(' ')
+    for (const tag of ['nav', 'main']) expect(classes(tag), tag).toEqual(expect.arrayContaining(['w-full', 'max-w-4xl', 'mx-auto']))
+  })
+
   it('names the project and its module everywhere', () => {
     const custom = starterKit({ name: 'Acme CRM', module: 'sales' })
     const file = (path: string) => custom.files.find(entry => entry.path === path)?.content ?? ''

@@ -158,8 +158,24 @@ export const LINK_ICON_DISPLAY = 'inline-flex'
 /** An icon inside a Link scales with its text. */
 export const ICON_CLASS = 'size-[1em] shrink-0'
 
-/** The URLs a Link or Button may point to with `href`. */
-const EXTERNAL_URL = /^(?:https?:\/\/|mailto:|tel:)/i
+/** The URL schemes a Link or Button `href` (all three) and a static Image `src` (http(s) only) may use. */
+const HREF_SCHEME = /^(?:https?:\/\/|mailto:|tel:)/i
+const SRC_SCHEME = /^https?:\/\//i
+/** A path on this origin: one `/`, never `//` or `/\` (a browser reads both as another host). */
+const LOCAL_PATH = /^\/(?![/\\])/
+
+/**
+ * The one URL rule for `href` and a static `src`: http(s), mailto: and tel:
+ * (href only), or a path starting with a single `/`. Everything else
+ * (`javascript:`, `data:`, `//host`, a bare word…) is refused, and so is a
+ * URL with whitespace or control characters a browser would strip. A bound
+ * (`$bind`) `src` is a runtime value this rule can't see.
+ */
+export function isSafeUrl(url: string, kind: 'href' | 'src'): boolean {
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000- \u007f]/.test(url)) return false
+  return (kind === 'href' ? HREF_SCHEME : SRC_SCHEME).test(url) || LOCAL_PATH.test(url)
+}
 
 /** External URLs open in a new tab (NuxtLink adds `rel="noopener noreferrer"` to them). */
 export function linkTarget(url: string | undefined): '_blank' | undefined {
@@ -228,9 +244,21 @@ export function nodePropProblems(type: string, props: Record<string, unknown> = 
   const href = () => {
     const value = props.href
     if (value === undefined) return
-    if (typeof value === 'string' && !EXTERNAL_URL.test(value)) problems.push({ key: 'href', message: 'href must be an http(s), mailto: or tel: URL' })
+    // The generator writes `href` as a static `to`: no bindings.
+    if (typeof value !== 'string') problems.push({ key: 'href', message: 'href must be a URL' })
+    else if (!isSafeUrl(value, 'href')) problems.push({ key: 'href', message: 'href must be an http(s), mailto: or tel: URL, or a path starting with /' })
     else if (props.to !== undefined) problems.push({ key: 'href', message: 'A link has either `href` (external) or `to` (a page), not both' })
   }
+  if ((type === 'Page' || type === 'Container' || type === 'Row' || type === 'List') && props.tag !== undefined && containerTag(props.tag) === undefined) {
+    problems.push({ key: 'tag', message: `tag must be one of ${CONTAINER_TAGS.join(', ')}` })
+  }
+  if (type === 'Image') {
+    const src = props.src
+    if (src === undefined || src === null || src === '') problems.push({ key: 'src', message: 'an Image needs `src`, a URL or a binding' })
+    else if (typeof src === 'string' && !isSafeUrl(src, 'src')) problems.push({ key: 'src', message: 'src must be an http(s) URL or a path starting with /' })
+    else if (typeof src !== 'string' && (typeof src !== 'object' || Array.isArray(src))) problems.push({ key: 'src', message: 'an Image needs `src`, a URL or a binding' })
+  }
+  if (type === 'Input' && props.multiline === true && props.inputType !== undefined) problems.push({ key: 'inputType', message: 'a multiline input has no inputType' })
   if (type === 'Button') {
     oneOf('color', BUTTON_COLORS, 'Button color')
     oneOf('variant', BUTTON_VARIANTS, 'Button variant')

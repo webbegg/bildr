@@ -14,6 +14,7 @@ import {
   IMAGE_FALLBACK_STYLE,
   INPUT_CONTROL_CLASS,
   isFlexType,
+  isSafeUrl,
   KNOWN_DIVERGENCES,
   LINK_CLASS,
   linkTarget,
@@ -105,7 +106,14 @@ describe('render rules', () => {
     expect(nodePropProblems('Button', { variant: 'fancy' })[0]?.key).toBe('variant')
     expect(nodePropProblems('Button', { size: 'huge' })[0]?.key).toBe('size')
     expect(nodePropProblems('Link', { icon: 'send' })).toEqual([{ key: 'icon', message: 'An icon is a name like "i-lucide-send"' }])
-    expect(nodePropProblems('Link', { href: 'javascript:alert(1)' })).toEqual([{ key: 'href', message: 'href must be an http(s), mailto: or tel: URL' }])
+    expect(nodePropProblems('Link', { href: 'javascript:alert(1)' })).toEqual([{ key: 'href', message: 'href must be an http(s), mailto: or tel: URL, or a path starting with /' }])
+    expect(nodePropProblems('Link', { href: '/about' })).toEqual([])
+    expect(nodePropProblems('Link', { href: 42 })).toEqual([{ key: 'href', message: 'href must be a URL' }])
+    expect(nodePropProblems('Container', { tag: 'script' })).toEqual([{ key: 'tag', message: 'tag must be one of div, section, article, aside, header, nav, main, footer' }])
+    expect(nodePropProblems('Image', {})).toEqual([{ key: 'src', message: 'an Image needs `src`, a URL or a binding' }])
+    expect(nodePropProblems('Image', { src: 'data:image/png;base64,AA' })).toEqual([{ key: 'src', message: 'src must be an http(s) URL or a path starting with /' }])
+    expect(nodePropProblems('Image', { src: { $bind: 'post.cover' } })).toEqual([])
+    expect(nodePropProblems('Input', { multiline: true, inputType: 'email' })).toEqual([{ key: 'inputType', message: 'a multiline input has no inputType' }])
     expect(nodePropProblems('Link', { href: 'https://nuxt.com', to: { page: 'pg_x' } })).toEqual([{ key: 'href', message: 'A link has either `href` (external) or `to` (a page), not both' }])
     expect(nodePropProblems('Input', { inputType: 'email' })).toEqual([])
     expect(nodePropProblems('Input', { inputType: 'date' })).toEqual([{ key: 'inputType', message: 'inputType must be one of text, email, password, url, tel, number' }])
@@ -113,6 +121,17 @@ describe('render rules', () => {
     expect(nodePropProblems('Heading', { level: 7 })).toEqual([{ key: 'level', message: 'heading level must be 1–6' }])
     // Expressions are checked where they are evaluated, not here.
     expect(nodePropProblems('Button', { color: { $bind: 'x' } })).toEqual([])
+  })
+
+  // One URL rule for `href` and a static Image `src`.
+  it('allows only http(s), mailto:/tel: (href) and single-slash paths as URLs', () => {
+    for (const url of ['https://x.test/a', 'http://x.test', 'mailto:a@x.test', 'tel:+34600', '/about', '/uploads/a.png', '/']) expect(isSafeUrl(url, 'href'), url).toBe(true)
+    for (const url of ['https://x.test/a.png', '/uploads/a.png']) expect(isSafeUrl(url, 'src'), url).toBe(true)
+    for (const url of ['mailto:a@x.test', 'tel:1']) expect(isSafeUrl(url, 'src'), url).toBe(false)
+    for (const url of ['javascript:alert(1)', ' javascript:alert(1)', 'JAVASCRIPT:x', 'data:text/html,x', 'vbscript:x', '//evil.com', '/\\evil.com', '\\evil.com', '/\t/evil.com', 'about', '', 'https:evil.com']) {
+      expect(isSafeUrl(url, 'href'), url).toBe(false)
+      expect(isSafeUrl(url, 'src'), url).toBe(false)
+    }
   })
 
   it('names the element of each type', () => {
