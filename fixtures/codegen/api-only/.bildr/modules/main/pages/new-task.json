@@ -1,0 +1,119 @@
+{
+  "$schema": "https://bildr.dev/schema/page.v1.json",
+  "id": "pg_new_task",
+  "name": "tasks-new",
+  "path": "/tasks/new",
+  "layout": "lay_main",
+  "seo": {
+    "title": "New task"
+  },
+  "uses": {
+    "actions": [
+      {
+        "as": "createTask",
+        "action": "act_create_task"
+      }
+    ]
+  },
+  "root": {
+    "id": "n_page",
+    "type": "Page",
+    "children": [
+      {
+        "id": "n_form",
+        "type": "Form",
+        "props": {
+          "action": "act_create_task",
+          "fields": [
+            "fld_title",
+            "fld_done"
+          ]
+        },
+        "style": {
+          "display": "flex",
+          "direction": "col",
+          "gap": "4",
+          "maxW": "xl"
+        },
+        "interactions": [
+          {
+            "on": "submit",
+            "do": [
+              {
+                "kind": "runAction",
+                "action": "act_create_task",
+                "args": {
+                  "$form": true
+                }
+              },
+              {
+                "kind": "navigate",
+                "to": {
+                  "page": "pg_index"
+                },
+                "when": "success"
+              }
+            ]
+          }
+        ],
+        "children": [
+          {
+            "id": "n_h1",
+            "type": "Heading",
+            "props": {
+              "level": 1,
+              "text": "New task"
+            },
+            "style": {
+              "text": "3xl",
+              "font": "semibold"
+            }
+          },
+          {
+            "id": "n_title",
+            "type": "Input",
+            "props": {
+              "field": "fld_title",
+              "label": "Title"
+            }
+          },
+          {
+            "id": "n_done",
+            "type": "Checkbox",
+            "props": {
+              "field": "fld_done",
+              "label": "Done"
+            }
+          },
+          {
+            "id": "n_error",
+            "type": "Text",
+            "props": {
+              "text": {
+                "$bind": "createTask.error"
+              },
+              "visible": {
+                "$bind": "createTask.error"
+              }
+            },
+            "style": {
+              "text": "sm",
+              "color": "error"
+            }
+          },
+          {
+            "id": "n_submit",
+            "type": "Button",
+            "props": {
+              "text": "Create",
+              "type": "submit",
+              "disabled": {
+                "$bind": "createTask.pending"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

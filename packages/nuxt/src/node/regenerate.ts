@@ -1,15 +1,15 @@
-import { existsSync } from 'node:fs'
+import { existsSync, rmSync } from 'node:fs'
 import { join, sep } from 'node:path'
-import { generate } from '@bildr/codegen/generate'
+import { generate, hasDatabase } from '@bildr/codegen/generate'
 import { schemaIds } from '@bildr/codegen/migrate'
 import { loadModel } from '@bildr/codegen/model'
 import type { Model, ModelProblem } from '@bildr/codegen/model'
 import type { GeneratedFile, SyncReport } from '@bildr/codegen/sync'
 import { projectDrift, readPendingMigration, updateHealth } from './health.ts'
 import type { HealthPatch } from './health.ts'
-import { migrateProject, MIGRATIONS_DIR, schemaSources } from './migrations.ts'
+import { migrateProject, MIGRATIONS_DIR, PENDING_FILE, schemaSources } from './migrations.ts'
 import type { MigrationResult } from './migrations.ts'
-import { readModelFiles } from './project.ts'
+import { readModelFiles, resolvesInside } from './project.ts'
 import { syncProject } from './sync.ts'
 
 export type MigrationOutcome = MigrationResult | { kind: 'error', message: string }
@@ -30,9 +30,12 @@ export interface RegenerateOptions {
   databaseUrl?: string
 }
 
-/** No stored entities and no migrations yet: nothing to migrate, and drizzle-kit isn't needed. */
-const needsMigrations = (root: string, model: Model) =>
-  Object.keys(schemaIds(model).tables).length > 0 || existsSync(join(root, MIGRATIONS_DIR, 'meta/_journal.json'))
+/**
+ * No database (V7: no sqlite data source), or no stored entities and no migrations yet:
+ * nothing to migrate, and drizzle-kit isn't needed.
+ */
+const needsMigrations = (root: string, model: Model) => hasDatabase(model)
+  && (Object.keys(schemaIds(model).tables).length > 0 || existsSync(join(root, MIGRATIONS_DIR, 'meta/_journal.json')))
 
 /**
  * One regeneration (T7d, T8): load `.bildr/`, generate the whole app, write
@@ -58,6 +61,9 @@ export const regenerate = async (root: string, options: RegenerateOptions = {}):
     }))
   }
   let migration: MigrationOutcome = { kind: 'none' }
+  // Without a database nothing can wait for confirmation: a plan left from when it had one goes.
+  // Same boundary as migrateProject: never through a .bildr/.cache symlink that leaves the project.
+  if (!hasDatabase(loaded.model) && resolvesInside(root, join(root, '.bildr/.cache'))) rmSync(join(root, PENDING_FILE), { force: true })
   if (needsMigrations(root, loaded.model)) {
     try {
       migration = await migrateProject(root, loaded.model, schemaSources(root, files), options)

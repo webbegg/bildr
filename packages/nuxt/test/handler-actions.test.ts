@@ -133,6 +133,12 @@ describe('model_get', () => {
     expect(Object.keys(files)).not.toContain('.bildr/manifest.json')
   })
 
+  it('says whether the project has a database (a sqlite data source)', async () => {
+    expect((await result(await act('model_get'))).database).toBe(true)
+    rmSync(join(dir, '.bildr/datasources/main.json'))
+    expect((await result(await act('model_get'))).database).toBe(false)
+  })
+
   it('returns the problems of an invalid model', async () => {
     writeFileSync(join(dir, pagePath), JSON.stringify({ ...page(), layout: 'lay_nope' }))
     const got = await result(await act('model_get'))
@@ -270,11 +276,18 @@ describe('health actions', () => {
 
 describe('migration actions', () => {
   it('migration_pending_get returns the pending plan or null', async () => {
-    expect(await result(await act('migration_pending_get'))).toEqual({ pending: null })
+    expect(await result(await act('migration_pending_get'))).toEqual({ pending: null, database: true })
     const plan = { hash: 'h1', destructive: ['DROP TABLE `t`;'], statements: ['DROP TABLE `t`;'] }
     mkdirSync(join(dir, '.bildr/.cache'), { recursive: true })
     writeFileSync(join(dir, PENDING_FILE), JSON.stringify(plan))
-    expect(await result(await act('migration_pending_get'))).toEqual({ pending: plan })
+    expect(await result(await act('migration_pending_get'))).toEqual({ pending: plan, database: true })
+  })
+
+  it('migration_pending_get returns none without a database, even with a stale plan', async () => {
+    mkdirSync(join(dir, '.bildr/.cache'), { recursive: true })
+    writeFileSync(join(dir, PENDING_FILE), JSON.stringify({ hash: 'h1', destructive: [], statements: [] }))
+    rmSync(join(dir, '.bildr/datasources/main.json'))
+    expect(await result(await act('migration_pending_get'))).toEqual({ pending: null, database: false })
   })
 
   it('migration_confirm confirms by hash through the module', async () => {

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://bildr.dev/schema/query.v1.json",
+  "id": "q_task_by_id",
+  "name": "taskById",
+  "label": "Task by id",
+  "from": "ent_task",
+  "params": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "reactive": true
+    }
+  ],
+  "where": {
+    "op": "eq",
+    "field": "id",
+    "value": {
+      "$param": "id"
+    }
+  },
+  "result": "one"
+}

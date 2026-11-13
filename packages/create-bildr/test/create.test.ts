@@ -56,6 +56,19 @@ describe('createProject', () => {
     ])
   })
 
+  it('--database none: an API-only project with no database files or dependencies', () => {
+    const dir = join(root, 'api')
+    const result = createProject(dir, { name: 'Api', database: 'none' })
+    const read = (path: string) => existsSync(join(dir, path)) ? readFileSync(join(dir, path), 'utf8') : undefined
+    expect(detectStarterKit(read)).toEqual({ ok: true })
+    for (const path of ['.bildr/datasources/main.json', 'layers/core/server/utils/db.ts', 'layers/core/server/plugins/migrate.ts', 'drizzle.config.ts', 'server/database/migrations']) {
+      expect(existsSync(join(dir, path)), path).toBe(false)
+    }
+    expect(result.files.filter(path => /(from|import\(|require\()\s*['"](drizzle-orm|drizzle-kit|@libsql)/.test(read(path)!))).toEqual([])
+    const pkg = JSON.parse(read('package.json')!) as { dependencies: object, devDependencies: object }
+    expect(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter(name => /drizzle|libsql/.test(name))).toEqual([])
+  })
+
   it('depends on the published @bildr/nuxt of the same version when it runs from the built package', () => {
     const own = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
     expect(own.version).toBe('0.1.0')
@@ -110,6 +123,12 @@ describe('parseArgs', () => {
     expect(parseArgs(['shop', '--bildr', 'link:/src/bildr/packages/nuxt'])).toEqual({ dir: 'shop', name: 'Shop', module: 'main', bildr: 'link:/src/bildr/packages/nuxt' })
   })
 
+  it('reads --database sqlite|none and refuses anything else', () => {
+    expect(parseArgs(['api', '--database', 'none'])).toEqual({ dir: 'api', name: 'Api', module: 'main', database: 'none' })
+    expect(parseArgs(['app', '--database=sqlite'])).toEqual({ dir: 'app', name: 'App', module: 'main', database: 'sqlite' })
+    expect(() => parseArgs(['app', '--database', 'postgres'])).toThrow('--database: use sqlite or none')
+  })
+
   it('refuses empty option values instead of silently using defaults', () => {
     expect(() => parseArgs(['shop', '--bildr='])).toThrow('--bildr needs a value')
     expect(() => parseArgs(['shop', '--bildr', ''])).toThrow('--bildr needs a value')
@@ -118,7 +137,7 @@ describe('parseArgs', () => {
   })
 
   it('explains the usage when the directory is missing or an option is unknown', () => {
-    expect(() => parseArgs([])).toThrow('Usage: pnpm create bildr <directory> [--name "Project name"] [--module main] [--bildr <@bildr/nuxt version or link:path>]')
+    expect(() => parseArgs([])).toThrow('Usage: pnpm create bildr <directory> [--name "Project name"] [--module main] [--database sqlite|none] [--bildr <@bildr/nuxt version or link:path>]')
     expect(() => parseArgs(['x', '--force'])).toThrow('Unknown option --force')
   })
 })

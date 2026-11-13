@@ -12,7 +12,8 @@ const status = useStatus()
 
 usePolling(status.refresh)
 
-const nav = computed(() => routes.filter(record => record.meta?.label).map(record => ({
+// No database (V7): no migrations, so no Migrations screen in the nav.
+const nav = computed(() => routes.filter(record => record.meta?.label && (record.path !== '/migrations' || status.database.value)).map(record => ({
   label: String(record.meta!.label),
   icon: String(record.meta!.icon),
   to: record.path,

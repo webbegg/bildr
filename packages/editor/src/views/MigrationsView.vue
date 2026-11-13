@@ -85,7 +85,15 @@ onMounted(() => {
       :message="status.pendingError.value"
     />
 
-    <template v-if="pending">
+    <UAlert
+      v-if="!status.database.value"
+      data-testid="no-database"
+      color="neutral"
+      variant="subtle"
+      icon="i-lucide-database"
+      title="This project has no database, so it has no migrations. Add a sqlite data source in Model to turn the database on."
+    />
+    <template v-else-if="pending">
       <UCard>
         <template #header>
           <h2 class="font-semibold text-error">

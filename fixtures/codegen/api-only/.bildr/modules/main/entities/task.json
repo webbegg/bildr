@@ -1,0 +1,27 @@
+{
+  "$schema": "https://bildr.dev/schema/entity.v1.json",
+  "id": "ent_task",
+  "name": "Task",
+  "plural": "tasks",
+  "idStrategy": "uuid",
+  "timestamps": false,
+  "fields": [
+    {
+      "id": "fld_title",
+      "name": "title",
+      "type": "text",
+      "required": true,
+      "max": 120
+    },
+    {
+      "id": "fld_done",
+      "name": "done",
+      "type": "boolean",
+      "default": false
+    }
+  ],
+  "relations": [],
+  "client": {
+    "sync": "eager"
+  }
+}

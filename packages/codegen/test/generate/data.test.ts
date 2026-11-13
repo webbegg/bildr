@@ -105,6 +105,35 @@ describe('generateData rules', () => {
     expect(composable).toContain('/** Query "All posts": it\'s *\\/ done */')
   })
 
+  it('generates REST get/create/update/delete over the endpoints the repository declares', () => {
+    const model = fixtureModel()
+    const quotes = model.modules.blog!.repositories.find(repo => repo.id === 'repo_quote')!
+    quotes.operations = ['list', 'get', 'create', 'update', 'delete']
+    quotes.rest = { ...quotes.rest, get: { path: '/quotes/:id' }, create: { path: '/quotes/add' }, update: { method: 'PATCH', path: '/quotes/:id' }, delete: { path: '/quotes/:id' } }
+    const files = generateData(model)
+    const adapter = files.find(file => file.path === 'layers/blog/server/infrastructure/repositories/quote.rest.ts')!.content
+    expect(adapter).toContain('http<QuoteRow | undefined>(`/quotes/${encodeURIComponent(String(id))}`, { optional: true })')
+    expect(adapter).toContain('http<QuoteRow | undefined>(\'/quotes/add\', { method: \'POST\', body: toRow(quote) })')
+    expect(adapter).toContain('{ method: \'PATCH\', body: toRow(quote) }')
+    expect(adapter).toContain('{ method: \'DELETE\' }')
+    // Model field → remote key, both ways.
+    expect(adapter).toContain('const toRow = (quote: Quote): QuoteRow => ({ id: quote.id, quote: quote.text, author: quote.author })')
+    // Use-case tests need an in-memory adapter with the same port.
+    expect(files.map(file => file.path)).toContain('layers/blog/server/infrastructure/repositories/quote.memory.ts')
+    const port = files.find(file => file.path === 'layers/blog/server/application/ports/quote-repository.ts')!.content
+    expect(port).toContain('  create(quote: Quote): Promise<Quote>\n')
+  })
+
+  it('refuses a REST operation without its endpoint, or a lookup path without :id', () => {
+    const model = fixtureModel()
+    const quotes = model.modules.blog!.repositories.find(repo => repo.id === 'repo_quote')!
+    quotes.operations = ['list', 'create']
+    expect(() => generateData(model)).toThrow('repo_quote: the REST operation "create" needs rest.create (its endpoint, like {"path": "/items"})')
+    quotes.operations = ['list', 'get']
+    quotes.rest = { ...quotes.rest, get: { path: '/quotes' } }
+    expect(() => generateData(model)).toThrow('repo_quote: rest.get.path needs an :id segment (like "/items/:id")')
+  })
+
   it('refuses REST paging styles it cannot generate yet', () => {
     const model = fixtureModel()
     const quotes = model.modules.blog!.repositories.find(repo => repo.id === 'repo_quote')!

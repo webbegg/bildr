@@ -89,11 +89,18 @@ describe('generateProject rules', () => {
     expect(content(model, 'vitest.config.ts')).toContain('      \'#blog/domain\': here(\'./layers/blog/shared/domain\'),\n      \'#shop/domain\': here(\'./layers/shop/shared/domain\')\n')
   })
 
-  it('refuses a second sqlite data source and a missing one', () => {
+  it('refuses a second sqlite data source', () => {
     const model = fixtureModel()
     model.datasources.push({ ...model.datasources.find(source => source.kind === 'sqlite')!, id: 'ds_other', name: 'other' })
-    expect(() => generateProject(model)).toThrow(/one sqlite data source/)
+    expect(() => generateProject(model)).toThrow('The project can have at most one sqlite data source (the app database), found 2')
+  })
+
+  it('has no database runtimeConfig without a sqlite data source (V7: the database is optional)', () => {
+    const model = fixtureModel()
     model.datasources = model.datasources.filter(source => source.kind !== 'sqlite')
-    expect(() => generateProject(model)).toThrow(/one sqlite data source/)
+    const config = content(model, 'layers/core/nuxt.config.ts')
+    expect(config).not.toContain('db: {')
+    expect(config).not.toContain('migrationsDir')
+    expect(config).toContain('quotes: { baseUrl: \'https://dummyjson.com\', apiKey: \'\' }')
   })
 })

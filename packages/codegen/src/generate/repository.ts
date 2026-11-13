@@ -209,7 +209,7 @@ export const memoryRepositoryFile = (context: ModuleContext, entity: EntityFile,
       `import type { ${names.type} } from '#${context.name}/domain/${names.file}'`,
       `import type { ${names.port} } from '../../application/ports/${names.portFile}'`,
       '',
-      `/** In-memory ${names.port} for use-case tests. Same contract as the Drizzle one. */`,
+      `/** In-memory ${names.port} for use-case tests. Same contract as the ${datasourceOf(context, repository).kind === 'sqlite' ? 'Drizzle' : 'REST'} one. */`,
       `export const memory${names.port} = (seed: ${names.type}[] = []): ${names.port} => {`,
       `  const rows = new Map(seed.map(${row} => [${row}.id, ${row}]))`,
       has(repository, 'list') && `  const sorted = () => [...rows.values()]${comparator(entity, repository)}`,
@@ -223,27 +223,54 @@ export const memoryRepositoryFile = (context: ModuleContext, entity: EntityFile,
 
 // ── REST adapter ───────────────────────────────────────────────────────
 
+interface RestEndpoint { method?: string, path: string }
+
 interface RestConfig {
   list?: { method?: string, path: string, itemsPath: string, totalPath?: string }
   paging?: { style: string, limitParam?: string, offsetParam?: string }
   fieldMap?: Record<string, string>
+  get?: RestEndpoint
+  create?: RestEndpoint
+  update?: RestEndpoint
+  delete?: RestEndpoint
 }
+
+/** The operations a REST repository maps to one endpoint each, with their default HTTP method. */
+const REST_ENDPOINTS = { get: 'GET', create: 'POST', update: 'PUT', delete: 'DELETE' } as const
+type RestEndpointOp = keyof typeof REST_ENDPOINTS
 
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
 const member = (object: string, key: string) => IDENTIFIER.test(key) ? `${object}.${key}` : `${object}[${tsString(key)}]`
 const property = (key: string) => IDENTIFIER.test(key) ? key : tsString(key)
 
-const restConfig = (repository: RepositoryFile): Required<Pick<RestConfig, 'list' | 'paging'>> & RestConfig => {
+const restConfig = (repository: RepositoryFile): RestConfig & { paging: { style: string, limitParam: string, offsetParam: string } } => {
   const rest = (repository.rest ?? {}) as RestConfig
-  if (repository.operations.some(op => op !== 'list')) throw new Error(`${repository.id}: REST operations other than list are not generated yet`)
-  if (!rest.list) throw new Error(`${repository.id}: a REST repository needs rest.list`)
+  if (repository.finders?.length) throw new Error(`${repository.id}: REST finders are not generated yet`)
+  if (has(repository, 'list') && !rest.list) throw new Error(`${repository.id}: a REST repository needs rest.list`)
+  for (const op of Object.keys(REST_ENDPOINTS) as RestEndpointOp[]) {
+    if (!has(repository, op)) continue
+    const endpoint = rest[op]
+    if (!endpoint) throw new Error(`${repository.id}: the REST operation "${op}" needs rest.${op} (its endpoint, like {"path": "/items"})`)
+    const params = endpoint.path.split('/').filter(segment => segment.startsWith(':'))
+    if (op !== 'create' && !params.includes(':id')) throw new Error(`${repository.id}: rest.${op}.path needs an :id segment (like "/items/:id")`)
+    if (params.some(param => param !== ':id')) throw new Error(`${repository.id}: rest.${op}.path: only the :id parameter is generated yet`)
+  }
   const paging = rest.paging?.style ?? 'offset'
   if (paging !== 'offset') throw new Error(`${repository.id}: REST paging style "${paging}" is not generated yet (supported: offset)`)
-  for (const key of [rest.list.itemsPath, rest.list.totalPath].filter(Boolean) as string[]) {
+  for (const key of [rest.list?.itemsPath, rest.list?.totalPath].filter(Boolean) as string[]) {
     if (!IDENTIFIER.test(key)) throw new Error(`${repository.id}: nested response paths ("${key}") are not generated yet`)
   }
-  return { ...rest, list: rest.list, paging: { style: paging, limitParam: rest.paging?.limitParam ?? 'limit', offsetParam: rest.paging?.offsetParam ?? 'offset' } }
+  return { ...rest, paging: { style: paging, limitParam: rest.paging?.limitParam ?? 'limit', offsetParam: rest.paging?.offsetParam ?? 'offset' } }
 }
+
+/** The REST config of a repository that only lists (the read-only shape, T5). */
+const listRestConfig = (repository: RepositoryFile) => {
+  const rest = restConfig(repository)
+  return { ...rest, list: rest.list! }
+}
+
+/** Whether a REST repository does more than list: then it gets the full adapter and an in-memory twin for use-case tests. */
+export const restDoesMoreThanList = (repository: RepositoryFile) => repository.operations.some(op => op !== 'list')
 
 /** Model field → remote key, in the field map's order (all entity fields when no map is given). */
 const remoteFields = (entity: EntityFile, rest: RestConfig) => {
@@ -258,8 +285,9 @@ const pagingQuery = (rest: ReturnType<typeof restConfig>) =>
   `{ ${shorthand(rest.paging.limitParam!, 'limit')}, ${shorthand(rest.paging.offsetParam!, 'offset')} }`
 
 export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
+  if (restDoesMoreThanList(repository)) return restCrudRepositoryFile(context, entity, repository)
   const names = entityNames(entity)
-  const rest = restConfig(repository)
+  const rest = listRestConfig(repository)
   const source = datasourceOf(context, repository)
   const response = `${pascal(entity.plural)}Response`
   const fields = remoteFields(entity, rest)
@@ -299,8 +327,9 @@ const sample = (field: Field) => field.type === 'integer' || field.type === 'num
 
 /** A generated adapter test: fields and paging map to the REST source as modeled. */
 export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
+  if (restDoesMoreThanList(repository)) return restCrudRepositoryTestFile(context, entity, repository)
   const names = entityNames(entity)
-  const rest = restConfig(repository)
+  const rest = listRestConfig(repository)
   const fields = remoteFields(entity, rest)
   const items = rest.list.itemsPath
   const total = rest.list.totalPath
@@ -326,6 +355,190 @@ export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFil
       `    expect(calls).toEqual([{ path: ${tsString(rest.list.path)}, options: { query: ${query} } }])`,
       `    expect(page).toEqual({ items: [${modelRow}], total: ${total ? 40 : 1} })`,
       '  })',
+      '})'
+    ])
+  }
+}
+
+// ── REST adapter with lookups and writes (V7: API-only projects) ───────
+
+const HTTP_OPTIONS = '{ method?: \'GET\' | \'POST\' | \'PUT\' | \'PATCH\' | \'DELETE\', query?: Record<string, string | number | undefined>, body?: unknown, optional?: boolean }'
+
+/** `/posts/:id` → a template literal with the key URL-encoded. */
+const idPath = (path: string) => `\`${path.replace(':id', '${encodeURIComponent(String(id))}')}\``
+
+const methodOf = (rest: RestConfig, op: RestEndpointOp) => rest[op]?.method ?? REST_ENDPOINTS[op]
+
+/** Options of one call: `method` only when it isn't GET. */
+const callOptions = (method: string, extra: string[]) => {
+  const entries = [...(method === 'GET' ? [] : [`method: ${tsString(method)}`]), ...extra]
+  return entries.length ? `, { ${entries.join(', ')} }` : ''
+}
+
+const restCrudRepositoryFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
+  const names = entityNames(entity)
+  const rest = restConfig(repository)
+  const source = datasourceOf(context, repository)
+  const fields = remoteFields(entity, rest)
+  const row = `${names.type}Row`
+  const response = `${pascal(entity.plural)}Response`
+  const variable = names.variable
+  const readsRows = has(repository, 'list') || has(repository, 'get') || has(repository, 'create') || has(repository, 'update')
+  const writesRows = has(repository, 'create') || has(repository, 'update')
+  const body: string[] = []
+  if (has(repository, 'list')) {
+    const list = rest.list!
+    body.push(
+      '  async list({ limit, offset }) {',
+      `    const response = await http<${response}>(${tsString(list.path)}, { query: ${pagingQuery(rest)} })`,
+      '    return {',
+      `      items: ${member('response', list.itemsPath)}.map(fromRow),`,
+      `      total: ${list.totalPath ? member('response', list.totalPath) : `${member('response', list.itemsPath)}.length`}`,
+      '    }',
+      '  }'
+    )
+  }
+  if (has(repository, 'get')) {
+    body.push(
+      '  async get(id) {',
+      `    const row = await http<${row} | undefined>(${idPath(rest.get!.path)}${callOptions(methodOf(rest, 'get'), ['optional: true'])})`,
+      '    return row === undefined ? undefined : fromRow(row)',
+      '  }'
+    )
+  }
+  if (has(repository, 'create')) {
+    body.push(
+      `  async create(${variable}: ${names.type}) {`,
+      `    const row = await http<${row} | undefined>(${tsString(rest.create!.path)}${callOptions(methodOf(rest, 'create'), [`body: toRow(${variable})`])})`,
+      `    return row === undefined ? ${variable} : fromRow(row)`,
+      '  }'
+    )
+  }
+  if (has(repository, 'update')) {
+    body.push(
+      `  async update(id, ${variable}: ${names.type}) {`,
+      `    const row = await http<${row} | undefined>(${idPath(rest.update!.path)}${callOptions(methodOf(rest, 'update'), [`body: toRow(${variable})`])})`,
+      `    return row === undefined ? ${variable} : fromRow(row)`,
+      '  }'
+    )
+  }
+  if (has(repository, 'delete')) {
+    body.push('  async delete(id) {', `    await http<unknown>(${idPath(rest.delete!.path)}${callOptions(methodOf(rest, 'delete'), [])})`, '  }')
+  }
+  return {
+    path: `layers/${context.name}/server/infrastructure/repositories/${names.file}.rest.ts`,
+    source: context.source(repository.id),
+    content: file([
+      header(context.source(repository.id)),
+      importLine(`#${context.name}/domain/${names.file}`, [{ name: names.type, type: true }, ...(readsRows ? [`${names.type}Schema`] : [])]),
+      `import type { ${names.port} } from '../../application/ports/${names.portFile}'`,
+      '',
+      '/** The minimal HTTP client this adapter needs (core\'s useRemote provides it). With `optional`, a 404 resolves to undefined. */',
+      `export type ${names.type}Http = <T>(path: string, options?: ${HTTP_OPTIONS}) => Promise<T>`,
+      '',
+      `/** A ${names.type} as the "${docText(source.name)}" source sends and takes it. */`,
+      `interface ${row} {`,
+      ...fields.map(({ field, remote }) => `  ${property(remote)}: ${tsType(field)}`),
+      '}',
+      ...(has(repository, 'list')
+        ? ['', `interface ${response} {`, `  ${property(rest.list!.itemsPath)}: ${row}[]`, ...(rest.list!.totalPath ? [`  ${property(rest.list!.totalPath)}: number`] : []), '}']
+        : []),
+      '',
+      readsRows && `const fromRow = (row: ${row}): ${names.type} => ${names.type}Schema.parse({ ${fields.map(({ field, remote }) => `${field.name}: ${member('row', remote)}`).join(', ')} })`,
+      writesRows && `const toRow = (${variable}: ${names.type}): ${row} => ({ ${fields.map(({ field, remote }) => `${property(remote)}: ${variable}.${field.name}`).join(', ')} })`,
+      '',
+      `/** ${names.port} over the "${docText(source.name)}" REST data source.${has(repository, 'list') ? ` Paging style: offset (${docText(String(rest.paging.offsetParam))}/${docText(String(rest.paging.limitParam))}).` : ''} */`,
+      `export const rest${names.port} = (http: ${names.type}Http): ${names.port} => ({`,
+      joinMethods(body),
+      '})'
+    ])
+  }
+}
+
+const SAMPLE_UUID = '00000000-0000-4000-8000-000000000001'
+const crudSample = (field: Field) => field.type === 'uuid'
+  ? SAMPLE_UUID
+  : field.type === 'datetime' ? '2026-01-01T00:00:00.000Z' : field.type === 'date' ? '2026-01-01' : sample(field)
+
+/** Generated adapter tests: each declared operation calls its endpoint with the remote field names. */
+const restCrudRepositoryTestFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
+  const names = entityNames(entity)
+  const rest = restConfig(repository)
+  const fields = remoteFields(entity, rest)
+  const key = fields.find(({ field }) => field.name === keyOf(entity).name)
+  const id = key ? crudSample(key.field) : SAMPLE_UUID
+  const at = (path: string) => tsString(path.replace(':id', encodeURIComponent(String(id))))
+  const options = (op: RestEndpointOp, extra: string[]) => {
+    const method = methodOf(rest, op)
+    const entries = [...(method === 'GET' ? [] : [`method: ${tsString(method)}`]), ...extra]
+    return `{ ${entries.join(', ')} }`
+  }
+  const factory = `rest${names.port}`
+  const tests: string[][] = []
+  if (has(repository, 'list')) {
+    const list = rest.list!
+    const query = `{ ${property(rest.paging.limitParam)}: 10, ${property(rest.paging.offsetParam)}: 20 }`
+    tests.push([
+      '  it(\'maps fields and offset paging to the REST source\', async () => {',
+      `    const { calls, repository } = fake({ ${property(list.itemsPath)}: [row]${list.totalPath ? `, ${property(list.totalPath)}: 40` : ''} })`,
+      '    const page = await repository.list({ limit: 10, offset: 20 })',
+      `    expect(calls).toEqual([{ path: ${tsString(list.path)}, options: { query: ${query} } }])`,
+      `    expect(page).toEqual({ items: [${names.variable}], total: ${list.totalPath ? 40 : 1} })`,
+      '  })'
+    ])
+  }
+  if (has(repository, 'get')) {
+    tests.push([
+      '  it(\'gets one by id, and undefined when the source has none\', async () => {',
+      '    const found = fake(row)',
+      `    expect(await found.repository.get(${tsLiteral(id)})).toEqual(${names.variable})`,
+      `    expect(found.calls).toEqual([{ path: ${at(rest.get!.path)}, options: ${options('get', ['optional: true'])} }])`,
+      `    expect(await fake(undefined).repository.get(${tsLiteral(id)})).toBeUndefined()`,
+      '  })'
+    ])
+  }
+  for (const op of ['create', 'update'] as const) {
+    if (!has(repository, op)) continue
+    tests.push([
+      `  it('${op === 'create' ? 'creates' : 'updates'} with the remote field names', async () => {`,
+      '    const { calls, repository } = fake(row)',
+      `    expect(await repository.${op}(${op === 'update' ? `${tsLiteral(id)}, ` : ''}${names.variable})).toEqual(${names.variable})`,
+      `    expect(calls).toEqual([{ path: ${op === 'create' ? tsString(rest.create!.path) : at(rest.update!.path)}, options: ${options(op, ['body: row'])} }])`,
+      '  })'
+    ])
+  }
+  if (has(repository, 'delete')) {
+    tests.push([
+      '  it(\'deletes by id\', async () => {',
+      '    const { calls, repository } = fake(undefined)',
+      `    await repository.delete(${tsLiteral(id)})`,
+      `    expect(calls).toEqual([{ path: ${at(rest.delete!.path)}, options: ${options('delete', [])} }])`,
+      '  })'
+    ])
+  }
+  return {
+    path: `layers/${context.name}/test/infrastructure/${names.file}.rest.test.ts`,
+    source: context.source(repository.id),
+    content: file([
+      header(context.source(repository.id)),
+      'import { describe, expect, it } from \'vitest\'',
+      `import { type ${names.type}Http, ${factory} } from '../../server/infrastructure/repositories/${names.file}.rest'`,
+      '',
+      `const row = { ${fields.map(({ field, remote }) => `${property(remote)}: ${tsLiteral(crudSample(field))}`).join(', ')} }`,
+      `const ${names.variable} = { ${fields.map(({ field }) => `${field.name}: ${tsLiteral(crudSample(field))}`).join(', ')} }`,
+      '',
+      '/** A fake REST source that answers every call with `answer` and records the calls. */',
+      'const fake = (answer: unknown) => {',
+      '  const calls: unknown[] = []',
+      `  const http: ${names.type}Http = async <T>(path: string, options?: unknown) => {`,
+      '    calls.push({ path, options })',
+      '    return answer as T',
+      '  }',
+      `  return { calls, repository: ${factory}(http) }`,
+      '}',
+      '',
+      `describe('${factory}', () => {`,
+      tests.map(test => test.join('\n')).join('\n\n'),
       '})'
     ])
   }

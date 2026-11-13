@@ -1,0 +1,17 @@
+{
+  "$schema": "https://bildr.dev/schema/datasource.v1.json",
+  "id": "ds_api",
+  "name": "api",
+  "kind": "rest",
+  "env": {
+    "baseUrl": "NUXT_DATASOURCES_API_BASE_URL",
+    "apiKey": "NUXT_DATASOURCES_API_API_KEY"
+  },
+  "defaults": {
+    "baseUrl": "http://127.0.0.1:4010"
+  },
+  "auth": {
+    "type": "bearer",
+    "secret": "apiKey"
+  }
+}

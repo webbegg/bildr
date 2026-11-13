@@ -133,6 +133,33 @@ describe('regenerate', { timeout: 60_000 }, () => {
   })
 })
 
+// V7 (E2): without a sqlite data source there is no database: the migration pipeline is a no-op.
+describe('regenerate without a database', { timeout: 60_000 }, () => {
+  const DB_FILES = ['drizzle.config.ts', 'layers/core/server/plugins/migrate.ts', 'layers/core/server/utils/db.ts']
+
+  it('an API-only project regenerates without drizzle-kit, ignoring a stale migrations folder and pending plan', async () => {
+    const api = join(root, 'api')
+    createProject(api, { name: 'Api', database: 'none' })
+    mkdirSync(join(api, 'server/database/migrations/meta'), { recursive: true })
+    writeFileSync(join(api, 'server/database/migrations/meta/_journal.json'), JSON.stringify({ version: '7', dialect: 'sqlite', entries: [] }))
+    mkdirSync(join(api, '.bildr/.cache'), { recursive: true })
+    writeFileSync(join(api, PENDING_FILE), JSON.stringify({ hash: 'h1', destructive: ['DROP TABLE `t`;'], losing: ['table t'], statements: [] }))
+    const result = await regenerate(api)
+    expect(result).toMatchObject({ ok: true, migration: { kind: 'none' } })
+    expect(existsSync(join(api, PENDING_FILE))).toBe(false)
+    expect(readHealth(api).migration).toBeNull()
+    for (const path of DB_FILES) expect(existsSync(join(api, path)), path).toBe(false)
+  })
+
+  it('removing the last sqlite data source removes the database layer the sync manages', async () => {
+    rmSync(join(dir, '.bildr/datasources/main.json'))
+    const result = await regenerate(dir)
+    expect(result.ok && result.report.removed.sort()).toEqual(DB_FILES)
+    for (const path of DB_FILES) expect(existsSync(join(dir, path)), path).toBe(false)
+    expect(read('layers/core/nuxt.config.ts')).not.toContain('db: {')
+  })
+})
+
 // T9c (S6, RA §7): every regeneration refreshes the Health report; Health never blocks it.
 describe('regenerate refreshes health', { timeout: 60_000 }, () => {
   it('lists a hand-edited generated file as detached with its diff, and no pending migration', async () => {

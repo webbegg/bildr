@@ -171,6 +171,13 @@ export const EntityFileSchema = z.object({
 export const REPOSITORY_OPERATIONS = ['list', 'get', 'create', 'update', 'delete'] as const
 const OrderSchema = z.object({ field: CamelNameSchema, direction: z.enum(['asc', 'desc']) })
 
+export const REST_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'] as const
+/** One endpoint of a REST repository operation. `:id` in the path is the entity key. */
+export const RestEndpointSchema = z.object({
+  method: z.enum(REST_METHODS).optional(),
+  path: z.string().regex(/^\/[\w\-/:.]*$/, 'Use a path like /posts/:id')
+})
+
 export const RepositoryFileSchema = z.object({
   ...schemaField,
   id: ArtifactIdSchema,
@@ -180,7 +187,17 @@ export const RepositoryFileSchema = z.object({
   operations: z.array(z.enum(REPOSITORY_OPERATIONS)).min(1),
   finders: z.array(z.object({ by: ArtifactIdSchema })).optional(),
   list: z.object({ orderBy: z.array(OrderSchema) }).optional(),
-  rest: z.looseObject({}).optional(),
+  /** REST data sources: `list` (paging, items path), `fieldMap`, and the endpoint of each other operation (defaults: GET, POST, PUT, DELETE). */
+  // Declared in file order (list, paging, fieldMap first): the canonical form keeps the keys the way they are written.
+  rest: z.looseObject({
+    list: z.looseObject({}).optional(),
+    paging: z.looseObject({}).optional(),
+    fieldMap: z.record(z.string(), z.string()).optional(),
+    get: RestEndpointSchema.optional(),
+    create: RestEndpointSchema.optional(),
+    update: RestEndpointSchema.optional(),
+    delete: RestEndpointSchema.optional()
+  }).optional(),
   expose: z.object({ list: z.boolean() }).optional()
 })
 

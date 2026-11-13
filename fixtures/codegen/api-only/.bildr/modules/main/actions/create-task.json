@@ -1,0 +1,41 @@
+{
+  "$schema": "https://bildr.dev/schema/action.v1.json",
+  "id": "act_create_task",
+  "name": "createTask",
+  "label": "Create task",
+  "http": {
+    "method": "POST",
+    "path": "/tasks"
+  },
+  "input": {
+    "entity": "ent_task",
+    "pick": [
+      "id",
+      "title",
+      "done"
+    ]
+  },
+  "output": {
+    "entity": "ent_task"
+  },
+  "errors": [],
+  "steps": [
+    {
+      "kind": "validate"
+    },
+    {
+      "kind": "repository",
+      "repository": "repo_task",
+      "op": "create"
+    }
+  ],
+  "client": {
+    "optimistic": {
+      "kind": "insert",
+      "entity": "ent_task"
+    },
+    "invalidates": [
+      "ent_task"
+    ]
+  }
+}

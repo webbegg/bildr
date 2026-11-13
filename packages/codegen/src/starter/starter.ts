@@ -24,7 +24,16 @@ export interface StarterKitOptions {
   module?: string
   /** Dependency spec for `@bildr/nuxt` (a version, or `link:<path>` while it is unpublished). Default `^0.1.0`. */
   bildrNuxt?: string
+  /**
+   * The app database (V7, E2). `sqlite` (default): a `main` sqlite data source, Drizzle and
+   * libSQL. `none`: an API-only project, no database code or dependencies; data comes from
+   * REST data sources. Adding a sqlite data source later turns the database on.
+   */
+  database?: StarterDatabase
 }
+
+export const STARTER_DATABASES = ['sqlite', 'none'] as const
+export type StarterDatabase = typeof STARTER_DATABASES[number]
 
 export const BILDR_NUXT_VERSION = '^0.1.0'
 
@@ -37,24 +46,25 @@ export interface StarterKit {
 const packageName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'bildr-app'
 const pascal = (name: string) => name.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('')
 
-export const starterKit = ({ name, module = 'main', bildrNuxt = BILDR_NUXT_VERSION }: StarterKitOptions): StarterKit => {
+export const starterKit = ({ name, module = 'main', bildrNuxt = BILDR_NUXT_VERSION, database = 'sqlite' }: StarterKitOptions): StarterKit => {
   const title = name.trim()
   if (!title) throw new Error('Give the project a name')
   if (!ModuleNameSchema.safeParse(module).success) throw new Error(`Module name "${module}": use lowercase letters, digits and dashes (kebab-case)`)
   if ((RESERVED_MODULE_NAMES as readonly string[]).includes(module)) throw new Error(`Module name "${module}" is reserved (Nuxt aliases and the core layer use it)`)
+  if (!(STARTER_DATABASES as readonly string[]).includes(database)) throw new Error(`Database "${String(database)}": use ${STARTER_DATABASES.join(' or ')}`)
 
-  const model = initialModel(title, module)
-  const files: GeneratedFile[] = [...generate(model.loaded), ...scaffoldFiles(title, module, bildrNuxt)]
+  const model = initialModel(title, module, database)
+  const files: GeneratedFile[] = [...generate(model.loaded), ...scaffoldFiles(title, module, bildrNuxt, database)]
   return { model: model.files, files: files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0) }
 }
 
 // ── The initial .bildr/ model ──────────────────────────────────────────
 
-const initialModel = (title: string, module: string): { files: Record<string, string>, loaded: Model } => {
+const initialModel = (title: string, module: string, database: StarterDatabase): { files: Record<string, string>, loaded: Model } => {
   const raw: Record<string, unknown> = {
     '.bildr/bildr.json': { schemaVersion: 1, generatorVersion: GENERATOR_VERSION, starterKit: STARTER_KIT_VERSION, name: title, defaultModule: module, modules: [module] },
     '.bildr/theme.json': DEFAULT_THEME,
-    '.bildr/datasources/main.json': { id: 'ds_main', name: 'main', kind: 'sqlite', env: { url: 'NUXT_DB_URL' }, defaults: { url: 'file:.data/app.db' } },
+    ...(database === 'sqlite' ? { '.bildr/datasources/main.json': { id: 'ds_main', name: 'main', kind: 'sqlite', env: { url: 'NUXT_DB_URL' }, defaults: { url: 'file:.data/app.db' } } } : {}),
     '.bildr/layouts/main.json': {
       id: 'lay_main',
       name: 'main',
@@ -91,51 +101,79 @@ const initialModel = (title: string, module: string): { files: Record<string, st
 
 // ── Scaffold-once files (the user's after creation) ──────────────────────────
 
-const scaffoldFiles = (title: string, module: string, bildrNuxt: string): GeneratedFile[] => [
-  ...Object.entries(STARTER_ROOT_FILES).filter(([path]) => SCAFFOLD_ROOT_FILES.has(path)).map(([path, content]) => ({ path, content, owner: 'scaffold' as const })),
-  { path: 'package.json', owner: 'scaffold', content: `${JSON.stringify({
-    name: packageName(title),
-    private: true,
-    type: 'module',
-    scripts: {
-      'dev': 'nuxt dev',
-      'build': 'nuxt build',
-      'preview': 'nuxt preview',
-      'postinstall': 'nuxt prepare',
-      'typecheck': 'nuxt typecheck',
-      'lint': 'eslint .',
-      'test': 'vitest run',
-      'db:generate': 'drizzle-kit generate'
-    },
-    dependencies: {
-      '@libsql/client': '^0.18.0',
-      '@nuxt/ui': '^4.12.0',
-      '@tanstack/query-core': '^5.100.0',
-      '@tanstack/query-db-collection': '^1.5.2',
-      '@tanstack/vue-db': '1.0.0-rc.1.5',
-      'drizzle-orm': '^0.45.4',
-      'nuxt': '^4.6.3',
-      'zod': '^4.6.7'
-    },
-    devDependencies: {
-      '@bildr/nuxt': bildrNuxt,
-      '@iconify-json/lucide': '^1.2.147',
-      '@nuxt/eslint': '^1.17.0',
-      '@nuxt/test-utils': '^4.4.0',
-      'drizzle-kit': '^0.31.11',
-      'eslint': '^10.13.0',
-      'tailwindcss': '^4.3.3',
-      'typescript': '^6.0.3',
-      'vitest': '^5.1.0',
-      'vue-tsc': '^3.3.13'
-    },
-    packageManager: 'pnpm@12.15.0'
-  }, null, 2)}\n` },
-  { path: '.env.example', owner: 'scaffold', content: '# Database (libSQL: a local file by default, or a remote libsql:// URL)\nNUXT_DB_URL=file:.data/app.db\n' },
-  { path: 'README.md', owner: 'scaffold', content: readme(title, module) }
-]
+/**
+ * What a project needs for its app database (D3): add these to package.json when a sqlite
+ * data source is added to a project created without one. package.json is the user's
+ * (scaffold-once), so bildr never edits it after creation.
+ */
+export const DATABASE_DEPENDENCIES = {
+  dependencies: { '@libsql/client': '^0.18.0', 'drizzle-orm': '^0.45.4' },
+  devDependencies: { 'drizzle-kit': '^0.31.11' },
+  scripts: { 'db:generate': 'drizzle-kit generate' }
+} as const
 
-const readme = (title: string, module: string) => `# ${title}
+const sorted = (entries: Record<string, string>) => Object.fromEntries(Object.entries(entries).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
+
+const scaffoldFiles = (title: string, module: string, bildrNuxt: string, database: StarterDatabase): GeneratedFile[] => {
+  const db = database === 'sqlite'
+  return [
+    ...Object.entries(STARTER_ROOT_FILES).filter(([path]) => SCAFFOLD_ROOT_FILES.has(path)).map(([path, content]) => ({ path, content, owner: 'scaffold' as const })),
+    { path: 'package.json', owner: 'scaffold', content: `${JSON.stringify({
+      name: packageName(title),
+      private: true,
+      type: 'module',
+      scripts: {
+        dev: 'nuxt dev',
+        build: 'nuxt build',
+        preview: 'nuxt preview',
+        postinstall: 'nuxt prepare',
+        typecheck: 'nuxt typecheck',
+        lint: 'eslint .',
+        test: 'vitest run',
+        ...(db ? DATABASE_DEPENDENCIES.scripts : {})
+      },
+      dependencies: sorted({
+        '@nuxt/ui': '^4.12.0',
+        '@tanstack/query-core': '^5.100.0',
+        '@tanstack/query-db-collection': '^1.5.2',
+        '@tanstack/vue-db': '1.0.0-rc.1.5',
+        'nuxt': '^4.6.3',
+        'zod': '^4.6.7',
+        ...(db ? DATABASE_DEPENDENCIES.dependencies : {})
+      }),
+      devDependencies: sorted({
+        '@bildr/nuxt': bildrNuxt,
+        '@iconify-json/lucide': '^1.2.147',
+        '@nuxt/eslint': '^1.17.0',
+        '@nuxt/test-utils': '^4.4.0',
+        'eslint': '^10.13.0',
+        'tailwindcss': '^4.3.3',
+        'typescript': '^6.0.3',
+        'vitest': '^5.1.0',
+        'vue-tsc': '^3.3.13',
+        ...(db ? DATABASE_DEPENDENCIES.devDependencies : {})
+      }),
+      packageManager: 'pnpm@12.15.0'
+    }, null, 2)}\n` },
+    {
+      path: '.env.example',
+      owner: 'scaffold',
+      content: db
+        ? '# Database (libSQL: a local file by default, or a remote libsql:// URL)\nNUXT_DB_URL=file:.data/app.db\n'
+        : '# This project has no database: its data comes from REST data sources.\n# Each one reads its settings from NUXT_DATASOURCES_<NAME>_* env vars (base URL, API key).\n'
+    },
+    { path: 'README.md', owner: 'scaffold', content: readme(title, module, db) }
+  ]
+}
+
+const noDatabaseNote = [
+  'Copy `.env.example` to `.env` to point the REST data sources at their APIs.',
+  '',
+  'This project has no database (created with `--database none`). To add one, add a sqlite data source in the editor: bildr generates the database layer. Then add',
+  `${Object.keys({ ...DATABASE_DEPENDENCIES.dependencies, ...DATABASE_DEPENDENCIES.devDependencies }).map(name => `\`${name}\``).join(', ')} and the \`db:generate\` script to \`package.json\`, and run \`pnpm install\`.`
+].join('\n')
+
+const readme = (title: string, module: string, db: boolean) => `# ${title}
 
 A Nuxt 4 app built with bildr. It's a normal Nuxt project: it runs, builds and deploys without the bildr editor.
 
@@ -143,22 +181,21 @@ A Nuxt 4 app built with bildr. It's a normal Nuxt project: it runs, builds and d
 
 \`\`\`sh
 pnpm install
-pnpm dev            # http://localhost:3000 (migrations apply on start)
+pnpm dev            # http://localhost:3000${db ? ' (migrations apply on start)' : ''}
 pnpm build && node .output/server/index.mjs
 \`\`\`
 
-Copy \`.env.example\` to \`.env\` to change the database URL.
+${db ? 'Copy `.env.example` to `.env` to change the database URL.' : noDatabaseNote}
 
 ## Layout
 
 | Path | What it is | Who owns it |
 |---|---|---|
 | \`.bildr/\` | The model the editor saves: modules, entities, repositories, queries, actions, pages, components, layouts, theme. \`manifest.json\` lists the files bildr generated. | bildr editor |
-| \`layers/core/\` | Shared kernel (\`Result\`, \`Page\`, ids), database client, migrations on boot, HTTP error mapping, query client, theme, app shell, layouts. | generated |
+| \`layers/core/\` | Shared kernel (\`Result\`, \`Page\`, ids), ${db ? 'database client, migrations on boot, ' : ''}HTTP error mapping, query client, theme, app shell, layouts. | generated |
 | \`layers/${module}/\` | Your first feature module. Every module is one Nuxt layer. | generated |
 | \`app/\`, \`server/\` | Your code. Files here override the same path in any layer. | you |
-| \`server/database/migrations/\` | Drizzle migrations. Written once, never regenerated. | you |
-| \`nuxt.config.ts\`, \`package.json\` | Project config. Written once by the starter kit. | you |
+${db ? '| `server/database/migrations/` | Drizzle migrations. Written once, never regenerated. | you |\n' : ''}| \`nuxt.config.ts\`, \`package.json\` | Project config. Written once by the starter kit. | you |
 
 ## Inside a module layer
 
@@ -184,5 +221,5 @@ test/                     use-case, adapter and API tests
 
 ## Scripts
 
-\`dev\`, \`build\`, \`preview\`, \`typecheck\`, \`lint\`, \`test\` (unit and API tests), \`db:generate\` (new migration after entity changes).
+\`dev\`, \`build\`, \`preview\`, \`typecheck\`, \`lint\`, \`test\` (unit and API tests)${db ? ', `db:generate` (new migration after entity changes)' : ''}.
 `

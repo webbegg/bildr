@@ -1,0 +1,90 @@
+{
+  "$schema": "https://bildr.dev/schema/page.v1.json",
+  "id": "pg_index",
+  "name": "index",
+  "path": "/",
+  "layout": "lay_main",
+  "seo": {
+    "title": "Tasks"
+  },
+  "uses": {
+    "queries": [
+      {
+        "as": "tasks",
+        "query": "q_all_tasks"
+      }
+    ]
+  },
+  "root": {
+    "id": "n_page",
+    "type": "Page",
+    "props": {
+      "tag": "section"
+    },
+    "style": {
+      "display": "flex",
+      "direction": "col",
+      "gap": "4"
+    },
+    "children": [
+      {
+        "id": "n_h1",
+        "type": "Heading",
+        "props": {
+          "level": 1,
+          "text": "Tasks"
+        },
+        "style": {
+          "text": "3xl",
+          "font": "semibold"
+        }
+      },
+      {
+        "id": "n_new",
+        "type": "Link",
+        "props": {
+          "to": {
+            "page": "pg_new_task"
+          },
+          "text": "New task"
+        }
+      },
+      {
+        "id": "n_list",
+        "type": "List",
+        "props": {
+          "items": {
+            "$bind": "tasks"
+          },
+          "as": "task",
+          "empty": "No tasks yet.",
+          "loading": "Loading…"
+        },
+        "style": {
+          "display": "flex",
+          "direction": "col",
+          "gap": "2"
+        },
+        "children": [
+          {
+            "id": "n_task",
+            "type": "Link",
+            "props": {
+              "to": {
+                "page": "pg_task_detail",
+                "params": {
+                  "id": {
+                    "$bind": "task.id"
+                  }
+                }
+              },
+              "text": {
+                "$bind": "task.title"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

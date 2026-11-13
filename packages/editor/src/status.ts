@@ -12,6 +12,8 @@ export interface Status {
   healthError: Ref<string | null>
   pending: Ref<PendingMigration | null>
   pendingError: Ref<string | null>
+  /** Whether the project has an app database (V7); false hides the Migrations screen. True until known. */
+  database: Ref<boolean>
   refreshHealth: () => Promise<void>
   refreshPending: () => Promise<void>
   refresh: () => Promise<void>
@@ -24,6 +26,7 @@ export const createStatus = (): Status => {
   const healthError = ref<string | null>(null)
   const pending = ref<PendingMigration | null>(null)
   const pendingError = ref<string | null>(null)
+  const database = ref(true)
 
   const refreshHealth = async () => {
     try {
@@ -35,8 +38,9 @@ export const createStatus = (): Status => {
   }
   const refreshPending = async () => {
     try {
-      const result = await callAction<{ pending: PendingMigration | null }>('migration_pending_get')
+      const result = await callAction<{ pending: PendingMigration | null, database?: boolean }>('migration_pending_get')
       pending.value = result.pending ?? null
+      database.value = result.database !== false
       pendingError.value = null
     } catch (error) {
       pendingError.value = errorMessage(error)
@@ -45,7 +49,7 @@ export const createStatus = (): Status => {
   const refresh = async () => {
     await Promise.all([refreshHealth(), refreshPending()])
   }
-  return { health, healthError, pending, pendingError, refreshHealth, refreshPending, refresh }
+  return { health, healthError, pending, pendingError, database, refreshHealth, refreshPending, refresh }
 }
 
 export const useStatus = (): Status => {

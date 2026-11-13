@@ -87,7 +87,8 @@ const appConfigFile = (model: Model, theme: Theme): GeneratedFile => {
 
 const nuxtConfigFile = (model: Model): GeneratedFile => {
   const sqlite = model.datasources.filter(source => source.kind === 'sqlite')
-  if (sqlite.length !== 1) throw new Error(`The project needs exactly one sqlite data source (the app database), found ${sqlite.length}`)
+  // The app database is optional (V7): none for an API-only project, at most one.
+  if (sqlite.length > 1) throw new Error(`The project can have at most one sqlite data source (the app database), found ${sqlite.length}`)
   const rest = model.datasources.filter(source => source.kind === 'rest')
   return {
     path: 'layers/core/nuxt.config.ts',
@@ -107,10 +108,14 @@ const nuxtConfigFile = (model: Model): GeneratedFile => {
       '  css: [here(\'./app/assets/css/theme.css\')],',
       '  nitro: { experimental: { tasks: true } },',
       '  runtimeConfig: {',
-      '    db: {',
-      `      url: ${tsString(sqlite[0]!.defaults?.url ?? '')},`,
-      '      migrationsDir: \'server/database/migrations\'',
-      '    },',
+      ...(sqlite[0]
+        ? [
+            '    db: {',
+            `      url: ${tsString(sqlite[0].defaults?.url ?? '')},`,
+            '      migrationsDir: \'server/database/migrations\'',
+            '    },'
+          ]
+        : []),
       '    // Data sources. Values come from NUXT_DATASOURCES_* env vars; see .env.example.',
       rest.length
         ? ['    datasources: {', rest.map(restSourceLine).join(',\n'), '    }'].join('\n')

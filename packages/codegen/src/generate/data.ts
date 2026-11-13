@@ -8,7 +8,7 @@ import { domainFile } from './entity.ts'
 import { importLine } from './imports.ts'
 import {
   drizzleRepositoryFile, drizzleSchemaFile, listRouteFile, listUseCaseFile, memoryRepositoryFile, portFile,
-  restRepositoryFile, restRepositoryTestFile
+  restDoesMoreThanList, restRepositoryFile, restRepositoryTestFile
 } from './repository.ts'
 import { file, header, tsLiteral } from './text.ts'
 
@@ -40,6 +40,8 @@ const moduleData = (context: ModuleContext): Array<Omit<GeneratedFile, 'owner'>>
       out.push(drizzleRepositoryFile(context, entity, repository), memoryRepositoryFile(context, entity, repository))
     } else {
       out.push(restRepositoryFile(context, entity, repository), restRepositoryTestFile(context, entity, repository))
+      // Lookups and writes are what use-cases call: their tests run against an in-memory twin, as for the database.
+      if (restDoesMoreThanList(repository)) out.push(memoryRepositoryFile(context, entity, repository))
     }
     if (repository.expose?.list && repository.operations.includes('list')) {
       out.push(listUseCaseFile(context, entity, repository), listRouteFile(context, entity, repository), collectionFile(context, entity, repository))

@@ -69,5 +69,12 @@ export const allFields = (entity: EntityFile): Field[] => [
   ...(entity.timestamps ? TIMESTAMP_FIELDS : [])
 ]
 
+/**
+ * Whether the project has an app database (V7, E2): a `sqlite` data source. Without one
+ * the database layer (client, schema, migrations, boot migrate plugin) isn't generated.
+ */
+export const hasDatabase = (model: Pick<Model, 'datasources'>): boolean =>
+  model.datasources.some(source => source.kind === 'sqlite')
+
 export const isWritable = (repository: RepositoryFile | undefined) =>
   !!repository && repository.operations.some(op => op === 'create' || op === 'update' || op === 'delete')

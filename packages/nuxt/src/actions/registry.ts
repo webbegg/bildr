@@ -1,5 +1,7 @@
 import { z } from 'zod'
+import { hasDatabase } from '@bildr/codegen/generate'
 import { MANIFEST_FILE, fileKind, loadModel } from '@bildr/codegen/model'
+import type { DataSourceFile } from '@bildr/codegen/model'
 import { CHECK_NAMES, readHealth } from '../node/health.ts'
 import type { CheckName } from '../node/health.ts'
 import { codeView, deleteModelFile, isDeletableModelPath, isModelFilePath, pendingMigration, saveModelFile } from '../node/editor-io.ts'
@@ -29,15 +31,25 @@ const parsedFiles = (files: Record<string, string>): Record<string, unknown> => 
   return parsed
 }
 
+/**
+ * Whether the project has an app database (V7): a sqlite data source file. Read from the
+ * files, so it holds while the rest of the model has problems.
+ */
+const databaseOf = (parsed: Record<string, unknown>) => hasDatabase({
+  datasources: Object.entries(parsed).filter(([path]) => path.startsWith('.bildr/datasources/')).map(([, file]) => file as DataSourceFile)
+})
+
 const modelGet = defineAction({
   name: 'model_get',
-  description: 'Read the project\'s .bildr/ model: the validated model and every model file as JSON, or the problems that keep it from loading (the files are returned too, so they can be fixed).',
+  description: 'Read the project\'s .bildr/ model: the validated model and every model file as JSON, or the problems that keep it from loading (the files are returned too, so they can be fixed). `database` says whether the project has an app database (a sqlite data source); without one there are no migrations.',
   input: z.object({}),
   readOnly: true,
   run: (_input, { root }) => {
     const files = readModelFiles(root)
     const result = loadModel(files)
-    return result.ok ? { ok: true, model: result.model, files: parsedFiles(files) } : { ok: false, problems: result.problems, files: parsedFiles(files) }
+    const parsed = parsedFiles(files)
+    const database = databaseOf(parsed)
+    return result.ok ? { ok: true, model: result.model, files: parsed, database } : { ok: false, problems: result.problems, files: parsed, database }
   }
 })
 
@@ -105,10 +117,13 @@ const healthRun = defineAction({
 
 const migrationPendingGet = defineAction({
   name: 'migration_pending_get',
-  description: 'Read the database migration that would lose data and waits for confirmation (what it drops, its statements and its hash), or null when there is none.',
+  description: 'Read the database migration that would lose data and waits for confirmation (what it drops, its statements and its hash), or null when there is none. `database` is false when the project has no app database (no sqlite data source): then nothing is ever pending.',
   input: z.object({}),
   readOnly: true,
-  run: (_input, { root }) => ({ pending: pendingMigration(root) })
+  run: (_input, { root }) => {
+    const database = databaseOf(parsedFiles(readModelFiles(root)))
+    return { pending: database ? pendingMigration(root) : null, database }
+  }
 })
 
 const migrationConfirm = defineAction({

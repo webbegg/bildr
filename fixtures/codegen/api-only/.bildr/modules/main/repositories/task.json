@@ -1,0 +1,27 @@
+{
+  "$schema": "https://bildr.dev/schema/repository.v1.json",
+  "id": "repo_task",
+  "entity": "ent_task",
+  "datasource": "ds_api",
+  "operations": [
+    "list",
+    "get",
+    "create"
+  ],
+  "rest": {
+    "list": {
+      "path": "/tasks",
+      "itemsPath": "items",
+      "totalPath": "total"
+    },
+    "get": {
+      "path": "/tasks/:id"
+    },
+    "create": {
+      "path": "/tasks"
+    }
+  },
+  "expose": {
+    "list": true
+  }
+}

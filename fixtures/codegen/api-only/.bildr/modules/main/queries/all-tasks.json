@@ -1,0 +1,9 @@
+{
+  "$schema": "https://bildr.dev/schema/query.v1.json",
+  "id": "q_all_tasks",
+  "name": "allTasks",
+  "label": "All tasks",
+  "from": "ent_task",
+  "params": [],
+  "result": "many"
+}

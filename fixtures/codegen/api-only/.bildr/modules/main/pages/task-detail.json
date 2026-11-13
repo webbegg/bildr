@@ -1,0 +1,74 @@
+{
+  "$schema": "https://bildr.dev/schema/page.v1.json",
+  "id": "pg_task_detail",
+  "name": "tasks-id",
+  "path": "/tasks/:id",
+  "layout": "lay_main",
+  "params": [
+    {
+      "name": "id"
+    }
+  ],
+  "seo": {
+    "title": {
+      "$bind": "task.title",
+      "fallback": "Task"
+    }
+  },
+  "uses": {
+    "queries": [
+      {
+        "as": "task",
+        "query": "q_task_by_id",
+        "args": {
+          "id": {
+            "$route": "id"
+          }
+        }
+      }
+    ]
+  },
+  "root": {
+    "id": "n_page",
+    "type": "Page",
+    "props": {
+      "loading": "Loading…",
+      "empty": "This task doesn't exist.",
+      "when": {
+        "$bind": "task"
+      },
+      "tag": "article"
+    },
+    "style": {
+      "display": "flex",
+      "direction": "col",
+      "gap": "4"
+    },
+    "children": [
+      {
+        "id": "n_title",
+        "type": "Heading",
+        "props": {
+          "level": 1,
+          "text": {
+            "$bind": "task.title"
+          }
+        },
+        "style": {
+          "text": "3xl",
+          "font": "semibold"
+        }
+      },
+      {
+        "id": "n_done",
+        "type": "Text",
+        "props": {
+          "text": "Done",
+          "visible": {
+            "$bind": "task.done"
+          }
+        }
+      }
+    ]
+  }
+}

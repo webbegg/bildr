@@ -4,8 +4,13 @@
  * empty directory to a built, booted app that lists, shows and creates a
  * record. Standalone: it needs no running bildr server (unlike e2e/all.mjs).
  *
- *   node e2e/generated.mjs [--install] [--packed] [--keep]
+ *   node e2e/generated.mjs [--install] [--packed] [--keep] [--database none]
  *   pnpm e2e:generated
+ *
+ * `--database none` (V7, E2): the same loop for an API-only project. `create-bildr
+ * --database none`, the model is fixtures/codegen/api-only/.bildr (one REST data source,
+ * a Task entity, list/detail/create pages), the generated app has no database code or
+ * dependency, and the smoke runs against an in-process stub of that REST source.
  *
  * Steps, in a fresh temp dir under $E2E_TMP (default: the OS temp dir):
  * 0. pack     `--packed` only (T12): `pnpm pack` @bildr/codegen, @bildr/editor,
@@ -48,16 +53,29 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const REPO = fileURLToPath(new URL('..', import.meta.url))
 const FIXTURE = join(REPO, 'fixtures/codegen/blog')
+const API_ONLY_FIXTURE = join(REPO, 'fixtures/codegen/api-only')
 const CLI = join(REPO, 'packages/create-bildr/src/cli.ts')
 const PLAYWRIGHT_CORE = process.env.PLAYWRIGHT_CORE || join(homedir(), '.t3/runtime/versions/0.1.6/node_modules/playwright-core/index.mjs')
 const CHROMIUM = process.env.CHROMIUM || join(homedir(), '.cache/ms-playwright/chromium-1194/chrome-linux/chrome')
 
-const flags = new Set(process.argv.slice(2))
+const USAGE = 'Usage: node e2e/generated.mjs [--install] [--packed] [--keep] [--database sqlite|none]'
+const argv = process.argv.slice(2)
+let DATABASE = 'sqlite'
+const flags = new Set()
+for (let i = 0; i < argv.length; i++) {
+  const [flag, inline] = argv[i].split(/=(.*)/s, 2)
+  if (flag === '--database') {
+    DATABASE = inline ?? argv[++i]
+    if (!['sqlite', 'none'].includes(DATABASE)) throw new Error(`--database: use sqlite or none. ${USAGE}`)
+  } else flags.add(argv[i])
+}
+const API_ONLY = DATABASE === 'none'
 const PACKED = flags.has('--packed')
 const INSTALL = flags.has('--install') || PACKED
 const KEEP = flags.has('--keep')
 const MUTATE = new Set((process.env.E2E_MUTATE ?? '').split(',').map(name => name.trim()).filter(Boolean))
-for (const flag of flags) if (!['--install', '--packed', '--keep'].includes(flag)) throw new Error(`Unknown flag ${flag}. Usage: node e2e/generated.mjs [--install] [--packed] [--keep]`)
+for (const flag of flags) if (!['--install', '--packed', '--keep'].includes(flag)) throw new Error(`Unknown flag ${flag}. ${USAGE}`)
+if (API_ONLY && MUTATE.size) throw new Error('E2E_MUTATE breaks the blog app: run it without --database none')
 
 const MINUTE = 60_000
 const UI_TIMEOUT = 20_000
@@ -212,7 +230,8 @@ const readOr = path => existsSync(path) ? readFileSync(path, 'utf8') : undefined
  * links it, and module.json files are never deletable).
  */
 async function create(ctx) {
-  const args = ['--name', 'Blog', '--module', 'blog']
+  // API-only: the starter's `main` module, whose index page the api-only model replaces (same id).
+  const args = API_ONLY ? ['--name', 'Tasks', '--module', 'main', '--database', 'none'] : ['--name', 'Blog', '--module', 'blog']
   const command = PACKED
     ? [join(ctx.packs.runner, 'node_modules/create-bildr/dist/cli.js'), ctx.dir, ...args, '--bildr', `file:${ctx.packs.tarballs['@bildr/nuxt']}`]
     : ['--experimental-strip-types', '--no-warnings', CLI, ctx.dir, ...args]
@@ -315,8 +334,9 @@ async function model(ctx) {
     check(true, `nuxt dev serves the editor actions at ${base}/__bildr (log ${log})`)
 
     // What the golden model needs: its files that the starter lacks or has otherwise; starter-only files go.
-    const golden = modelFiles(FIXTURE)
+    // API-only: the starter's model plus fixtures/codegen/api-only/.bildr.
     const current = modelFiles(ctx.dir)
+    const golden = API_ONLY ? { ...current, ...modelFiles(API_ONLY_FIXTURE) } : modelFiles(FIXTURE)
     const extra = Object.keys(current).filter(path => !(path in golden))
     let todo = Object.keys(golden).filter(path => golden[path] !== current[path])
       .sort((a, b) => kindRank(a) - kindRank(b) || (a < b ? -1 : 1))
@@ -343,6 +363,8 @@ async function model(ctx) {
     }
     console.log(`model put order:\n${order.map((path, index) => `    ${index + 1}. ${path}`).join('\n')}`)
     check(todo.length === 0, `every golden model file was saved through model_file_put (${order.length} puts${todo.length ? `, refused: ${todo.join(', ')}` : ''})`)
+
+    if (API_ONLY) return await settledApiOnly(ctx, action, log, golden)
 
     // Settled: the model loads, no drift, no pending migration, the managed files match, and the log is quiet.
     const goldenManaged = managedPaths(FIXTURE)
@@ -395,6 +417,61 @@ async function model(ctx) {
   }
 }
 
+/** Files an API-only project must have (V7): the REST adapter and the layers over it. */
+const API_ONLY_FILES = [
+  'layers/main/server/infrastructure/repositories/task.rest.ts',
+  'layers/main/server/infrastructure/repositories/task.memory.ts',
+  'layers/main/server/api/main/tasks/index.get.ts',
+  'layers/main/server/api/main/tasks/index.post.ts',
+  'layers/main/app/pages/index.vue',
+  'layers/main/app/pages/tasks/new.vue',
+  'layers/main/app/pages/tasks/[id].vue'
+]
+const DATABASE_FILES = ['drizzle.config.ts', 'layers/core/server/utils/db.ts', 'layers/core/server/plugins/migrate.ts', 'server/database']
+const IMPORTS_DATABASE = /(from|import\(|require\()\s*['"](drizzle-orm|drizzle-kit|@libsql)/
+
+/** `--database none`: regeneration settles with no database, no migration and no database code. */
+async function settledApiOnly(ctx, action, log, golden) {
+  let lastSize = -1
+  let quietSince = Date.now()
+  let state = {}
+  try {
+    await waitFor('regeneration to settle', async () => {
+      const size = statSync(log).size
+      if (size !== lastSize) {
+        lastSize = size
+        quietSince = Date.now()
+      }
+      const [health, pending, model] = await Promise.all([action('health_get'), action('migration_pending_get'), action('model_get')]).catch(() => [])
+      if (!health || !pending || !model) return false
+      state = {
+        model: health.result?.model?.ok === true,
+        drift: health.result?.drift?.files?.length === 0 && health.result.drift.missingManifest === false,
+        migration: pending.ok && pending.result?.pending === null && pending.result?.database === false,
+        database: model.result?.database === false,
+        files: API_ONLY_FILES.every(path => existsSync(join(ctx.dir, path))),
+        quiet: Date.now() - quietSince > 4000,
+        health
+      }
+      return state.model && state.drift && state.migration && state.database && state.files && state.quiet
+    }, 4 * MINUTE, 1000)
+  } catch (error) {
+    console.log(`    ${error.message}`)
+  }
+  check(state.model, 'health_get: the model loads')
+  check(state.drift, `health_get: drift lists no file${state.drift ? '' : ` (${JSON.stringify(state.health?.result?.drift)?.slice(0, 600)})`}`)
+  check(state.migration, 'migration_pending_get: no pending migration, and database: false')
+  check(state.database, 'model_get: database: false')
+  check(state.files, `the REST adapter, its use-case layers and the pages were generated (${API_ONLY_FILES.filter(path => !existsSync(join(ctx.dir, path))).join(', ') || 'all'})`)
+  const present = DATABASE_FILES.filter(path => existsSync(join(ctx.dir, path)))
+  check(present.length === 0, `no database layer: no ${DATABASE_FILES.join(', ')}${present.length ? ` (found ${present.join(', ')})` : ''}`)
+  const after = modelFiles(ctx.dir)
+  const modelDiff = [...new Set([...Object.keys(after), ...Object.keys(golden)])].filter(path => after[path] !== golden[path])
+  check(modelDiff.length === 0, `the project's .bildr/ model is the starter plus the api-only fixture${modelDiff.length ? `; differ: ${modelDiff.join(', ')}` : ''}`)
+  const problems = (readOr(log) ?? '').split('\n').filter(line => /could not regenerate|can't generate|model has problems|did not migrate|could not plan|ERROR/.test(line))
+  check(problems.length === 0, `the dev log has no regeneration or migration errors${problems.length ? `:\n${problems.slice(0, 10).map(line => `    | ${line}`).join('\n')}` : ''}`)
+}
+
 /** Breaks the generated app on purpose (E2E_MUTATE), so a run proves the smoke checks notice. */
 const MUTATIONS = {
   submit: ['layers/blog/app/pages/posts/new.vue', ' @submit.prevent="onFormSubmit"', ''],
@@ -422,6 +499,12 @@ async function standalone(ctx) {
   const dev = Object.keys(pkg.devDependencies ?? {}).filter(isBildr)
   check(runtime.length === 0, `package.json dependencies have no bildr package${runtime.length ? ` (found ${runtime.join(', ')})` : ''}`)
   check(dev.length === 1 && dev[0] === '@bildr/nuxt', `the only bildr devDependency is @bildr/nuxt (found ${dev.join(', ') || 'none'})`)
+  if (API_ONLY) {
+    const database = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter(name => /drizzle|libsql/.test(name))
+    check(database.length === 0, `package.json has no Drizzle or libSQL dependency${database.length ? ` (found ${database.join(', ')})` : ''}`)
+    const importing = walk(join(ctx.dir, 'layers'), ctx.dir).filter(path => IMPORTS_DATABASE.test(readFileSync(join(ctx.dir, path), 'utf8')))
+    check(importing.length === 0, `no generated file imports Drizzle or libSQL${importing.length ? ` (${importing.join(', ')})` : ''}`)
+  }
 
   const configPath = join(ctx.dir, 'nuxt.config.ts')
   const config = readFileSync(configPath, 'utf8')
@@ -447,6 +530,107 @@ function quotesStub() {
     response.end(JSON.stringify(ok ? { quotes: [{ id: 1, quote: 'Stub quote from e2e', author: 'E2E' }], total: 1 } : {}))
   })
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)))
+}
+
+// API-only smoke (--database none).
+
+/** The REST "api" data source of the api-only fixture, in memory: GET /tasks (offset paging), GET /tasks/:id, POST /tasks. */
+function tasksStub() {
+  const tasks = new Map()
+  const calls = []
+  const server = createServer((request, response) => {
+    const url = new URL(request.url, 'http://stub')
+    let body = ''
+    request.on('data', chunk => (body += chunk))
+    request.on('end', () => {
+      calls.push({ method: request.method, path: url.pathname, body: body || undefined, authorization: request.headers.authorization })
+      const send = (status, value) => {
+        response.writeHead(status, { 'content-type': 'application/json' })
+        response.end(value === undefined ? '' : JSON.stringify(value))
+      }
+      const one = /^\/tasks\/([^/]+)$/.exec(url.pathname)
+      if (request.method === 'GET' && url.pathname === '/tasks') {
+        const limit = Number(url.searchParams.get('limit') ?? 100)
+        const offset = Number(url.searchParams.get('offset') ?? 0)
+        return send(200, { items: [...tasks.values()].slice(offset, offset + limit), total: tasks.size })
+      }
+      if (request.method === 'GET' && one) return tasks.has(one[1]) ? send(200, tasks.get(one[1])) : send(404, { message: 'not found' })
+      if (request.method === 'POST' && url.pathname === '/tasks') {
+        const task = JSON.parse(body)
+        tasks.set(task.id, task)
+        return send(201, task)
+      }
+      send(404, { message: 'not found' })
+    })
+  })
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({ server, tasks, calls })))
+}
+
+/** V7: the built API-only app lists, creates and shows a task through its API, over the stub REST source. */
+async function smokeApiOnly(ctx) {
+  for (const [label, path] of [['playwright-core', PLAYWRIGHT_CORE], ['Chromium', CHROMIUM]]) {
+    if (!existsSync(path)) throw new Error(`${label} not found at ${path}; set ${label === 'Chromium' ? 'CHROMIUM' : 'PLAYWRIGHT_CORE'}`)
+  }
+  const stub = await tasksStub()
+  const port = await freePort()
+  const base = `http://127.0.0.1:${port}`
+  const log = join(ctx.tmp, 'server.log')
+  const server = start(process.execPath, ['.output/server/index.mjs'], {
+    cwd: ctx.dir,
+    log,
+    env: { PORT: String(port), HOST: '127.0.0.1', NUXT_DATASOURCES_API_BASE_URL: `http://127.0.0.1:${stub.server.address().port}`, NUXT_DATASOURCES_API_API_KEY: 'e2e-key' }
+  })
+  let browser
+  try {
+    await waitFor('the built server to answer', async () => (await fetch(`${base}/`).catch(() => undefined))?.ok, MINUTE)
+    const empty = await (await fetch(`${base}/api/main/tasks`)).json().catch(() => undefined)
+    check(Array.isArray(empty?.items) && empty.items.length === 0 && empty.total === 0, `API: GET /api/main/tasks lists the empty REST source → ${JSON.stringify(empty)?.slice(0, 200)}`)
+
+    const { chromium } = await import(pathToFileURL(PLAYWRIGHT_CORE).href)
+    browser = await chromium.launch({ executablePath: CHROMIUM, headless: true })
+    const page = await browser.newPage()
+    const errors = []
+    page.on('console', message => message.type() === 'error' && errors.push(`console: ${message.text()}`))
+    page.on('pageerror', error => errors.push(`page error: ${error.message}`))
+    page.on('requestfailed', request => request.failure()?.errorText !== 'net::ERR_ABORTED' && errors.push(`request failed: ${request.method()} ${request.url()} (${request.failure()?.errorText})`))
+    const external = new Set()
+    page.on('request', request => !request.url().startsWith(base) && !request.url().startsWith('data:') && external.add(new URL(request.url()).origin + new URL(request.url()).pathname))
+    page.on('response', response => response.status() >= 400 && !response.url().endsWith('/favicon.ico') && errors.push(`HTTP ${response.status()}: ${response.request().method()} ${response.url()}`))
+    const visible = async (locator, msg) => check(await locator.first().waitFor({ timeout: UI_TIMEOUT }).then(() => true, () => false), msg)
+
+    const title = `E2E task ${Date.now()}`
+    await page.goto(`${base}/`)
+    await visible(page.getByText('No tasks yet.'), 'list page: the empty state from the REST source')
+    await page.getByRole('link', { name: 'New task' }).click()
+    await visible(page.getByRole('heading', { name: 'New task' }), 'the "New task" link opens the create form')
+    await page.locator('input[name="title"]').fill(title)
+    await page.getByRole('button', { name: 'Create' }).click()
+    check(await page.waitForURL(`${base}/`, { timeout: UI_TIMEOUT }).then(() => true, () => false), `create: the form goes back to the list (at ${page.url()})`)
+    await visible(page.getByRole('link', { name: title }), 'list page: the new task')
+
+    const posted = stub.calls.find(call => call.method === 'POST' && call.path === '/tasks')
+    const sent = posted?.body ? JSON.parse(posted.body) : undefined
+    check(sent?.title === title && sent.done === false && typeof sent.id === 'string', `the REST source got POST /tasks with the remote fields (${posted?.body})`)
+    check(posted?.authorization === 'Bearer e2e-key', `the REST source got the API key from the env, as a bearer token (${posted?.authorization})`)
+    const list = await (await fetch(`${base}/api/main/tasks`)).json().catch(() => undefined)
+    check(list?.items?.length === 1 && list.items[0].title === title, `API: GET /api/main/tasks lists the created task (${JSON.stringify(list)?.slice(0, 300)})`)
+
+    if (sent?.id) {
+      await page.getByRole('link', { name: title }).first().click()
+      check(await page.waitForURL(`**/tasks/${sent.id}`, { timeout: UI_TIMEOUT }).then(() => true, () => false), `list page: the task opens its detail page /tasks/${sent.id}`)
+      await visible(page.getByRole('heading', { name: title }), 'detail page: the title')
+      await page.goto(`${base}/tasks/${sent.id}`)
+      await visible(page.getByRole('heading', { name: title }), 'detail page by direct URL: the title')
+    }
+
+    check(errors.length === 0, `no console errors or failed requests${errors.length ? `:\n${errors.map(line => `    | ${line}`).join('\n')}` : ''}`)
+    check(external.size === 0, `the app requested no other origins at runtime${external.size ? `:\n${[...external].map(url => `    | ${url}`).join('\n')}` : ''}`)
+  } finally {
+    await browser?.close().catch(() => {})
+    await stop(server)
+    await new Promise(resolve => stub.server.close(resolve))
+    if (counts.fail) console.log(`server log (${log}):\n${tail(log, 15)}`)
+  }
 }
 
 /** S2 "lists, shows detail and creates a record" on the built app with a fresh database. */
@@ -531,13 +715,13 @@ async function smoke(ctx) {
 
 // ── Main ───────────────────────────────────────────────────────────────
 
-const STEPS = [...(PACKED ? [['pack', pack]] : []), ['create', create], ['install', install], ['model', model], ['standalone', standalone], ['smoke', smoke]]
+const STEPS = [...(PACKED ? [['pack', pack]] : []), ['create', create], ['install', install], ['model', model], ['standalone', standalone], ['smoke', API_ONLY ? smokeApiOnly : smoke]]
 
 async function main() {
   const parent = process.env.E2E_TMP ?? tmpdir()
   const tmp = mkdtempSync(join(parent, 'bildr-e2e-'))
-  const ctx = { tmp, dir: join(tmp, 'blog') }
-  console.log(`temp dir: ${tmp}${MUTATE.size ? ` (E2E_MUTATE=${[...MUTATE].join(',')})` : ''}`)
+  const ctx = { tmp, dir: join(tmp, API_ONLY ? 'tasks' : 'blog') }
+  console.log(`temp dir: ${tmp}${MUTATE.size ? ` (E2E_MUTATE=${[...MUTATE].join(',')})` : ''}${API_ONLY ? ' (--database none: API-only project)' : ''}`)
   const cleanup = () => {
     killAll()
     if (!KEEP) rmSync(tmp, { recursive: true, force: true })

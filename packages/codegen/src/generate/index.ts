@@ -3,6 +3,7 @@ import type { Model } from '../model/load.ts'
 import { STARTER_CORE_FILES, STARTER_ROOT_FILES } from '../starter/core-files.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
 import { generateActions } from './actions.ts'
+import { hasDatabase } from './context.ts'
 import { generateData } from './data.ts'
 import { generateProject } from './project.ts'
 import { generateUi } from './ui.ts'
@@ -13,6 +14,10 @@ export { generateActions } from './actions.ts'
 export { generateData } from './data.ts'
 export { generateProject } from './project.ts'
 export { generateUi } from './ui.ts'
+export { hasDatabase } from './context.ts'
+
+/** Static files of the database layer: generated only while the model has a sqlite data source (V7). */
+export const DATABASE_FILES = new Set(['layers/core/server/utils/db.ts', 'layers/core/server/plugins/migrate.ts', 'drizzle.config.ts'])
 
 /** Root files the starter kit writes once and then leaves to the user; never part of a sync. */
 export const SCAFFOLD_ROOT_FILES = new Set(['nuxt.config.ts', 'tsconfig.json', '.gitignore', 'pnpm-workspace.yaml', 'app/README.md', 'server/README.md'])
@@ -52,11 +57,15 @@ export const generate = (model: Model): GeneratedFile[] => {
   return generateAll(model)
 }
 
-const generateAll = (model: Model): GeneratedFile[] => [
-  ...Object.entries(STARTER_CORE_FILES).map(([path, content]) => ({ path, content, owner: 'managed' as const })),
-  ...Object.entries(STARTER_ROOT_FILES).filter(([path]) => !SCAFFOLD_ROOT_FILES.has(path)).map(([path, content]) => ({ path, content, owner: 'managed' as const })),
-  ...generateProject(model),
-  ...generateData(model),
-  ...generateActions(model),
-  ...generateUi(model)
-].sort(byPath)
+const generateAll = (model: Model): GeneratedFile[] => {
+  const database = hasDatabase(model)
+  const kept = (path: string) => database || !DATABASE_FILES.has(path)
+  return [
+    ...Object.entries(STARTER_CORE_FILES).filter(([path]) => kept(path)).map(([path, content]) => ({ path, content, owner: 'managed' as const })),
+    ...Object.entries(STARTER_ROOT_FILES).filter(([path]) => !SCAFFOLD_ROOT_FILES.has(path) && kept(path)).map(([path, content]) => ({ path, content, owner: 'managed' as const })),
+    ...generateProject(model),
+    ...generateData(model),
+    ...generateActions(model),
+    ...generateUi(model)
+  ].sort(byPath)
+}

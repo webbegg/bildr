@@ -350,7 +350,21 @@ pnpm lint
 pnpm typecheck
 pnpm e2e:generated            # create, model, build, boot and smoke a generated app
 pnpm e2e:generated --packed   # the same from the packed npm tarballs (real install)
+pnpm e2e:generated --database none   # the same for an API-only project, against a stub REST source
 ```
+
+## Generated apps with or without a database
+
+`pnpm create bildr <dir> --database sqlite|none` picks the app database of a new generated project (see `packages/create-bildr`).
+
+- `sqlite` (default): a `main` sqlite data source, Drizzle and libSQL, migrations under `server/database/migrations`, applied when the server starts.
+- `none`: an API-only project. Data comes from REST data sources. There is no database code, dependency, drizzle config, migrate plugin or migrations folder, and the editor hides its Migrations screen. `model_get` and `migration_pending_get` return `database: false`.
+
+Entities, repositories, queries, actions and pages are the same model either way. Only the repository adapter differs: Drizzle for a sqlite data source, `fetch` for a REST one.
+
+A REST repository can list, get, create, update and delete. Each operation beyond `list` names its endpoint in `rest`, for example `"get": { "path": "/tasks/:id" }` or `"create": { "path": "/tasks" }`. The default methods are GET, POST, PUT and DELETE, and `method` overrides them. `fieldMap` maps fields both ways.
+
+Adding a sqlite data source later turns the database on: the next sync generates the database layer. Removing the last one removes the generated database files, except those you edited (they become orphaned). `package.json` belongs to you, so bildr never changes it after creation. When you add a database, also add `@libsql/client`, `drizzle-orm` and `drizzle-kit` (and the `db:generate` script). The generated project README lists them.
 
 ## Releasing
 

@@ -112,6 +112,45 @@ describe('starterKit', () => {
   })
 })
 
+// V7 (E2): the database is optional. An API-only project has no sqlite data source and no database code or dependencies.
+describe('starterKit without a database', () => {
+  const kit = starterKit({ name: 'Acme API', database: 'none' })
+  const paths = kit.files.map(file => file.path)
+  const pkg = JSON.parse(kit.files.find(file => file.path === 'package.json')!.content)
+
+  it('starts a valid model with no data source', () => {
+    const result = loadModel(kit.model)
+    expect(result.ok ? [] : result.problems).toEqual([])
+    if (!result.ok) return
+    expect(result.model.datasources).toEqual([])
+    expect(Object.keys(kit.model)).not.toContain('.bildr/datasources/main.json')
+  })
+
+  it('ships no database client, migrate plugin, drizzle config or migrations', () => {
+    for (const path of ['layers/core/server/utils/db.ts', 'layers/core/server/plugins/migrate.ts', 'drizzle.config.ts']) expect(paths, path).not.toContain(path)
+    expect(paths.filter(path => path.includes('server/database') || path.includes('infrastructure/db'))).toEqual([])
+    // No code imports them (the eslint boundary rules still name them, and the README says how to add a database).
+    for (const file of kit.files) expect(file.content, file.path).not.toMatch(/(from|import\(|require\()\s*['"](drizzle-orm|drizzle-kit|@libsql)/)
+    expect(kit.files.find(file => file.path === 'layers/core/nuxt.config.ts')!.content).not.toContain('db:')
+  })
+
+  it('depends on neither drizzle nor libsql', () => {
+    const names = [...Object.keys(pkg.dependencies), ...Object.keys(pkg.devDependencies)]
+    expect(names.filter(name => /drizzle|libsql/.test(name))).toEqual([])
+    expect(Object.keys(pkg.scripts)).not.toContain('db:generate')
+    expect(names).toEqual(expect.arrayContaining(['nuxt', 'zod', '@tanstack/vue-db', '@tanstack/query-db-collection', '@bildr/nuxt']))
+  })
+
+  it('is a starter-kit project the module and the CLI accept', () => {
+    const files = { ...kit.model, ...Object.fromEntries(kit.files.map(file => [file.path, file.content])) }
+    expect(detectStarterKit(path => files[path])).toEqual({ ok: true })
+  })
+
+  it('refuses an unknown database kind', () => {
+    expect(() => starterKit({ name: 'X', database: 'postgres' as never })).toThrow('Database "postgres": use sqlite or none')
+  })
+})
+
 describe('detectStarterKit', () => {
   const fromFiles = (files: Record<string, string>) => (path: string) => files[path]
   const kitFiles = () => {
@@ -132,7 +171,7 @@ describe('detectStarterKit', () => {
     expect(result.reasons).toEqual([
       'No .bildr/bildr.json: this is not a bildr project',
       'No layers/core: the starter kit\'s core layer is missing',
-      'Missing dependencies: zod, drizzle-orm, @libsql/client, @tanstack/vue-db, @tanstack/query-db-collection, @bildr/nuxt'
+      'Missing dependencies: zod, @tanstack/vue-db, @tanstack/query-db-collection, @bildr/nuxt'
     ])
     expect(result.hint).toBe('bildr only runs on projects created from its starter kit. Create one with: pnpm create bildr <name>')
   })
