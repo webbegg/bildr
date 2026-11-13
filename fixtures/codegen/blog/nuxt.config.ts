@@ -7,5 +7,7 @@ export default defineNuxtConfig({
   // @bildr/nuxt is dev only: `nuxt dev` serves the editor at /__bildr; builds never include it.
   modules: ['@nuxt/eslint', '@bildr/nuxt'],
   devtools: { enabled: true },
+  // Icons ship with the app (the installed @iconify-json collections), so it never calls the Iconify API at runtime.
+  icon: { clientBundle: { scan: true } },
   experimental: { typedPages: true }
 })

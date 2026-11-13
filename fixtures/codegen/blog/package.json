@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@bildr/nuxt": "link:../../../packages/nuxt",
+    "@iconify-json/lucide": "^1.2.147",
     "@nuxt/eslint": "^1.17.0",
     "@nuxt/test-utils": "^4.4.0",
     "drizzle-kit": "^0.31.11",

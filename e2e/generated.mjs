@@ -18,8 +18,8 @@
  *             `modules`, `nuxi typecheck`, `nuxi build` and `vitest run` pass (S2).
  * 5. smoke    the built server on a fresh database; a headless Chromium opens the
  *             list, creates a post through the form, sees it in the list and on
- *             its detail page; the API lists it. Console errors and failed
- *             requests are FAILs.
+ *             its detail page; the API lists it. Console errors, failed
+ *             requests and requests to other origins are FAILs.
  *
  * Flags and env:
  * --install          real install instead of the symlink
@@ -415,7 +415,7 @@ async function smoke(ctx) {
     page.on('pageerror', error => errors.push(`page error: ${error.message}`))
     // ERR_ABORTED is a request a navigation cancelled (the form goes to the detail page while the checkbox icon loads).
     page.on('requestfailed', request => request.failure()?.errorText !== 'net::ERR_ABORTED' && errors.push(`request failed: ${request.method()} ${request.url()} (${request.failure()?.errorText})`))
-    // Not a FAIL (yet): the app works, but these need the network at runtime.
+    // The app must work offline: everything it loads comes from its own server (icons too, see the root nuxt.config `icon`).
     const external = new Set()
     page.on('request', request => !request.url().startsWith(base) && !request.url().startsWith('data:') && external.add(new URL(request.url()).origin + new URL(request.url()).pathname))
     page.on('response', response => response.status() >= 400 && !response.url().endsWith('/favicon.ico') && errors.push(`HTTP ${response.status()}: ${response.request().method()} ${response.url()}`))
@@ -456,7 +456,7 @@ async function smoke(ctx) {
     await visible(page.getByRole('heading', { name: post.title }), 'detail page by direct URL: the title')
 
     check(errors.length === 0, `no console errors or failed requests${errors.length ? `:\n${errors.map(line => `    | ${line}`).join('\n')}` : ''}`)
-    if (external.size) console.log(`NOTE the app requested other origins at runtime:\n${[...external].map(url => `    | ${url}`).join('\n')}`)
+    check(external.size === 0, `the app requested no other origins at runtime${external.size ? `:\n${[...external].map(url => `    | ${url}`).join('\n')}` : ''}`)
   } finally {
     await browser?.close().catch(() => {})
     await stop(server)

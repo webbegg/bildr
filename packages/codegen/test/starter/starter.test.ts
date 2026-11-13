@@ -82,6 +82,23 @@ describe('starterKit', () => {
     expect(kit.files.find(file => file.path === 'nuxt.config.ts')!.content).toContain('\'@bildr/nuxt\'')
   })
 
+  it('ships the golden fixture\'s dependencies, so a created project installs what the fixture is proven with', () => {
+    const pkg = JSON.parse(kit.files.find(file => file.path === 'package.json')!.content)
+    const golden = JSON.parse(fixtureFile('package.json'))
+    expect(pkg.dependencies).toEqual(golden.dependencies)
+    const { '@bildr/nuxt': _kit, ...devDependencies } = pkg.devDependencies
+    const { '@bildr/nuxt': _golden, ...goldenDevDependencies } = golden.devDependencies
+    expect(devDependencies).toEqual(goldenDevDependencies)
+  })
+
+  it('serves Nuxt UI\'s icons from the app itself, never from the Iconify API at runtime', () => {
+    const pkg = JSON.parse(kit.files.find(file => file.path === 'package.json')!.content)
+    // An installed collection puts the icons Nuxt UI uses (app.config `ui.icons`) in the client bundle.
+    expect(pkg.devDependencies['@iconify-json/lucide']).toBe('^1.2.147')
+    // Icons named in the app's own files are bundled too.
+    expect(kit.files.find(file => file.path === 'nuxt.config.ts')!.content).toContain('icon: { clientBundle: { scan: true } }')
+  })
+
   it('refuses reserved or invalid module names and empty project names', () => {
     expect(() => starterKit({ name: 'X', module: 'app' })).toThrow('"app" is reserved')
     expect(() => starterKit({ name: 'X', module: 'Bad Name' })).toThrow('kebab-case')

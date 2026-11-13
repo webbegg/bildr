@@ -280,11 +280,11 @@
     },
     "nuxt.config.ts": {
       "owner": "scaffold",
-      "sha256": "6f67d76f4791e5b6def0a4ce7905f56d69d41de1ae46d0c6909b638f46e2d9e1"
+      "sha256": "bdb065affeb24973650e005abd77571d8e8712d3aa5f595a1d8ef825e6a6ca47"
     },
     "package.json": {
       "owner": "scaffold",
-      "sha256": "184ada1fdffcc72705cc6c29a5934ddfaff8beec43cf2dcad9483b4496099b2c"
+      "sha256": "76073314c4335dab7feb81f2d5fc7d60b19a3859d17cb548c0ace703c69f7977"
     },
     "pnpm-workspace.yaml": {
       "owner": "scaffold",

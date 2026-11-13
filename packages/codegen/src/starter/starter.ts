@@ -119,6 +119,7 @@ const scaffoldFiles = (title: string, module: string, bildrNuxt: string): Genera
     },
     devDependencies: {
       '@bildr/nuxt': bildrNuxt,
+      '@iconify-json/lucide': '^1.2.147',
       '@nuxt/eslint': '^1.17.0',
       '@nuxt/test-utils': '^4.4.0',
       'drizzle-kit': '^0.31.11',
