@@ -1,0 +1,84 @@
+import { inject, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { InjectionKey, Ref } from 'vue'
+import { callAction, errorMessage } from './api.ts'
+import type { HealthReport, PendingMigration } from './types.ts'
+
+/** How often health and the pending migration are re-read while the page is visible: the module regenerates on its own after a save. */
+export const POLL_MS = 3000
+
+/** The project status every screen shares: the Health report and the pending migration plan. */
+export interface Status {
+  health: Ref<HealthReport | null>
+  healthError: Ref<string | null>
+  pending: Ref<PendingMigration | null>
+  pendingError: Ref<string | null>
+  refreshHealth: () => Promise<void>
+  refreshPending: () => Promise<void>
+  refresh: () => Promise<void>
+}
+
+export const STATUS_KEY: InjectionKey<Status> = Symbol('bildr-status')
+
+export const createStatus = (): Status => {
+  const health = ref<HealthReport | null>(null)
+  const healthError = ref<string | null>(null)
+  const pending = ref<PendingMigration | null>(null)
+  const pendingError = ref<string | null>(null)
+
+  const refreshHealth = async () => {
+    try {
+      health.value = await callAction<HealthReport>('health_get')
+      healthError.value = null
+    } catch (error) {
+      healthError.value = errorMessage(error)
+    }
+  }
+  const refreshPending = async () => {
+    try {
+      const result = await callAction<{ pending: PendingMigration | null }>('migration_pending_get')
+      pending.value = result.pending ?? null
+      pendingError.value = null
+    } catch (error) {
+      pendingError.value = errorMessage(error)
+    }
+  }
+  const refresh = async () => {
+    await Promise.all([refreshHealth(), refreshPending()])
+  }
+  return { health, healthError, pending, pendingError, refreshHealth, refreshPending, refresh }
+}
+
+export const useStatus = (): Status => {
+  const status = inject(STATUS_KEY)
+  if (!status) throw new Error('The bildr status is not provided (see App.vue / main.ts)')
+  return status
+}
+
+/** Calls `task` now and every `ms` while the document is visible; stops on unmount. */
+export const usePolling = (task: () => Promise<void>, ms = POLL_MS) => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let stopped = false
+  const schedule = () => {
+    clearTimeout(timer)
+    if (stopped || document.visibilityState === 'hidden') return
+    timer = setTimeout(tick, ms)
+  }
+  const tick = async () => {
+    if (stopped) return
+    await task()
+    schedule()
+  }
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') void tick()
+    else clearTimeout(timer)
+  }
+  onMounted(() => {
+    document.addEventListener('visibilitychange', onVisibility)
+    void tick()
+  })
+  onBeforeUnmount(() => {
+    stopped = true
+    clearTimeout(timer)
+    document.removeEventListener('visibilitychange', onVisibility)
+  })
+}
