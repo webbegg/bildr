@@ -73,6 +73,16 @@ describe('health report', () => {
     expect(readFileSync(join(dir, HEALTH_FILE), 'utf8')).toBe(before)
   })
 
+  it('never writes the report through a temporary-file symlink planted in the cache (verification B2)', () => {
+    const victim = join(root, 'victim')
+    writeFileSync(victim, 'keep')
+    mkdirSync(join(dir, '.bildr/.cache'), { recursive: true })
+    symlinkSync(victim, join(dir, `${HEALTH_FILE}.tmp`))
+    updateHealth(dir, { migration: null })
+    expect(readFileSync(victim, 'utf8')).toBe('keep')
+    expect(readHealth(dir).migration).toBeNull()
+  })
+
   it('refuses to write when .bildr/.cache resolves outside the project', () => {
     const outside = join(root, 'outside')
     mkdirSync(outside)
@@ -258,6 +268,15 @@ describe.skipIf(!!NEEDS_FIXTURE)(`runCheck${NEEDS_FIXTURE}`, { timeout: 300_000 
     const passing = await runCheck(dir, 'lint')
     expect(passing).toMatchObject({ name: 'lint', ok: true, findings: [] })
     expect(passing.output).toBeUndefined()
+  })
+
+  it('lint runs like `pnpm lint`: in .nuxt only @nuxt/eslint\'s own type file may change (verification B1)', async () => {
+    // `.nuxt/eslint.config.mjs` (from @nuxt/eslint) regenerates `eslint-typegen.d.ts` on every eslint run,
+    // the editor's ESLint and `pnpm lint` included; nothing else nuxt dev owns may change.
+    const before = snapshot(join(dir, '.nuxt'), ['eslint-typegen.d.ts'])
+    await runCheck(dir, 'lint')
+    expect(snapshot(join(dir, '.nuxt'), ['eslint-typegen.d.ts'])).toEqual(before)
+    expect(existsSync(join(dir, '.output'))).toBe(false)
   })
 
   it('tests passes with the project\'s tests green and reports a failing one', async () => {

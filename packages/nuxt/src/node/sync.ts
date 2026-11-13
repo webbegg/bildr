@@ -54,6 +54,8 @@ export const hashFiles = (root: string, paths: Iterable<string>): Record<string,
 export const writeAtomically = (target: string, content: string, io: SyncIo = nodeIo) => {
   const temporary = `${target}.tmp`
   try {
+    // A leftover (or planted) temporary path is removed first: writing through a symlink there would land outside.
+    rmSync(temporary, { force: true })
     io.writeFile(temporary, content)
     renameSync(temporary, target)
   } catch (error) {
