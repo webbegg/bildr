@@ -1,13 +1,13 @@
 import { execFile } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, isAbsolute, join, relative, sep } from 'node:path'
 import { promisify } from 'node:util'
-import { driftReport, isSafeProjectPath } from '@bildr/codegen/sync'
+import { driftReport } from '@bildr/codegen/sync'
 import type { DriftReport, GeneratedFile } from '@bildr/codegen/sync'
 import type { ModelProblem } from '@bildr/codegen/model'
 import { PENDING_FILE } from './migrations.ts'
-import { resolvesInside } from './project.ts'
+import { readProjectFile, resolvesInside } from './project.ts'
 import { readManifest, sha256, writeAtomically } from './sync.ts'
 
 /**
@@ -108,11 +108,7 @@ export const readPendingMigration = (root: string): unknown => {
 export const projectDrift = (root: string, generated: GeneratedFile[]): DriftReport => {
   const manifest = readManifest(root)
   const disk: Record<string, string | undefined> = {}
-  for (const path of new Set([...generated.map(file => file.path), ...Object.keys(manifest)])) {
-    const target = join(root, path)
-    const readable = isSafeProjectPath(path) && existsSync(target) && resolvesInside(root, target) && statSync(target).isFile()
-    disk[path] = readable ? readFileSync(target, 'utf8') : undefined
-  }
+  for (const path of new Set([...generated.map(file => file.path), ...Object.keys(manifest)])) disk[path] = readProjectFile(root, path)
   return driftReport({ generated, manifest, disk, hash: sha256 })
 }
 

@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs'
 import { dirname, join, relative, sep } from 'node:path'
+import { isSafeProjectPath } from '@bildr/codegen/sync'
 
 const toPosix = (path: string) => path.split(sep).join('/')
 
@@ -25,6 +26,13 @@ export const resolvesInside = (base: string, target: string): boolean => {
   }
   const real = realpathSync(probe)
   return real === realBase || real.startsWith(realBase + sep)
+}
+
+/** A project file's text, read only when the path is safe, resolves inside the project and is a regular file; undefined otherwise. */
+export const readProjectFile = (root: string, path: string): string | undefined => {
+  const target = join(root, path)
+  const readable = isSafeProjectPath(path) && existsSync(target) && resolvesInside(root, target) && statSync(target).isFile()
+  return readable ? readFileSync(target, 'utf8') : undefined
 }
 
 /** The project's `.bildr/` model files as path → text, without the `.cache/` folder or leftovers of atomic writes. */

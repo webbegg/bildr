@@ -1,7 +1,11 @@
 /**
- * Placeholder editor page until the editor UI moves into the module (T10):
- * shows the model summary and drift through the guarded API.
+ * Fallback editor page while `@bildr/editor` isn't built (T10): shows the
+ * model summary and drift through the guarded API, and how to build the editor.
  */
+
+/** The placeholder's own policy: its one inline script needs `'unsafe-inline'`. */
+export const PAGE_CSP = 'default-src \'self\'; script-src \'self\' \'unsafe-inline\'; style-src \'self\' \'unsafe-inline\'; frame-ancestors \'self\''
+
 export const editorPage = () => `<!doctype html>
 <html lang="en">
 <head>
@@ -15,7 +19,7 @@ export const editorPage = () => `<!doctype html>
 </head>
 <body>
 <h1>bildr</h1>
-<p>The visual editor arrives here. Model and drift of this project:</p>
+<p>The editor isn't built yet: run <code>pnpm --filter @bildr/editor build</code> in the bildr repository, then reload. Model and drift of this project:</p>
 <pre id="model">Loading…</pre>
 <pre id="drift"></pre>
 <script>

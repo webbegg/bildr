@@ -12,7 +12,10 @@
   },
   "dependencies": {
     "@bildr/codegen": "workspace:*",
+    "@bildr/editor": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@nuxt/kit": "^4.6.3",
-    "h3": "^1.15.11"
+    "h3": "^1.15.11",
+    "zod": "^4.6.7"
   }
 }

@@ -3,13 +3,13 @@ import { existsSync, watch } from 'node:fs'
 import type { FSWatcher } from 'node:fs'
 import { join } from 'node:path'
 import { addDevServerHandler, defineNuxtModule, useLogger } from '@nuxt/kit'
-import { defineEventHandler, sendWebResponse, toWebRequest } from 'h3'
+import { defineEventHandler, getRequestURL, sendWebResponse, toWebRequest } from 'h3'
 import { detectStarterKit } from '@bildr/codegen/starter'
 import { createHealthRunner } from './node/health.ts'
 import { projectReader } from './node/project.ts'
 import { createRegenerator, isModelChange } from './node/regenerate.ts'
 import type { MigrationOutcome } from './node/regenerate.ts'
-import { BASE, createBildrHandler } from './server/handler.ts'
+import { BASE, createBildrHandler, ownsPath } from './server/handler.ts'
 
 /**
  * `@bildr/nuxt`: the bildr editor inside `nuxt dev` (decisions D8, D9).
@@ -73,6 +73,8 @@ export default defineNuxtModule<ModuleOptions>({
       route: BASE,
       handler: {
         nitro2: defineEventHandler(async (event) => {
+          // h3 matches the route as a plain prefix: `/__bildrfoo` belongs to the app, so leave it to the next handler.
+          if (!ownsPath(getRequestURL(event).pathname)) return
           const response = await handle(toWebRequest(event), { remoteAddress: event.node.req.socket.remoteAddress })
           return sendWebResponse(event, response)
         })
