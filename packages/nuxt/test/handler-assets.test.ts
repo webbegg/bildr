@@ -63,7 +63,7 @@ describe('editor shell', () => {
       expect(response.headers.get('content-security-policy')).toMatch(/frame-ancestors 'self'/)
       const html = await response.text()
       expect(html).toContain('/__bildr/api/model')
-      expect(html).toContain('pnpm --filter @bildr/editor build')
+      expect(html).toContain('pnpm build:editor')
     }
   })
 })

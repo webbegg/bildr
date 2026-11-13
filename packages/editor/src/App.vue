@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { sessionEnded } from './api.ts'
 import { routes } from './router.ts'
 import { usePolling, useStatus } from './status.ts'
 
-/** The editor shell: left nav, the pending-migration banner on every screen, and the current screen. */
+/** The editor shell: left nav, the pending-migration banner on every screen, and the current screen; one notice instead, once the session ended. */
 
 const route = useRoute()
 const status = useStatus()
@@ -27,7 +28,22 @@ const losses = computed(() => {
 
 <template>
   <UApp>
-    <div class="flex h-screen bg-default text-default">
+    <div
+      v-if="sessionEnded"
+      class="h-screen bg-default p-6 text-default"
+    >
+      <UAlert
+        data-testid="session-ended"
+        color="neutral"
+        variant="subtle"
+        icon="i-lucide-plug-zap"
+        title="This editor session ended. Open the editor again from the link in the nuxt dev log."
+      />
+    </div>
+    <div
+      v-else
+      class="flex h-screen bg-default text-default"
+    >
       <nav class="flex w-52 shrink-0 flex-col gap-4 border-r border-default p-3">
         <div class="flex items-center gap-2 px-2 pt-1 font-semibold">
           <UIcon

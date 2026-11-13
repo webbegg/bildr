@@ -7,6 +7,7 @@ import ui from '@nuxt/ui/vue-plugin'
 import UApp from '@nuxt/ui/components/App.vue'
 import { afterEach, vi } from 'vitest'
 import { ACTIONS } from '../../nuxt/src/actions/registry.ts'
+import { sessionEnded } from '../src/api.ts'
 import App from '../src/App.vue'
 import { routes } from '../src/router.ts'
 import { STATUS_KEY, createStatus } from '../src/status.ts'
@@ -17,6 +18,7 @@ const mounted: VueWrapper[] = []
 afterEach(() => {
   for (const wrapper of mounted.splice(0)) wrapper.unmount()
   document.body.innerHTML = ''
+  sessionEnded.value = false
   vi.unstubAllGlobals()
 })
 
@@ -29,6 +31,12 @@ export class Failure {
     readonly problems?: Array<{ path: string, message: string }>
   ) {}
 }
+
+/** The guard's exact 401 body (`packages/nuxt/src/server/handler.ts`): no `code`, because the guard answers before any action runs. */
+export const SESSION_401_MESSAGE = 'Missing or wrong bildr session token: open the editor from the link in the dev server log'
+
+/** Return it from a handler to answer that call as the guard does when the session token is missing or wrong. */
+export const UNAUTHORIZED = Symbol('unauthorized')
 
 export type Handler = (input: Record<string, unknown>) => unknown
 
@@ -49,6 +57,7 @@ export const mockActions = (handlers: Record<string, Handler>) => {
     const handler = handlers[name]
     if (!handler) return json(501, { ok: false, code: 'unavailable', message: `No handler for ${name}` })
     const out = await handler(input)
+    if (out === UNAUTHORIZED) return json(401, { ok: false, message: SESSION_401_MESSAGE })
     if (out instanceof Failure) {
       return json(out.status, { ok: false, code: out.code, message: out.message, ...(out.problems ? { problems: out.problems } : {}) })
     }

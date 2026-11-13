@@ -1,6 +1,6 @@
 import { inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { InjectionKey, Ref } from 'vue'
-import { callAction, errorMessage } from './api.ts'
+import { callAction, errorMessage, sessionEnded } from './api.ts'
 import type { HealthReport, PendingMigration } from './types.ts'
 
 /** How often health and the pending migration are re-read while the page is visible: the module regenerates on its own after a save. */
@@ -54,17 +54,17 @@ export const useStatus = (): Status => {
   return status
 }
 
-/** Calls `task` now and every `ms` while the document is visible; stops on unmount. */
+/** Calls `task` now and every `ms` while the document is visible; stops on unmount and once the session ended (a 401). */
 export const usePolling = (task: () => Promise<void>, ms = POLL_MS) => {
   let timer: ReturnType<typeof setTimeout> | undefined
   let stopped = false
   const schedule = () => {
     clearTimeout(timer)
-    if (stopped || document.visibilityState === 'hidden') return
+    if (stopped || sessionEnded.value || document.visibilityState === 'hidden') return
     timer = setTimeout(tick, ms)
   }
   const tick = async () => {
-    if (stopped) return
+    if (stopped || sessionEnded.value) return
     await task()
     schedule()
   }

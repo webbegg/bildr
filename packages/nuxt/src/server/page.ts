@@ -19,7 +19,7 @@ export const editorPage = () => `<!doctype html>
 </head>
 <body>
 <h1>bildr</h1>
-<p>The editor isn't built yet: run <code>pnpm --filter @bildr/editor build</code> in the bildr repository, then reload. Model and drift of this project:</p>
+<p>The editor isn't built yet: run <code>pnpm build:editor</code> in the bildr repository, then reload. Model and drift of this project:</p>
 <pre id="model">Loading…</pre>
 <pre id="drift"></pre>
 <script>

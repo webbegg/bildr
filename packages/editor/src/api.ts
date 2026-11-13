@@ -1,7 +1,15 @@
+import { ref } from 'vue'
 import type { ModelProblem } from './types.ts'
 
-/** The error codes of the action contract, plus the two the client adds for transport failures. */
-export type ActionErrorCode = 'invalid_input' | 'not_found' | 'invalid' | 'forbidden' | 'unavailable' | 'network' | 'bad_response' | (string & {})
+/** The error codes of the action contract, plus the ones the client adds for transport failures and the guard's 401. */
+export type ActionErrorCode = 'invalid_input' | 'not_found' | 'invalid' | 'forbidden' | 'unavailable' | 'network' | 'bad_response' | 'unauthorized' | (string & {})
+
+/**
+ * Set once any call gets the guard's 401 (missing or wrong session token, e.g.
+ * the cookie is gone). The shell then shows one notice instead of per-call
+ * errors, and polling stops: no later call can succeed from this page.
+ */
+export const sessionEnded = ref(false)
 
 /** A failed action: the `{ok:false, code, message, problems?}` body, or a transport failure. */
 export class ActionCallError extends Error {
@@ -35,6 +43,11 @@ export const callAction = async <T = unknown>(name: string, input: Record<string
     })
   } catch (error) {
     throw new ActionCallError('network', `Could not reach the bildr module: ${error instanceof Error ? error.message : String(error)}`)
+  }
+
+  if (response.status === 401) {
+    sessionEnded.value = true
+    throw new ActionCallError('unauthorized', 'This editor session ended. Open the editor again from the link in the nuxt dev log.')
   }
 
   let body: unknown

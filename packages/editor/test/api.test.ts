@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ActionCallError, callAction } from '../src/api.ts'
+import { ActionCallError, callAction, sessionEnded } from '../src/api.ts'
 
 const respond = (status: number, body: unknown) => vi.fn(async () => new Response(typeof body === 'string' ? body : JSON.stringify(body), { status }))
 
 afterEach(() => {
+  sessionEnded.value = false
   vi.unstubAllGlobals()
 })
 
@@ -42,6 +43,12 @@ describe('callAction', () => {
       expect(error.message).toBe(`failed ${code}`)
       expect(error.problems).toBeUndefined()
     }
+  })
+
+  it('marks the session ended on the guard\'s 401 and throws unauthorized', async () => {
+    vi.stubGlobal('fetch', respond(401, { ok: false, message: 'Missing or wrong bildr session token: open the editor from the link in the dev server log' }))
+    await expect(callAction('health_get', {})).rejects.toMatchObject({ code: 'unauthorized' })
+    expect(sessionEnded.value).toBe(true)
   })
 
   it('reports a non-JSON response as bad_response with the HTTP status', async () => {

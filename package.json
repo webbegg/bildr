@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "nuxt build",
+    "build:editor": "pnpm --filter @bildr/editor build",
     "dev": "nuxt dev",
     "e2e": "node e2e/all.mjs",
     "preview": "nuxt preview",
