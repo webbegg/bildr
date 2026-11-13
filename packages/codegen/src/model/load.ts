@@ -295,6 +295,15 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       if (action.input.entity) ref(path, 'input.entity', 'entity', action.input.entity, 'entity')
       if (action.output) ref(path, 'output.entity', 'entity', action.output.entity, 'entity')
       action.client.invalidates.forEach((id, index) => ref(path, `client.invalidates.${index}`, 'entity', id, 'entity'))
+      // The repository step is what the use-case does and returns; without one it would only check its input.
+      if (!action.steps.some(step => step.kind === 'repository')) report(path, 'steps', 'An action needs a "repository" step (create, update or delete) to do its work')
+    }
+    // The generators derive the key from idStrategy: "uuid" adds the id field, "external" uses the source's own.
+    for (const entity of mod.entities) {
+      const path = at(entity.id)
+      const idField = entity.fields.findIndex(field => field.name === 'id')
+      if (entity.idStrategy === 'uuid' && idField !== -1) report(path, `fields.${idField}.name`, '"id" is reserved: the id comes from idStrategy "uuid"')
+      if (entity.idStrategy === 'external' && idField === -1) report(path, 'fields', 'idStrategy "external" needs an "id" field (the key its data source owns)')
     }
     for (const fixtures of mod.fixtures) ref(at(`fixtures:${fixtures.entity}`), 'entity', 'entity', fixtures.entity, 'entity')
     for (const component of mod.components) {

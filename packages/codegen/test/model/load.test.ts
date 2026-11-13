@@ -159,6 +159,22 @@ describe('loadModel problems', () => {
     ])
   })
 
+  it('refuses an action without a repository step: nothing would do its work', () => {
+    for (const steps of [[{ kind: 'validate' }], [{ kind: 'validate' }, { kind: 'assert', unless: { repository: 'repo_post', op: 'findBySlug', args: { slug: { $input: 'slug' } } }, error: 'slug_taken', errorData: { slug: { $input: 'slug' } } }]]) {
+      expect(problems(edit('.bildr/modules/blog/actions/create-post.json', { steps })), JSON.stringify(steps))
+        .toEqual(['.bildr/modules/blog/actions/create-post.json: steps: An action needs a "repository" step (create, update or delete) to do its work'])
+    }
+  })
+
+  it('keeps the id field to the idStrategy: reserved for "uuid", required for "external"', () => {
+    const post = JSON.parse(fixtureModelFiles()['.bildr/modules/blog/entities/post.json']!)
+    expect(problems(edit('.bildr/modules/blog/entities/post.json', { fields: [...post.fields, { id: 'fld_post_id', name: 'id', type: 'uuid', required: true }] })))
+      .toEqual(['.bildr/modules/blog/entities/post.json: fields.5.name: "id" is reserved: the id comes from idStrategy "uuid"'])
+    const quote = JSON.parse(fixtureModelFiles()['.bildr/modules/blog/entities/quote.json']!)
+    expect(problems(edit('.bildr/modules/blog/entities/quote.json', { fields: quote.fields.filter((field: { name: string }) => field.name !== 'id') })))
+      .toEqual(['.bildr/modules/blog/entities/quote.json: fields: idStrategy "external" needs an "id" field (the key its data source owns)'])
+  })
+
   it('never stores secret values in data sources', () => {
     expect(problems(edit('.bildr/datasources/quotes.json', { 'defaults.apiKey': 'sk-live-123' })))
       .toEqual(['.bildr/datasources/quotes.json: defaults.apiKey: "apiKey" is a secret: set it with NUXT_DATASOURCES_QUOTES_API_KEY, never in the model'])
