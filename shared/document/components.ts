@@ -247,19 +247,5 @@ export function isContainerType(type: string): boolean {
   return type === PAGE_ROOT_TYPE || getComponent(type)?.container === true
 }
 
-const STACK_TYPES = [PAGE_ROOT_TYPE, 'Container', 'Column', 'Form', 'Card']
-
-/** Whether the type lays its children out with flexbox, so `direction`, `items` and `justify` apply. */
-export function isFlexType(type: string): boolean {
-  return type === 'Row' || STACK_TYPES.includes(type)
-}
-
-/**
- * The tokens a type renders with before its own style: the flex direction of
- * the flex containers. A `direction` token of the node replaces it, and a
- * breakpoint one (`md:direction`) applies above it.
- */
-export function structuralStyle(type: string): Record<string, string> {
-  if (type === 'Row') return { direction: 'row' }
-  return STACK_TYPES.includes(type) ? { direction: 'col' } : {}
-}
+/** The flex containers and their structural direction: one rule for the generator and the canvas. */
+export { isFlexType, structuralStyle } from '@bildr/codegen/render'

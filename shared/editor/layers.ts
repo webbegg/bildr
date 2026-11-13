@@ -1,6 +1,7 @@
 import { parseStyleKey, styleKey } from '../design/tokens'
 import type { Breakpoint, BreakpointBase } from '../design/tokens'
-import { INSTANCE_TYPE, isFlexType, SLOT_FILL_TYPE } from '../document/components'
+import { isFlexType } from '@bildr/codegen/render'
+import { INSTANCE_TYPE, SLOT_FILL_TYPE } from '../document/components'
 import type { ComponentDefinition, DocNode, Layout, Page } from '../document/schema'
 import { findNode, findParent, pathTo } from '../document/tree'
 import type { DropTarget } from './dropTarget'

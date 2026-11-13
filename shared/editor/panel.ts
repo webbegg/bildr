@@ -1,5 +1,6 @@
 import { parseStyleKey, styleKey } from '../design/tokens'
-import { isContainerType, isFlexType } from '../document/components'
+import { isFlexType } from '@bildr/codegen/render'
+import { isContainerType } from '../document/components'
 import { spacingSide } from './spacing'
 import type { Side, SpacingBox } from './spacing'
 import { deviceOf, styleProvenance } from './styleFields'

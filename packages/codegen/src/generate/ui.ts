@@ -2,6 +2,7 @@ import { customColorNames } from '../design/theme.ts'
 import { displayFallback, styleClasses, styleInline, styleTokenProblem } from '../design/tokens.ts'
 import type { Model } from '../model/load.ts'
 import type { ActionFile, ComponentFile, EntityFile, LayoutFile, ModelNode, PageFile, QueryFile, Value } from '../model/schemas.ts'
+import { CONTAINER_TAGS, DEFAULT_HEADING_LEVEL, displayOf, headingTag, INPUT_CONTROL_CLASS, NODE_ELEMENTS } from '../render/rules.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
 import { entityNames, moduleContext } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
@@ -234,8 +235,6 @@ const routeLocation = (env: Env, node: ModelNode | undefined, to: Value | undefi
 
 // ── Nodes ───────────────────────────────────────────────────────────────
 
-const CONTAINER_TAGS = ['div', 'section', 'article', 'aside', 'header', 'nav', 'main', 'footer']
-
 const tagOf = (env: Env, node: ModelNode) => {
   const tag = node.props?.tag ?? 'div'
   if (typeof tag !== 'string' || !CONTAINER_TAGS.includes(tag)) return fail(env, node, `tag must be one of ${CONTAINER_TAGS.join(', ')}`)
@@ -259,7 +258,8 @@ const render = (env: Env, node: ModelNode, indent: string, options: RenderOption
     case 'Container':
     case 'Row': {
       const tag = tagOf(env, node)
-      const attrs = [...extra, ...styleAttrs(env, node, node.type === 'Row' ? 'flex' : '')]
+      // Only a Row gets its display: KNOWN_DIVERGENCES container-direction, row-direction-wrap.
+      const attrs = [...extra, ...styleAttrs(env, node, node.type === 'Row' ? displayOf(node.type) : '')]
       let inner = children(env, node, indent, options)
       const slot = options.slots?.get(node.id)
       if (slot) {
@@ -271,20 +271,20 @@ const render = (env: Env, node: ModelNode, indent: string, options: RenderOption
       return element(tag, attrs, inner, indent)
     }
     case 'Heading': {
-      const level = node.props?.level ?? 2
+      const level = node.props?.level ?? DEFAULT_HEADING_LEVEL
       if (typeof level !== 'number' || level < 1 || level > 6) return fail(env, node, 'heading level must be 1–6')
-      return element(`h${level}`, [...extra, ...styleAttrs(env, node)], textContent(env, node, node.props?.text), indent)
+      return element(headingTag(level), [...extra, ...styleAttrs(env, node)], textContent(env, node, node.props?.text), indent)
     }
     case 'Text':
-      return element('p', [...extra, ...styleAttrs(env, node)], textContent(env, node, node.props?.text), indent)
+      return element(NODE_ELEMENTS.Text, [...extra, ...styleAttrs(env, node)], textContent(env, node, node.props?.text), indent)
     case 'Link': {
       const to = routeLocation(env, node, node.props?.to, 'template')
       const attrs = [...extra, to.static !== undefined ? staticAttr('to', to.static) : boundAttr('to', to.code), ...styleAttrs(env, node)]
       const inner = node.children?.length ? children(env, node, indent, options) : textContent(env, node, node.props?.text)
-      return element('NuxtLink', attrs, inner, indent)
+      return element(NODE_ELEMENTS.Link, attrs, inner, indent)
     }
     case 'Button':
-      return element('UButton', [...extra, ...buttonAttrs(env, node), ...styleAttrs(env, node), ...events(env, node)], undefined, indent)
+      return element(NODE_ELEMENTS.Button, [...extra, ...buttonAttrs(env, node), ...styleAttrs(env, node), ...events(env, node)], undefined, indent)
     case 'Input':
       return input(env, node, extra, indent)
     case 'Checkbox':
@@ -342,9 +342,9 @@ const input = (env: Env, node: ModelNode, extra: Attr[], indent: string) => {
   if (field.pattern) attrs.push(staticAttr('pattern', htmlPattern(field.pattern)))
   const multiline = node.props?.multiline === true
   if (multiline && typeof node.props?.rows === 'number') attrs.push(boundAttr('rows', String(node.props.rows)))
-  attrs.push(staticAttr('class', 'w-full'))
-  const control = element(multiline ? 'UTextarea' : 'UInput', attrs, undefined, `${indent}  `)
-  return element('UFormField', [...extra, staticAttr('label', label), staticAttr('name', field.name), ...(field.required ? [attr('attr', 'required')] : []), ...styleAttrs(env, node)], control, indent)
+  attrs.push(staticAttr('class', INPUT_CONTROL_CLASS))
+  const control = element(multiline ? NODE_ELEMENTS.InputMultiline : NODE_ELEMENTS.InputControl, attrs, undefined, `${indent}  `)
+  return element(NODE_ELEMENTS.Input, [...extra, staticAttr('label', label), staticAttr('name', field.name), ...(field.required ? [attr('attr', 'required')] : []), ...styleAttrs(env, node)], control, indent)
 }
 
 const checkbox = (env: Env, node: ModelNode, extra: Attr[], indent: string) => {
@@ -358,7 +358,7 @@ const checkbox = (env: Env, node: ModelNode, extra: Attr[], indent: string) => {
     attrs.push(boundAttr('model-value', expression(env, node, node.props.value, 'template')))
   }
   if (typeof label === 'string') attrs.push(staticAttr('label', label))
-  return element('UCheckbox', [...attrs, ...styleAttrs(env, node), ...events(env, node)], undefined, indent)
+  return element(NODE_ELEMENTS.Checkbox, [...attrs, ...styleAttrs(env, node), ...events(env, node)], undefined, indent)
 }
 
 const form = (env: Env, node: ModelNode, extra: Attr[], indent: string, options: RenderOptions) => {
@@ -369,7 +369,7 @@ const form = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
   const fields = ids.map(id => entity.fields.find(field => field.id === id) ?? fail(env, node, `unknown field ${String(id)}`))
   env.form = { fields }
   env.needs.add('form')
-  const lines = element('form', [...extra, ...styleAttrs(env, node), ...events(env, node)], children(env, node, indent, options), indent)
+  const lines = element(NODE_ELEMENTS.Form, [...extra, ...styleAttrs(env, node), ...events(env, node)], children(env, node, indent, options), indent)
   return lines
 }
 

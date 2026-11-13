@@ -2,7 +2,7 @@
 import { mergeProps } from 'vue'
 import type { ButtonProps } from '@nuxt/ui'
 import { displayFallback, parseStyleKey, styleClasses, styleInline } from '#shared/design/tokens'
-import { structuralStyle } from '#shared/document/components'
+import { CARD_DEFAULT_STYLE, CARD_STACK_KEYS, DEFAULT_HEADING_LEVEL, displayOf, HEADING_TOKENS, headingTag, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, structuralStyle, TEXT_CLASS } from '@bildr/codegen/render'
 import type { DocNode } from '#shared/document/schema'
 import { hasEnvRefs } from '#shared/env/variables'
 import { bindingItem, hasBindings } from '#shared/runtime/bindings'
@@ -15,6 +15,9 @@ import { resolveLink } from '#shared/runtime/render'
 /**
  * Renders one document node and its children. The editor canvas and the
  * published app share this component, so what you edit is what ships.
+ * The per-type render rules it shares with the generator (elements, token
+ * fallbacks) live in `@bildr/codegen/render`; where the two still differ,
+ * see its `KNOWN_DIVERGENCES`.
  * Visual styling comes only from the node's design tokens (colour keys
  * holding a hex or a theme colour name render as an inline style, since they
  * have no generated class; see `styleInline`); the template
@@ -116,24 +119,17 @@ const rowWrap = computed((): Record<string, string> => (props.node.type === 'Row
 const tokens = computed(() => withFallback({ ...structuralStyle(props.node.type), ...rowWrap.value }))
 const display = (fallback: string) => displayFallback(fallback, props.node.style)
 
-const HEADING_TOKENS: Record<string, Record<string, string>> = {
-  1: { text: '4xl', font: 'bold', tracking: 'tight' },
-  2: { text: '3xl', font: 'bold', tracking: 'tight' },
-  3: { text: '2xl', font: 'semibold' },
-  4: { text: 'xl', font: 'semibold' }
-}
-const level = computed(() => (text('level') in HEADING_TOKENS ? text('level') : '2'))
+const level = computed(() => (text('level') in HEADING_TOKENS ? text('level') : String(DEFAULT_HEADING_LEVEL)))
 
 // The card's gap and items lay out its inner stack; every other token styles the card
 // itself. Its padding is a token too (UCard's body padding is zeroed), so `p-8`
 // replaces the default instead of adding to it. Breakpoint variants follow their base key.
-const STACK_KEYS = ['direction', 'flexWrap', 'gap', 'items', 'justify']
 const card = computed(() => {
   const entries = Object.entries(props.node.style)
-  const inStack = ([key]: [string, string]) => STACK_KEYS.includes(parseStyleKey(key)?.token.key ?? '')
+  const inStack = ([key]: [string, string]) => CARD_STACK_KEYS.includes(parseStyleKey(key)?.token.key ?? '')
   const stack = Object.fromEntries(entries.filter(inStack))
   const rest = Object.fromEntries(entries.filter(entry => !inStack(entry)))
-  return { root: styleClasses({ ...selfFallback.value, p: '6', ...rest }), stack: styleClasses({ ...structuralStyle('Card'), ...stack }) }
+  return { root: styleClasses({ ...selfFallback.value, ...CARD_DEFAULT_STYLE, ...rest }), stack: styleClasses({ ...structuralStyle('Card'), ...stack }) }
 })
 const icon = (name: string) => text(name) || undefined
 
@@ -183,7 +179,7 @@ const list = computed(() => {
   <div
     v-else-if="stacked || node.type === 'Row'"
     v-bind="attrs"
-    :class="[display('flex'), { 'min-h-full': node.type === 'Page' }, tokens]"
+    :class="[display(displayOf(node.type)), { 'min-h-full': node.type === 'Page' }, tokens]"
   >
     <BildrNode
       v-for="child in node.children"
@@ -200,7 +196,7 @@ const list = computed(() => {
   <div
     v-else-if="node.type === 'Grid'"
     v-bind="attrs"
-    :class="[display('grid'), tokens]"
+    :class="[display(displayOf(node.type)), tokens]"
   >
     <BildrNode
       v-for="child in node.children"
@@ -214,7 +210,7 @@ const list = computed(() => {
   </div>
 
   <component
-    :is="`h${level}`"
+    :is="headingTag(level)"
     v-else-if="node.type === 'Heading'"
     v-bind="attrs"
     :class="withFallback(HEADING_TOKENS[level]!)"
@@ -225,8 +221,7 @@ const list = computed(() => {
   <p
     v-else-if="node.type === 'Text'"
     v-bind="attrs"
-    class="whitespace-pre-line"
-    :class="tokens"
+    :class="[TEXT_CLASS, tokens]"
   >
     {{ text('text') }}
   </p>
@@ -236,7 +231,7 @@ const list = computed(() => {
     v-bind="attrs"
     :src="imageSrc || undefined"
     :alt="text('alt')"
-    :class="[display('block'), withFallback({ maxW: 'full' }), { 'min-h-24 bg-elevated': !imageSrc }]"
+    :class="[display(displayOf(node.type)), withFallback(IMAGE_FALLBACK_STYLE), { 'min-h-24 bg-elevated': !imageSrc }]"
   >
 
   <UButton
@@ -281,7 +276,7 @@ const list = computed(() => {
       :name="text('field') || undefined"
       :placeholder="text('placeholder')"
       :type="text('inputType')"
-      class="w-full"
+      :class="INPUT_CONTROL_CLASS"
     />
   </UFormField>
 
@@ -344,7 +339,7 @@ const list = computed(() => {
     v-else-if="node.type === 'Form'"
     v-bind="attrs"
     :node="node"
-    :class="[display('flex'), tokens]"
+    :class="[display(displayOf(node.type)), tokens]"
   >
     <BildrNode
       v-for="child in node.children"

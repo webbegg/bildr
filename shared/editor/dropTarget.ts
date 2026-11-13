@@ -1,4 +1,5 @@
-import { isContainerType, structuralStyle } from '../document/components'
+import { structuralStyle } from '@bildr/codegen/render'
+import { isContainerType } from '../document/components'
 import type { DocNode } from '../document/schema'
 import { containsNode, findNode, findParent } from '../document/tree'
 import type { Breakpoint, BreakpointBase } from '../design/tokens'
