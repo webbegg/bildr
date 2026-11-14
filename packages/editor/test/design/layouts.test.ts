@@ -48,7 +48,7 @@ describe('Layouts section', () => {
 
   it('renames, duplicates and deletes a layout, showing the refusal of a delete in use', async () => {
     const message = 'Layout "main" is used by 1 page: pg_index. Give them another layout first'
-    const { actions } = await open({ layout_rename: ok(), layout_duplicate: ok({ layoutId: 'lay_x', filePath: 'x' }), layout_delete: () => new Failure(403, 'forbidden', message) })
+    const { actions } = await open({ layout_rename: ok(), layout_duplicate: ok({ layoutId: 'lay_x', filePath: 'x' }), layout_delete: () => new Failure(422, 'invalid', message) })
     await openTab('layouts')
     await click(byTestId(`layout-rename-${MAIN}`))
     await typeInto(byTestId('layout-rename-input'), 'site')
@@ -134,6 +134,19 @@ describe('A page in a layout', () => {
       { page: 'pg_index', values: { prop_tone: 'dark' } },
       { page: 'pg_index', values: { prop_title: null } }
     ])
+  })
+
+  it('keeps the value of a number variable when a typo is typed', async () => {
+    mainLayout().variables!.push({ id: 'prop_cols', name: 'cols', kind: 'number' })
+    indexPage().layoutValues = { prop_cols: 7 }
+    const { actions } = await open({ page_set_layout_values: ok() })
+    await fileTab()
+    expect((byTestId('layout-value-prop_cols') as HTMLInputElement).value).toBe('7')
+
+    await typeInto(byTestId('layout-value-prop_cols'), 'abc')
+
+    expect(actions.named('page_set_layout_values')).toEqual([])
+    expect((byTestId('layout-value-prop_cols') as HTMLInputElement).value).toBe('7')
   })
 
   it('fills a named slot with the page\'s own content, optionally moving the selection in, and clears it', async () => {

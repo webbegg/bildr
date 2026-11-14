@@ -155,7 +155,7 @@ export const datasourceDelete = defineEdit({
     const source = datasourceById(draft, id)
     const users = Object.values(draft.model.modules).flatMap(mod => mod.repositories.filter(repository => repository.datasource === id).map(repository => repository.id))
     if (users.length) {
-      fail('forbidden', `Data source "${source.name}" is used by ${users.length === 1 ? 'the repository' : 'the repositories'} ${users.join(', ')}. Delete their entities (entity_delete) first`)
+      fail('invalid', `Data source "${source.name}" is used by ${users.length === 1 ? 'the repository' : 'the repositories'} ${users.join(', ')}. Delete their entities first`)
     }
     draft.model.datasources.splice(draft.model.datasources.indexOf(source), 1)
     // Without a sqlite data source the project has no app database (V7): its layer is no longer generated.

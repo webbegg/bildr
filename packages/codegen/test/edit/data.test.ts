@@ -107,11 +107,11 @@ describe('entity_update and entity_delete', () => {
     const p = project()
     p.edit('entity_update', { entity: 'ent_post', name: 'article', plural: 'articles' })
     expect(p.json('.bildr/modules/blog/entities/post.json')).toMatchObject({ name: 'Article', plural: 'articles' })
-    expect(p.refuse('entity_update', { entity: 'ent_post', expose: false }, 'forbidden').message).toBe('The queries q_all_posts, q_featured_posts, q_post_by_slug read Article rows in the app. Delete them first')
+    expect(p.refuse('entity_update', { entity: 'ent_post', expose: false }, 'invalid').message).toBe('The queries q_all_posts, q_featured_posts, q_post_by_slug read Article rows in the app. Delete them first')
   })
 
   it('entity_delete is refused while pages use its queries, actions or fields, naming them', () => {
-    const message = project().refuse('entity_delete', { entity: 'ent_post' }, 'forbidden').message
+    const message = project().refuse('entity_delete', { entity: 'ent_post' }, 'invalid').message
     expect(message).toMatch(/^Entity Post is still used by /)
     expect(message).toContain('pg_index (uses)')
     expect(message).toContain('pg_new_post (n_form)')
@@ -137,7 +137,7 @@ describe('entity fields', () => {
 
   it('entity_field_remove is refused while queries, actions or pages use the field; otherwise it leaves the picks and fixtures', () => {
     const p = project()
-    const message = p.refuse('entity_field_remove', { entity: 'ent_post', field: 'fld_slug' }, 'forbidden').message
+    const message = p.refuse('entity_field_remove', { entity: 'ent_post', field: 'fld_slug' }, 'invalid').message
     expect(message).toMatch(/^slug is used by /)
     expect(message).toContain('q_post_by_slug')
     expect(message).toContain('act_create_post')
@@ -145,7 +145,7 @@ describe('entity fields', () => {
     p.edit('entity_field_add', { entity: 'ent_post', name: 'subtitle', type: 'text' })
     p.edit('entity_field_remove', { entity: 'ent_post', field: 'fld_subtitle' })
     expect(p.json('.bildr/modules/blog/actions/create-post.json').input.pick).toEqual(['id', 'title', 'slug', 'body', 'published'])
-    expect(p.refuse('entity_field_remove', { entity: 'ent_post', field: 'fld_body' }, 'forbidden').message).toContain('pg_post_detail')
+    expect(p.refuse('entity_field_remove', { entity: 'ent_post', field: 'fld_body' }, 'invalid').message).toContain('pg_post_detail')
   })
 
   it('entity_field_update checks a new type against the default, the fixtures and query conditions', () => {
@@ -157,7 +157,7 @@ describe('entity fields', () => {
     p.edit('entity_field_update', { entity: 'ent_post', field: 'fld_words', type: 'integer', name: 'wordCount' })
     expect(p.json('.bildr/modules/blog/entities/post.json').fields.at(-1)).toEqual({ id: 'fld_words', name: 'wordCount', type: 'integer' })
     expect(p.json('.bildr/modules/blog/actions/create-post.json').input.pick.at(-1)).toBe('wordCount')
-    expect(p.refuse('entity_field_update', { entity: 'ent_post', field: 'fld_slug', name: 'handle' }, 'forbidden').message).toMatch(/^slug is used by /)
+    expect(p.refuse('entity_field_update', { entity: 'ent_post', field: 'fld_slug', name: 'handle' }, 'invalid').message).toMatch(/^slug is used by /)
   })
 })
 
@@ -186,8 +186,8 @@ describe('data sources', () => {
   it('one app database at most; deleting the last sqlite source turns it off; a used source is kept', () => {
     expect(project().refuse('datasource_create', { name: 'second', kind: 'sqlite' }, 'invalid').message)
       .toBe('The project already has its app database (ds_main): a project has at most one sqlite data source')
-    expect(project().refuse('datasource_delete', { datasource: 'ds_main' }, 'forbidden').message)
-      .toBe('Data source "main" is used by the repository repo_post. Delete their entities (entity_delete) first')
+    expect(project().refuse('datasource_delete', { datasource: 'ds_main' }, 'invalid').message)
+      .toBe('Data source "main" is used by the repository repo_post. Delete their entities first')
     const p = apiOnly()
     const made = p.edit('datasource_create', { name: 'main', kind: 'sqlite' })
     expect(made).toMatchObject({ datasourceId: 'ds_main', database: true, packageJson: { dependencies: { 'drizzle-orm': expect.any(String) } } })

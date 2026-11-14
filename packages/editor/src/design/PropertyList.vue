@@ -64,7 +64,7 @@ const add = async () => {
 
 const TEXTUAL = ['text', 'textarea', 'image', 'link', 'icon']
 const defaultText = (property: PropertyDef) => property.default === undefined || typeof property.default === 'object' ? '' : String(property.default)
-const commitDefault = (property: PropertyDef, raw: string) => update(property.id, { default: raw === '' ? null : property.kind === 'number' ? Number(raw) : raw })
+const commitDefault = (property: PropertyDef, raw: string) => update(property.id, { default: raw.trim() === '' ? null : property.kind === 'number' ? Number(raw) : raw })
 const commitOptions = (property: PropertyDef, raw: string) => {
   const list = raw.split(',').map(entry => entry.trim()).filter(Boolean)
   return update(property.id, { options: list.length ? list : null })
@@ -127,6 +127,7 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
         :data-testid="`property-default-${property.id}`"
         :model-value="defaultText(property)"
         :multiline="property.kind === 'textarea'"
+        :numeric="property.kind === 'number'"
         placeholder="Default"
         @commit="commitDefault(property, $event)"
       />

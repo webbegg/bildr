@@ -77,7 +77,7 @@ describe('MCP', () => {
     expect(readFileSync(join(dir, '.bildr/modules/main/pages/index.json'), 'utf8')).toContain('From an agent')
     const refused = await client.callTool({ name: 'node_delete', arguments: { file: 'pg_index', nodeId: 'n_page' } }) as { isError?: boolean, content: { text: string }[] }
     expect(refused.isError).toBe(true)
-    expect(refused.content[0]!.text).toBe('forbidden: The page root cannot be deleted')
+    expect(refused.content[0]!.text).toBe('invalid: The page root cannot be deleted')
     await client.close()
   })
 

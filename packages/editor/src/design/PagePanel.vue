@@ -26,7 +26,7 @@ const shown = (variable: PropertyDef) => {
   const value = props.page.layoutValues?.[variable.id]
   return value === undefined ? '' : typeof value === 'object' ? JSON.stringify(value) : String(value)
 }
-const commitText = (variable: PropertyDef, raw: string) => setValue(variable, raw === '' ? null : variable.kind === 'number' ? (Number.isNaN(Number(raw)) ? null : Number(raw)) : raw)
+const commitText = (variable: PropertyDef, raw: string) => setValue(variable, raw === '' ? null : variable.kind === 'number' ? Number(raw) : raw)
 const setSlot = (slot: string, on: boolean) => design.edit('page_set_slot', { page: props.page.id, slot, filled: on })
 const moveIn = (slot: string) => design.edit('page_set_slot', { page: props.page.id, slot, filled: true, nodeIds: [...design.selectedIds.value] })
 const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text-sm'
@@ -100,6 +100,7 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
           :data-testid="`layout-value-${variable.id}`"
           :model-value="shown(variable)"
           :multiline="variable.kind === 'textarea'"
+          :numeric="variable.kind === 'number'"
           :placeholder="variable.default === undefined ? '' : String(variable.default)"
           @commit="commitText(variable, $event)"
         />

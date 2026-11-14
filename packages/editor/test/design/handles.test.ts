@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { allByTestId, byTestId, click, Failure } from '../helpers.ts'
+import { allByTestId, byTestId, click, Failure, settle } from '../helpers.ts'
 import { find, fromCanvas, indexPage, open, select, sent, setupHarness } from './harness.ts'
 
 /**
@@ -44,6 +44,47 @@ describe('handle drags', () => {
     await fromCanvas({ type: 'bildr:style-commit', nodeId: 'n_h1', style: { w: '64' } })
     expect(byTestId('design-error')?.textContent?.trim()).toBe('Unknown style token "wat"')
     expect(previews().at(-1)).toEqual({ type: 'bildr:preview', nodeId: 'n_h1', style: null })
+  })
+})
+
+describe('Esc during a drag', () => {
+  const escape = async () => {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true }))
+    await settle()
+  }
+
+  it('cancels the drag in the canvas and keeps the selection', async () => {
+    await open()
+    await select('n_h1')
+    await fromCanvas({ type: 'bildr:style-preview', nodeId: 'n_h1', style: { 'lg:w': '96' } })
+
+    await escape()
+
+    expect(sent('bildr:cancel-drag')).toEqual([{ type: 'bildr:cancel-drag' }])
+    expect(sent('bildr:select').at(-1)).toMatchObject({ nodeIds: ['n_h1'] })
+  })
+
+  it('is the usual Esc again once the drag ended: it deselects and cancels nothing', async () => {
+    await open()
+    await select('n_h1')
+    await fromCanvas({ type: 'bildr:style-preview', nodeId: 'n_h1', style: { 'lg:w': '96' } })
+    await fromCanvas({ type: 'bildr:style-preview', nodeId: 'n_h1', style: null })
+
+    await escape()
+
+    expect(sent('bildr:cancel-drag')).toEqual([])
+    expect(sent('bildr:select').at(-1)).toMatchObject({ nodeId: null, nodeIds: [] })
+  })
+
+  it('a commit ends the drag too', async () => {
+    await open({ node_update_style: ok })
+    await select('n_h1')
+    await fromCanvas({ type: 'bildr:style-preview', nodeId: 'n_h1', style: { 'lg:w': '96' } })
+    await fromCanvas({ type: 'bildr:style-commit', nodeId: 'n_h1', style: { 'lg:w': '96' } })
+
+    await escape()
+
+    expect(sent('bildr:cancel-drag')).toEqual([])
   })
 })
 

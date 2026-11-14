@@ -515,6 +515,12 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
     if (node.type === 'Instance' && typeof node.props?.component === 'string') {
       const component = components.get(node.props.component)
       const values = node.props.values
+      if (component) {
+        // A required property without a default has no value to fall back on: the instance gives it (the page would fail at runtime otherwise).
+        const given = values && typeof values === 'object' && !Array.isArray(values) ? values : {}
+        const missing = component.properties.filter(property => property.required && property.kind !== 'slot' && property.default === undefined && !(property.id in given)).map(property => property.name)
+        if (missing.length) report(path, `${where}.props.values`, `${component.name} needs a value for its required propert${missing.length === 1 ? 'y' : 'ies'} ${missing.join(', ')}`)
+      }
       if (component && values && typeof values === 'object' && !Array.isArray(values)) {
         for (const [id, value] of Object.entries(values)) {
           const property = component.properties.find(entry => entry.id === id)

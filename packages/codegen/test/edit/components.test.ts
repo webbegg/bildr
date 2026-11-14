@@ -29,7 +29,7 @@ describe('component_create', () => {
     expect(component.root.children.map((child: Json) => child.type)).toEqual(['Column', 'Image'])
     expect(childIds(findNode(p.json(IDX).root, 'n_about'))).toEqual([made.nodeId])
     expect(p.refuse('component_create', { file: 'pg_index', nodeId: 'n_about', name: 'tip' }, 'invalid').message).toBe('A component is already named "Tip" in module "blog"')
-    expect(p.refuse('component_create', { file: 'pg_index', nodeId: 'n_page' }, 'forbidden').message).toBe('The page root cannot become a component')
+    expect(p.refuse('component_create', { file: 'pg_index', nodeId: 'n_page' }, 'invalid').message).toBe('The page root cannot become a component')
   })
 })
 
@@ -71,7 +71,7 @@ describe('component_rename, component_duplicate, component_delete', () => {
 
   it('refuses to delete a used component unless forced, which deletes its instances', () => {
     const p = project()
-    expect(p.refuse('component_delete', { component: 'cmp_tip' }, 'forbidden').message).toBe('Component "Tip" is used by 1 instance: pg_new_post (n_tip). Delete it first, or pass force: true to delete it too')
+    expect(p.refuse('component_delete', { component: 'cmp_tip' }, 'invalid').message).toBe('Component "Tip" is used by 1 instance: pg_new_post (n_tip). Delete it first')
     const deleted = p.edit('component_delete', { component: 'cmp_tip', force: true })
     expect(deleted.deletedInstances).toEqual(['pg_new_post (n_tip)'])
     expect(deleted.changes.map((change: Json) => [change.path, change.content === null])).toEqual([[TIP, true], [NEW_POST, false]])
@@ -218,8 +218,26 @@ describe('instances', () => {
     const copy = p.edit('component_duplicate', { component: 'cmp_tip', name: 'Hint' })
     p.edit('instance_replace', { file: 'pg_new_post', nodeId: 'n_tip', component: copy.componentId })
     expect(p.json(NEW_POST).root.children[0].props).toEqual({ component: 'cmp_hint', variant: 'var_collapsed_2', values: { prop_title_2: 'Writing tips', prop_body_2: 'Keep the title short: the slug becomes the post\'s URL.' } })
-    p.edit('node_insert', { file: 'cmp_hint', type: 'Instance', props: { component: 'cmp_tip' } })
+    p.edit('node_insert', { file: 'cmp_hint', type: 'Instance', props: { component: 'cmp_tip', values: { prop_title: 'Nested' } } })
     expect(p.refuse('instance_replace', { file: 'cmp_hint', nodeId: 'n_instance_1', component: 'cmp_hint' }, 'invalid').message).toBe('"Hint" cannot contain itself')
+  })
+})
+
+describe('an instance keeps the values its component requires', () => {
+  it('instance_replace to a component with a required property is refused, naming the property', () => {
+    const p = project()
+    const refused = p.refuse('instance_replace', { file: 'pg_new_post', nodeId: 'n_tip', component: 'cmp_post_card' }, 'invalid')
+    expect(refused.message).toContain('The edit would leave the model with problems')
+    expect(refused.message).toContain('PostCard needs a value for its required property post')
+    // Every other instance of the model still has its values: the tip stays a tip.
+    expect(p.json(NEW_POST).root.children[0].props.component).toBe('cmp_tip')
+  })
+
+  it('component_property_add of a required property is refused while an instance lacks it', () => {
+    const p = project()
+    const refused = p.refuse('component_property_add', { component: 'cmp_tip', name: 'owner', kind: 'text', required: true }, 'invalid')
+    expect(refused.message).toContain('Tip needs a value for its required property owner')
+    p.edit('component_property_add', { component: 'cmp_tip', name: 'owner', kind: 'text', required: true, default: 'me' })
   })
 })
 

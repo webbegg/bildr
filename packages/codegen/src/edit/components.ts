@@ -94,7 +94,7 @@ export const componentCreate = defineEdit({
     const tree = draft.tree(file)
     const module = tree.module ?? draft.model.project.defaultModule
     const ids = idsOf(nodes)
-    if (ids.includes(tree.root.id)) fail('forbidden', `The ${rootName(tree)} cannot become a component`)
+    if (ids.includes(tree.root.id)) fail('invalid', `The ${rootName(tree)} cannot become a component`)
     const locations = ids.map(id => located(tree, id, 'turned into a component'))
     const parent = locations[0]!.parent
     if (locations.some(location => location.parent !== parent)) fail('invalid', 'Only siblings (nodes of one parent) can become one component')
@@ -152,7 +152,7 @@ export const componentDelete = defineEdit({
     const where = users.map(use => `${use.tree.file} (${use.node.id})`)
     if (users.length && !force) {
       const one = users.length === 1
-      fail('forbidden', `Component "${component.name}" is used by ${users.length} instance${one ? '' : 's'}: ${where.join(', ')}. Delete ${one ? 'it' : 'them'} first, or pass force: true to delete ${one ? 'it' : 'them'} too`)
+      fail('invalid', `Component "${component.name}" is used by ${users.length} instance${one ? '' : 's'}: ${where.join(', ')}. Delete ${one ? 'it' : 'them'} first`)
     }
     // Innermost first, so an outer instance never takes one still to delete.
     for (const use of [...users].reverse()) if (findNode(use.tree.root, use.node.id)) removeNode(use.tree, use.node)

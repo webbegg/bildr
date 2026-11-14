@@ -83,6 +83,10 @@ export const createDesign = () => {
   const fileId = ref<string | null>(null)
   const selectedIds = ref<string[]>([])
   const hoveredId = ref<string | null>(null)
+  /** The node a canvas handle drag is previewing (`bildr:style-preview` until the commit or cancel), so Esc cancels it instead of clearing the selection. */
+  const dragging = ref<string | null>(null)
+  /** Counts the Esc presses that ask the canvas to cancel its drag. */
+  const dragCancels = ref(0)
   const deviceChoice = ref<DeviceId | null>(null)
   const mode = ref<CanvasMode>('edit')
   const catalog = shallowRef<Catalog | null>(null)
@@ -423,8 +427,10 @@ export const createDesign = () => {
     }
     if (key.meta || key.alt) return false
     if (key.key === 'Delete' || key.key === 'Backspace') void remove()
-    else if (key.key === 'Escape') select([])
-    else return false
+    else if (key.key === 'Escape') {
+      if (dragging.value) dragCancels.value++
+      else select([])
+    } else return false
     return true
   }
 
@@ -458,7 +464,7 @@ export const createDesign = () => {
 
   return {
     result, loading, error, zoom, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
-    selectedIds, selectedId, selected, selectedParent, hoveredId, device, devices, deviceChoice, mode, history, clipboard,
+    selectedIds, selectedId, selected, selectedParent, hoveredId, dragging, dragCancels, device, devices, deviceChoice, mode, history, clipboard,
     component, variantId, variant, inspected, breadcrumbs, nameOf, dark, view, selectVariant, override, commitStyle,
     isContainer, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,
     setLocked, rename, copy, paste, setProps, setStyle, onDrop, onKey, start, dispose,

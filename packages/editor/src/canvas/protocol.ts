@@ -52,6 +52,8 @@ export type EditorToCanvas
   = | RenderMessage
     | EditorToCanvasCommon
     | { type: 'bildr:mode', mode: CanvasMode }
+    /** Esc went to the editor (the canvas never has focus) while a handle drag was in progress: cancel it. */
+    | { type: 'bildr:cancel-drag' }
 
 export type CanvasToEditor
   = | CoreCanvasToEditor

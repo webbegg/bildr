@@ -66,6 +66,7 @@ const sendAll = () => {
 watch(renderMessage, () => ready.value && sendRender())
 watch(design.selectedIds, () => ready.value && sendSelection(), { deep: true })
 watch(design.hoveredId, id => ready.value && post({ type: 'bildr:hover', nodeId: id }))
+watch(design.dragCancels, () => ready.value && post({ type: 'bildr:cancel-drag' }))
 watch(design.mode, mode => ready.value && post({ type: 'bildr:mode', mode }))
 watch(design.dark, dark => ready.value && post({ type: 'bildr:dark', dark }))
 watch([design.device, scale], () => ready.value && sendDevice())
@@ -76,6 +77,7 @@ const onMessage = (event: MessageEvent) => {
   switch (message.type) {
     case 'bildr:ready':
       ready.value = true
+      design.dragging.value = null
       sendAll()
       break
     case 'bildr:click':
@@ -100,9 +102,11 @@ const onMessage = (event: MessageEvent) => {
       stage.value?.scrollBy({ left: -message.dx, top: -message.dy })
       break
     case 'bildr:style-preview':
+      design.dragging.value = message.style ? message.nodeId : null
       post({ type: 'bildr:preview', nodeId: message.nodeId, style: message.style })
       break
     case 'bildr:style-commit':
+      design.dragging.value = null
       // The patch keeps showing until the model it lands in is read again; a refusal drops it too.
       void design.commitStyle(message.nodeId, message.style).finally(() => post({ type: 'bildr:preview', nodeId: message.nodeId, style: null }))
       break

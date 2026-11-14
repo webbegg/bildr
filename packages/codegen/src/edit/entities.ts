@@ -289,7 +289,7 @@ export const entityUpdate = defineEdit({
         repository.expose = { list: true }
       } else {
         const readers = queries(draft).filter(query => query.from === id).map(query => query.id)
-        if (readers.length) fail('forbidden', `The queries ${listOf(readers)} read ${entity.name} rows in the app. Delete them first`)
+        if (readers.length) fail('invalid', `The queries ${listOf(readers)} read ${entity.name} rows in the app. Delete them first`)
         delete repository.expose
         for (const action of actions(draft)) if (action.client.optimistic?.entity === id) delete action.client.optimistic
       }
@@ -321,7 +321,7 @@ export const entityDelete = defineEdit({
     for (const component of draft.components()) {
       if (component.properties.some(property => property.entity === id) && !users.includes(`${component.id} (properties)`)) users.push(`${component.id} (properties)`)
     }
-    if (users.length) fail('forbidden', `Entity ${entity.name} is still used by ${listOf(users)}. Change them first`)
+    if (users.length) fail('invalid', `Entity ${entity.name} is still used by ${listOf(users)}. Change them first`)
 
     const remove = <T>(list: T[], items: T[]) => {
       for (const item of items) list.splice(list.indexOf(item), 1)
@@ -456,10 +456,10 @@ export const entityFieldUpdate = defineEdit({
     if (given !== undefined) {
       const name = fieldName(given)
       if (name !== field.name) {
-        if (field.name === 'id') fail('forbidden', 'The key "id" can\'t be renamed')
+        if (field.name === 'id') fail('invalid', 'The key "id" can\'t be renamed')
         if (entity.fields.some(other => other.name === name)) fail('invalid', `Entity ${entity.name} already has a field "${name}"`)
         const users = fieldUsers(draft, entity, field)
-        if (users.length) fail('forbidden', `${field.name} is used by ${listOf(users)}: change them first`)
+        if (users.length) fail('invalid', `${field.name} is used by ${listOf(users)}: change them first`)
         for (const action of pickingActions(draft, id)) action.input.pick = action.input.pick!.map(entry => entry === field.name ? name : entry)
         if (map && field.name in map) {
           const value = map[field.name]!
@@ -503,10 +503,10 @@ export const entityFieldRemove = defineEdit({
   apply: (draft, { entity: id, field: fieldId }) => {
     const { entity } = entityById(draft, id)
     const field = fieldOf(entity, fieldId)
-    if (field.name === 'id') fail('forbidden', `"id" is the key ${entity.name} rows are found by: it can't be removed`)
-    if (entity.fields.length === 1) fail('forbidden', `${field.name} is the only field of ${entity.name}: an entity needs at least one`)
+    if (field.name === 'id') fail('invalid', `"id" is the key ${entity.name} rows are found by: it can't be removed`)
+    if (entity.fields.length === 1) fail('invalid', `${field.name} is the only field of ${entity.name}: an entity needs at least one`)
     const users = fieldUsers(draft, entity, field)
-    if (users.length) fail('forbidden', `${field.name} is used by ${listOf(users)}: change them first`)
+    if (users.length) fail('invalid', `${field.name} is used by ${listOf(users)}: change them first`)
     entity.fields.splice(entity.fields.indexOf(field), 1)
     for (const action of pickingActions(draft, id)) action.input.pick = action.input.pick!.filter(entry => entry !== field.name)
     const map = fieldMapOf(draft, id)

@@ -217,6 +217,8 @@ function onMessage(event: MessageEvent) {
     mode.value = message.mode
     for (const key of Object.keys(shown)) Reflect.deleteProperty(shown, key)
     for (const key of Object.keys(pointer)) Reflect.deleteProperty(pointer, key)
+  } else if (message.type === 'bildr:cancel-drag') {
+    handles.cancel()
   } else if (message.type === 'bildr:select') {
     selectedId.value = message.nodeId
     selectedIds.value = message.nodeIds

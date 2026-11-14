@@ -57,7 +57,7 @@ const DESCRIPTIONS: Record<EditName, string> = {
   layout_rename: 'Rename a layout (kebab-cased, unique); its file keeps its path.',
   layout_duplicate: 'Copy a layout into a new file right after it (tree, slots, variables with new ids); pages keep theirs. name defaults to "<name>-copy". Returns layoutId and filePath.',
   layout_delete: 'Delete a layout file. Refused while pages use it (give them another layout, or none, with page_set_layout).',
-  layout_slot_add: 'Add a named slot to a layout: a container node of the layout (not another slot\'s, nor inside or around one) whose children are the default content pages may replace (page_set_slot). name is camelCased. Returns slotId.',
+  layout_slot_add: 'Add a named slot to a layout: a container node of the layout (not its root, another slot\'s, nor inside or around one) whose children are the default content pages may replace (page_set_slot). name is camelCased. Returns slotId.',
   layout_slot_update: 'Rename a named slot or bind it to another container node of the layout.',
   layout_slot_remove: 'Remove a named slot (never children) with the pages\' content for it.',
   layout_variable_add: 'Add a variable to a layout, which pages set with page_set_layout_values and the layout reads with { "$bind": "layout.<name>" } or drives through bindings: name (camelCased), kind (text, textarea, number, boolean, select, image, link, icon), label, description, options, default, optional, placeholder, bindings. The id is prop_<name>. Returns variableId.',

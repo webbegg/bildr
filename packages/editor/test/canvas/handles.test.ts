@@ -153,6 +153,17 @@ describe('resize handles', () => {
     expect(sent('bildr:key')).toEqual([])
   })
 
+  it('the editor\'s cancel-drag message (Esc went to the editor, the canvas has no focus) cancels the drag the same way', async () => {
+    await select('n_h1')
+    await press(220, 60)
+    await move(280, 60)
+    await send({ type: 'bildr:cancel-drag' })
+    expect(sent('bildr:style-preview').at(-1)).toEqual({ type: 'bildr:style-preview', nodeId: 'n_h1', style: null })
+    expect(node('n_h1').className).not.toContain('w-64')
+    await release(280, 60)
+    expect(sent('bildr:style-commit')).toEqual([])
+  })
+
   it('a press on the handle that never moves is not a drag: nothing is previewed or committed', async () => {
     await select('n_h1')
     await press(220, 60)

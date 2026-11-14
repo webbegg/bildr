@@ -74,6 +74,38 @@ describe('loadModel: component property kinds', () => {
     })).toContainEqual(`${IDX}: root.children.4.props.values.prop_posts: posts is a list of entities: bind it with $bind`)
   })
 
+  it('an instance gives a value for each required property that has no default', () => {
+    const required = (extra: Json = {}) => (files: Record<string, Json>) => {
+      files[BADGE]!.properties.push({ id: 'prop_href', name: 'href', kind: 'text', required: true, ...extra })
+      files[BADGE]!.properties.push({ id: 'prop_size', name: 'size', kind: 'number', required: true })
+    }
+    const missing = `${IDX}: root.children.4.props.values: Badge needs a value for its required properties href, size`
+    expect(problems((files) => {
+      required()(files)
+      instance({ prop_label: 'New' })(files)
+    })).toContainEqual(missing)
+    expect(problems((files) => {
+      required()(files)
+      instance({ prop_href: '/x' })(files)
+    })).toContainEqual(`${IDX}: root.children.4.props.values: Badge needs a value for its required property size`)
+    // No `values` at all is a missing value too.
+    expect(problems((files) => {
+      required()(files)
+      files[IDX]!.root.children.push({ id: 'n_b', type: 'Instance', props: { component: 'cmp_badge' } })
+    })).toContainEqual(missing)
+    // A default, a bound value, or a value of its own is enough; an optional property needs none.
+    expect(problems((files) => {
+      required({ default: '/' })(files)
+      files[BADGE]!.properties[3].required = false
+      files[BADGE]!.properties[3].optional = true
+      instance({})(files)
+    })).toEqual([])
+    expect(problems((files) => {
+      required()(files)
+      instance({ prop_href: { $bind: 'preferences.showDrafts' }, prop_size: 2 })(files)
+    })).not.toContainEqual(expect.stringContaining('needs a value'))
+  })
+
   it('a property is required or optional, not both', () => {
     expect(problems((files) => {
       Object.assign(files[BADGE]!.properties[0], { required: true, optional: true })

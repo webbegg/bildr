@@ -13,7 +13,8 @@ import { walk } from './tree.ts'
  * an edit changes, and the change set it becomes. Pure: no fs.
  */
 
-export type EditErrorCode = 'invalid_input' | 'not_found' | 'invalid' | 'forbidden'
+/** A refusal is a model rule (`invalid`, 422), never a guard: path and write refusals (`forbidden`) belong to the module's actions. */
+export type EditErrorCode = 'invalid_input' | 'not_found' | 'invalid'
 
 export class EditError extends Error {
   readonly code: EditErrorCode
@@ -223,6 +224,12 @@ export interface EditDef<S extends z.ZodType = z.ZodType> {
 
 export const defineEdit = <S extends z.ZodType>(def: EditDef<S>): EditDef<S> => def
 
+/** The first problems as one sentence for the user: what is wrong and in which file. */
+const problemsText = (problems: ModelProblem[]): string => {
+  const shown = problems.slice(0, 3).map(problem => `${problem.message} (${problem.path})`).join('; ')
+  return problems.length > 3 ? `${shown}; and ${problems.length - 3} more` : shown
+}
+
 /** The generator's error for `model` (as a problem of the file it names), or undefined when it generates. */
 const generationProblem = (model: Model): ModelProblem | undefined => {
   try {
@@ -267,7 +274,7 @@ export const runEdit = (files: Record<string, string>, def: EditDef, rawInput: u
     else next[path] = after[path]
   }
   const check = loadModel(next)
-  if (!check.ok) return { ok: false, code: 'invalid', message: 'The edit would leave the model with problems', problems: check.problems }
+  if (!check.ok) return { ok: false, code: 'invalid', message: `The edit would leave the model with problems: ${problemsText(check.problems)}`, problems: check.problems }
   const broken = generationProblem(check.model)
   // Only an edit that breaks generation is refused: a model that already failed to generate can still be edited.
   if (broken && !generationProblem(loaded.model)) return { ok: false, code: 'invalid', message: `The edit would leave a model the generator can't build: ${broken.message}`, problems: [broken] }

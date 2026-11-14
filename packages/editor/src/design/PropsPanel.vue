@@ -34,7 +34,7 @@ const text = (key: string) => {
   return typeof entry === 'string' ? entry : typeof entry === 'number' ? String(entry) : ''
 }
 const commitText = (key: string, entry: string) => save({ [key]: entry === '' ? null : entry })
-const commitNumber = (key: string, entry: string) => save({ [key]: entry === '' || Number.isNaN(Number(entry)) ? null : Number(entry) })
+const commitNumber = (key: string, entry: string) => save({ [key]: entry.trim() === '' ? null : Number(entry) })
 const commitSelect = (spec: PropSpec, event: Event) => {
   const entry = (event.target as HTMLSelectElement).value
   save({ [spec.key]: entry === '' ? null : spec.numeric ? Number(entry) : entry })
@@ -116,6 +116,7 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
         v-else-if="spec.control === 'number'"
         :data-testid="`prop-${spec.key}`"
         :model-value="text(spec.key)"
+        numeric
         @commit="commitNumber(spec.key, $event)"
       />
       <select
@@ -242,6 +243,7 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
           v-else
           :data-testid="`value-${property.name}`"
           :model-value="String(values[property.id] ?? '')"
+          :numeric="property.kind === 'number'"
           :placeholder="property.default === undefined ? '' : String(property.default)"
           @commit="setValue(property.id, $event === '' ? null : property.kind === 'number' ? Number($event) : $event)"
         />

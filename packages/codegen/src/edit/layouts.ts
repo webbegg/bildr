@@ -49,6 +49,7 @@ const slotIn = (layout: LayoutFile, id: string) => layout.slots.find(slot => slo
 const checkSlotNode = (layout: LayoutFile, nodeId: string, except?: string) => {
   const node = findNode(layout.root, nodeId) ?? fail('not_found', `Node "${nodeId}" not found in ${layout.id}`)
   if (!isContainerType(node.type)) fail('invalid', `A ${node.type} cannot hold slot content`)
+  if (node === layout.root) fail('invalid', 'The layout root cannot be a slot: it holds the whole layout. Pick a container inside it')
   for (const slot of layout.slots) {
     if (slot.id === except) continue
     if (slot.nodeId === nodeId) fail('invalid', `Node "${nodeId}" is already the slot "${slot.name}"`)
@@ -139,7 +140,7 @@ export const layoutDelete = defineEdit({
   apply: (draft, { layout: id }) => {
     const layout = draft.layout(id)
     const pages = pagesUsing(draft, id)
-    if (pages.length) fail('forbidden', `Layout "${layout.name}" is used by ${pages.length} page${pages.length === 1 ? '' : 's'}: ${pages.map(page => page.id).join(', ')}. Give them another layout first`)
+    if (pages.length) fail('invalid', `Layout "${layout.name}" is used by ${pages.length} page${pages.length === 1 ? '' : 's'}: ${pages.map(page => page.id).join(', ')}. Give them another layout first`)
     draft.model.layouts.splice(draft.model.layouts.indexOf(layout), 1)
     return {}
   }
@@ -171,7 +172,7 @@ export const layoutSlotUpdate = defineEdit({
     const layout = draft.layout(id)
     const slot = slotIn(layout, slotId)
     if (name !== undefined) {
-      if (slot.id === CHILDREN_SLOT) fail('forbidden', 'The children slot keeps its name')
+      if (slot.id === CHILDREN_SLOT) fail('invalid', 'The children slot keeps its name')
       const value = slotName(name)
       if (layout.slots.some(other => other !== slot && other.name === value)) fail('invalid', `Layout ${layout.name} already has a slot "${value}"`)
       slot.name = value
@@ -189,7 +190,7 @@ export const layoutSlotRemove = defineEdit({
   apply: (draft, { layout: id, slot: slotId }) => {
     const layout = draft.layout(id)
     const slot = slotIn(layout, slotId)
-    if (slot.id === CHILDREN_SLOT) fail('forbidden', 'The children slot cannot be removed: it holds the page content')
+    if (slot.id === CHILDREN_SLOT) fail('invalid', 'The children slot cannot be removed: it holds the page content')
     for (const page of pagesUsing(draft, id)) for (const fill of fillsOf(page, slotId)) removeNode(pageTree(draft, page), fill)
     layout.slots.splice(layout.slots.indexOf(slot), 1)
     return {}

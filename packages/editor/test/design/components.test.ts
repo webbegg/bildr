@@ -52,9 +52,9 @@ describe('Components section', () => {
   })
 
   it('shows the refusal of a delete in use, and offers to delete the instances too', async () => {
-    const message = 'Component "PostCard" is used by 1 instance: pg_index (n_card). Delete it first, or pass force: true to delete it too'
+    const message = 'Component "PostCard" is used by 1 instance: pg_index (n_card). Delete it first'
     let refuse = true
-    const { actions } = await open({ component_delete: () => refuse ? new Failure(403, 'forbidden', message) : ok({ deletedInstances: ['pg_index (n_card)'] })() })
+    const { actions } = await open({ component_delete: () => refuse ? new Failure(422, 'invalid', message) : ok({ deletedInstances: ['pg_index (n_card)'] })() })
     await openTab('components')
 
     await click(byTestId(`component-delete-${POST_CARD}`))
@@ -358,5 +358,65 @@ describe('Instance inspector', () => {
     expect(actions.named('instance_set_slot').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_card', slot: 'prop_actions', filled: false }])
     expect(actions.named('instance_detach').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_card' }])
     expect(actions.named('instance_replace').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_card', component: 'cmp_tip' }])
+  })
+})
+
+describe('A typo in a number field is refused, never committed as a removal', () => {
+  const value = (testId: string) => (byTestId(testId) as HTMLInputElement).value
+
+  it('keeps the default of a number property, puts the saved value back, and takes a real number', async () => {
+    postCard().properties.push({ id: 'prop_count', name: 'count', kind: 'number', default: 3 })
+    const { actions } = await open({ component_property_update: ok() }, POST_CARD)
+    await fileTab()
+
+    await typeInto(byTestId('property-default-prop_count'), 'abc')
+    expect(actions.named('component_property_update')).toEqual([])
+    expect(value('property-default-prop_count')).toBe('3')
+
+    await typeInto(byTestId('property-default-prop_count'), '4')
+    await typeInto(byTestId('property-default-prop_count'), '')
+    expect(actions.named('component_property_update').map(call => call.input)).toEqual([
+      { component: POST_CARD, property: 'prop_count', default: 4 },
+      { component: POST_CARD, property: 'prop_count', default: null }
+    ])
+  })
+
+  it('keeps the value an instance gives a number property', async () => {
+    postCard().properties.push({ id: 'prop_count', name: 'count', kind: 'number', default: 3 })
+    const { actions } = await open({ instance_set_values: ok() })
+    await select('n_card')
+
+    await typeInto(byTestId('value-count'), 'abc')
+    expect(actions.named('instance_set_values')).toEqual([])
+    expect(value('value-count')).toBe('')
+
+    await typeInto(byTestId('value-count'), '5')
+    expect(actions.named('instance_set_values').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_card', values: { prop_count: 5 } }])
+  })
+
+  it('keeps a number prop of a node (an Input\'s rows)', async () => {
+    const { actions } = await open({ node_update_props: ok() }, 'pg_new_post')
+    await select('n_title')
+
+    await typeInto(byTestId('prop-rows'), '4x')
+    expect(actions.named('node_update_props')).toEqual([])
+    expect(value('prop-rows')).toBe('')
+
+    await typeInto(byTestId('prop-rows'), '4')
+    expect(actions.named('node_update_props').map(call => call.input)).toEqual([{ file: 'pg_new_post', nodeId: 'n_title', props: { rows: 4 } }])
+  })
+
+  it('keeps the delay of an interaction and the numbers of a transition', async () => {
+    postCard().transition = { type: 'ease', duration: 0.2, easing: 'ease-out' }
+    postCard().interactions = [{ on: 'click', do: [{ kind: 'setVariant', to: 'var_compact' }] }]
+    const { actions } = await open({ component_interaction_update: ok(), component_transition_set: ok() }, POST_CARD)
+    await fileTab()
+
+    await typeInto(byTestId('transition-duration'), 'fast')
+    expect(actions.named('component_transition_set')).toEqual([])
+    expect(value('transition-duration')).toBe('0.2')
+    await typeInto(byTestId('interaction-delay-0'), 'soon')
+    expect(actions.named('component_interaction_update')).toEqual([])
+    expect(value('interaction-delay-0')).toBe('')
   })
 })

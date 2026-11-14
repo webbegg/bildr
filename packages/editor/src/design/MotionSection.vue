@@ -25,7 +25,7 @@ const edit = (action: string, input: Record<string, unknown>) => design.edit(act
 
 const add = () => edit('component_interaction_add', { on: 'click', to: targets.value[0]?.id ?? '' })
 const update = (index: number, patch: Record<string, unknown>) => edit('component_interaction_update', { index, ...patch })
-const commitDelay = (index: number, raw: string) => update(index, { delay: raw.trim() === '' || Number.isNaN(Number(raw)) ? null : Number(raw) })
+const commitDelay = (index: number, raw: string) => update(index, { delay: raw.trim() === '' ? null : Number(raw) })
 
 const DEFAULTS: Record<string, Transition> = {
   instant: { type: 'instant' },
@@ -37,7 +37,7 @@ const pickType = (event: Event) => {
   const type = (event.target as HTMLSelectElement).value
   return setTransition(type === 'none' ? null : { ...DEFAULTS[type]! })
 }
-const number = (raw: string, fallback: number) => raw.trim() === '' || Number.isNaN(Number(raw)) ? fallback : Number(raw)
+const number = (raw: string, fallback: number) => raw.trim() === '' ? fallback : Number(raw)
 const ease = (patch: Partial<Transition>) => setTransition({ ...DEFAULTS.ease!, ...transition.value, ...patch, type: 'ease' })
 const spring = (patch: Partial<Transition>) => setTransition({ ...DEFAULTS.spring!, ...transition.value, ...patch, type: 'spring' })
 const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text-xs'
@@ -95,6 +95,7 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
           :data-testid="`interaction-delay-${index}`"
           :model-value="interaction.do[0].delay === undefined ? '' : String(interaction.do[0].delay)"
           placeholder="Delay s"
+          numeric
           @commit="commitDelay(index, $event)"
         />
         <button
@@ -151,6 +152,7 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
           data-testid="transition-duration"
           :model-value="String(transition.duration ?? 0.2)"
           placeholder="Duration s"
+          numeric
           @commit="ease({ duration: number($event, 0.2) })"
         />
         <select
@@ -174,12 +176,14 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
           data-testid="transition-stiffness"
           :model-value="String(transition.stiffness ?? 400)"
           placeholder="Stiffness"
+          numeric
           @commit="spring({ stiffness: number($event, 400) })"
         />
         <CommitInput
           data-testid="transition-damping"
           :model-value="String(transition.damping ?? 25)"
           placeholder="Damping"
+          numeric
           @commit="spring({ damping: number($event, 25) })"
         />
       </template>

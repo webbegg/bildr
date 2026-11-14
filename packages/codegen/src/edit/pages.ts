@@ -91,9 +91,9 @@ export const pageDelete = defineEdit({
     const users = pageTargets(draft, id)
     if (users.length) {
       const many = users.length !== 1
-      fail('forbidden', `Page "${page.name}" is the target of ${users.length} link${many ? 's' : ''} or navigate step${many ? 's' : ''}: ${users.join(', ')}. Change them first`)
+      fail('invalid', `Page "${page.name}" is the target of ${users.length} link${many ? 's' : ''} or navigate step${many ? 's' : ''}: ${users.join(', ')}. Change them first`)
     }
-    if (draft.pages().length === 1) fail('forbidden', 'A project needs at least one page')
+    if (draft.pages().length === 1) fail('invalid', 'A project needs at least one page')
     const pages = draft.module(module).pages
     pages.splice(pages.indexOf(page), 1)
     return {}

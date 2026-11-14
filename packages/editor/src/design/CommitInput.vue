@@ -7,7 +7,7 @@ import { ref, watch } from 'vue'
  * it changes (undo, another editor).
  */
 
-const props = defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, mono?: boolean }>()
+const props = defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, mono?: boolean, numeric?: boolean }>()
 const emit = defineEmits<{ commit: [value: string] }>()
 
 const draft = ref(props.modelValue)
@@ -16,7 +16,14 @@ watch(() => props.modelValue, (value) => {
 })
 
 const commit = () => {
-  if (draft.value !== props.modelValue) emit('commit', draft.value)
+  if (draft.value === props.modelValue) return
+  // A number field refuses a typo and shows the saved value again: an `abc`
+  // must never reach the action as `null` and remove the value.
+  if (props.numeric && draft.value.trim() !== '' && !Number.isFinite(Number(draft.value))) {
+    draft.value = props.modelValue
+    return
+  }
+  emit('commit', draft.value)
 }
 const enter = (event: KeyboardEvent) => {
   if (props.multiline && event.shiftKey) return

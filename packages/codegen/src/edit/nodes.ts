@@ -63,7 +63,7 @@ export const nodeIn = (tree: Tree, id: string): ModelNode => findNode(tree.root,
 /** The node `id` with its parent; the root is refused (`verb`: "moved", "deleted"…). */
 export const located = (tree: Tree, id: string, verb: string) => {
   nodeIn(tree, id)
-  return findParent(tree.root, id) ?? fail('forbidden', `The ${rootName(tree)} cannot be ${verb}`)
+  return findParent(tree.root, id) ?? fail('invalid', `The ${rootName(tree)} cannot be ${verb}`)
 }
 
 export const idsOf = ({ nodeId, nodeIds }: { nodeId?: string, nodeIds?: string[] }): string[] => {
@@ -75,14 +75,14 @@ export const idsOf = ({ nodeId, nodeIds }: { nodeId?: string, nodeIds?: string[]
 /** The nodes of `ids` not inside another of them, in `ids` order; refuses missing nodes and the root. */
 const outermost = (tree: Tree, ids: string[], verb: string): ModelNode[] => {
   const nodes = ids.map(id => nodeIn(tree, id))
-  if (nodes.includes(tree.root)) fail('forbidden', `The ${rootName(tree)} cannot be ${verb}`)
+  if (nodes.includes(tree.root)) fail('invalid', `The ${rootName(tree)} cannot be ${verb}`)
   return nodes.filter(node => !nodes.some(other => other !== node && containsNode(other, node.id)))
 }
 
 /** Where a new child of `parentId` may go: a container, and an Instance only takes SlotFills. */
 export const containerIn = (tree: Tree, parentId: string, child: string): ModelNode => {
   const parent = nodeIn(tree, parentId)
-  if (parent.type === 'Instance' && child !== 'SlotFill') fail('invalid', 'An Instance holds only SlotFills: fill a slot with instance_set_slot')
+  if (parent.type === 'Instance' && child !== 'SlotFill') fail('invalid', 'An Instance holds only the content of its slots: fill one of its slots instead')
   if (!isContainerType(parent.type)) fail('invalid', `A ${parent.type} cannot hold children`)
   return parent
 }
