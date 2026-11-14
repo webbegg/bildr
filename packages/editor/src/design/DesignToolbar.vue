@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { deviceHint } from '@bildr/editor-core/devices'
+import { zoomLabel } from './scale.ts'
 import type { FileKind } from './store.ts'
 import { useDesign } from './store.ts'
 
@@ -63,6 +64,12 @@ const preview = computed(() => design.mode.value === 'preview')
       </UTooltip>
     </div>
 
+    <span
+      class="w-10 text-xs text-muted tabular-nums"
+      title="The canvas is shown scaled down to fit; it lays out at the device's width"
+      data-testid="zoom"
+    >{{ zoomLabel(design.zoom.value) }}</span>
+
     <div class="flex items-center gap-1">
       <UButton
         data-testid="undo"
@@ -105,14 +112,24 @@ const preview = computed(() => design.mode.value === 'preview')
       >
         The app could not regenerate
       </span>
-      <span
-        v-if="design.error.value"
-        data-testid="design-error"
-        class="max-w-96 truncate text-error"
-        :title="design.error.value"
-      >
-        {{ design.error.value }}
-      </span>
+      <template v-if="design.error.value">
+        <span
+          data-testid="design-error"
+          class="max-w-96 truncate text-error"
+          :title="design.error.value"
+        >
+          {{ design.error.value }}
+        </span>
+        <UButton
+          data-testid="design-error-dismiss"
+          icon="i-lucide-x"
+          aria-label="Dismiss"
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          @click="design.dismissError()"
+        />
+      </template>
     </div>
   </header>
 </template>

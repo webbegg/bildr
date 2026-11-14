@@ -108,6 +108,20 @@ const elements = computed(() => {
   return map
 })
 
+/** The interactive instances' roots by `variantRoot.key`: a render builds new plan elements, but a key names the same instance. */
+const variantRoots = computed(() => {
+  const map = new Map<string, PlanElement>()
+  const visit = (children: PlanChild[]) => {
+    for (const child of children) {
+      if (typeof child === 'string') continue
+      if (child.variantRoot && !map.has(child.variantRoot.key)) map.set(child.variantRoot.key, child)
+      visit(child.children)
+    }
+  }
+  visit(plan.value)
+  return map
+})
+
 // ── Theme and viewport ─────────────────────────────────────────────────
 
 const headStyle = (id: string, css: string) => {
@@ -431,18 +445,27 @@ function preview(event: Event, on: string) {
   }
 }
 
-let hoveredRoots: PlanElement[] = []
+/**
+ * The keys of the interactive instances under the pointer. Keys, not plan
+ * elements: a click that switches a variant renders a new plan, and elements
+ * compared by identity would read every instance as left and entered again,
+ * resetting the variant the click had just set.
+ */
+let hoveredRoots: string[] = []
 function previewPointer(event: MouseEvent) {
   const roots = planChain(event.target).filter(element => element.variantRoot)
-  for (const left of hoveredRoots.filter(element => !roots.includes(element))) {
+  const keys = roots.map(element => element.variantRoot!.key)
+  for (const key of hoveredRoots.filter(entry => !keys.includes(entry))) {
+    const left = variantRoots.value.get(key)
+    if (!left) continue
     pointerState(left, null)
     runVariant(left, 'mouseleave')
   }
-  for (const entered of roots.filter(element => !hoveredRoots.includes(element))) {
+  for (const entered of roots.filter(element => !hoveredRoots.includes(element.variantRoot!.key))) {
     pointerState(entered, 'hover')
     runVariant(entered, 'mouseenter')
   }
-  hoveredRoots = roots
+  hoveredRoots = keys
 }
 
 // ── Pointer and keys ────────────────────────────────────────────────────
@@ -460,7 +483,10 @@ function onPointerMove(event: MouseEvent) {
 function onPointerLeave() {
   if (tool.value) indicator.value = null
   if (mode.value === 'preview') {
-    for (const left of hoveredRoots) pointerState(left, null)
+    for (const key of hoveredRoots) {
+      const left = variantRoots.value.get(key)
+      if (left) pointerState(left, null)
+    }
     hoveredRoots = []
     return
   }

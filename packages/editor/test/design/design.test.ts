@@ -7,7 +7,7 @@ import type { CanvasToEditor, EditorToCanvas } from '../../src/canvas/protocol.t
 import { canvasSrc } from '../../src/design/config.ts'
 import DesignView from '../../src/views/DesignView.vue'
 import { blogModelFiles } from '../canvas/fixture.ts'
-import { allByTestId, byTestId, click, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
+import { allByTestId, byTestId, click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
 
 /**
  * The Design screen (P4b, V1): page picker, layers, the canvas frame, inspector,
@@ -70,6 +70,19 @@ const fromCanvas = async (message: CanvasToEditor, origin = window.location.orig
   await settle()
 }
 
+/** jsdom has no layout: the stage reports this width (0 = not measured, so the frame stays at 100%). */
+let stagePx = 0
+const stageWidth = (px: number) => {
+  stagePx = px
+}
+const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
+Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
+  configurable: true,
+  get(this: HTMLElement) {
+    return this.dataset.testid === 'stage' ? stagePx : originalClientWidth?.get?.call(this) ?? 0
+  }
+})
+
 const originalContentWindow = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow')
 
 const handlers = () => ({
@@ -103,6 +116,7 @@ const handlers = () => ({
 
 beforeEach(() => {
   canvasSrc.value = 'about:blank'
+  stagePx = 0
   model = blank()
   posted = []
   FakeEventSource.instances = []
@@ -306,6 +320,54 @@ describe('Design screen', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', bubbles: true }))
     await settle()
     expect(actions.named('node_delete')).toHaveLength(1)
+  })
+
+  it('keeps a refused edit\'s message after a regenerated event', async () => {
+    const message = 'Can\'t make a component of n_quote: it binds "quote" (n_quote), defined outside it. A component sees only its own properties: pick nodes that don\'t use that name, or unbind it first'
+    await open({ component_create: () => new Failure(422, 'invalid', message) })
+    await click(layer('n_quote'))
+    await click(byTestId('node-component'))
+    FakeEventSource.instances.at(-1)!.send({ type: 'regenerated', version: 9, ok: true })
+    await settle()
+    expect(byTestId('design-error')?.textContent?.trim()).toBe(message)
+  })
+
+  it('dismisses an action error, and the next edit clears it', async () => {
+    await open({ component_create: () => new Failure(422, 'invalid', 'nope') })
+    await click(layer('n_quote'))
+    await click(byTestId('node-component'))
+    expect(byTestId('design-error')?.textContent?.trim()).toBe('nope')
+    await click(byTestId('design-error-dismiss'))
+    expect(byTestId('design-error')).toBeNull()
+    await click(byTestId('node-component'))
+    expect(byTestId('design-error')?.textContent?.trim()).toBe('nope')
+    await click(layer('n_h1'))
+    await click(byTestId('undo'))
+    expect(byTestId('design-error')).toBeNull()
+  })
+
+  it('frames the canvas at the device width, never narrower', async () => {
+    await open()
+    await click(byTestId('device-desktop'))
+    const box = byTestId('canvas-frame')!.parentElement!
+    expect(box.style.width).toBe('1280px')
+    expect(box.style.maxWidth).not.toBe('100%')
+  })
+
+  it('scales the frame down to the stage, keeps its layout width, and tells the canvas and the toolbar the zoom', async () => {
+    stageWidth(1000)
+    await open()
+    await click(byTestId('device-desktop'))
+    const box = byTestId('canvas-frame')!.parentElement!
+    // 1000 px stage − 48 px padding = 952 px for a 1280 px device.
+    expect(box.style.width).toBe('1280px')
+    expect(box.style.transform).toBe('scale(0.74375)')
+    expect(box.parentElement!.style.width).toBe('952px')
+    expect(byTestId('zoom')?.textContent?.trim()).toBe('74%')
+    expect(sent('bildr:active').at(-1)).toMatchObject({ zoom: 0.74375 })
+    await click(byTestId('device-tablet'))
+    expect(byTestId('zoom')?.textContent?.trim()).toBe('100%')
+    expect(byTestId('canvas-frame')!.parentElement!.style.transform).toBe('')
   })
 
   it('the preview toggle switches the canvas mode', async () => {

@@ -192,4 +192,23 @@ describe('preview mode', () => {
     await settle()
     expect(sent('bildr:interaction')).toEqual([{ type: 'bildr:interaction', nodeId: 'n_cancel', on: 'click', step: { kind: 'navigate', to: { page: 'pg_index' } } }])
   })
+
+  it('toggles an interactive instance both ways with a real mouse: every click is preceded by a pointer move', async () => {
+    await send(render('posts-new', { createPost: { pending: false, error: null } }))
+    await send({ type: 'bildr:mode', mode: 'preview' })
+    const toggle = () => node('n_tip/n_tip_toggle')!
+    const mouseClick = async () => {
+      toggle().dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+      toggle().dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      toggle().dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+      toggle().dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      await settle()
+    }
+    const labels: string[] = [toggle().textContent!.trim()]
+    for (let i = 0; i < 4; i++) {
+      await mouseClick()
+      labels.push(toggle().textContent!.trim())
+    }
+    expect(labels).toEqual(['Show', 'Hide', 'Show', 'Hide', 'Show'])
+  })
 })

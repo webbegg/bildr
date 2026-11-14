@@ -72,7 +72,10 @@ const toSpec = (node: ModelNode): Record<string, unknown> => ({
 export const createDesign = () => {
   const result = shallowRef<ModelResult | null>(null)
   const loading = ref(true)
+  /** The last action's refusal, or a failed read. It stays until dismissed or the next edit; a refresh never clears an action's. */
   const error = ref<string | null>(null)
+  let errorFromRead = false
+  const zoom = ref(1)
   const regenerated = ref<{ ok: boolean, problems?: ModelProblem[], error?: string } | null>(null)
   const fileId = ref<string | null>(null)
   const selectedIds = ref<string[]>([])
@@ -139,11 +142,12 @@ export const createDesign = () => {
     try {
       const next = await callAction<{ ok: boolean, model?: ProjectModel, problems?: ModelProblem[] }>('model_get')
       result.value = next.ok && next.model ? { ok: true, model: next.model } : { ok: false, problems: next.problems ?? [] }
-      error.value = null
+      if (errorFromRead) error.value = null
       if (!files.value.some(entry => entry.id === fileId.value)) fileId.value = files.value.find(entry => entry.kind === 'page')?.id ?? files.value[0]?.id ?? null
       keepSelection()
     } catch (caught) {
       error.value = errorMessage(caught)
+      errorFromRead = true
     }
     try {
       const steps = await callAction<{ undo: unknown[], redo: unknown[] }>('history_get', { limit: 1 })
@@ -183,18 +187,23 @@ export const createDesign = () => {
   let queue: Promise<unknown> = Promise.resolve()
   const edit: Edit = (name, input) => {
     const run = queue.then(async () => {
+      error.value = null
       try {
         const out = await callAction<Record<string, unknown>>(name, input)
-        error.value = null
         await refresh()
         return out
       } catch (caught) {
         error.value = errorMessage(caught)
+        errorFromRead = false
         return undefined
       }
     })
     queue = run
     return run
+  }
+
+  const dismissError = () => {
+    error.value = null
   }
 
   const select = (ids: string[]) => {
@@ -361,9 +370,9 @@ export const createDesign = () => {
   }
 
   return {
-    result, loading, error, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
+    result, loading, error, zoom, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
     selectedIds, selectedId, selected, selectedParent, hoveredId, device, devices, deviceChoice, mode, history, clipboard,
-    isContainer, refresh, edit, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,
+    isContainer, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,
     setLocked, rename, copy, paste, setProps, setStyle, onDrop, onKey, start, dispose,
     chooseDevice: (id: DeviceId) => {
       deviceChoice.value = id
