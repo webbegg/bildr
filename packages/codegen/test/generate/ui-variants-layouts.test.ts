@@ -105,7 +105,8 @@ describe('generateUi: variants', () => {
     expect(page).toContain('<BlogBadge variant="loud" class="self-stretch" />')
   })
 
-  it('renders hover and pressed states with group classes and animates them with the transition', () => {
+  // The root carries the group class, so a group variant on it would need an ancestor: it gets plain hover:/active:.
+  it('renders hover and pressed states on the root with hover:/active: classes and animates them with the transition', () => {
     const code = badgeOut((component) => {
       component.variants.push(
         { id: 'var_hover', name: 'hovered', overrides: { n_badge: { style: { px: '3' } } }, state: { of: '', kind: 'hover' } },
@@ -115,13 +116,34 @@ describe('generateUi: variants', () => {
     })
     expect(code).toContain([
       'const badgeVariants = {',
-      '  default: \'px-2 group-hover/badge:px-3 group-active/badge:px-4\',',
+      '  default: \'px-2 hover:px-3 active:px-4\',',
       '  hovered: \'px-3\',',
       '  pressed: \'px-4\'',
       '} as const'
     ].join('\n'))
-    expect(code).toContain('<div class="flex group/badge transition-[padding-left,padding-right] duration-200 ease-[ease-out] flex-row" :class="[badgeVariants[props.variant], badgeBgClasses[props.tone]]">')
+    expect(code).not.toContain('group-')
+    expect(code).toContain('<div class="flex transition-[padding-left,padding-right] duration-200 ease-[ease-out] flex-row" :class="[badgeVariants[props.variant], badgeBgClasses[props.tone]]">')
     expect(code).not.toContain('useVariantState')
+  })
+
+  it('renders hover and pressed states on a descendant with group classes from the root', () => {
+    const code = badgeOut((component) => {
+      component.root.children[0].style = { color: 'muted' }
+      component.variants.push(
+        { id: 'var_hover', name: 'hovered', overrides: { n_badge_text: { style: { color: 'primary' } } }, state: { of: '', kind: 'hover' } },
+        { id: 'var_pressed', name: 'pressed', overrides: { n_badge_text: { style: { color: 'error' } } }, state: { of: '', kind: 'pressed' } }
+      )
+    })
+    expect(code).toContain('  default: \'text-muted group-hover/badge:text-primary group-active/badge:text-error\',')
+    expect(code).toContain('<div class="flex group/badge')
+  })
+
+  it('gives the golden PostCard root plain hover: classes and its title group-hover/post-card: ones', () => {
+    const code = out(() => {}, 'components/blog/PostCard.vue')
+    expect(code).toContain('const cardVariants = {\n  default: \'p-5 hover:shadow-md\',')
+    expect(code).not.toMatch(/cardVariants = \{[^}]*group-hover/)
+    expect(code).toContain('const titleVariants = {\n  default: \'group-hover/post-card:text-primary\',')
+    expect(code).toContain('group/post-card')
   })
 
   it('switches variants on interactions with the core useVariantState composable', () => {

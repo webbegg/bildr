@@ -10,7 +10,7 @@ const props = withDefaults(defineProps<{
 }>(), { cover: '', draftLabel: undefined, variant: 'default' })
 
 const cardVariants = {
-  default: 'p-5 group-hover/post-card:shadow-md',
+  default: 'p-5 hover:shadow-md',
   compact: 'p-3',
   hovered: 'p-5 shadow-md'
 } as const

@@ -28,7 +28,7 @@
     },
     "layers/blog/app/components/blog/PostCard.vue": {
       "owner": "managed",
-      "sha256": "f559b212d96fa908efecd8c78949f51e2d1e0c83c8bf8c10a6526c7ef86712c4",
+      "sha256": "88fcb826ad622a031c87d7028133a1cba54cf5a9076d76bb7c591d824138f0c1",
       "source": ".bildr/modules/blog/components/post-card.json"
     },
     "layers/blog/app/components/blog/Tip.vue": {

@@ -91,6 +91,26 @@ describe('loadModel: property bindings', () => {
     })).toContainEqual(`${BADGE}: properties.0.bindings.0.prop: A property can't drive "level": it shapes the generated markup`)
   })
 
+  it('a prop binding names a prop the node type takes', () => {
+    expect(problems((files) => {
+      files[BADGE]!.properties[0].bindings[0].prop = 'bogus'
+    })).toContainEqual(`${BADGE}: properties.0.bindings.0.prop: A Text has no prop "bogus"`)
+  })
+
+  it('a Button variant, color or size is driven by a select property whose options are values it takes', () => {
+    const button = (property: Json) => (files: Record<string, Json>) => {
+      files[BADGE]!.root.children.push({ id: 'n_badge_go', type: 'Button', props: { text: 'Go' } })
+      files[BADGE]!.properties.push({ id: 'prop_look', name: 'look', ...property })
+    }
+    expect(problems(button({ kind: 'select', options: ['solid', 'ghost'], default: 'solid', bindings: [{ nodeId: 'n_badge_go', prop: 'variant' }] }))).toEqual([])
+    expect(problems(button({ kind: 'text', bindings: [{ nodeId: 'n_badge_go', prop: 'variant' }] })))
+      .toContainEqual(`${BADGE}: properties.2.bindings.0: look (kind text) can't drive the Button variant: use a select property with options among solid, outline, soft, subtle, ghost, link`)
+    expect(problems(button({ kind: 'select', options: ['md', 'huge'], bindings: [{ nodeId: 'n_badge_go', prop: 'size' }] })))
+      .toContainEqual(`${BADGE}: properties.2.options.1: "huge" is not a value of the Button size look drives (xs, sm, md, lg, xl)`)
+    expect(problems(button({ kind: 'select', options: ['primary', 'glow'], bindings: [{ nodeId: 'n_badge_go', prop: 'color' }] })))
+      .toContainEqual(expect.stringMatching(/properties\.2\.options\.1: "glow" is not a value of the Button color look drives \(/))
+  })
+
   it('a style binding names a token of the project base, from a text or select property', () => {
     expect(problems((files) => {
       files[BADGE]!.properties[1].bindings[0].prop = 'glow'
@@ -138,6 +158,8 @@ describe('loadModel: variants, states, interactions and transitions', () => {
   it('an override style is a token of the project, and a prop override a value the node takes', () => {
     expect(problems(variant({ overrides: { n_badge: { style: { px: 'huge' } } } }))).toContainEqual(expect.stringMatching(/^.*badge\.json: variants\.0\.overrides\.n_badge\.style\.px: /))
     expect(problems(variant({ overrides: { n_badge_text: { props: { level: 3 } } } }))).toContainEqual(`${BADGE}: variants.0.overrides.n_badge_text.props.level: A variant can't override "level": it shapes the generated markup`)
+    expect(problems(variant({ overrides: { n_badge_text: { props: { bogus: 'x' } } } }))).toContainEqual(`${BADGE}: variants.0.overrides.n_badge_text.props.bogus: A Text has no prop "bogus"`)
+    expect(problems(variant({ overrides: { n_badge_text: { props: { hidden: true } } } }))).toEqual([])
     expect(problems(variant({ overrides: { n_nope: { style: { px: '4' } } } }))).toContainEqual(`${BADGE}: variants.0.overrides.n_nope: Variant loud overrides the missing node "n_nope"`)
   })
 

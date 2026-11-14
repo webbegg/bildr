@@ -37,7 +37,8 @@
  * --keep             keep the temp dir (its path is printed)
  * E2E_TMP            parent of the temp dir
  * E2E_MUTATE=a,b     break the generated app on purpose, to prove the checks catch it:
- *                    `submit` (the create form doesn't submit), `list` (list cards lose the title)
+ *                    `submit` (the create form doesn't submit), `list` (list cards lose the title),
+ *                    `hover` (the card's hover state is dropped)
  * PLAYWRIGHT_CORE, CHROMIUM  as in e2e/lib.mjs
  *
  * PASS/FAIL lines and the exit code work like e2e/lib.mjs. Every child process
@@ -492,7 +493,8 @@ async function settledApiOnly(ctx, action, log, golden) {
 /** Breaks the generated app on purpose (E2E_MUTATE), so a run proves the smoke checks notice. */
 const MUTATIONS = {
   submit: ['layers/blog/app/pages/posts/new.vue', ' @submit.prevent="onFormSubmit"', ''],
-  list: ['layers/blog/app/components/blog/PostCard.vue', /\n\s*<h2[^\n]*props\.post\.title[^\n]*<\/h2>/, '']
+  list: ['layers/blog/app/components/blog/PostCard.vue', /\n\s*<h2[^\n]*props\.post\.title[^\n]*<\/h2>/, ''],
+  hover: ['layers/blog/app/components/blog/PostCard.vue', ' hover:shadow-md', '']
 }
 function mutate(ctx) {
   for (const name of MUTATE) {
@@ -714,6 +716,21 @@ async function smoke(ctx) {
     const card = page.locator('div', { has: link }).filter({ hasText: post.body }).last()
     await visible(card.getByRole('heading', { name: post.title }), 'list page: the new post\'s card shows its title')
     await visible(card.getByText(post.body), 'list page: the new post\'s card shows its body')
+    // The card's hovered state (a state on the component root) shows its shadow-md. `card` is the Card's inner stack: its parent is the root.
+    const cardRoot = card.locator('xpath=..')
+    const shadow = '0px 4px 6px -1px'
+    await cardRoot.hover().catch(() => {})
+    const hovered = await cardRoot.evaluate((element, expected) => new Promise((resolve) => {
+      const started = Date.now()
+      const poll = () => {
+        const value = getComputedStyle(element).boxShadow
+        if (value.includes(expected) || Date.now() - started > 3000) resolve(value)
+        else setTimeout(poll, 50)
+      }
+      poll()
+    }), shadow).catch(error => `(${error.message})`)
+    check(hovered.includes(shadow), `list page: hovering the card shows its shadow (box-shadow: ${hovered})`)
+    await page.mouse.move(0, 0)
     if (await link.count()) {
       await link.first().click()
       check(await page.waitForURL(`**/posts/${post.slug}`, { timeout: UI_TIMEOUT }).then(() => true, () => false), 'list page: the card opens the detail page')

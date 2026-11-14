@@ -2,7 +2,7 @@ import type { z } from 'zod'
 import { customColorNames } from '../design/theme.ts'
 import { isStyleKeyOf, styleTokenProblem } from '../design/tokens.ts'
 import type { BreakpointBase } from '../design/tokens.ts'
-import { ICON_NAME, nodePropProblems, STRUCTURAL_PROPS, uiStepProblems } from '../render/rules.ts'
+import { ICON_NAME, nodePropProblems, propValues, STRUCTURAL_PROPS, takesProp, uiStepProblems } from '../render/rules.ts'
 import {
   ActionFileSchema, ComponentFileSchema, DataSourceFileSchema, EntityFileSchema, EXPRESSION_KEYS, FixturesFileSchema, LAYOUT_VARIABLE_KINDS, PATH_EXPRESSIONS, PROPERTY_PATH,
   LayoutFileSchema, ManifestFileSchema, ModuleFileSchema, PageFileSchema, ProjectFileSchema, QueryFileSchema,
@@ -413,9 +413,18 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
     if (property.kind === 'slot' && property.bindings) report(path, `${where}.bindings`, 'A slot property names its node with nodeId')
     property.bindings?.forEach((binding, index) => {
       const at = `${where}.bindings.${index}`
-      if (!nodes.has(binding.nodeId)) return report(path, `${at}.nodeId`, `Unknown node "${binding.nodeId}"`)
+      const node = nodes.get(binding.nodeId)
+      if (!node) return report(path, `${at}.nodeId`, `Unknown node "${binding.nodeId}"`)
       if (binding.target !== 'style') {
-        if (STRUCTURAL_PROPS.includes(binding.prop)) report(path, `${at}.prop`, `A property can't drive "${binding.prop}": it shapes the generated markup`)
+        if (STRUCTURAL_PROPS.includes(binding.prop)) return report(path, `${at}.prop`, `A property can't drive "${binding.prop}": it shapes the generated markup`)
+        if (!takesProp(node.type, binding.prop)) return report(path, `${at}.prop`, `A ${node.type} has no prop "${binding.prop}"`)
+        const values = propValues(node.type, binding.prop)
+        if (!values) return
+        const what = `the ${node.type} ${binding.prop}`
+        if (property.kind !== 'select') return report(path, at, `${property.name} (kind ${property.kind}) can't drive ${what}: use a select property with options among ${values.join(', ')}`)
+        property.options?.forEach((option, o) => {
+          if (!values.includes(option)) report(path, `${where}.options.${o}`, `"${option}" is not a value of ${what} ${property.name} drives (${values.join(', ')})`)
+        })
         return
       }
       if (!isStyleKeyOf(binding.prop, base)) return report(path, `${at}.prop`, styleTokenProblem(binding.prop, '', colors, base) ?? `Unknown style token "${binding.prop}"`)
@@ -452,6 +461,7 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
         const props = override.props ?? {}
         for (const key of Object.keys(props)) {
           if (STRUCTURAL_PROPS.includes(key)) report(path, `${at}.props.${key}`, `A variant can't override "${key}": it shapes the generated markup`)
+          else if (key !== 'hidden' && !takesProp(node.type, key)) report(path, `${at}.props.${key}`, `A ${node.type} has no prop "${key}"`)
           else checkValue(props[key], `${at}.props.${key}`, path)
         }
         for (const problem of nodePropProblems(node.type, { ...node.props, ...props })) {

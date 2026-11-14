@@ -302,7 +302,7 @@ const styleAttrs = (env: Env, node: ModelNode, { display = '', fallback = {}, cl
 /** The keys whose values differ between two styles. */
 const changedKeys = (a: Record<string, string>, b: Record<string, string>) => Object.keys({ ...a, ...b }).filter(key => a[key] !== b[key])
 
-/** A style's classes under a state variant: `group-hover/card:p-4`, after the breakpoint (`md:group-hover/card:p-4`). */
+/** A style's classes under a state variant: `group-hover/card:p-4` or `hover:p-4`, after the breakpoint (`md:group-hover/card:p-4`). */
 const prefixedClasses = (style: Record<string, string>, prefix: string) => orderedStyleTokens(style).filter(token => token.className)
   .map(token => token.breakpoint ? `${token.breakpoint}:${prefix}${token.className.slice(token.breakpoint.length + 1)}` : `${prefix}${token.className}`).join(' ')
 
@@ -869,9 +869,10 @@ const styleIn = (style: Record<string, string>, override: Override | undefined) 
  * see `styleAttrs`), the variants that hide it, and the props they change
  * (`$$variants` expressions). A state shows its own overrides over its base's.
  * With states or interactions the component is interactive: style changes
- * animate (`transition`), and hover and pressed states render as `group-hover`
- * and `group-active` classes when CSS can express them (style-only states, no
- * interactions); otherwise the core `useVariantState` composable keeps the
+ * animate (`transition`), and hover and pressed states render as `hover:` and
+ * `active:` classes on the root, and `group-hover` and `group-active` classes on
+ * its descendants (the root carries the group), when CSS can express them
+ * (style-only states, no interactions); otherwise the core `useVariantState` composable keeps the
  * variant it shows, and the line declaring it is returned.
  */
 const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string, ModelNode>): string | undefined => {
@@ -898,19 +899,21 @@ const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string, Model
     const looks: Array<[string, Record<string, string>]> = [['default', own], ...variants.map(variant => [variant.name, styleIn(own, effective(variant, id))] as [string, Record<string, string>])]
     const styleOf = new Map(looks)
     const pointer: Variant['pointer'] = new Map()
+    // The root can't be its own group's descendant: it takes the plain pseudo-class variants.
+    const [hoverPrefix, pressedPrefix] = id === component.root.id ? ['hover:', 'active:'] : [`group-hover/${group}:`, `group-active/${group}:`]
     for (const base of bases) {
       const at = styleOf.get(base.name)!
       const hover = stateOf(base.id, 'hover')
       const pressed = stateOf(base.id, 'pressed')
       const hoverStyle = hover ? styleOf.get(hover.name)! : at
       const hoverKeys = changedKeys(at, hoverStyle)
-      const entries: Array<{ prefix: string, style: Record<string, string>, keys: string[] }> = hoverKeys.length ? [{ prefix: `group-hover/${group}:`, style: hoverStyle, keys: hoverKeys }] : []
+      const entries: Array<{ prefix: string, style: Record<string, string>, keys: string[] }> = hoverKeys.length ? [{ prefix: hoverPrefix, style: hoverStyle, keys: hoverKeys }] : []
       if (pressed) {
         // Pressed wins over hover: it restates every key hover changes, so each needs a value.
         const pressedStyle = styleOf.get(pressed.name)!
         const keys = [...new Set([...changedKeys(at, pressedStyle), ...hoverKeys])]
         if (keys.some(key => pressedStyle[key] === undefined)) css = false
-        if (keys.length) entries.push({ prefix: `group-active/${group}:`, style: pressedStyle, keys })
+        if (keys.length) entries.push({ prefix: pressedPrefix, style: pressedStyle, keys })
       }
       if (entries.length) pointer.set(base.name, entries)
     }
@@ -931,7 +934,7 @@ const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string, Model
   env.variants = map
   if (!interactive) return undefined
   if (css) {
-    if ([...map.values()].some(entry => entry.pointer.size)) env.root = { id: component.root.id, classes: [`group/${group}`], attrs: [] }
+    if ([...map].some(([id, entry]) => id !== component.root.id && entry.pointer.size)) env.root = { id: component.root.id, classes: [`group/${group}`], attrs: [] }
     return undefined
   }
 

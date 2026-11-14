@@ -227,6 +227,39 @@ export interface PropProblem {
   message: string
 }
 
+/** The props each node type renders (besides `visible`, which every node takes). Unknown types are left to the generator. */
+export const NODE_PROPS: Readonly<Record<string, readonly string[]>> = {
+  Page: ['tag', 'when', 'loading', 'empty'],
+  Container: ['tag'],
+  Row: ['tag', 'wrap'],
+  Column: [],
+  Grid: [],
+  Card: [],
+  Heading: ['level', 'text'],
+  Text: ['text'],
+  Image: ['src', 'alt'],
+  Link: ['to', 'href', 'text', 'icon'],
+  Button: ['type', 'text', 'color', 'variant', 'size', 'icon', 'trailingIcon', 'href', 'disabled'],
+  Input: ['field', 'label', 'multiline', 'inputType', 'placeholder', 'rows'],
+  Checkbox: ['field', 'value', 'label'],
+  Form: ['action', 'fields'],
+  List: ['tag', 'as', 'items', 'loading', 'empty', 'hideWhenEmpty', 'layout'],
+  Instance: ['component', 'values', 'variant'],
+  SlotFill: ['slot']
+}
+
+/** Whether a node type renders `key`; unknown types say yes (the generator refuses them anyway). */
+export function takesProp(type: string, key: string): boolean {
+  const props = NODE_PROPS[type]
+  return !props || key === 'visible' || props.includes(key)
+}
+
+/** The values a node prop takes when it is one of a fixed set (a Button's color, variant and size). */
+export function propValues(type: string, key: string): readonly string[] | undefined {
+  if (type !== 'Button') return undefined
+  return key === 'color' ? BUTTON_COLORS : key === 'variant' ? BUTTON_VARIANTS : key === 'size' ? BUTTON_SIZES : undefined
+}
+
 /**
  * The static prop values a node type doesn't accept. Expressions (`$bind`…)
  * are left to where they are evaluated. The loader reports these as model
