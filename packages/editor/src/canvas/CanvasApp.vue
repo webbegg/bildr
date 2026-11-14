@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, useTemplateRef } from 'vue'
+import { useRouter } from 'vue-router'
 import UApp from '@nuxt/ui/components/App.vue'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import { resolveThemeColors, themeCss } from '@bildr/codegen/design'
@@ -70,6 +71,7 @@ const panelOverlay = ref<SpacingOverlay | null>(null)
 const previews = shallowRef<Record<string, StylePatch>>({})
 const root = useTemplateRef<HTMLDivElement>('root')
 const toast = useToast()
+const router = useRouter()
 
 const withPreviews = (node: TreeNode, patches: Record<string, StylePatch>): TreeNode => {
   const patch = patches[node.id]
@@ -89,7 +91,7 @@ const file = computed<CanvasFile | null>(() => {
 const plan = computed<PlanElement[]>(() => {
   const message = render.value
   if (!message || !file.value || message.view !== 'page') return []
-  return renderPlan({ file: file.value, components: message.components, layouts: message.layouts, data: message.data, variant: message.variant ?? null, shown: { ...shown } })
+  return renderPlan({ file: file.value, components: message.components, layouts: message.layouts, data: message.data, ...(message.paths ? { paths: message.paths } : {}), variant: message.variant ?? null, shown: { ...shown } })
 })
 
 /** The first (non-copy) plan element of each node id, for interactions and labels. */
@@ -180,7 +182,7 @@ const settlePreviews = (current: Record<string, StylePatch>, tree: TreeNode) => 
 }
 
 function onMessage(event: MessageEvent) {
-  if (event.source !== window.parent || !isCanvasMessage<EditorToCanvas>(event.data)) return
+  if (event.source !== window.parent || event.origin !== window.location.origin || !isCanvasMessage<EditorToCanvas>(event.data)) return
   const message = event.data
   if (message.type === 'bildr:render') {
     const base = render.value?.breakpointBase
@@ -188,6 +190,8 @@ function onMessage(event: MessageEvent) {
     if (Object.keys(previews.value).length) previews.value = settlePreviews(previews.value, message.file.root)
     headStyle('bildr-canvas-theme', themeCss(resolveThemeColors(message.theme, {})))
     if (message.breakpointBase !== base) applyViewportRules()
+    // Links to the page being edited are active: the router sits on its path.
+    if (router.currentRoute.value.fullPath !== (message.path ?? '/')) void router.replace(message.path ?? '/')
   } else if (message.type === 'bildr:mode') {
     mode.value = message.mode
     for (const key of Object.keys(shown)) Reflect.deleteProperty(shown, key)

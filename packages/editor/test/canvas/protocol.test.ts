@@ -88,6 +88,14 @@ describe('render', () => {
     await settle()
     expect(node('n_h1')).toBeNull()
   })
+
+  it('ignores messages from its parent window under another origin', async () => {
+    window.dispatchEvent(new MessageEvent('message', { data: render('index'), source: window.parent, origin: 'https://evil.example' }))
+    await settle()
+    expect(node('n_h1')).toBeNull()
+    await send(render('index'))
+    expect(node('n_h1')).not.toBeNull()
+  })
 })
 
 describe('pointer gestures', () => {

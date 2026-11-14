@@ -37,5 +37,6 @@ declare module 'vue' {
     USwitch: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Switch.vue')['default']
     UTabs: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Tabs.vue')['default']
     UTextarea: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Textarea.vue')['default']
+    UTooltip: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Tooltip.vue')['default']
   }
 }

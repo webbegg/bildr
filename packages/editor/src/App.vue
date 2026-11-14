@@ -69,7 +69,7 @@ const losses = computed(() => {
           :title="`A destructive migration waits for confirmation (${losses}).`"
           :actions="route.path === '/migrations' ? [] : [{ label: 'Review', to: '/migrations', color: 'warning', variant: 'solid' }]"
         />
-        <div class="min-h-0 flex-1 overflow-y-auto">
+        <div class="relative min-h-0 flex-1 overflow-y-auto">
           <RouterView />
         </div>
       </div>

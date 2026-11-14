@@ -1,0 +1,382 @@
+import { computed, inject, ref, shallowRef } from 'vue'
+import type { InjectionKey } from 'vue'
+import { DEFAULT_THEME } from '@bildr/codegen/design'
+import type { BreakpointBase, Theme } from '@bildr/codegen/design'
+import type { ComponentFile, LayoutFile, Model as ProjectModel, ModelNode, PageFile, Value } from '@bildr/codegen/model'
+import { primaryFrame } from '@bildr/editor-core/frames'
+import { devicesFor } from '@bildr/editor-core/styleFields'
+import type { Device, DeviceId } from '@bildr/editor-core/styleFields'
+import { callAction, errorMessage, subscribeEvents } from '../api.ts'
+import type { BildrEvent } from '../api.ts'
+import type { CanvasFile } from '../canvas/render.ts'
+import type { CanvasMode, CanvasToEditor } from '../canvas/protocol.ts'
+import type { ModelProblem } from '../types.ts'
+import { designData } from './data.ts'
+import { findNode, findParent, moveTarget, nodeIds, slotIndex } from './tree.ts'
+import type { DropPosition } from './tree.ts'
+
+/**
+ * The Design screen's state (P4b, V1/V2): the loaded model, the file being
+ * edited and its selection, the device, and every edit as one module action.
+ * `.bildr/` is the only store: an edit calls its action (P3a), reads the model
+ * again, and the screen renders what it reads. Module events (P3b: `model`,
+ * `regenerated`, `navigate`) do the same refresh for changes made elsewhere
+ * (undo from an agent, a hand edit on disk), keeping the selection where its
+ * node still exists. Edits run one at a time, in order.
+ */
+
+export type FileKind = 'page' | 'component' | 'layout'
+
+export interface FileRef {
+  id: string
+  kind: FileKind
+  name: string
+  module?: string
+  path: string
+}
+
+export interface CatalogNodeType {
+  type: string
+  label: string
+  description: string
+  container: boolean
+  insertable?: boolean
+  props: string[]
+  defaults: { props: Record<string, Value>, style: Record<string, string> }
+}
+
+export interface Catalog {
+  nodeTypes: CatalogNodeType[]
+  components: Array<{ id: string, name: string, module: string }>
+  layouts: Array<{ id: string, name: string }>
+}
+
+type ModelResult = { ok: true, model: ProjectModel } | { ok: false, problems: ModelProblem[] }
+
+export type Edit = (name: string, input: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>
+
+const FALLBACK_CONTAINERS = ['Page', 'Container', 'Row', 'Column', 'Grid', 'Card', 'Form', 'List', 'Link', 'SlotFill']
+export const WRAP_TYPES = ['Container', 'Row', 'Column', 'Card', 'Grid'] as const
+
+/** What a copy holds: the node as a spec `node_insert` takes (no ids; it mints new ones). */
+const toSpec = (node: ModelNode): Record<string, unknown> => ({
+  type: node.type,
+  ...(node.name ? { name: node.name } : {}),
+  ...(node.locked ? { locked: true } : {}),
+  ...(node.props ? { props: structuredClone(node.props) } : {}),
+  ...(node.style ? { style: { ...node.style } } : {}),
+  ...(node.interactions ? { interactions: structuredClone(node.interactions) } : {}),
+  ...(node.children ? { children: node.children.map(toSpec) } : {})
+})
+
+export const createDesign = () => {
+  const result = shallowRef<ModelResult | null>(null)
+  const loading = ref(true)
+  const error = ref<string | null>(null)
+  const regenerated = ref<{ ok: boolean, problems?: ModelProblem[], error?: string } | null>(null)
+  const fileId = ref<string | null>(null)
+  const selectedIds = ref<string[]>([])
+  const hoveredId = ref<string | null>(null)
+  const deviceChoice = ref<DeviceId | null>(null)
+  const mode = ref<CanvasMode>('edit')
+  const catalog = shallowRef<Catalog | null>(null)
+  const history = ref({ undo: 0, redo: 0 })
+  const clipboard = shallowRef<ModelNode | null>(null)
+
+  const model = computed<ProjectModel | null>(() => result.value?.ok ? result.value.model : null)
+  const problems = computed<ModelProblem[]>(() => result.value && !result.value.ok ? result.value.problems : [])
+  const base = computed<BreakpointBase>(() => model.value?.project.breakpointBase ?? 'mobile')
+  const theme = computed<Theme>(() => model.value?.theme ?? DEFAULT_THEME)
+  const components = computed<ComponentFile[]>(() => Object.values(model.value?.modules ?? {}).flatMap(entry => entry.components))
+  const layouts = computed<LayoutFile[]>(() => model.value?.layouts ?? [])
+
+  const files = computed<FileRef[]>(() => {
+    const current = model.value
+    if (!current) return []
+    const pathOf = (id: string) => current.paths[id] ?? ''
+    return [
+      ...Object.entries(current.modules).flatMap(([module, entry]) => entry.pages.map((page): FileRef => ({ id: page.id, kind: 'page', name: page.name, module, path: pathOf(page.id) }))),
+      ...Object.entries(current.modules).flatMap(([module, entry]) => entry.components.map((component): FileRef => ({ id: component.id, kind: 'component', name: component.name, module, path: pathOf(component.id) }))),
+      ...current.layouts.map((layout): FileRef => ({ id: layout.id, kind: 'layout', name: layout.name, path: pathOf(layout.id) }))
+    ]
+  })
+
+  const file = computed<CanvasFile | null>(() => {
+    const ref = files.value.find(entry => entry.id === fileId.value)
+    if (!ref || !model.value) return null
+    if (ref.kind === 'page') return Object.values(model.value.modules).flatMap(entry => entry.pages).find(page => page.id === ref.id) ?? null
+    if (ref.kind === 'component') return components.value.find(component => component.id === ref.id) ?? null
+    return layouts.value.find(layout => layout.id === ref.id) ?? null
+  })
+  /** Page id → route path, which the canvas links its page links to. */
+  const pagePaths = computed<Record<string, string>>(() => Object.fromEntries(Object.values(model.value?.modules ?? {}).flatMap(entry => entry.pages.map(page => [page.id, page.path]))))
+  const fileKind = computed(() => files.value.find(entry => entry.id === fileId.value)?.kind ?? null)
+  const data = computed(() => model.value ? designData(model.value, fileKind.value === 'page' ? file.value as PageFile : undefined) : {})
+
+  const device = computed<Device>(() => {
+    const set = devicesFor(base.value)
+    return set.find(entry => entry.id === deviceChoice.value) ?? set.find(entry => entry.id === primaryFrame(base.value))!
+  })
+  const devices = computed(() => devicesFor(base.value))
+
+  const selectedId = computed(() => selectedIds.value.at(-1) ?? null)
+  const selected = computed<ModelNode | null>(() => file.value && selectedId.value ? findNode(file.value.root, selectedId.value) ?? null : null)
+  const selectedParent = computed<ModelNode | null>(() => file.value && selectedId.value ? findParent(file.value.root, selectedId.value) ?? null : null)
+
+  const isContainer = (type: string) => catalog.value?.nodeTypes.find(entry => entry.type === type)?.container ?? FALLBACK_CONTAINERS.includes(type)
+
+  // ── Loading ──────────────────────────────────────────────────────────
+
+  const keepSelection = () => {
+    const root = file.value?.root
+    const kept = root ? selectedIds.value.filter(id => findNode(root, id)) : []
+    if (kept.length !== selectedIds.value.length) selectedIds.value = kept
+  }
+
+  let reading: Promise<void> | undefined
+  let readAgain = false
+  const readModel = async () => {
+    try {
+      const next = await callAction<{ ok: boolean, model?: ProjectModel, problems?: ModelProblem[] }>('model_get')
+      result.value = next.ok && next.model ? { ok: true, model: next.model } : { ok: false, problems: next.problems ?? [] }
+      error.value = null
+      if (!files.value.some(entry => entry.id === fileId.value)) fileId.value = files.value.find(entry => entry.kind === 'page')?.id ?? files.value[0]?.id ?? null
+      keepSelection()
+    } catch (caught) {
+      error.value = errorMessage(caught)
+    }
+    try {
+      const steps = await callAction<{ undo: unknown[], redo: unknown[] }>('history_get', { limit: 1 })
+      history.value = { undo: steps.undo.length, redo: steps.redo.length }
+    } catch {
+      // The buttons stay enabled and the action refuses when there is nothing to undo.
+    }
+  }
+  /** Reads the model; a read that is already running reads once more when it ends, so the last change always shows. */
+  const refresh = (): Promise<void> => {
+    if (reading) {
+      readAgain = true
+      return reading
+    }
+    reading = (async () => {
+      do {
+        readAgain = false
+        await readModel()
+      } while (readAgain)
+    })().finally(() => {
+      reading = undefined
+      loading.value = false
+    })
+    return reading
+  }
+
+  const loadCatalog = async () => {
+    try {
+      catalog.value = await callAction<Catalog>('catalog_get')
+    } catch {
+      // The palette falls back to its built-in container list and has no entries until the next load.
+    }
+  }
+
+  // ── Edits ────────────────────────────────────────────────────────────
+
+  let queue: Promise<unknown> = Promise.resolve()
+  const edit: Edit = (name, input) => {
+    const run = queue.then(async () => {
+      try {
+        const out = await callAction<Record<string, unknown>>(name, input)
+        error.value = null
+        await refresh()
+        return out
+      } catch (caught) {
+        error.value = errorMessage(caught)
+        return undefined
+      }
+    })
+    queue = run
+    return run
+  }
+
+  const select = (ids: string[]) => {
+    selectedIds.value = ids
+    reportContext()
+  }
+  const selectNode = (id: string, additive = false) => {
+    if (!additive) return select([id])
+    select(selectedIds.value.includes(id) ? selectedIds.value.filter(entry => entry !== id) : [...selectedIds.value, id])
+  }
+  const openFile = (id: string) => {
+    if (id === fileId.value) return
+    fileId.value = id
+    selectedIds.value = []
+    reportContext()
+  }
+
+  /** Tells the module what the editor shows, for agents (`editor_context_get`). Best effort. */
+  const reportContext = () => {
+    if (!fileId.value) return
+    void callAction('editor_context_set', { file: fileId.value, nodeId: selectedId.value, variant: null }).catch(() => {})
+  }
+
+  const fileInput = () => fileId.value!
+
+  const undo = async () => {
+    await edit('history_undo', {})
+  }
+  const redo = async () => {
+    await edit('history_redo', {})
+  }
+
+  /** Where a new node goes: into the selected container (at its end), after a selected leaf, else at the root's end. */
+  const insertionPoint = (): { parentId?: string, index?: number } => {
+    const node = selected.value
+    const parent = selectedParent.value
+    if (!node) return {}
+    if (isContainer(node.type) && node.type !== 'Instance') return { parentId: node.id }
+    if (!parent) return {}
+    return { parentId: parent.id, index: parent.children!.findIndex(child => child.id === node.id) + 1 }
+  }
+
+  const insert = async (spec: { type: string, props?: Record<string, Value> }, at: { parentId?: string, index?: number } = insertionPoint()) => {
+    if (!fileId.value) return
+    const out = await edit('node_insert', { file: fileInput(), ...at, ...spec })
+    if (typeof out?.nodeId === 'string') select([out.nodeId])
+  }
+  const insertComponent = (id: string) => insert({ type: 'Instance', props: { component: id } })
+
+  const moveNode = async (nodeId: string, parentId: string, index: number) => {
+    if (fileId.value) await edit('node_move', { file: fileInput(), nodeId, parentId, index })
+  }
+  const dropOnLayer = async (draggedId: string, overId: string, position: DropPosition) => {
+    const root = file.value?.root
+    const target = root ? moveTarget(root, draggedId, overId, position) : null
+    if (target) await moveNode(draggedId, target.parentId, target.index)
+  }
+
+  const ids = () => selectedIds.value
+  const duplicate = async () => {
+    if (!ids().length) return
+    const out = await edit('node_duplicate', { file: fileInput(), nodeIds: ids() })
+    if (Array.isArray(out?.nodeIds)) select(out.nodeIds as string[])
+  }
+  const remove = async () => {
+    if (!ids().length) return
+    const done = await edit('node_delete', { file: fileInput(), nodeIds: ids() })
+    if (done) select([])
+  }
+  const wrap = async (type: typeof WRAP_TYPES[number] = 'Container') => {
+    if (!ids().length) return
+    const out = await edit('node_wrap', { file: fileInput(), nodeIds: ids(), type })
+    if (typeof out?.nodeId === 'string') select([out.nodeId])
+  }
+  const makeComponent = async () => {
+    if (!selectedId.value) return
+    const out = await edit('component_create', { file: fileInput(), ...(ids().length > 1 ? { nodeIds: ids() } : { nodeId: selectedId.value }) })
+    if (typeof out?.nodeId === 'string') select([out.nodeId])
+  }
+  const setLocked = async (id: string, locked: boolean) => {
+    await edit('node_set_locked', { file: fileInput(), nodeIds: [id], locked })
+  }
+  const rename = async (id: string, name: string) => {
+    await edit('node_rename', { file: fileInput(), nodeId: id, name: name.trim() || null })
+  }
+  const copy = () => {
+    if (selected.value) clipboard.value = structuredClone(selected.value)
+  }
+  const paste = async () => {
+    if (!clipboard.value || !fileId.value) return
+    const out = await edit('node_insert', { file: fileInput(), ...insertionPoint(), exact: true, nodes: [toSpec(clipboard.value)] })
+    if (Array.isArray(out?.nodeIds)) select(out.nodeIds as string[])
+  }
+
+  const setProps = (nodeId: string, props: Record<string, Value | null>) => edit('node_update_props', { file: fileInput(), nodeId, props })
+  /** Writes style tokens of the selection at the device's breakpoint (the base for a token without breakpoint variants). */
+  const setStyle = (style: Record<string, string | null>, breakpoint: string | undefined) =>
+    edit('node_update_style', { file: fileInput(), nodeIds: ids(), ...(breakpoint ? { breakpoint } : {}), style })
+
+  // ── The canvas's drops, keys and the editor's own keys ──────────────────
+
+  const onDrop = async (parentId: string, index: number, payload: string) => {
+    let drop: { insert?: unknown, move?: unknown, component?: unknown }
+    try {
+      drop = JSON.parse(payload) as typeof drop
+    } catch {
+      return
+    }
+    const root = file.value?.root
+    if (typeof drop.insert === 'string') await insert({ type: drop.insert }, { parentId, index })
+    else if (typeof drop.component === 'string') await insert({ type: 'Instance', props: { component: drop.component } }, { parentId, index })
+    else if (typeof drop.move === 'string' && root) await moveNode(drop.move, parentId, slotIndex(root, drop.move, parentId, index))
+  }
+
+  type Key = Extract<CanvasToEditor, { type: 'bildr:key' }>
+  /** The editor's shortcuts, for keys typed in the editor or the canvas. Returns whether it took the key. */
+  const onKey = (key: Pick<Key, 'key' | 'code' | 'meta' | 'shift' | 'alt'>): boolean => {
+    const lower = key.key.toLowerCase()
+    if (key.meta && !key.alt) {
+      if (lower === 'z') void (key.shift ? redo() : undo())
+      else if (lower === 'y') void redo()
+      else if (lower === 'd') void duplicate()
+      else if (lower === 'g') void wrap()
+      else if (lower === 'c') copy()
+      else if (lower === 'v') void paste()
+      else if (lower === 'l' && selectedId.value) void setLocked(selectedId.value, !selected.value?.locked)
+      else if (lower === 'a' && file.value) select(nodeIds(file.value.root).slice(1))
+      else return false
+      return true
+    }
+    if (key.meta || key.alt) return false
+    if (key.key === 'Delete' || key.key === 'Backspace') void remove()
+    else if (key.key === 'Escape') select([])
+    else return false
+    return true
+  }
+
+  // ── Events ───────────────────────────────────────────────────────────
+
+  const onEvent = (event: BildrEvent) => {
+    if (event.type === 'model' || event.type === 'version') void refresh()
+    else if (event.type === 'regenerated') {
+      regenerated.value = { ok: event.ok, ...(event.problems ? { problems: event.problems } : {}), ...(event.error ? { error: event.error } : {}) }
+      void refresh()
+    } else if (event.type === 'navigate') {
+      void refresh().then(() => {
+        if (files.value.some(entry => entry.id === event.target.file)) {
+          fileId.value = event.target.file
+          selectedIds.value = event.target.nodeId ? [event.target.nodeId] : []
+        }
+      })
+    }
+  }
+
+  let stop: (() => void) | undefined
+  const start = async () => {
+    stop = subscribeEvents(onEvent)
+    await Promise.all([refresh(), loadCatalog()])
+    reportContext()
+  }
+  const dispose = () => {
+    stop?.()
+    stop = undefined
+  }
+
+  return {
+    result, loading, error, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
+    selectedIds, selectedId, selected, selectedParent, hoveredId, device, devices, deviceChoice, mode, history, clipboard,
+    isContainer, refresh, edit, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,
+    setLocked, rename, copy, paste, setProps, setStyle, onDrop, onKey, start, dispose,
+    chooseDevice: (id: DeviceId) => {
+      deviceChoice.value = id
+    }
+  }
+}
+
+export type Design = ReturnType<typeof createDesign>
+
+export const DESIGN_KEY: InjectionKey<Design> = Symbol('bildr-design')
+
+export const useDesign = (): Design => {
+  const design = inject(DESIGN_KEY)
+  if (!design) throw new Error('The design state is not provided (see DesignView.vue)')
+  return design
+}

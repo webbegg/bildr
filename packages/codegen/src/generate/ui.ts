@@ -219,12 +219,24 @@ const element = (tag: string, attrs: Attr[], inner: string | string[] | undefine
   return [`${indent}<${open}>`, ...inner, `${indent}</${tag}>`]
 }
 
+/**
+ * A string literal for an interpolation (`{{ 'a\nb' }}`): `tsString`, with the characters that could end the
+ * interpolation or open a tag written as escapes, so the template parser never sees them.
+ */
+const interpolatedString = (text: string) => tsString(text).replace(/[<>&{}]/g, char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`)
+
+/**
+ * Static text in a template. Vue condenses whitespace in template text (a newline becomes a space), so text with
+ * a line break, which the canvas keeps (`whitespace-pre-line`), goes out as a string expression instead.
+ */
+const staticText = (text: string) => text.includes('\n') ? `{{ ${interpolatedString(text)} }}` : escapeText(text)
+
 /** Text content: static text escaped, `$template` interpolated, other values as one interpolation. */
 const textContent = (env: Env, node: ModelNode, value: Value | undefined): string | undefined => {
   if (value === undefined) return undefined
-  if (typeof value === 'string') return escapeText(value)
+  if (typeof value === 'string') return staticText(value)
   if (isObject(value) && typeof value.$template === 'string') {
-    return templateParts(value.$template).map(part => part.path ? `{{ ${bindPath(env, node, part.path, 'template')} }}` : escapeText(part.text)).join('')
+    return templateParts(value.$template).map(part => part.path ? `{{ ${bindPath(env, node, part.path, 'template')} }}` : staticText(part.text)).join('')
   }
   return `{{ ${expression(env, node, value, 'template')} }}`
 }

@@ -12,7 +12,7 @@ import type { CheckName } from '../node/health.ts'
 import type { MigrationOutcome } from '../node/regenerate.ts'
 import { hashFiles, readManifest } from '../node/sync.ts'
 import { readModelFiles } from '../node/project.ts'
-import { EDITOR_CSP, defaultEditorDist, readEditorAsset, readEditorShell } from './assets.ts'
+import { CANVAS_CSP, EDITOR_CSP, defaultEditorDist, readEditorAsset, readEditorShell } from './assets.ts'
 import { cookieValue, isLoopbackAddress, isLoopbackHost, isSameOriginWrite, tokensMatch } from './guard.ts'
 import { PAGE_CSP, editorPage } from './page.ts'
 
@@ -84,7 +84,7 @@ const editorResponse = (dist: string | undefined, headers: Record<string, string
 }
 
 /**
- * The canvas page the editor frames (P4a): the same CSP, whose `frame-ancestors 'self'`
+ * The canvas page the editor frames (P4a): the editor's CSP plus https images, whose `frame-ancestors 'self'`
  * lets only this origin (the editor) frame it. 404 while the editor build has none.
  */
 const canvasResponse = (dist: string | undefined) => {
@@ -92,7 +92,7 @@ const canvasResponse = (dist: string | undefined) => {
   if (page === undefined) return fail(404, 'The editor build has no canvas: run pnpm build:editor in the bildr repository')
   return new Response(page, {
     status: 200,
-    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': EDITOR_CSP, 'referrer-policy': 'no-referrer' }
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': CANVAS_CSP, 'referrer-policy': 'no-referrer' }
   })
 }
 

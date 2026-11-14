@@ -79,7 +79,8 @@ describe('canvas page', () => {
       expect(response.status, path).toBe(200)
       expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
       expect(response.headers.get('cache-control')).toBe('no-store')
-      expect(response.headers.get('content-security-policy')).toBe(CSP)
+      // The canvas shows images of the model like the generated app (any https URL), and nothing else the editor's CSP doesn't.
+      expect(response.headers.get('content-security-policy')).toBe(CSP.replace('img-src \'self\' data:', 'img-src \'self\' data: https:'))
       expect(response.headers.get('content-security-policy')).toMatch(/frame-ancestors 'self'$/)
       expect(await response.text()).toBe(CANVAS)
     }

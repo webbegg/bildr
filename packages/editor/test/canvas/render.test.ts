@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { loadModel } from '../../../codegen/src/model/load.ts'
-import { pageNodeId, renderPlan } from '../../src/canvas/render.ts'
+import { CANVAS_LINK, pageNodeId, renderPlan } from '../../src/canvas/render.ts'
 import type { PlanChild, PlanElement, RenderInput } from '../../src/canvas/render.ts'
 import { blogModelFiles } from './fixture.ts'
 
@@ -12,7 +12,7 @@ const fixture = loaded.model
 const blog = fixture.modules.blog!
 const page = (name: string) => blog.pages.find(entry => entry.name === name)!
 
-const plan = (file: RenderInput['file'], data: Record<string, unknown> = {}) => renderPlan({ file, components: blog.components, layouts: fixture.layouts, data })
+const plan = (file: RenderInput['file'], data: Record<string, unknown> = {}, paths?: Record<string, string>) => renderPlan({ file, components: blog.components, layouts: fixture.layouts, data, ...(paths ? { paths } : {}) })
 const all = (children: PlanChild[], out: PlanElement[] = []): PlanElement[] => {
   for (const child of children) {
     if (typeof child === 'string') continue
@@ -58,6 +58,14 @@ describe('canvas node ids', () => {
   })
 })
 
+describe('multi-line text', () => {
+  it('keeps the line break of a Text, as the generated app does (it emits the text as a string expression, which Vue does not condense)', () => {
+    const [body] = byNode(plan(page('index')), 'n_about_body')
+    expect(body).toMatchObject({ tag: 'p', children: ['Notes on building apps from a model.\nNew posts most weeks.'] })
+    expect(body!.class).toContain('whitespace-pre-line')
+  })
+})
+
 describe('missing data', () => {
   it('a List without data shows its children once, dimmed, with bindings as their paths', () => {
     const elements = plan(page('index'))
@@ -95,5 +103,24 @@ describe('missing data', () => {
     const index = page('index')
     const broken = { ...index, root: { ...index.root, children: [{ id: 'n_x', type: 'Instance', props: { component: 'cmp_gone' } }] } }
     expect(byNode(plan(broken), 'n_x')[0]).toMatchObject({ placeholder: true, children: ['Missing component'] })
+  })
+})
+
+describe('page links', () => {
+  const paths = Object.fromEntries(blog.pages.map(entry => [entry.id, entry.path]))
+  const rows = [{ id: 'a', title: 'A', slug: 'first' }]
+
+  it('link to the page path the editor sends, with its params filled from the row, so the current page\'s links are active', () => {
+    const elements = plan(page('index'), { preferences: { showDrafts: false }, featured: rows, quotes: [] }, paths)
+    expect(byNode(elements, 'n_read_more')[0]!.attrs.to).toBe('/posts/first')
+    const home = all(elements).filter(element => element.tag === 'ULink' && element.attrs.to === '/')
+    expect(home.length).toBeGreaterThan(0)
+  })
+
+  it('stays inert without a path or without the param\'s value', () => {
+    const noPaths = plan(page('index'), { preferences: { showDrafts: false }, featured: rows, quotes: [] })
+    expect(byNode(noPaths, 'n_read_more')[0]!.attrs.to).toBe(CANVAS_LINK)
+    const noRow = plan(page('index'), {}, paths)
+    expect(byNode(noRow, 'n_read_more')[0]!.attrs.to).toBe(CANVAS_LINK)
   })
 })

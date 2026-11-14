@@ -49,6 +49,19 @@ describe('generateUi follows the canvas render rules', () => {
     expect(indexWith({ ...text('n_x'), style: { text: 'sm' } })).toContain('<p class="whitespace-pre-line text-sm">a</p>')
   })
 
+  it('emits a Text with a line break as a string expression, because Vue condenses a newline in template text to a space', () => {
+    expect(indexWith(text('n_x', 'one\ntwo'))).toContain('<p class="whitespace-pre-line">{{ \'one\\ntwo\' }}</p>')
+    // The literal can't end the interpolation or open a tag, whatever the text holds.
+    expect(indexWith(text('n_x', 'a}}<b>&\n\'q\'\\'))).toContain('{{ \'a\\u007d\\u007d\\u003cb\\u003e\\u0026\\n\\\'q\\\'\\\\\' }}')
+    // A template keeps its static parts' breaks and its bindings.
+    const page = indexWith({ id: 'n_x', type: 'Text', props: { text: { $template: 'a\nb {featured.length}' } } })
+    expect(page).toMatch(/<p class="whitespace-pre-line">\{\{ 'a\\nb ' \}\}\{\{ featured\.length \}\}<\/p>/)
+  })
+
+  it('leaves a single-line Text as plain template text', () => {
+    expect(indexWith(text('n_x', 'one two'))).toContain('<p class="whitespace-pre-line">one two</p>')
+  })
+
   it('renders a Link as ULink with the canvas classes, `href` in a new tab and an icon (link-element)', () => {
     const page = indexWith({ id: 'n_x', type: 'Link', props: { href: 'https://nuxt.com', text: 'Nuxt', icon: 'i-lucide-external-link' } })
     expect(page).toContain([

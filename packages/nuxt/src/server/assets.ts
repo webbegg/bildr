@@ -12,6 +12,12 @@ import { resolvesInside } from '../node/project.ts'
 /** No inline scripts, no third-party origins: the editor talks only to `/__bildr`. */
 export const EDITOR_CSP = 'default-src \'self\'; script-src \'self\'; style-src \'self\' \'unsafe-inline\'; img-src \'self\' data:; font-src \'self\' data:; connect-src \'self\'; frame-src \'self\'; frame-ancestors \'self\''
 
+/**
+ * The canvas page's policy: the editor's, but the images of the model load from any https URL, as in the
+ * generated app (`<img>` of a URL). Only the canvas gets it; the editor shell keeps `img-src 'self' data:`.
+ */
+export const CANVAS_CSP = EDITOR_CSP.replace('img-src \'self\' data:', 'img-src \'self\' data: https:')
+
 /** `@bildr/editor`'s `dist/` folder, or undefined when the package can't be resolved. */
 export const defaultEditorDist = (): string | undefined => {
   try {

@@ -56,6 +56,8 @@ export interface RenderInput {
   variant?: BoardVariant | null
   /** Preview mode: the variant each interactive instance shows now, by its root's `data-node` id. */
   shown?: Record<string, string>
+  /** Page id → route path, so links to a page point at it (the canvas's router sits on the current page's path, which makes those links active). */
+  paths?: Record<string, string>
 }
 
 export interface PlanElement {
@@ -463,7 +465,7 @@ const renderNode = (frame: Frame, original: ModelNode, options: Options = {}): P
       const look = styleOf(frame, node, { classes: [LINK_CLASS, ...(icon ? [LINK_ICON_CLASS] : [])], display: icon ? LINK_ICON_DISPLAY : '', fallback: fallbackOf(node, options) })
       const content = node.children?.length ? renderChildren(frame, node, options) : textChildren(textOf(props.text, frame.scope))
       const children: PlanChild[] = icon ? [{ tag: 'UIcon', class: ICON_CLASS, attrs: { name: icon }, children: [], ...(options.copy ? { copy: true } : {}) }, ...content] : content
-      return [base(frame, node, options, NODE_ELEMENTS.Link, look, { attrs: linkAttrs(props), children })]
+      return [base(frame, node, options, NODE_ELEMENTS.Link, look, { attrs: linkAttrs(frame, props), children })]
     }
     case 'Button': {
       const attrs: Record<string, unknown> = { type: props.type === 'submit' ? 'submit' : 'button' }
@@ -472,7 +474,7 @@ const renderNode = (frame: Frame, original: ModelNode, options: Options = {}): P
         const value = stringOf(props[key], frame.scope)
         if (value !== undefined) attrs[key] = value
       }
-      if (props.href !== undefined) Object.assign(attrs, linkAttrs(props))
+      if (props.href !== undefined) Object.assign(attrs, linkAttrs(frame, props))
       if (props.disabled !== undefined) attrs.disabled = evaluate(props.disabled, frame.scope) === true
       return [base(frame, node, options, NODE_ELEMENTS.Button, styleOf(frame, node, { fallback: fallbackOf(node, options) }), { attrs })]
     }
@@ -514,13 +516,32 @@ const fieldName = (id: Value | undefined) => String(id ?? '').replace(/^fld_/, '
 /** A page link's `to` in the canvas: the render payload has no page paths, and the canvas never navigates (an inactive link). */
 export const CANVAS_LINK = '/__canvas-link'
 
-/** A link in the canvas: an external URL as it is (new tab), a page link `CANVAS_LINK`; clicks never follow either. */
-const linkAttrs = (props: Record<string, Value>): Record<string, unknown> => {
+/**
+ * A page link's route, from the page paths the editor sends: the path with its
+ * `:params` filled from the link's own values; undefined when the path is
+ * unknown or a param has no value (missing data).
+ */
+const pageRoute = (frame: Frame, to: Value | undefined): string | undefined => {
+  if (!isObject(to) || typeof to.page !== 'string') return undefined
+  const path = frame.input.paths?.[to.page]
+  if (!path) return undefined
+  const params = isObject(to.params) ? to.params : {}
+  let missing = false
+  const route = path.replace(/:(\w+)/g, (_, name: string) => {
+    const value = stringOf(params[name], frame.scope)
+    if (value === undefined) missing = true
+    return encodeURIComponent(value ?? '')
+  })
+  return missing ? undefined : route
+}
+
+/** A link in the canvas: an external URL as it is (new tab), a page link its route (else `CANVAS_LINK`); clicks never follow either. */
+const linkAttrs = (frame: Frame, props: Record<string, Value>): Record<string, unknown> => {
   if (typeof props.href === 'string' && isSafeUrl(props.href, 'href')) {
     const target = linkTarget(props.href)
     return { to: props.href, ...(target ? { target } : {}) }
   }
-  return { to: CANVAS_LINK }
+  return { to: pageRoute(frame, props.to) ?? CANVAS_LINK }
 }
 
 const list = (frame: Frame, node: ModelNode, options: Options): PlanElement[] => {

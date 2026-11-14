@@ -16,6 +16,9 @@ import type { BoardVariant, CanvasFile } from './render.ts'
  *   a query's rows, a state's value, an action's `{pending, error}`; `site`;
  *   `$route` params), or a component's props by name. Anything missing renders
  *   as a placeholder;
+ * - `paths`: page id → route path, so page links point at their pages, and
+ *   `path`: the route of the file being edited (a page's path), where the
+ *   canvas's router sits: links to it are active, as in the app;
  * - `variant`: the variant a variant-board frame shows;
  * - `view`: the page, or the token sheet (P4c).
  *
@@ -39,6 +42,8 @@ export interface RenderMessage {
   theme: Theme
   breakpointBase?: BreakpointBase
   data: Record<string, unknown>
+  paths?: Record<string, string>
+  path?: string
   variant?: BoardVariant
   view: CanvasView
 }

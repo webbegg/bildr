@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import vue from '@vitejs/plugin-vue'
 import ui from '@nuxt/ui/vite'
@@ -6,6 +7,13 @@ import type { Plugin } from 'vite'
 import { tokenSafelistCss } from '../codegen/src/design/tokens.ts'
 
 const root = fileURLToPath(new URL('.', import.meta.url))
+
+/**
+ * Every lucide icon name. The canvas renders the icons a model names (`i-lucide-send`), which no editor
+ * source spells out, and the strict CSP leaves no remote icon API: the editor bundle carries the whole set.
+ */
+const lucide = createRequire(import.meta.url)('@iconify-json/lucide/icons.json') as { icons: Record<string, unknown>, aliases?: Record<string, unknown> }
+const LUCIDE_ICONS = [...Object.keys(lucide.icons), ...Object.keys(lucide.aliases ?? {})].map(name => `i-lucide-${name}`)
 
 const SAFELIST_MARKER = '/* bildr:token-safelist */'
 
@@ -26,10 +34,10 @@ const tokenSafelist = (): Plugin => ({
 /**
  * The editor SPA that `@bildr/nuxt` serves at `/__bildr/` (D12). The served
  * page has a strict CSP (`script-src 'self'`, `connect-src 'self'`), so the
- * build has no inline scripts and the icons are bundled: `clientBundle.scan`
- * collects every `i-lucide-*` name in the sources (`.ts` too: the nav icons
- * live in `router.ts`; the scanner's default only reads templates) at build
- * time, so nothing is fetched from the Iconify API at runtime.
+ * build has no inline scripts and the icons are bundled: the whole lucide set
+ * (`LUCIDE_ICONS`, which the canvas needs for the icons a model names; the
+ * scan of the sources, `.ts` too, stays for any other collection), so nothing
+ * is fetched from the Iconify API at runtime.
  * Two pages: the editor (`index.html`) and the canvas it frames
  * (`canvas.html`, P4a), served at `/__bildr/canvas` under the same CSP.
  */
@@ -42,7 +50,7 @@ export default defineConfig({
     ui({
       root,
       ui: { colors: { primary: 'emerald', neutral: 'zinc' } },
-      icon: { clientBundle: { scan: { globInclude: ['src/**/*.{vue,ts}'], globExclude: ['node_modules', 'dist'] } } }
+      icon: { clientBundle: { icons: LUCIDE_ICONS, scan: { globInclude: ['src/**/*.{vue,ts}'], globExclude: ['node_modules', 'dist'] }, sizeLimitKb: 0 } }
     })
   ],
   build: {

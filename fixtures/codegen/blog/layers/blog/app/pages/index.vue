@@ -35,8 +35,7 @@ useSeoMeta({ title: 'Blog' })
       <img :src="'/uploads/notebook.svg'" alt="An open notebook" class="block max-w-full rounded-lg">
       <div class="flex gap-2 flex-col md:col-span-2">
         <h2 class="text-xl font-semibold tracking-tight">About this blog</h2>
-        <p class="whitespace-pre-line text-muted">Notes on building apps from a model.
-New posts most weeks.</p>
+        <p class="whitespace-pre-line text-muted">{{ 'Notes on building apps from a model.\nNew posts most weeks.' }}</p>
       </div>
     </div>
   </section>
