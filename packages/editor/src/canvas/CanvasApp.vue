@@ -61,6 +61,8 @@ const render = shallowRef<RenderMessage | null>(null)
 const mode = ref<CanvasMode>('edit')
 /** Preview mode: the variant each interactive instance's interactions switched it to, by its root's `data-node` id. It stays until another interaction changes it. */
 const shown = reactive<Record<string, string>>({})
+/** Preview mode: how many records each List shows after its Load more clicks, by the List's `data-node` id. */
+const listShown = reactive<Record<string, number>>({})
 /** Preview mode: the hover or pressed state each instance under the pointer shows over its variant; it ends with the pointer. */
 const pointer = reactive<Record<string, string>>({})
 const selectedId = ref<string | null>(null)
@@ -98,7 +100,7 @@ const file = computed<CanvasFile | null>(() => {
 const plan = computed<PlanElement[]>(() => {
   const message = render.value
   if (!message || !file.value || message.view !== 'page') return []
-  return renderPlan({ file: file.value, components: message.components, layouts: message.layouts, data: message.data, ...(message.paths ? { paths: message.paths } : {}), variant: message.variant ?? null, shown: { ...shown, ...pointer } })
+  return renderPlan({ file: file.value, components: message.components, layouts: message.layouts, data: message.data, ...(message.paths ? { paths: message.paths } : {}), variant: message.variant ?? null, shown: { ...shown, ...pointer }, listShown: { ...listShown } })
 })
 
 /** The first (non-copy) plan element of each node id, for interactions and labels. */
@@ -216,6 +218,7 @@ function onMessage(event: MessageEvent) {
   } else if (message.type === 'bildr:mode') {
     mode.value = message.mode
     for (const key of Object.keys(shown)) Reflect.deleteProperty(shown, key)
+    for (const key of Object.keys(listShown)) Reflect.deleteProperty(listShown, key)
     for (const key of Object.keys(pointer)) Reflect.deleteProperty(pointer, key)
   } else if (message.type === 'bildr:cancel-drag') {
     handles.cancel()
@@ -451,6 +454,14 @@ function planChain(target: EventTarget | null): PlanElement[] {
 
 /** A preview event: the nearest node with an interaction for it runs it, and the nearest interactive instance switches variant. */
 function preview(event: Event, on: string) {
+  // A List's Load more shows a page more records, as the generated page's button does.
+  const button = on === 'click' && event.target instanceof Element ? event.target.closest('[data-load-more]') : null
+  if (button) {
+    const key = button.getAttribute('data-load-more')!
+    const size = Number(button.getAttribute('data-load-more-size'))
+    listShown[key] = (listShown[key] ?? size) + size
+    return
+  }
   const chain = planChain(event.target)
   const own = chain.find(element => element.interactions?.some(interaction => interaction.on === on))
   if (own) {

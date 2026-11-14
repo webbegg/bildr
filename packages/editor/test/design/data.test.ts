@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { byTestId, click, Failure, settle } from '../helpers.ts'
+import { liveRows } from '../../src/design/liveRows.ts'
 import { choose, FakeEventSource, fromCanvas, open, sent, setupHarness } from './harness.ts'
 
 /**
@@ -41,11 +42,44 @@ describe('the canvas shows the app\'s rows', () => {
     expect(lastData().all).toHaveLength(7)
   })
 
+  it('reads at most 500 rows of an entity, whatever page size the route answers with', async () => {
+    const many = Array.from({ length: 1200 }, (_, index) => post(`p${index}`, true, '2026-11-01T09:00:00.000Z'))
+    // A route that ignores `limit` and always answers a page of 100.
+    const { actions } = await open({}, 'pg_index', {
+      ...app,
+      '/api/blog/posts': (query: URLSearchParams) => ({ items: many.slice(Number(query.get('offset')), Number(query.get('offset')) + 100), total: 1200 })
+    })
+    expect(lastData().all).toHaveLength(500)
+    expect(actions.appCalls.filter(call => call.startsWith('/api/blog/posts?')).length).toBeLessThanOrEqual(6)
+  })
+
   it('falls back to the fixtures when the app does not answer, and badges them', async () => {
     await open({}, 'pg_index', {})
     expect(ids(lastData().all)).toEqual(['a-draft', 'hello-bildr'])
     expect(badge()?.dataset.state).toBe('fixtures')
     expect(badge()?.textContent).toContain('fixtures')
+  })
+
+  it('gives up on a route that never answers, falls back to the fixtures and says why in the badge', async () => {
+    const before = liveRows.timeoutMs
+    liveRows.timeoutMs = 60
+    try {
+      await open({}, 'pg_index', { ...app, '/api/blog/posts': () => new Promise(() => {}) })
+      await new Promise(resolve => setTimeout(resolve, 150))
+      await settle()
+      expect(ids(lastData().all)).toEqual(['a-draft', 'hello-bildr'])
+      expect(badge()?.dataset.state).toBe('partial')
+      expect(badge()?.title).toContain('posts')
+      expect(badge()?.title).toContain('did not answer in time')
+    } finally {
+      liveRows.timeoutMs = before
+    }
+  })
+
+  it('names the failure of a route in the badge', async () => {
+    await open({}, 'pg_index', { ...app, '/api/blog/quotes': new Failure(500, 'x', 'upstream down') })
+    expect(badge()?.title).toContain('quotes')
+    expect(badge()?.title).toContain('HTTP 500')
   })
 
   it('falls back for a route that fails, and says when only some of the data is live', async () => {

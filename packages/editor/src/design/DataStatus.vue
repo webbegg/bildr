@@ -15,9 +15,9 @@ const state = computed(() => design.rowsOf.state.value)
 const LABELS = { live: 'live', fixtures: 'fixtures', partial: 'live + fixtures' } as const
 const names = (ids: string[]) => ids.map(id => Object.values(design.model.value?.modules ?? {}).flatMap(entry => entry.entities).find(entity => entity.id === id)?.plural ?? id)
 const title = computed(() => {
-  const missing = names(design.rowsOf.fixtureEntities.value)
   if (state.value === 'live') return 'The canvas shows the rows of the running app'
-  return `The app's list route did not answer for ${missing.join(', ')}: the canvas shows the model's fixtures for it. Start the app (nuxt dev) and refresh.`
+  const why = design.rowsOf.fixtureEntities.value.map(id => `${names([id])[0]} ${design.rowsOf.reasons.value[id] ?? 'has no rows from the app'}`)
+  return `The canvas shows the model's fixtures where the app's rows could not be read: ${why.join('; ')}. Start the app (nuxt dev) and refresh.`
 })
 const label = (key: string): string => {
   const detail = design.detail.value

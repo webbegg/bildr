@@ -4,8 +4,8 @@ import type { ModelNode } from '@bildr/codegen/model'
 import { useDesign } from './store.ts'
 
 /**
- * A Form's action and fields (P5, mapping §4): the action the submit runs (picked among the page's
- * module's actions; the page starts using it as it picks) and the fields of its entity the form
+ * A Form's action and fields (P5, mapping §4): the action the submit runs (picked among the actions of
+ * the page's module that take an entity; setting it makes the page use it, in the same edit) and the fields of its entity the form
  * edits, in the entity's order (`fields`: field ids). Switching the action clears the fields:
  * they belong to the entity it creates.
  */
@@ -19,7 +19,7 @@ const module = computed(() => {
   const page = design.page.value
   return current && page ? Object.values(current.modules).find(mod => mod.pages.some(entry => entry.id === page.id)) : undefined
 })
-const actions = computed(() => module.value?.actions ?? [])
+const actions = computed(() => (module.value?.actions ?? []).filter(entry => !!entry.input.entity || entry.id === chosen.value))
 const chosen = computed(() => typeof props.node.props?.action === 'string' ? props.node.props.action : '')
 const entity = computed(() => {
   const id = actions.value.find(entry => entry.id === chosen.value)?.input.entity
@@ -30,16 +30,8 @@ const selected = computed<string[]>(() => Array.isArray(props.node.props?.fields
 
 const pick = async (event: Event) => {
   const id = (event.target as HTMLSelectElement).value
-  const page = design.page.value
-  const action = actions.value.find(entry => entry.id === id)
-  if (!page || !action) return
-  if (!page.uses?.actions?.some(use => use.action === id)) {
-    const taken = [...(page.uses?.queries ?? []), ...(page.uses?.actions ?? []), ...(page.uses?.state ?? []), ...(page.uses?.computed ?? [])].map(use => use.as)
-    let as = action.name
-    for (let n = 2; taken.includes(as); n++) as = `${action.name}${n}`
-    const added = await design.edit('page_use_add', { page: page.id, as, action: id })
-    if (!added) return
-  }
+  if (!design.page.value || !actions.value.some(entry => entry.id === id)) return
+  // One edit: the module adds the page's use of the action with the prop, or refuses both.
   await design.setProps(props.node.id, { action: id, fields: [] })
 }
 const toggle = (id: string, on: boolean) => {

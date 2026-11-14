@@ -359,8 +359,22 @@ export const createDesign = () => {
     return { parentId: parent.id, index: parent.children!.findIndex(child => child.id === node.id) + 1 }
   }
 
+  /** The actions a Form of the page can run: those of the page's module that take an entity (what the Form's fields edit). */
+  const formActions = () => {
+    const current = model.value
+    const id = page.value?.id
+    const module = current && id ? Object.values(current.modules).find(mod => mod.pages.some(entry => entry.id === id)) : undefined
+    return (module?.actions ?? []).filter(action => !!action.input.entity)
+  }
+  /** A Form insertion waiting for its action (`FormActionDialog`): a Form without one can't be generated. */
+  const pendingForm = shallowRef<{ at: { parentId?: string, index?: number } } | null>(null)
+
   const insert = async (spec: { type: string, props?: Record<string, Value> }, at: { parentId?: string, index?: number } = insertionPoint()) => {
     if (!fileId.value) return
+    if (spec.type === 'Form' && spec.props?.action === undefined && page.value) {
+      pendingForm.value = { at }
+      return
+    }
     const out = await edit('node_insert', { file: fileInput(), ...at, ...spec })
     if (typeof out?.nodeId === 'string') select([out.nodeId])
   }
@@ -384,6 +398,12 @@ export const createDesign = () => {
     const pending = pendingInsert.value
     pendingInsert.value = null
     if (pending) await insert({ type: 'Instance', props: { component: pending.component.id, values } }, pending.at)
+  }
+
+  const confirmForm = async (action: string) => {
+    const pending = pendingForm.value
+    pendingForm.value = null
+    if (pending) await insert({ type: 'Form', props: { action, fields: [] } }, pending.at)
   }
 
   const moveNode = async (nodeId: string, parentId: string, index: number) => {
@@ -565,7 +585,7 @@ export const createDesign = () => {
     page, rowsOf, detail, records, record, pickRecord, result, loading, error, zoom, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
     selectedIds, selectedId, selected, selectedParent, hoveredId, dragging, dragCancels, device, devices, deviceChoice, mode, history, clipboard,
     component, variantId, variant, inspected, breadcrumbs, nameOf, dark, view, selectVariant, override, commitStyle,
-    isContainer, scopeOf, pendingInsert, confirmInsert, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,
+    isContainer, scopeOf, pendingInsert, confirmInsert, pendingForm, confirmForm, formActions, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,
     setLocked, rename, copy, paste, setProps, setStyle, onDrop, onKey, start, dispose, refreshDataSoon,
     chooseDevice: (id: DeviceId) => {
       deviceChoice.value = id

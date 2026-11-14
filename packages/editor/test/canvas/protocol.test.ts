@@ -256,3 +256,38 @@ describe('preview mode', () => {
     expect(toggle().textContent?.trim()).toBe('Hide')
   })
 })
+
+describe('a List\'s Load more in preview', () => {
+  const rows = (count: number) => Array.from({ length: count }, (_, index) => ({ id: `p${index}`, title: `Post ${index}`, slug: `p${index}`, body: '', published: true, publishedAt: null, createdAt: null }))
+  const cards = () => document.querySelectorAll('[data-node="n_card"]').length
+  const more = () => [...document.querySelectorAll<HTMLElement>('button')].find(button => button.textContent?.trim() === 'Load more')
+  const click = async (target: HTMLElement) => {
+    target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await settle()
+  }
+  const index = (count: number) => render('index', { posts: rows(count), all: rows(count), featured: [], quotes: [] })
+
+  it('shows a page more rows for each click, until there are no more, and only in preview', async () => {
+    await send(index(14))
+    expect(cards()).toBe(6)
+    // Edit mode: the button is not live.
+    await click(more()!)
+    expect(cards()).toBe(6)
+
+    await send({ type: 'bildr:mode', mode: 'preview' })
+    await click(more()!)
+    expect(cards()).toBe(12)
+    await click(more()!)
+    expect(cards()).toBe(14)
+    expect(more()).toBeUndefined()
+  })
+
+  it('starts again from the first page when the mode changes', async () => {
+    await send(index(14))
+    await send({ type: 'bildr:mode', mode: 'preview' })
+    await click(more()!)
+    expect(cards()).toBe(12)
+    await send({ type: 'bildr:mode', mode: 'edit' })
+    expect(cards()).toBe(6)
+  })
+})

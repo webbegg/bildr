@@ -9,8 +9,11 @@ import type { QueryFile } from '../model/schemas.ts'
  * the app's list route (or the fixtures), so it runs this instead. The two
  * must agree, and `test/query/parity.test.ts` checks that against the real
  * live queries: a null field matches no condition (`ne` too), nulls sort
- * first (both ways), words sort by `localeCompare`, `like` is case-sensitive with `%`
- * and `_`, a missing parameter matches nothing. Pure: no Vue, no DOM, no fs.
+ * first (both ways), words sort by `localeCompare` but a condition compares them by
+ * code unit (`<`, as the live query's `lt`/`gte` do: capitals before lower case), a
+ * limited query without an ordering is ordered by the key (`id`, as the generated
+ * composable adds), `like` is case-sensitive with `%` and `_`, a missing parameter
+ * matches nothing. Pure: no Vue, no DOM, no fs.
  */
 
 export type Row = Record<string, unknown>
@@ -50,6 +53,13 @@ const compare = (a: unknown, b: unknown): number => {
   return String(x).localeCompare(String(y))
 }
 
+/** How a condition compares two values: JavaScript's `<` and `>` (words by code unit), as the live query's `lt`/`gte` do. */
+const order = (a: unknown, b: unknown): number => {
+  const x = plain(a) as number | string | boolean
+  const y = plain(b) as number | string | boolean
+  return x < y ? -1 : x > y ? 1 : 0
+}
+
 const same = (a: unknown, b: unknown): boolean => {
   const x = plain(a)
   const y = plain(b)
@@ -67,10 +77,10 @@ const matches = (op: Op, field: unknown, value: unknown): boolean => {
   switch (op) {
     case 'eq': return same(field, value)
     case 'ne': return !same(field, value)
-    case 'lt': return !nil(value) && compare(field, value) < 0
-    case 'lte': return !nil(value) && compare(field, value) <= 0
-    case 'gt': return !nil(value) && compare(field, value) > 0
-    case 'gte': return !nil(value) && compare(field, value) >= 0
+    case 'lt': return !nil(value) && order(field, value) < 0
+    case 'lte': return !nil(value) && order(field, value) <= 0
+    case 'gt': return !nil(value) && order(field, value) > 0
+    case 'gte': return !nil(value) && order(field, value) >= 0
     case 'in': return Array.isArray(value) && value.some(entry => same(field, entry))
     case 'like': return typeof value === 'string' && likePattern(value).test(String(field))
     default: return false
@@ -86,12 +96,13 @@ export function evaluateQuery(query: QueryShape, rows: readonly Row[], args: Rec
     found = found.filter(row => matches(op, row[field], value))
   }
   const total = found.length
-  const order = query.orderBy ?? []
-  if (order.length) {
+  // The generated composable orders a limited query by the key when it has no ordering (a live query refuses a limit without one).
+  const ordering = query.orderBy?.length ? query.orderBy : query.limit !== undefined ? [{ field: 'id', direction: 'asc' as const }] : []
+  if (ordering.length) {
     found = found
       .map((row, index) => ({ row, index }))
       .sort((a, b) => {
-        for (const { field, direction } of order) {
+        for (const { field, direction } of ordering) {
           const [x, y] = [a.row[field], b.row[field]]
           // Nulls come first whichever way it goes (TanStack DB's default).
           const result = nil(x) || nil(y) ? compare(x, y) : direction === 'desc' ? compare(y, x) : compare(x, y)

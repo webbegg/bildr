@@ -58,7 +58,9 @@ export const mockActions = (handlers: Record<string, Handler>, routes: AppRoutes
       appCalls.push(target.pathname + target.search)
       const answer = routes[target.pathname]
       if (answer === undefined) throw new TypeError('Failed to fetch')
-      const body = typeof answer === 'function' ? (answer as (query: URLSearchParams) => unknown)(target.searchParams) : answer
+      // A route may answer later (a promise, even one that never settles): an aborted request fails as the browser's does.
+      const aborted = new Promise<never>((_, reject) => init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted', 'AbortError'))))
+      const body = await Promise.race([Promise.resolve(typeof answer === 'function' ? (answer as (query: URLSearchParams) => unknown)(target.searchParams) : answer), aborted])
       return body instanceof Failure ? json(body.status, { message: body.message }) : json(200, body)
     }
     const name = String(url).replace('/__bildr/api/actions/', '')

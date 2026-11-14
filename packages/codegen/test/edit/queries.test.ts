@@ -90,6 +90,14 @@ describe('query_create_for_list', () => {
     expect(p.json('.bildr/modules/blog/pages/gallery.json').root.children[0].props).toEqual({ items: { $bind: 'recent' }, as: 'entry' })
   })
 
+  it('takes the first free name when none is given: a second list of the same entity on a page', () => {
+    const p = project()
+    expect(p.edit('query_create_for_list', { page: 'pg_index', entity: 'ent_post' })).toMatchObject({ as: 'posts2', queryId: 'q_index_posts2' })
+    expect(p.edit('query_create_for_list', { page: 'pg_index', entity: 'ent_post' })).toMatchObject({ as: 'posts3' })
+    expect(p.json(IDX).uses.queries.map((use: { as: string }) => use.as)).toEqual(expect.arrayContaining(['posts2', 'posts3']))
+    expect(() => generate(p.model())).not.toThrow()
+  })
+
   it('creates the query without a List, and refuses a taken name, a node that is no List and an entity without a list', () => {
     const p = project()
     p.edit('query_create_for_list', { page: 'pg_index', entity: 'ent_post', as: 'extra' })
@@ -142,5 +150,32 @@ describe('page_use_add, page_use_update and page_use_remove', () => {
     const p = project()
     const used = p.json('.bildr/modules/blog/pages/new-post.json').uses.actions[0]
     expect(p.refuse('page_use_remove', { page: 'pg_new_post', as: used.as }, 'invalid').message).toMatch(new RegExp(`"${used.as}"`))
+  })
+})
+
+describe('a Form\'s action (one change set: the page use and the prop)', () => {
+  it('node_insert of a Form with an action makes the page use it, under a free name', () => {
+    const p = project()
+    p.edit('page_create', { name: 'contact' })
+    const out = p.edit('node_insert', { file: 'pg_contact', type: 'Form', props: { action: 'act_create_post', fields: [] } })
+    const page = p.json('.bildr/modules/blog/pages/contact.json')
+    expect(page.uses.actions).toEqual([{ as: 'createPost', action: 'act_create_post' }])
+    expect(page.root.children[0]).toMatchObject({ id: out.nodeId, type: 'Form', props: { action: 'act_create_post', fields: [] } })
+    expect(() => generate(p.model())).not.toThrow()
+  })
+
+  it('node_update_props of a Form\'s action reuses the use the page already has', () => {
+    const p = project()
+    p.edit('node_update_props', { file: 'pg_new_post', nodeId: 'n_form', props: { action: 'act_create_post' } })
+    expect(p.json('.bildr/modules/blog/pages/new-post.json').uses.actions).toEqual([{ as: 'createPost', action: 'act_create_post' }])
+  })
+
+  it('refuses an action without an entity input and leaves no use behind', () => {
+    const p = project()
+    const before = p.files
+    const refusal = p.refuse('node_update_props', { file: 'pg_new_post', nodeId: 'n_form', props: { action: 'act_publish_post', fields: [] } }, 'invalid')
+    expect(refusal.message).toContain('a Form needs an action with an entity input')
+    expect(p.files).toBe(before)
+    expect(p.json('.bildr/modules/blog/pages/new-post.json').uses.actions.map((use: { as: string }) => use.as)).toEqual(['createPost'])
   })
 })

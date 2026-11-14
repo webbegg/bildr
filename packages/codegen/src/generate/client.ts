@@ -91,6 +91,8 @@ export const queryFile = (context: ModuleContext, query: QueryFile) => {
     chain.push(`.where(({ ${alias} }) => ${query.where.op === 'ne' ? `not(${condition})` : condition})`)
   }
   for (const order of query.orderBy ?? []) chain.push(`.orderBy(({ ${alias} }) => ${alias}.${order.field}, ${tsString(order.direction)})`)
+  // A live query refuses a limit without an ordering: a limited query with none is ordered by the entity key.
+  if (query.limit !== undefined && !query.orderBy?.length) chain.push(`.orderBy(({ ${alias} }) => ${alias}.${keyOf(entity).name}, 'asc')`)
   if (query.limit !== undefined) chain.push(`.limit(${valueOf(query.limit)})`)
   if (query.result === 'one') {
     chain.push('.findOne()')

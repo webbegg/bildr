@@ -1,12 +1,13 @@
 import { z } from 'zod'
 import { ALL_BREAKPOINTS, isStyleTokenKey, styleTokenProblem } from '../design/tokens.ts'
 import { ArtifactIdSchema, InteractionSchema, LocalIdSchema, ValueSchema } from '../model/schemas.ts'
-import type { ComponentFile, LayoutFile, ModelNode, Value } from '../model/schemas.ts'
+import type { ComponentFile, LayoutFile, ModelNode, PageFile, Value } from '../model/schemas.ts'
 import { takesProp } from '../render/rules.ts'
 import { defineEdit, fail, rootName } from './core.ts'
 import type { Draft, Tree } from './core.ts'
+import { useAction } from './queries.ts'
 import { INTERNAL_TYPES, isContainerType, isNodeType, LINK_PROPS, paletteEntry } from './palette.ts'
-import { cloneWithNewIds, containsNode, findNode, findParent, insertChild, subtreeIds } from './tree.ts'
+import { cloneWithNewIds, containsNode, findNode, findParent, insertChild, subtreeIds, walk } from './tree.ts'
 
 /** The node operations of `shared/document/operations.ts` (insert, remove, move, setProps, setStyle, setNodeMeta) on `.bildr/` trees. */
 
@@ -131,6 +132,14 @@ export const removeNode = (tree: Tree, node: ModelNode): void => {
   forgetNodes(tree, subtreeIds(node))
 }
 
+/** A page's Form that runs an action makes the page use it (in the same change set, so nothing stays behind when the edit is refused). */
+const wireForms = (draft: Draft, tree: Tree, node: ModelNode): void => {
+  if (tree.kind !== 'page') return
+  walk(node, (entry) => {
+    if (entry.type === 'Form' && typeof entry.props?.action === 'string') useAction(draft, tree.owner as PageFile, entry.props.action)
+  })
+}
+
 export const setProps = (node: ModelNode, props: Record<string, Value | null>): void => {
   const next = { ...node.props }
   for (const [key, value] of Object.entries(props)) {
@@ -184,7 +193,10 @@ export const nodeInsert = defineEdit({
     const tree = draft.tree(file)
     const all = specs ?? [spec as NodeSpec]
     const nodes = all.map(one => buildNode(draft, one, exact))
-    for (const [i, node] of nodes.entries()) insertChild(containerIn(tree, parentId ?? tree.root.id, node.type), node, index === undefined ? undefined : index + i)
+    for (const [i, node] of nodes.entries()) {
+      insertChild(containerIn(tree, parentId ?? tree.root.id, node.type), node, index === undefined ? undefined : index + i)
+      wireForms(draft, tree, node)
+    }
     const nodeIds = nodes.map(node => node.id)
     return specs ? { nodeId: nodeIds[0], nodeIds } : { nodeId: nodeIds[0] }
   }
@@ -193,9 +205,11 @@ export const nodeInsert = defineEdit({
 export const nodeUpdateProps = defineEdit({
   input: z.object({ file: FileRef, nodeId: NodeRef, props: z.record(z.string(), ValueSchema.nullable()).describe('Props to set; null removes one') }),
   apply: (draft, { file, nodeId, props }) => {
-    const node = nodeIn(draft.tree(file), nodeId)
+    const tree = draft.tree(file)
+    const node = nodeIn(tree, nodeId)
     checkProps(node.type, props)
     setProps(node, props)
+    wireForms(draft, tree, node)
     return {}
   }
 })

@@ -42,11 +42,11 @@ const rows: Row[] = [
 ]
 
 /** The rows of the app's generated query: compiles its composable and runs it over a local collection of `rows`. */
-const generated = async (file: QueryFile, args: unknown[]): Promise<Array<Row | undefined>> => {
+const generated = async (file: QueryFile, args: unknown[], data: Row[] = rows): Promise<Array<Row | undefined>> => {
   const db = ready!
   const source = queryFile(context, file).content
   const { outputText } = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } })
-  const collection = db.createCollection(db.localOnlyCollectionOptions({ id: `c${Math.random()}`, getKey: (row: Row) => row.id, initialData: rows }))
+  const collection = db.createCollection(db.localOnlyCollectionOptions({ id: `c${Math.random()}`, getKey: (row: Row) => row.id, initialData: data }))
   let live: { toArrayWhenReady: () => Promise<Row[]> } | undefined
   const modules: Record<string, unknown> = {
     '@tanstack/vue-db': {
@@ -94,6 +94,9 @@ const cases: Array<{ name: string, query: QueryFile, args?: Record<string, unkno
   { name: 'a condition parameter', query: query({ params: [{ name: 'slug', type: 'text', reactive: true }], where: { op: 'eq', field: 'slug', value: { $param: 'slug' } }, result: 'one' }), args: { slug: 'gamma' } },
   { name: 'a one query without a match', query: query({ params: [{ name: 'slug', type: 'text', reactive: true }], where: { op: 'eq', field: 'slug', value: { $param: 'slug' } }, result: 'one' }), args: { slug: 'zzz' } },
   { name: 'a missing parameter', query: query({ params: [{ name: 'slug', type: 'text', reactive: true }], where: { op: 'eq', field: 'slug', value: { $param: 'slug' } }, result: 'one' }) },
+  { name: 'a limit without an ordering', query: query({ limit: 2 }) },
+  { name: 'lt on words (mixed case)', query: query({ where: { op: 'lt', field: 'title', value: 'beta' } }) },
+  { name: 'gte on words (mixed case)', query: query({ where: { op: 'gte', field: 'title', value: 'B' } }) },
   { name: 'filter, order and limit together', query: query({ where: { op: 'eq', field: 'published', value: true }, orderBy: [{ field: 'publishedAt', direction: 'desc' }], limit: 2 }) }
 ]
 
@@ -109,8 +112,26 @@ describe.skipIf(MISSING)('the evaluator and the generated query composable agree
     expect(fixtures.length).toBeGreaterThan(0)
     for (const file of context.module.queries.filter(entry => entry.from === 'ent_post')) {
       const args = file.params.some(param => param.name === 'slug') ? { slug: 'hello-bildr' } : {}
-      const app = (await generated(file, file.params.map(param => args[param.name as keyof typeof args]))).map(row => row?.id)
-      expect(evaluateQuery(file, rows, args).rows.map(row => row.id), file.id).toEqual(app)
+      const given = file.params.map(param => args[param.name as keyof typeof args])
+      const app = (await generated(file, given, fixtures as Row[])).map(row => row?.id)
+      expect(evaluateQuery(file, fixtures as Row[], args).rows.map(row => row.id), file.id).toEqual(app)
     }
+  })
+})
+
+describe('the generated query composable of a limited query', () => {
+  it('orders by the entity key when the query has no ordering, so the live query compiles', () => {
+    const { content } = queryFile(context, query({ limit: 2 }))
+    expect(content).toContain(`.orderBy(({ post }) => post.id, 'asc')`)
+    expect(content.indexOf('.orderBy(')).toBeLessThan(content.indexOf('.limit(2)'))
+  })
+
+  it('keeps the query\'s own ordering', () => {
+    const { content } = queryFile(context, query({ limit: 2, orderBy: [{ field: 'title', direction: 'desc' }] }))
+    expect(content).not.toContain('post.id')
+  })
+
+  it('leaves an unlimited query unordered', () => {
+    expect(queryFile(context, query({})).content).not.toContain('.orderBy(')
   })
 })

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { allByTestId, byTestId, click, settle, typeInto } from '../helpers.ts'
+import { applyEdit } from '../../../codegen/src/edit/index.ts'
+import { blogModelFiles } from '../canvas/fixture.ts'
+import { allByTestId, byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
 import { check, choose, open, select, setupHarness } from './harness.ts'
 
 /**
@@ -12,13 +14,20 @@ import { check, choose, open, select, setupHarness } from './harness.ts'
 setupHarness()
 
 const ok = (extra: Record<string, unknown> = {}) => () => ({ changed: [], ...extra })
+/** The module's real edit over the blog fixture (what the action does), not a stand-in that always succeeds: its refusals come back as the module's. */
+const real = (name: Parameters<typeof applyEdit>[1], outcomes: unknown[] = []) => (input: Record<string, unknown>) => {
+  const outcome = applyEdit(blogModelFiles(), name, input)
+  outcomes.push(outcome)
+  return outcome.ok ? { changed: outcome.changes.map(change => change.path), ...outcome.result } : new Failure(422, outcome.code, outcome.message)
+}
 const nodeTab = () => click(byTestId('inspector-tab-node'))
 const fileTab = () => click(byTestId('inspector-tab-file'))
 const options = (id: string) => [...(byTestId(id) as HTMLSelectElement).options].map(option => option.value)
 
 describe('a List\'s source', () => {
   it('picks among the page\'s lists and offers a new query for each entity', async () => {
-    const { actions } = await open({ node_update_props: ok(), query_create_for_list: ok({ queryId: 'q_index_posts', as: 'posts' }) }, 'pg_index')
+    const outcomes: unknown[] = []
+    const { actions } = await open({ node_update_props: ok(), query_create_for_list: real('query_create_for_list', outcomes) }, 'pg_index')
     await select('n_list')
     expect(options('list-items')).toEqual(['featured', 'all', 'quotes', 'posts', 'new:ent_post', 'new:ent_quote'])
     expect((byTestId('list-items') as HTMLSelectElement).value).toBe('posts')
@@ -28,6 +37,9 @@ describe('a List\'s source', () => {
 
     expect(actions.named('node_update_props').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_list', props: { items: { $bind: 'all' } } }])
     expect(actions.named('query_create_for_list').map(call => call.input)).toEqual([{ page: 'pg_index', entity: 'ent_post', nodeId: 'n_list' }])
+    // pg_index already uses "posts": the module takes the next free name instead of refusing, and the List is bound to it.
+    expect(outcomes).toMatchObject([{ ok: true, result: { as: 'posts2' } }])
+    expect(byTestId('design-error')).toBeNull()
   })
 
   it('edits the sort of every query behind a computed source, for this page use', async () => {
@@ -183,16 +195,56 @@ describe('inserting a component that needs a record', () => {
 })
 
 describe('a Form\'s action and fields', () => {
-  it('picks the action (adding its use to the page first) and ticks the fields it edits', async () => {
-    const { actions } = await open({ node_update_props: ok(), page_use_add: ok() }, 'pg_new_post')
+  it('sets the action in one edit (the module adds the page\'s use with it) and ticks the fields it edits', async () => {
+    const { actions } = await open({ node_update_props: ok() }, 'pg_new_post')
     await select('n_form')
     expect((byTestId('form-action') as HTMLSelectElement).value).toBe('act_create_post')
-    expect(options('form-action')).toEqual(['', 'act_create_post', 'act_publish_post'])
     await check('form-field-fld_body', false)
-    await choose('form-action', 'act_publish_post')
+    await choose('form-action', 'act_create_post')
     expect(actions.named('node_update_props').map(call => call.input)[0]).toMatchObject({ file: 'pg_new_post', nodeId: 'n_form', props: { fields: expect.not.arrayContaining(['fld_body']) } })
-    expect(actions.named('page_use_add').map(call => call.input)).toEqual([{ page: 'pg_new_post', as: 'publishPost', action: 'act_publish_post' }])
-    expect(actions.named('node_update_props').at(-1)?.input).toMatchObject({ props: { action: 'act_publish_post', fields: [] } })
+    expect(actions.named('node_update_props').at(-1)?.input).toMatchObject({ props: { action: 'act_create_post', fields: [] } })
+    expect(actions.named('page_use_add')).toEqual([])
+  })
+
+  it('offers only actions a Form can run (an entity input), so picking one never leaves a stray use', async () => {
+    await open({}, 'pg_new_post')
+    await select('n_form')
+    expect(options('form-action')).not.toContain('act_publish_post')
+    expect(options('form-action')).toEqual(['', 'act_create_post'])
+  })
+})
+
+describe('inserting a Form from the palette', () => {
+  it('asks which action it runs, and inserts it with that action and no fields', async () => {
+    const { actions } = await open({ node_insert: ok({ nodeId: 'n_form_2' }) }, 'pg_new_post')
+    await click(byTestId('palette-Form'))
+    expect(byTestId('form-dialog')).not.toBeNull()
+    expect(actions.named('node_insert')).toEqual([])
+    expect((byTestId('form-dialog-confirm') as HTMLButtonElement).disabled).toBe(true)
+    expect(options('form-dialog-action')).toEqual(['', 'act_create_post'])
+    await choose('form-dialog-action', 'act_create_post')
+    await click(byTestId('form-dialog-confirm'))
+    expect(actions.named('node_insert').map(call => call.input)).toEqual([
+      { file: 'pg_new_post', type: 'Form', props: { action: 'act_create_post', fields: [] } }
+    ])
+    expect(byTestId('form-dialog')).toBeNull()
+  })
+
+  it('inserts nothing when the dialog is cancelled', async () => {
+    const { actions } = await open({ node_insert: ok() }, 'pg_new_post')
+    await click(byTestId('palette-Form'))
+    await click(byTestId('form-dialog-cancel'))
+    expect(actions.named('node_insert')).toEqual([])
+    expect(byTestId('form-dialog')).toBeNull()
+  })
+
+  it('is accepted by the real edit: the page uses the action and the model builds', async () => {
+    const outcomes: unknown[] = []
+    await open({ node_insert: real('node_insert', outcomes) }, 'pg_index')
+    await click(byTestId('palette-Form'))
+    await choose('form-dialog-action', 'act_create_post')
+    await click(byTestId('form-dialog-confirm'))
+    expect(outcomes).toMatchObject([{ ok: true }])
   })
 })
 

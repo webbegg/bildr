@@ -62,6 +62,22 @@ const findQuery = (draft: Draft, id: string): { query: QueryFile, module: string
 const usesOf = (draft: Draft, id: string): Array<{ page: PageFile, as: string }> =>
   draft.pages().flatMap(page => (page.uses?.queries ?? []).filter(use => use.query === id).map(use => ({ page, as: use.as })))
 
+/**
+ * Makes the page use action `actionId` (under its name, or the first free one) unless it already does, and returns the
+ * name. A Form's `action` prop is set in the same edit as this use, so a refused edit leaves neither. An action that
+ * isn't in the page's module gets no use: the model refuses the prop itself.
+ */
+export const useAction = (draft: Draft, page: PageFile, actionId: string): string | undefined => {
+  const existing = page.uses?.actions?.find(use => use.action === actionId)
+  if (existing) return existing.as
+  const action = moduleOfPage(draft, page).mod.actions.find(entry => entry.id === actionId)
+  if (!action) return undefined
+  const as = uniqueName(action.name, [...aliasesOf(page), ...RESERVED])
+  const uses = page.uses ??= {}
+  ;(uses.actions ??= []).push({ as, action: actionId })
+  return as
+}
+
 const checkParam = (query: QueryFile, value: Value | null | undefined, where: string) => {
   if (isObject(value) && typeof value.$param === 'string' && !query.params.some(param => param.name === value.$param)) fail('invalid', `${where}: the query has no parameter "${value.$param}"`)
 }
@@ -141,7 +157,7 @@ export const queryCreateForList = defineEdit({
   input: z.object({
     page: PageRef,
     entity: ArtifactIdSchema.describe('The entity whose rows the list shows'),
-    as: Alias.optional().describe('The name the page binds the rows by (default: the entity\'s plural)'),
+    as: Alias.optional().describe('The name the page binds the rows by (default: the entity\'s plural, or the first free one: "posts", "posts2"…). A name the page already uses is refused'),
     nodeId: LocalIdSchema.optional().describe('A List node of the page to bind: its items become the new rows, and its item name the entity\'s name unless it has a name of its own')
   }),
   apply: (draft, { page: pageId, entity: entityId, as: given, nodeId }) => {
@@ -158,7 +174,7 @@ export const queryCreateForList = defineEdit({
       if (!list) fail('not_found', `Node "${nodeId}" not found in ${page.id}`)
       if (list!.type !== 'List') fail('invalid', `Node "${nodeId}" is a ${list!.type}, not a List`)
     }
-    const as = given ?? entity.plural
+    const as = given ?? uniqueName(entity.plural, [...aliasesOf(page), ...RESERVED])
     checkAlias(page, as)
     const query: QueryFile = {
       id: draft.mint('q', `${page.name} ${as}`),

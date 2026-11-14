@@ -157,6 +157,14 @@ describe('queries and page uses (P5)', () => {
     expect(json('.bildr/modules/main/queries/index-notes.json')).not.toHaveProperty('limit')
   })
 
+  it('creates a second list query for an entity under a free name', async () => {
+    await listed()
+    await ok('query_create_for_list', { page: 'pg_index', entity: 'ent_note' })
+    const second = await ok('query_create_for_list', { page: 'pg_index', entity: 'ent_note' })
+    expect(second.as).not.toBe('notes')
+    expect(json(pagePath).uses.queries.map((use: Json) => use.as)).toEqual(['notes', second.as])
+  })
+
   it('refuse what the model refuses with 422, and a missing target with 404', async () => {
     await listed()
     await failure('query_update', { query: 'q_notes', orderBy: [{ field: 'nope', direction: 'asc' }] }, 422, 'invalid')

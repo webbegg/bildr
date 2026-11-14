@@ -41,6 +41,18 @@ describe('evaluateQuery (the generated queries\' semantics, V4)', () => {
     expect(ids({ orderBy, params, limit: { $param: 'limit' } }, { limit: 1 })).toEqual(['d'])
   })
 
+  it('orders a limited query by its key when it has no ordering of its own (as the generated query does)', () => {
+    const shuffled = [posts[3]!, posts[0]!, posts[2]!, posts[1]!]
+    const run = evaluateQuery({ params: [], limit: 2, result: 'many' }, shuffled)
+    expect(run.rows.map(row => row.id)).toEqual(['a', 'b'])
+  })
+
+  it('compares words by code unit in a condition (capitals before lower case), as the app\'s live query does', () => {
+    expect(ids({ where: { op: 'lt', field: 'title', value: 'beta' } })).toEqual(['a', 'c', 'd'])
+    expect(ids({ where: { op: 'gte', field: 'title', value: 'B' } })).toEqual(['b', 'c', 'd'])
+    expect(ids({ where: { op: 'lte', field: 'title', value: 'Delta' } })).toEqual(['a', 'd'])
+  })
+
   it('reads a parameter in the condition, and a missing one matches nothing', () => {
     const params: QueryShape['params'] = [{ name: 'slug', type: 'text', reactive: true }]
     const where: QueryShape['where'] = { op: 'eq', field: 'slug', value: { $param: 'slug' } }

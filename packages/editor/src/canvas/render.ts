@@ -56,6 +56,8 @@ export interface RenderInput {
   variant?: BoardVariant | null
   /** Preview mode: the variant each interactive instance shows now, by its root's `data-node` id. */
   shown?: Record<string, string>
+  /** Preview mode: how many records each List shows after Load more clicks, by the List's `data-node` id (its `loadMore` page size until clicked). */
+  listShown?: Record<string, number>
   /** Page id → route path, so links to a page point at it (the canvas's router sits on the current page's path, which makes those links active). */
   paths?: Record<string, string>
 }
@@ -556,18 +558,21 @@ const list = (frame: Frame, node: ModelNode, options: Options): PlanElement[] =>
   }
   const inStack = childrenInStack(node.type, props)
   const kids = node.children ?? []
-  // `loadMore`: the first n records, then the Load more button while more follow (the canvas never loads them).
+  // `loadMore`: the first n records, then the Load more button while more follow; preview mode's clicks show a page more each.
   const more = loadMoreSize(props.loadMore)
+  const key = frame.id(node)
+  const count = more ? frame.input.listShown?.[key] ?? more : 0
   // No data: the children once, dimmed, with their bindings as placeholders.
-  const shown = missing ? [MISSING] : more ? rows.slice(0, more) : rows
+  const shown = missing ? [MISSING] : more ? rows.slice(0, count) : rows
   const children = shown.flatMap((row, index) => {
     const itemFrame: Frame = { ...frame, scope: { ...frame.scope, [as]: row } }
     const copy = options.copy || index > 0
     return kids.flatMap(child => renderNode(itemFrame, child, { inStack, copy }).map(element => missing ? { ...element, class: [element.class, 'opacity-60'].filter(Boolean).join(' '), placeholder: false } : element))
   })
-  if (more && rows.length > more) {
+  if (more && rows.length > count) {
     const copy = options.copy ? { copy: true } : {}
-    const button: PlanElement = { tag: NODE_ELEMENTS.Button, class: '', attrs: { label: LOAD_MORE_LABEL }, children: [], ...copy }
+    // The canvas's preview reads the List's key and page size from the button (`data-load-more`, `data-load-more-size`).
+    const button: PlanElement = { tag: NODE_ELEMENTS.Button, class: '', attrs: { 'label': LOAD_MORE_LABEL, 'data-load-more': key, 'data-load-more-size': more }, children: [], ...copy }
     children.push({ tag: 'div', class: LOAD_MORE_CLASS, attrs: {}, children: [button], ...copy })
   }
   const tag = containerTag(props.tag) ?? 'div'
