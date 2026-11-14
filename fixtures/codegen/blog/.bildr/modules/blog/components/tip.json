@@ -1,0 +1,172 @@
+{
+  "$schema": "https://bildr.dev/schema/component.v1.json",
+  "id": "cmp_tip",
+  "name": "Tip",
+  "properties": [
+    {
+      "id": "prop_title",
+      "name": "title",
+      "kind": "text",
+      "label": "Title",
+      "required": true,
+      "placeholder": "A short tip",
+      "bindings": [
+        {
+          "nodeId": "n_tip_title",
+          "prop": "text"
+        }
+      ]
+    },
+    {
+      "id": "prop_body",
+      "name": "body",
+      "kind": "textarea",
+      "label": "Body",
+      "description": "Shown while the tip is open.",
+      "optional": true,
+      "bindings": [
+        {
+          "nodeId": "n_tip_body",
+          "prop": "text"
+        }
+      ]
+    },
+    {
+      "id": "prop_tone",
+      "name": "tone",
+      "kind": "select",
+      "label": "Background",
+      "options": [
+        "muted",
+        "elevated"
+      ],
+      "default": "muted",
+      "bindings": [
+        {
+          "nodeId": "n_tip",
+          "prop": "bg",
+          "target": "style"
+        }
+      ]
+    },
+    {
+      "id": "prop_icon",
+      "name": "icon",
+      "kind": "icon",
+      "default": "i-lucide-lightbulb",
+      "bindings": [
+        {
+          "nodeId": "n_tip_toggle",
+          "prop": "icon"
+        }
+      ]
+    }
+  ],
+  "variants": [
+    {
+      "id": "var_collapsed",
+      "name": "collapsed",
+      "overrides": {
+        "n_tip": {
+          "style": {
+            "py": "2"
+          },
+          "unset": [
+            "gap"
+          ]
+        },
+        "n_tip_body": {
+          "props": {
+            "hidden": true
+          }
+        },
+        "n_tip_toggle": {
+          "props": {
+            "text": "Show"
+          }
+        }
+      },
+      "interactions": [
+        {
+          "on": "click",
+          "do": [
+            {
+              "kind": "setVariant",
+              "to": ""
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "interactions": [
+    {
+      "on": "click",
+      "do": [
+        {
+          "kind": "setVariant",
+          "to": "var_collapsed"
+        }
+      ]
+    }
+  ],
+  "transition": {
+    "type": "ease",
+    "duration": 0.2,
+    "easing": "ease-in-out"
+  },
+  "root": {
+    "id": "n_tip",
+    "type": "Column",
+    "style": {
+      "gap": "2",
+      "px": "4",
+      "py": "4",
+      "rounded": "md",
+      "bg": "muted"
+    },
+    "children": [
+      {
+        "id": "n_tip_head",
+        "type": "Row",
+        "style": {
+          "justify": "between",
+          "items": "center"
+        },
+        "children": [
+          {
+            "id": "n_tip_title",
+            "type": "Text",
+            "props": {
+              "text": "Tip"
+            },
+            "style": {
+              "font": "medium"
+            }
+          },
+          {
+            "id": "n_tip_toggle",
+            "type": "Button",
+            "props": {
+              "text": "Hide",
+              "variant": "ghost",
+              "size": "xs",
+              "color": "neutral"
+            }
+          }
+        ]
+      },
+      {
+        "id": "n_tip_body",
+        "type": "Text",
+        "props": {
+          "text": ""
+        },
+        "style": {
+          "text": "sm",
+          "color": "muted"
+        }
+      }
+    ]
+  }
+}

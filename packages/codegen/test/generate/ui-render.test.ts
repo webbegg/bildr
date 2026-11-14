@@ -93,7 +93,7 @@ describe('generateUi follows the canvas render rules', () => {
 
   it('takes an Input\'s placeholder and type from its props, beside its field\'s attributes (input-props)', () => {
     const model = fixtureModel()
-    const form = pageOf(model, 'posts-new').root.children![0]!
+    const form = pageOf(model, 'posts-new').root.children!.find(node => node.type === 'Form')!
     const title = form.children!.find(node => node.props?.field === 'fld_title')!
     title.props = { ...title.props, placeholder: 'A catchy title', inputType: 'email' }
     expect(generated(model, 'posts/new.vue')).toContain('<UInput v-model="form.title" name="title" required maxlength="120" type="email" placeholder="A catchy title" class="w-full" />')
@@ -156,7 +156,7 @@ describe('generateUi follows the canvas render rules', () => {
     const index = pageOf(model, 'index')
     index.root.children!.push({ id: 'n_fill', type: 'SlotFill', props: { slot: 'footer' }, children: [text('n_note', 'Thanks for reading')] })
     const page = generated(model, 'pages/index.vue')
-    expect(page).toContain('definePageMeta({ name: \'index\', layout: false })')
+    expect(page).toContain('definePageMeta({ name: \'index\', layout: false, layoutValues: { title: \'Posts\' } })')
     expect(page).toMatch(/<template>\n {2}<NuxtLayout name="main">\n {4}<template #default>\n {6}<section /)
     expect(page).toContain('    <template #footer>\n      <p class="whitespace-pre-line">Thanks for reading</p>\n    </template>\n  </NuxtLayout>\n</template>')
     expect(page).not.toContain('Thanks for reading</p>\n    </section>')

@@ -4,6 +4,9 @@
   "name": "posts-new",
   "path": "/posts/new",
   "layout": "lay_main",
+  "layoutValues": {
+    "prop_title": "Write"
+  },
   "seo": {
     "title": "New post"
   },
@@ -19,6 +22,22 @@
     "id": "n_page",
     "type": "Page",
     "children": [
+      {
+        "id": "n_tip",
+        "type": "Instance",
+        "props": {
+          "component": "cmp_tip",
+          "variant": "var_collapsed",
+          "values": {
+            "prop_title": "Writing tips",
+            "prop_body": "Keep the title short: the slug becomes the post's URL."
+          }
+        },
+        "style": {
+          "maxW": "xl",
+          "mb": "4"
+        }
+      },
       {
         "id": "n_form",
         "type": "Form",

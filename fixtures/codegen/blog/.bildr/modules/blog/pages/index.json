@@ -4,6 +4,9 @@
   "name": "index",
   "path": "/",
   "layout": "lay_main",
+  "layoutValues": {
+    "prop_title": "Posts"
+  },
   "seo": {
     "title": "Blog"
   },

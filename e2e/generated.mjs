@@ -351,6 +351,23 @@ async function model(ctx) {
         else throw new Error(`model_file_put ${path} → ${result.status} ${result.code}: ${result.message}`)
       }
       if (refused.length === todo.length) {
+        // A layout links pages that set its variables (layoutValues): stage those pages without their values first,
+        // as the editor would (add the variable, then set it); the next pass puts them whole.
+        let staged = 0
+        for (const { path } of refused) {
+          const content = JSON.parse(golden[path])
+          if (!content.layoutValues) continue
+          delete content.layoutValues
+          const result = await action('model_file_put', { path, content })
+          if (result.ok) {
+            order.push(`${path} (without layoutValues)`)
+            staged++
+          }
+        }
+        if (staged) {
+          todo = refused.map(({ path }) => path)
+          continue
+        }
         for (const { path, result } of refused) console.log(`    ${path}: ${result.problems?.map(problem => `${problem.path}: ${problem.message}`).join('; ')}`)
         break
       }

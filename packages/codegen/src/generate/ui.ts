@@ -1,11 +1,12 @@
 import { customColorNames } from '../design/theme.ts'
-import { displayFallback, parseStyleKey, styleClasses, styleInline, styleTokenProblem } from '../design/tokens.ts'
+import { displayFallback, orderedStyleTokens, parseStyleKey, styleClasses, styleInline, styleTokenProblem } from '../design/tokens.ts'
+import type { BreakpointBase } from '../design/tokens.ts'
 import type { Model } from '../model/load.ts'
-import type { ActionFile, ComponentFile, EntityFile, LayoutFile, ModelNode, PageFile, QueryFile, Value } from '../model/schemas.ts'
+import type { ActionFile, ComponentFile, EntityFile, LayoutFile, ModelNode, PageFile, PropertyDef, QueryFile, Value } from '../model/schemas.ts'
 import {
-  CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, CONTAINER_TAGS, containerTag, DEFAULT_HEADING_LEVEL,
-  displayOf, fallbackStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, LINK_CLASS,
-  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, NODE_ELEMENTS, nodePropProblems, selfFallback, structuralStyle, TEXT_CLASS, uiStepProblems
+  animatedProperties, CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, CONTAINER_TAGS, containerTag, DEFAULT_HEADING_LEVEL,
+  DEFAULT_TRANSITION, displayOf, fallbackStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, LINK_CLASS,
+  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, NODE_ELEMENTS, nodePropProblems, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses, uiStepProblems
 } from '../render/rules.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
 import { entityNames, moduleContext } from './context.ts'
@@ -47,7 +48,17 @@ interface Env {
   roots: Map<string, Root>
   /** Script declarations the template needs, by kind and alias: `query:featured` → `data`, `loading`… */
   used: Map<string, Set<string>>
-  needs: Set<'route' | 'site' | 'form' | 'props' | 'toast'>
+  needs: Set<'route' | 'site' | 'form' | 'props' | 'toast' | 'layout'>
+  /** The project's breakpoint base: which prefixes its style keys take (`md:` or `max-md:`). */
+  base: BreakpointBase
+  /** The variant a component renders: its prop, or the `useVariantState` one when it has interactions. */
+  variantExpr: string
+  /** A component's root: the classes (`group/<name>`) and attributes (`v-on`) its states need. */
+  root?: { id: string, classes: string[], attrs: Attr[] }
+  /** Per node id, the props variants and property bindings drive (`$$variants` is generator-internal). */
+  substitutions?: Map<string, Record<string, Value>>
+  /** Per node id, the style keys properties drive. */
+  styleBindings?: Map<string, StyleBinding[]>
   /** Script blocks of interaction handlers. */
   handlers: string[][]
   /** The Form being rendered: its action and the entity fields it edits. */
@@ -67,9 +78,23 @@ interface Env {
 interface Variant {
   /** The base of its class map constants, e.g. `card` for `cardVariants`. */
   base: string
-  /** Every variant of the component with the style it overrides on this node (empty when none). */
+  /** `default`, then every variant of the component, with the node's style in it (overrides and `unset` applied). */
   styles: Array<[string, Record<string, string>]>
+  /** Hover and pressed states rendered in CSS: per base variant, the class prefix, the state's style and the keys it changes. */
+  pointer: Map<string, Array<{ prefix: string, style: Record<string, string>, keys: string[] }>>
   hiddenIn: string[]
+  /** An interactive component's transition timing classes per variant (the target's); empty for instant. */
+  timing?: Map<string, string>
+}
+
+interface StyleBinding {
+  key: string
+  /** The `$bind` path of the property's value (`tone`, `layout.tone`). */
+  path: string
+  hasDefault: boolean
+  select: boolean
+  /** The token values it can take: its options, or every value of the token. */
+  values: string[]
 }
 
 const use = (env: Env, key: string, part: string) => {
@@ -123,6 +148,9 @@ const expression = (env: Env, node: ModelNode | undefined, value: Value | undefi
   if (typeof value === 'string') return tsString(value)
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   if (!isObject(value)) return fail(env, node, 'lists are not expressions')
+  if (isObject(value.$$variants)) {
+    return `({ ${Object.entries(value.$$variants).map(([name, item]) => `${name}: ${expression(env, node, item, ctx)}`).join(', ')} })[${env.variantExpr}]`
+  }
   if (typeof value.$bind === 'string') {
     const bound = bindPath(env, node, value.$bind, ctx)
     return value.fallback === undefined ? bound : `${bound} ?? ${expression(env, node, value.fallback, ctx)}`
@@ -219,31 +247,64 @@ const styleAttrs = (env: Env, node: ModelNode, { display = '', fallback = {}, cl
   const style = node.style ?? {}
   const custom = customColorNames(env.model.theme)
   for (const [key, value] of Object.entries(style)) {
-    const problem = styleTokenProblem(key, value, custom)
+    const problem = styleTokenProblem(key, value, custom, env.base)
     if (problem) fail(env, node, problem)
   }
   const mine = (entries: Record<string, string>) => Object.fromEntries(Object.entries(entries).filter(([key]) => pick(key)))
   const full = mine({ ...fallback, ...style })
   const variant = env.variants?.get(node.id)
-  const keys = [...new Set((variant?.styles ?? []).flatMap(([, override]) => Object.keys(mine(override))))]
-  const own = Object.fromEntries(Object.entries(full).filter(([key]) => !keys.includes(key)))
-  const classes = [...fixed, display ? displayFallback(display, style) : '', styleClasses(own)].filter(Boolean).join(' ')
+  const bound = (env.styleBindings?.get(node.id) ?? []).filter(binding => pick(binding.key))
+  const keys = variant
+    ? [...new Set([...variant.styles.flatMap(([, entry]) => changedKeys(style, entry)), ...[...variant.pointer.values()].flat().flatMap(state => state.keys)])].filter(pick)
+    : []
+  if (bound.some(binding => keys.includes(binding.key))) fail(env, node, 'a style a property drives is also overridden by a variant')
+  const excluded = new Set([...keys, ...bound.map(binding => binding.key)])
+  const own = Object.fromEntries(Object.entries(full).filter(([key]) => !excluded.has(key)))
+  // An interactive component animates what its variants change, with the timing of the variant it goes to.
+  const timings = variant?.timing && keys.length ? [...variant.timing.values()] : []
+  const animated = timings.some(Boolean) ? animatedProperties(keys) : []
+  const sharedTiming = animated.length && new Set(timings).size === 1 ? timings[0]! : ''
+  const rootClasses = env.root?.id === node.id && !part ? env.root.classes : []
+  const classes = [...fixed, display ? displayFallback(display, style) : '', ...rootClasses, animated.length ? `transition-[${animated.join(',')}]` : '', sharedTiming, styleClasses(own)].filter(Boolean).join(' ')
   const inline = Object.entries(styleInline(own)).map(([property, value]) => `${property}: ${value}`).join('; ')
-  let map: string | undefined
+  const maps: string[] = []
   if (variant && keys.length) {
     // Variant overrides become a class map; the default entry holds what the node renders without one.
-    map = `${variant.base}${part}Variants`
-    const only = (entries: Record<string, string>) => Object.fromEntries(keys.filter(key => entries[key] !== undefined).map(key => [key, entries[key]!]))
-    const perVariant: Array<[string, string]> = [['default', styleClasses(only(full))], ...variant.styles.map(([name, override]): [string, string] => [name, styleClasses(only({ ...full, ...mine(override) }))])]
+    const map = `${variant.base}${part}Variants`
+    const only = (entries: Record<string, string>, subset = keys) => Object.fromEntries(subset.filter(key => keys.includes(key) && entries[key] !== undefined).map(key => [key, entries[key]!]))
+    const perVariant = variant.styles.map(([name, entry]): [string, string] => [name, [
+      styleClasses(only({ ...fallback, ...entry })),
+      ...(variant.pointer.get(name) ?? []).map(state => prefixedClasses(only({ ...fallback, ...state.style }, state.keys), state.prefix)),
+      animated.length && !sharedTiming ? variant.timing!.get(name) || 'duration-0' : ''
+    ].filter(Boolean).join(' ')])
     env.needs.add('props')
     env.variantLines.push('', `const ${map} = {`, perVariant.map(([name, value]) => `  ${name}: ${tsString(value)}`).join(',\n'), '} as const')
+    maps.push(`${map}[${env.variantExpr}]`)
+  }
+  for (const binding of bound) {
+    // A style a property drives: a class map of the values it can take, indexed by the property.
+    const map = `${camel(node.id.replace(/^n_/, ''))}${pascal(binding.key.replace(/[^A-Za-z0-9]+/g, ' ').replace(/\s+(\w)/g, (_, char: string) => char.toUpperCase()))}Classes`
+    const entries = binding.values.map(value => [value, styleClasses({ [binding.key]: value })] as const).filter(([, value]) => value)
+    const quote = entries.some(([value]) => !/^[A-Za-z_$][\w$]*$/.test(value))
+    const typed = binding.select && binding.hasDefault
+    env.variantLines.push('', typed ? `const ${map} = {` : `const ${map}: Record<string, string> = {`, entries.map(([value, classes]) => `  ${quote ? tsString(value) : value}: ${tsString(classes)}`).join(',\n'), typed ? '} as const' : '}')
+    const value = bindPath(env, node, binding.path, 'template')
+    const fallbackValue = full[binding.key]
+    maps.push(`${map}[${value}${binding.hasDefault ? '' : ` ?? ${tsString(fallbackValue ?? '')}`}]`)
   }
   return [
     ...(classes ? [staticAttr('class', classes)] : []),
-    ...(map ? [boundAttr('class', `${map}[props.variant]`)] : []),
+    ...(maps.length ? [boundAttr('class', maps.length === 1 ? maps[0]! : `[${maps.join(', ')}]`)] : []),
     ...(inline ? [staticAttr('style', inline)] : [])
   ]
 }
+
+/** The keys whose values differ between two styles. */
+const changedKeys = (a: Record<string, string>, b: Record<string, string>) => Object.keys({ ...a, ...b }).filter(key => a[key] !== b[key])
+
+/** A style's classes under a state variant: `group-hover/card:p-4`, after the breakpoint (`md:group-hover/card:p-4`). */
+const prefixedClasses = (style: Record<string, string>, prefix: string) => orderedStyleTokens(style).filter(token => token.className)
+  .map(token => token.breakpoint ? `${token.breakpoint}:${prefix}${token.className.slice(token.breakpoint.length + 1)}` : `${prefix}${token.className}`).join(' ')
 
 /** A static string as an attribute, any other value bound. */
 const valueAttr = (env: Env, node: ModelNode, name: string, value: Value): Attr =>
@@ -255,7 +316,7 @@ const visibility = (env: Env, node: ModelNode): Attr[] => {
   if (node.props?.visible !== undefined) conditions.push(expression(env, node, node.props.visible, 'template'))
   for (const name of env.variants?.get(node.id)?.hiddenIn ?? []) {
     env.needs.add('props')
-    conditions.push(`props.variant !== ${tsString(name)}`)
+    conditions.push(`${env.variantExpr} !== ${tsString(name)}`)
   }
   return conditions.length ? [attr('if', `v-if="${escapeAttr(conditions.join(' && '))}"`)] : []
 }
@@ -315,10 +376,13 @@ const slotted = (env: Env, node: ModelNode, inner: string[], indent: string, opt
   return inner.length ? [`${indent}<slot${name}>`, ...inner.map(line => `  ${line}`), `${indent}</slot>`] : [`${indent}<slot${name} />`]
 }
 
-const render = (env: Env, node: ModelNode, indent: string, options: RenderOptions = {}): string[] => {
-  const problem = nodePropProblems(node.type, node.props)[0]
-  if (problem) fail(env, node, problem.message)
-  const extra = [...(options.attrs ?? []), ...visibility(env, node)]
+const render = (env: Env, original: ModelNode, indent: string, options: RenderOptions = {}): string[] => {
+  const problem = nodePropProblems(original.type, original.props)[0]
+  if (problem) fail(env, original, problem.message)
+  // Props a variant overrides or a property drives become expressions.
+  const swapped = env.substitutions?.get(original.id)
+  const node = swapped ? { ...original, props: { ...original.props, ...swapped } } : original
+  const extra = [...(options.attrs ?? []), ...visibility(env, node), ...(env.root?.id === node.id ? env.root.attrs : [])]
   switch (node.type) {
     case 'Page':
     case 'Container':
@@ -527,6 +591,10 @@ const instance = (env: Env, node: ModelNode, extra: Attr[], indent: string, opti
   const context = env.context ?? fail(env, node, 'component instances need a module')
   const component = context.module.components.find(entry => entry.id === node.props?.component) ?? fail(env, node, `unknown component ${String(node.props?.component)}`)
   const values = isObject(node.props?.values) ? node.props.values : {}
+  const variantId = node.props?.variant
+  const variant = typeof variantId === 'string' && variantId !== ''
+    ? [staticAttr('variant', component.variants.find(entry => entry.id === variantId)?.name ?? fail(env, node, `component ${component.name} has no variant ${variantId}`))]
+    : []
   const attrs = component.properties.flatMap((property) => {
     const value = values[property.id]
     if (value === undefined || property.kind === 'slot') return []
@@ -541,7 +609,7 @@ const instance = (env: Env, node: ModelNode, extra: Attr[], indent: string, opti
       ?? fail(env, child, `component ${component.name} has no slot property ${String(child.props?.slot)}`)
     return fillTemplate(env, child, property.name, findNode(root, property.nodeId ?? ''), `${indent}  `)
   })
-  return element(`${pascal(context.name)}${component.name}`, [...extra, ...attrs, ...style], fills, indent)
+  return element(`${pascal(context.name)}${component.name}`, [...extra, ...variant, ...attrs, ...style], fills, indent)
 }
 
 // ── Interactions ────────────────────────────────────────────────────────
@@ -651,8 +719,44 @@ const sfc = (source: string, script: string[], template: string[]) => [
 ].join('\n')
 
 const newEnv = (model: Model, file: string, context?: ModuleContext): Env => ({
-  model, context, file, roots: new Map(), used: new Map(), needs: new Set(), handlers: [], variantLines: [], optional: { used: new Set(), guarded: new Set() }, aliases: { actions: new Map(), state: new Map() }
+  model, context, file, roots: new Map(), used: new Map(), needs: new Set(), handlers: [], variantLines: [], optional: { used: new Set(), guarded: new Set() }, aliases: { actions: new Map(), state: new Map() },
+  base: model.project.breakpointBase ?? 'mobile', variantExpr: 'props.variant'
 })
+
+/**
+ * Property bindings (the hosted `bindings`): a bound prop reads the property (`path`),
+ * the node's own value as its fallback when the property has no default; a bound style
+ * key becomes a class map (see `styleAttrs`).
+ */
+const bindProperties = (env: Env, properties: PropertyDef[], nodes: Map<string, ModelNode>, path: (property: PropertyDef) => string) => {
+  env.substitutions ??= new Map()
+  env.styleBindings ??= new Map()
+  for (const property of properties) {
+    if (property.kind === 'slot') continue
+    for (const binding of property.bindings ?? []) {
+      const node = nodes.get(binding.nodeId) ?? fail(env, undefined, `property ${property.name} is bound to the unknown node ${binding.nodeId}`)
+      if (binding.target === 'style') {
+        const values = property.kind === 'select' ? property.options ?? [] : parseStyleKey(binding.prop)?.token.values ?? fail(env, node, `unknown style token ${binding.prop}`)
+        env.styleBindings.set(node.id, [...env.styleBindings.get(node.id) ?? [], { key: binding.prop, path: path(property), hasDefault: property.default !== undefined, select: property.kind === 'select', values }])
+        continue
+      }
+      const swapped = env.substitutions.get(node.id) ?? {}
+      const current = swapped[binding.prop] ?? node.props?.[binding.prop]
+      swapped[binding.prop] = property.default === undefined && !property.required && current !== undefined ? { $bind: path(property), fallback: current } : { $bind: path(property) }
+      env.substitutions.set(node.id, swapped)
+    }
+  }
+}
+
+const nodeIndex = (root: ModelNode) => {
+  const nodes = new Map<string, ModelNode>()
+  const visit = (node: ModelNode) => {
+    nodes.set(node.id, node)
+    node.children?.forEach(visit)
+  }
+  visit(root)
+  return nodes
+}
 
 /** The script lines of the composables the template uses outside a page's declarations. */
 const composableLines = (env: Env) => [
@@ -667,14 +771,28 @@ const layoutFile = (model: Model, layout: LayoutFile): GeneratedFile => {
   const source = model.paths[layout.id] ?? `.bildr/layouts/${layout.name}.json`
   const env = newEnv(model, source)
   env.roots.set('site', siteRoot(env))
+  // Layout variables: the page's values (route meta) over the defaults, read as `layout.<name>`.
+  const variables = layout.variables ?? []
+  env.roots.set('layout', refRoot('layout', () => env.needs.add('layout')))
+  bindProperties(env, variables, nodeIndex(layout.root), variable => `layout.${variable.name}`)
   const slots = new Map(layout.slots.map(slot => [slot.nodeId, slot.name]))
   const template = render(env, layout.root, '  ', { slots })
-  const script = [...composableLines(env), ...handlerLines(env)]
+  const defaults = variables.filter(variable => variable.default !== undefined).map(variable => `${variable.name}: ${expression(env, undefined, variable.default, 'script')}`)
+  const types = variables.map(variable => `${variable.name}${variable.default === undefined ? '?' : ''}: ${propertyType(env, variable)}`)
+  const layoutLines = env.needs.has('layout')
+    ? ['const route = useRoute()', `const layout = computed(() => ({ ${[...defaults, '...route.meta.layoutValues'].join(', ')} }) as { ${types.join(', ')} })`]
+    : []
+  const script = [...composableLines(env), ...layoutLines, ...env.variantLines, ...handlerLines(env)]
   while (script[0] === '') script.shift()
   return { path: `layers/core/app/layouts/${layout.name}.vue`, owner: 'managed', source, content: sfc(source, script, template) }
 }
 
-const PROPERTY_TYPES: Record<string, string> = { text: 'string', number: 'number', boolean: 'boolean', image: 'string', link: 'string' }
+const PROPERTY_TYPES: Record<string, string> = { text: 'string', textarea: 'string', number: 'number', boolean: 'boolean', image: 'string', link: 'string', icon: 'string', field: 'string' }
+
+/** The TS type of a plain property or layout variable: a select is the union of its options. */
+const propertyType = (env: Env, property: PropertyDef) => property.kind === 'select'
+  ? (property.options ?? fail(env, undefined, `select property ${property.name} needs options`)).map(option => tsString(option)).join(' | ')
+  : PROPERTY_TYPES[property.kind] ?? fail(env, undefined, `${property.kind} properties can't be generated yet`)
 
 const componentFile = (context: ModuleContext, component: ComponentFile): GeneratedFile => {
   const source = context.source(component.id)
@@ -692,33 +810,19 @@ const componentFile = (context: ModuleContext, component: ComponentFile): Genera
       const entity = entityOf(env, undefined, property.entity ?? fail(env, undefined, `property ${property.name} needs an entity`))
       imports.push(`import type { ${entity.name} } from '#${context.name}/domain/${entityNames(entity).file}'`)
       type = property.pick?.length ? `Pick<${entity.name}, ${property.pick.map(name => tsString(name)).join(' | ')}>` : entity.name
+      if (property.many) type = `${type}[]`
     } else {
-      type = PROPERTY_TYPES[property.kind] ?? fail(env, undefined, `${property.kind} properties can't be generated yet`)
+      type = propertyType(env, property)
     }
     props.push(`  ${property.name}${property.required ? '' : '?'}: ${type}`)
     if (property.default !== undefined) defaults.push(`${property.name}: ${expression(env, undefined, property.default, 'script')}`)
+    // vue/require-default-prop: an optional prop states that it has no default (a boolean's is false).
+    else if (!property.required && property.kind !== 'boolean') defaults.push(`${property.name}: undefined`)
   }
 
-  // Variants: style overrides become a class map on the node (see `styleAttrs`), `hidden` a v-if.
-  const variantMap = new Map<string, Variant>()
-  const nodes = new Map<string, ModelNode>()
-  const collect = (node: ModelNode) => {
-    nodes.set(node.id, node)
-    node.children?.forEach(collect)
-  }
-  collect(component.root)
-  for (const variant of component.variants) {
-    for (const [id, override] of Object.entries(variant.overrides)) {
-      const node = nodes.get(id) ?? fail(env, undefined, `variant ${variant.name} overrides unknown node ${id}`)
-      const entry = variantMap.get(id) ?? { base: camel(id.replace(/^n_/, '')), styles: component.variants.map(({ name, overrides }): [string, Record<string, string>] => [name, overrides[id]?.style ?? {}]), hiddenIn: [] }
-      for (const [key, value] of Object.entries(override.props ?? {})) {
-        if (key === 'hidden' && value === true) entry.hiddenIn.push(variant.name)
-        else fail(env, node, `variant ${variant.name}: overriding ${key} can't be generated yet`)
-      }
-      variantMap.set(id, entry)
-    }
-  }
-  env.variants = variantMap
+  const nodes = nodeIndex(component.root)
+  const variantLine = variantsOf(env, component, nodes)
+  bindProperties(env, component.properties, nodes, property => property.name)
 
   const template = render(env, component.root, '  ')
   if (component.variants.length) {
@@ -731,7 +835,7 @@ const componentFile = (context: ModuleContext, component: ComponentFile): Genera
     : defaults.length
       ? [`${declare}withDefaults(defineProps<{\n${props.join('\n')}\n}>(), { ${defaults.join(', ')} })`]
       : [`${declare}defineProps<{\n${props.join('\n')}\n}>()`]
-  const script = [...imports, ...(imports.length ? [''] : []), ...define, ...composableLines(env), ...env.variantLines, ...handlerLines(env)]
+  const script = [...imports, ...(imports.length ? [''] : []), ...define, ...(variantLine ? ['', variantLine] : []), ...composableLines(env), ...env.variantLines, ...handlerLines(env)]
   while (script[0] === '') script.shift()
   return {
     path: `layers/${context.name}/app/components/${context.name}/${component.name}.vue`,
@@ -739,6 +843,118 @@ const componentFile = (context: ModuleContext, component: ComponentFile): Genera
     source,
     content: sfc(source, script, template)
   }
+}
+
+type Override = ComponentFile['variants'][number]['overrides'][string]
+type VariantDef = ComponentFile['variants'][number]
+
+/** `top` over `below`: props and style merge, a key `top` sets is no longer removed, and one it removes no longer set (the canvas's `layerOverride`). */
+const layerOverride = (below: Override | undefined, top: Override | undefined): Override | undefined => {
+  if (!below || !top) return top ?? below
+  const style = { ...below.style, ...top.style }
+  for (const key of top.unset ?? []) Reflect.deleteProperty(style, key)
+  const unset = [...new Set([...(below.unset ?? []).filter(key => !(key in (top.style ?? {}))), ...(top.unset ?? [])])]
+  return { props: { ...below.props, ...top.props }, style, unset }
+}
+
+/** A node's style in a variant: its own tokens with the override's, less the ones it removes. */
+const styleIn = (style: Record<string, string>, override: Override | undefined) => {
+  const merged = { ...style, ...override?.style }
+  for (const key of override?.unset ?? []) Reflect.deleteProperty(merged, key)
+  return merged
+}
+
+/**
+ * A component's variants, per node they override: the style of each (a class map,
+ * see `styleAttrs`), the variants that hide it, and the props they change
+ * (`$$variants` expressions). A state shows its own overrides over its base's.
+ * With states or interactions the component is interactive: style changes
+ * animate (`transition`), and hover and pressed states render as `group-hover`
+ * and `group-active` classes when CSS can express them (style-only states, no
+ * interactions); otherwise the core `useVariantState` composable keeps the
+ * variant it shows, and the line declaring it is returned.
+ */
+const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string, ModelNode>): string | undefined => {
+  const variants = component.variants
+  if (!variants.length) return undefined
+  const byId = new Map(variants.map(variant => [variant.id, variant]))
+  const nameOf = (id: string) => id === '' ? 'default' : byId.get(id)?.name ?? fail(env, undefined, `unknown variant ${id}`)
+  const effective = (variant: VariantDef, id: string) => layerOverride(variant.state?.of ? byId.get(variant.state.of)?.overrides[id] : undefined, variant.overrides[id])
+  const states = variants.filter(variant => variant.state)
+  const interactions = [component.interactions ?? [], ...variants.map(variant => variant.interactions ?? [])].flat()
+  const interactive = states.length > 0 || interactions.length > 0
+  const group = kebab(component.name)
+  const bases: Array<{ id: string, name: string }> = [{ id: '', name: 'default' }, ...variants.filter(variant => !variant.state).map(({ id, name }) => ({ id, name }))]
+  const stateOf = (base: string, kind: 'hover' | 'pressed') => states.find(variant => variant.state!.of === base && variant.state!.kind === kind)
+  let css = interactive && !interactions.length && states.every(state => Object.values(state.overrides).every(override => !override.props && !override.unset?.length))
+
+  const timingOf = (variant?: VariantDef) => transitionTimingClasses(variant?.transition ?? (variant?.state?.of ? byId.get(variant.state.of)?.transition : undefined) ?? component.transition ?? DEFAULT_TRANSITION)
+  const timing = interactive ? new Map([['default', timingOf()], ...variants.map(variant => [variant.name, timingOf(variant)] as const)]) : undefined
+  const map = new Map<string, Variant>()
+  env.substitutions ??= new Map()
+  for (const id of [...new Set(variants.flatMap(variant => Object.keys(variant.overrides)))]) {
+    const node = nodes.get(id) ?? fail(env, undefined, `a variant overrides the unknown node ${id}`)
+    const own = node.style ?? {}
+    const looks: Array<[string, Record<string, string>]> = [['default', own], ...variants.map(variant => [variant.name, styleIn(own, effective(variant, id))] as [string, Record<string, string>])]
+    const styleOf = new Map(looks)
+    const pointer: Variant['pointer'] = new Map()
+    for (const base of bases) {
+      const at = styleOf.get(base.name)!
+      const hover = stateOf(base.id, 'hover')
+      const pressed = stateOf(base.id, 'pressed')
+      const hoverStyle = hover ? styleOf.get(hover.name)! : at
+      const hoverKeys = changedKeys(at, hoverStyle)
+      const entries: Array<{ prefix: string, style: Record<string, string>, keys: string[] }> = hoverKeys.length ? [{ prefix: `group-hover/${group}:`, style: hoverStyle, keys: hoverKeys }] : []
+      if (pressed) {
+        // Pressed wins over hover: it restates every key hover changes, so each needs a value.
+        const pressedStyle = styleOf.get(pressed.name)!
+        const keys = [...new Set([...changedKeys(at, pressedStyle), ...hoverKeys])]
+        if (keys.some(key => pressedStyle[key] === undefined)) css = false
+        if (keys.length) entries.push({ prefix: `group-active/${group}:`, style: pressedStyle, keys })
+      }
+      if (entries.length) pointer.set(base.name, entries)
+    }
+    const hiddenIn = variants.filter(variant => effective(variant, id)?.props?.hidden === true).map(variant => variant.name)
+    map.set(id, { base: camel(id.replace(/^n_/, '')), styles: looks, pointer, hiddenIn, timing })
+    // Any other prop a variant overrides: one value per variant.
+    const keys = [...new Set(variants.flatMap(variant => Object.keys(effective(variant, id)?.props ?? {})))].filter(key => key !== 'hidden')
+    if (keys.length) {
+      const swapped = env.substitutions.get(id) ?? {}
+      for (const key of keys) {
+        const base = node.props?.[key]
+        swapped[key] = { $$variants: Object.fromEntries([['default', base], ...variants.map(variant => [variant.name, effective(variant, id)?.props?.[key] ?? base])]) as Record<string, Value> }
+      }
+      env.substitutions.set(id, swapped)
+    }
+  }
+  if (!css) for (const entry of map.values()) entry.pointer.clear()
+  env.variants = map
+  if (!interactive) return undefined
+  if (css) {
+    if ([...map.values()].some(entry => entry.pointer.size)) env.root = { id: component.root.id, classes: [`group/${group}`], attrs: [] }
+    return undefined
+  }
+
+  // Interactions or states CSS can't show: the core composable keeps the shown variant.
+  env.variantExpr = 'variant'
+  env.needs.add('props')
+  const parts: string[] = []
+  const stated = bases.flatMap((base) => {
+    const kinds = (['hover', 'pressed'] as const).flatMap(kind => stateOf(base.id, kind) ? [`${kind}: ${tsString(stateOf(base.id, kind)!.name)}`] : [])
+    return kinds.length ? [`${base.name}: { ${kinds.join(', ')} }`] : []
+  })
+  if (stated.length) parts.push(`  states: { ${stated.join(', ')} }`)
+  const owners = [['default', component.interactions ?? []] as const, ...variants.map(variant => [variant.name, variant.interactions ?? []] as const)].filter(([, list]) => list.length)
+  if (owners.length) {
+    const step = (interaction: (typeof interactions)[number]) => {
+      const { to, delay } = interaction.do[0]
+      return `{ on: ${tsString(interaction.on)}, to: ${tsString(nameOf(to))}${delay ? `, delay: ${delay}` : ''} }`
+    }
+    parts.push(['  interactions: {', owners.map(([name, list]) => `    ${name}: [${list.map(step).join(', ')}]`).join(',\n'), '  }'].join('\n'))
+  }
+  const appear = interactions.some(interaction => interaction.on === 'appear')
+  env.root = { id: component.root.id, classes: [], attrs: [...(appear ? [attr('key', 'ref="variantRoot"')] : []), attr('event', 'v-on="on"')] }
+  return `const { variant, on } = useVariantState(() => props.variant, {\n${parts.join(',\n')}\n}${appear ? ', \'variantRoot\'' : ''})`
 }
 
 /** `/posts/:slug` → `posts/[slug].vue`, `/` → `index.vue`. */
@@ -854,6 +1070,11 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
   const imports: string[] = []
   const meta = [`name: ${tsString(page.name)}`]
   if (layout) meta.push(`layout: ${fills.length ? 'false' : tsString(layout.name)}`)
+  const layoutValues = Object.entries(page.layoutValues ?? {}).map(([id, value]) => {
+    const variable = layout?.variables?.find(entry => entry.id === id) ?? fail(env, undefined, `layout ${layout?.name ?? '(none)'} has no variable ${id}`)
+    return `${variable.name}: ${expression(env, undefined, value, 'script')}`
+  })
+  if (layoutValues.length) meta.push(`layoutValues: { ${layoutValues.join(', ')} }`)
   const validators = (page.params ?? []).filter(param => param.validate).map((param) => {
     const entity = context.module.entities.find(entry => entry.fields.some(field => field.id === param.validate!.field)) ?? fail(env, undefined, `unknown field ${param.validate!.field}`)
     const field = entity.fields.find(entry => entry.id === param.validate!.field)!

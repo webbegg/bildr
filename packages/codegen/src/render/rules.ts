@@ -219,7 +219,8 @@ export const BUTTON_SIZES = ['xs', 'sm', 'md', 'lg', 'xl'] as const
 export const INPUT_TYPES = ['text', 'email', 'password', 'url', 'tel', 'number'] as const
 
 /** An Iconify name, as Nuxt UI takes it. */
-const ICON_NAME = /^i-[a-z0-9]+(?:-[a-z0-9]+)+$/
+/** An Iconify icon name, like `i-lucide-send`. */
+export const ICON_NAME = /^i-[a-z0-9]+(?:-[a-z0-9]+)+$/
 
 export interface PropProblem {
   key: string
@@ -300,6 +301,92 @@ export interface RenderDivergence {
   generator: string
   /** What the canvas (`BildrNode.vue`) renders. */
   canvas: string
+}
+
+// ── Variants ──────────────────────────────────────────────────────────────────
+
+/**
+ * Node props that shape the generated markup (its element, route, form or
+ * list): fixed at generation, so neither a variant nor a property drives them.
+ */
+export const STRUCTURAL_PROPS: readonly string[] = ['level', 'tag', 'to', 'href', 'field', 'fields', 'action', 'items', 'as', 'component', 'values', 'multiline', 'inputType', 'type', 'rows', 'slot', 'when', 'layout']
+
+export interface TransitionSpec {
+  type: 'instant' | 'ease' | 'spring'
+  duration?: number
+  easing?: 'ease' | 'ease-in' | 'ease-out' | 'ease-in-out' | 'linear'
+  stiffness?: number
+  damping?: number
+}
+
+/** Used when neither the variant nor the component sets a transition (the canvas's `DEFAULT_TRANSITION`). */
+export const DEFAULT_TRANSITION: TransitionSpec = { type: 'ease', duration: 0.3, easing: 'ease' }
+
+const sides = (prefix: string, suffix = '') => ({ t: [`${prefix}-top${suffix}`], r: [`${prefix}-right${suffix}`], b: [`${prefix}-bottom${suffix}`], l: [`${prefix}-left${suffix}`] })
+const margin = sides('margin')
+const padding = sides('padding')
+const border = sides('border', '-width')
+
+/** The CSS properties a style token key sets that can animate (the canvas's `animatedProperties`); layout switches cannot. */
+export const ANIMATED_PROPERTIES: Record<string, string[]> = {
+  m: ['margin'], mx: [...margin.l, ...margin.r], my: [...margin.t, ...margin.b], mt: margin.t, mr: margin.r, mb: margin.b, ml: margin.l,
+  p: ['padding'], px: [...padding.l, ...padding.r], py: [...padding.t, ...padding.b], pt: padding.t, pr: padding.r, pb: padding.b, pl: padding.l,
+  gap: ['gap'],
+  w: ['width'], h: ['height'], minW: ['min-width'], maxW: ['max-width'], minH: ['min-height'], maxH: ['max-height'],
+  bg: ['background-color'], color: ['color'], borderColor: ['border-color'],
+  text: ['font-size', 'line-height'], font: ['font-weight'], tracking: ['letter-spacing'], leading: ['line-height'],
+  border: ['border-width'], borderT: border.t, borderR: border.r, borderB: border.b, borderL: border.l,
+  rounded: ['border-radius'], roundedTl: ['border-top-left-radius'], roundedTr: ['border-top-right-radius'], roundedBr: ['border-bottom-right-radius'], roundedBl: ['border-bottom-left-radius'],
+  shadow: ['box-shadow'], opacity: ['opacity']
+}
+
+/** The animatable CSS properties of style keys, in key order, each once. */
+export function animatedProperties(keys: readonly string[]): string[] {
+  return [...new Set(keys.flatMap(key => ANIMATED_PROPERTIES[parseStyleKey(key)?.token.key ?? ''] ?? []))]
+}
+
+const round = (value: number) => Math.round(value * 1000) / 1000
+
+/** A damped spring from 0 to 1 (mass 1): its settle time in seconds and its largest overshoot (the canvas's `springCurve`). */
+export function springSettle(stiffness: number, damping: number): { duration: number, overshoot: number } {
+  const w0 = Math.sqrt(Math.max(stiffness, 1))
+  const zeta = Math.max(damping, 0) / (2 * w0)
+  const at = (t: number): number => {
+    if (Math.abs(zeta - 1) < 1e-6) return 1 - Math.exp(-w0 * t) * (1 + w0 * t)
+    if (zeta < 1) {
+      const wd = w0 * Math.sqrt(1 - zeta * zeta)
+      return 1 - Math.exp(-zeta * w0 * t) * (Math.cos(wd * t) + (zeta * w0 / wd) * Math.sin(wd * t))
+    }
+    const root = Math.sqrt(zeta * zeta - 1)
+    const r1 = -w0 * (zeta - root)
+    const r2 = -w0 * (zeta + root)
+    return 1 + (r2 * Math.exp(r1 * t) - r1 * Math.exp(r2 * t)) / (r1 - r2)
+  }
+  let duration = 0.05
+  let peak = 1
+  for (let t = 0; t <= 5; t += 0.001) {
+    const value = at(t)
+    if (Math.abs(value - 1) > 0.001) duration = t
+    peak = Math.max(peak, value)
+  }
+  return { duration: round(duration), overshoot: round(peak - 1) }
+}
+
+/**
+ * The Tailwind timing classes of a transition (`duration-300 ease-[ease]`),
+ * empty for an instant one. Easings are the CSS keywords (arbitrary values:
+ * Tailwind's own `ease-in`… are other curves); a spring is its settle time
+ * with the cubic-bezier the canvas falls back to without `linear()`.
+ */
+export function transitionTimingClasses(transition: TransitionSpec): string {
+  if (transition.type === 'instant') return ''
+  if (transition.type === 'spring') {
+    const { duration, overshoot } = springSettle(transition.stiffness ?? 300, transition.damping ?? 30)
+    const bezier = overshoot > 0.001 ? `cubic-bezier(0.3,${round(1 + Math.min(overshoot * 2.6, 1.5))},0.6,1)` : 'cubic-bezier(0.25,0.1,0.25,1)'
+    return `duration-${Math.round(duration * 1000)} ease-[${bezier}]`
+  }
+  const easing = transition.easing ?? 'ease'
+  return `duration-${Math.round((transition.duration ?? 0.3) * 1000)} ${easing === 'linear' ? 'ease-linear' : `ease-[${easing}]`}`
 }
 
 /**

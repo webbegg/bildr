@@ -1,13 +1,16 @@
 import type { z } from 'zod'
-import { nodePropProblems, uiStepProblems } from '../render/rules.ts'
+import { customColorNames } from '../design/theme.ts'
+import { isStyleKeyOf, styleTokenProblem } from '../design/tokens.ts'
+import type { BreakpointBase } from '../design/tokens.ts'
+import { ICON_NAME, nodePropProblems, STRUCTURAL_PROPS, uiStepProblems } from '../render/rules.ts'
 import {
-  ActionFileSchema, ComponentFileSchema, DataSourceFileSchema, EntityFileSchema, EXPRESSION_KEYS, FixturesFileSchema, PATH_EXPRESSIONS, PROPERTY_PATH,
+  ActionFileSchema, ComponentFileSchema, DataSourceFileSchema, EntityFileSchema, EXPRESSION_KEYS, FixturesFileSchema, LAYOUT_VARIABLE_KINDS, PATH_EXPRESSIONS, PROPERTY_PATH,
   LayoutFileSchema, ManifestFileSchema, ModuleFileSchema, PageFileSchema, ProjectFileSchema, QueryFileSchema,
   RepositoryFileSchema, StateFileSchema, ThemeFileSchema
 } from './schemas.ts'
 import type {
   ActionFile, ComponentFile, DataSourceFile, EntityFile, FixturesFile, LayoutFile, ManifestFile, ModelNode, ModuleFile,
-  PageFile, ProjectFile, QueryFile, RepositoryFile, StateFile, ThemeFile, Value
+  PageFile, ProjectFile, PropertyDef, QueryFile, RepositoryFile, StateFile, ThemeFile, Value
 } from './schemas.ts'
 
 /** The model version this bildr reads and writes. Older files are migrated on load, newer ones refused. */
@@ -227,7 +230,12 @@ const NAME_LABELS: Partial<Record<FileKind, string>> = {
 const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
   const problems: ModelProblem[] = []
   const at = (id: string) => model.paths[id] ?? PROJECT_FILE
-  const report = (path: string, where: string, message: string) => problems.push({ path, message: `${where}: ${message}` })
+  const report = (path: string, where: string, message: string) => {
+    problems.push({ path, message: `${where}: ${message}` })
+  }
+  const base: BreakpointBase = model.project.breakpointBase ?? 'mobile'
+  const colors = customColorNames(model.theme)
+  const components = new Map(Object.values(model.modules).flatMap(mod => mod.components.map(component => [component.id, component] as const)))
 
   type RefKind = 'entity' | 'datasource' | 'layout' | 'page' | 'component' | 'query' | 'action' | 'state' | 'field'
   const byKind = Object.fromEntries((['entity', 'datasource', 'layout', 'page', 'component', 'query', 'action', 'state', 'field'] as const)
@@ -318,60 +326,215 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
     }
     for (const fixtures of mod.fixtures) ref(at(`fixtures:${fixtures.entity}`), 'entity', 'entity', fixtures.entity, 'entity')
     for (const component of mod.components) {
-      component.properties.forEach((prop, index) => prop.entity && ref(at(component.id), `properties.${index}.entity`, 'entity', prop.entity, 'entity'))
-      const nodeIds = new Set<string>()
-      const collectIds = (node: ModelNode) => {
-        nodeIds.add(node.id)
-        node.children?.forEach(collectIds)
-      }
-      collectIds(component.root)
+      const path = at(component.id)
+      component.properties.forEach((prop, index) => prop.entity && ref(path, `properties.${index}.entity`, 'entity', prop.entity, 'entity'))
+      const nodes = nodeIndex(component.root)
       component.properties.forEach((prop, index) => {
-        if (prop.kind === 'slot' && !prop.nodeId) report(at(component.id), `properties.${index}.nodeId`, 'A slot property needs the node whose children it replaces')
-        else if (prop.nodeId && !nodeIds.has(prop.nodeId)) report(at(component.id), `properties.${index}.nodeId`, `Unknown node "${prop.nodeId}"`)
+        if (prop.kind === 'slot' && !prop.nodeId) report(path, `properties.${index}.nodeId`, 'A slot property needs the node whose children it replaces')
+        else if (prop.nodeId && !nodes.has(prop.nodeId)) report(path, `properties.${index}.nodeId`, `Unknown node "${prop.nodeId}"`)
+        propertyProblems(prop, `properties.${index}`, path, nodes)
       })
-      checkTree(component.root, 'root', at(component.id))
+      variantProblems(component, path, nodes)
+      // A property named `layout` is the component's own root.
+      checkTree(component.root, 'root', path, component.properties.some(prop => prop.name === 'layout') ? undefined : null)
     }
     for (const page of mod.pages) {
       const path = at(page.id)
       if (page.layout) ref(path, 'layout', 'layout', page.layout, 'layout')
+      if (page.layoutValues) {
+        const layout = model.layouts.find(entry => entry.id === page.layout)
+        if (!page.layout) report(path, 'layoutValues', 'A page without a layout has no layout values')
+        else if (layout) {
+          for (const [id, value] of Object.entries(page.layoutValues)) {
+            const variable = layout.variables?.find(entry => entry.id === id)
+            if (!variable) report(path, `layoutValues.${id}`, `Layout ${layout.name} has no variable "${id}"`)
+            else if (isExpression(value)) report(path, `layoutValues.${id}`, 'Layout values are static (definePageMeta is compiled ahead of the page)')
+            else {
+              const problem = valueProblem(variable, value)
+              if (problem) report(path, `layoutValues.${id}`, problem)
+            }
+          }
+        }
+      }
       page.uses?.queries?.forEach((use, index) => ref(path, `uses.queries.${index}.query`, 'query', use.query, 'query'))
       page.uses?.actions?.forEach((use, index) => ref(path, `uses.actions.${index}.action`, 'action', use.action, 'action'))
       page.uses?.state?.forEach((use, index) => ref(path, `uses.state.${index}.state`, 'state', use.state, 'state'))
-      checkTree(page.root, 'root', path)
+      const uses = page.uses ?? {}
+      const aliased = [...uses.state ?? [], ...uses.queries ?? [], ...uses.actions ?? [], ...uses.computed ?? []].some(use => use.as === 'layout')
+      checkTree(page.root, 'root', path, aliased ? undefined : null)
     }
   }
   for (const layout of model.layouts) {
     const path = at(layout.id)
-    checkTree(layout.root, 'root', path)
-    const ids = new Set<string>()
-    const collect = (node: ModelNode) => {
-      ids.add(node.id)
-      node.children?.forEach(collect)
-    }
-    collect(layout.root)
+    const ids = nodeIndex(layout.root)
+    checkTree(layout.root, 'root', path, { name: layout.name, variables: new Set((layout.variables ?? []).map(variable => variable.name)) })
     layout.slots.forEach((slot, index) => !ids.has(slot.nodeId) && report(path, `slots.${index}.nodeId`, `Unknown node "${slot.nodeId}"`))
+    layout.variables?.forEach((variable, index) => {
+      if (!(LAYOUT_VARIABLE_KINDS as readonly string[]).includes(variable.kind)) {
+        report(path, `variables.${index}.kind`, `A layout variable is ${LAYOUT_VARIABLE_KINDS.slice(0, -1).join(', ')} or ${LAYOUT_VARIABLE_KINDS.at(-1)}`)
+      } else {
+        propertyProblems(variable, `variables.${index}`, path, ids)
+      }
+    })
   }
   return problems
 
-  function checkTree(node: ModelNode, where: string, path: string) {
+  function nodeIndex(root: ModelNode) {
+    const nodes = new Map<string, ModelNode>()
+    const visit = (node: ModelNode) => {
+      nodes.set(node.id, node)
+      node.children?.forEach(visit)
+    }
+    visit(root)
+    return nodes
+  }
+
+  function isExpression(value: Value | undefined) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).some(key => key.startsWith('$') || key === 'not')
+  }
+
+  /** Why `value` can't be the value of `property` (a default, an instance value or a layout value); expressions are checked where they are evaluated. */
+  function valueProblem(property: PropertyDef, value: Value): string | undefined {
+    if (property.kind === 'entity' && property.many) return isExpression(value) && '$bind' in (value as object) ? undefined : `${property.name} is a list of entities: bind it with $bind`
+    if (isExpression(value) || property.kind === 'entity' || property.kind === 'slot') return undefined
+    if (property.kind === 'number') return typeof value === 'number' ? undefined : `${property.name} must be a number`
+    if (property.kind === 'boolean') return typeof value === 'boolean' ? undefined : `${property.name} must be true or false`
+    if (typeof value !== 'string') return `${property.name} must be a string`
+    if (property.kind === 'select' && property.options && !property.options.includes(value)) return `"${value}" is not one of the options of ${property.name} (${property.options.join(', ')})`
+    if (property.kind === 'icon' && value !== '' && !ICON_NAME.test(value)) return 'An icon is a name like "i-lucide-send"'
+    if (property.kind === 'field' && !byKind.field.has(value)) return `Unknown field "${value}"`
+    return undefined
+  }
+
+  /** Rules shared by component properties and layout variables: options, bindings and the default. */
+  function propertyProblems(property: PropertyDef, where: string, path: string, nodes: Map<string, ModelNode>) {
+    if (property.kind === 'select' && !property.options) report(path, `${where}.options`, 'A select property needs its options')
+    if (property.required && property.optional) report(path, `${where}.optional`, 'A property is either required or optional')
+    if (property.kind === 'slot' && property.bindings) report(path, `${where}.bindings`, 'A slot property names its node with nodeId')
+    property.bindings?.forEach((binding, index) => {
+      const at = `${where}.bindings.${index}`
+      if (!nodes.has(binding.nodeId)) return report(path, `${at}.nodeId`, `Unknown node "${binding.nodeId}"`)
+      if (binding.target !== 'style') {
+        if (STRUCTURAL_PROPS.includes(binding.prop)) report(path, `${at}.prop`, `A property can't drive "${binding.prop}": it shapes the generated markup`)
+        return
+      }
+      if (!isStyleKeyOf(binding.prop, base)) return report(path, `${at}.prop`, styleTokenProblem(binding.prop, '', colors, base) ?? `Unknown style token "${binding.prop}"`)
+      if (property.kind !== 'text' && property.kind !== 'select') return report(path, at, `${property.name} (kind ${property.kind}) can't drive the style "${binding.prop}": use a text or select property`)
+      property.options?.forEach((option, o) => {
+        if (styleTokenProblem(binding.prop, option, colors, base)) report(path, `${where}.options.${o}`, `"${option}" is not a value of the style "${binding.prop}" ${property.name} drives`)
+      })
+      if (typeof property.default === 'string' && styleTokenProblem(binding.prop, property.default, colors, base)) {
+        report(path, `${where}.default`, `"${property.default}" is not a value of the style "${binding.prop}" ${property.name} drives`)
+      }
+    })
+    if (property.default !== undefined) {
+      const problem = valueProblem(property, property.default)
+      if (problem) report(path, `${where}.default`, problem)
+    }
+  }
+
+  /** Overrides (nodes, props, style, unset), states and interactions of a component's variants. */
+  function variantProblems(component: ComponentFile, path: string, nodes: Map<string, ModelNode>) {
+    const byId = new Map(component.variants.map(variant => [variant.id, variant]))
+    const driven = new Map<string, string>()
+    for (const property of component.properties) {
+      for (const binding of property.bindings ?? []) if (binding.target === 'style') driven.set(`${binding.nodeId}:${binding.prop}`, property.name)
+    }
+    const states = new Set<string>()
+    component.variants.forEach((variant, v) => {
+      for (const [id, override] of Object.entries(variant.overrides)) {
+        const at = `variants.${v}.overrides.${id}`
+        const node = nodes.get(id)
+        if (!node) {
+          report(path, at, `Variant ${variant.name} overrides the missing node "${id}"`)
+          continue
+        }
+        const props = override.props ?? {}
+        for (const key of Object.keys(props)) {
+          if (STRUCTURAL_PROPS.includes(key)) report(path, `${at}.props.${key}`, `A variant can't override "${key}": it shapes the generated markup`)
+          else checkValue(props[key], `${at}.props.${key}`, path)
+        }
+        for (const problem of nodePropProblems(node.type, { ...node.props, ...props })) {
+          if (problem.key in props && !STRUCTURAL_PROPS.includes(problem.key)) report(path, `${at}.props.${problem.key}`, problem.message)
+        }
+        for (const [key, value] of Object.entries(override.style ?? {})) {
+          const problem = styleTokenProblem(key, value, colors, base)
+          if (problem) report(path, `${at}.style.${key}`, problem)
+          else if (driven.has(`${id}:${key}`)) report(path, `${at}.style.${key}`, `${driven.get(`${id}:${key}`)} drives "${key}" of ${id}: a variant can't override it too`)
+        }
+        const removed = new Set<string>()
+        override.unset?.forEach((key, u) => {
+          const message = (isStyleKeyOf(key, base) ? undefined : styleTokenProblem(key, '', colors, base) ?? `Unknown style token "${key}"`)
+            ?? (removed.has(key) ? `Variant ${variant.name} removes "${key}" twice on ${id}` : undefined)
+            ?? (override.style && key in override.style ? `Variant ${variant.name} both overrides and removes "${key}" on ${id}` : undefined)
+            ?? (driven.has(`${id}:${key}`) ? `${driven.get(`${id}:${key}`)} drives "${key}" of ${id}: a variant can't override it too` : undefined)
+          if (message) report(path, `${at}.unset.${u}`, message)
+          removed.add(key)
+        })
+      }
+      if (variant.state) {
+        const { of, kind } = variant.state
+        const base = of === '' ? undefined : byId.get(of)
+        const at = `variants.${v}.state`
+        if (of === variant.id) report(path, `${at}.of`, `State ${variant.name} can't be a state of itself`)
+        else if (of !== '' && !base) report(path, `${at}.of`, `State ${variant.name} is a state of the missing variant "${of}"`)
+        else if (base?.state) report(path, `${at}.of`, `State ${variant.name} can't be a state of the state ${base.name}`)
+        else if (states.has(`${of}:${kind}`)) report(path, `${at}.kind`, `${base ? `Variant ${base.name}` : 'The primary variant'} already has a ${kind} state`)
+        states.add(`${of}:${kind}`)
+      }
+    })
+    const lists = [
+      { where: 'interactions', list: component.interactions ?? [] },
+      ...component.variants.map((variant, v) => ({ where: `variants.${v}.interactions`, list: variant.interactions ?? [] }))
+    ]
+    for (const { where, list } of lists) {
+      list.forEach((interaction, k) => {
+        const to = interaction.do[0].to
+        const target = to === '' ? undefined : byId.get(to)
+        if (to !== '' && !target) report(path, `${where}.${k}.do.0.to`, `An interaction goes to the missing variant "${to}"`)
+        else if (target?.state) report(path, `${where}.${k}.do.0.to`, `An interaction can't go to the state ${target.name}: states show from the pointer`)
+      })
+    }
+  }
+
+  /** `layout`: the variables `$bind: 'layout.<name>'` may read (a layout), null where no `layout` root exists, undefined where `layout` is the file's own root. */
+  function checkTree(node: ModelNode, where: string, path: string, layout?: { name: string, variables: Set<string> } | null) {
     if (node.type === 'Instance' && typeof node.props?.component === 'string' && !byKind.component.has(node.props.component)) {
       report(path, `${where}.props.component`, `Unknown component "${node.props.component}"`)
     }
-    for (const [key, value] of Object.entries(node.props ?? {})) checkValue(value, `${where}.props.${key}`, path)
+    if (node.type === 'Instance' && typeof node.props?.component === 'string') {
+      const component = components.get(node.props.component)
+      const values = node.props.values
+      if (component && values && typeof values === 'object' && !Array.isArray(values)) {
+        for (const [id, value] of Object.entries(values)) {
+          const property = component.properties.find(entry => entry.id === id)
+          const problem = property ? valueProblem(property, value) : `Component ${component.name} has no property "${id}"`
+          if (problem) report(path, `${where}.props.values.${id}`, problem)
+        }
+      }
+      const variant = node.props.variant
+      if (component && variant !== undefined && variant !== '' && !component.variants.some(entry => entry.id === variant)) {
+        report(path, `${where}.props.variant`, `Component ${component.name} has no variant "${String(variant)}"`)
+      }
+    }
+    for (const [key, value] of Object.entries(node.props ?? {})) checkValue(value, `${where}.props.${key}`, path, layout)
     for (const problem of nodePropProblems(node.type, node.props)) report(path, `${where}.props.${problem.key}`, problem.message)
     node.interactions?.forEach((interaction, i) => interaction.do.forEach((step, j) => {
       const at = `${where}.interactions.${i}.do.${j}`
       for (const problem of uiStepProblems(step)) report(path, `${at}.${problem.key}`, problem.message)
       if (step.kind === 'runAction' && typeof step.action === 'string' && !byKind.action.has(step.action)) report(path, `${at}.action`, `Unknown action "${step.action}"`)
       if (step.kind === 'setState' && typeof step.state === 'string' && !byKind.state.has(step.state)) report(path, `${at}.state`, `Unknown state "${step.state}"`)
-      for (const [key, value] of Object.entries(step)) if (key !== 'kind') checkValue(value as Value, `${at}.${key}`, path)
+      for (const [key, value] of Object.entries(step)) if (key !== 'kind') checkValue(value as Value, `${at}.${key}`, path, layout)
     }))
-    node.children?.forEach((child, index) => checkTree(child, `${where}.children.${index}`, path))
+    node.children?.forEach((child, index) => checkTree(child, `${where}.children.${index}`, path, layout))
   }
 
-  function checkValue(value: Value | undefined, where: string, path: string) {
+  function checkValue(value: Value | undefined, where: string, path: string, layout?: { name: string, variables: Set<string> } | null) {
     if (!value || typeof value !== 'object') return
-    if (Array.isArray(value)) return value.forEach((item, index) => checkValue(item, `${where}.${index}`, path))
+    if (Array.isArray(value)) return value.forEach((item, index) => checkValue(item, `${where}.${index}`, path, layout))
+    const bound = typeof value.$bind === 'string' ? value.$bind.split('.') : []
+    if (bound[0] === 'layout' && layout === null) report(path, `${where}.$bind`, '"layout" values are read in layouts only')
+    if (bound[0] === 'layout' && layout && (bound.length !== 2 || !layout.variables.has(bound[1]!))) report(path, `${where}.$bind`, `Layout ${layout.name} has no variable "${bound.slice(1).join('.')}"`)
     for (const key of Object.keys(value)) {
       if (key.startsWith('$') && !(EXPRESSION_KEYS as readonly string[]).includes(key)) report(path, `${where}.${key}`, `Unknown expression "${key}"`)
     }
@@ -386,6 +549,6 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       }
     }
     if (typeof value.page === 'string' && !byKind.page.has(value.page)) report(path, `${where}.page`, `Unknown page "${value.page}"`)
-    for (const [key, item] of Object.entries(value)) if (key !== 'page') checkValue(item, `${where}.${key}`, path)
+    for (const [key, item] of Object.entries(value)) if (key !== 'page') checkValue(item, `${where}.${key}`, path, layout)
   }
 }

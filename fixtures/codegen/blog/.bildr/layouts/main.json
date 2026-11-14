@@ -14,6 +14,16 @@
       "nodeId": "n_footer"
     }
   ],
+  "variables": [
+    {
+      "id": "prop_title",
+      "name": "title",
+      "kind": "text",
+      "label": "Section title",
+      "description": "Shown in the header next to the blog name.",
+      "default": "Blog"
+    }
+  ],
   "root": {
     "id": "n_root",
     "type": "Container",
@@ -26,6 +36,7 @@
       {
         "id": "n_header",
         "type": "Container",
+        "locked": true,
         "props": {
           "tag": "header"
         },
@@ -63,6 +74,19 @@
                 "style": {
                   "text": "lg",
                   "font": "semibold"
+                }
+              },
+              {
+                "id": "n_section",
+                "type": "Text",
+                "props": {
+                  "text": {
+                    "$bind": "layout.title"
+                  }
+                },
+                "style": {
+                  "text": "sm",
+                  "color": "muted"
                 }
               },
               {

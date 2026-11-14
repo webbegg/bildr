@@ -16,6 +16,7 @@ const fixtureModel = (): Model => {
 /** What the layouts, pages and components generate (T7c). */
 const UI_FILES = [
   'layers/blog/app/components/blog/PostCard.vue',
+  'layers/blog/app/components/blog/Tip.vue',
   'layers/blog/app/pages/index.vue',
   'layers/blog/app/pages/posts/[slug].vue',
   'layers/blog/app/pages/posts/new.vue',

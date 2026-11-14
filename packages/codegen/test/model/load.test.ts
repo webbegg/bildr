@@ -55,7 +55,7 @@ describe('loadModel on the golden fixture', () => {
     expect(blog.queries.find(query => query.name === 'featuredPosts')!.description).toBe('published posts, newest first, at most `limit`.')
     expect(blog.actions.map(action => action.name)).toEqual(['createPost', 'publishPost'])
     expect(blog.state.map(state => state.name)).toEqual(['preferences'])
-    expect(blog.components.map(component => component.name)).toEqual(['PostCard'])
+    expect(blog.components.map(component => component.name)).toEqual(['PostCard', 'Tip'])
     expect(blog.pages.map(page => page.path)).toEqual(['/', '/posts/new', '/posts/:slug'])
     expect(blog.fixtures[0]!.rows).toHaveLength(2)
     expect(result.model.manifest?.files['layers/blog/shared/domain/post.ts']?.owner).toBe('managed')

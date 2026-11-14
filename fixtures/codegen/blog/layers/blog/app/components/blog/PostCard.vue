@@ -5,29 +5,38 @@ import type { Post } from '#blog/domain/post'
 const props = withDefaults(defineProps<{
   post: Pick<Post, 'title' | 'slug' | 'body' | 'published'>
   cover?: string
-  variant?: 'default' | 'compact'
-}>(), { cover: '', variant: 'default' })
+  draftLabel?: string
+  variant?: 'default' | 'compact' | 'hovered'
+}>(), { cover: '', draftLabel: undefined, variant: 'default' })
 
 const cardVariants = {
-  default: 'p-5',
-  compact: 'p-3'
+  default: 'p-5 group-hover/post-card:shadow-md',
+  compact: 'p-3',
+  hovered: 'p-5 shadow-md'
 } as const
 
 const cardStackVariants = {
   default: 'gap-2',
-  compact: 'gap-1'
+  compact: 'gap-1',
+  hovered: 'gap-2'
+} as const
+
+const titleVariants = {
+  default: 'group-hover/post-card:text-primary',
+  compact: '',
+  hovered: 'text-primary'
 } as const
 </script>
 
 <template>
-  <div class="ring ring-default bg-default rounded-lg overflow-hidden" :class="cardVariants[props.variant]">
-    <div class="flex flex-col" :class="cardStackVariants[props.variant]">
+  <div class="ring ring-default group/post-card transition-[padding,box-shadow] duration-200 ease-[ease-out] bg-default rounded-lg overflow-hidden" :class="cardVariants[props.variant]">
+    <div class="flex transition-[gap] duration-200 ease-[ease-out] flex-col" :class="cardStackVariants[props.variant]">
       <img v-if="props.cover" :src="props.cover" :alt="props.post.title" class="block max-w-full rounded-md">
       <ULink :to="{ name: 'posts-slug', params: { slug: props.post.slug } }" class="underline-offset-4 hover:underline">
-        <h2 class="text-lg font-semibold tracking-tight">{{ props.post.title }}</h2>
+        <h2 class="transition-[color] duration-200 ease-[ease-out] text-lg font-semibold tracking-tight" :class="titleVariants[props.variant]">{{ props.post.title }}</h2>
       </ULink>
       <p v-if="props.variant !== 'compact'" class="whitespace-pre-line text-muted">{{ props.post.body }}</p>
-      <p v-if="!props.post.published" class="whitespace-pre-line px-2 py-0.5 bg-elevated text-xs rounded-sm self-start">Draft</p>
+      <p v-if="!props.post.published" class="whitespace-pre-line px-2 py-0.5 bg-elevated text-xs rounded-sm self-start">{{ props.draftLabel ?? 'Draft' }}</p>
       <div class="flex gap-3 flex-row items-center self-stretch">
         <slot name="actions" />
       </div>

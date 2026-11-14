@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { ThemeSchema } from '../design/theme.ts'
+import { BREAKPOINT_BASES } from '../design/tokens.ts'
 
 /**
  * The `.bildr/` model: one JSON file per artifact. The editor writes these
@@ -47,6 +48,8 @@ export interface ModelNode {
   id: string
   type: string
   name?: string
+  /** Locked on the canvas: editor metadata the generator ignores. */
+  locked?: boolean
   props?: Record<string, Value>
   style?: Record<string, string>
   interactions?: Array<z.infer<typeof InteractionSchema>>
@@ -57,6 +60,7 @@ export const ModelNodeSchema: z.ZodType<ModelNode> = z.lazy(() => z.object({
   id: LocalIdSchema,
   type: z.string().min(1),
   name: z.string().min(1).max(100).optional(),
+  locked: z.boolean().optional(),
   props: z.record(z.string(), ValueSchema).optional(),
   style: z.record(z.string(), z.string()).optional(),
   interactions: z.array(InteractionSchema).optional(),
@@ -73,7 +77,9 @@ export const ProjectFileSchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().max(500).optional(),
   defaultModule: ModuleNameSchema,
-  modules: z.array(ModuleNameSchema)
+  modules: z.array(ModuleNameSchema),
+  /** Which device the unprefixed style is for: `mobile` (absent; `sm:`/`md:`/`lg:` override wider) or `desktop` (`max-lg:`/`max-md:`/`max-sm:` override narrower). */
+  breakpointBase: z.enum(BREAKPOINT_BASES).optional()
 })
 
 /** The editor's `Theme` (D11): the same palette colours, font, radius and spacing the canvas paints. */
@@ -98,11 +104,79 @@ export const DataSourceFileSchema = z.object({
   }
 })
 
+// ── Component properties and layout variables ──────────────────────────
+
+export const PROPERTY_KINDS = ['text', 'textarea', 'number', 'boolean', 'select', 'image', 'link', 'icon', 'entity', 'field', 'slot'] as const
+/** The kinds a layout variable takes: plain values a page sets in `layoutValues`. */
+export const LAYOUT_VARIABLE_KINDS = ['text', 'textarea', 'number', 'boolean', 'select', 'image', 'link', 'icon'] as const
+
+/**
+ * Which node prop a property drives (the hosted `bindings`); with `target: 'style'`,
+ * `prop` is a style key of the node (`bg`, `md:p`) and the property's value is its token.
+ * A slot property names its node with `nodeId` instead.
+ */
+export const PropertyBindingSchema = z.object({ nodeId: LocalIdSchema, prop: z.string().min(1).max(64), target: z.literal('style').optional() })
+
+/**
+ * A component property or layout variable. `label`, `description` (a tooltip),
+ * `optional` (instances or pages may leave it empty) and `placeholder` only describe
+ * it to the editor.
+ */
+export const PropertySchema = z.object({
+  id: ArtifactIdSchema,
+  name: CamelNameSchema,
+  kind: z.enum(PROPERTY_KINDS),
+  label: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).optional(),
+  /** `select`: the values it takes, generated as a string-literal union. */
+  options: z.array(z.string().min(1).max(100)).min(1).optional(),
+  entity: ArtifactIdSchema.optional(),
+  pick: z.array(CamelNameSchema).optional(),
+  /** `entity`: a list of them (the instance binds it with `$bind`). */
+  many: z.boolean().optional(),
+  required: z.boolean().optional(),
+  optional: z.boolean().optional(),
+  placeholder: z.string().max(200).optional(),
+  default: ValueSchema.optional(),
+  /** A `slot` property: the node whose children an Instance's SlotFill replaces (they stay its default content). */
+  nodeId: LocalIdSchema.optional(),
+  bindings: z.array(PropertyBindingSchema).optional()
+})
+
+// ── Variants: states, interactions and transitions ─────────────────────
+
+/** A variant id, or `''` for the primary variant (the component's own tree). */
+export const VariantRefSchema = z.union([ArtifactIdSchema, z.literal('')])
+export const STATE_KINDS = ['hover', 'pressed'] as const
+export const VARIANT_EVENTS = ['click', 'mouseenter', 'mouseleave', 'appear'] as const
+export const TRANSITION_TYPES = ['instant', 'ease', 'spring'] as const
+export const TRANSITION_EASINGS = ['ease', 'ease-in', 'ease-out', 'ease-in-out', 'linear'] as const
+
+/** A variant shown while the pointer is over (`hover`) or pressing (`pressed`) an instance in its base variant `of`. */
+export const VariantStateSchema = z.object({ of: VariantRefSchema, kind: z.enum(STATE_KINDS) })
+
+/** On `on`, after `delay` seconds, the instance switches to variant `to` (a `setVariant` step). */
+export const VariantInteractionSchema = z.object({
+  on: z.enum(VARIANT_EVENTS),
+  do: z.tuple([z.object({ kind: z.literal('setVariant'), to: VariantRefSchema, delay: z.number().min(0).max(10).optional() })])
+})
+
+/** How style changes animate when an instance changes variant (the hosted `Transition`). */
+export const TransitionSchema = z.object({
+  type: z.enum(TRANSITION_TYPES),
+  duration: z.number().min(0).max(10).optional(),
+  easing: z.enum(TRANSITION_EASINGS).optional(),
+  stiffness: z.number().min(1).max(1000).optional(),
+  damping: z.number().min(0).max(100).optional()
+})
+
 export const LayoutFileSchema = z.object({
   ...schemaField,
   id: ArtifactIdSchema,
   name: ModuleNameSchema,
   slots: z.array(z.object({ id: LocalIdSchema, name: z.string().min(1), nodeId: LocalIdSchema })),
+  /** Values pages set (`layoutValues`) and the tree reads with `{ $bind: 'layout.<name>' }`. Absent means none. */
+  variables: z.array(PropertySchema).optional(),
   root: ModelNodeSchema
 })
 
@@ -273,22 +347,23 @@ export const ComponentFileSchema = z.object({
   ...schemaField,
   id: ArtifactIdSchema,
   name: PascalNameSchema,
-  properties: z.array(z.object({
-    id: ArtifactIdSchema,
-    name: CamelNameSchema,
-    kind: z.enum(['text', 'number', 'boolean', 'image', 'link', 'entity', 'slot']),
-    entity: ArtifactIdSchema.optional(),
-    pick: z.array(CamelNameSchema).optional(),
-    required: z.boolean().optional(),
-    default: ValueSchema.optional(),
-    /** A `slot` property: the node whose children an Instance's SlotFill replaces (they stay its default content). */
-    nodeId: LocalIdSchema.optional()
-  })),
+  properties: z.array(PropertySchema),
   variants: z.array(z.object({
     id: ArtifactIdSchema,
     name: CamelNameSchema,
-    overrides: z.record(LocalIdSchema, z.object({ props: z.record(z.string(), ValueSchema).optional(), style: z.record(z.string(), z.string()).optional() }))
+    /** Sparse, per node id: `unset` lists style keys the variant removes. */
+    overrides: z.record(LocalIdSchema, z.object({
+      props: z.record(z.string(), ValueSchema).optional(),
+      style: z.record(z.string(), z.string()).optional(),
+      unset: z.array(z.string()).optional()
+    })),
+    state: VariantStateSchema.optional(),
+    interactions: z.array(VariantInteractionSchema).max(20).optional(),
+    transition: TransitionSchema.optional()
   })),
+  /** The primary variant's interactions; `transition` is the primary's and every variant's default. */
+  interactions: z.array(VariantInteractionSchema).max(20).optional(),
+  transition: TransitionSchema.optional(),
   root: ModelNodeSchema
 })
 
@@ -298,6 +373,8 @@ export const PageFileSchema = z.object({
   name: z.string().regex(/^[a-z][a-z0-9-]*$/, 'Use a kebab-case route name'),
   path: z.string().regex(/^\/[\w\-/:]*$/, 'Use a path like /posts/:slug'),
   layout: ArtifactIdSchema.optional(),
+  /** The page's value per layout variable id; static, generated into `definePageMeta({ layoutValues })`. */
+  layoutValues: z.record(ArtifactIdSchema, ValueSchema).optional(),
   params: z.array(z.object({ name: CamelNameSchema, validate: z.object({ field: ArtifactIdSchema }).optional() })).optional(),
   seo: z.object({ title: ValueSchema.optional(), description: ValueSchema.optional() }).optional(),
   uses: z.object({
@@ -327,5 +404,7 @@ export type QueryFile = z.infer<typeof QueryFileSchema>
 export type ActionFile = z.infer<typeof ActionFileSchema>
 export type StateFile = z.infer<typeof StateFileSchema>
 export type ComponentFile = z.infer<typeof ComponentFileSchema>
+export type PropertyDef = z.infer<typeof PropertySchema>
+export type Transition = z.infer<typeof TransitionSchema>
 export type PageFile = z.infer<typeof PageFileSchema>
 export type FixturesFile = z.infer<typeof FixturesFileSchema>

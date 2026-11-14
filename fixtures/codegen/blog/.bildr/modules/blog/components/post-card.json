@@ -23,6 +23,20 @@
       "default": ""
     },
     {
+      "id": "prop_draft_label",
+      "name": "draftLabel",
+      "kind": "text",
+      "label": "Draft label",
+      "optional": true,
+      "placeholder": "Draft",
+      "bindings": [
+        {
+          "nodeId": "n_draft",
+          "prop": "text"
+        }
+      ]
+    },
+    {
       "id": "prop_actions",
       "name": "actions",
       "kind": "slot",
@@ -46,8 +60,33 @@
           }
         }
       }
+    },
+    {
+      "id": "var_hovered",
+      "name": "hovered",
+      "overrides": {
+        "n_card": {
+          "style": {
+            "shadow": "md"
+          }
+        },
+        "n_title": {
+          "style": {
+            "color": "primary"
+          }
+        }
+      },
+      "state": {
+        "of": "",
+        "kind": "hover"
+      }
     }
   ],
+  "transition": {
+    "type": "ease",
+    "duration": 0.2,
+    "easing": "ease-out"
+  },
   "root": {
     "id": "n_card",
     "type": "Card",

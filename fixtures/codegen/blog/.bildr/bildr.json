@@ -8,5 +8,6 @@
   "defaultModule": "blog",
   "modules": [
     "blog"
-  ]
+  ],
+  "breakpointBase": "mobile"
 }

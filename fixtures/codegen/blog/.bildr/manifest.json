@@ -28,8 +28,13 @@
     },
     "layers/blog/app/components/blog/PostCard.vue": {
       "owner": "managed",
-      "sha256": "c59132e79030509565561b55113f1958817a3faef4cbd942b038cb0862374de8",
+      "sha256": "f559b212d96fa908efecd8c78949f51e2d1e0c83c8bf8c10a6526c7ef86712c4",
       "source": ".bildr/modules/blog/components/post-card.json"
+    },
+    "layers/blog/app/components/blog/Tip.vue": {
+      "owner": "managed",
+      "sha256": "372f79024c577cb6b09ac7bd7c22520807bc2ca70f278e9285a8e3b5928f6ac7",
+      "source": ".bildr/modules/blog/components/tip.json"
     },
     "layers/blog/app/composables/blog/useAllPosts.ts": {
       "owner": "managed",
@@ -83,7 +88,7 @@
     },
     "layers/blog/app/pages/index.vue": {
       "owner": "managed",
-      "sha256": "278f8bffc2476ecb338bb213994bd3ee6d5af27a1307c3fec8fd04f1cf9d32b5",
+      "sha256": "c264ae90f8431d7a0e1b819aadff25060c1c56f232ff1c371fbfe4be7babd8e0",
       "source": ".bildr/modules/blog/pages/index.json"
     },
     "layers/blog/app/pages/posts/[slug].vue": {
@@ -93,7 +98,7 @@
     },
     "layers/blog/app/pages/posts/new.vue": {
       "owner": "managed",
-      "sha256": "8beac7e443c61f15d1e547bd823ab44d1fafd11f4daae1c48546bc6cac08d18e",
+      "sha256": "32972c90abf236a2997118a1aee2458ecf21a5882225660737c73210dc3ba416",
       "source": ".bildr/modules/blog/pages/new-post.json"
     },
     "layers/blog/nuxt.config.ts": {
@@ -229,6 +234,10 @@
       "sha256": "7f1b1de4dbc02d03ca5fc4e50f101dbaa09db45b2cbc96770f2f06e53a333aa8",
       "source": ".bildr/theme.json"
     },
+    "layers/core/app/composables/useVariantState.ts": {
+      "owner": "managed",
+      "sha256": "f7ef51ead129e93d3dcdd4a2036026858d72a56f85ead9636403ce4b34f1a459"
+    },
     "layers/core/app/data/query-client.ts": {
       "owner": "managed",
       "sha256": "5edda13ce52d11b72868c1f092512d685d48c1e2968682ae00550155b9ecbc42"
@@ -239,8 +248,12 @@
     },
     "layers/core/app/layouts/main.vue": {
       "owner": "managed",
-      "sha256": "c9f343228554a5a559b67d1a80a24a194f9bf5a3b1596e02a8b0efb32bde9704",
+      "sha256": "dc6d14d2d3d78d9b18fe701b0c7818333fd23c3392dd7f66a803b9272be45bae",
       "source": ".bildr/layouts/main.json"
+    },
+    "layers/core/app/types/page-meta.d.ts": {
+      "owner": "managed",
+      "sha256": "6e12023162dcc092ed1436e10fa0928ab4b6288d1aaa7ed3ea56d3b34a3121a0"
     },
     "layers/core/app/utils/errorMessage.ts": {
       "owner": "managed",
