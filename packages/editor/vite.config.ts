@@ -49,7 +49,8 @@ export default defineConfig({
     vue(),
     ui({
       root,
-      ui: { colors: { primary: 'emerald', neutral: 'zinc' } },
+      // The hosted editor's palette (app/app.config.ts); the chrome maps primary to the selection blue (main.css).
+      ui: { colors: { primary: 'green', neutral: 'slate' } },
       icon: { clientBundle: { icons: LUCIDE_ICONS, scan: { globInclude: ['src/**/*.{vue,ts}'], globExclude: ['node_modules', 'dist'] }, sizeLimitKb: 0 } }
     })
   ],

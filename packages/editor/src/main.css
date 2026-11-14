@@ -1,2 +1,122 @@
 @import "tailwindcss";
 @import "@nuxt/ui";
+
+/*
+ * Ported from the hosted editor (app/assets/css/main.css). Its tokens.css
+ * safelist is the canvas's concern here (canvas/canvas.css). The chrome font,
+ * Inter, is bundled (@fontsource-variable/inter, main.ts): the strict CSP
+ * (`font-src 'self' data:`) leaves no font service.
+ */
+@theme static {
+  --font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+
+  --color-green-50: #EFFDF5;
+  --color-green-100: #D9FBE8;
+  --color-green-200: #B3F5D1;
+  --color-green-300: #75EDAE;
+  --color-green-400: #00DC82;
+  --color-green-500: #00C16A;
+  --color-green-600: #00A155;
+  --color-green-700: #007F45;
+  --color-green-800: #016538;
+  --color-green-900: #0A5331;
+  --color-green-950: #052E16;
+}
+
+/*
+ * The editor chrome: a Stacki-style dark UI (palette from Stacki's tokens.css),
+ * mapped onto Nuxt UI's variables so its components pick it up. index.html
+ * puts the class on its <html>; the canvas iframe (canvas.html) is its own
+ * document and keeps the project theme. `bildr-chrome` scopes the same chrome
+ * to one subtree: the kit's modals and popovers (editorUi.ts) carry it, as
+ * Nuxt UI teleports them out of the app root.
+ * Framer's proportions: panels (`--editor-page`) darker than the canvas
+ * (`--editor-canvas`), so the work surface reads as the focus; soft field
+ * fills that stay readable on them; one accent, `--editor-selection`, for
+ * selection, focus, the active frame and the primary action. The canvas
+ * iframe can't see these variables: its overlays define the same accent on
+ * their own root.
+ * `--editor-context` is the accent of where you are, Framer's: the selection
+ * blue on pages, `--editor-component` purple while editing a component or a
+ * layout (`data-editor-context` on the editor root). The breadcrumb and the
+ * selected Layers row use it; instances and the Assets component and layout
+ * icons use `--editor-component` everywhere.
+ */
+html.bildr-editor,
+.bildr-chrome {
+  color-scheme: dark;
+
+  --editor-inset: #000;
+  --editor-page: #111;
+  --editor-surface: #222;
+  --editor-raised: #2e2e2e;
+  /* The work surface behind the frames, lighter than the panels. */
+  --editor-canvas: #1f1f1f;
+  /* The canvas's floating bar. */
+  --editor-bar: #111;
+  --editor-selection: #09f;
+  --editor-component: #85f;
+  --editor-context: var(--editor-selection);
+  /* A value set here (an instance's, a non-default one); purple while a variant is shown, where it overrides that variant. */
+  --editor-override: var(--editor-selection);
+  /* Text on the blue "set here" pills: the accent itself, there is one blue. */
+  --editor-info: var(--editor-selection);
+  --editor-provenance: #ffbc86;
+  --editor-provenance-bg: rgba(223, 100, 12, 0.2);
+
+  --ui-bg: var(--editor-page);
+  --ui-bg-muted: var(--editor-inset);
+  --ui-bg-elevated: var(--editor-surface);
+  --ui-bg-accented: var(--editor-raised);
+  --ui-bg-inverted: #f0f0f0;
+  --ui-border: rgba(255, 255, 255, 0.08);
+  --ui-border-muted: rgba(255, 255, 255, 0.05);
+  --ui-border-accented: rgba(255, 255, 255, 0.16);
+  --ui-border-inverted: #f0f0f0;
+  --ui-text-dimmed: #707070;
+  --ui-text-muted: #a6a6a6;
+  --ui-text-toned: #c2c2c2;
+  --ui-text: #f0f0f0;
+  --ui-text-highlighted: #fff;
+  --ui-text-inverted: #111;
+  --ui-primary: var(--editor-selection);
+  /*
+   * Two radii: Nuxt UI's `rounded-lg` (2 × this) is 8px, for controls, rows
+   * and menu items; `rounded-xl` (3 ×) is 12px, for popovers, modals and the
+   * floating bar. (`rounded-md` is 6px, `rounded-sm` 4px: small swatches and
+   * nested pills only.)
+   */
+  --ui-radius: 4px;
+
+  --font-sans: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/*
+ * Not on <html>: the rem, and with it the 4px spacing grid, stays 16px based.
+ * One 12px size (10px captions), at Inter's variable 450; titles use 550.
+ */
+html.bildr-editor body {
+  background: var(--ui-bg);
+  font-size: 12px;
+  font-weight: 450;
+}
+
+/* Inside a component or a layout: the context accent turns purple. */
+[data-editor-context='component'],
+[data-editor-context='layout'] {
+  --editor-context: var(--editor-component);
+}
+
+/* A component variant is shown (`data-editor-variant`): its overrides are purple, as in Framer. */
+[data-editor-variant] {
+  --editor-override: var(--editor-component);
+}
+
+/* What <html> and <body> give the editor page, for a subtree elsewhere. */
+.bildr-chrome {
+  color: var(--ui-text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 450;
+}
