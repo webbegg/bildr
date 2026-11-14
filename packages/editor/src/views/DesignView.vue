@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import CanvasFrame from '../design/CanvasFrame.vue'
+import LayerBreadcrumbs from '../design/LayerBreadcrumbs.vue'
+import ComponentsPanel from '../design/ComponentsPanel.vue'
+import LayoutsPanel from '../design/LayoutsPanel.vue'
+import ThemePanel from '../design/ThemePanel.vue'
 import DesignInspector from '../design/DesignInspector.vue'
 import DesignLayers from '../design/DesignLayers.vue'
 import DesignPalette from '../design/DesignPalette.vue'
 import ProblemsList from '../components/ProblemsList.vue'
 import DesignToolbar from '../design/DesignToolbar.vue'
+import VariantBar from '../design/VariantBar.vue'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
 
 /**
@@ -17,7 +22,7 @@ import { createDesign, DESIGN_KEY } from '../design/store.ts'
 
 const design = createDesign()
 provide(DESIGN_KEY, design)
-const side = ref<'layers' | 'add'>('layers')
+const side = ref<'layers' | 'add' | 'components' | 'layouts' | 'theme'>('layers')
 
 const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
 
@@ -59,7 +64,7 @@ onBeforeUnmount(() => {
       class="flex min-h-0 flex-1"
     >
       <aside class="flex w-64 shrink-0 flex-col border-r border-default">
-        <div class="flex gap-1 border-b border-default p-1">
+        <div class="flex flex-wrap gap-1 border-b border-default p-1">
           <UButton
             data-testid="tab-layers"
             label="Layers"
@@ -76,13 +81,44 @@ onBeforeUnmount(() => {
             :variant="side === 'add' ? 'soft' : 'ghost'"
             @click="side = 'add'"
           />
+          <UButton
+            data-testid="tab-components"
+            label="Components"
+            size="xs"
+            color="neutral"
+            :variant="side === 'components' ? 'soft' : 'ghost'"
+            @click="side = 'components'"
+          />
+          <UButton
+            data-testid="tab-layouts"
+            label="Layouts"
+            size="xs"
+            color="neutral"
+            :variant="side === 'layouts' ? 'soft' : 'ghost'"
+            @click="side = 'layouts'"
+          />
+          <UButton
+            data-testid="tab-theme"
+            label="Theme"
+            size="xs"
+            color="neutral"
+            :variant="side === 'theme' ? 'soft' : 'ghost'"
+            @click="side = 'theme'"
+          />
         </div>
         <div class="min-h-0 flex-1 overflow-y-auto">
           <DesignLayers v-show="side === 'layers'" />
           <DesignPalette v-show="side === 'add'" />
+          <ComponentsPanel v-if="side === 'components'" />
+          <LayoutsPanel v-if="side === 'layouts'" />
+          <ThemePanel v-if="side === 'theme'" />
         </div>
       </aside>
-      <CanvasFrame />
+      <div class="flex min-w-0 flex-1 flex-col">
+        <VariantBar />
+        <CanvasFrame />
+        <LayerBreadcrumbs />
+      </div>
       <aside class="flex w-80 shrink-0 flex-col border-l border-default">
         <DesignInspector />
       </aside>

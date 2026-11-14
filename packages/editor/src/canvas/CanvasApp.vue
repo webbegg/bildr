@@ -8,7 +8,8 @@ import type { Breakpoint, BreakpointBase } from '@bildr/codegen/design'
 import type { ComponentFile, ModelNode as TreeNode, Value } from '@bildr/codegen/model'
 import type { NodeBox } from '@bildr/editor-core/autoLayout'
 import { editorTakesKey, hasTextSelection } from '@bildr/editor-core/clipboardKeys'
-import { gapRects, paddingRects } from '@bildr/editor-core/handles'
+import { paddingRects } from '@bildr/editor-core/handles'
+import type { SpacingHandle } from '@bildr/editor-core/handles'
 import { labelPlacement } from '@bildr/editor-core/labelPlacement'
 import { measure as measureLines } from '@bildr/editor-core/measure'
 import type { MeasureLine } from '@bildr/editor-core/measure'
@@ -16,9 +17,11 @@ import { applyStylePreview, showsPatch } from '@bildr/editor-core/preview'
 import type { StylePatch } from '@bildr/editor-core/preview'
 import { FRAME_MIN_HEIGHT, viewportUnitRules, wheelPixels, zoomShortcut } from '@bildr/editor-core/viewport'
 import ModelNode from './ModelNode.vue'
+import TokenSheet from './TokenSheet.vue'
 import { dropTarget, nearestUnlocked } from './drop.ts'
 import type { Box, DropSlot } from './drop.ts'
 import { canvasKeyMessage, isCanvasMessage } from './protocol.ts'
+import { HANDLE_PX, useHandles } from './useHandles.ts'
 import type { CanvasMode, CanvasToEditor, EditorToCanvas, RenderMessage, SpacingOverlay } from './protocol.ts'
 import { pageNodeId, renderPlan } from './render.ts'
 import type { CanvasFile, PlanChild, PlanElement } from './render.ts'
@@ -42,9 +45,11 @@ import type { CanvasFile, PlanChild, PlanElement } from './render.ts'
  * run: component variants and toasts here; navigate, runAction and setState
  * steps are reported (`bildr:interaction`). Style previews from the editor
  * show over the file until it clears them or a render shows their values.
- * Not yet ported: handle drags (resize, padding and gap), drag-to-reorder
- * from the canvas, the insert slot math of armed tools (a click inserts at
- * the drop slot under the pointer) and the token sheet view (P4c).
+ * Handle drags (resize, padding and gap, `useHandles.ts`) preview live and
+ * commit once on release. The token sheet view (`view: 'tokens'`,
+ * `TokenSheet.vue`) shows the theme in place of the file. Not yet ported:
+ * drag-to-reorder from the canvas, and the insert slot math of armed tools (a
+ * click inserts at the drop slot under the pointer).
  */
 
 const SELECTION_ACCENT = '#09f'
@@ -54,8 +59,10 @@ const DRAG_MIME = 'application/x-bildr'
 
 const render = shallowRef<RenderMessage | null>(null)
 const mode = ref<CanvasMode>('edit')
-/** Preview mode: the variant each interactive instance shows, by its root's `data-node` id. */
+/** Preview mode: the variant each interactive instance's interactions switched it to, by its root's `data-node` id. It stays until another interaction changes it. */
 const shown = reactive<Record<string, string>>({})
+/** Preview mode: the hover or pressed state each instance under the pointer shows over its variant; it ends with the pointer. */
+const pointer = reactive<Record<string, string>>({})
 const selectedId = ref<string | null>(null)
 const selectedIds = ref<string[]>([])
 /** The node under the pointer here, or the one the editor's layers hover. */
@@ -91,7 +98,7 @@ const file = computed<CanvasFile | null>(() => {
 const plan = computed<PlanElement[]>(() => {
   const message = render.value
   if (!message || !file.value || message.view !== 'page') return []
-  return renderPlan({ file: file.value, components: message.components, layouts: message.layouts, data: message.data, ...(message.paths ? { paths: message.paths } : {}), variant: message.variant ?? null, shown: { ...shown } })
+  return renderPlan({ file: file.value, components: message.components, layouts: message.layouts, data: message.data, ...(message.paths ? { paths: message.paths } : {}), variant: message.variant ?? null, shown: { ...shown, ...pointer } })
 })
 
 /** The first (non-copy) plan element of each node id, for interactions and labels. */
@@ -209,6 +216,7 @@ function onMessage(event: MessageEvent) {
   } else if (message.type === 'bildr:mode') {
     mode.value = message.mode
     for (const key of Object.keys(shown)) Reflect.deleteProperty(shown, key)
+    for (const key of Object.keys(pointer)) Reflect.deleteProperty(pointer, key)
   } else if (message.type === 'bildr:select') {
     selectedId.value = message.nodeId
     selectedIds.value = message.nodeIds
@@ -247,30 +255,34 @@ const parentId = computed(() => {
   return tree && id ? findParent(tree, id)?.id ?? null : null
 })
 
-interface Spacing { padding: Array<Box & { side: string }>, gaps: Box[] }
-const spacing = shallowRef<Spacing | null>(null)
+const handles = useHandles({
+  root: () => render.value?.file.root,
+  theme: () => render.value?.theme,
+  selectedIds,
+  active,
+  tool,
+  mode,
+  view: () => render.value?.view,
+  zoom,
+  panelOverlay,
+  breakpoint: () => frameBreakpoint(),
+  firstCopy,
+  boxOf: id => boxes.selected.find(box => box.id === id) ?? outline(id),
+  setPreview: (nodeId, patch) => {
+    const { [nodeId]: _, ...others } = previews.value
+    previews.value = patch ? { ...others, [nodeId]: patch } : others
+  },
+  post
+})
+const { spacing, resizeHandles, spacingHandleList, dragLabel } = handles
 
-function measureSpacing(id: string, box: Outline): Spacing | null {
-  const el = firstCopy(id)
-  if (!el) return null
-  const px = (value: string) => Number.parseFloat(value) || 0
-  const css = getComputedStyle(el)
-  const border = { top: px(css.borderTopWidth), right: px(css.borderRightWidth), bottom: px(css.borderBottomWidth), left: px(css.borderLeftWidth) }
-  const rect = { x: box.left + border.left, y: box.top + border.top, width: box.width - border.left - border.right, height: box.height - border.top - border.bottom }
-  const insets = { top: px(css.paddingTop), right: px(css.paddingRight), bottom: px(css.paddingBottom), left: px(css.paddingLeft) }
-  const flex = css.display.includes('flex')
-  const axis = css.flexDirection.startsWith('column') ? 'col' : 'row'
-  const children = flex
-    ? [...el.children].filter(child => getComputedStyle(child).display !== 'none').map((child) => {
-        const r = child.getBoundingClientRect()
-        return { x: r.left + window.scrollX, y: r.top + window.scrollY, width: r.width, height: r.height }
-      })
-    : []
-  const content = { x: rect.x + insets.left, y: rect.y + insets.top, width: rect.width - insets.left - insets.right, height: rect.height - insets.top - insets.bottom }
-  return {
-    padding: panelOverlay.value === 'padding' ? paddingRects(rect, insets).filter(area => area.width > 0 && area.height > 0) : [],
-    gaps: panelOverlay.value === 'gap' && flex ? gapRects(content, children, axis).filter(gap => gap.width > 0 && gap.height > 0) : []
-  }
+/** The white ring around a handle, `px` wide on screen. */
+const ringShadow = (width: number) => `0 0 0 ${width / zoom.value}px #fff`
+/** A spacing handle: a pill across the side or gap it drags (12 × 4 on screen). */
+function spacingHandleStyle(handle: SpacingHandle) {
+  const across = handle.kind === 'padding' ? handle.side === 'left' || handle.side === 'right' : spacing.value?.axis === 'row'
+  const [w, h] = (across ? [4, 12] : [12, 4]).map(n => n / zoom.value) as [number, number]
+  return { left: `${handle.x - w / 2}px`, top: `${handle.y - h / 2}px`, width: `${w}px`, height: `${h}px`, boxShadow: ringShadow(1) }
 }
 
 let frame = 0
@@ -278,8 +290,7 @@ function track() {
   boxes.hover = hoveredId.value && !selectedIds.value.includes(hoveredId.value) ? outline(hoveredId.value) : null
   boxes.selected = selectedIds.value.map(outline).filter((box): box is Outline => !!box)
   boxes.parent = active.value && parentId.value ? outline(parentId.value) : null
-  const one = selectedIds.value.length === 1 ? boxes.selected[0] : undefined
-  spacing.value = panelOverlay.value && one && active.value ? measureSpacing(one.id, one) : null
+  handles.track()
   frame = requestAnimationFrame(track)
 }
 
@@ -396,6 +407,9 @@ function runVariant(root: PlanElement, on: string): boolean {
   const { to, delay } = interaction.do[0]
   const apply = () => {
     shown[info.key] = variantName(info.component, to)
+    // The state the pointer showed was of the variant it left: show the one of the new variant, if the pointer is still there.
+    Reflect.deleteProperty(pointer, info.key)
+    if (hoveredRoots.includes(info.key)) pointerState(root, 'hover')
   }
   if (delay) {
     const timer = setTimeout(() => {
@@ -416,11 +430,11 @@ function runVariant(root: PlanElement, on: string): boolean {
  */
 function pointerState(root: PlanElement, kind: 'hover' | 'pressed' | null) {
   const info = root.variantRoot!
-  const base = info.variant
+  const base = shown[info.key] ?? info.variant
   const baseId = base === 'default' ? '' : info.component.variants.find(variant => variant.name === base)?.id ?? ''
   const state = kind ? info.component.variants.find(variant => variant.state?.of === baseId && variant.state.kind === kind) : undefined
-  if (state) shown[info.key] = state.name
-  else if (!kind) Reflect.deleteProperty(shown, info.key)
+  if (state) pointer[info.key] = state.name
+  else if (!kind) Reflect.deleteProperty(pointer, info.key)
 }
 
 /** The plan elements from `target` up to the document, nearest first. */
@@ -473,6 +487,7 @@ function previewPointer(event: MouseEvent) {
 function onPointerMove(event: MouseEvent) {
   alt.value = event.altKey
   if (mode.value === 'preview') return previewPointer(event)
+  handles.moved(event)
   if (tool.value) indicator.value = slotAt(event.target, { x: event.clientX, y: event.clientY })?.indicator ?? null
   const id = reachableAt(event.target)
   if (id === hoveredId.value) return
@@ -481,6 +496,7 @@ function onPointerMove(event: MouseEvent) {
 }
 
 function onPointerLeave() {
+  handles.left()
   if (tool.value) indicator.value = null
   if (mode.value === 'preview') {
     for (const key of hoveredRoots) {
@@ -501,6 +517,8 @@ function onClick(event: MouseEvent) {
   event.preventDefault()
   if (mode.value === 'preview') return preview(event, 'click')
   event.stopPropagation()
+  // The click that ends a handle drag selects nothing.
+  if (handles.takesClick()) return
   if (tool.value) {
     const insert = slotAt(event.target, { x: event.clientX, y: event.clientY })
     indicator.value = null
@@ -516,6 +534,12 @@ function onPress(event: MouseEvent, kind: 'pressed' | null) {
   for (const element of planChain(event.target)) {
     if (element.variantRoot) pointerState(element, kind ?? 'hover')
   }
+}
+/** A press on a handle starts a drag; nothing else sees it (no text selection, no focus change). */
+const onPointerDown = (event: PointerEvent) => {
+  if (!handles.down(event)) return
+  event.preventDefault()
+  event.stopPropagation()
 }
 const onMouseDown = (event: MouseEvent) => {
   if (mode.value === 'preview') return onPress(event, 'pressed')
@@ -549,6 +573,11 @@ function onContextMenu(event: MouseEvent) {
 
 const SHORTCUT_KEYS = new Set(['Delete', 'Backspace', 'Escape', 'Enter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 function onKeyDown(event: KeyboardEvent) {
+  // Esc is a drag's own: it must not also clear the editor's selection.
+  if (event.key === 'Escape' && handles.cancel()) {
+    event.preventDefault()
+    return
+  }
   const meta = event.metaKey || event.ctrlKey
   if (event.key === 'Alt') alt.value = true
   if (event.code === 'Space') {
@@ -585,6 +614,7 @@ const listeners: Array<[EventTarget, string, EventListener, AddEventListenerOpti
   [document, 'dragleave', onDragLeave as EventListener, undefined],
   [document, 'drop', onDrop as EventListener, undefined],
   [document, 'dragend', clearIndicator, undefined],
+  [document, 'pointerdown', onPointerDown as EventListener, true],
   [document, 'mousemove', onPointerMove as EventListener, true],
   [document, 'click', onClick as EventListener, true],
   [document, 'mousedown', onMouseDown as EventListener, true],
@@ -610,6 +640,7 @@ onBeforeUnmount(() => {
   for (const [target, name, listener, options] of listeners) target.removeEventListener(name, listener, options)
   document.documentElement.removeEventListener('mouseleave', onPointerLeave)
   cancelAnimationFrame(frame)
+  handles.dispose()
   sizeObserver?.disconnect()
   for (const timer of timers) clearTimeout(timer)
 })
@@ -625,12 +656,10 @@ onBeforeUnmount(() => {
       :data-canvas-mode="mode"
       :style="{ minHeight: `${FRAME_MIN_HEIGHT}px`, [VIEWPORT_VAR]: `${viewportHeight}px`, [ACCENT_VAR]: accent }"
     >
-      <p
+      <TokenSheet
         v-if="render?.view === 'tokens'"
-        class="p-6 text-sm text-muted"
-      >
-        The token sheet comes with the Design screen.
-      </p>
+        :theme="render.theme"
+      />
       <ModelNode
         v-for="(element, i) in plan"
         :key="element.node ?? i"
@@ -664,30 +693,52 @@ onBeforeUnmount(() => {
           :style="{ ...boxStyle(boxes.hover), outlineColor: measurement ? '#f24822' : `color-mix(in srgb, var(${ACCENT_VAR}) 50%, transparent)` }"
           :data-hover-box="boxes.hover.id"
         />
-        <div
-          v-if="spacing && spacing.padding.length"
-          class="contents"
-          data-spacing-overlay="padding"
-        >
+        <template v-if="spacing">
           <div
-            v-for="area in spacing.padding"
-            :key="area.side"
-            class="pointer-events-none absolute z-50"
-            :style="{ ...rectStyle(area), ...hatch() }"
-          />
-        </div>
-        <div
-          v-if="spacing && spacing.gaps.length"
-          class="contents"
-          data-spacing-overlay="gap"
-        >
+            v-if="spacing.showPadding"
+            class="contents"
+            data-spacing-overlay="padding"
+          >
+            <div
+              v-for="area in paddingRects(spacing.rect, spacing.insets).filter(entry => entry.width > 0 && entry.height > 0)"
+              :key="area.side"
+              class="pointer-events-none absolute z-50"
+              :style="{ ...rectStyle(area), ...hatch() }"
+            />
+          </div>
           <div
-            v-for="(gap, i) in spacing.gaps"
-            :key="i"
-            class="pointer-events-none absolute z-50"
-            :style="{ ...rectStyle(gap), ...hatch() }"
+            v-if="spacing.showGap"
+            class="contents"
+            data-spacing-overlay="gap"
+          >
+            <div
+              v-for="(gap, i) in spacing.gaps.filter(entry => entry.width > 0 && entry.height > 0)"
+              :key="i"
+              class="pointer-events-none absolute z-50"
+              :style="{ ...rectStyle(gap), ...hatch() }"
+            />
+          </div>
+          <div
+            v-for="handle in spacingHandleList"
+            :key="handle.kind === 'padding' ? handle.side : `gap-${handle.index}`"
+            class="pointer-events-none absolute z-50 rounded-full bg-(--canvas-accent)"
+            :style="spacingHandleStyle(handle)"
+            :data-spacing-handle="handle.kind === 'padding' ? handle.side : 'gap'"
           />
-        </div>
+        </template>
+        <div
+          v-for="h in resizeHandles"
+          :key="h.handle"
+          class="pointer-events-none absolute z-50 rounded-full bg-(--canvas-accent)"
+          :style="{ left: `${h.x - HANDLE_PX / 2 / zoom}px`, top: `${h.y - HANDLE_PX / 2 / zoom}px`, width: `${HANDLE_PX / zoom}px`, height: `${HANDLE_PX / zoom}px`, boxShadow: ringShadow(1.5) }"
+          :data-resize-handle="h.handle"
+        />
+        <span
+          v-if="dragLabel"
+          class="pointer-events-none absolute z-50 origin-top-left rounded-sm bg-(--canvas-accent) px-1 text-[10px] leading-4 font-medium whitespace-nowrap text-white tabular-nums"
+          :style="{ left: `${dragLabel.x + 12 / zoom}px`, top: `${dragLabel.y + 12 / zoom}px`, transform: `scale(${1 / zoom})` }"
+          data-drag-label
+        >{{ dragLabel.text }}</span>
         <div
           v-for="(line, i) in measurement ?? []"
           :key="i"

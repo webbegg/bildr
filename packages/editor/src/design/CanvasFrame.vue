@@ -44,7 +44,9 @@ const renderMessage = computed<RenderMessage | null>(() => design.file.value
       data: design.data.value,
       paths: design.pagePaths.value,
       ...(design.fileKind.value === 'page' ? { path: design.pagePaths.value[design.fileId.value!] } : {}),
-      view: 'page'
+      // A component shows the variant being edited (the primary when none is).
+      ...(design.fileKind.value === 'component' ? { variant: design.variant.value ? { id: design.variant.value.id, label: design.variant.value.name } : { id: null, label: 'default' } } : {}),
+      view: design.view.value
     }
   : null)
 
@@ -57,6 +59,7 @@ const sendAll = () => {
   sendSelection()
   post({ type: 'bildr:mode', mode: design.mode.value })
   post({ type: 'bildr:hover', nodeId: design.hoveredId.value })
+  post({ type: 'bildr:dark', dark: design.dark.value })
   sendDevice()
 }
 
@@ -64,6 +67,7 @@ watch(renderMessage, () => ready.value && sendRender())
 watch(design.selectedIds, () => ready.value && sendSelection(), { deep: true })
 watch(design.hoveredId, id => ready.value && post({ type: 'bildr:hover', nodeId: id }))
 watch(design.mode, mode => ready.value && post({ type: 'bildr:mode', mode }))
+watch(design.dark, dark => ready.value && post({ type: 'bildr:dark', dark }))
 watch([design.device, scale], () => ready.value && sendDevice())
 
 const onMessage = (event: MessageEvent) => {
@@ -95,8 +99,12 @@ const onMessage = (event: MessageEvent) => {
     case 'bildr:pan':
       stage.value?.scrollBy({ left: -message.dx, top: -message.dy })
       break
+    case 'bildr:style-preview':
+      post({ type: 'bildr:preview', nodeId: message.nodeId, style: message.style })
+      break
     case 'bildr:style-commit':
-      void design.edit('node_update_style', { file: design.fileId.value!, nodeIds: [message.nodeId], ...(design.device.value.breakpoint ? { breakpoint: design.device.value.breakpoint } : {}), style: message.style })
+      // The patch keeps showing until the model it lands in is read again; a refusal drops it too.
+      void design.commitStyle(message.nodeId, message.style).finally(() => post({ type: 'bildr:preview', nodeId: message.nodeId, style: null }))
       break
     default:
       break

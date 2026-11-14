@@ -23,7 +23,7 @@ const design = useDesign()
 const sections = styleSections()
 const OPEN: StyleSection[] = ['Layout', 'Spacing', 'Size']
 
-const style = computed(() => design.selected.value?.style ?? {})
+const style = computed(() => design.inspected.value?.style ?? {})
 const spacingDensity = computed(() => design.theme.value.spacing)
 const device = computed(() => design.device.value)
 /** A scrub in progress: the stop its travel reached, shown before it is committed. */

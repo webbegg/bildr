@@ -60,6 +60,21 @@ const SIMPLE_KINDS = ['text', 'textarea', 'image', 'link', 'icon', 'number', 'bo
 const properties = computed(() => (component.value?.properties ?? []).filter(property => SIMPLE_KINDS.includes(property.kind)))
 const setValue = (id: string, entry: Value | null) => design.edit('instance_set_values', { file: design.fileId.value!, nodeId: props.node.id, values: { [id]: entry } })
 const setVariant = (event: Event) => design.edit('instance_set_values', { file: design.fileId.value!, nodeId: props.node.id, variant: (event.target as HTMLSelectElement).value })
+/** What an instance can be set to: the variants, not the states (hover and pressed follow the pointer). */
+const variants = computed(() => (component.value?.variants ?? []).filter(variant => !variant.state))
+const slots = computed(() => (component.value?.properties ?? []).filter(property => property.kind === 'slot'))
+const filled = (slot: string) => !!props.node.children?.some(child => child.type === 'SlotFill' && child.props?.slot === slot)
+const setSlot = (slot: string, on: boolean) => design.edit('instance_set_slot', { file: design.fileId.value!, nodeId: props.node.id, slot, filled: on })
+/** The other selected nodes (siblings in the same file) go into the slot as its content. */
+const moveIn = (slot: string) => design.edit('instance_set_slot', { file: design.fileId.value!, nodeId: props.node.id, slot, filled: true, nodeIds: design.selectedIds.value.filter(id => id !== props.node.id) })
+const detach = () => design.edit('instance_detach', { file: design.fileId.value!, nodeId: props.node.id })
+const replacements = computed(() => design.components.value.filter(entry => entry.id !== props.node.props?.component && entry.id !== design.fileId.value))
+const replace = async (event: Event) => {
+  const select = event.target as HTMLSelectElement
+  const id = select.value
+  select.value = ''
+  if (id) await design.edit('instance_replace', { file: design.fileId.value!, nodeId: props.node.id, component: id })
+}
 const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text-sm'
 </script>
 
@@ -165,7 +180,7 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
         <span class="truncate text-default">{{ component.name }}</span>
       </div>
       <label
-        v-if="component.variants.length"
+        v-if="variants.length"
         class="grid grid-cols-[6.5rem_1fr] items-center gap-2 text-xs text-muted"
       >
         Variant
@@ -179,7 +194,7 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
             Primary
           </option>
           <option
-            v-for="variant in component.variants"
+            v-for="variant in variants"
             :key="variant.id"
             :value="variant.id"
           >
@@ -231,6 +246,58 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
           @commit="setValue(property.id, $event === '' ? null : property.kind === 'number' ? Number($event) : $event)"
         />
       </label>
+      <div
+        v-for="slot in slots"
+        :key="slot.id"
+        class="grid grid-cols-[6.5rem_1fr] items-center gap-2 text-xs text-muted"
+      >
+        {{ slot.label ?? slot.name }}
+        <span class="flex items-center gap-2">
+          <input
+            type="checkbox"
+            :data-testid="`instance-slot-${slot.id}`"
+            class="size-4"
+            title="Fill the slot with this instance's own content"
+            :checked="filled(slot.id)"
+            @change="setSlot(slot.id, ($event.target as HTMLInputElement).checked)"
+          >
+          <button
+            v-if="design.selectedIds.value.length > 1"
+            type="button"
+            :data-testid="`instance-slot-fill-${slot.id}`"
+            class="text-xs text-primary"
+            @click="moveIn(slot.id)"
+          >Move selection in</button>
+        </span>
+      </div>
+      <div class="flex items-center gap-2 pt-1">
+        <UButton
+          data-testid="instance-detach"
+          label="Detach"
+          icon="i-lucide-unlink"
+          size="xs"
+          color="neutral"
+          variant="soft"
+          @click="detach()"
+        />
+        <select
+          data-testid="instance-replace"
+          :class="field"
+          aria-label="Replace with"
+          @change="replace"
+        >
+          <option value="">
+            Replace with…
+          </option>
+          <option
+            v-for="entry in replacements"
+            :key="entry.id"
+            :value="entry.id"
+          >
+            {{ entry.name }}
+          </option>
+        </select>
+      </div>
     </template>
   </div>
 </template>

@@ -24,7 +24,7 @@ const open = computed(() => !props.collapsed.has(props.node.id))
 const hasChildren = computed(() => !!props.node.children?.length)
 const label = computed(() => {
   const text = props.node.props?.text
-  return props.node.name ?? (typeof text === 'string' && text ? text : props.node.type)
+  return design.nameOf(props.node) ?? (typeof text === 'string' && text ? text : props.node.type)
 })
 const mark = computed(() => dropMark.value?.id === props.node.id ? dropMark.value.position : null)
 

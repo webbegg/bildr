@@ -9,7 +9,7 @@ import type { Device, DeviceId } from '@bildr/editor-core/styleFields'
 import { callAction, errorMessage, subscribeEvents } from '../api.ts'
 import type { BildrEvent } from '../api.ts'
 import type { CanvasFile } from '../canvas/render.ts'
-import type { CanvasMode, CanvasToEditor } from '../canvas/protocol.ts'
+import type { CanvasMode, CanvasToEditor, CanvasView } from '../canvas/protocol.ts'
 import type { ModelProblem } from '../types.ts'
 import { designData } from './data.ts'
 import { findNode, findParent, moveTarget, nodeIds, slotIndex } from './tree.ts'
@@ -51,6 +51,9 @@ export interface Catalog {
   layouts: Array<{ id: string, name: string }>
 }
 
+type Variant = ComponentFile['variants'][number]
+type Override = Variant['overrides'][string]
+
 type ModelResult = { ok: true, model: ProjectModel } | { ok: false, problems: ModelProblem[] }
 
 export type Edit = (name: string, input: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>
@@ -85,6 +88,12 @@ export const createDesign = () => {
   const catalog = shallowRef<Catalog | null>(null)
   const history = ref({ undo: 0, redo: 0 })
   const clipboard = shallowRef<ModelNode | null>(null)
+  /** The variant of the component being edited that edits are recorded in (null: the primary, whose edits change the component itself). */
+  const variantId = ref<string | null>(null)
+  /** Previews the project's dark colours in the canvas. */
+  const dark = ref(false)
+  /** What the canvas shows: the file, or the theme's token sheet. */
+  const view = ref<CanvasView>('page')
 
   const model = computed<ProjectModel | null>(() => result.value?.ok ? result.value.model : null)
   const problems = computed<ModelProblem[]>(() => result.value && !result.value.ok ? result.value.problems : [])
@@ -122,9 +131,46 @@ export const createDesign = () => {
   })
   const devices = computed(() => devicesFor(base.value))
 
+  /** The component being edited, and its active variant (a variant being edited records overrides). */
+  const component = computed<ComponentFile | null>(() => fileKind.value === 'component' ? file.value as ComponentFile : null)
+  const variant = computed<Variant | null>(() => component.value?.variants.find(entry => entry.id === variantId.value) ?? null)
+
   const selectedId = computed(() => selectedIds.value.at(-1) ?? null)
   const selected = computed<ModelNode | null>(() => file.value && selectedId.value ? findNode(file.value.root, selectedId.value) ?? null : null)
   const selectedParent = computed<ModelNode | null>(() => file.value && selectedId.value ? findParent(file.value.root, selectedId.value) ?? null : null)
+
+  /** What the active variant overrides of `nodeId`: its base variant's (a state's), then its own. */
+  const overrideOf = (nodeId: string): Required<Override> => {
+    const active = variant.value
+    const base = active?.state?.of ? component.value?.variants.find(entry => entry.id === active.state!.of)?.overrides[nodeId] : undefined
+    const own = active?.overrides[nodeId]
+    return { props: { ...base?.props, ...own?.props }, style: { ...base?.style, ...own?.style }, unset: [...base?.unset ?? [], ...own?.unset ?? []] }
+  }
+  /** The selected node as the active variant shows it: its overrides applied, its unset tokens removed. */
+  const inspected = computed<ModelNode | null>(() => {
+    const node = selected.value
+    if (!node || !variant.value) return node
+    const override = overrideOf(node.id)
+    const style = { ...node.style, ...override.style }
+    for (const key of override.unset) Reflect.deleteProperty(style, key)
+    return { ...node, props: { ...node.props, ...override.props }, style }
+  })
+  /** What a layer is called: its own name, or for an instance its component's. */
+  const nameOf = (node: ModelNode): string | undefined => node.name ?? (node.type === 'Instance' ? components.value.find(entry => entry.id === node.props?.component)?.name : undefined)
+  /** The layers from the root to the selected node, for the breadcrumbs. */
+  const breadcrumbs = computed<Array<{ id: string, label: string }>>(() => {
+    const root = file.value?.root
+    if (!root || !selectedId.value) return []
+    const chain: ModelNode[] = []
+    const walk = (node: ModelNode): boolean => {
+      chain.push(node)
+      if (node.id === selectedId.value || node.children?.some(walk)) return true
+      chain.pop()
+      return false
+    }
+    walk(root)
+    return chain.map(node => ({ id: node.id, label: nameOf(node) ?? node.type }))
+  })
 
   const isContainer = (type: string) => catalog.value?.nodeTypes.find(entry => entry.type === type)?.container ?? FALLBACK_CONTAINERS.includes(type)
 
@@ -144,6 +190,7 @@ export const createDesign = () => {
       result.value = next.ok && next.model ? { ok: true, model: next.model } : { ok: false, problems: next.problems ?? [] }
       if (errorFromRead) error.value = null
       if (!files.value.some(entry => entry.id === fileId.value)) fileId.value = files.value.find(entry => entry.kind === 'page')?.id ?? files.value[0]?.id ?? null
+      if (variantId.value && !variant.value) variantId.value = null
       keepSelection()
     } catch (caught) {
       error.value = errorMessage(caught)
@@ -217,14 +264,20 @@ export const createDesign = () => {
   const openFile = (id: string) => {
     if (id === fileId.value) return
     fileId.value = id
+    variantId.value = null
     selectedIds.value = []
+    reportContext()
+  }
+  /** Edits a variant of the component being edited (null: the primary). */
+  const selectVariant = (id: string | null) => {
+    variantId.value = id
     reportContext()
   }
 
   /** Tells the module what the editor shows, for agents (`editor_context_get`). Best effort. */
   const reportContext = () => {
     if (!fileId.value) return
-    void callAction('editor_context_set', { file: fileId.value, nodeId: selectedId.value, variant: null }).catch(() => {})
+    void callAction('editor_context_set', { file: fileId.value, nodeId: selectedId.value, variant: variantId.value }).catch(() => {})
   }
 
   const fileInput = () => fileId.value!
@@ -278,9 +331,9 @@ export const createDesign = () => {
     const out = await edit('node_wrap', { file: fileInput(), nodeIds: ids(), type })
     if (typeof out?.nodeId === 'string') select([out.nodeId])
   }
-  const makeComponent = async () => {
+  const makeComponent = async (name?: string) => {
     if (!selectedId.value) return
-    const out = await edit('component_create', { file: fileInput(), ...(ids().length > 1 ? { nodeIds: ids() } : { nodeId: selectedId.value }) })
+    const out = await edit('component_create', { file: fileInput(), ...(ids().length > 1 ? { nodeIds: ids() } : { nodeId: selectedId.value }), ...(name?.trim() ? { name: name.trim() } : {}) })
     if (typeof out?.nodeId === 'string') select([out.nodeId])
   }
   const setLocked = async (id: string, locked: boolean) => {
@@ -298,10 +351,44 @@ export const createDesign = () => {
     if (Array.isArray(out?.nodeIds)) select(out.nodeIds as string[])
   }
 
-  const setProps = (nodeId: string, props: Record<string, Value | null>) => edit('node_update_props', { file: fileInput(), nodeId, props })
-  /** Writes style tokens of the selection at the device's breakpoint (the base for a token without breakpoint variants). */
-  const setStyle = (style: Record<string, string | null>, breakpoint: string | undefined) =>
-    edit('node_update_style', { file: fileInput(), nodeIds: ids(), ...(breakpoint ? { breakpoint } : {}), style })
+  /** An edit of a component node while a variant is active: recorded in the variant, not in the node (`component_variant_set_override`). */
+  const override = (nodeId: string, patch: { props?: Record<string, Value | null>, style?: Record<string, string | null>, unset?: string[] }) =>
+    edit('component_variant_set_override', { component: fileId.value!, variant: variantId.value!, nodeId, ...patch })
+
+  /** The release of a canvas handle drag: its tokens are already keyed at the breakpoint the frame is at. */
+  const commitStyle = (nodeId: string, style: Record<string, string | null>) => variant.value
+    ? override(nodeId, { style })
+    : edit('node_update_style', { file: fileInput(), nodeIds: [nodeId], style })
+
+  const setProps = (nodeId: string, props: Record<string, Value | null>) => variant.value
+    ? override(nodeId, { props })
+    : edit('node_update_props', { file: fileInput(), nodeId, props })
+
+  /**
+   * Writes style tokens of the selection at the device's breakpoint (the base
+   * for a token without breakpoint variants). With a variant active they are
+   * its overrides: clearing a token the variant overrides gives back the
+   * primary's, clearing one only the primary sets removes it in the variant.
+   */
+  const setStyle = async (style: Record<string, string | null>, breakpoint: string | undefined) => {
+    if (!variant.value) return edit('node_update_style', { file: fileInput(), nodeIds: ids(), ...(breakpoint ? { breakpoint } : {}), style })
+    const prefix = breakpoint ? `${breakpoint}:` : ''
+    let out: Record<string, unknown> | undefined
+    for (const id of ids()) {
+      const own = variant.value.overrides[id]?.style ?? {}
+      const shown = inspected.value?.id === id ? inspected.value.style ?? {} : {}
+      const patch: { style: Record<string, string | null>, unset: string[] } = { style: {}, unset: [] }
+      for (const [key, value] of Object.entries(style)) {
+        const full = prefix + key
+        if (value !== null) patch.style[full] = value
+        else if (full in own) patch.style[full] = null
+        else if (full in shown) patch.unset.push(full)
+      }
+      if (!Object.keys(patch.style).length && !patch.unset.length) continue
+      out = await override(id, { ...(Object.keys(patch.style).length ? { style: patch.style } : {}), ...(patch.unset.length ? { unset: patch.unset } : {}) })
+    }
+    return out
+  }
 
   // ── The canvas's drops, keys and the editor's own keys ──────────────────
 
@@ -372,6 +459,7 @@ export const createDesign = () => {
   return {
     result, loading, error, zoom, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
     selectedIds, selectedId, selected, selectedParent, hoveredId, device, devices, deviceChoice, mode, history, clipboard,
+    component, variantId, variant, inspected, breadcrumbs, nameOf, dark, view, selectVariant, override, commitStyle,
     isContainer, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,
     setLocked, rename, copy, paste, setProps, setStyle, onDrop, onKey, start, dispose,
     chooseDevice: (id: DeviceId) => {

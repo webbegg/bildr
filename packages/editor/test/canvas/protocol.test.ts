@@ -4,7 +4,7 @@ import ui from '@nuxt/ui/vue-plugin'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadModel } from '../../../codegen/src/model/load.ts'
 import CanvasApp from '../../src/canvas/CanvasApp.vue'
-import type { CanvasToEditor, EditorToCanvas } from '../../src/canvas/protocol.ts'
+import type { CanvasToEditor, EditorToCanvas, RenderMessage } from '../../src/canvas/protocol.ts'
 import { createCanvasRouter } from '../../src/canvas/router.ts'
 import { blogModelFiles } from './fixture.ts'
 
@@ -35,7 +35,7 @@ const send = async (message: EditorToCanvas) => {
   await settle()
 }
 
-const render = (name: string, data: Record<string, unknown> = {}): EditorToCanvas => ({
+const render = (name: string, data: Record<string, unknown> = {}): RenderMessage => ({
   type: 'bildr:render',
   file: page(name),
   components: blog.components,
@@ -94,6 +94,29 @@ describe('render', () => {
     await settle()
     expect(node('n_h1')).toBeNull()
     await send(render('index'))
+    expect(node('n_h1')).not.toBeNull()
+  })
+})
+
+describe('token sheet', () => {
+  it('shows the theme\'s colours with their shades, its own colours, radius, spacing and font instead of the page', async () => {
+    await send({ ...render('index'), theme: { ...fixture.theme!, custom: { ink: '#112233' } }, view: 'tokens' })
+    expect(document.querySelector('[data-token-sheet]')).not.toBeNull()
+    expect(node('n_h1')).toBeNull()
+    for (const name of ['primary', 'secondary', 'success', 'info', 'warning', 'error', 'neutral']) {
+      expect(document.querySelectorAll(`[data-token-color="${name}"] [data-shade]`), name).toHaveLength(11)
+    }
+    const swatch = document.querySelector<HTMLElement>('[data-token-color="primary"] [data-shade="500"]')!
+    expect(swatch.style.backgroundColor).toContain('var(--ui-color-primary-500)')
+    expect(document.querySelector<HTMLElement>('[data-token-custom="ink"]')?.style.backgroundColor).toContain('var(--bildr-color-ink)')
+    expect(document.querySelector('[data-token-radius]')?.textContent).toContain('0.375rem')
+    expect(document.querySelector('[data-token-font]')?.textContent).toContain('Inter')
+  })
+
+  it('goes back to the page when it is sent again', async () => {
+    await send({ ...render('index'), view: 'tokens' })
+    await send(render('index'))
+    expect(document.querySelector('[data-token-sheet]')).toBeNull()
     expect(node('n_h1')).not.toBeNull()
   })
 })
@@ -210,5 +233,26 @@ describe('preview mode', () => {
       labels.push(toggle().textContent!.trim())
     }
     expect(labels).toEqual(['Show', 'Hide', 'Show', 'Hide', 'Show'])
+  })
+
+  it('keeps a variant a click switched to when the pointer leaves the instance, as the generated app does', async () => {
+    await send(render('posts-new', { createPost: { pending: false, error: null } }))
+    await send({ type: 'bildr:mode', mode: 'preview' })
+    const toggle = () => node('n_tip/n_tip_toggle')!
+    // The tip starts collapsed ("Show"); a click expands it ("Hide").
+    expect(toggle().textContent?.trim()).toBe('Show')
+    toggle().dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    toggle().dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    toggle().dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+    toggle().dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(toggle().textContent?.trim()).toBe('Hide')
+
+    node('n_cancel')!.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }))
+    await settle()
+    expect(toggle().textContent?.trim()).toBe('Hide')
+    document.documentElement.dispatchEvent(new MouseEvent('mouseleave'))
+    await settle()
+    expect(toggle().textContent?.trim()).toBe('Hide')
   })
 })
