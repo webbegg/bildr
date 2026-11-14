@@ -11,8 +11,9 @@ import type { QueryFile } from '../model/schemas.ts'
  * live queries: a null field matches no condition (`ne` too), nulls sort
  * first (both ways), words sort by `localeCompare` but a condition compares them by
  * code unit (`<`, as the live query's `lt`/`gte` do: capitals before lower case), a
- * limited query without an ordering is ordered by the key (`id`, as the generated
- * composable adds), `like` is case-sensitive with `%` and `_`, a missing parameter
+ * query without an ordering comes back in key order (`id`, by code unit, strings before
+ * numbers: a live query's default, and what the generated composable adds for a limited
+ * one), whatever order the rows arrive in, `like` is case-sensitive with `%` and `_`, a missing parameter
  * matches nothing. Pure: no Vue, no DOM, no fs.
  */
 
@@ -42,6 +43,12 @@ const resolve = (value: unknown, query: QueryShape, args: Record<string, unknown
 
 const nil = (value: unknown): value is null | undefined => value === null || value === undefined
 const plain = (value: unknown): unknown => value instanceof Date ? value.getTime() : value
+
+/** How the live query collection orders keys: by code unit, strings before numbers. */
+const compareKeys = (a: unknown, b: unknown): number => {
+  if (typeof a === typeof b) return (a as string) < (b as string) ? -1 : (a as string) > (b as string) ? 1 : 0
+  return typeof a === 'string' ? -1 : 1
+}
 
 /** Orders two values: null and undefined first (a descending order doesn't move them), numbers and booleans by value, anything else as words. */
 const compare = (a: unknown, b: unknown): number => {
@@ -96,22 +103,20 @@ export function evaluateQuery(query: QueryShape, rows: readonly Row[], args: Rec
     found = found.filter(row => matches(op, row[field], value))
   }
   const total = found.length
-  // The generated composable orders a limited query by the key when it has no ordering (a live query refuses a limit without one).
-  const ordering = query.orderBy?.length ? query.orderBy : query.limit !== undefined ? [{ field: 'id', direction: 'asc' as const }] : []
-  if (ordering.length) {
-    found = found
-      .map((row, index) => ({ row, index }))
-      .sort((a, b) => {
-        for (const { field, direction } of ordering) {
-          const [x, y] = [a.row[field], b.row[field]]
-          // Nulls come first whichever way it goes (TanStack DB's default).
-          const result = nil(x) || nil(y) ? compare(x, y) : direction === 'desc' ? compare(y, x) : compare(x, y)
-          if (result) return result
-        }
-        return a.index - b.index
-      })
-      .map(entry => entry.row)
-  }
+  // Rows that tie, or a query with no ordering, come back in key order (a live query's default), not in the API's.
+  const ordering = query.orderBy ?? []
+  found = found
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      for (const { field, direction } of ordering) {
+        const [x, y] = [a.row[field], b.row[field]]
+        // Nulls come first whichever way it goes (TanStack DB's default).
+        const result = nil(x) || nil(y) ? compare(x, y) : direction === 'desc' ? compare(y, x) : compare(x, y)
+        if (result) return result
+      }
+      return compareKeys(a.row.id, b.row.id) || a.index - b.index
+    })
+    .map(entry => entry.row)
   const limit = resolve(query.limit, query, args)
   if (typeof limit === 'number' && Number.isInteger(limit) && limit >= 0) found = found.slice(0, limit)
   if (query.result === 'one') found = found.slice(0, 1)

@@ -107,6 +107,15 @@ describe.skipIf(MISSING)('the evaluator and the generated query composable agree
     expect(evaluateQuery(file, rows, args).rows.map(row => row.id)).toEqual(app)
   })
 
+  it('agrees on the order of rows that arrive out of key order (a query without a sort)', async () => {
+    const shuffled = [rows[3]!, rows[0]!, rows[4]!, rows[1]!, rows[2]!]
+    for (const file of [query({}), query({ orderBy: [{ field: 'published', direction: 'desc' }] }), query({ limit: 3 }), query({ where: { op: 'eq', field: 'published', value: true } }), query({ result: 'one', where: { op: 'eq', field: 'published', value: false } })]) {
+      const app = (await generated(file, [], shuffled)).map(row => row?.id)
+      expect(app.length).toBeGreaterThan(0)
+      expect(evaluateQuery(file, shuffled, {}).rows.map(row => row.id)).toEqual(app)
+    }
+  })
+
   it('also agrees on the model\'s own queries and fixtures', async () => {
     const fixtures = loaded.model.modules.blog!.fixtures.find(entry => entry.entity === 'ent_post')!.rows
     expect(fixtures.length).toBeGreaterThan(0)

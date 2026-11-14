@@ -47,6 +47,12 @@ describe('evaluateQuery (the generated queries\' semantics, V4)', () => {
     expect(run.rows.map(row => row.id)).toEqual(['a', 'b'])
   })
 
+  it('returns a query without an ordering in key order, and breaks ties by key, whatever order the rows arrive in', () => {
+    const shuffled = [posts[3]!, posts[0]!, posts[2]!, posts[1]!]
+    expect(evaluateQuery({ params: [], result: 'many' }, shuffled).rows.map(row => row.id)).toEqual(['a', 'b', 'c', 'd'])
+    expect(evaluateQuery({ params: [], orderBy: [{ field: 'published', direction: 'desc' }], result: 'many' }, shuffled).rows.map(row => row.id)).toEqual(['a', 'c', 'd', 'b'])
+  })
+
   it('compares words by code unit in a condition (capitals before lower case), as the app\'s live query does', () => {
     expect(ids({ where: { op: 'lt', field: 'title', value: 'beta' } })).toEqual(['a', 'c', 'd'])
     expect(ids({ where: { op: 'gte', field: 'title', value: 'B' } })).toEqual(['b', 'c', 'd'])
