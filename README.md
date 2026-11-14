@@ -358,9 +358,13 @@ pnpm e2e:generated --database none   # the same for an API-only project, against
 `pnpm create bildr <dir> --database sqlite|none` picks the app database of a new generated project (see `packages/create-bildr`).
 
 - `sqlite` (default): a `main` sqlite data source, Drizzle and libSQL, migrations under `server/database/migrations`, applied when the server starts.
-- `none`: an API-only project. Data comes from REST data sources. There is no database code, dependency, drizzle config, migrate plugin or migrations folder, and the editor hides its Migrations screen. `model_get` and `migration_pending_get` return `database: false`.
+- `none`: an API-only project. Data comes from REST or memory data sources. There is no database code, dependency, drizzle config, migrate plugin or migrations folder, and the editor hides its Migrations screen. `model_get` and `migration_pending_get` return `database: false`.
 
-Entities, repositories, queries, actions and pages are the same model either way. Only the repository adapter differs: Drizzle for a sqlite data source, `fetch` for a REST one.
+Entities, repositories, queries, actions and pages are the same model either way. Only the repository adapter differs: Drizzle for a sqlite data source, `fetch` for a REST one, and the in-memory adapter for a `memory` one.
+
+A `memory` data source (`{ "kind": "memory", "env": {} }`, no settings) keeps its rows in the server process: one store per entity, seeded at boot from `.bildr/modules/<module>/fixtures/<entity>.json` and lost when the server stops. It needs no database and no API, so it suits prototypes and data the app owns but needn't keep. Its repositories have every operation and finders.
+
+The editor's data actions (`datasource_*`, `entity_*`, `entity_field_*`) write these files. `entity_create` writes an entity with its repository, the queries `q_<plural>` and `q_<entity>_by_id`, the action `act_create_<entity>` and, for a memory source, its fixtures. `datasource_preview` and `repository_endpoint_test` GET a REST source's endpoints (under its base URL only, 10 s and 1 MB at most) and propose fields. `env_status` says which env vars the data sources need and whether each is set, never their values. Secrets are env vars only: you set them in `.env`.
 
 A REST repository can list, get, create, update and delete. Each operation beyond `list` names its endpoint in `rest`, for example `"get": { "path": "/tasks/:id" }` or `"create": { "path": "/tasks" }`. The default methods are GET, POST, PUT and DELETE, and `method` overrides them. `fieldMap` maps fields both ways.
 

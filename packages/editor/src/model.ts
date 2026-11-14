@@ -52,7 +52,7 @@ export const KINDS: Record<KindKey, KindSpec> = {
     fields: [
       { key: 'id', label: 'Id', type: 'text', placeholder: 'ds_main' },
       { key: 'name', label: 'Name', type: 'text', placeholder: 'main', hint: 'kebab-case' },
-      { key: 'kind', label: 'Kind', type: 'select', options: ['sqlite', 'rest'] },
+      { key: 'kind', label: 'Kind', type: 'select', options: ['sqlite', 'rest', 'memory'] },
       { key: 'env', label: 'Env vars', type: 'json', hint: 'Setting name → env var, like {"url": "NUXT_DB_URL"}' },
       { key: 'defaults', label: 'Defaults', type: 'json', optional: true, hint: 'Non-secret defaults; never put secrets here' },
       { key: 'auth', label: 'Auth', type: 'json', optional: true, hint: '{"type": "bearer", "secret": "apiKey"}' }

@@ -1,0 +1,40 @@
+{
+  "id": "act_create_note",
+  "name": "createNote",
+  "label": "Create note",
+  "http": {
+    "method": "POST",
+    "path": "/notes"
+  },
+  "input": {
+    "entity": "ent_note",
+    "pick": [
+      "id",
+      "text",
+      "pinned"
+    ]
+  },
+  "output": {
+    "entity": "ent_note"
+  },
+  "errors": [],
+  "steps": [
+    {
+      "kind": "validate"
+    },
+    {
+      "kind": "repository",
+      "repository": "repo_note",
+      "op": "create"
+    }
+  ],
+  "client": {
+    "optimistic": {
+      "kind": "insert",
+      "entity": "ent_note"
+    },
+    "invalidates": [
+      "ent_note"
+    ]
+  }
+}

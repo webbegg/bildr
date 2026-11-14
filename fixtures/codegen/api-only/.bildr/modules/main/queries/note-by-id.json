@@ -1,0 +1,21 @@
+{
+  "id": "q_note_by_id",
+  "name": "noteById",
+  "label": "Note by id",
+  "from": "ent_note",
+  "params": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "reactive": true
+    }
+  ],
+  "where": {
+    "op": "eq",
+    "field": "id",
+    "value": {
+      "$param": "id"
+    }
+  },
+  "result": "one"
+}

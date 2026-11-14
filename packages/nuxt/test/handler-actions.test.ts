@@ -81,7 +81,11 @@ const NAMES = [
   'theme_get', 'theme_update', 'theme_presets_list', 'theme_apply', 'project_update', 'catalog_get',
   'editor_context_get', 'editor_context_set', 'editor_navigate',
   // P3b: undo/redo and the model version.
-  'history_get', 'history_undo', 'history_redo', 'model_version_get'
+  'history_get', 'history_undo', 'history_redo', 'model_version_get',
+  // P3c: data sources, entities and fields; previews and env status.
+  'datasource_create', 'datasource_update', 'datasource_delete', 'entity_create', 'entity_update', 'entity_delete',
+  'entity_field_add', 'entity_field_update', 'entity_field_move', 'entity_field_remove',
+  'datasource_preview', 'repository_endpoint_test', 'env_status'
 ].sort()
 
 // T10a (S11, D12): every editor operation is an action, callable over HTTP.

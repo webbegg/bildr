@@ -1,0 +1,8 @@
+{
+  "id": "q_notes",
+  "name": "notes",
+  "label": "All notes",
+  "from": "ent_note",
+  "params": [],
+  "result": "many"
+}

@@ -1,0 +1,24 @@
+{
+  "id": "ent_note",
+  "name": "Note",
+  "plural": "notes",
+  "idStrategy": "uuid",
+  "timestamps": false,
+  "fields": [
+    {
+      "id": "fld_text",
+      "name": "text",
+      "type": "text",
+      "required": true
+    },
+    {
+      "id": "fld_pinned",
+      "name": "pinned",
+      "type": "boolean"
+    }
+  ],
+  "relations": [],
+  "client": {
+    "sync": "eager"
+  }
+}

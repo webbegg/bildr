@@ -278,8 +278,11 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
   const entries: string[] = []
   const imports: Array<{ path: string, name: string }> = []
   const wiring: string[] = []
+  // Memory stores live as long as the server process, so they sit outside the per-call root.
+  const stores: string[] = []
+  const seeds: string[] = []
   const placed = new Set<string>()
-  const sources = { database: false, rest: [] as string[] }
+  const sources = { database: false, rest: [] as string[], memory: [] as string[] }
   const listed = (repository: RepositoryFile) => Boolean(repository.expose?.list && repository.operations.includes('list'))
   // Only repositories a use-case consumes are wired: an unused adapter binding fails the project's lint.
   const consumed = new Set(actions.flatMap(analyzed => analyzed.repositories.map(({ entity }) => entity.id)))
@@ -289,11 +292,18 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
     if (!repository || !(listed(repository) || consumed.has(entity.id))) continue
     const names = entityNames(entity)
     const datasource = datasourceOf(context, repository)
-    const adapter = datasource.kind === 'sqlite' ? `drizzle${names.port}` : `rest${names.port}`
-    imports.push({ path: `../infrastructure/repositories/${names.file}.${datasource.kind === 'sqlite' ? 'drizzle' : 'rest'}`, name: adapter })
-    wiring.push(`  const ${names.plural} = ${adapter}(${datasource.kind === 'sqlite' ? 'useDb()' : `useRemote(${tsString(datasource.name)})`})`)
+    const adapter = datasource.kind === 'sqlite' ? `drizzle${names.port}` : `${datasource.kind}${names.port}`
+    const adapterFile = datasource.kind === 'sqlite' ? 'drizzle' : datasource.kind
+    imports.push({ path: `../infrastructure/repositories/${names.file}.${adapterFile}`, name: adapter })
+    if (datasource.kind === 'memory') {
+      const seeded = context.module.fixtures.some(fixtures => fixtures.entity === entity.id)
+      if (seeded) seeds.push(`${names.variable}Seed`)
+      stores.push(`const ${names.plural} = ${adapter}(${seeded ? `${names.variable}Seed` : ''})`)
+    } else {
+      wiring.push(`  const ${names.plural} = ${adapter}(${datasource.kind === 'sqlite' ? 'useDb()' : `useRemote(${tsString(datasource.name)})`})`)
+    }
     if (datasource.kind === 'sqlite') sources.database = true
-    else if (!sources.rest.includes(datasource.name)) sources.rest.push(datasource.name)
+    else if (!sources[datasource.kind].includes(datasource.name)) sources[datasource.kind].push(datasource.name)
     if (listed(repository)) {
       const useCase = `list${pascal(entity.plural)}`
       imports.push({ path: `../application/queries/list-${kebab(entity.plural)}`, name: useCase })
@@ -310,10 +320,13 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
     entries.push(`    ${analyzed.action.name}: ${analyzed.action.name}({})`)
   }
   for (const analyzed of actions) imports.push({ path: `../application/actions/${kebab(analyzed.action.name)}`, name: analyzed.action.name })
+  if (seeds.length) imports.push({ path: `../infrastructure/memory/seed`, name: seeds.join(', ') })
 
+  const named = (names: string[], kind: string) => `the ${names.map(name => `"${name}"`).join(' and ')} ${kind}data source${names.length > 1 ? 's' : ''}`
   const wired = [
     ...(sources.database ? ['the app database'] : []),
-    ...(sources.rest.length ? [`the ${sources.rest.map(name => `"${name}"`).join(' and ')} data source${sources.rest.length > 1 ? 's' : ''}`] : [])
+    ...(sources.rest.length ? [named(sources.rest, '')] : []),
+    ...(sources.memory.length ? [named(sources.memory, 'memory ')] : [])
   ]
   const statuses = errorsOf(context).map(error => `  ${error.type}: ${error.status}`)
   const source = `.bildr/modules/${context.name}`
@@ -326,6 +339,7 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
       'import type { ErrorStatusMap } from \'#core/kernel/result\'',
       ...imports.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0).map(entry => `import { ${entry.name} } from '${entry.path}'`),
       '',
+      ...(stores.length ? ['// Memory data sources: one store per server process, seeded from the model fixtures, never persisted.', ...stores, ''] : []),
       `/** The ${context.name} module's use-cases${wired.length ? `, wired to ${wired.join(' and ')}` : ''}. */`,
       `export const ${context.root} = () => {`,
       ...wiring,
@@ -519,7 +533,10 @@ const useCaseTestFile = (context: ModuleContext, analyzed: Analyzed) => {
     const loaded = load ? analyzed.repositories.find(entry => entry.repository.id === load.repository) : undefined
     const seeded = loaded && context.module.fixtures.some(fixtures => fixtures.entity === loaded.entity.id)
     if (loaded && !seeded) throw new Error(`${action.id}: generated tests need fixtures for ${loaded.entity.name}`)
-    if (loaded) imports.push({ path: '../../server/infrastructure/db/seed', line: `import { ${entityNames(loaded.entity).variable}Seed } from '../../server/infrastructure/db/seed'` })
+    if (loaded) {
+      const seedFile = datasourceOf(context, loaded.repository).kind === 'memory' ? '../../server/infrastructure/memory/seed' : '../../server/infrastructure/db/seed'
+      imports.push({ path: seedFile, line: `import { ${entityNames(loaded.entity).variable}Seed } from '${seedFile}'` })
+    }
     const existing = loaded ? `${entityNames(loaded.entity).variable}Seed[0]!.id` : tsString(sampleId(1))
     tests.push(['  it(\'succeeds\', async () => {', ...setup(Boolean(loaded)), `    const result = await ${action.name}({ ${deps} })(${params.map(() => existing).join(', ')})`, '    expect(result.ok).toBe(true)', '  })'])
     if (load?.orError) {

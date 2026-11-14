@@ -71,7 +71,9 @@ export const portFile = (context: ModuleContext, entity: EntityFile, repository:
   const writable = has(repository, 'create') || has(repository, 'update') || has(repository, 'delete')
   const doc = source.kind === 'sqlite'
     ? `Persistence port for ${names.type}. Use-cases depend on this, never on Drizzle.`
-    : `${writable ? 'Persistence' : 'Read-only'} port for ${names.type} (REST data source).`
+    : source.kind === 'memory'
+      ? `${writable ? 'Persistence' : 'Read-only'} port for ${names.type} (memory data source).`
+      : `${writable ? 'Persistence' : 'Read-only'} port for ${names.type} (REST data source).`
   const methods: string[] = []
   for (const op of OPERATION_ORDER) {
     if (!has(repository, op)) {
@@ -188,6 +190,12 @@ const comparator = (entity: EntityFile, repository: RepositoryFile) => {
   return parts.length ? `.sort((a, b) => ${parts.join(' || ')})` : ''
 }
 
+const memoryDoc = (context: ModuleContext, repository: RepositoryFile, port: string) => {
+  const source = datasourceOf(context, repository)
+  if (source.kind === 'memory') return `/** ${port} over the "${docText(source.name)}" memory data source: rows live in the server process, from its seed until it stops. Also used by use-case tests. */`
+  return `/** In-memory ${port} for use-case tests. Same contract as the ${source.kind === 'sqlite' ? 'Drizzle' : 'REST'} one. */`
+}
+
 export const memoryRepositoryFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
   const names = entityNames(entity)
   const row = names.variable
@@ -209,7 +217,7 @@ export const memoryRepositoryFile = (context: ModuleContext, entity: EntityFile,
       `import type { ${names.type} } from '#${context.name}/domain/${names.file}'`,
       `import type { ${names.port} } from '../../application/ports/${names.portFile}'`,
       '',
-      `/** In-memory ${names.port} for use-case tests. Same contract as the ${datasourceOf(context, repository).kind === 'sqlite' ? 'Drizzle' : 'REST'} one. */`,
+      memoryDoc(context, repository, names.port),
       `export const memory${names.port} = (seed: ${names.type}[] = []): ${names.port} => {`,
       `  const rows = new Map(seed.map(${row} => [${row}.id, ${row}]))`,
       has(repository, 'list') && `  const sorted = () => [...rows.values()]${comparator(entity, repository)}`,

@@ -1,0 +1,10 @@
+{
+  "entity": "ent_note",
+  "rows": [
+    {
+      "id": "6f1c2d3e-4b5a-4c6d-8e7f-000000000001",
+      "text": "Seeded from the model fixtures",
+      "pinned": true
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "id": "repo_note",
+  "entity": "ent_note",
+  "datasource": "ds_local",
+  "operations": [
+    "list",
+    "get",
+    "create",
+    "update",
+    "delete"
+  ],
+  "expose": {
+    "list": true
+  }
+}

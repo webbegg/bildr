@@ -1,0 +1,6 @@
+{
+  "id": "ds_local",
+  "name": "local",
+  "kind": "memory",
+  "env": {}
+}

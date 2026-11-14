@@ -4,9 +4,15 @@
 
 declare global {
   interface URL {
+    readonly href: string
+    readonly origin: string
+    readonly protocol: string
+    readonly username: string
+    readonly password: string
     readonly hostname: string
     readonly pathname: string
     readonly search: string
+    readonly hash: string
   }
   var URL: { new (url: string, base?: string): URL }
 

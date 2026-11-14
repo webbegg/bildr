@@ -18,7 +18,7 @@ export const collectionFile = (context: ModuleContext, entity: EntityFile, repos
   const names = entityNames(entity)
   const source = datasourceOf(context, repository)
   const route = `/api/${context.name}/${kebab(entity.plural)}`
-  const doc = source.kind === 'sqlite'
+  const doc = source.kind !== 'rest'
     ? `Client copy of every ${names.type}, synced from the ${names.type} repository's list route (sync mode: ${entity.client.sync}).`
     : `Client copy of the first page of ${pascal(entity.plural)} from the "${source.name}" REST data source${isWritable(repository) ? '' : ' (read-only)'}.`
   const key = keyOf(entity)

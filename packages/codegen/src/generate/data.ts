@@ -28,6 +28,7 @@ export const generateData = (model: Model): GeneratedFile[] => {
 const moduleData = (context: ModuleContext): Array<Omit<GeneratedFile, 'owner'>> => {
   const out: Array<Omit<GeneratedFile, 'owner'>> = [moduleConfigFile(context)]
   const stored: Array<{ entity: EntityFile, repository: RepositoryFile }> = []
+  const kept: EntityFile[] = []
 
   for (const entity of context.module.entities) {
     out.push(domainFile(context, entity))
@@ -38,6 +39,10 @@ const moduleData = (context: ModuleContext): Array<Omit<GeneratedFile, 'owner'>>
     if (kind === 'sqlite') {
       stored.push({ entity, repository })
       out.push(drizzleRepositoryFile(context, entity, repository), memoryRepositoryFile(context, entity, repository))
+    } else if (kind === 'memory') {
+      // The in-memory adapter is the real one: the composition root keeps one per server process.
+      kept.push(entity)
+      out.push(memoryRepositoryFile(context, entity, repository))
     } else {
       out.push(restRepositoryFile(context, entity, repository), restRepositoryTestFile(context, entity, repository))
       // Lookups and writes are what use-cases call: their tests run against an in-memory twin, as for the database.
@@ -50,8 +55,31 @@ const moduleData = (context: ModuleContext): Array<Omit<GeneratedFile, 'owner'>>
   if (stored.length) out.push(drizzleSchemaFile(context, stored))
   for (const query of context.module.queries) out.push(queryFile(context, query))
   for (const state of context.module.state) out.push(stateCollectionFile(context, state), stateComposableFile(context, state))
-  out.push(...seedFiles(context, stored))
+  out.push(...seedFiles(context, stored), ...memorySeedFiles(context, kept))
   return out
+}
+
+/** The fixtures of memory entities, which their stores start with at boot. */
+const memorySeedPath = 'server/infrastructure/memory/seed'
+
+const memorySeedFiles = (context: ModuleContext, kept: EntityFile[]) => {
+  const ids = new Set(kept.map(entity => entity.id))
+  const seeds = context.module.fixtures
+    .filter(fixtures => ids.has(fixtures.entity))
+    .map(fixtures => ({ entity: entityById(context, fixtures.entity), rows: fixtures.rows }))
+  if (!seeds.length) return []
+  const source = `.bildr/modules/${context.name}/fixtures`
+  return [{
+    path: `layers/${context.name}/${memorySeedPath}.ts`,
+    source,
+    content: file([
+      header(source),
+      ...seeds.map(({ entity }) => `import type { ${entity.name} } from '#${context.name}/domain/${entityNames(entity).file}'`),
+      '',
+      '// The rows each memory store starts with when the server starts. Changes to them are lost when it stops.',
+      ...seeds.flatMap(({ entity, rows }, index) => [...(index ? [''] : []), `export const ${entityNames(entity).variable}Seed: ${entity.name}[] = ${tsLiteral(rows)}`])
+    ])
+  }]
 }
 
 const moduleConfigFile = (context: ModuleContext) => {

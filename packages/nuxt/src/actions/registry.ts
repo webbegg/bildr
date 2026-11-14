@@ -10,6 +10,7 @@ import { codeView, deleteModelFile, isDeletableModelPath, isModelFilePath, pendi
 import { readModelFiles } from '../node/project.ts'
 import { ActionError, defineAction } from './define.ts'
 import type { ActionDef } from './define.ts'
+import { DATA_ACTIONS } from './data.ts'
 import { EDIT_ACTIONS } from './editing.ts'
 import { EDITOR_ACTIONS } from './editor.ts'
 import { HISTORY_ACTIONS, changed, historyReady } from './history.ts'
@@ -164,7 +165,9 @@ export const ACTIONS: readonly ActionDef[] = [
   migrationPendingGet,
   migrationConfirm,
   // The visual editor's operations (P3a): nodes, pages, components, instances, layouts, theme, project.
+  // …and the data ones (P3c): data sources, entities, fields; previews and env status.
   ...EDIT_ACTIONS,
+  ...DATA_ACTIONS,
   ...EDITOR_ACTIONS,
   // Undo/redo and the model version (P3b).
   ...HISTORY_ACTIONS

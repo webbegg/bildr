@@ -14,6 +14,8 @@ import {
   layoutVariableRemove, layoutVariableUpdate, pageSetLayout, pageSetLayoutValues, pageSetSlot
 } from './layouts.ts'
 import { catalogGet, projectUpdate, themeApply, themeGet, themePresetsList, themeUpdate } from './theme.ts'
+import { datasourceCreate, datasourceDelete, datasourceUpdate } from './datasources.ts'
+import { entityCreate, entityDelete, entityFieldAdd, entityFieldMove, entityFieldRemove, entityFieldUpdate, entityUpdate } from './entities.ts'
 
 /**
  * `@bildr/codegen/edit`: the visual editor's operations on the `.bildr/`
@@ -81,7 +83,18 @@ export const EDITS = {
   theme_presets_list: themePresetsList,
   theme_apply: themeApply,
   project_update: projectUpdate,
-  catalog_get: catalogGet
+  catalog_get: catalogGet,
+  // Data (P3c): data sources, entities with their repository, queries, create action and fixtures, fields.
+  datasource_create: datasourceCreate,
+  datasource_update: datasourceUpdate,
+  datasource_delete: datasourceDelete,
+  entity_create: entityCreate,
+  entity_update: entityUpdate,
+  entity_delete: entityDelete,
+  entity_field_add: entityFieldAdd,
+  entity_field_update: entityFieldUpdate,
+  entity_field_move: entityFieldMove,
+  entity_field_remove: entityFieldRemove
 } satisfies Record<string, EditDef>
 
 export type EditName = keyof typeof EDITS
@@ -103,6 +116,10 @@ export const applyEdit = (files: Record<string, string>, name: EditName, input: 
 }
 
 export { mintId } from './core.ts'
+export { datasourceEnvVars } from './datasources.ts'
+export type { DataSourceEnvVar } from './datasources.ts'
+export { detectItems, inferFields, isUnder, remoteUrl } from './remote.ts'
+export type { InferredField, RemoteUrl } from './remote.ts'
 export type { EditErrorCode, EditOutcome, FileChange } from './core.ts'
 export { PALETTE } from './palette.ts'
 export { THEME_PRESETS } from './theme.ts'

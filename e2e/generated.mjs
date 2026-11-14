@@ -445,6 +445,9 @@ async function model(ctx) {
 const API_ONLY_FILES = [
   'layers/main/server/infrastructure/repositories/task.rest.ts',
   'layers/main/server/infrastructure/repositories/task.memory.ts',
+  // The memory data source (P3c): the in-memory adapter wired for real, seeded from the fixtures.
+  'layers/main/server/infrastructure/repositories/note.memory.ts',
+  'layers/main/server/infrastructure/memory/seed.ts',
   'layers/main/server/api/main/tasks/index.get.ts',
   'layers/main/server/api/main/tasks/index.post.ts',
   'layers/main/app/pages/index.vue',
@@ -610,6 +613,12 @@ async function smokeApiOnly(ctx) {
     await waitFor('the built server to answer', async () => (await fetch(`${base}/`).catch(() => undefined))?.ok, MINUTE)
     const empty = await (await fetch(`${base}/api/main/tasks`)).json().catch(() => undefined)
     check(Array.isArray(empty?.items) && empty.items.length === 0 && empty.total === 0, `API: GET /api/main/tasks lists the empty REST source → ${JSON.stringify(empty)?.slice(0, 200)}`)
+    const seeded = await (await fetch(`${base}/api/main/notes`)).json().catch(() => undefined)
+    check(seeded?.total === 1 && seeded.items[0]?.text === 'Seeded from the model fixtures', `API: GET /api/main/notes lists the memory source's seed row → ${JSON.stringify(seeded)?.slice(0, 200)}`)
+    const note = { id: '6f1c2d3e-4b5a-4c6d-8e7f-0000000000e2', text: 'Kept in memory', pinned: false }
+    const created = await fetch(`${base}/api/main/notes`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(note) })
+    const notes = await (await fetch(`${base}/api/main/notes`)).json().catch(() => undefined)
+    check(created.ok && notes?.total === 2 && notes.items.some(item => item.id === note.id), `API: POST /api/main/notes (${created.status}) adds a row the next list has → ${JSON.stringify(notes)?.slice(0, 300)}`)
 
     const { chromium } = await import(pathToFileURL(PLAYWRIGHT_CORE).href)
     browser = await chromium.launch({ executablePath: CHROMIUM, headless: true })

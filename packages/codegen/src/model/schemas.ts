@@ -85,17 +85,29 @@ export const ProjectFileSchema = z.object({
 /** The editor's `Theme` (D11): the same palette colours, font, radius and spacing the canvas paints. */
 export const ThemeFileSchema = ThemeSchema.extend(schemaField)
 
+/**
+ * Where a repository's rows live: `sqlite` (the app database), `rest` (a remote API) or
+ * `memory` (the server process, seeded from the module fixtures at boot, never persisted).
+ */
+export const DATASOURCE_KINDS = ['sqlite', 'rest', 'memory'] as const
+
 export const DataSourceFileSchema = z.object({
   ...schemaField,
   id: ArtifactIdSchema,
   name: ModuleNameSchema,
-  kind: z.enum(['sqlite', 'rest']),
+  kind: z.enum(DATASOURCE_KINDS),
   /** Setting name → env var that holds its value at runtime. */
   env: z.record(CamelNameSchema, EnvNameSchema),
   /** Non-secret defaults written into runtimeConfig. */
   defaults: z.record(CamelNameSchema, z.string()).optional(),
   auth: z.object({ type: z.enum(['bearer', 'header']), secret: CamelNameSchema, header: z.string().optional() }).optional()
 }).superRefine((source, ctx) => {
+  if (source.kind === 'memory') {
+    for (const key of ['defaults', 'auth'] as const) {
+      if (source[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'A memory data source keeps its rows in the server process: it has no settings' })
+    }
+    if (Object.keys(source.env).length) ctx.addIssue({ code: 'custom', path: ['env'], message: 'A memory data source keeps its rows in the server process: it has no settings' })
+  }
   const secret = source.auth?.secret
   if (!secret) return
   if (!source.env[secret]) ctx.addIssue({ code: 'custom', path: ['auth', 'secret'], message: `Secret "${secret}" needs an env var in "env"` })

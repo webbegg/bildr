@@ -78,6 +78,31 @@ describe('golden API-only project: the generated files', () => {
     expect(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter(name => /drizzle|libsql/.test(name))).toEqual([])
     expect(files.find(file => file.path === 'layers/main/server/utils/main.ts')!.content).toContain('restTaskRepository(useRemote(\'api\'))')
   })
+
+  it('has a memory data source: the in-memory adapter wired for real, seeded from the fixtures, no REST or database code', () => {
+    expect(paths).toEqual(expect.arrayContaining([
+      'layers/main/shared/domain/note.ts',
+      'layers/main/server/application/ports/note-repository.ts',
+      'layers/main/server/infrastructure/repositories/note.memory.ts',
+      'layers/main/server/infrastructure/memory/seed.ts',
+      'layers/main/server/api/main/notes/index.get.ts',
+      'layers/main/server/api/main/notes/index.post.ts',
+      'layers/main/app/data/notes.collection.ts',
+      'layers/main/app/composables/main/useNotes.ts',
+      'layers/main/app/composables/main/useNoteById.ts'
+    ]))
+    expect(paths.filter(path => /note\.(rest|drizzle)/.test(path))).toEqual([])
+    const seed = files.find(file => file.path === 'layers/main/server/infrastructure/memory/seed.ts')!.content
+    expect(seed).toContain('export const noteSeed: Note[] = [')
+    expect(seed).toContain('Seeded from the model fixtures')
+    const root = files.find(file => file.path === 'layers/main/server/utils/main.ts')!.content
+    // One store per server process (outside the composition root's function): rows live until it stops.
+    expect(root).toMatch(/^const notes = memoryNoteRepository\(noteSeed\)$/m)
+    expect(root).toContain('import { noteSeed } from \'../infrastructure/memory/seed\'')
+    expect(root).toContain('the "local" memory data source')
+    const nuxtConfig = files.find(file => file.path === 'layers/core/nuxt.config.ts')!.content
+    expect(nuxtConfig).not.toContain('local')
+  })
 })
 
 describe.skipIf(!!NEEDS_FIXTURE)(`golden API-only project: typecheck, lint and generated tests${NEEDS_FIXTURE}`, { timeout: 600_000 }, () => {
@@ -121,6 +146,7 @@ describe.skipIf(!!NEEDS_FIXTURE)(`golden API-only project: typecheck, lint and g
     expect(output).toMatch(/Tests\s+\d+ passed/)
     expect(output).toContain('task.rest.test.ts')
     expect(output).toContain('create-task.test.ts')
+    expect(output).toContain('create-note.test.ts')
   })
 
   it('the typecheck is real: a type error in a layer fails it', async () => {
