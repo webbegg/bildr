@@ -78,7 +78,7 @@ const originalContentWindow = Object.getOwnPropertyDescriptor(HTMLIFrameElement.
 
 export type Handlers = Record<string, (input: Record<string, unknown>) => unknown>
 
-const baseHandlers = (): Handlers => ({
+export const baseHandlers = (): Handlers => ({
   model_get: modelGet,
   catalog_get: catalog,
   history_get: () => ({ undo: [], redo: [] }),

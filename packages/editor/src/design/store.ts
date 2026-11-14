@@ -442,8 +442,10 @@ export const createDesign = () => {
   const rename = async (id: string, name: string) => {
     await edit('node_rename', { file: fileInput(), nodeId: id, name: name.trim() || null })
   }
-  const copy = () => {
-    if (selected.value) clipboard.value = structuredClone(selected.value)
+  /** Copies node `id`, or the selected node. */
+  const copy = (id?: string) => {
+    const node = id ? file.value && findNode(file.value.root, id) : selected.value
+    if (node) clipboard.value = structuredClone(node)
   }
   const paste = async () => {
     if (!clipboard.value || !fileId.value) return
@@ -470,11 +472,11 @@ export const createDesign = () => {
    * its overrides: clearing a token the variant overrides gives back the
    * primary's, clearing one only the primary sets removes it in the variant.
    */
-  const setStyle = async (style: Record<string, string | null>, breakpoint: string | undefined) => {
-    if (!variant.value) return edit('node_update_style', { file: fileInput(), nodeIds: ids(), ...(breakpoint ? { breakpoint } : {}), style })
+  const setStyle = async (style: Record<string, string | null>, breakpoint: string | undefined, nodeIds: string[] = ids()) => {
+    if (!variant.value) return edit('node_update_style', { file: fileInput(), nodeIds, ...(breakpoint ? { breakpoint } : {}), style })
     const prefix = breakpoint ? `${breakpoint}:` : ''
     let out: Record<string, unknown> | undefined
-    for (const id of ids()) {
+    for (const id of nodeIds) {
       const own = variant.value.overrides[id]?.style ?? {}
       const shown = inspected.value?.id === id ? inspected.value.style ?? {} : {}
       const patch: { style: Record<string, string | null>, unset: string[] } = { style: {}, unset: [] }
