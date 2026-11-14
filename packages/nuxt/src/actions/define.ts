@@ -1,5 +1,6 @@
 import type { z } from 'zod'
 import type { ModelProblem } from '@bildr/codegen/model'
+import type { ModelEvents } from '../node/events.ts'
 import type { CheckName, CheckResult } from '../node/health.ts'
 import type { MigrationOutcome } from '../node/regenerate.ts'
 
@@ -17,6 +18,8 @@ export interface ActionContext {
   confirmMigration?: (hash: string) => Promise<MigrationOutcome>
   /** Runs Health checks on demand (through the module's one-at-a-time runner) and returns their results. */
   runHealth?: (checks: CheckName[]) => Promise<CheckResult[]>
+  /** The event bus open editors follow (P3b): model changes, navigate and context. */
+  events?: ModelEvents
 }
 
 export interface ActionDef<I extends z.ZodType = z.ZodType, O = unknown> {
@@ -31,7 +34,7 @@ export interface ActionDef<I extends z.ZodType = z.ZodType, O = unknown> {
 
 export const defineAction = <I extends z.ZodType, O>(def: ActionDef<I, O>): ActionDef<I, O> => def
 
-export type ActionErrorCode = 'invalid_input' | 'not_found' | 'invalid' | 'forbidden' | 'unavailable' | 'write_failed'
+export type ActionErrorCode = 'invalid_input' | 'not_found' | 'invalid' | 'forbidden' | 'unavailable' | 'write_failed' | 'conflict'
 
 /** HTTP status of each error code (the action contract of T10). */
 export const ERROR_STATUS: Record<ActionErrorCode, number> = {
@@ -41,7 +44,9 @@ export const ERROR_STATUS: Record<ActionErrorCode, number> = {
   forbidden: 403,
   unavailable: 501,
   /** The file system failed while writing (permissions, a folder in the way, a full disk): nothing changed. */
-  write_failed: 500
+  write_failed: 500,
+  /** The files changed since (e.g. an undo after a hand edit): nothing was written. */
+  conflict: 409
 }
 
 export class ActionError extends Error {

@@ -12,8 +12,8 @@ import type { ActionDef } from './define.ts'
  * Editor context (after the hosted `editor_*` actions): the editor reports
  * what the human looks at, agents read it, and `editor_navigate` names a
  * target for the editor to open. Kept in `.bildr/.cache/session.json` (V2:
- * the cache is the only place besides the model). Navigation events reach
- * open editors with the event stream (P3b); until then the target is returned.
+ * the cache is the only place besides the model). Both reach open editors on
+ * the event stream (P3b): `context` and `navigate` events.
  */
 
 export const CONTEXT_FILE = '.bildr/.cache/session.json'
@@ -99,10 +99,11 @@ const editorContextSet = defineAction({
   name: 'editor_context_set',
   description: 'Record what the editor shows: the page, component or layout (file), the selected node (nodeId, null for none) and, for a component, its variant. Called by the editor UI; stored in .bildr/.cache/session.json.',
   input: z.object({ file: FileRef, nodeId: LocalIdSchema.nullable(), variant: VariantRef }),
-  run: ({ file, nodeId, variant }, { root }) => {
+  run: ({ file, nodeId, variant }, { root, events }) => {
     target(loaded(root), file, nodeId, variant)
     const context: StoredContext = { file, nodeId, variant: variant ?? null, updatedAt: new Date().toISOString() }
     writeContext(root, context)
+    events?.publish({ type: 'context', context })
     return context
   }
 })
@@ -128,12 +129,14 @@ const editorContextGet = defineAction({
 
 const editorNavigate = defineAction({
   name: 'editor_navigate',
-  description: 'Point the editor at a page, component (optionally a variant) or layout, and optionally a node to select. Checks the target and returns it; changes no file. Open editors follow it once the event stream lands (P3b).',
+  description: 'Point the editor at a page, component (optionally a variant) or layout, and optionally a node to select. Checks the target, sends it to open editors (a navigate event on /__bildr/api/events) and returns it; changes no file.',
   input: z.object({ file: FileRef, nodeId: LocalIdSchema.optional(), variant: VariantRef }),
   readOnly: true,
-  run: ({ file, nodeId, variant }, { root }) => {
+  run: ({ file, nodeId, variant }, { root, events }) => {
     const shown = target(loaded(root), file, nodeId, variant)
-    return { file, kind: shown.kind, nodeId: nodeId ?? null, variant: variant ?? null }
+    const navigated = { file, kind: shown.kind, nodeId: nodeId ?? null, variant: variant ?? null }
+    events?.publish({ type: 'navigate', target: navigated })
+    return navigated
   }
 })
 

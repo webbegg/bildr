@@ -1,6 +1,6 @@
 import { inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { InjectionKey, Ref } from 'vue'
-import { callAction, errorMessage, sessionEnded } from './api.ts'
+import { callAction, errorMessage, sessionEnded, subscribeEvents } from './api.ts'
 import type { HealthReport, PendingMigration } from './types.ts'
 
 /** How often health and the pending migration are re-read while the page is visible: the module regenerates on its own after a save. */
@@ -58,10 +58,18 @@ export const useStatus = (): Status => {
   return status
 }
 
-/** Calls `task` now and every `ms` while the document is visible; stops on unmount and once the session ended (a 401). */
+/**
+ * Calls `task` now, every `ms` while the document is visible, and as soon as the
+ * module's event stream says the model changed or the app regenerated; stops on
+ * unmount and once the session ended (a 401). The polling is the fallback, so the
+ * stream itself doesn't poll the version too.
+ */
 export const usePolling = (task: () => Promise<void>, ms = POLL_MS) => {
   let timer: ReturnType<typeof setTimeout> | undefined
   let stopped = false
+  let running = false
+  let again = false
+  let unsubscribe: (() => void) | undefined
   const schedule = () => {
     clearTimeout(timer)
     if (stopped || sessionEnded.value || document.visibilityState === 'hidden') return
@@ -69,7 +77,21 @@ export const usePolling = (task: () => Promise<void>, ms = POLL_MS) => {
   }
   const tick = async () => {
     if (stopped || sessionEnded.value) return
-    await task()
+    // One run at a time: an event during a run queues one more.
+    if (running) {
+      again = true
+      return
+    }
+    running = true
+    try {
+      await task()
+    } finally {
+      running = false
+    }
+    if (again) {
+      again = false
+      return tick()
+    }
     schedule()
   }
   const onVisibility = () => {
@@ -79,9 +101,13 @@ export const usePolling = (task: () => Promise<void>, ms = POLL_MS) => {
   onMounted(() => {
     document.addEventListener('visibilitychange', onVisibility)
     void tick()
+    unsubscribe = subscribeEvents((event) => {
+      if (event.type === 'model' || event.type === 'regenerated' || event.type === 'version') void tick()
+    }, { poll: false })
   })
   onBeforeUnmount(() => {
     stopped = true
+    unsubscribe?.()
     clearTimeout(timer)
     document.removeEventListener('visibilitychange', onVisibility)
   })

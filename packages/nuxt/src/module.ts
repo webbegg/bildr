@@ -4,6 +4,7 @@ import { addDevServerHandler, defineNuxtModule, useLogger } from '@nuxt/kit'
 import type { NuxtModule } from '@nuxt/schema'
 import { defineEventHandler, getRequestURL, sendWebResponse, toWebRequest } from 'h3'
 import { detectStarterKit } from '@bildr/codegen/starter'
+import { projectEvents } from './node/events.ts'
 import { createHealthRunner } from './node/health.ts'
 import { projectReader } from './node/project.ts'
 import { createRegenerator, isModelChange } from './node/regenerate.ts'
@@ -61,6 +62,11 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
     // The app's database, as its runtimeConfig resolves it in dev (NUXT_DB_URL overrides the generated default).
     const databaseUrl = process.env.NUXT_DB_URL ?? (nuxt.options.runtimeConfig as { db?: { url?: string } }).db?.url
     const regenerator = createRegenerator(root, databaseUrl ? { databaseUrl } : {})
+    // P3b: the model version and the events open editors follow; one bus per project for the whole dev process.
+    const events = projectEvents(root)
+    const regenerated = (result: Awaited<ReturnType<typeof regenerator.run>>) => events.regenerated(
+      result.ok ? { ok: true } : 'problems' in result ? { ok: false, problems: result.problems } : { ok: false, error: result.error }
+    )
     // L9: a regenerate that rewrites what Nuxt reads only at startup (a nuxt.config, the set of layers) restarts it, once.
     const loadedLayers = nuxt.options._layers.flatMap((layer) => {
       const path = relative(root, layer.config.rootDir ?? layer.cwd).split(sep).join('/')
@@ -74,6 +80,7 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
     })
     const confirmMigration = async (hash: string): Promise<MigrationOutcome> => {
       const result = await regenerator.run({ confirm: hash })
+      regenerated(result)
       if (!result.ok) return { kind: 'error', message: 'error' in result ? result.error : 'The model has problems' }
       restarter.request(needsRestart(result.report, loadedLayers))
       logMigration(result.migration)
@@ -81,7 +88,7 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
     }
     // Health checks (RA §7), one at a time: on demand from the editor, and the boundary lint after each sync.
     const health = createHealthRunner(root)
-    const handle = createBildrHandler({ root, token, confirmMigration, runHealth: checks => health.run(checks) })
+    const handle = createBildrHandler({ root, token, confirmMigration, runHealth: checks => health.run(checks), events })
     const checkBoundaries = () => {
       health.run(['lint']).then(([lint]) => {
         const violations = lint?.findings.filter(finding => finding.boundary).length ?? 0
@@ -96,7 +103,10 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
         nitro2: defineEventHandler(async (event) => {
           // h3 matches the route as a plain prefix: `/__bildrfoo` belongs to the app, so leave it to the next handler.
           if (!ownsPath(getRequestURL(event).pathname)) return
-          const response = await handle(toWebRequest(event), { remoteAddress: event.node.req.socket.remoteAddress })
+          // The event stream ends when the client goes away.
+          const disconnect = new AbortController()
+          event.node.res.once('close', () => disconnect.abort())
+          const response = await handle(toWebRequest(event), { remoteAddress: event.node.req.socket.remoteAddress, signal: disconnect.signal })
           return sendWebResponse(event, response)
         })
       }
@@ -129,6 +139,7 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
     const sync = async () => {
       try {
         const result = await regenerator.run()
+        regenerated(result)
         if (result.healthError) logger.warn(`bildr could not update the health report: ${result.healthError}`)
         if (!result.ok && 'problems' in result) {
           logger.warn(['bildr model has problems, the app was not regenerated:', ...result.problems.map(problem => `  - ${problem.path}: ${problem.message}`)].join('\n'))
@@ -151,6 +162,8 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
 
     let watcher: ModelWatcher | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
+    /** Model files the watcher saw change since the last sync (from the project root). */
+    const seen = new Set<string>()
     const modelDir = join(root, '.bildr')
     // A watcher that can't start or fails later (inotify limits, the folder removed) turns live
     // regeneration off with a warning; it never takes nuxt dev down.
@@ -165,8 +178,18 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
           onChange: (file) => {
             // Never the manifest or temp files a sync writes: that would loop.
             if (!isModelChange(file)) return
+            seen.add(`.bildr/${file}`)
             clearTimeout(timer)
-            timer = setTimeout(() => void sync(), 150)
+            timer = setTimeout(() => {
+              // Changes not made through the module (hand edits, git) are a `disk` model event.
+              try {
+                events.diskChanged(root, [...seen])
+              } catch (error) {
+                logger.warn(`bildr could not report the change to open editors: ${(error as Error).message}`)
+              }
+              seen.clear()
+              void sync()
+            }, 150)
           },
           onError: stopWatching
         })

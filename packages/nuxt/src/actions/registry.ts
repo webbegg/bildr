@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { z } from 'zod'
 import { hasDatabase } from '@bildr/codegen/generate'
 import { MANIFEST_FILE, fileKind, loadModel } from '@bildr/codegen/model'
@@ -10,6 +12,7 @@ import { ActionError, defineAction } from './define.ts'
 import type { ActionDef } from './define.ts'
 import { EDIT_ACTIONS } from './editing.ts'
 import { EDITOR_ACTIONS } from './editor.ts'
+import { HISTORY_ACTIONS, changed } from './history.ts'
 
 /**
  * The editor's operations (T10 action contract). The editor UI calls them
@@ -62,10 +65,16 @@ const modelFilePut = defineAction({
     path: modelPath,
     content: z.record(z.string(), z.unknown()).describe('The file\'s JSON object')
   }),
-  run: ({ path, content }, { root }) => {
+  run: ({ path, content }, ctx) => {
+    const { root } = ctx
     if (!isModelFilePath(path)) throw new ActionError('forbidden', 'Only .bildr/ model files can be written (not the manifest, the cache or project files)')
+    const before = readModelFiles(root)
     const saved = saveModelFile(root, path, JSON.stringify(content))
-    if (saved.ok) return { sha256: saved.sha256 }
+    if (saved.ok) {
+      const after = readFileSync(join(root, path), 'utf8')
+      if (before[path] !== after) changed(ctx, 'model_file_put', before, [{ path, content: after }])
+      return { sha256: saved.sha256 }
+    }
     if (saved.reason === 'invalid') throw new ActionError('invalid', `The model would have problems, ${path} was not saved`, saved.problems)
     throw new ActionError(saved.reason === 'json' ? 'invalid_input' : 'forbidden', saved.message)
   }
@@ -75,10 +84,15 @@ const modelFileDelete = defineAction({
   name: 'model_file_delete',
   description: 'Delete one artifact file of the model (a data source, a layout, or an entity, repository, query, action, state, component, page or fixtures file of a module). Never bildr.json, theme.json, the manifest or a module.json. Refused when the rest of the model would have problems.',
   input: z.object({ path: modelPath }),
-  run: ({ path }, { root }) => {
+  run: ({ path }, ctx) => {
+    const { root } = ctx
     if (!isDeletableModelPath(path)) throw new ActionError('forbidden', 'Only artifact files of the model can be deleted (not bildr.json, theme.json, the manifest, a module.json or files outside the model)')
+    const before = readModelFiles(root)
     const deleted = deleteModelFile(root, path)
-    if (deleted.ok) return {}
+    if (deleted.ok) {
+      changed(ctx, 'model_file_delete', before, [{ path, content: null }])
+      return {}
+    }
     if (deleted.reason === 'invalid') throw new ActionError('invalid', `The rest of the model would have problems, ${path} was not deleted`, deleted.problems)
     throw new ActionError(deleted.reason === 'missing' ? 'not_found' : 'forbidden', deleted.message)
   }
@@ -149,5 +163,7 @@ export const ACTIONS: readonly ActionDef[] = [
   migrationConfirm,
   // The visual editor's operations (P3a): nodes, pages, components, instances, layouts, theme, project.
   ...EDIT_ACTIONS,
-  ...EDITOR_ACTIONS
+  ...EDITOR_ACTIONS,
+  // Undo/redo and the model version (P3b).
+  ...HISTORY_ACTIONS
 ] as ActionDef[]

@@ -5,6 +5,8 @@ import { handleMcp } from '../actions/mcp.ts'
 import { createActions } from '../actions/runtime.ts'
 import type { Actions } from '../actions/runtime.ts'
 import { isModelFilePath, pendingMigration, saveModelFile } from '../node/editor-io.ts'
+import { createModelEvents } from '../node/events.ts'
+import type { BildrEvent, ModelEvents } from '../node/events.ts'
 import { CHECK_NAMES, readHealth } from '../node/health.ts'
 import type { CheckName } from '../node/health.ts'
 import type { MigrationOutcome } from '../node/regenerate.ts'
@@ -29,6 +31,8 @@ export interface HandlerOptions extends ActionContext {
   token: string
   /** The built editor (`index.html`, `_assets/`). Default: `@bildr/editor`'s `dist/`. */
   editorDist?: string
+  /** How often the event stream sends a heartbeat comment. Default 15 s. */
+  heartbeatMs?: number
 }
 
 /** Whether a request path is the editor's: `/__bildr` and below, never `/__bildrfoo`. */
@@ -37,6 +41,8 @@ export const ownsPath = (pathname: string): boolean => pathname === BASE || path
 export interface RequestContext {
   /** The client's socket address, from the server adapter. Unknown means refused. */
   remoteAddress?: string
+  /** Aborted when the client disconnects (the server adapter knows): ends an event stream. */
+  signal?: AbortSignal
 }
 
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
@@ -45,11 +51,13 @@ const fail = (status: number, message: string) => json(status, { ok: false, mess
 
 interface Setup extends HandlerOptions {
   actions: Actions
+  events: ModelEvents
 }
 
 export const createBildrHandler = (options: HandlerOptions) => {
   const { root, confirmMigration, runHealth } = options
-  const setup: Setup = { ...options, editorDist: options.editorDist ?? defaultEditorDist(), actions: createActions({ root, confirmMigration, runHealth }) }
+  const events = options.events ?? createModelEvents()
+  const setup: Setup = { ...options, events, editorDist: options.editorDist ?? defaultEditorDist(), actions: createActions({ root, confirmMigration, runHealth, events }) }
   return async (request: Request, context: RequestContext = {}): Promise<Response> => {
     try {
       return await route(setup, request, context)
@@ -79,7 +87,7 @@ const ASSETS = `${BASE}/_assets/`
 const MCP = `${BASE}/mcp`
 const ACTION_PATH = /^\/__bildr\/api\/actions\/([^/]+)$/
 
-const route = async ({ root, token, confirmMigration, runHealth, editorDist, actions }: Setup, request: Request, context: RequestContext): Promise<Response> => {
+const route = async ({ root, token, confirmMigration, runHealth, editorDist, actions, events, heartbeatMs }: Setup, request: Request, context: RequestContext): Promise<Response> => {
   const url = new URL(request.url)
   if (!ownsPath(url.pathname)) return fail(404, 'Not found')
   const host = request.headers.get('host')
@@ -105,6 +113,8 @@ const route = async ({ root, token, confirmMigration, runHealth, editorDist, act
   if (path === `${BASE}/api/actions` && request.method === 'GET') return json(200, actions.list())
   const action = ACTION_PATH.exec(path)
   if (action && request.method === 'POST') return callAction(actions, action[1]!, request)
+  if (path === `${BASE}/api/events` && request.method === 'GET') return eventStream(events, heartbeatMs ?? HEARTBEAT_MS, [request.signal, context.signal])
+  if (path === `${BASE}/api/version` && request.method === 'GET') return json(200, { version: events.version })
   if (path === `${BASE}/api/model` && request.method === 'GET') return json(200, loadModel(readModelFiles(root)))
   if (path === `${BASE}/api/drift` && request.method === 'GET') return json(200, drift(root))
   if (path === `${BASE}/api/file` && request.method === 'PUT') return writeModelFile(root, url.searchParams.get('path'), request)
@@ -113,6 +123,60 @@ const route = async ({ root, token, confirmMigration, runHealth, editorDist, act
   if (path === `${BASE}/api/health` && request.method === 'GET') return json(200, readHealth(root))
   if (path === `${BASE}/api/health/run` && request.method === 'POST') return runChecks(runHealth, request)
   return fail(404, 'Not found')
+}
+
+const HEARTBEAT_MS = 15_000
+/** Messages a slow client may leave unread before its stream is closed (it reconnects and reads the version again). */
+const MAX_BACKLOG = 256
+
+/**
+ * Server-sent events for open editors (P3b): first `{type:'ready', version}`, then every
+ * bus event as one `data:` message, and a heartbeat comment. The subscription ends when
+ * the client cancels the stream or disconnects (`signals`), or falls too far behind.
+ */
+const eventStream = (events: ModelEvents, heartbeatMs: number, signals: Array<AbortSignal | undefined>) => {
+  const encoder = new TextEncoder()
+  let stop = () => {}
+  let unsubscribe: (() => void) | undefined
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      let open = true
+      const send = (text: string) => {
+        if (!open) return
+        if ((controller.desiredSize ?? 0) < -MAX_BACKLOG) return stop()
+        controller.enqueue(encoder.encode(text))
+      }
+      const heartbeat = setInterval(() => send(': heartbeat\n\n'), heartbeatMs)
+      const onAbort = () => stop()
+      stop = () => {
+        if (!open) return
+        open = false
+        clearInterval(heartbeat)
+        unsubscribe?.()
+        for (const signal of signals) signal?.removeEventListener('abort', onAbort)
+        try {
+          controller.close()
+        } catch {
+          // Already cancelled by the client.
+        }
+      }
+      for (const signal of signals) signal?.addEventListener('abort', onAbort)
+      send(`retry: 2000\ndata: ${JSON.stringify({ type: 'ready', version: events.version })}\n\n`)
+      unsubscribe = events.subscribe((event: BildrEvent) => send(`data: ${JSON.stringify(event)}\n\n`))
+      if (signals.some(signal => signal?.aborted)) stop()
+    },
+    cancel() {
+      stop()
+    }
+  }, { highWaterMark: 1 })
+  if (!unsubscribe) {
+    stop()
+    return fail(503, 'Too many open bildr event streams: close other editor tabs')
+  }
+  return new Response(stream, {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-store', 'x-accel-buffering': 'no' }
+  })
 }
 
 const asset = (dist: string | undefined, encoded: string) => {

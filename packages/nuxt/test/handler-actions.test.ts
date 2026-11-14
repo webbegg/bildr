@@ -79,7 +79,9 @@ const NAMES = [
   'layout_create', 'layout_create_from_selection', 'layout_rename', 'layout_duplicate', 'layout_delete', 'layout_slot_add', 'layout_slot_update', 'layout_slot_remove',
   'layout_variable_add', 'layout_variable_update', 'layout_variable_remove', 'page_set_layout', 'page_set_layout_values', 'page_set_slot',
   'theme_get', 'theme_update', 'theme_presets_list', 'theme_apply', 'project_update', 'catalog_get',
-  'editor_context_get', 'editor_context_set', 'editor_navigate'
+  'editor_context_get', 'editor_context_set', 'editor_navigate',
+  // P3b: undo/redo and the model version.
+  'history_get', 'history_undo', 'history_redo', 'model_version_get'
 ].sort()
 
 // T10a (S11, D12): every editor operation is an action, callable over HTTP.
