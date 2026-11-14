@@ -8,6 +8,8 @@ import { codeView, deleteModelFile, isDeletableModelPath, isModelFilePath, pendi
 import { readModelFiles } from '../node/project.ts'
 import { ActionError, defineAction } from './define.ts'
 import type { ActionDef } from './define.ts'
+import { EDIT_ACTIONS } from './editing.ts'
+import { EDITOR_ACTIONS } from './editor.ts'
 
 /**
  * The editor's operations (T10 action contract). The editor UI calls them
@@ -144,5 +146,8 @@ export const ACTIONS: readonly ActionDef[] = [
   healthGet,
   healthRun,
   migrationPendingGet,
-  migrationConfirm
+  migrationConfirm,
+  // The visual editor's operations (P3a): nodes, pages, components, instances, layouts, theme, project.
+  ...EDIT_ACTIONS,
+  ...EDITOR_ACTIONS
 ] as ActionDef[]

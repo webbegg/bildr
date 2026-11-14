@@ -1,4 +1,4 @@
-import { existsSync, lstatSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { MANIFEST_FILE, fileKind, loadModel, serializeModel } from '@bildr/codegen/model'
 import type { ModelProblem } from '@bildr/codegen/model'
@@ -67,6 +67,50 @@ export const deleteModelFile = (root: string, path: string): DeleteOutcome => {
   const result = loadModel(Object.fromEntries(Object.entries(readModelFiles(root)).filter(([file]) => file !== path)))
   if (!result.ok) return { ok: false, reason: 'invalid', problems: result.problems }
   rmSync(target)
+  return { ok: true }
+}
+
+/** One file of an edit's change set (`@bildr/codegen/edit`): its canonical text, or null to delete it. */
+export interface ModelFileChange {
+  path: string
+  content: string | null
+}
+
+export type ChangeSetOutcome = { ok: true } | { ok: false, message: string }
+
+/**
+ * Writes an edit's change set: every path is checked first (model files only,
+ * deletes only of artifact files, nothing through a symlink that leaves
+ * `.bildr/`), then each file is written atomically; a failure part-way puts
+ * back what was already written. The caller validated the model.
+ */
+export const writeChangeSet = (root: string, changes: readonly ModelFileChange[]): ChangeSetOutcome => {
+  const base = join(root, '.bildr')
+  for (const { path, content } of changes) {
+    if (content === null ? !isDeletableModelPath(path) : !isModelFilePath(path)) return { ok: false, message: `${path} is not a model file bildr may ${content === null ? 'delete' : 'write'}` }
+    const target = join(root, path)
+    if (!resolvesInside(base, content === null ? dirname(target) : target)) return { ok: false, message: `${path} resolves outside .bildr/ (symlink)` }
+    if (lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink()) return { ok: false, message: `${path} is a symlink: bildr only writes model files it can read` }
+  }
+  const undo: Array<{ target: string, previous: Buffer | undefined }> = []
+  try {
+    for (const { path, content } of changes) {
+      const target = join(root, path)
+      undo.push({ target, previous: existsSync(target) ? readFileSync(target) : undefined })
+      if (content === null) {
+        rmSync(target, { force: true })
+      } else {
+        mkdirSync(dirname(target), { recursive: true })
+        writeAtomically(target, content)
+      }
+    }
+  } catch (error) {
+    for (const { target, previous } of undo.reverse()) {
+      if (previous === undefined) rmSync(target, { force: true })
+      else writeFileSync(target, previous)
+    }
+    return { ok: false, message: `bildr could not write the edit, nothing changed: ${(error as Error).message}` }
+  }
   return { ok: true }
 }
 

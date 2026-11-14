@@ -67,7 +67,20 @@ const failure = async (response: Response, status: number, code: string) => {
 }
 const page = () => JSON.parse(readFileSync(join(dir, pagePath), 'utf8')) as Record<string, unknown> & { seo: { title: string }, layout: string }
 
-const NAMES = ['code_view', 'health_get', 'health_run', 'migration_confirm', 'migration_pending_get', 'model_file_delete', 'model_file_put', 'model_get']
+const NAMES = [
+  'code_view', 'health_get', 'health_run', 'migration_confirm', 'migration_pending_get', 'model_file_delete', 'model_file_put', 'model_get',
+  // P3a: the visual editing operations.
+  'node_insert', 'node_update_props', 'node_update_style', 'node_rename', 'node_set_locked', 'node_move', 'node_move_many', 'node_delete', 'node_duplicate', 'node_wrap',
+  'page_create', 'page_update', 'page_delete',
+  'component_create', 'component_rename', 'component_duplicate', 'component_delete', 'component_property_add', 'component_property_update', 'component_property_remove',
+  'component_variant_add', 'component_variant_rename', 'component_variant_delete', 'component_variant_set_override', 'component_state_add',
+  'component_interaction_add', 'component_interaction_update', 'component_interaction_remove', 'component_transition_set',
+  'instance_set_values', 'instance_set_slot', 'instance_detach', 'instance_replace',
+  'layout_create', 'layout_create_from_selection', 'layout_rename', 'layout_duplicate', 'layout_delete', 'layout_slot_add', 'layout_slot_update', 'layout_slot_remove',
+  'layout_variable_add', 'layout_variable_update', 'layout_variable_remove', 'page_set_layout', 'page_set_layout_values', 'page_set_slot',
+  'theme_get', 'theme_update', 'theme_presets_list', 'theme_apply', 'project_update', 'catalog_get',
+  'editor_context_get', 'editor_context_set', 'editor_navigate'
+].sort()
 
 // T10a (S11, D12): every editor operation is an action, callable over HTTP.
 describe('action list', () => {

@@ -16,6 +16,7 @@
     "./generate": "./src/generate/index.ts",
     "./design": "./src/design/index.ts",
     "./render": "./src/render/index.ts",
+    "./edit": "./src/edit/index.ts",
     "./env": "./src/env/index.ts",
     "./migrate": "./src/migrate/index.ts"
   },
@@ -34,6 +35,7 @@
       "./generate": { "types": "./dist/generate/index.d.ts", "default": "./dist/generate/index.js" },
       "./design": { "types": "./dist/design/index.d.ts", "default": "./dist/design/index.js" },
       "./render": { "types": "./dist/render/index.d.ts", "default": "./dist/render/index.js" },
+      "./edit": { "types": "./dist/edit/index.d.ts", "default": "./dist/edit/index.js" },
       "./env": { "types": "./dist/env/index.d.ts", "default": "./dist/env/index.js" },
       "./migrate": { "types": "./dist/migrate/index.d.ts", "default": "./dist/migrate/index.js" }
     }

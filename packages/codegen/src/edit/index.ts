@@ -1,0 +1,110 @@
+import type { z } from 'zod'
+import { runEdit } from './core.ts'
+import type { EditDef, EditOutcome } from './core.ts'
+import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeRename, nodeSetLocked, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './nodes.ts'
+import { pageCreate, pageDelete, pageUpdate } from './pages.ts'
+import {
+  componentCreate, componentDelete, componentDuplicate, componentInteractionAdd, componentInteractionRemove, componentInteractionUpdate, componentPropertyAdd,
+  componentPropertyRemove, componentPropertyUpdate, componentRename, componentStateAdd, componentTransitionSet, componentVariantAdd, componentVariantDelete,
+  componentVariantRename, componentVariantSetOverride
+} from './components.ts'
+import { instanceDetach, instanceReplace, instanceSetSlot, instanceSetValues } from './instances.ts'
+import {
+  layoutCreate, layoutCreateFromSelection, layoutDelete, layoutDuplicate, layoutRename, layoutSlotAdd, layoutSlotRemove, layoutSlotUpdate, layoutVariableAdd,
+  layoutVariableRemove, layoutVariableUpdate, pageSetLayout, pageSetLayoutValues, pageSetSlot
+} from './layouts.ts'
+import { catalogGet, projectUpdate, themeApply, themeGet, themePresetsList, themeUpdate } from './theme.ts'
+
+/**
+ * `@bildr/codegen/edit`: the visual editor's operations on the `.bildr/`
+ * model (P3a; adapted from the hosted `shared/document/operations.ts`).
+ *
+ * One entry point: `applyEdit(files, name, input)` takes the model files
+ * (path → text, as `readModelFiles` gives them), runs one edit on a copy of
+ * the loaded model and returns the change set to write: only the files the
+ * edit changed, in canonical form, with `content: null` for a file to delete.
+ * It never touches disk. The whole model must load afterwards, or the
+ * problems come back instead of a change set. `EDIT_INPUTS` holds each
+ * edit's input schema (the module's actions take them as they are).
+ */
+
+export const EDITS = {
+  node_insert: nodeInsert,
+  node_update_props: nodeUpdateProps,
+  node_update_style: nodeUpdateStyle,
+  node_rename: nodeRename,
+  node_set_locked: nodeSetLocked,
+  node_move: nodeMove,
+  node_move_many: nodeMoveMany,
+  node_delete: nodeDelete,
+  node_duplicate: nodeDuplicate,
+  node_wrap: nodeWrap,
+  page_create: pageCreate,
+  page_update: pageUpdate,
+  page_delete: pageDelete,
+  component_create: componentCreate,
+  component_rename: componentRename,
+  component_duplicate: componentDuplicate,
+  component_delete: componentDelete,
+  component_property_add: componentPropertyAdd,
+  component_property_update: componentPropertyUpdate,
+  component_property_remove: componentPropertyRemove,
+  component_variant_add: componentVariantAdd,
+  component_variant_rename: componentVariantRename,
+  component_variant_delete: componentVariantDelete,
+  component_variant_set_override: componentVariantSetOverride,
+  component_state_add: componentStateAdd,
+  component_interaction_add: componentInteractionAdd,
+  component_interaction_update: componentInteractionUpdate,
+  component_interaction_remove: componentInteractionRemove,
+  component_transition_set: componentTransitionSet,
+  instance_set_values: instanceSetValues,
+  instance_set_slot: instanceSetSlot,
+  instance_detach: instanceDetach,
+  instance_replace: instanceReplace,
+  layout_create: layoutCreate,
+  layout_create_from_selection: layoutCreateFromSelection,
+  layout_rename: layoutRename,
+  layout_duplicate: layoutDuplicate,
+  layout_delete: layoutDelete,
+  layout_slot_add: layoutSlotAdd,
+  layout_slot_update: layoutSlotUpdate,
+  layout_slot_remove: layoutSlotRemove,
+  layout_variable_add: layoutVariableAdd,
+  layout_variable_update: layoutVariableUpdate,
+  layout_variable_remove: layoutVariableRemove,
+  page_set_layout: pageSetLayout,
+  page_set_layout_values: pageSetLayoutValues,
+  page_set_slot: pageSetSlot,
+  theme_get: themeGet,
+  theme_update: themeUpdate,
+  theme_presets_list: themePresetsList,
+  theme_apply: themeApply,
+  project_update: projectUpdate,
+  catalog_get: catalogGet
+} satisfies Record<string, EditDef>
+
+export type EditName = keyof typeof EDITS
+export type EditInput<N extends EditName> = z.input<(typeof EDITS)[N]['input']>
+
+export const EDIT_NAMES = Object.keys(EDITS) as EditName[]
+
+/** Each edit's input schema, by name. */
+export const EDIT_INPUTS: { [N in EditName]: (typeof EDITS)[N]['input'] } = Object.fromEntries(EDIT_NAMES.map(name => [name, EDITS[name].input])) as never
+
+/** Whether the edit only reads the model. */
+export const isReadOnlyEdit = (name: EditName): boolean => (EDITS[name] as EditDef).readOnly === true
+
+/** Runs edit `name` with `input` on the model `files` (see the module comment). */
+export const applyEdit = (files: Record<string, string>, name: EditName, input: unknown): EditOutcome => {
+  const def = Object.hasOwn(EDITS, name) ? EDITS[name] as EditDef : undefined
+  if (!def) return { ok: false, code: 'invalid_input', message: `Unknown edit "${String(name)}"` }
+  return runEdit(files, def, input)
+}
+
+export { mintId } from './core.ts'
+export type { EditErrorCode, EditOutcome, FileChange } from './core.ts'
+export { PALETTE } from './palette.ts'
+export { THEME_PRESETS } from './theme.ts'
+export type { ThemePreset } from './theme.ts'
+export type { PaletteEntry } from './palette.ts'
