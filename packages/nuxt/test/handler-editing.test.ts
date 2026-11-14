@@ -137,6 +137,36 @@ describe('theme, project and catalog actions', () => {
   })
 })
 
+describe('queries and page uses (P5)', () => {
+  const listed = async () => {
+    const made = await ok('datasource_create', { name: 'local', kind: 'memory' })
+    await ok('entity_create', { name: 'note', source: made.datasourceId, fields: [{ name: 'text', type: 'text', required: true }] })
+  }
+
+  it('create a list\'s query, bind the List, edit its sort and limit, and undo each as one step', async () => {
+    await listed()
+    const list = await ok('node_insert', { file: 'pg_index', type: 'List' })
+    const created = await ok('query_create_for_list', { page: 'pg_index', entity: 'ent_note', nodeId: list.nodeId })
+    expect(created).toMatchObject({ queryId: 'q_index_notes', as: 'notes', changed: expect.arrayContaining([pagePath, '.bildr/modules/main/queries/index-notes.json']) })
+    expect(json(pagePath).uses.queries).toEqual([{ as: 'notes', query: 'q_index_notes' }])
+    const updated = await ok('query_update', { query: 'q_index_notes', page: 'pg_index', as: 'notes', orderBy: [{ field: 'text', direction: 'desc' }], limit: 4 })
+    expect(updated).toMatchObject({ queryId: 'q_index_notes', forked: false })
+    expect(json('.bildr/modules/main/queries/index-notes.json')).toMatchObject({ orderBy: [{ field: 'text', direction: 'desc' }], limit: 4 })
+    expect((await ok('history_get')).undo.map((step: Json) => step.action).slice(0, 2)).toEqual(['query_update', 'query_create_for_list'])
+    await ok('history_undo')
+    expect(json('.bildr/modules/main/queries/index-notes.json')).not.toHaveProperty('limit')
+  })
+
+  it('refuse what the model refuses with 422, and a missing target with 404', async () => {
+    await listed()
+    await failure('query_update', { query: 'q_notes', orderBy: [{ field: 'nope', direction: 'asc' }] }, 422, 'invalid')
+    await failure('page_use_add', { page: 'pg_index', as: 'site', query: 'q_notes' }, 422, 'invalid')
+    await failure('page_use_add', { page: 'pg_index', as: 'x', query: 'q_nope' }, 404, 'not_found')
+    await failure('page_use_remove', { page: 'pg_index', as: 'nope' }, 404, 'not_found')
+    await failure('query_update', { query: 'q_notes', page: 'pg_index' }, 422, 'invalid')
+  })
+})
+
 describe('editor context and navigate', () => {
   it('store what the editor shows in .bildr/.cache/session.json and read it back with the selected node', async () => {
     expect(await ok('editor_context_get')).toBeNull()
@@ -147,6 +177,13 @@ describe('editor context and navigate', () => {
     expect(got).toMatchObject({ file: 'pg_index', kind: 'page', name: 'index', selected: { id: 'n_h1', type: 'Heading', props: { level: 1, text: 'Welcome to App' } } })
     await failure('editor_context_set', { file: 'pg_index', nodeId: 'n_nope' }, 404, 'not_found')
     await failure('editor_context_set', { file: 'pg_nope', nodeId: null }, 404, 'not_found')
+  })
+
+  it('keep the record picked on a detail page (P5), and drop it when none is given', async () => {
+    const set = await ok('editor_context_set', { file: 'pg_index', nodeId: null, record: 'hello-bildr' })
+    expect(set).toMatchObject({ file: 'pg_index', record: 'hello-bildr' })
+    expect(await ok('editor_context_get')).toMatchObject({ record: 'hello-bildr' })
+    expect(await ok('editor_context_set', { file: 'pg_index', nodeId: null })).not.toHaveProperty('record')
   })
 
   it('editor_navigate checks and returns the target (no event stream yet)', async () => {

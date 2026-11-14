@@ -3,7 +3,7 @@ import type { ComponentFile, LayoutFile, ModelNode, PageFile, PropertyDef, Value
 import {
   animatedProperties, CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, containerTag, DEFAULT_HEADING_LEVEL,
   DEFAULT_TRANSITION, displayOf, fallbackStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, isSafeUrl, LINK_CLASS,
-  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, NODE_ELEMENTS, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses
+  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses
 } from '@bildr/codegen/render'
 
 /**
@@ -556,13 +556,20 @@ const list = (frame: Frame, node: ModelNode, options: Options): PlanElement[] =>
   }
   const inStack = childrenInStack(node.type, props)
   const kids = node.children ?? []
+  // `loadMore`: the first n records, then the Load more button while more follow (the canvas never loads them).
+  const more = loadMoreSize(props.loadMore)
   // No data: the children once, dimmed, with their bindings as placeholders.
-  const shown = missing ? [MISSING] : rows
+  const shown = missing ? [MISSING] : more ? rows.slice(0, more) : rows
   const children = shown.flatMap((row, index) => {
     const itemFrame: Frame = { ...frame, scope: { ...frame.scope, [as]: row } }
     const copy = options.copy || index > 0
     return kids.flatMap(child => renderNode(itemFrame, child, { inStack, copy }).map(element => missing ? { ...element, class: [element.class, 'opacity-60'].filter(Boolean).join(' '), placeholder: false } : element))
   })
+  if (more && rows.length > more) {
+    const copy = options.copy ? { copy: true } : {}
+    const button: PlanElement = { tag: NODE_ELEMENTS.Button, class: '', attrs: { label: LOAD_MORE_LABEL }, children: [], ...copy }
+    children.push({ tag: 'div', class: LOAD_MORE_CLASS, attrs: {}, children: [button], ...copy })
+  }
   const tag = containerTag(props.tag) ?? 'div'
   return [base(frame, node, options, tag, styleOf(frame, node, { display: displayOf(node.type, props), fallback: fallbackOf(node, options) }), { children })]
 }

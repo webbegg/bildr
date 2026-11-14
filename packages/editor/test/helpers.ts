@@ -42,10 +42,25 @@ export type Handler = (input: Record<string, unknown>) => unknown
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
+/**
+ * What the app's own routes answer (`/api/<module>/<plural>`, P5): by path, the JSON body, a `Failure`
+ * (its status) or a function of the query string. A path nobody answers is an unreachable app (a network error).
+ */
+export type AppRoutes = Record<string, unknown | ((query: URLSearchParams) => unknown)>
+
 /** Stubs `fetch` with the action endpoint: each call is recorded and answered by the handler for its name. */
-export const mockActions = (handlers: Record<string, Handler>) => {
+export const mockActions = (handlers: Record<string, Handler>, routes: AppRoutes = {}) => {
   const calls: Array<{ name: string, input: Record<string, unknown> }> = []
+  const appCalls: string[] = []
   const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+    if (!String(url).startsWith('/__bildr/api/')) {
+      const target = new URL(String(url), 'http://app.test')
+      appCalls.push(target.pathname + target.search)
+      const answer = routes[target.pathname]
+      if (answer === undefined) throw new TypeError('Failed to fetch')
+      const body = typeof answer === 'function' ? (answer as (query: URLSearchParams) => unknown)(target.searchParams) : answer
+      return body instanceof Failure ? json(body.status, { message: body.message }) : json(200, body)
+    }
     const name = String(url).replace('/__bildr/api/actions/', '')
     const input = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
     calls.push({ name, input })
@@ -64,7 +79,7 @@ export const mockActions = (handlers: Record<string, Handler>) => {
     return json(200, { ok: true, result: out })
   })
   vi.stubGlobal('fetch', fetchMock)
-  return { calls, fetch: fetchMock, named: (name: string) => calls.filter(call => call.name === name) }
+  return { calls, appCalls, fetch: fetchMock, named: (name: string) => calls.filter(call => call.name === name) }
 }
 
 /** Mounts `component` (a screen inside `<UApp>`, or the whole App, which has its own) with the Nuxt UI plugin, a router at `path` and the shared status. */

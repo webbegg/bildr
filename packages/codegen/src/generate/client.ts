@@ -3,6 +3,7 @@ import { datasourceOf, entityById, entityNames, isWritable, keyOf } from './cont
 import type { ModuleContext } from './context.ts'
 import { zodField } from './entity.ts'
 import type { KernelName } from './entity.ts'
+import { listRoute } from '../query/index.ts'
 import { importLine } from './imports.ts'
 import { camel, docText, file, header, kebab, pascal, tsDuration, tsLiteral, tsString } from './text.ts'
 
@@ -17,7 +18,7 @@ import { camel, docText, file, header, kebab, pascal, tsDuration, tsLiteral, tsS
 export const collectionFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
   const names = entityNames(entity)
   const source = datasourceOf(context, repository)
-  const route = `/api/${context.name}/${kebab(entity.plural)}`
+  const route = listRoute(context.model, entity.id) ?? `/api/${context.name}/${kebab(entity.plural)}`
   const doc = source.kind !== 'rest'
     ? `Client copy of every ${names.type}, synced from the ${names.type} repository's list route (sync mode: ${entity.client.sync}).`
     : `Client copy of the first page of ${pascal(entity.plural)} from the "${source.name}" REST data source${isWritable(repository) ? '' : ' (read-only)'}.`

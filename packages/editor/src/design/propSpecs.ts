@@ -38,9 +38,18 @@ export const PROP_SPECS: Record<string, PropSpec[]> = {
   ],
   Input: [text('label', 'Label'), text('placeholder', 'Placeholder'), text('field', 'Field'), choice('inputType', 'Type', INPUT_TYPES), toggle('multiline', 'Multiline'), { key: 'rows', label: 'Rows', control: 'number' }],
   Checkbox: [text('label', 'Label'), text('field', 'Field')],
-  List: [text('as', 'Item name'), choice('layout', 'Layout', LIST_LAYOUTS), tag, text('empty', 'Empty text'), text('loading', 'Loading text'), toggle('hideWhenEmpty', 'Hide when empty')],
+  List: [text('as', 'Item name'), choice('layout', 'Layout', LIST_LAYOUTS), tag, text('empty', 'Empty text'), text('loading', 'Loading text'), toggle('hideWhenEmpty', 'Hide when empty'), { key: 'loadMore', label: 'Load more (page size)', control: 'number' }],
   Form: []
 }
 
 /** `visible` is every node's: false hides it (in the app and on the canvas). */
 export const VISIBLE_SPEC: PropSpec = toggle('visible', 'Visible', true)
+
+/** The props whose value a binding can give, by node type (`$bind`, or a `$template` with names in it). */
+export const BINDABLE: Record<string, string[]> = {
+  Heading: ['text'],
+  Text: ['text'],
+  Button: ['text'],
+  Link: ['text'],
+  Image: ['src', 'alt']
+}

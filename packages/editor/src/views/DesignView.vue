@@ -10,6 +10,7 @@ import DesignLayers from '../design/DesignLayers.vue'
 import DesignPalette from '../design/DesignPalette.vue'
 import ProblemsList from '../components/ProblemsList.vue'
 import DesignToolbar from '../design/DesignToolbar.vue'
+import RequiredValuesDialog from '../design/RequiredValuesDialog.vue'
 import VariantBar from '../design/VariantBar.vue'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
 
@@ -123,5 +124,6 @@ onBeforeUnmount(() => {
         <DesignInspector />
       </aside>
     </div>
+    <RequiredValuesDialog />
   </div>
 </template>

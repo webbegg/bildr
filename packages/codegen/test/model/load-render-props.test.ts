@@ -51,6 +51,12 @@ describe('loadModel reports render props the generator refuses', () => {
     expect(problems(add({ id: 'n_x', type: 'Image', props: { src: '/uploads/a.png', alt: 'x' } }))).toEqual([])
     expect(problems(add({ id: 'n_x', type: 'Image', props: { src: 'https://x.test/a.png', alt: 'x' } }))).toEqual([])
   })
+  it.each([0, -1, 2.5, 501, '6', true])('a List loadMore of %j', (loadMore) => {
+    expect(problems(add({ id: 'n_x', type: 'List', props: { items: { $bind: 'all' }, as: 'p', loadMore } }))).toContainEqual(expect.stringMatching(/loadMore must be a whole number from 1 to 500/))
+  })
+  it('accepts a List loadMore page size', () => {
+    expect(problems(add({ id: 'n_x', type: 'List', props: { items: { $bind: 'all' }, as: 'p', loadMore: 6 } }))).toEqual([])
+  })
   it('an inputType on a multiline input', () => {
     expect(problems((_index, newPost) => {
       find(newPost.root, 'n_body')!.props!.inputType = 'email'

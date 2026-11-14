@@ -92,6 +92,10 @@ const onMessage = (event: MessageEvent) => {
     case 'bildr:drop':
       void design.onDrop(message.parentId, message.index, message.payload)
       break
+    case 'bildr:interaction':
+      // A submitted form or an action run in preview may have changed the app's rows.
+      if (message.step.kind === 'runAction') design.refreshDataSoon()
+      break
     case 'bildr:size':
       contentHeight.value = message.height
       break

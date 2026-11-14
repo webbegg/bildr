@@ -85,7 +85,9 @@ const NAMES = [
   // P3c: data sources, entities and fields; previews and env status.
   'datasource_create', 'datasource_update', 'datasource_delete', 'entity_create', 'entity_update', 'entity_delete',
   'entity_field_add', 'entity_field_update', 'entity_field_move', 'entity_field_remove',
-  'datasource_preview', 'repository_endpoint_test', 'env_status'
+  'datasource_preview', 'repository_endpoint_test', 'env_status',
+  // P5: a list's query and what a page uses.
+  'query_create_for_list', 'query_update', 'page_use_add', 'page_use_update', 'page_use_remove'
 ].sort()
 
 // T10a (S11, D12): every editor operation is an action, callable over HTTP.

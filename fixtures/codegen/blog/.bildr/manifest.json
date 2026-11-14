@@ -88,7 +88,7 @@
     },
     "layers/blog/app/pages/index.vue": {
       "owner": "managed",
-      "sha256": "53131d60cd814286112a8ac2d56c39c50f5d50e67b6953fe52781ecb5100e8d9",
+      "sha256": "4359dd75375a75471008e417f0f8447e4ef767d961d1c01221680c5f08162468",
       "source": ".bildr/modules/blog/pages/index.json"
     },
     "layers/blog/app/pages/posts/[slug].vue": {

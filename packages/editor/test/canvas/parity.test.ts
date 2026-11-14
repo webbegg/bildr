@@ -59,6 +59,18 @@ describe('canvas render parity with the generated app', () => {
     expect(canvas(page('index'), { site, preferences: { showDrafts: true }, featured: [], all: [hello, draft], quotes: [] })).toEqual(normalized(generated))
   })
 
+  // list-load-more: the index list shows its first 6 records and a Load more button while more follow.
+  it.each([[7, true], [6, false]])('index page: a List with loadMore and %i records (button: %s)', (count, button) => {
+    const rows = Array.from({ length: count }, (_, index) => ({ ...hello, id: `p${index}`, slug: `p${index}` }))
+    const generated = renderGeneratedPage(app, sfc('layers/blog/app/pages/index.vue'), {
+      site, preferences: { showDrafts: true }, featured: [], all: rows, quotes: [], posts: rows, allLoading: false, featuredLoading: false, shownList: 6
+    })
+    const rendered = canvas(page('index'), { site, preferences: { showDrafts: true }, featured: [], all: rows, quotes: [] })
+    expect(rendered).toEqual(normalized(generated))
+    expect(rendered.filter(line => line.startsWith('UButton:'))).toHaveLength(button ? 1 : 0)
+    expect(rendered.includes('div: basis-full col-span-full flex flex-col gap-2 items-center self-stretch w-full')).toBe(button)
+  })
+
   it('detail page: `when`, a filled layout slot, a bound visible and action state', () => {
     const generated = renderGeneratedPage(app, sfc('layers/blog/app/pages/posts/[slug].vue'), {
       site, post: draft, postLoading: false, publishPending: false, publishError: null

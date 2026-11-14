@@ -24,6 +24,8 @@ interface StoredContext {
   nodeId: string | null
   /** With a component: the variant shown (`''` for the primary). */
   variant: string | null
+  /** On a detail page: the key (the value of the field its route parameter matches) of the record the editor shows. */
+  record?: string | null
   updatedAt: string
 }
 
@@ -97,11 +99,11 @@ const VariantRef = z.union([ArtifactIdSchema, z.literal('')]).nullable().optiona
 
 const editorContextSet = defineAction({
   name: 'editor_context_set',
-  description: 'Record what the editor shows: the page, component or layout (file), the selected node (nodeId, null for none) and, for a component, its variant. Called by the editor UI; stored in .bildr/.cache/session.json.',
-  input: z.object({ file: FileRef, nodeId: LocalIdSchema.nullable(), variant: VariantRef }),
-  run: ({ file, nodeId, variant }, { root, events }) => {
+  description: 'Record what the editor shows: the page, component or layout (file), the selected node (nodeId, null for none), for a component its variant and for a detail page the record picked (record). Called by the editor UI; stored in .bildr/.cache/session.json.',
+  input: z.object({ file: FileRef, nodeId: LocalIdSchema.nullable(), variant: VariantRef, record: z.string().max(500).nullable().optional().describe('On a detail page: the key of the record shown (the value of the field its route parameter matches)') }),
+  run: ({ file, nodeId, variant, record }, { root, events }) => {
     target(loaded(root), file, nodeId, variant)
-    const context: StoredContext = { file, nodeId, variant: variant ?? null, updatedAt: new Date().toISOString() }
+    const context: StoredContext = { file, nodeId, variant: variant ?? null, ...(record ? { record } : {}), updatedAt: new Date().toISOString() }
     writeContext(root, context)
     events?.publish({ type: 'context', context })
     return context

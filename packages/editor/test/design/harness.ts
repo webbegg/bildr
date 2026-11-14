@@ -7,6 +7,7 @@ import { canvasSrc } from '../../src/design/config.ts'
 import DesignView from '../../src/views/DesignView.vue'
 import { blogModelFiles } from '../canvas/fixture.ts'
 import { mockActions, mountWithApp, settle } from '../helpers.ts'
+import type { AppRoutes } from '../helpers.ts'
 
 /**
  * The Design screen's test harness (P4b, P4c): the blog fixture as the module's
@@ -100,8 +101,8 @@ export const setupHarness = () => {
 }
 
 /** Mounts the Design screen with the base handlers plus `extra`, and opens `file` (the first page by default). */
-export const open = async (extra: Handlers = {}, file?: string) => {
-  const actions = mockActions({ ...baseHandlers(), ...extra })
+export const open = async (extra: Handlers = {}, file?: string, routes: AppRoutes = {}) => {
+  const actions = mockActions({ ...baseHandlers(), ...extra }, routes)
   const mounted = await mountWithApp(DesignView, '/design')
   await fromCanvas({ type: 'bildr:ready' })
   if (file) {

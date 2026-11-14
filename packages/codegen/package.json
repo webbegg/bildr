@@ -18,7 +18,8 @@
     "./render": "./src/render/index.ts",
     "./edit": "./src/edit/index.ts",
     "./env": "./src/env/index.ts",
-    "./migrate": "./src/migrate/index.ts"
+    "./migrate": "./src/migrate/index.ts",
+    "./query": "./src/query/index.ts"
   },
   "files": [
     "dist"
@@ -37,7 +38,8 @@
       "./render": { "types": "./dist/render/index.d.ts", "default": "./dist/render/index.js" },
       "./edit": { "types": "./dist/edit/index.d.ts", "default": "./dist/edit/index.js" },
       "./env": { "types": "./dist/env/index.d.ts", "default": "./dist/env/index.js" },
-      "./migrate": { "types": "./dist/migrate/index.d.ts", "default": "./dist/migrate/index.js" }
+      "./migrate": { "types": "./dist/migrate/index.d.ts", "default": "./dist/migrate/index.js" },
+      "./query": { "types": "./dist/query/index.d.ts", "default": "./dist/query/index.js" }
     }
   },
   "scripts": {

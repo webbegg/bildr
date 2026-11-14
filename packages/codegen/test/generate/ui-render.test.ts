@@ -45,6 +45,17 @@ describe('generateUi follows the canvas render rules', () => {
     expect(() => indexWith({ id: 'n_x', type: 'Heading', props: { level: 7, text: 'x' } })).toThrow(/heading level must be 1–6/)
   })
 
+  it('shows a List\'s first `loadMore` records and a Load more button that shows the next ones (list-load-more)', () => {
+    const page = indexWith({
+      id: 'n_more', type: 'List', props: { items: { $bind: 'all' }, as: 'post', loadMore: 4 },
+      children: [{ id: 'n_title', type: 'Text', props: { text: { $bind: 'post.title' } } }]
+    })
+    expect(page).toContain('const shownMore = ref(4)')
+    expect(page).toContain('<p v-for="post in all.slice(0, shownMore)" :key="post.id" class="whitespace-pre-line">{{ post.title }}</p>')
+    expect(page).toContain('<div v-if="all.length > shownMore" class="col-span-full flex w-full basis-full flex-col items-center gap-2 self-stretch">')
+    expect(page).toContain('<UButton label="Load more" @click="shownMore += 4" />')
+  })
+
   it('keeps the line breaks of a Text (text-line-breaks)', () => {
     expect(indexWith({ ...text('n_x'), style: { text: 'sm' } })).toContain('<p class="whitespace-pre-line text-sm">a</p>')
   })
@@ -152,7 +163,7 @@ describe('generateUi follows the canvas render rules', () => {
     expect(component).toContain('No actions</p>\n        </slot>')
     expect(component).not.toContain('actions?:')
     expect(generated(model, 'pages/index.vue')).toContain([
-      '      <BlogPostCard v-for="post in posts" :key="post.id" :post="post">',
+      '      <BlogPostCard v-for="post in posts.slice(0, shownList)" :key="post.id" :post="post">',
       '        <template #actions>',
       '          <p class="whitespace-pre-line">More</p>',
       '        </template>',

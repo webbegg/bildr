@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { deviceHint } from '@bildr/editor-core/devices'
+import DataStatus from './DataStatus.vue'
 import { zoomLabel } from './scale.ts'
 import type { FileKind } from './store.ts'
 import { useDesign } from './store.ts'
@@ -102,6 +103,8 @@ const preview = computed(() => design.mode.value === 'preview')
       :variant="preview ? 'soft' : 'ghost'"
       @click="design.mode.value = preview ? 'edit' : 'preview'"
     />
+
+    <DataStatus />
 
     <div class="ml-auto flex min-w-0 items-center gap-2 text-xs">
       <span

@@ -1,8 +1,10 @@
 import { computed, inject, ref, shallowRef } from 'vue'
 import type { InjectionKey } from 'vue'
 import { DEFAULT_THEME } from '@bildr/codegen/design'
+import { bindingScope } from '@bildr/codegen/edit'
+import type { ScopeName } from '@bildr/codegen/edit'
 import type { BreakpointBase, Theme } from '@bildr/codegen/design'
-import type { ComponentFile, LayoutFile, Model as ProjectModel, ModelNode, PageFile, Value } from '@bildr/codegen/model'
+import type { ComponentFile, LayoutFile, Model as ProjectModel, ModelNode, PageFile, PropertyDef, Value } from '@bildr/codegen/model'
 import { primaryFrame } from '@bildr/editor-core/frames'
 import { devicesFor } from '@bildr/editor-core/styleFields'
 import type { Device, DeviceId } from '@bildr/editor-core/styleFields'
@@ -11,7 +13,9 @@ import type { BildrEvent } from '../api.ts'
 import type { CanvasFile } from '../canvas/render.ts'
 import type { CanvasMode, CanvasToEditor, CanvasView } from '../canvas/protocol.ts'
 import type { ModelProblem } from '../types.ts'
-import { designData } from './data.ts'
+import type { Row } from '@bildr/codegen/query'
+import { designData, detailField, routeParams } from './data.ts'
+import { createLiveRows } from './liveRows.ts'
 import { findNode, findParent, moveTarget, nodeIds, slotIndex } from './tree.ts'
 import type { DropPosition } from './tree.ts'
 
@@ -24,6 +28,9 @@ import type { DropPosition } from './tree.ts'
  * (undo from an agent, a hand edit on disk), keeping the selection where its
  * node still exists. Edits run one at a time, in order.
  */
+
+/** How long after a form is submitted in preview the app's rows are read again. */
+export const DATA_REFRESH_DELAY_MS = 500
 
 export type FileKind = 'page' | 'component' | 'layout'
 
@@ -127,7 +134,49 @@ export const createDesign = () => {
   /** Page id → route path, which the canvas links its page links to. */
   const pagePaths = computed<Record<string, string>>(() => Object.fromEntries(Object.values(model.value?.modules ?? {}).flatMap(entry => entry.pages.map(page => [page.id, page.path]))))
   const fileKind = computed(() => files.value.find(entry => entry.id === fileId.value)?.kind ?? null)
-  const data = computed(() => model.value ? designData(model.value, fileKind.value === 'page' ? file.value as PageFile : undefined) : {})
+  const page = computed<PageFile | undefined>(() => fileKind.value === 'page' ? file.value as PageFile : undefined)
+
+  // ── The app's data (P5) ───────────────────────────────────────────────
+
+  /** The entities the page's queries read: the rows the canvas needs. */
+  const neededEntities = computed<string[]>(() => {
+    const queries = Object.values(model.value?.modules ?? {}).flatMap(entry => entry.queries)
+    return [...new Set((page.value?.uses?.queries ?? []).flatMap(use => queries.find(query => query.id === use.query)?.from ?? []))]
+  })
+  const rowsOf = createLiveRows(model, neededEntities)
+  /** The record picked on a detail page (its key value), until another is picked. */
+  const recordKey = ref<string | null>(null)
+  /** A detail page: the entity its record comes from and the field (and route parameter) that picks it. */
+  const detail = computed<{ entity: string, field: string, param: string, label: string } | null>(() => {
+    const current = model.value
+    const shown = page.value
+    if (!current || !shown?.params?.length) return null
+    const queries = Object.values(current.modules).flatMap(entry => entry.queries)
+    for (const param of shown.params) {
+      const field = detailField(queries, shown, param.name)
+      const use = (shown.uses?.queries ?? []).find(entry => Object.values(entry.args ?? {}).some(value => typeof value === 'object' && value !== null && !Array.isArray(value) && (value as Record<string, unknown>).$route === param.name))
+      const entity = queries.find(query => query.id === use?.query)?.from
+      if (field && entity) {
+        const fields = Object.values(current.modules).flatMap(entry => entry.entities).find(candidate => candidate.id === entity)?.fields ?? []
+        return { entity, field, param: param.name, label: fields.find(candidate => candidate.type === 'text' && candidate.name !== field)?.name ?? field }
+      }
+    }
+    return null
+  })
+  /** The records the picker offers: the app's rows, else the model's fixtures. */
+  const records = computed<Row[]>(() => {
+    const picked = detail.value
+    if (!picked || !model.value) return []
+    return rowsOf.rows.value[picked.entity] ?? Object.values(model.value.modules).flatMap(entry => entry.fixtures).find(entry => entry.entity === picked.entity)?.rows ?? []
+  })
+  const record = computed<Row | undefined>(() => {
+    const picked = detail.value
+    if (!picked) return undefined
+    return records.value.find(row => String(row[picked.field]) === recordKey.value) ?? records.value[0]
+  })
+  const data = computed(() => model.value
+    ? designData(model.value, page.value, { rows: rowsOf.rows.value, route: routeParams(model.value, page.value, record.value) })
+    : {})
 
   const device = computed<Device>(() => {
     const set = devicesFor(base.value)
@@ -268,6 +317,7 @@ export const createDesign = () => {
   const openFile = (id: string) => {
     if (id === fileId.value) return
     fileId.value = id
+    recordKey.value = null
     variantId.value = null
     selectedIds.value = []
     reportContext()
@@ -281,7 +331,13 @@ export const createDesign = () => {
   /** Tells the module what the editor shows, for agents (`editor_context_get`). Best effort. */
   const reportContext = () => {
     if (!fileId.value) return
-    void callAction('editor_context_set', { file: fileId.value, nodeId: selectedId.value, variant: variantId.value }).catch(() => {})
+    const picked = detail.value && record.value ? String(record.value[detail.value.field]) : null
+    void callAction('editor_context_set', { file: fileId.value, nodeId: selectedId.value, variant: variantId.value, ...(picked ? { record: picked } : {}) }).catch(() => {})
+  }
+  /** Picks the record a detail page shows. */
+  const pickRecord = (key: string) => {
+    recordKey.value = key
+    reportContext()
   }
 
   const fileInput = () => fileId.value!
@@ -308,7 +364,27 @@ export const createDesign = () => {
     const out = await edit('node_insert', { file: fileInput(), ...at, ...spec })
     if (typeof out?.nodeId === 'string') select([out.nodeId])
   }
-  const insertComponent = (id: string) => insert({ type: 'Instance', props: { component: id } })
+  /** The names a node of the file being edited can bind; `within`: what something put inside it can (a List's item counts). */
+  const scopeOf = (nodeId?: string | null, within = false): ScopeName[] =>
+    model.value && fileId.value ? bindingScope(model.value, fileId.value, nodeId ?? undefined, { within }) : []
+
+  /** A component insertion waiting for the values its required properties need (`RequiredValuesDialog`). */
+  const pendingInsert = shallowRef<{ component: ComponentFile, at: { parentId?: string, index?: number }, needs: PropertyDef[], scope: ScopeName[] } | null>(null)
+  const insertComponent = async (id: string, at: { parentId?: string, index?: number } = insertionPoint()) => {
+    const component = components.value.find(entry => entry.id === id)
+    // A required property without a default has no value to fall back on: the instance must give it (the model refuses it otherwise).
+    const needs = component?.properties.filter(property => property.required && property.kind !== 'slot' && property.default === undefined) ?? []
+    if (component && needs.length && file.value) {
+      pendingInsert.value = { component, at, needs, scope: scopeOf(at.parentId ?? file.value.root.id, true) }
+      return
+    }
+    await insert({ type: 'Instance', props: { component: id } }, at)
+  }
+  const confirmInsert = async (values: Record<string, Value>) => {
+    const pending = pendingInsert.value
+    pendingInsert.value = null
+    if (pending) await insert({ type: 'Instance', props: { component: pending.component.id, values } }, pending.at)
+  }
 
   const moveNode = async (nodeId: string, parentId: string, index: number) => {
     if (fileId.value) await edit('node_move', { file: fileInput(), nodeId, parentId, index })
@@ -405,7 +481,7 @@ export const createDesign = () => {
     }
     const root = file.value?.root
     if (typeof drop.insert === 'string') await insert({ type: drop.insert }, { parentId, index })
-    else if (typeof drop.component === 'string') await insert({ type: 'Instance', props: { component: drop.component } }, { parentId, index })
+    else if (typeof drop.component === 'string') await insertComponent(drop.component, { parentId, index })
     else if (typeof drop.move === 'string' && root) await moveNode(drop.move, parentId, slotIndex(root, drop.move, parentId, index))
   }
 
@@ -441,6 +517,8 @@ export const createDesign = () => {
     else if (event.type === 'regenerated') {
       regenerated.value = { ok: event.ok, ...(event.problems ? { problems: event.problems } : {}), ...(event.error ? { error: event.error } : {}) }
       void refresh()
+      // The app's data layer may have changed with it (and the dev server may still be restarting).
+      void rowsOf.refresh()
     } else if (event.type === 'navigate') {
       void refresh().then(() => {
         if (files.value.some(entry => entry.id === event.target.file)) {
@@ -451,23 +529,44 @@ export const createDesign = () => {
     }
   }
 
+  /** The app's data may have changed (a form submitted in preview): read it again shortly, once for a burst. */
+  let later: ReturnType<typeof setTimeout> | undefined
+  const refreshDataSoon = () => {
+    clearTimeout(later)
+    later = setTimeout(() => void rowsOf.refresh(), DATA_REFRESH_DELAY_MS)
+  }
+
+  /** Back to where the last session was: its file and the record it picked (best effort; the module may have none). */
+  const restoreContext = async () => {
+    try {
+      const stored = await callAction<{ file?: string, record?: string | null } | null>('editor_context_get')
+      if (!stored?.file || !files.value.some(entry => entry.id === stored.file)) return
+      fileId.value = stored.file
+      recordKey.value = stored.record ?? null
+    } catch {
+      // A fresh editor: the first page.
+    }
+  }
+
   let stop: (() => void) | undefined
   const start = async () => {
     stop = subscribeEvents(onEvent)
     await Promise.all([refresh(), loadCatalog()])
+    await restoreContext()
     reportContext()
   }
   const dispose = () => {
     stop?.()
     stop = undefined
+    clearTimeout(later)
   }
 
   return {
-    result, loading, error, zoom, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
+    page, rowsOf, detail, records, record, pickRecord, result, loading, error, zoom, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
     selectedIds, selectedId, selected, selectedParent, hoveredId, dragging, dragCancels, device, devices, deviceChoice, mode, history, clipboard,
     component, variantId, variant, inspected, breadcrumbs, nameOf, dark, view, selectVariant, override, commitStyle,
-    isContainer, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,
-    setLocked, rename, copy, paste, setProps, setStyle, onDrop, onKey, start, dispose,
+    isContainer, scopeOf, pendingInsert, confirmInsert, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,
+    setLocked, rename, copy, paste, setProps, setStyle, onDrop, onKey, start, dispose, refreshDataSoon,
     chooseDevice: (id: DeviceId) => {
       deviceChoice.value = id
     }

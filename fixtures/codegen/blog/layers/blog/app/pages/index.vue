@@ -8,6 +8,8 @@ const { data: all, isLoading: allLoading } = useAllPosts()
 const { data: quotes } = useLatestQuotes(3)
 const posts = computed(() => preferences.value.showDrafts ? all.value : featured.value)
 useSeoMeta({ title: 'Blog' })
+
+const shownList = ref(6)
 </script>
 
 <template>
@@ -19,7 +21,7 @@ useSeoMeta({ title: 'Blog' })
     <p v-if="allLoading || featuredLoading" class="text-muted">Loading…</p>
     <p v-else-if="!posts.length" class="text-muted">No posts yet.</p>
     <div v-else class="gap-4 self-stretch sm:grid-cols-2 grid">
-      <BlogPostCard v-for="post in posts" :key="post.id" :post="post">
+      <BlogPostCard v-for="post in posts.slice(0, shownList)" :key="post.id" :post="post">
         <template #actions>
           <ULink :to="{ name: 'posts-slug', params: { slug: post.slug } }" class="underline-offset-4 hover:underline items-center gap-1 inline-flex text-primary text-sm">
             <UIcon name="i-lucide-arrow-right" class="size-[1em] shrink-0" />
@@ -27,6 +29,9 @@ useSeoMeta({ title: 'Blog' })
           </ULink>
         </template>
       </BlogPostCard>
+      <div v-if="posts.length > shownList" class="col-span-full flex w-full basis-full flex-col items-center gap-2 self-stretch">
+        <UButton label="Load more" @click="shownList += 6" />
+      </div>
     </div>
     <aside v-if="quotes.length" class="pt-6 gap-2 border-default border-t-1 flex-col self-stretch flex">
       <p v-for="quote in quotes" :key="quote.id" class="whitespace-pre-line text-sm">“{{ quote.text }}” — {{ quote.author }}</p>

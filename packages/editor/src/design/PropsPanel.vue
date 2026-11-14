@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ModelNode, Value } from '@bildr/codegen/model'
+import type { ModelNode, PropertyDef, Value } from '@bildr/codegen/model'
+import { bindingPaths } from '@bildr/codegen/edit'
+import BindPicker from './BindPicker.vue'
 import CommitInput from './CommitInput.vue'
-import { PROP_SPECS, VISIBLE_SPEC } from './propSpecs.ts'
+import FormBindingPanel from './FormBindingPanel.vue'
+import ListSourcePanel from './ListSourcePanel.vue'
+import { BINDABLE, PROP_SPECS, VISIBLE_SPEC } from './propSpecs.ts'
 import type { PropSpec } from './propSpecs.ts'
 import { useDesign } from './store.ts'
 
@@ -26,9 +30,22 @@ const describeBound = (key: string) => {
   return typeof expression.$bind === 'string' ? `{${expression.$bind}}` : typeof expression.$template === 'string' ? expression.$template : JSON.stringify(expression)
 }
 /** Bound props of the node no control covers (a List's `items`, a Form's `action`). */
-const others = computed(() => Object.entries(props.node.props ?? {}).filter(([key, entry]) => isExpression(entry) && !specs.value.some(spec => spec.key === key) && !['values', 'component'].includes(key)).map(([key]) => key))
+const others = computed(() => Object.entries(props.node.props ?? {}).filter(([key, entry]) => isExpression(entry) && !specs.value.some(spec => spec.key === key) && !['values', 'component'].includes(key)
+  // A List's items and a Form's action have their own controls on a page.
+  && !(design.fileKind.value === 'page' && ((props.node.type === 'List' && key === 'items') || (props.node.type === 'Form' && key === 'action')))).map(([key]) => key))
 
 const save = (patch: Record<string, Value | null>) => design.setProps(props.node.id, patch)
+
+// ── Binding (P5) ───────────────────────────────────────────────────────
+
+/** The names this node can read as a value: a record's fields, a list's length, a lone value (a prop, `layout.x`, `site.name`). */
+const paths = computed(() => bindingPaths(design.scopeOf(props.node.id), { leaves: true }))
+const canBind = (spec: PropSpec) => (BINDABLE[props.node.type] ?? []).includes(spec.key) && paths.value.length > 0
+/** Binds a prop to a name: alone when the prop is empty, else added to its text as a template. */
+const bindTo = (key: string, path: string) => {
+  const current = value(key)
+  save({ [key]: typeof current === 'string' && current !== '' ? { $template: `${current} {${path}}` } : { $bind: path } })
+}
 const text = (key: string) => {
   const entry = value(key)
   return typeof entry === 'string' ? entry : typeof entry === 'number' ? String(entry) : ''
@@ -57,7 +74,10 @@ const commitPage = (event: Event) => {
 const component = computed(() => props.node.type === 'Instance' ? design.components.value.find(entry => entry.id === props.node.props?.component) : undefined)
 const values = computed(() => isExpression(props.node.props?.values) ? props.node.props.values as Record<string, Value> : {})
 const SIMPLE_KINDS = ['text', 'textarea', 'image', 'link', 'icon', 'number', 'boolean', 'select']
-const properties = computed(() => (component.value?.properties ?? []).filter(property => SIMPLE_KINDS.includes(property.kind)))
+const properties = computed(() => (component.value?.properties ?? []).filter(property => SIMPLE_KINDS.includes(property.kind) || property.kind === 'entity'))
+/** The records an entity property can take: the names in scope of its entity (one record, or a list for `many`). */
+const records = (property: PropertyDef) => design.scopeOf(props.node.id).filter(entry => entry.entity === property.entity && entry.many === (property.many === true)).map(entry => entry.name)
+const boundName = (id: string) => isExpression(values.value[id]) && typeof (values.value[id] as Record<string, Value>).$bind === 'string' ? (values.value[id] as Record<string, string>).$bind! : ''
 const setValue = (id: string, entry: Value | null) => design.edit('instance_set_values', { file: design.fileId.value!, nodeId: props.node.id, values: { [id]: entry } })
 const setVariant = (event: Event) => design.edit('instance_set_values', { file: design.fileId.value!, nodeId: props.node.id, variant: (event.target as HTMLSelectElement).value })
 /** What an instance can be set to: the variants, not the states (hover and pressed follow the pointer). */
@@ -105,13 +125,23 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
           class="size-3"
         /></button>
       </span>
-      <CommitInput
+      <span
         v-else-if="spec.control === 'text' || spec.control === 'textarea'"
-        :data-testid="`prop-${spec.key}`"
-        :model-value="text(spec.key)"
-        :multiline="spec.control === 'textarea'"
-        @commit="commitText(spec.key, $event)"
-      />
+        class="flex items-start gap-1"
+      >
+        <CommitInput
+          :data-testid="`prop-${spec.key}`"
+          :model-value="text(spec.key)"
+          :multiline="spec.control === 'textarea'"
+          @commit="commitText(spec.key, $event)"
+        />
+        <BindPicker
+          v-if="canBind(spec)"
+          :data-testid="`bind-${spec.key}`"
+          :paths="paths"
+          @pick="bindTo(spec.key, $event)"
+        />
+      </span>
       <CommitInput
         v-else-if="spec.control === 'number'"
         :data-testid="`prop-${spec.key}`"
@@ -175,6 +205,15 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
       <code class="min-w-0 truncate rounded-sm bg-elevated px-1 py-0.5 text-default">{{ describeBound(key) }}</code>
     </div>
 
+    <ListSourcePanel
+      v-if="node.type === 'List' && design.fileKind.value === 'page'"
+      :node="node"
+    />
+    <FormBindingPanel
+      v-if="node.type === 'Form' && design.fileKind.value === 'page'"
+      :node="node"
+    />
+
     <template v-if="component">
       <div class="grid grid-cols-[6.5rem_1fr] items-center gap-2 text-xs text-muted">
         Component
@@ -209,8 +248,32 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
         class="grid grid-cols-[6.5rem_1fr] items-center gap-2 text-xs text-muted"
       >
         {{ property.label ?? property.name }}
+        <select
+          v-if="property.kind === 'entity'"
+          :data-testid="`value-${property.name}`"
+          :class="field"
+          :value="boundName(property.id)"
+          @change="setValue(property.id, ($event.target as HTMLSelectElement).value ? { $bind: ($event.target as HTMLSelectElement).value } : null)"
+        >
+          <option value="">
+            None
+          </option>
+          <option
+            v-if="boundName(property.id) && !records(property).includes(boundName(property.id))"
+            :value="boundName(property.id)"
+          >
+            {{ boundName(property.id) }}
+          </option>
+          <option
+            v-for="name in records(property)"
+            :key="name"
+            :value="name"
+          >
+            {{ name }}
+          </option>
+        </select>
         <span
-          v-if="isExpression(values[property.id])"
+          v-else-if="isExpression(values[property.id])"
           class="truncate"
         ><code class="rounded-sm bg-elevated px-1 py-0.5 text-default">{{ JSON.stringify(values[property.id]) }}</code></span>
         <input

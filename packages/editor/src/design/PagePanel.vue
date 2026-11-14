@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { PageFile, PropertyDef, Value } from '@bildr/codegen/model'
 import CommitInput from './CommitInput.vue'
+import PageUsesPanel from './PageUsesPanel.vue'
 import { useDesign } from './store.ts'
 
 /**
@@ -106,6 +107,8 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
         />
       </label>
     </template>
+
+    <PageUsesPanel :page="page" />
 
     <template v-if="layout && slots.length">
       <h3 class="text-xs font-semibold">

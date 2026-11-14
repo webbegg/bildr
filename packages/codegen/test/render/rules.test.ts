@@ -151,9 +151,9 @@ describe('render rules', () => {
     expect(IMAGE_FALLBACK_STYLE).toEqual({ maxW: 'full' })
   })
 
-  // P2a (E3, "the canvas wins"): every divergence is resolved but a List's Load more, which needs
-  // paged queries (P5). A new entry is a regression: resolve it instead of listing it.
-  it('leaves only the List Load more divergence', () => {
-    expect(KNOWN_DIVERGENCES.map(entry => entry.id)).toEqual(['list-load-more'])
+  // E3 ("the canvas wins"): every divergence is resolved (a List's Load more last, P5).
+  // A new entry is a regression: resolve it instead of listing it.
+  it('has no divergence left', () => {
+    expect(KNOWN_DIVERGENCES).toEqual([])
   })
 })

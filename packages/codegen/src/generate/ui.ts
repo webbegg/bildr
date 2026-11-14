@@ -6,7 +6,7 @@ import type { ActionFile, ComponentFile, EntityFile, LayoutFile, ModelNode, Page
 import {
   animatedProperties, CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, CONTAINER_TAGS, containerTag, DEFAULT_HEADING_LEVEL,
   DEFAULT_TRANSITION, displayOf, fallbackStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, LINK_CLASS,
-  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, NODE_ELEMENTS, nodePropProblems, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses, uiStepProblems
+  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, nodePropProblems, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses, uiStepProblems
 } from '../render/rules.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
 import { entityNames, moduleContext } from './context.ts'
@@ -575,16 +575,23 @@ const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
   const condition = () => lines.length ? 'v-else-if' : 'v-if'
   if (loading.length) lines.push(...element('p', [attr('if', `v-if="${loading.join(' || ')}"`), staticAttr('class', 'text-muted')], escapeText(props.loading as string), indent))
   if (typeof props.empty === 'string') lines.push(...element('p', [attr('if', `${condition()}="!${escapeAttr(items)}.length"`), staticAttr('class', 'text-muted')], escapeText(props.empty), indent))
-  const shown: Attr[] = lines.length ? [attr('if', 'v-else')] : props.hideWhenEmpty === true ? [attr('if', `v-if="${escapeAttr(items)}.length"`)] : []
+  const shownIf: Attr[] = lines.length ? [attr('if', 'v-else')] : props.hideWhenEmpty === true ? [attr('if', `v-if="${escapeAttr(items)}.length"`)] : []
 
   const itemEnv: Env = { ...env, roots: new Map(env.roots).set(as, plainRoot(as)) }
-  const repeat = [attr('for', `v-for="${as} in ${escapeAttr(items)}"`), attr('key', `:key="${as}.id"`)]
+  // `loadMore`: the first n records, and a button that shows n more (state of this node, so one per List).
+  const more = loadMoreSize(props.loadMore)
+  const shown = more ? identifier(`shown${pascal(node.id.replace(/^n_/, ''))}`, where(env, node)) : undefined
+  if (more) env.handlers.push([`const ${shown} = ref(${more})`])
+  const repeat = [attr('for', `v-for="${as} in ${escapeAttr(shown ? `${items}.slice(0, ${shown})` : items)}"`), attr('key', `:key="${as}.id"`)]
   const kids = node.children ?? []
   const inStack = childrenInStack(node.type, props)
   const inner = kids.length === 1
     ? render(itemEnv, kids[0]!, `${indent}  `, { attrs: repeat, slots: options.slots, inStack })
     : [`${indent}  <template ${repeat.map(entry => entry.text).join(' ')}>`, ...kids.flatMap(child => render(itemEnv, child, `${indent}    `, { slots: options.slots, inStack })), `${indent}  </template>`]
-  lines.push(...element(tagOf(env, node), [...shown, ...styleAttrs(env, node, { display: displayOf(node.type, props), fallback: fallbackOf(node, options) })], inner, indent))
+  const button = shown && more
+    ? [`${indent}  <div v-if="${escapeAttr(items)}.length > ${shown}" class="${LOAD_MORE_CLASS}">`, `${indent}    <UButton label="${LOAD_MORE_LABEL}" @click="${shown} += ${more}" />`, `${indent}  </div>`]
+    : []
+  lines.push(...element(tagOf(env, node), [...shownIf, ...styleAttrs(env, node, { display: displayOf(node.type, props), fallback: fallbackOf(node, options) })], [...inner, ...button], indent))
   return lines
 }
 

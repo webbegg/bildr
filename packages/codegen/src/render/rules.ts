@@ -66,6 +66,21 @@ export function listLayout(layout: unknown): ListLayout {
   return (LIST_LAYOUTS as readonly unknown[]).includes(layout) ? layout as ListLayout : 'stack'
 }
 
+/**
+ * A List's `loadMore`: how many records it shows first and adds with each click of its Load more button
+ * (a whole number from 1 to `MAX_LOAD_MORE`), the button staying while more follow. It is the same slice
+ * of the bound list in the app and on the canvas; the button is the last child of the List, a full row
+ * of a grid, its own line in a wrapping row.
+ */
+export const MAX_LOAD_MORE = 500
+export const LOAD_MORE_LABEL = 'Load more'
+export const LOAD_MORE_CLASS = 'col-span-full flex w-full basis-full flex-col items-center gap-2 self-stretch'
+
+/** A List's page size, undefined when it has no (valid) `loadMore`. */
+export function loadMoreSize(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= MAX_LOAD_MORE ? value : undefined
+}
+
 /** A page fills its frame (the canvas) or its layout slot. */
 export const PAGE_FALLBACK_STYLE: Record<string, string> = { minH: 'full' }
 
@@ -243,7 +258,7 @@ export const NODE_PROPS: Readonly<Record<string, readonly string[]>> = {
   Input: ['field', 'label', 'multiline', 'inputType', 'placeholder', 'rows'],
   Checkbox: ['field', 'value', 'label'],
   Form: ['action', 'fields'],
-  List: ['tag', 'as', 'items', 'loading', 'empty', 'hideWhenEmpty', 'layout'],
+  List: ['tag', 'as', 'items', 'loading', 'empty', 'hideWhenEmpty', 'layout', 'loadMore'],
   Instance: ['component', 'values', 'variant'],
   SlotFill: ['slot']
 }
@@ -307,6 +322,7 @@ export function nodePropProblems(type: string, props: Record<string, unknown> = 
   }
   if (type === 'Input') oneOf('inputType', INPUT_TYPES, 'inputType')
   if (type === 'List') oneOf('layout', LIST_LAYOUTS)
+  if (type === 'List' && props.loadMore !== undefined && loadMoreSize(props.loadMore) === undefined) problems.push({ key: 'loadMore', message: `loadMore must be a whole number from 1 to ${MAX_LOAD_MORE}` })
   if (type === 'Heading' && props.level !== undefined && headingLevel(props.level) === undefined) problems.push({ key: 'level', message: 'heading level must be 1–6' })
   return problems
 }
@@ -426,11 +442,4 @@ export function transitionTimingClasses(transition: TransitionSpec): string {
  * Where the generator and the canvas still render a node differently. P2a
  * resolved the other P1 entries (E3); this one waits for paged queries (P5).
  */
-export const KNOWN_DIVERGENCES: readonly RenderDivergence[] = [
-  {
-    id: 'list-load-more',
-    types: ['List'],
-    generator: 'every record of the bound query; no Load more button',
-    canvas: 'with `loadMore`, published apps and the preview show a Load more button under the records while more follow (P5: a paging param on the query)'
-  }
-]
+export const KNOWN_DIVERGENCES: readonly RenderDivergence[] = []

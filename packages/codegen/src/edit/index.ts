@@ -15,6 +15,7 @@ import {
 } from './layouts.ts'
 import { catalogGet, projectUpdate, themeApply, themeGet, themePresetsList, themeUpdate } from './theme.ts'
 import { datasourceCreate, datasourceDelete, datasourceUpdate } from './datasources.ts'
+import { pageUseAdd, pageUseRemove, pageUseUpdate, queryCreateForList, queryUpdate } from './queries.ts'
 import { entityCreate, entityDelete, entityFieldAdd, entityFieldMove, entityFieldRemove, entityFieldUpdate, entityUpdate } from './entities.ts'
 
 /**
@@ -94,7 +95,13 @@ export const EDITS = {
   entity_field_add: entityFieldAdd,
   entity_field_update: entityFieldUpdate,
   entity_field_move: entityFieldMove,
-  entity_field_remove: entityFieldRemove
+  entity_field_remove: entityFieldRemove,
+  // Queries and page uses (P5): a list's source, its sort, filter and limit, what a page reads and runs.
+  query_create_for_list: queryCreateForList,
+  query_update: queryUpdate,
+  page_use_add: pageUseAdd,
+  page_use_update: pageUseUpdate,
+  page_use_remove: pageUseRemove
 } satisfies Record<string, EditDef>
 
 export type EditName = keyof typeof EDITS
@@ -116,6 +123,8 @@ export const applyEdit = (files: Record<string, string>, name: EditName, input: 
 }
 
 export { mintId } from './core.ts'
+export { bindingPaths, bindingScope, entityFieldNames, queryBehind } from './scope.ts'
+export type { ScopeName } from './scope.ts'
 export { datasourceEnvVars } from './datasources.ts'
 export type { DataSourceEnvVar } from './datasources.ts'
 export { detectItems, inferFields, isUnder, remoteUrl } from './remote.ts'

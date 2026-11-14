@@ -121,7 +121,8 @@
           "as": "post",
           "empty": "No posts yet.",
           "loading": "Loading…",
-          "layout": "grid"
+          "layout": "grid",
+          "loadMore": 6
         },
         "style": {
           "display": "grid",
