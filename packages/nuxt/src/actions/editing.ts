@@ -5,7 +5,7 @@ import { writeChangeSet } from '../node/editor-io.ts'
 import { readModelFiles } from '../node/project.ts'
 import { ActionError, defineAction } from './define.ts'
 import type { ActionDef } from './define.ts'
-import { changed } from './history.ts'
+import { changed, historyReady } from './history.ts'
 
 /**
  * The visual editor's operations (P3a, V2/V5): one action per edit of
@@ -84,6 +84,7 @@ const editAction = (name: EditName): ActionDef => defineAction({
     const outcome = applyEdit(files, name, input)
     if (!outcome.ok) throw new ActionError(outcome.code, outcome.message, outcome.problems)
     if (isReadOnlyEdit(name)) return outcome.result
+    if (outcome.changes.length) historyReady(ctx)
     const written = writeChangeSet(ctx.root, outcome.changes)
     if (!written.ok) throw new ActionError(written.reason === 'disk' ? 'write_failed' : 'forbidden', written.message)
     // One undoable step and one `model` event (P3b).

@@ -1,7 +1,9 @@
 import { z } from 'zod'
 import type { ModelFileChange } from '../node/editor-io.ts'
-import { HISTORY_CAP, readHistory, recordStep, redoStep, stepInfo, stepOf, undoStep } from '../node/history.ts'
-import type { ReplayOutcome } from '../node/history.ts'
+import type { ModelChangeSource } from '../node/events.ts'
+import { HISTORY_CAP, HistoryUnavailable, readHistory, recordChange, redoStep, stepInfo, stepOf, undoStep } from '../node/history.ts'
+import type { ReplayOutcome, Unkept } from '../node/history.ts'
+import { readModelFiles } from '../node/project.ts'
 import { sha256 } from '../node/sync.ts'
 import { ActionError, defineAction } from './define.ts'
 import type { ActionContext, ActionDef } from './define.ts'
@@ -13,23 +15,47 @@ import type { ActionContext, ActionDef } from './define.ts'
  */
 
 /**
+ * Every accepted model change is undoable: refuses (forbidden), before an action writes
+ * anything, when the history can't be read or written here (a cache symlinked away, a
+ * history file that is a folder or unreadable).
+ */
+export const historyReady = (ctx: ActionContext): void => {
+  try {
+    readHistory(ctx.root)
+  } catch (error) {
+    if (error instanceof HistoryUnavailable) throw new ActionError('forbidden', `${error.message}: the change couldn't be undone, nothing was written`)
+    throw error
+  }
+}
+
+/**
+ * A history write that failed after the model write: `write_failed`. When the model files
+ * couldn't be put back either, open editors are told what is on disk now, to resync.
+ */
+const unkept = (ctx: ActionContext, failure: Unkept, source: ModelChangeSource): never => {
+  if (failure.unsettled?.length) {
+    const files = readModelFiles(ctx.root)
+    ctx.events?.modelChanged(failure.unsettled.map(path => ({ path, sha: Object.hasOwn(files, path) ? sha256(files[path]!) : null })), source)
+  }
+  throw new ActionError('write_failed', failure.message)
+}
+
+/**
  * Records `changes` (already written by `action` over the model files `before`) as one
- * history step and tells open editors. History is best effort: the edit is on disk, so a
- * history that can't be written (a cache symlinked away, a full disk) never fails it.
+ * history step and tells open editors. When the step can't be recorded the files are put
+ * back and the action fails with `write_failed`: no change is kept that can't be undone.
  */
 export const changed = (ctx: ActionContext, action: string, before: Record<string, string>, changes: readonly ModelFileChange[]): void => {
   if (!changes.length) return
-  try {
-    recordStep(ctx.root, stepOf(action, before, changes))
-  } catch {
-    // Not undoable; the change itself stands.
-  }
+  const kept = recordChange(ctx.root, stepOf(action, before, changes))
+  if (!kept.ok) unkept(ctx, kept, 'action')
   ctx.events?.modelChanged(changes.map(({ path, content }) => ({ path, sha: content === null ? null : sha256(content) })), 'action')
 }
 
 const replayed = (ctx: ActionContext, outcome: ReplayOutcome, source: 'undo' | 'redo') => {
   if (!outcome.ok) {
     if (outcome.reason === 'invalid') throw new ActionError('invalid', outcome.message, outcome.problems)
+    if (outcome.reason === 'disk') unkept(ctx, outcome, source)
     const code = ({ empty: 'not_found', conflict: 'conflict', refused: 'forbidden', unavailable: 'forbidden', disk: 'write_failed' } as const)[outcome.reason]
     throw new ActionError(code, outcome.message)
   }

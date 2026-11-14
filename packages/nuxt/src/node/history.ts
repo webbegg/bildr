@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, lstatSync, mkdirSync, readFileSync } from 'node:fs'
+import { lstatSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { generate } from '@bildr/codegen/generate'
 import { MANIFEST_FILE, loadModel } from '@bildr/codegen/model'
 import type { ModelProblem } from '@bildr/codegen/model'
-import { writeChangeSet } from './editor-io.ts'
+import { diskProblem, isModelFilePath, writeChangeSet } from './editor-io.ts'
 import type { ModelFileChange } from './editor-io.ts'
 import { readModelFiles, resolvesInside } from './project.ts'
 import { sha256, writeAtomically } from './sync.ts'
@@ -22,6 +22,10 @@ import { sha256, writeAtomically } from './sync.ts'
  *
  * Each file is rewritten whole and atomically. A new step empties the redo
  * stack. Lines that don't read as a step are skipped.
+ *
+ * Every accepted model change is undoable: the model files are written
+ * first, then the stacks; when the stacks can't be written the model files
+ * are put back (`keepUndoable`).
  */
 
 export const HISTORY_FILE = '.bildr/.cache/history.jsonl'
@@ -84,7 +88,7 @@ const isStep = (value: unknown): value is HistoryStep => {
     && typeof step.time === 'string' && Array.isArray(step.changes) && step.changes.every(isChange)
 }
 
-/** Why the history can't be read or written here: `.bildr/.cache` or one of its files leaves the project (symlink). */
+/** Why the history can't be read or written here: `.bildr/.cache` or one of its files leaves the project (symlink), isn't a file, or can't be read. */
 export class HistoryUnavailable extends Error {}
 
 const cacheSafe = (root: string) => {
@@ -92,16 +96,24 @@ const cacheSafe = (root: string) => {
   // Same boundary as the session and editor context files: a committed symlink can't send the history elsewhere.
   if (!resolvesInside(root, cache)) throw new HistoryUnavailable('.bildr/.cache resolves outside the project (symlink)')
   for (const file of [HISTORY_FILE, REDO_FILE]) {
-    if (lstatSync(join(root, file), { throwIfNoEntry: false })?.isSymbolicLink()) throw new HistoryUnavailable(`${file} is a symlink`)
+    const stat = lstatSync(join(root, file), { throwIfNoEntry: false })
+    if (stat?.isSymbolicLink()) throw new HistoryUnavailable(`${file} is a symlink`)
+    if (stat && !stat.isFile()) throw new HistoryUnavailable(`${file} is not a file`)
   }
   return cache
 }
 
 const readStack = (root: string, file: string): HistoryStep[] => {
   const path = join(root, file)
-  if (!existsSync(path)) return []
+  if (!lstatSync(path, { throwIfNoEntry: false })) return []
+  let text: string
+  try {
+    text = readFileSync(path, 'utf8')
+  } catch (error) {
+    throw new HistoryUnavailable(`${diskProblem(file, error)}: the history can't be read`)
+  }
   const steps: HistoryStep[] = []
-  for (const line of readFileSync(path, 'utf8').split('\n')) {
+  for (const line of text.split('\n')) {
     if (!line.trim()) continue
     try {
       const step = JSON.parse(line) as unknown
@@ -113,9 +125,17 @@ const readStack = (root: string, file: string): HistoryStep[] => {
   return steps
 }
 
+/** The history stack file could not be written; the message names it. */
+class HistoryWriteFailed extends Error {}
+
 const writeStack = (root: string, file: string, steps: readonly HistoryStep[]) => {
-  mkdirSync(cacheSafe(root), { recursive: true })
-  writeAtomically(join(root, file), steps.map(step => `${JSON.stringify(step)}\n`).join(''))
+  const cache = cacheSafe(root)
+  try {
+    mkdirSync(cache, { recursive: true })
+    writeAtomically(join(root, file), steps.map(step => `${JSON.stringify(step)}\n`).join(''))
+  } catch (error) {
+    throw new HistoryWriteFailed(diskProblem(file, error))
+  }
 }
 
 /** The undo stack (oldest first) and the redo stack (the next redo last). */
@@ -130,9 +150,61 @@ export const recordStep = (root: string, step: HistoryStep, cap = HISTORY_CAP): 
   writeStack(root, REDO_FILE, [])
 }
 
+/**
+ * The history couldn't be written after the model files were. `unsettled`: the model
+ * files couldn't be put back either, so these may hold the change that isn't undoable.
+ */
+export interface Unkept { ok: false, message: string, unsettled?: string[] }
+
+/** The text of each stack file (undefined when absent or unreadable), to put back after a half-written update. */
+const stackTexts = (root: string) => [HISTORY_FILE, REDO_FILE].map((file) => {
+  try {
+    return { file, text: lstatSync(join(root, file), { throwIfNoEntry: false })?.isFile() ? readFileSync(join(root, file), 'utf8') : undefined }
+  } catch {
+    return { file, text: undefined }
+  }
+})
+
+/**
+ * Runs `writeStacks` after a model write. When it fails, the stack files are put back
+ * (best effort) and so are the model files, with `rollback` (each file as it was before
+ * the write) through the same atomic path: a change that can't be undone isn't kept.
+ */
+const keepUndoable = (root: string, rollback: readonly ModelFileChange[], writeStacks: () => void): { ok: true } | Unkept => {
+  const stacks = stackTexts(root)
+  try {
+    writeStacks()
+    return { ok: true }
+  } catch (error) {
+    if (!(error instanceof HistoryWriteFailed || error instanceof HistoryUnavailable)) throw error
+    try {
+      cacheSafe(root)
+      for (const { file, text } of stacks) {
+        try {
+          if (text === undefined) rmSync(join(root, file), { force: true })
+          else writeAtomically(join(root, file), text)
+        } catch {
+          // The stack that failed to write is still as it was.
+        }
+      }
+    } catch {
+      // The cache left the project meanwhile: nothing is written there.
+    }
+    const restored = writeChangeSet(root, rollback)
+    return restored.ok
+      ? { ok: false, message: `bildr could not record the change in the history (${error.message}), so it was not kept: nothing changed` }
+      : { ok: false, message: `bildr could not record the change in the history (${error.message}) nor put the model files back (${restored.message}): the model may have changed`, unsettled: rollback.map(change => change.path) }
+  }
+}
+
+/** Records `step`, already written over the files its `before` holds; when that fails the files are put back. */
+export const recordChange = (root: string, step: HistoryStep): { ok: true } | Unkept =>
+  keepUndoable(root, step.changes.map(change => ({ path: change.path, content: change.before })), () => recordStep(root, step))
+
 export type ReplayOutcome
   = | { ok: true, step: HistoryStep }
-    | { ok: false, reason: 'empty' | 'conflict' | 'refused' | 'disk' | 'unavailable', message: string }
+    | { ok: false, reason: 'empty' | 'conflict' | 'refused' | 'unavailable', message: string }
+    | (Unkept & { reason: 'disk' })
     | { ok: false, reason: 'invalid', message: string, problems: ModelProblem[] }
 
 /** The model's problems, or the generator's error as a problem of the file it names; undefined when the model loads and generates. */
@@ -167,8 +239,13 @@ const replay = (root: string, direction: 'undo' | 'redo'): ReplayOutcome => {
   const step = from.at(-1)
   if (!step) return { ok: false, reason: 'empty', message: direction === 'undo' ? 'Nothing to undo' : 'Nothing to redo' }
 
+  // A hand-edited history may name any path: only model files are ever written back.
+  const foreign = step.changes.find(change => !isModelFilePath(change.path))
+  if (foreign) return { ok: false, reason: 'refused', message: `${foreign.path} is not a model file bildr may write (the history was edited by hand): nothing was ${direction === 'undo' ? 'undone' : 'redone'}` }
+
   const files = readModelFiles(root)
-  const changed = step.changes.filter(change => shaOf(files[change.path]) !== (direction === 'undo' ? change.afterSha : shaOf(change.before)))
+  const onDisk = (path: string) => (Object.hasOwn(files, path) ? files[path] : undefined)
+  const changed = step.changes.filter(change => shaOf(onDisk(change.path)) !== (direction === 'undo' ? change.afterSha : shaOf(change.before)))
   if (changed.length) {
     const paths = changed.map(change => change.path).join(', ')
     return direction === 'undo'
@@ -188,13 +265,18 @@ const replay = (root: string, direction: 'undo' | 'redo'): ReplayOutcome => {
 
   const outcome = writeChangeSet(root, writes)
   if (!outcome.ok) return { ok: false, reason: outcome.reason, message: outcome.message }
-  if (direction === 'undo') {
-    writeStack(root, HISTORY_FILE, stacks.undo.slice(0, -1))
-    writeStack(root, REDO_FILE, [...stacks.redo, step])
-  } else {
-    writeStack(root, REDO_FILE, stacks.redo.slice(0, -1))
-    writeStack(root, HISTORY_FILE, [...stacks.undo, step].slice(-HISTORY_CAP))
-  }
+  // What the files were before this write (the conflict check made sure of it).
+  const rollback = step.changes.map(change => ({ path: change.path, content: direction === 'undo' ? change.after : change.before }))
+  const kept = keepUndoable(root, rollback, () => {
+    if (direction === 'undo') {
+      writeStack(root, HISTORY_FILE, stacks.undo.slice(0, -1))
+      writeStack(root, REDO_FILE, [...stacks.redo, step])
+    } else {
+      writeStack(root, REDO_FILE, stacks.redo.slice(0, -1))
+      writeStack(root, HISTORY_FILE, [...stacks.undo, step].slice(-HISTORY_CAP))
+    }
+  })
+  if (!kept.ok) return { ...kept, reason: 'disk' }
   return { ok: true, step }
 }
 

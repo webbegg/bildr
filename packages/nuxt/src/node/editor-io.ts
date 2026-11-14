@@ -89,7 +89,8 @@ const DISK_ERRORS: Record<string, (path: string) => string> = {
   EROFS: () => 'the file system is read-only'
 }
 
-const diskProblem = (path: string, error: unknown): string => {
+/** What went wrong writing `path`, in words (permission denied, a folder in the way, a full disk…). */
+export const diskProblem = (path: string, error: unknown): string => {
   const code = (error as NodeJS.ErrnoException).code
   return code && DISK_ERRORS[code] ? DISK_ERRORS[code](path) : `${path}: ${(error as Error).message}`
 }

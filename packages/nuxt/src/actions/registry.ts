@@ -12,7 +12,7 @@ import { ActionError, defineAction } from './define.ts'
 import type { ActionDef } from './define.ts'
 import { EDIT_ACTIONS } from './editing.ts'
 import { EDITOR_ACTIONS } from './editor.ts'
-import { HISTORY_ACTIONS, changed } from './history.ts'
+import { HISTORY_ACTIONS, changed, historyReady } from './history.ts'
 
 /**
  * The editor's operations (T10 action contract). The editor UI calls them
@@ -68,6 +68,7 @@ const modelFilePut = defineAction({
   run: ({ path, content }, ctx) => {
     const { root } = ctx
     if (!isModelFilePath(path)) throw new ActionError('forbidden', 'Only .bildr/ model files can be written (not the manifest, the cache or project files)')
+    historyReady(ctx)
     const before = readModelFiles(root)
     const saved = saveModelFile(root, path, JSON.stringify(content))
     if (saved.ok) {
@@ -87,6 +88,7 @@ const modelFileDelete = defineAction({
   run: ({ path }, ctx) => {
     const { root } = ctx
     if (!isDeletableModelPath(path)) throw new ActionError('forbidden', 'Only artifact files of the model can be deleted (not bildr.json, theme.json, the manifest, a module.json or files outside the model)')
+    historyReady(ctx)
     const before = readModelFiles(root)
     const deleted = deleteModelFile(root, path)
     if (deleted.ok) {

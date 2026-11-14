@@ -1,5 +1,5 @@
 // P3b (V2, V6): undo/redo of the module actions as file-level change sets in .bildr/.cache.
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, mkdirSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, mkdirSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -147,12 +147,82 @@ describe('history', () => {
     expect(changed.filter(path => path.startsWith('.bildr/.cache/')).sort()).toEqual([HISTORY_FILE, REDO_FILE].sort())
   })
 
-  it('refuses undo, and skips recording, when .bildr/.cache leaves the project (symlink)', async () => {
+  it('refuses edits and undo, writing nothing, when .bildr/.cache leaves the project (symlink)', async () => {
     mkdirSync(join(root, 'outside'))
     rmSync(join(dir, '.bildr/.cache'), { recursive: true, force: true })
     symlinkSync(join(root, 'outside'), join(dir, '.bildr/.cache'))
-    await ok('node_insert', { file: 'pg_index', type: 'Text' })
+    const before = read(pagePath)
+    const refused = await failure('node_insert', { file: 'pg_index', type: 'Text' }, 403, 'forbidden')
+    expect(refused.message).toContain('.bildr/.cache resolves outside the project')
+    expect(read(pagePath)).toBe(before)
     expect(readdirSync(join(root, 'outside'))).toEqual([])
+    await failure('history_undo', {}, 403, 'forbidden')
+  })
+
+  // Every accepted model change is undoable: a history that can't be written undoes the model write.
+  const asRoot = process.getuid?.() === 0
+  const cache = () => join(dir, '.bildr/.cache')
+
+  it.skipIf(asRoot)('an undo/redo whose history write fails changes no model file', async () => {
+    await ok('node_insert', { file: 'pg_index', type: 'Text' })
+    await ok('history_undo')
+    const before = read(pagePath)
+    chmodSync(cache(), 0o555)
+    try {
+      const refused = await failure('history_redo', {}, 500, 'write_failed')
+      expect(refused.message).toContain(REDO_FILE)
+      expect(read(pagePath)).toBe(before)
+    } finally {
+      chmodSync(cache(), 0o755)
+    }
+    expect(await ok('history_get')).toMatchObject({ undo: [], redo: [{ action: 'node_insert' }] })
+    await ok('history_redo')
+    await ok('history_undo')
+    expect(read(pagePath)).toBe(before)
+  })
+
+  it.skipIf(asRoot)('an undo whose history write fails changes no model file', async () => {
+    await ok('node_insert', { file: 'pg_index', type: 'Text' })
+    const before = read(pagePath)
+    chmodSync(cache(), 0o555)
+    try {
+      await failure('history_undo', {}, 500, 'write_failed')
+      expect(read(pagePath)).toBe(before)
+    } finally {
+      chmodSync(cache(), 0o755)
+    }
+    expect((await ok('history_get')).undo).toMatchObject([{ action: 'node_insert' }])
+  })
+
+  it.skipIf(asRoot)('an edit whose history write fails is not kept: 500, no file, the redo stack intact', async () => {
+    await ok('node_insert', { file: 'pg_index', type: 'Text' })
+    await ok('history_undo')
+    chmodSync(cache(), 0o555)
+    try {
+      const refused = await failure('page_create', { name: 'About' }, 500, 'write_failed')
+      expect(refused.message).toContain(HISTORY_FILE)
+      expect(existsSync(join(dir, '.bildr/modules/main/pages/about.json'))).toBe(false)
+      const project = JSON.parse(read('.bildr/bildr.json')) as Json
+      const original = read('.bildr/bildr.json')
+      await failure('model_file_put', { path: '.bildr/bildr.json', content: { ...project, name: 'Renamed' } }, 500, 'write_failed')
+      expect(read('.bildr/bildr.json')).toBe(original)
+    } finally {
+      chmodSync(cache(), 0o755)
+    }
+    expect(await ok('history_get')).toMatchObject({ undo: [], redo: [{ action: 'node_insert' }] })
+  })
+
+  it('refuses a tampered step whose path is not a model file (__proto__), writing nothing', async () => {
+    recordStep(dir, stepOf('model_file_put', {}, [{ path: '__proto__', content: 'x' }]))
+    const before = snapshot()
+    const refused = await failure('history_undo', {}, 403, 'forbidden')
+    expect(refused.message).toContain('__proto__')
+    expect(snapshot()).toEqual(before)
+  })
+
+  it('answers history_get and undo with the same code when history.jsonl is a folder', async () => {
+    mkdirSync(join(dir, HISTORY_FILE), { recursive: true })
+    await failure('history_get', {}, 403, 'forbidden')
     await failure('history_undo', {}, 403, 'forbidden')
   })
 })
