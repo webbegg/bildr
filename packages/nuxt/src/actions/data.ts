@@ -32,6 +32,20 @@ const restSource = (model: Model, id: string): DataSourceFile => {
 
 const SAMPLE_ITEMS = 10
 
+/**
+ * `value` with the secrets redacted out of every string and key. Redacting the
+ * parsed values, not their JSON text: JSON escapes a secret holding `"` or `\`,
+ * and the escaped form wouldn't match.
+ */
+const redactValue = (value: unknown, secrets: string[]): unknown => {
+  if (typeof value === 'string') return redact(value, secrets)
+  if (Array.isArray(value)) return value.map(item => redactValue(item, secrets))
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [redact(key, secrets), redactValue(item, secrets)]))
+  }
+  return value
+}
+
 /** GETs `path` of `source` and returns its JSON with the secrets redacted out of everything. */
 const get = async (root: string, source: DataSourceFile, path: string) => {
   const settings = resolveSettings(root, source)
@@ -40,7 +54,7 @@ const get = async (root: string, source: DataSourceFile, path: string) => {
   const { headers, secrets } = authHeaders(source, settings)
   try {
     const { status, json } = await fetchJson(target.url, { baseUrl: settings.baseUrl!, headers })
-    const clean = <T>(value: T): T => secrets.length ? JSON.parse(redact(JSON.stringify(value), secrets)) as T : value
+    const clean = <T>(value: T): T => secrets.length ? redactValue(value, secrets) as T : value
     return { status, json: clean(json), clean }
   } catch (error) {
     if (error instanceof RemoteError) throw new ActionError('upstream', secrets.length ? redact(error.message, secrets) : error.message)

@@ -123,6 +123,15 @@ describe('datasource_preview', () => {
     expect(preview.sample.echo).toBe('Bearer •••')
   })
 
+  it('redacts a secret holding a quote or a backslash (JSON escapes it)', async () => {
+    await ok('datasource_create', { name: 'stub', kind: 'rest', defaults: { baseUrl: base }, auth: { type: 'bearer' } })
+    writeFileSync(join(dir, '.env'), 'NUXT_DATASOURCES_STUB_API_KEY=\'sk-"quo\\te-1234\'\n')
+    const preview = await ok('datasource_preview', { datasource: 'ds_stub', path: '/tasks' })
+    expect(lastAuthorization).toBe('Bearer sk-"quo\\te-1234')
+    expect(preview.sample.echo).toBe('Bearer •••')
+    expect(JSON.stringify(preview)).not.toContain('quo')
+  })
+
   it('refuses paths outside the base URL, redirects elsewhere, big or non-JSON answers', async () => {
     await stubSource()
     expect((await failure('datasource_preview', { datasource: 'ds_stub', path: 'http://example.invalid/x' }, 400, 'invalid_input')).message).toBe('Use a path relative to the data source\'s base URL, like "/posts"')
