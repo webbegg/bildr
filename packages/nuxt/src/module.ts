@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { addDevServerHandler, defineNuxtModule, useLogger } from '@nuxt/kit'
 import type { NuxtModule } from '@nuxt/schema'
 import { defineEventHandler, getRequestURL, sendWebResponse, toWebRequest } from 'h3'
@@ -8,6 +8,7 @@ import { createHealthRunner } from './node/health.ts'
 import { projectReader } from './node/project.ts'
 import { createRegenerator, isModelChange } from './node/regenerate.ts'
 import type { MigrationOutcome } from './node/regenerate.ts'
+import { createRestarter, needsRestart } from './node/restart.ts'
 import { editorSession } from './node/session.ts'
 import { watchModel } from './node/watch.ts'
 import type { ModelWatcher } from './node/watch.ts'
@@ -23,6 +24,8 @@ import { BASE, createBildrHandler, ownsPath } from './server/handler.ts'
  * - The editor API is local-only and needs the per-session token printed in
  *   the dev server log (also used by the DevTools tab). It survives Nuxt
  *   restarts within one `nuxt dev`, so open editor tabs keep working.
+ * - A regenerate that rewrites a `nuxt.config` or changes the layers restarts
+ *   Nuxt once (Nuxt reads those only at startup; see node/restart.ts).
  */
 
 export interface ModuleOptions {
@@ -58,9 +61,21 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
     // The app's database, as its runtimeConfig resolves it in dev (NUXT_DB_URL overrides the generated default).
     const databaseUrl = process.env.NUXT_DB_URL ?? (nuxt.options.runtimeConfig as { db?: { url?: string } }).db?.url
     const regenerator = createRegenerator(root, databaseUrl ? { databaseUrl } : {})
+    // L9: a regenerate that rewrites what Nuxt reads only at startup (a nuxt.config, the set of layers) restarts it, once.
+    const loadedLayers = nuxt.options._layers.flatMap((layer) => {
+      const path = relative(root, layer.config.rootDir ?? layer.cwd).split(sep).join('/')
+      return /^layers\/[^/]+$/.test(path) ? [path.slice('layers/'.length)] : []
+    })
+    const restarter = createRestarter({
+      restart: options => Promise.resolve(nuxt.callHook('restart', options)).catch((error: unknown) => {
+        logger.warn(`bildr could not restart Nuxt, restart nuxt dev to apply the new config: ${(error as Error).message}`)
+      }),
+      log: message => logger.info(message)
+    })
     const confirmMigration = async (hash: string): Promise<MigrationOutcome> => {
       const result = await regenerator.run({ confirm: hash })
       if (!result.ok) return { kind: 'error', message: 'error' in result ? result.error : 'The model has problems' }
+      restarter.request(needsRestart(result.report, loadedLayers))
       logMigration(result.migration)
       return result.migration
     }
@@ -92,6 +107,7 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
       const base = (listener.url ?? 'http://localhost:3000/').replace(/\/$/, '')
       logger.info(`bildr editor: ${base}${editorPath}`)
     })
+    nuxt.hook('build:done', () => restarter.built())
     ;(nuxt.hooks as unknown as { hook: (name: string, fn: (tabs: DevtoolsTab[]) => void) => void })
       .hook('devtools:customTabs', tabs => tabs.push({ name: 'bildr', title: 'bildr', icon: 'carbon:paint-brush', view: { type: 'iframe', src: editorPath } }))
 
@@ -124,6 +140,7 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
           if (detached.length) logger.info(['bildr kept your edits to these generated files (detached):', ...detached.map(path => `  - ${path}`)].join('\n'))
           logMigration(result.migration)
           checkBoundaries()
+          restarter.request(needsRestart(result.report, loadedLayers))
         }
       } catch (error) {
         // A file can vanish or be unreadable mid-change; never take nuxt dev down for it.

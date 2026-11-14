@@ -428,6 +428,12 @@ async function model(ctx) {
     const modelDiff = [...new Set([...Object.keys(after), ...Object.keys(golden)])].filter(path => after[path] !== golden[path])
     check(modelDiff.length === 0, `the project's .bildr/ model equals the fixture's (${Object.keys(golden).length} files)${modelDiff.length ? `; differ: ${modelDiff.join(', ')}` : ''}`)
     check(existsSync(join(ctx.dir, 'server/database/migrations/meta/_journal.json')), 'nuxt dev wrote the database migrations (server/database/migrations/meta/_journal.json)')
+    // L9: the regenerate rewrote layers/core/nuxt.config.ts (the quotes data source); the running app must use it without a manual restart.
+    const posts = await waitFor('the dev API to list posts', async () => {
+      const response = await fetch(`${base}/api/blog/posts?limit=10&offset=0`).catch(() => undefined)
+      return response?.status === 200 ? response.status : undefined
+    }, MINUTE, 1000).catch(() => undefined)
+    check(posts === 200, 'nuxt dev answers GET /api/blog/posts with the regenerated config (no manual restart)')
     const problems = (readOr(log) ?? '').split('\n').filter(line => /could not regenerate|can't generate|model has problems|did not migrate|could not plan|ERROR/.test(line))
     check(problems.length === 0, `the dev log has no regeneration or migration errors${problems.length ? `:\n${problems.slice(0, 10).map(line => `    | ${line}`).join('\n')}` : ''}`)
   } finally {
