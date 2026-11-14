@@ -8,6 +8,7 @@ import { camel, defineEdit, fail, kebab, pascal, rootName, uniqueName } from './
 import type { Draft, Tree } from './core.ts'
 import { buildNode, checkStyle, FileRef, idsOf, located, NodeRef, removeNode } from './nodes.ts'
 import { cloneWithNewIds, findNode, walk } from './tree.ts'
+import { freeNames, mapNodePaths, mapPaths, rootOf, walkScoped } from './bindings.ts'
 
 /** Component files: create from a selection, rename, duplicate, delete; properties, variants, states, interactions and transitions. */
 
@@ -72,6 +73,16 @@ export const addComponent = (draft: Draft, module: string, name: string, root: M
   return { component, filePath: draft.place(component.id, `.bildr/modules/${module}/components`, kebab(name)) }
 }
 
+/** A component sees only its own properties: nodes that bind a List item or a page's data can't move into one. */
+const refuseOuterNames = (picked: ModelNode[]) => {
+  const free = new Map<string, string[]>()
+  for (const node of picked) for (const [name, ids] of freeNames(node)) free.set(name, [...free.get(name) ?? [], ...ids])
+  if (!free.size) return
+  const names = [...free].map(([name, ids]) => `"${name}" (${ids.join(', ')})`).join(', ')
+  const one = free.size === 1
+  fail('invalid', `Can't make a component of ${picked.map(node => node.id).join(', ')}: ${one ? 'it binds' : 'they bind'} ${names}, defined outside ${one && picked.length === 1 ? 'it' : 'them'}. A component sees only its own properties: pick nodes that don't use ${one ? 'that name' : 'those names'}, or unbind ${one ? 'it' : 'them'} first`)
+}
+
 export const componentCreate = defineEdit({
   input: z.object({
     file: FileRef,
@@ -88,6 +99,7 @@ export const componentCreate = defineEdit({
     const parent = locations[0]!.parent
     if (locations.some(location => location.parent !== parent)) fail('invalid', 'Only siblings (nodes of one parent) can become one component')
     const picked = ids.map(id => findNode(tree.root, id)!)
+    refuseOuterNames(picked)
     const fallback = pascal(picked.length === 1 ? picked[0]!.name ?? picked[0]!.type : 'Component') || 'Component'
     const name = given === undefined ? uniqueName(fallback, draft.module(module).components.map(component => component.name)) : componentName(draft, module, given)
     const mint = (type: string) => draft.nodeId(type)
@@ -235,16 +247,52 @@ export const componentPropertyUpdate = defineEdit({
   }),
   apply: (draft, { component: id, property: propertyId, ...patch }) => {
     const { component } = draft.component(id)
-    patchProperty(component.properties, propertyIn(component, propertyId), component.name, patch)
+    const property = propertyIn(component, propertyId)
+    const before = property.name
+    patchProperty(component.properties, property, component.name, patch)
+    if (property.name !== before) rebindProperty(component, before, property.name)
     return {}
   }
 })
+
+/**
+ * Calls `map` on every path of `component` (its nodes and its variants' overrides)
+ * that reads property `name`, with the List item names in scope at its node.
+ */
+const propertyPaths = (component: ComponentFile, name: string, map: (node: string, path: string, scope: ReadonlySet<string>) => string | undefined) => {
+  const scopes = new Map<string, ReadonlySet<string>>()
+  walkScoped(component.root, (node, scope) => {
+    scopes.set(node.id, scope)
+    if (!scope.has(name)) mapNodePaths(node, path => (rootOf(path) === name ? map(node.id, path, scope) : undefined))
+  })
+  for (const variant of component.variants) {
+    for (const [nodeId, override] of Object.entries(variant.overrides)) {
+      const scope = scopes.get(nodeId) ?? new Set<string>()
+      if (!scope.has(name)) mapPaths(override.props, path => (rootOf(path) === name ? map(nodeId, path, scope) : undefined))
+    }
+  }
+}
+
+/** Rewrites the `$bind`/`$template` paths that read property `from` to read `to`. */
+const rebindProperty = (component: ComponentFile, from: string, to: string) => {
+  propertyPaths(component, from, (node, _path, scope) => {
+    if (scope.has(to)) fail('invalid', `Can't rename property "${from}" of ${component.name} to "${to}": node ${node} is inside a List whose items are named "${to}"`)
+    return undefined
+  })
+  propertyPaths(component, from, (_node, path) => [to, ...path.split('.').slice(1)].join('.'))
+}
 
 export const componentPropertyRemove = defineEdit({
   input: z.object({ component: ComponentRef, property: ArtifactIdSchema }),
   apply: (draft, { component: id, property: propertyId }) => {
     const { component } = draft.component(id)
     const property = propertyIn(component, propertyId)
+    const users = new Set<string>()
+    if (property.kind !== 'slot') propertyPaths(component, property.name, (node) => {
+      users.add(node)
+      return undefined
+    })
+    if (users.size) fail('invalid', `${component.name} still binds property "${property.name}" in ${[...users].join(', ')}: unbind ${users.size === 1 ? 'it' : 'them'} first`)
     for (const { tree, node } of instancesOf(draft, id).reverse()) {
       const values = node.props?.values
       if (values && typeof values === 'object' && !Array.isArray(values) && propertyId in values) {

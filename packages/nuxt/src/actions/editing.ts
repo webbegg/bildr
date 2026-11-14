@@ -31,13 +31,13 @@ const DESCRIPTIONS: Record<EditName, string> = {
   page_create: 'Create a page file in a module (default: the project\'s defaultModule): name is kebab-cased into its route name, the id is pg_<name>, path defaults to /<name>, layout is optional. The page starts with an empty Page root. Returns pageId, filePath and nodeId (the root).',
   page_update: 'Rename (kebab-case) or re-path a page; its file keeps its path.',
   page_delete: 'Delete a page file. Refused while links (to: { page }) or navigate steps target it, and for the last page.',
-  component_create: `Turn a node (or, with nodeIds, siblings wrapped in a Container) into a component file of the tree's module (layouts: the defaultModule), with fresh node ids; an Instance of it takes its place. name is PascalCased (default: the layer name or type), unique ignoring case; the id is cmp_<name>. Returns componentId, nodeId (the instance) and filePath. ${TREE}`,
+  component_create: `Turn a node (or, with nodeIds, siblings wrapped in a Container) into a component file of the tree's module (layouts: the defaultModule), with fresh node ids; an Instance of it takes its place. name is PascalCased (default: the layer name or type), unique ignoring case; the id is cmp_<name>. Refused when the nodes bind names from around them (a List's item, the page's data): a component sees only its own properties. Returns componentId, nodeId (the instance) and filePath. ${TREE}`,
   component_rename: 'Rename a component (PascalCased, unique in its module ignoring case); its file keeps its path.',
   component_duplicate: 'Copy a component into a new file right after it, with new property and variant ids (no instances). name defaults to "<Name>Copy". Returns componentId and filePath.',
   component_delete: 'Delete a component file. Refused while instances use it, unless force: true, which deletes them too. Returns deletedInstances.',
   component_property_add: 'Add a property to a component: name (camelCased), kind (text, textarea, number, boolean, select, image, link, icon, entity, field, slot), and optionally label, description, options (select), entity/pick/many (entity), required or optional, placeholder, default, nodeId (slot) and bindings (the node props, or with target "style" the style keys, it drives). The id is prop_<name>, the key of instance values. Returns propertyId.',
-  component_property_update: 'Change a component property: name, label, description, options, default, required, optional, placeholder, entity, pick, many, nodeId or bindings (null removes one), and index (its position). To change its kind, remove and add it.',
-  component_property_remove: 'Remove a component property, with the instance values for it and their content for a slot property.',
+  component_property_update: 'Change a component property: name, label, description, options, default, required, optional, placeholder, entity, pick, many, nodeId or bindings (null removes one), and index (its position). Renaming it rewrites the component\'s $bind/$template paths that read it. To change its kind, remove and add it.',
+  component_property_remove: 'Remove a component property, with the instance values for it and their content for a slot property. Refused while the component\'s nodes still bind it.',
   component_variant_add: 'Add a variant (name camelCased; the id is var_<name>); it looks like the primary until component_variant_set_override changes it. Returns variantId.',
   component_variant_rename: 'Rename a variant of a component (camelCased); instances keep it (they use its id).',
   component_variant_delete: 'Delete a variant with its hover/pressed states and the interactions that go to them; instances using any of them go back to the primary.',
@@ -83,7 +83,7 @@ const editAction = (name: EditName): ActionDef => defineAction({
     if (!outcome.ok) throw new ActionError(outcome.code, outcome.message, outcome.problems)
     if (isReadOnlyEdit(name)) return outcome.result
     const written = writeChangeSet(root, outcome.changes)
-    if (!written.ok) throw new ActionError('forbidden', written.message)
+    if (!written.ok) throw new ActionError(written.reason === 'disk' ? 'write_failed' : 'forbidden', written.message)
     return { ...outcome.result, changed: outcome.changes.map(change => change.path) }
   }
 })

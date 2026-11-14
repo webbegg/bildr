@@ -31,7 +31,7 @@ export interface ActionDef<I extends z.ZodType = z.ZodType, O = unknown> {
 
 export const defineAction = <I extends z.ZodType, O>(def: ActionDef<I, O>): ActionDef<I, O> => def
 
-export type ActionErrorCode = 'invalid_input' | 'not_found' | 'invalid' | 'forbidden' | 'unavailable'
+export type ActionErrorCode = 'invalid_input' | 'not_found' | 'invalid' | 'forbidden' | 'unavailable' | 'write_failed'
 
 /** HTTP status of each error code (the action contract of T10). */
 export const ERROR_STATUS: Record<ActionErrorCode, number> = {
@@ -39,7 +39,9 @@ export const ERROR_STATUS: Record<ActionErrorCode, number> = {
   not_found: 404,
   invalid: 422,
   forbidden: 403,
-  unavailable: 501
+  unavailable: 501,
+  /** The file system failed while writing (permissions, a folder in the way, a full disk): nothing changed. */
+  write_failed: 500
 }
 
 export class ActionError extends Error {

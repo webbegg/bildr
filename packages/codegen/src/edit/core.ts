@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { customColorNames } from '../design/theme.ts'
+import { generate } from '../generate/index.ts'
 import type { BreakpointBase } from '../design/tokens.ts'
 import { loadModel, MANIFEST_FILE } from '../model/load.ts'
 import type { Model, ModelProblem, ModuleModel } from '../model/load.ts'
@@ -93,6 +94,9 @@ export interface Tree {
 
 const KIND_ROOT: Record<TreeKind, string> = { page: 'page root', component: 'component root', layout: 'layout root' }
 export const rootName = (tree: Tree) => KIND_ROOT[tree.kind]
+
+/** File base names Windows reserves for devices, with any extension. */
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
 
 /** The model an edit changes in place (a copy of the loaded one), with what minting needs. */
 export class Draft {
@@ -193,11 +197,16 @@ export class Draft {
     return Object.values(this.model.modules).flatMap(mod => mod.components)
   }
 
-  /** Records where a new artifact is written: `<folder>/<file>.json`, numbered when another artifact has that path. */
+  /**
+   * Records where a new artifact is written: `<folder>/<file>.json`, numbered when
+   * another artifact has that path in any letter case (macOS and Windows file
+   * systems ignore it). A name Windows reserves for a device is refused.
+   */
   place(id: string, folder: string, file: string): string {
-    const used = new Set(Object.values(this.model.paths))
+    if (WINDOWS_RESERVED.test(file)) fail('invalid', `"${file.toLowerCase()}" can't be a file name: Windows reserves it for a device. Pick another name`)
+    const used = new Set(Object.values(this.model.paths).map(path => path.toLowerCase()))
     let path = `${folder}/${file}.json`
-    for (let n = 2; used.has(path); n++) path = `${folder}/${file}-${n}.json`
+    for (let n = 2; used.has(path.toLowerCase()); n++) path = `${folder}/${file}-${n}.json`
     this.model.paths[id] = path
     return path
   }
@@ -213,6 +222,18 @@ export interface EditDef<S extends z.ZodType = z.ZodType> {
 }
 
 export const defineEdit = <S extends z.ZodType>(def: EditDef<S>): EditDef<S> => def
+
+/** The generator's error for `model` (as a problem of the file it names), or undefined when it generates. */
+const generationProblem = (model: Model): ModelProblem | undefined => {
+  try {
+    generate(model)
+    return undefined
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    const file = /^(\.bildr\/[^\s:]+)/.exec(message)?.[1]
+    return { path: file ?? MANIFEST_FILE, message }
+  }
+}
 
 const changed = (before: Record<string, string>, after: Record<string, string>): string[] => {
   const paths = new Set([...Object.keys(before), ...Object.keys(after)])
@@ -247,6 +268,9 @@ export const runEdit = (files: Record<string, string>, def: EditDef, rawInput: u
   }
   const check = loadModel(next)
   if (!check.ok) return { ok: false, code: 'invalid', message: 'The edit would leave the model with problems', problems: check.problems }
+  const broken = generationProblem(check.model)
+  // Only an edit that breaks generation is refused: a model that already failed to generate can still be edited.
+  if (broken && !generationProblem(loaded.model)) return { ok: false, code: 'invalid', message: `The edit would leave a model the generator can't build: ${broken.message}`, problems: [broken] }
   // The canonical form is the loaded one (schema key order), as a saved file has.
   const canonical = serializeModel(check.model)
   return { ok: true, changes: paths.map(path => ({ path, content: after[path] === undefined ? null : canonical[path]! })), result }

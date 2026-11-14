@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createProject } from '../../create-bildr/src/create'
+import { writeChangeSet } from '../src/node/editor-io'
 import { regenerate } from '../src/node/regenerate'
 import { createBildrHandler } from '../src/server/handler'
 
@@ -77,6 +78,27 @@ describe('node and page actions', () => {
     symlinkSync(join(root, 'outside/about.json'), join(dir, '.bildr/modules/main/pages/about.json'))
     await failure('page_create', { name: 'About' }, 403, 'forbidden')
     expect(readFileSync(join(root, 'outside/about.json'), 'utf8')).toBe('mine')
+  })
+})
+
+describe('disk errors', () => {
+  it('are a server error (500 write_failed) that names the file, not a refusal', async () => {
+    mkdirSync(join(dir, '.bildr/modules/main/pages/about.json'))
+    const failed = await failure('page_create', { name: 'About' }, 500, 'write_failed')
+    expect(failed.message).toBe('bildr could not write the edit, nothing changed: .bildr/modules/main/pages/about.json is a folder')
+  })
+
+  it('put back what was written, folders it created included', () => {
+    mkdirSync(join(dir, '.bildr/modules/main/pages/about.json'))
+    const before = read(pagePath)
+    const written = writeChangeSet(dir, [
+      { path: pagePath, content: '{}\n' },
+      { path: '.bildr/modules/fresh/components/card.json', content: '{}\n' },
+      { path: '.bildr/modules/main/pages/about.json', content: '{}\n' }
+    ])
+    expect(written).toEqual({ ok: false, reason: 'disk', message: 'bildr could not write the edit, nothing changed: .bildr/modules/main/pages/about.json is a folder' })
+    expect(read(pagePath)).toBe(before)
+    expect(existsSync(join(dir, '.bildr/modules/fresh'))).toBe(false)
   })
 })
 

@@ -21,15 +21,29 @@ describe('component_create', () => {
 
   it('wraps several siblings in a Container, takes a PascalCase name, and refuses a taken one', () => {
     const p = project()
-    const made = p.edit('component_create', { file: 'pg_index', nodeIds: ['n_quotes', 'n_list'], name: 'post feed' })
-    expect(made.componentId).toBe('cmp_post_feed')
-    const component = p.json('.bildr/modules/blog/components/post-feed.json')
-    expect(component.name).toBe('PostFeed')
+    const made = p.edit('component_create', { file: 'pg_index', nodeIds: ['n_about_text', 'n_about_image'], name: 'about box' })
+    expect(made.componentId).toBe('cmp_about_box')
+    const component = p.json('.bildr/modules/blog/components/about-box.json')
+    expect(component.name).toBe('AboutBox')
     expect(component.root.type).toBe('Container')
-    expect(component.root.children.map((child: Json) => child.type)).toEqual(['List', 'List'])
-    expect(childIds(p.json(IDX).root)).toEqual(['n_head', made.nodeId, 'n_about'])
+    expect(component.root.children.map((child: Json) => child.type)).toEqual(['Column', 'Image'])
+    expect(childIds(findNode(p.json(IDX).root, 'n_about'))).toEqual([made.nodeId])
     expect(p.refuse('component_create', { file: 'pg_index', nodeId: 'n_about', name: 'tip' }, 'invalid').message).toBe('A component is already named "Tip" in module "blog"')
     expect(p.refuse('component_create', { file: 'pg_index', nodeId: 'n_page' }, 'forbidden').message).toBe('The page root cannot become a component')
+  })
+})
+
+describe('component_create from nodes that bind outer names', () => {
+  it('refuses a node that binds its List\'s item, naming the nodes', () => {
+    const p = project()
+    expect(p.refuse('component_create', { file: 'pg_index', nodeId: 'n_card', name: 'Wrapper' }, 'invalid').message)
+      .toBe('Can\'t make a component of n_card: it binds "post" (n_card, n_read_more), defined outside it. A component sees only its own properties: pick nodes that don\'t use that name, or unbind it first')
+  })
+
+  it('takes a List with the names it binds inside it, and refuses one bound to the page\'s data', () => {
+    const p = project()
+    expect(p.refuse('component_create', { file: 'pg_index', nodeIds: ['n_quotes', 'n_list'] }, 'invalid').message)
+      .toBe('Can\'t make a component of n_quotes, n_list: they bind "quotes" (n_quotes), "posts" (n_list), defined outside them. A component sees only its own properties: pick nodes that don\'t use those names, or unbind them first')
   })
 })
 
@@ -76,6 +90,23 @@ describe('properties', () => {
     p.edit('component_property_remove', { component: 'cmp_tip', property: 'prop_title' })
     expect(p.json(TIP).properties.map((property: Json) => property.id)).not.toContain('prop_title')
     expect(p.json(NEW_POST).root.children[0].props.values).toEqual({ prop_body: 'Keep the title short: the slug becomes the post\'s URL.' })
+  })
+
+  it('refuses to remove a property the component\'s nodes still bind, naming them', () => {
+    const p = project()
+    expect(p.refuse('component_property_remove', { component: 'cmp_post_card', property: 'prop_post' }, 'invalid').message)
+      .toBe('PostCard still binds property "post" in n_cover, n_title_link, n_title, n_excerpt, n_draft: unbind them first')
+  })
+
+  it('renaming a property rewrites the paths that read it', () => {
+    const p = project()
+    p.edit('component_property_update', { component: 'cmp_post_card', property: 'prop_post', name: 'article' })
+    const card = p.json(CARD)
+    expect(card.properties[0]).toMatchObject({ id: 'prop_post', name: 'article' })
+    expect(findNode(card.root, 'n_title')!.props.text).toEqual({ $bind: 'article.title' })
+    expect(findNode(card.root, 'n_cover')!.props).toMatchObject({ src: { $bind: 'cover' }, alt: { $bind: 'article.title' } })
+    expect(findNode(card.root, 'n_title_link')!.props.to.params.slug).toEqual({ $bind: 'article.slug' })
+    expect(findNode(card.root, 'n_draft')!.props.visible).toEqual({ not: { $bind: 'article.published' } })
   })
 
   it('removing a slot property removes the instances\' content for it', () => {

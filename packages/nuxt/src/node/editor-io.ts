@@ -76,31 +76,63 @@ export interface ModelFileChange {
   content: string | null
 }
 
-export type ChangeSetOutcome = { ok: true } | { ok: false, message: string }
+/** `refused`: a path bildr may not write; `disk`: the file system failed (permissions, a folder in the way, a full disk). */
+export type ChangeSetOutcome = { ok: true } | { ok: false, reason: 'refused' | 'disk', message: string }
+
+const DISK_ERRORS: Record<string, (path: string) => string> = {
+  EACCES: path => `${path}: permission denied`,
+  EPERM: path => `${path}: permission denied`,
+  EISDIR: path => `${path} is a folder`,
+  ENOTDIR: path => `a parent of ${path} is a file, not a folder`,
+  ENOSPC: () => 'the disk is full',
+  EDQUOT: () => 'the disk quota is used up',
+  EROFS: () => 'the file system is read-only'
+}
+
+const diskProblem = (path: string, error: unknown): string => {
+  const code = (error as NodeJS.ErrnoException).code
+  return code && DISK_ERRORS[code] ? DISK_ERRORS[code](path) : `${path}: ${(error as Error).message}`
+}
+
+/** The outermost folder of `dir` that doesn't exist yet (what `mkdirSync(dir, { recursive: true })` creates), or undefined. */
+const firstMissing = (dir: string): string | undefined => {
+  let missing: string | undefined
+  for (let current = dir; !existsSync(current); current = dirname(current)) {
+    missing = current
+    if (dirname(current) === current) break
+  }
+  return missing
+}
 
 /**
  * Writes an edit's change set: every path is checked first (model files only,
  * deletes only of artifact files, nothing through a symlink that leaves
  * `.bildr/`), then each file is written atomically; a failure part-way puts
- * back what was already written. The caller validated the model.
+ * back what was already written and removes the folders it created. The
+ * caller validated the model.
  */
 export const writeChangeSet = (root: string, changes: readonly ModelFileChange[]): ChangeSetOutcome => {
   const base = join(root, '.bildr')
   for (const { path, content } of changes) {
-    if (content === null ? !isDeletableModelPath(path) : !isModelFilePath(path)) return { ok: false, message: `${path} is not a model file bildr may ${content === null ? 'delete' : 'write'}` }
+    if (content === null ? !isDeletableModelPath(path) : !isModelFilePath(path)) return { ok: false, reason: 'refused', message: `${path} is not a model file bildr may ${content === null ? 'delete' : 'write'}` }
     const target = join(root, path)
-    if (!resolvesInside(base, content === null ? dirname(target) : target)) return { ok: false, message: `${path} resolves outside .bildr/ (symlink)` }
-    if (lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink()) return { ok: false, message: `${path} is a symlink: bildr only writes model files it can read` }
+    if (!resolvesInside(base, content === null ? dirname(target) : target)) return { ok: false, reason: 'refused', message: `${path} resolves outside .bildr/ (symlink)` }
+    if (lstatSync(target, { throwIfNoEntry: false })?.isSymbolicLink()) return { ok: false, reason: 'refused', message: `${path} is a symlink: bildr only writes model files it can read` }
   }
   const undo: Array<{ target: string, previous: Buffer | undefined }> = []
+  const createdFolders: string[] = []
+  let current = ''
   try {
     for (const { path, content } of changes) {
+      current = path
       const target = join(root, path)
       undo.push({ target, previous: existsSync(target) ? readFileSync(target) : undefined })
       if (content === null) {
         rmSync(target, { force: true })
       } else {
+        const missing = firstMissing(dirname(target))
         mkdirSync(dirname(target), { recursive: true })
+        if (missing) createdFolders.push(missing)
         writeAtomically(target, content)
       }
     }
@@ -109,7 +141,9 @@ export const writeChangeSet = (root: string, changes: readonly ModelFileChange[]
       if (previous === undefined) rmSync(target, { force: true })
       else writeFileSync(target, previous)
     }
-    return { ok: false, message: `bildr could not write the edit, nothing changed: ${(error as Error).message}` }
+    // Only the folders this write created: none of them existed before it.
+    for (const folder of createdFolders.reverse()) rmSync(folder, { recursive: true, force: true })
+    return { ok: false, reason: 'disk', message: `bildr could not write the edit, nothing changed: ${diskProblem(current, error)}` }
   }
   return { ok: true }
 }
