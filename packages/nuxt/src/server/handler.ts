@@ -83,6 +83,19 @@ const editorResponse = (dist: string | undefined, headers: Record<string, string
   })
 }
 
+/**
+ * The canvas page the editor frames (P4a): the same CSP, whose `frame-ancestors 'self'`
+ * lets only this origin (the editor) frame it. 404 while the editor build has none.
+ */
+const canvasResponse = (dist: string | undefined) => {
+  const page = readEditorShell(dist, 'canvas.html')
+  if (page === undefined) return fail(404, 'The editor build has no canvas: run pnpm build:editor in the bildr repository')
+  return new Response(page, {
+    status: 200,
+    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'content-security-policy': EDITOR_CSP, 'referrer-policy': 'no-referrer' }
+  })
+}
+
 const ASSETS = `${BASE}/_assets/`
 const MCP = `${BASE}/mcp`
 const ACTION_PATH = /^\/__bildr\/api\/actions\/([^/]+)$/
@@ -109,6 +122,7 @@ const route = async ({ root, token, confirmMigration, runHealth, editorDist, act
 
   if (path === MCP) return handleMcp(actions, request, MAX_BODY)
   if (path === BASE && request.method === 'GET') return editorResponse(editorDist)
+  if (path === `${BASE}/canvas` && request.method === 'GET') return canvasResponse(editorDist)
   if (url.pathname.startsWith(ASSETS) && request.method === 'GET') return asset(editorDist, url.pathname.slice(ASSETS.length))
   if (path === `${BASE}/api/actions` && request.method === 'GET') return json(200, actions.list())
   const action = ACTION_PATH.exec(path)

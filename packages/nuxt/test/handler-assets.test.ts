@@ -68,6 +68,33 @@ describe('editor shell', () => {
   })
 })
 
+// P4a: the canvas is the editor's second entry, framed by the editor at /__bildr/canvas.
+describe('canvas page', () => {
+  const CANVAS = '<!doctype html><html><head><script type="module" src="/__bildr/_assets/canvas-abc.js"></script></head><body><div id="canvas"></div></body></html>'
+
+  it('serves dist/canvas.html behind the cookie with the editor CSP, which lets only this origin frame it', async () => {
+    writeFileSync(join(dist, 'canvas.html'), CANVAS)
+    for (const path of ['/__bildr/canvas', '/__bildr/canvas/']) {
+      const response = await request(path, { cookie })
+      expect(response.status, path).toBe(200)
+      expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8')
+      expect(response.headers.get('cache-control')).toBe('no-store')
+      expect(response.headers.get('content-security-policy')).toBe(CSP)
+      expect(response.headers.get('content-security-policy')).toMatch(/frame-ancestors 'self'$/)
+      expect(await response.text()).toBe(CANVAS)
+    }
+    expect((await request('/__bildr/canvas')).status).toBe(401)
+    // The token link opens the editor, not the canvas.
+    expect((await request(`/__bildr/canvas?token=${TOKEN}`)).status).toBe(401)
+  })
+
+  it('is 404 with a build hint while the editor build has no canvas', async () => {
+    const response = await request('/__bildr/canvas', { cookie })
+    expect(response.status).toBe(404)
+    expect((await response.json() as { message: string }).message).toContain('pnpm build:editor')
+  })
+})
+
 describe('editor assets', () => {
   const files: [string, string][] = [
     ['index-abc.js', 'text/javascript; charset=utf-8'],

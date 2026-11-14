@@ -1,0 +1,13 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/*
+ * The canvas renders classes the generator would write into the app's
+ * templates, which no source here spells out: the render rules' fixed
+ * classes (scanned from them) and every style-token class with its
+ * breakpoint variants (the token registry's safelist, `tokenSafelistCss`,
+ * written in at build time by the editor's Vite config, as the hosted app's
+ * `tokens.css` is). The project theme comes as a stylesheet with the render.
+ */
+@source "../../../codegen/src/render/rules.ts";
+/* bildr:token-safelist */

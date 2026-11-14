@@ -21,10 +21,13 @@ export const defaultEditorDist = (): string | undefined => {
   }
 }
 
-/** The built shell page, or undefined when the editor isn't built. */
-export const readEditorShell = (dist: string | undefined): string | undefined => {
+/**
+ * A built page of the editor, or undefined when the editor isn't built: the
+ * shell (`index.html`) or the canvas the shell frames (`canvas.html`, P4a).
+ */
+export const readEditorShell = (dist: string | undefined, page: 'index.html' | 'canvas.html' = 'index.html'): string | undefined => {
   if (!dist) return undefined
-  const target = join(dist, 'index.html')
+  const target = join(dist, page)
   return existsSync(target) && statSync(target).isFile() ? readFileSync(target, 'utf8') : undefined
 }
 

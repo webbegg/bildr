@@ -1,0 +1,57 @@
+import { describe, expect, it } from 'vitest'
+import type { ModelNode } from '../../../codegen/src/model/schemas.ts'
+import { dropTarget, nearestUnlocked } from '../../src/canvas/drop.ts'
+
+/** Where a drag dropped on the canvas goes: a slot of the container under the pointer, by its children's boxes. */
+
+const root: ModelNode = {
+  id: 'n_page',
+  type: 'Page',
+  children: [
+    { id: 'n_a', type: 'Text' },
+    { id: 'n_row', type: 'Row', children: [{ id: 'n_x', type: 'Button' }, { id: 'n_y', type: 'Button' }] },
+    { id: 'n_empty', type: 'Container', children: [] },
+    { id: 'n_locked', type: 'Container', locked: true, children: [{ id: 'n_in', type: 'Text' }] }
+  ]
+}
+// A column: n_a (0–40), n_row (50–90, n_x 0–100 and n_y 110–210 across), n_empty (100–140), n_locked (150–190).
+const rects: Record<string, DOMRect> = {
+  n_page: new DOMRect(0, 0, 400, 200),
+  n_a: new DOMRect(0, 0, 400, 40),
+  n_row: new DOMRect(0, 50, 400, 40),
+  n_x: new DOMRect(0, 50, 100, 40),
+  n_y: new DOMRect(110, 50, 100, 40),
+  n_empty: new DOMRect(0, 100, 400, 40),
+  n_locked: new DOMRect(0, 150, 400, 40),
+  n_in: new DOMRect(0, 150, 400, 40)
+}
+const rectOf = (id: string) => rects[id] ?? null
+const isRow = (id: string) => id === 'n_row'
+
+describe('dropTarget', () => {
+  it('over a container: the slot among its children nearest the pointer, along its axis', () => {
+    expect(dropTarget(root, 'n_row', { x: 20, y: 60 }, rectOf, isRow)).toMatchObject({ parentId: 'n_row', index: 0 })
+    expect(dropTarget(root, 'n_row', { x: 105, y: 60 }, rectOf, isRow)).toMatchObject({ parentId: 'n_row', index: 1 })
+    expect(dropTarget(root, 'n_row', { x: 300, y: 60 }, rectOf, isRow)).toMatchObject({ parentId: 'n_row', index: 2 })
+  })
+
+  it('over an empty container: inside it', () => {
+    expect(dropTarget(root, 'n_empty', { x: 10, y: 120 }, rectOf, isRow)).toMatchObject({ parentId: 'n_empty', index: 0, position: 'inside' })
+  })
+
+  it('over a leaf: before or after it in its parent, by the half the pointer is in', () => {
+    expect(dropTarget(root, 'n_a', { x: 10, y: 5 }, rectOf, isRow)).toMatchObject({ parentId: 'n_page', index: 0, position: 'before', markId: 'n_a' })
+    expect(dropTarget(root, 'n_a', { x: 10, y: 35 }, rectOf, isRow)).toMatchObject({ parentId: 'n_page', index: 1, position: 'after', markId: 'n_a' })
+    expect(dropTarget(root, 'n_y', { x: 190, y: 60 }, rectOf, isRow)).toMatchObject({ parentId: 'n_row', index: 2, horizontal: true })
+  })
+
+  it('a locked node takes no drop: its nearest unlocked ancestor does', () => {
+    expect(nearestUnlocked(root, 'n_in')).toBe('n_page')
+    expect(dropTarget(root, 'n_in', { x: 10, y: 185 }, rectOf, isRow)).toMatchObject({ parentId: 'n_page', index: 4 })
+  })
+
+  it('a node never drops into itself', () => {
+    // Dragging the Row over its own Button: around the Row, in its parent.
+    expect(dropTarget(root, 'n_x', { x: 10, y: 60 }, rectOf, isRow, 'n_row')).toMatchObject({ parentId: 'n_page', index: 1, markId: 'n_row' })
+  })
+})

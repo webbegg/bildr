@@ -231,6 +231,9 @@ importers:
 
   packages/editor:
     devDependencies:
+      '@bildr/codegen':
+        specifier: workspace:*
+        version: link:../codegen
       '@bildr/editor-core':
         specifier: workspace:*
         version: link:../editor-core

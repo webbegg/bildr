@@ -25,6 +25,7 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
+    "@bildr/codegen": "workspace:*",
     "@bildr/editor-core": "workspace:*",
     "@iconify-json/lucide": "^1.2.147",
     "@nuxt/ui": "^4.12.0",
