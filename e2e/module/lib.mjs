@@ -38,6 +38,9 @@ const PLAYWRIGHT_CORE = process.env.PLAYWRIGHT_CORE || join(homedir(), '.t3/runt
 const CHROMIUM = process.env.CHROMIUM || join(homedir(), '.cache/ms-playwright/chromium-1194/chrome-linux/chrome')
 const SHOTS = fileURLToPath(new URL('./.shots/', import.meta.url))
 
+/** A URL without the editor's session token, for anything printed. */
+export const redact = url => url.replace(/([?&]token=)[^&#]*/, '$1<redacted>')
+
 /** How long a step may wait for the UI before it fails. */
 export const TIMEOUT = 10_000
 const MINUTE = 60_000
@@ -325,10 +328,10 @@ export async function launch({ ignore = [], viewport = { width: 1400, height: 85
   const skip = text => ignore.some(pattern => pattern.test(text))
   const watch = (page) => {
     page.on('console', (message) => {
-      if (message.type() === 'error' && !skip(message.text())) errors.push(`${page.url()}: ${message.text()}`)
+      if (message.type() === 'error' && !skip(message.text())) errors.push(`${redact(page.url())}: ${message.text()}`)
     })
     page.on('pageerror', (error) => {
-      if (!skip(error.message)) errors.push(`${page.url()}: ${error.message}`)
+      if (!skip(error.message)) errors.push(`${redact(page.url())}: ${error.message}`)
     })
   }
   context.on('page', watch)

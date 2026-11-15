@@ -69,10 +69,11 @@ try {
 
 console.log('\nSummary')
 for (const r of results) {
-  const crashed = r.code !== 0 && r.fail === 0 ? ' (exited with an error)' : ''
+  const crashed = r.code !== 0 && r.fail === 0 ? ' (exited with an error)' : r.pass === 0 && r.fail === 0 ? ' (checked nothing)' : ''
   console.log(`  ${r.name.padEnd(14)} ${String(r.pass).padStart(3)} PASS ${String(r.fail).padStart(3)} FAIL  ${r.seconds.toFixed(1)}s${crashed}`)
 }
 const pass = results.reduce((n, r) => n + r.pass, 0)
 const fail = results.reduce((n, r) => n + r.fail, 0)
 console.log(`  ${'total'.padEnd(14)} ${String(pass).padStart(3)} PASS ${String(fail).padStart(3)} FAIL  ${((Date.now() - started) / 1000).toFixed(1)}s`)
-if (fail || results.some(r => r.code !== 0)) process.exitCode = 1
+// A script that checked nothing fails the run: it would otherwise pass vacuously.
+if (fail || results.some(r => r.code !== 0 || r.pass + r.fail === 0)) process.exitCode = 1
