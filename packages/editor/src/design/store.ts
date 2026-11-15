@@ -101,6 +101,8 @@ export const createDesign = () => {
   const clipboard = shallowRef<ModelNode | null>(null)
   /** Every copied node (`clipboard` is the first), in document order. */
   const clipboardNodes = shallowRef<ModelNode[]>([])
+  /** The file the clipboard was copied from. */
+  const clipboardFile = shallowRef<string | null>(null)
   /** The variant of the component being edited that edits are recorded in (null: the primary, whose edits change the component itself). */
   const variantId = ref<string | null>(null)
   /** Previews the project's dark colours in the canvas. */
@@ -450,6 +452,7 @@ export const createDesign = () => {
   const copy = (id?: string) => {
     const root = file.value?.root
     if (!root) return
+    clipboardFile.value = fileId.value
     const ids = id ? [id] : selectedIds.value
     const top = new Set(topLevelSelection(root, ids))
     const nodes = nodeIds(root).filter(nodeId => top.has(nodeId)).map(nodeId => findNode(root, nodeId)!)
@@ -464,11 +467,14 @@ export const createDesign = () => {
     clipboardNodes.value = nodes.map(node => structuredClone(node))
     clipboard.value = clipboardNodes.value[0]!
   }
-  /** A paste over a node it copied lands after it (the last one of them), not inside it; elsewhere, where an insert would go. */
+  /**
+   * A paste over a node it copied lands after it, not inside it; elsewhere, where an insert would go. Node ids are
+   * minted per file, so "the node it copied" means the same id in the file it was copied from.
+   */
   const pastePoint = (): { parentId?: string, index?: number } => {
     const node = selected.value
     const parent = selectedParent.value
-    if (node && parent && clipboardNodes.value.some(copied => copied.id === node.id)) return { parentId: parent.id, index: parent.children!.findIndex(child => child.id === node.id) + 1 }
+    if (node && parent && clipboardFile.value === fileId.value && clipboardNodes.value.some(copied => copied.id === node.id)) return { parentId: parent.id, index: parent.children!.findIndex(child => child.id === node.id) + 1 }
     return insertionPoint()
   }
   const paste = async () => {

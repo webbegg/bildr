@@ -271,6 +271,22 @@ describe('clipboard', () => {
     expect(call!.index).toBe(parent.children!.findIndex(child => child.id === 'n_head') + 1)
   })
 
+  it('a paste in another file, over a node that only shares the copied id, goes where an insert would go', async () => {
+    // Node ids are minted per file, so another page can have an `n_head` of its own.
+    const other = world.model.modules.blog!.pages.find(page => page.id === 'pg_new_post')!
+    other.root.children = [...(other.root.children ?? []), { id: 'n_head', type: 'Row', children: [] }]
+    const { editor, actions } = await boot({ node_insert: ok({ nodeIds: ['n_copy'] }) }, 'pg_index')
+    editor.selectedId = 'n_head'
+    editor.copy()
+    await editor.selectPage('pg_new_post')
+    editor.selectedId = 'n_head'
+    await editor.paste()
+    const [call] = inputs(actions, 'node_insert') as Array<{ file: string, parentId?: string, index?: number }>
+    expect(call!.file).toBe('pg_new_post')
+    // That Row is not the copied node: the paste goes inside it, as any insert into a selected container would.
+    expect(call!.parentId).toBe('n_head')
+  })
+
   it('copying a multi-selection pastes all of it in one insert (one undo step), in document order', async () => {
     const { editor, actions } = await boot({ node_insert: ok({ nodeIds: ['n_a', 'n_b'] }) }, 'pg_index')
     editor.selectedIds = ['n_list', 'n_head']
