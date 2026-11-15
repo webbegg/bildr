@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { allByTestId, byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
-import { byLabel, combo, inputOf, inspectorHead, layer, menuItem, must, open, openFile, optionLabels, postCard, propInput, propRow, propSelect, resetStyle, sectionAdd, select, selectOption, sent, setupHarness, showVariant, sidebarTab, styleField, toggle, typeNumber, typeStyle } from './harness.ts'
+import { byLabel, chooseDevice, combo, inputOf, inspectorHead, layer, menuItem, must, open, openFile, optionLabels, postCard, propInput, propRow, propSelect, readyAll, resetStyle, sectionAdd, select, selectOption, sent, setupHarness, showVariant, sidebarTab, styleField, toggle, typeNumber, typeStyle } from './harness.ts'
 
 /**
  * Components in the Design screen (P4c, U5, V1, V2): the Components section, the hosted component
@@ -92,17 +92,34 @@ describe('Components section', () => {
 })
 
 describe('Component canvas and the variant being edited', () => {
-  it('shows the primary variant, and each variant its row in the Variants section picks, with its chip over the frame', async () => {
+  /** The chip of a board frame, by its label. */
+  const chip = (label: string) => qa('[data-board-label]').find(element => element.textContent?.trim() === label)
+  const activeChip = () => q('[data-board-bar][data-active] [data-board-label]')?.textContent?.trim()
+  /** The variant a board frame renders (`bildr:render.variant`), by its variant's id. */
+  const renderedVariant = (id: string | null) => sent('bildr:render').findLast(message => message.variant?.id === id)?.variant
+
+  it('shows every variant on the board, a frame with its chip each (a state under its base), each rendering its own variant; the Variants section picks the active one', async () => {
     await open({}, POST_CARD)
-    expect(sent('bildr:render').at(-1)?.variant).toEqual({ id: null, label: 'default' })
+    await readyAll()
     expect(qa('[data-component-variants] [data-variant-row]').map(row => row.dataset.variantRow)).toEqual(['primary', 'var_compact', 'var_hovered'])
-    expect(q('[data-board-label]')?.textContent?.trim()).toBe('Primary')
+    expect(qa('[data-board-label]').map(element => element.textContent?.trim())).toEqual(['Primary', 'hovered', 'compact'])
+    expect(qa('iframe[data-board-variant]').map(frame => frame.dataset.boardVariant)).toEqual(['primary', 'var_hovered', 'var_compact'])
+    expect(renderedVariant(null)).toEqual({ id: null, label: 'default' })
+    expect(renderedVariant('var_compact')).toEqual({ id: 'var_compact', label: 'compact' })
+    expect(renderedVariant('var_hovered')).toEqual({ id: 'var_hovered', label: 'hovered' })
+    expect(activeChip()).toBe('Primary')
 
     await showVariant('var_compact')
-    expect(sent('bildr:render').at(-1)?.variant).toEqual({ id: 'var_compact', label: 'compact' })
-    expect(q('[data-board-label]')?.textContent?.trim()).toBe('compact')
+    expect(activeChip()).toBe('compact')
     await showVariant(null)
-    expect(sent('bildr:render').at(-1)?.variant).toEqual({ id: null, label: 'default' })
+    expect(activeChip()).toBe('Primary')
+  })
+
+  it('makes a frame\'s variant the active one with a click on its chip', async () => {
+    await open({}, POST_CARD)
+    await click(chip('compact')!)
+    expect(activeChip()).toBe('compact')
+    expect(q('[data-component-variants] [data-variant-row="var_compact"] button[aria-pressed]')?.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('has no variants or chip on a page, and a variant is dropped when its file is left', async () => {
@@ -112,17 +129,16 @@ describe('Component canvas and the variant being edited', () => {
     expect(q('[data-component-variants]')).toBeNull()
     expect(q('[data-board-bar]')).toBeNull()
     await openFile(POST_CARD)
-    expect(sent('bildr:render').at(-1)?.variant).toEqual({ id: null, label: 'default' })
+    expect(activeChip()).toBe('Primary')
   })
 
-  it('renames the variant being edited from its chip (a double-click), but not the primary', async () => {
+  it('renames a variant from its chip (a double-click), but not the primary', async () => {
     const { actions } = await open({ component_variant_rename: ok() }, POST_CARD)
-    q('[data-board-label]')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    chip('Primary')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     await settle()
     expect(q('[data-board-rename]')).toBeNull()
 
-    await showVariant('var_compact')
-    q('[data-board-label]')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    chip('compact')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     await settle()
     await typeInto(q('[data-board-rename]'), 'dense')
 
@@ -376,7 +392,9 @@ describe('Variants and states', () => {
     await select('n_card')
     expect(styleField('p')!.querySelector('input')!.value).toBe('3')
 
-    await click(byTestId('device-tablet'))
+    // The board shows the variants at one breakpoint; with it off the device frames come back, of the active variant.
+    await toggle('[data-variant-board-toggle]')
+    await chooseDevice('tablet')
     await typeStyle('p', '8')
     expect(actions.named('component_variant_set_override').at(-1)?.input).toEqual({ component: POST_CARD, variant: 'var_compact', nodeId: 'n_card', style: { 'md:p': '8' } })
   })

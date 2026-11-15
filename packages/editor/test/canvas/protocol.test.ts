@@ -99,24 +99,24 @@ describe('render', () => {
 })
 
 describe('token sheet', () => {
-  it('shows the theme\'s colours with their shades, its own colours, radius, spacing and font instead of the page', async () => {
-    await send({ ...render('index'), theme: { ...fixture.theme!, custom: { ink: '#112233' } }, view: 'tokens' })
-    expect(document.querySelector('[data-token-sheet]')).not.toBeNull()
+  it('shows the hosted style guide (EditorTokenSheet): the theme\'s colours with their shades, the type scale, radii and spacing, instead of the page', async () => {
+    await send({ ...render('index'), view: 'tokens' })
+    expect(document.querySelector('[data-style-guide]')).not.toBeNull()
     expect(node('n_h1')).toBeNull()
     for (const name of ['primary', 'secondary', 'success', 'info', 'warning', 'error', 'neutral']) {
-      expect(document.querySelectorAll(`[data-token-color="${name}"] [data-shade]`), name).toHaveLength(11)
+      expect(document.querySelectorAll(`[data-token-color="${name}"] [data-token-shade]`), name).toHaveLength(11)
     }
-    const swatch = document.querySelector<HTMLElement>('[data-token-color="primary"] [data-shade="500"]')!
-    expect(swatch.style.backgroundColor).toContain('var(--ui-color-primary-500)')
-    expect(document.querySelector<HTMLElement>('[data-token-custom="ink"]')?.style.backgroundColor).toContain('var(--bildr-color-ink)')
-    expect(document.querySelector('[data-token-radius]')?.textContent).toContain('0.375rem')
-    expect(document.querySelector('[data-token-font]')?.textContent).toContain('Inter')
+    const swatch = document.querySelector<HTMLElement>('[data-token-shade="primary-500"]')!
+    expect(swatch.style.background).toContain('var(--ui-color-primary-500)')
+    expect(document.querySelectorAll('[data-type-sample]')).toHaveLength(5)
+    expect(document.querySelectorAll('[data-token-radius]').length).toBeGreaterThan(3)
+    expect(document.querySelectorAll('[data-token-spacing]').length).toBeGreaterThan(3)
   })
 
   it('goes back to the page when it is sent again', async () => {
     await send({ ...render('index'), view: 'tokens' })
     await send(render('index'))
-    expect(document.querySelector('[data-token-sheet]')).toBeNull()
+    expect(document.querySelector('[data-style-guide]')).toBeNull()
     expect(node('n_h1')).not.toBeNull()
   })
 })

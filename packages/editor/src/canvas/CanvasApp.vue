@@ -16,12 +16,14 @@ import type { MeasureLine } from '@bildr/editor-core/measure'
 import { applyStylePreview, showsPatch } from '@bildr/editor-core/preview'
 import type { StylePatch } from '@bildr/editor-core/preview'
 import { FRAME_MIN_HEIGHT, viewportUnitRules, wheelPixels, zoomShortcut } from '@bildr/editor-core/viewport'
+import EditorTokenSheet from '../components/editor/EditorTokenSheet.vue'
+import { toolForKey } from '../editor/tools.ts'
 import ModelNode from './ModelNode.vue'
-import TokenSheet from './TokenSheet.vue'
-import { dropTarget, nearestUnlocked } from './drop.ts'
+import { dropTarget, insertTarget, nearestUnlocked } from './drop.ts'
 import type { Box, DropSlot } from './drop.ts'
 import { canvasKeyMessage, isCanvasMessage } from './protocol.ts'
-import { HANDLE_PX, useHandles } from './useHandles.ts'
+import { HANDLE_PX, useGestures } from './useGestures.ts'
+import type { Indicator } from './useGestures.ts'
 import type { CanvasMode, CanvasToEditor, EditorToCanvas, RenderMessage, SpacingOverlay } from './protocol.ts'
 import { pageNodeId, renderPlan } from './render.ts'
 import type { CanvasFile, PlanChild, PlanElement } from './render.ts'
@@ -31,10 +33,11 @@ import type { CanvasFile, PlanChild, PlanElement } from './render.ts'
  * with postMessage (`protocol.ts`), as the hosted `pages/canvas.vue` did. It
  * renders the `.bildr` file of `bildr:render` with its data through the
  * render plan (`render.ts`, the generator's rules) and `ModelNode.vue`, and
- * draws no editor chrome beyond its overlays: hover and selection outlines
+ * draws no editor chrome beyond the hosted overlays: hover and selection outlines
  * (a single selection's parent dashed, the primary one labelled in the
- * active frame), Alt measurements to the hovered element, the padding and
- * gap overlays a hovered panel field asks for, and the drop indicator.
+ * active frame), Alt measurements to the hovered element (with their px),
+ * the padding and gap overlays a hovered panel field asks for, the resize and
+ * spacing handles, the drop indicator and the armed insert tool's slot.
  *
  * Elements map to nodes through `data-node`. Gestures report the node of the
  * file being edited (`pageNodeId`: an instance for its parts, the page root
@@ -45,11 +48,10 @@ import type { CanvasFile, PlanChild, PlanElement } from './render.ts'
  * run: component variants and toasts here; navigate, runAction and setState
  * steps are reported (`bildr:interaction`). Style previews from the editor
  * show over the file until it clears them or a render shows their values.
- * Handle drags (resize, padding and gap, `useHandles.ts`) preview live and
+ * Handle drags (resize, padding and gap) and the drag-to-reorder of the
+ * selection (`useGestures.ts`, the hosted gesture lifecycle) preview live and
  * commit once on release. The token sheet view (`view: 'tokens'`,
- * `TokenSheet.vue`) shows the theme in place of the file. Not yet ported:
- * drag-to-reorder from the canvas, and the insert slot math of armed tools (a
- * click inserts at the drop slot under the pointer).
+ * `EditorTokenSheet`, the Design view's style guide) shows the theme in place of the file.
  */
 
 const SELECTION_ACCENT = '#09f'
@@ -260,8 +262,9 @@ const parentId = computed(() => {
   return tree && id ? findParent(tree, id)?.id ?? null : null
 })
 
-const handles = useHandles({
+const handles = useGestures({
   root: () => render.value?.file.root,
+  fileId: () => render.value?.file.id,
   theme: () => render.value?.theme,
   selectedIds,
   active,
@@ -273,9 +276,14 @@ const handles = useHandles({
   breakpoint: () => frameBreakpoint(),
   firstCopy,
   boxOf: id => boxes.selected.find(box => box.id === id) ?? outline(id),
+  reachableAt,
+  dropAt: (target, point, draggedId) => slotAt(target, point, draggedId),
   setPreview: (nodeId, patch) => {
     const { [nodeId]: _, ...others } = previews.value
     previews.value = patch ? { ...others, [nodeId]: patch } : others
+  },
+  setIndicator: (next) => {
+    indicator.value = next
   },
   post
 })
@@ -322,7 +330,6 @@ const lineStyle = (line: MeasureLine) => line.y1 === line.y2
 
 // ── Drops and inserts ───────────────────────────────────────────────────
 
-interface Indicator { top: number, left: number, width: number, height: number, line: boolean }
 const indicator = ref<Indicator | null>(null)
 
 const rectOf = (id: string): Box | null => {
@@ -336,23 +343,44 @@ const isRow = (id: string) => {
   return css.display.includes('grid') || (css.display.includes('flex') && css.flexDirection.startsWith('row'))
 }
 
+/** Where to draw a drop slot: its mark's outline inside it, else a line on the side of its mark. */
+function indicatorOf(slot: DropSlot): Indicator | null {
+  const mark = rectOf(slot.markId)
+  if (!mark) return null
+  const box = { top: mark.y + window.scrollY, left: mark.x + window.scrollX, width: mark.width, height: mark.height }
+  if (slot.position === 'inside') return { ...box, line: false }
+  const end = slot.position === 'after'
+  return slot.horizontal
+    ? { top: box.top, left: box.left + (end ? box.width : 0) - 1, width: 2, height: box.height, line: true }
+    : { top: box.top + (end ? box.height : 0) - 1, left: box.left, width: box.width, height: 2, line: true }
+}
+
 /** The drop slot at a viewport point over `target`, and where to draw it. */
 function slotAt(target: EventTarget | null, point: { x: number, y: number }, draggedId?: string): { slot: DropSlot, indicator: Indicator } | null {
   const tree = file.value?.root
   const el = nodeOf(target)
   if (!tree || !el || el.closest('[data-copy]')) return null
   const slot = dropTarget(tree, pageNodeId(el.getAttribute('data-node')!), point, rectOf, isRow, draggedId)
-  const mark = slot ? rectOf(slot.markId) : null
-  if (!slot || !mark) return null
-  const box = { top: mark.y + window.scrollY, left: mark.x + window.scrollX, width: mark.width, height: mark.height }
-  if (slot.position === 'inside') return { slot, indicator: { ...box, line: false } }
-  const end = slot.position === 'after'
-  return {
-    slot,
-    indicator: slot.horizontal
-      ? { top: box.top, left: box.left + (end ? box.width : 0) - 1, width: 2, height: box.height, line: true }
-      : { top: box.top + (end ? box.height : 0) - 1, left: box.left, width: box.width, height: 2, line: true }
-  }
+  const drawn = slot ? indicatorOf(slot) : null
+  return slot && drawn ? { slot, indicator: drawn } : null
+}
+
+/**
+ * The insert slot of the armed tool under the pointer, plus where to draw it (the hosted `insertAt`): a
+ * container takes the component between the children around the pointer, a leaf right after itself.
+ * Lock-aware: a click on a locked node (or inside a lock) inserts into its nearest unlocked ancestor.
+ */
+function insertAt(event: MouseEvent): { slot: DropSlot, indicator: Indicator } | null {
+  const tree = file.value?.root
+  const id = reachableAt(event.target)
+  const node = tree && id && render.value?.view === 'page' ? findNode(tree, id) : undefined
+  if (!tree || !node) return null
+  const childRects = (node.children ?? []).map(child => firstCopy(child.id)?.getBoundingClientRect() ?? new DOMRect())
+  const hit = insertTarget(tree, node.id, { x: event.clientX, y: event.clientY }, childRects, isRow(node.id))
+  if (!hit) return null
+  const slot = { ...hit, horizontal: isRow(hit.parentId) }
+  const drawn = indicatorOf(slot)
+  return drawn ? { slot, indicator: drawn } : null
 }
 
 const NODE_DRAG_PREFIX = `${DRAG_MIME}-node;`
@@ -500,8 +528,9 @@ function previewPointer(event: MouseEvent) {
 function onPointerMove(event: MouseEvent) {
   alt.value = event.altKey
   if (mode.value === 'preview') return previewPointer(event)
-  handles.moved(event)
-  if (tool.value) indicator.value = slotAt(event.target, { x: event.clientX, y: event.clientY })?.indicator ?? null
+  // A press or drag is running: the hover waits (the hosted canvas does the same).
+  if (handles.moved(event)) return
+  if (tool.value) indicator.value = insertAt(event)?.indicator ?? null
   const id = reachableAt(event.target)
   if (id === hoveredId.value) return
   hoveredId.value = id
@@ -533,7 +562,7 @@ function onClick(event: MouseEvent) {
   // The click that ends a handle drag selects nothing.
   if (handles.takesClick()) return
   if (tool.value) {
-    const insert = slotAt(event.target, { x: event.clientX, y: event.clientY })
+    const insert = insertAt(event)
     indicator.value = null
     if (insert) post({ type: 'bildr:insert', parentId: insert.slot.parentId, index: insert.slot.index })
     return
@@ -600,12 +629,13 @@ function onKeyDown(event: KeyboardEvent) {
   }
   const lower = event.key.toLowerCase()
   const zooms = zoomShortcut({ code: event.code, key: event.key, meta, shift: event.shiftKey })
+  const armsTool = !!toolForKey({ key: event.key, meta, shift: event.shiftKey, alt: event.altKey })
   const editorMeta = meta && (event.altKey ? ['KeyV', 'KeyK', 'KeyB'].includes(event.code) : ['z', 'y', 'd', 'a', 'g', 'p', 'f', 'k', 'c', 'v', 'r', 'l'].includes(lower))
   const takes = editorTakesKey(
     { key: event.key, code: event.code, meta, shift: event.shiftKey, alt: event.altKey },
     { focus: 'canvas', textSelected: hasTextSelection(window), hasSelection: selectedIds.value.length > 0 }
   )
-  if (!takes || (!zooms && !SHORTCUT_KEYS.has(event.key) && !editorMeta && !(event.shiftKey && !meta && lower === 'a'))) return
+  if (!takes || (!zooms && !armsTool && !SHORTCUT_KEYS.has(event.key) && !editorMeta && !(event.shiftKey && !meta && lower === 'a'))) return
   event.preventDefault()
   post(canvasKeyMessage(event))
 }
@@ -664,12 +694,15 @@ onBeforeUnmount(() => {
     <div
       ref="root"
       class="relative"
-      :class="{ 'cursor-crosshair': tool && mode === 'edit' }"
+      :class="{ 'min-h-screen': render?.view === 'tokens', 'cursor-crosshair! **:cursor-crosshair!': tool && mode === 'edit' && render?.view === 'page' }"
+      :data-armed-tool="tool ?? undefined"
       :data-canvas-viewport="render?.view === 'page' || undefined"
       :data-canvas-mode="mode"
-      :style="{ minHeight: `${FRAME_MIN_HEIGHT}px`, [VIEWPORT_VAR]: `${viewportHeight}px`, [ACCENT_VAR]: accent }"
+      :data-canvas-accent="accent"
+      :data-board-variant="render?.variant ? (render.variant.id ?? 'primary') : undefined"
+      :style="render?.view === 'tokens' ? { [ACCENT_VAR]: accent } : { minHeight: `${FRAME_MIN_HEIGHT}px`, [VIEWPORT_VAR]: `${viewportHeight}px`, [ACCENT_VAR]: accent }"
     >
-      <TokenSheet
+      <EditorTokenSheet
         v-if="render?.view === 'tokens'"
         :theme="render.theme"
       />
@@ -697,7 +730,7 @@ onBeforeUnmount(() => {
             class="absolute left-0 px-1 text-[10px] leading-4 font-medium whitespace-nowrap text-white"
             :class="labelInside(box) ? 'top-0 origin-top-left rounded-sm' : 'bottom-full origin-bottom-left rounded-t-sm'"
             :style="{ backgroundColor: `var(${ACCENT_VAR})`, transform: labelInside(box) ? `translate(${2 / zoom}px, ${2 / zoom}px) scale(${1 / zoom})` : `scale(${1 / zoom})` }"
-            data-selection-label
+            :data-selection-label="labelInside(box) ? 'inside' : 'above'"
           >{{ box.label }}</span>
         </div>
         <div
@@ -717,6 +750,7 @@ onBeforeUnmount(() => {
               :key="area.side"
               class="pointer-events-none absolute z-50"
               :style="{ ...rectStyle(area), ...hatch() }"
+              :data-padding-area="area.side"
             />
           </div>
           <div
@@ -729,6 +763,7 @@ onBeforeUnmount(() => {
               :key="i"
               class="pointer-events-none absolute z-50"
               :style="{ ...rectStyle(gap), ...hatch() }"
+              data-gap-area
             />
           </div>
           <div
@@ -759,11 +794,19 @@ onBeforeUnmount(() => {
           :style="lineStyle(line)"
           data-measure-line
           :data-measure-px="Math.round(line.length)"
-        />
+        >
+          <!-- Beside the line, as in Figma: below a horizontal one, right of a vertical one. -->
+          <span
+            class="absolute rounded-[3px] bg-[#f24822] px-1 text-[10px] leading-4 font-medium whitespace-nowrap text-white tabular-nums"
+            :class="line.y1 === line.y2 ? 'top-full left-1/2 origin-top' : 'top-1/2 left-full origin-left'"
+            :style="{ transform: line.y1 === line.y2 ? `translate(-50%, ${4 / zoom}px) scale(${1 / zoom})` : `translate(${4 / zoom}px, -50%) scale(${1 / zoom})` }"
+          >{{ Math.round(line.length) }}</span>
+        </div>
         <div
           v-if="indicator"
-          class="pointer-events-none absolute z-50 rounded-sm"
-          :style="{ top: `${indicator.top}px`, left: `${indicator.left}px`, width: `${indicator.width}px`, height: `${indicator.height}px`, ...(indicator.line ? { backgroundColor: `var(${ACCENT_VAR})` } : { outline: `2px solid var(${ACCENT_VAR})`, outlineOffset: '-2px' }) }"
+          class="pointer-events-none absolute z-50"
+          :class="indicator.line ? 'rounded-full bg-(--canvas-accent)' : 'rounded-sm bg-(--canvas-accent)/5 outline-2 -outline-offset-2 outline-(--canvas-accent)'"
+          :style="{ top: `${indicator.top}px`, left: `${indicator.left}px`, width: `${indicator.width}px`, height: `${indicator.height}px` }"
           data-drop-indicator
         />
       </template>

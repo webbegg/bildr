@@ -6,7 +6,9 @@ import type { CanvasToEditor, EditorToCanvas } from '../../src/canvas/protocol.t
 import { canvasSrc } from '../../src/design/config.ts'
 import DesignView from '../../src/views/DesignView.vue'
 import { blogModelFiles } from '../canvas/fixture.ts'
-import { mockActions, mountWithApp, settle } from '../helpers.ts'
+import { DEVICES } from '@bildr/editor-core/styleFields'
+import type { DeviceId } from '@bildr/editor-core/styleFields'
+import { click, mockActions, mountWithApp, settle } from '../helpers.ts'
 import type { AppRoutes } from '../helpers.ts'
 
 /**
@@ -63,16 +65,34 @@ export class FakeEventSource {
 }
 
 // A real postMessage structured-clones its message (a Vue proxy throws DataCloneError), so the stand-in does too.
-export const frameWindow = { postMessage: (message: EditorToCanvas) => world.posted.push(structuredClone(message)) }
+const stubWindow = () => ({ postMessage: (message: EditorToCanvas) => world.posted.push(structuredClone(message)) })
+export const frameWindow = stubWindow()
 export const sent = <T extends EditorToCanvas['type']>(type: T) => world.posted.filter((message): message is Extract<EditorToCanvas, { type: T }> => message.type === type)
 
-/** What the canvas iframe says to the editor. */
-export const fromCanvas = async (message: CanvasToEditor, origin = window.location.origin) => {
-  window.dispatchEvent(new MessageEvent('message', { data: message, source: frameWindow as unknown as Window, origin }))
+/** Each canvas iframe is its own window, as in the browser (the editor tells its frames apart by `event.source`). */
+const frameWindows = new WeakMap<object, ReturnType<typeof stubWindow>>()
+const windowOf = (frame: object) => {
+  if (!frameWindows.has(frame)) frameWindows.set(frame, stubWindow())
+  return frameWindows.get(frame)!
+}
+/** The canvas iframes of the editor: the active frame (titled `Canvas`) first, the others in the DOM's order. */
+export const frames = () => [...document.body.querySelectorAll<HTMLIFrameElement>('iframe')].sort((a, b) => Number(b.title === 'Canvas') - Number(a.title === 'Canvas'))
+
+/** What a canvas iframe says to the editor: the active frame's by default. */
+export const fromCanvas = async (message: CanvasToEditor, origin = window.location.origin, frame: HTMLIFrameElement | undefined = frames()[0]) => {
+  window.dispatchEvent(new MessageEvent('message', { data: message, source: (frame ? windowOf(frame) : frameWindow) as unknown as Window, origin }))
   await settle()
 }
 
+/** Every frame announces it has loaded, as each iframe of the board does. */
+export const readyAll = async () => {
+  for (const frame of frames()) await fromCanvas({ type: 'bildr:ready' }, undefined, frame)
+}
+
 export const select = (nodeId: string) => fromCanvas({ type: 'bildr:click', nodeId, shift: false, meta: false })
+
+/** Selects a node by its layers row: the layers reach nodes inside a lock, which a canvas click does not (it selects the lock's parent). */
+export const selectLayer = async (nodeId: string) => click(document.body.querySelector<HTMLElement>(`[data-layer-id="${nodeId}"]`))
 
 const originalContentWindow = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow')
 
@@ -88,11 +108,19 @@ export const baseHandlers = (): Handlers => ({
 export const setupHarness = () => {
   beforeEach(() => {
     canvasSrc.value = 'about:blank'
+    // The visible frames and the single-frame choice are editor preferences kept across reloads: each test starts clean.
+    localStorage.removeItem('bildr:frames')
+    localStorage.removeItem('bildr:canvas-frames')
     world.model = structuredClone(loaded.model)
     world.posted = []
     FakeEventSource.instances = []
     vi.stubGlobal('EventSource', FakeEventSource)
-    Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', { configurable: true, get: () => frameWindow })
+    Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+      configurable: true,
+      get(this: HTMLIFrameElement) {
+        return windowOf(this)
+      }
+    })
   })
   afterEach(() => {
     if (originalContentWindow) Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', originalContentWindow)
@@ -149,13 +177,26 @@ export const sidebarTab = async (name: 'Pages' | 'Layers' | 'Assets') => {
   await settle()
 }
 
-/** Opens the Design view (the theme) from the Assets panel's Design system row, as a user does. */
+/** Opens the Design view (the theme) from the Assets panel's Design system row, as a user does; its style guide is a canvas of its own, which then loads. */
 export const openDesignSystem = async () => {
   await sidebarTab('Assets')
   const row = document.body.querySelector<HTMLElement>('[data-assets-design-system]')
   if (!row) throw new Error('no Design system row')
   row.click()
   await settle()
+  await fromCanvas({ type: 'bildr:ready' }, undefined, document.body.querySelector<HTMLIFrameElement>('iframe[title="Token preview"]') ?? undefined)
+}
+
+/**
+ * Edits another device as a user does on the canvas: a visible frame by its header bar, a hidden one from the "+" of a
+ * bar (which shows it). The device frames are `data-frame` blocks, each with its `data-frame-label`.
+ */
+export const chooseDevice = async (id: DeviceId) => {
+  const label = document.body.querySelector<HTMLElement>(`[data-frame="${id}"] [data-frame-label]`)
+  if (label) return click(label)
+  const add = document.body.querySelector<HTMLElement>('[data-frame-add] button')
+  if (!add) throw new Error(`no frame bar to add ${id} from`)
+  await menuItem(add, DEVICES.find(device => device.id === id)!.label)
 }
 
 /** Opens a page (Pages), a component or a layout (Assets) by clicking its sidebar row; leaves the sidebar on Layers. */

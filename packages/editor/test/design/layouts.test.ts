@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
-import { byLabel, fromCanvas, indexPage, mainLayout, menuItem, must, open, propInput, propRow, propSelect, sectionAdd, select, selectOption, sent, setupHarness, sidebarTab, typeNumber } from './harness.ts'
+import { byLabel, fromCanvas, indexPage, mainLayout, menuItem, must, open, propInput, propRow, propSelect, sectionAdd, select, selectLayer, selectOption, sent, setupHarness, sidebarTab, typeNumber } from './harness.ts'
 
 /**
  * Layouts in the Design screen (P4c, V1, V2): the Layouts section, a layout's
@@ -102,7 +102,7 @@ describe('Slots and variables of a layout', () => {
     // The root takes no slot of its own: its + has no menu.
     expect(pick('[data-layout-slots] [data-section-action="add"]')).toBeNull()
 
-    await select('n_nav')
+    await selectLayer('n_nav')
     await menuItem(sectionAdd('data-layout-slots'), 'Make slot')
     await select('n_root')
     await typeInto(byLabel('footer slot name'), 'bottom')
@@ -115,7 +115,7 @@ describe('Slots and variables of a layout', () => {
 
   it('turns a prop or a style key of the selected node into a variable, renames one and removes one', async () => {
     const { actions } = await open({ layout_variable_add: ok({ variableId: 'prop_label' }), layout_variable_update: ok(), layout_variable_remove: ok() }, MAIN)
-    await select('n_brand')
+    await selectLayer('n_brand')
     await menuItem(sectionAdd('data-layout-variables'), 'Label')
     await menuItem(sectionAdd('data-layout-variables'), 'Style · Background')
     await select('n_root')

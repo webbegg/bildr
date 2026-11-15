@@ -37,6 +37,12 @@ export const toolForKey = ({ key, meta, shift, alt, typing }: KeyInput): ToolId 
 /** True for a tool that inserts a component (not Move or Hand). */
 export const isInsertTool = (id: ToolId): boolean => id !== MOVE_TOOL && id !== HAND_TOOL
 
+/** What a canvas press does: Hand or a held Space pans (over any tool), an insert tool inserts, Move selects. */
+export const pointerMode = (tool: ToolId, spaceHeld: boolean): 'pan' | 'insert' | 'select' => {
+  if (spaceHeld || tool === HAND_TOOL) return 'pan'
+  return isInsertTool(tool) ? 'insert' : 'select'
+}
+
 /** The floating bar's hint for an armed insert tool, which only the keyboard arms; null otherwise. */
 export const toolHint = (id: ToolId): string | null => {
   if (!isInsertTool(id)) return null

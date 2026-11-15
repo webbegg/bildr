@@ -11,12 +11,12 @@ import type { Device, DeviceId } from '@bildr/editor-core/styleFields'
 import { callAction, errorMessage, subscribeEvents } from '../api.ts'
 import type { BildrEvent } from '../api.ts'
 import type { CanvasFile } from '../canvas/render.ts'
-import type { CanvasMode, CanvasToEditor, CanvasView } from '../canvas/protocol.ts'
+import type { CanvasMode } from '../canvas/protocol.ts'
 import type { ModelProblem } from '../types.ts'
 import type { Row } from '@bildr/codegen/query'
 import { designData, detailField, routeParams } from './data.ts'
 import { createLiveRows } from './liveRows.ts'
-import { findNode, findParent, moveTarget, nodeIds, slotIndex } from './tree.ts'
+import { findNode, findParent, moveTarget } from './tree.ts'
 import type { DropPosition } from './tree.ts'
 
 /**
@@ -85,7 +85,6 @@ export const createDesign = () => {
   /** The last action's refusal, or a failed read. It stays until dismissed or the next edit; a refresh never clears an action's. */
   const error = ref<string | null>(null)
   let errorFromRead = false
-  const zoom = ref(1)
   const regenerated = ref<{ ok: boolean, problems?: ModelProblem[], error?: string } | null>(null)
   const fileId = ref<string | null>(null)
   const selectedIds = ref<string[]>([])
@@ -104,7 +103,6 @@ export const createDesign = () => {
   /** Previews the project's dark colours in the canvas. */
   const dark = ref(false)
   /** What the canvas shows: the file, or the theme's token sheet. */
-  const view = ref<CanvasView>('page')
 
   const model = computed<ProjectModel | null>(() => result.value?.ok ? result.value.model : null)
   const problems = computed<ModelProblem[]>(() => result.value && !result.value.ok ? result.value.problems : [])
@@ -492,46 +490,6 @@ export const createDesign = () => {
     return out
   }
 
-  // ── The canvas's drops, keys and the editor's own keys ──────────────────
-
-  const onDrop = async (parentId: string, index: number, payload: string) => {
-    let drop: { insert?: unknown, move?: unknown, component?: unknown }
-    try {
-      drop = JSON.parse(payload) as typeof drop
-    } catch {
-      return
-    }
-    const root = file.value?.root
-    if (typeof drop.insert === 'string') await insert({ type: drop.insert }, { parentId, index })
-    else if (typeof drop.component === 'string') await insertComponent(drop.component, { parentId, index })
-    else if (typeof drop.move === 'string' && root) await moveNode(drop.move, parentId, slotIndex(root, drop.move, parentId, index))
-  }
-
-  type Key = Extract<CanvasToEditor, { type: 'bildr:key' }>
-  /** The editor's shortcuts, for keys typed in the editor or the canvas. Returns whether it took the key. */
-  const onKey = (key: Pick<Key, 'key' | 'code' | 'meta' | 'shift' | 'alt'>): boolean => {
-    const lower = key.key.toLowerCase()
-    if (key.meta && !key.alt) {
-      if (lower === 'z') void (key.shift ? redo() : undo())
-      else if (lower === 'y') void redo()
-      else if (lower === 'd') void duplicate()
-      else if (lower === 'g') void wrap()
-      else if (lower === 'c') copy()
-      else if (lower === 'v') void paste()
-      else if (lower === 'l' && selectedId.value) void setLocked(selectedId.value, !selected.value?.locked)
-      else if (lower === 'a' && file.value) select(nodeIds(file.value.root).slice(1))
-      else return false
-      return true
-    }
-    if (key.meta || key.alt) return false
-    if (key.key === 'Delete' || key.key === 'Backspace') void remove()
-    else if (key.key === 'Escape') {
-      if (dragging.value) dragCancels.value++
-      else select([])
-    } else return false
-    return true
-  }
-
   // ── Events ───────────────────────────────────────────────────────────
 
   const onEvent = (event: BildrEvent) => {
@@ -584,11 +542,11 @@ export const createDesign = () => {
   }
 
   return {
-    page, rowsOf, detail, records, record, pickRecord, result, loading, error, zoom, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
+    page, rowsOf, detail, records, record, pickRecord, result, loading, error, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
     selectedIds, selectedId, selected, selectedParent, hoveredId, dragging, dragCancels, device, devices, deviceChoice, mode, history, clipboard,
-    component, variantId, variant, inspected, breadcrumbs, nameOf, dark, view, selectVariant, override, commitStyle,
+    component, variantId, variant, inspected, breadcrumbs, nameOf, dark, selectVariant, override, commitStyle,
     isContainer, scopeOf, pendingInsert, confirmInsert, pendingForm, confirmForm, formActions, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,
-    setLocked, rename, copy, paste, setProps, setStyle, onDrop, onKey, start, dispose, refreshDataSoon,
+    setLocked, rename, copy, paste, setProps, setStyle, start, dispose, refreshDataSoon,
     chooseDevice: (id: DeviceId) => {
       deviceChoice.value = id
     }

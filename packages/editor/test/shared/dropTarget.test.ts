@@ -50,12 +50,12 @@ describe('resolveDrop', () => {
 })
 
 describe('drag payloads', () => {
-  it('carry the hosted payload and the P4 canvas\'s own keys, so a drop on either reads it', () => {
-    expect(JSON.parse(insertPayload('Text'))).toEqual({ kind: 'component', type: 'Text', insert: 'Text' })
+  it('carry the hosted payload (`kind`) alone, which a drop on the canvas or the layers reads', () => {
+    expect(JSON.parse(insertPayload('Text'))).toEqual({ kind: 'component', type: 'Text' })
     expect(parseDragPayload(insertPayload('Text'))).toEqual({ kind: 'component', type: 'Text' })
-    expect(JSON.parse(nodePayload('n_h1'))).toEqual({ kind: 'node', id: 'n_h1', move: 'n_h1' })
+    expect(JSON.parse(nodePayload('n_h1'))).toEqual({ kind: 'node', id: 'n_h1' })
     expect(parseDragPayload(nodePayload('n_h1'))).toEqual({ kind: 'node', id: 'n_h1' })
-    expect(JSON.parse(instancePayload('cmp_x'))).toEqual({ kind: 'instance', componentId: 'cmp_x', component: 'cmp_x' })
+    expect(JSON.parse(instancePayload('cmp_x'))).toEqual({ kind: 'instance', componentId: 'cmp_x' })
     expect(parseInstancePayload(instancePayload('cmp_x'))).toBe('cmp_x')
   })
 

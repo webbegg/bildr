@@ -4,30 +4,47 @@ import { spacingBasePx } from '@bildr/codegen/design'
 import type { Breakpoint, Theme } from '@bildr/codegen/design'
 import type { ModelNode } from '@bildr/codegen/model'
 import { changedPatch, fillSizes, gapRects, handleCursor, handlePoint, HANDLES, hitPoint, hitRadius, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '@bildr/editor-core/handles'
-import type { Axis, HandleId, Insets, Point, ResizeDrag, SpacingHandle, SpacingTarget } from '@bildr/editor-core/handles'
+import type { Axis, HandleId, Insets, ResizeDrag, SpacingHandle, SpacingTarget } from '@bildr/editor-core/handles'
 import type { StylePatch } from '@bildr/editor-core/preview'
 import { SCRUB_DEAD_ZONE } from '@bildr/editor-core/scrub'
-import { nearestUnlocked } from './drop.ts'
+import { containsNode, findNode } from '../design/tree.ts'
+import type { DropSlot } from './drop.ts'
+import { canDragNode, gestureTargetGone, isNoopMove, REORDER_THRESHOLD, startGesture, stepGesture } from './gesture.ts'
+import type { GestureEffect, GestureEndReason, GestureState, Point } from './gesture.ts'
 import type { CanvasMode, CanvasToEditor, SpacingOverlay } from './protocol.ts'
 
 /**
- * Direct manipulation in the canvas (hosted #23, P4c): the resize handles of a
- * single selected node, and the padding and gap overlays with their handles.
- * A press on a handle starts a drag; every move snaps to the token scale
- * (`resizePatch`, `spacingDragPatch`: a drag never writes a length), shows the
- * patch on the node here at once and reports it as `bildr:style-preview`; the
- * release reports the changed tokens once as `bildr:style-commit` (one undo
- * step); Esc, a pointer cancel, losing focus or a move with the button up
- * cancels it and drops the preview. The click that ends a drag selects
- * nothing. Handles are drawn only in the active frame, in edit mode, on a
- * single unlocked node that is not the root, and write at the breakpoint of
- * the frame's width. Rects and points are canvas px (the frame's CSS px).
+ * The canvas's pointer gestures on the selection (the hosted `pages/canvas.vue`, direct
+ * manipulation #23, over the module's `.bildr` file), in the active frame on a single unlocked
+ * selection (not the root), in edit mode with no insert tool armed:
+ *
+ * - 8 resize handles (corners and edge midpoints): a drag previews the W/H scale step nearest
+ *   the pointer (`resizePatch`), labelled e.g. `w-64 · 256px`, Shift by 4 stops; a Fit or Fill
+ *   size becomes fixed.
+ * - padding and gap overlays (hatched, accent) while the panel's Padding or Gap field is
+ *   hovered (`bildr:overlay`), or both while the pointer is over a selected auto layout; their
+ *   handles drag the padding key the side uses or `gap`, snapped the same way.
+ * - a press on the selection that moves past 4 px drags it: the drop indicator shows the sibling
+ *   slot or container under the pointer (locks respected), and the release moves it there
+ *   (`bildr:drop`, one node_move).
+ *
+ * A handle drag previews through the editor (`bildr:style-preview`) and commits once on release
+ * (`bildr:style-commit`), at this frame's breakpoint. Esc, a pointer cancel, losing focus, the
+ * editor's `bildr:cancel-drag` or a move with the button up cancels any drag and drops its
+ * preview; the click that ends a drag selects nothing. The lifecycle is `gesture.ts`.
+ *
+ * Module-specific (no hosted equivalent): the edit/preview mode gate, `cancel()` for the editor's
+ * cancel-drag message, and the scrub dead zone of a spacing drag (a press that barely moves
+ * changes no padding or gap).
  */
 
 export interface Box { top: number, left: number, width: number, height: number }
+export interface Indicator { top: number, left: number, width: number, height: number, line: boolean }
 
-export interface HandlesContext {
+export interface GesturesContext {
   root: () => ModelNode | undefined
+  /** The id of the file being edited: a gesture is gone when it changes. */
+  fileId: () => string | undefined
   theme: () => Theme | undefined
   selectedIds: Ref<string[]>
   active: Ref<boolean>
@@ -41,8 +58,13 @@ export interface HandlesContext {
   firstCopy: (id: string) => Element | null
   /** A node's box now, in canvas px. */
   boxOf: (id: string) => Box | null
+  /** The node a pointer gesture on `target` reaches (its nearest unlocked ancestor). */
+  reachableAt: (target: EventTarget | null) => string | null
+  /** The drop slot under a viewport point, with where to draw it; the dragged node never drops into itself. */
+  dropAt: (target: EventTarget | null, point: { x: number, y: number }, draggedId: string) => { slot: DropSlot, indicator: Indicator } | null
   /** Shows (or, with null, drops) a style patch on a node here. */
   setPreview: (nodeId: string, patch: StylePatch | null) => void
+  setIndicator: (indicator: Indicator | null) => void
   post: (message: CanvasToEditor) => void
 }
 
@@ -57,9 +79,12 @@ interface SpacingBox {
   showGap: boolean
 }
 
+/** A drag's node, the file it started on, and its lifecycle (`stepGesture`: pending → active → done or cancelled). */
+interface GestureBase { nodeId: string, pageId: string | undefined, state: GestureState }
 type Gesture
-  = | { kind: 'resize', nodeId: string, pointerId: number, start: Point, patch: Record<string, string>, cursor: string, drag: ResizeDrag }
-    | { kind: 'spacing', nodeId: string, pointerId: number, start: Point, patch: Record<string, string>, cursor: string, target: SpacingTarget, startPx: number, shown: { padding: boolean, gap: boolean } }
+  = | GestureBase & { kind: 'resize', drag: ResizeDrag, patch: Record<string, string>, cursor: string }
+    | GestureBase & { kind: 'spacing', target: SpacingTarget, startPx: number, patch: Record<string, string>, cursor: string, shown: { padding: boolean, gap: boolean } }
+    | GestureBase & { kind: 'reorder', slot: DropSlot | null }
 
 /** Handle sizes in screen px (scaled back by the zoom): the drawn dot, the hit radius, and a spacing handle's least inset. */
 export const HANDLE_PX = 7
@@ -103,20 +128,24 @@ function contentOf(target: Element) {
   }
 }
 
-export function useHandles(ctx: HandlesContext) {
-  /** The node direct manipulation applies to: a single unlocked selection, not the root, in the active frame in edit mode. */
+export function useGestures(ctx: GesturesContext) {
+  /** The node direct manipulation applies to: a single unlocked selection, not the root, in the active page-view frame in edit mode with Move. */
   const editable = computed(() => {
     const root = ctx.root()
     const id = ctx.selectedIds.value.length === 1 ? ctx.selectedIds.value[0] : undefined
-    return root && id && id !== root.id && ctx.view() === 'page' && ctx.mode.value === 'edit' && ctx.active.value && !ctx.tool.value && nearestUnlocked(root, id) === id ? id : null
+    return root && id && ctx.view() === 'page' && ctx.mode.value === 'edit' && ctx.active.value && !ctx.tool.value && canDragNode(root, id) ? id : null
   })
   const editableBox = shallowRef<Box | null>(null)
+  /** The spacing overlays shown on the editable node, measured each frame; null when none shows. */
   const spacing = shallowRef<SpacingBox | null>(null)
+  /** The live token label of a handle drag, at the pointer (canvas px). */
   const dragLabel = ref<{ text: string, x: number, y: number } | null>(null)
 
+  /** The drag in progress, from the press until it ends (`stepGesture`). */
   let gesture: Gesture | null = null
+  /** The pointer in canvas px; null outside the frame. */
   let pointer: Point | null = null
-  /** Set when a drag ended: the click that follows selects nothing. */
+  /** Set when a press ended a drag (or Esc cancelled one): the click that follows selects nothing. */
   let swallowClick = false
 
   const resizeHandles = computed(() => editableBox.value ? HANDLES.map(handle => ({ handle, ...handlePoint(toRect(editableBox.value!), handle) })) : [])
@@ -192,17 +221,11 @@ export function useHandles(ctx: HandlesContext) {
     trackSpacing()
   }
 
-  /** Shows a drag's patch on the node at once, and reports it to the editor. */
-  function showPatch(g: Gesture, patch: Record<string, string>, at: Point) {
-    const entries = Object.entries(patch)
-    dragLabel.value = entries.length ? { text: entries.map(([key, value]) => scaleLabel(key, value, ctx.theme()?.spacing ?? 'default')).join(', '), x: at.x, y: at.y } : null
-    if (JSON.stringify(patch) === JSON.stringify(g.patch)) return
-    g.patch = patch
-    ctx.setPreview(g.nodeId, entries.length ? patch : null)
-    ctx.post({ type: 'bildr:style-preview', nodeId: g.nodeId, style: entries.length ? patch : null })
-  }
-
-  /** A measurement of the Fill (`full`) sizes node `id` can snap to: its element at 100% and at 50% of each axis, then restored. */
+  /**
+   * The sizes Fill (`full`) can snap node `id` to (`fillSizes`): its element measured with the axis at `100%` and at
+   * `50%`, one axis at a time (a width change can rewrap text and change an auto height), then restored, before the next
+   * paint. A percentage of an indefinite parent size (an auto-height Column) renders as auto, so Fill is left out there.
+   */
   function fillSize(id: string): ResizeDrag['fill'] {
     const el = ctx.firstCopy(id) as HTMLElement | null
     if (!el?.style) return undefined
@@ -217,14 +240,50 @@ export function useHandles(ctx: HandlesContext) {
     return fillSizes({ width: sizeAt('width', '100%'), height: sizeAt('height', '100%') }, { width: sizeAt('width', '50%'), height: sizeAt('height', '50%') })
   }
 
+  /** A press becomes a drag: the pointer is captured (so it keeps dragging outside the frame), and the frame takes the keys (Esc). */
+  function beginDrag(g: Gesture) {
+    try {
+      document.documentElement.setPointerCapture(g.state.pointerId)
+    } catch {
+      // The pointer is already gone; its pointerup ends the drag.
+    }
+    window.focus()
+    setCursor(g.kind === 'reorder' ? 'grabbing' : g.cursor)
+  }
+
+  /** Shows a handle drag's patch on the node here at once, and through the editor in the other frames. */
+  function showPatch(g: Extract<Gesture, { kind: 'resize' | 'spacing' }>, patch: Record<string, string>, at: Point) {
+    const entries = Object.entries(patch)
+    dragLabel.value = entries.length ? { text: entries.map(([key, value]) => scaleLabel(key, value, ctx.theme()?.spacing ?? 'default')).join(', '), x: at.x, y: at.y } : null
+    if (JSON.stringify(patch) === JSON.stringify(g.patch)) return
+    g.patch = patch
+    ctx.setPreview(g.nodeId, entries.length ? patch : null)
+    ctx.post({ type: 'bildr:style-preview', nodeId: g.nodeId, style: entries.length ? patch : null })
+  }
+
   function onMove(event: PointerEvent) {
     const g = gesture
-    if (!g || event.pointerId !== g.pointerId) return
-    // The release happened outside the frame: the drag is over.
-    if ((event.buttons & 1) === 0) return end('cancel')
+    const root = ctx.root()
+    if (!g || !root) return
     const at = canvasPoint(event)
-    const delta = { dx: at.x - g.start.x, dy: at.y - g.start.y }
-    const style = findNodeStyle(g.nodeId)
+    // The threshold is screen px: scaled back by the editor zoom, like the handles.
+    const step = stepGesture(g.state, { type: 'move', pointerId: event.pointerId, point: at, buttons: event.buttons }, REORDER_THRESHOLD / ctx.zoom.value)
+    if (step.effect === 'ignore' || step.effect === 'wait') return
+    if (!step.state) {
+      finish(step.effect)
+      return
+    }
+    g.state = step.state
+    if (step.effect === 'activate') beginDrag(g)
+    const delta = { dx: at.x - g.state.start.x, dy: at.y - g.state.start.y }
+    if (g.kind === 'reorder') {
+      // The pointer is captured, so the element under it comes from its position.
+      const hit = ctx.dropAt(document.elementFromPoint(event.clientX, event.clientY), { x: event.clientX, y: event.clientY }, g.nodeId)
+      g.slot = hit && !isNoopMove(root, g.nodeId, hit.slot) ? hit.slot : null
+      ctx.setIndicator(hit && g.slot ? hit.indicator : null)
+      return
+    }
+    const style = findNode(root, g.nodeId)?.style ?? {}
     const patch = g.kind === 'resize'
       ? resizePatch(g.drag, delta, event.shiftKey)
       : Math.hypot(delta.dx, delta.dy) < SCRUB_DEAD_ZONE
@@ -232,106 +291,139 @@ export function useHandles(ctx: HandlesContext) {
         : spacingDragPatch(style, g.target, g.startPx, delta, { breakpoint: ctx.breakpoint(), basePx: spacingBasePx(ctx.theme()?.spacing ?? 'default'), shift: event.shiftKey })
     showPatch(g, patch, at)
   }
-  const onUp = (event: PointerEvent) => {
-    if (gesture && event.pointerId === gesture.pointerId) end('commit')
-  }
-  const onCancel = (event: PointerEvent) => {
-    if (gesture && event.pointerId === gesture.pointerId) end('cancel')
-  }
-  const onBlur = () => end('cancel')
 
-  function findNodeStyle(id: string): Record<string, string> {
-    const find = (node: ModelNode): ModelNode | undefined => node.id === id ? node : node.children?.map(find).find(Boolean)
-    const root = ctx.root()
-    return (root && find(root)?.style) ?? {}
+  function onUp(event: PointerEvent) {
+    if (!gesture) return
+    const step = stepGesture(gesture.state, { type: 'up', pointerId: event.pointerId })
+    if (!step.state) finish(step.effect)
   }
+  const onCancel = (event: PointerEvent) => endBy('pointercancel', event.pointerId)
+  const onBlur = () => endBy('blur')
+  const onLostCapture = (event: PointerEvent) => endBy('lostcapture', event.pointerId)
 
-  /** Ends the drag in progress: it commits its patch (one undo step), or is cancelled and its preview dropped. */
-  function end(how: 'commit' | 'cancel') {
+  /** Ends the drag in progress: listeners, capture, cursor and label. */
+  function endGesture(): Gesture | null {
     const g = gesture
-    if (!g) return
     gesture = null
     window.removeEventListener('pointermove', onMove)
     window.removeEventListener('pointerup', onUp)
     window.removeEventListener('pointercancel', onCancel)
     window.removeEventListener('blur', onBlur)
+    document.documentElement.removeEventListener('lostpointercapture', onLostCapture)
     try {
-      if (document.documentElement.hasPointerCapture?.(g.pointerId)) document.documentElement.releasePointerCapture(g.pointerId)
+      if (g && document.documentElement.hasPointerCapture?.(g.state.pointerId)) document.documentElement.releasePointerCapture(g.state.pointerId)
     } catch {
       // The pointer is already gone.
     }
     setCursor(null)
     dragLabel.value = null
-    const dragged = Object.keys(g.patch).length > 0
-    swallowClick = dragged || how === 'cancel'
-    if (!dragged) return
-    const changed = how === 'commit' ? changedPatch(findNodeStyle(g.nodeId), g.patch) : {}
-    if (Object.keys(changed).length) {
-      ctx.post({ type: 'bildr:style-commit', nodeId: g.nodeId, style: changed })
-    } else {
-      ctx.setPreview(g.nodeId, null)
-      ctx.post({ type: 'bildr:style-preview', nodeId: g.nodeId, style: null })
-    }
+    return g
   }
 
-  /** A press: on a handle it starts a drag (and is taken, so nothing else sees it); anywhere else it is not ours. */
+  /** Ends the gesture for an exit (Esc, blur, lost capture…) if it applies; returns what that did (`cancel` for a running drag). */
+  function endBy(reason: GestureEndReason, pointerId?: number): GestureEffect {
+    if (!gesture) return 'ignore'
+    const step = stepGesture(gesture.state, { type: 'end', reason, pointerId })
+    if (!step.state) finish(step.effect)
+    return step.effect
+  }
+
+  /** Ends the gesture by its outcome: `commit`, `cancel` (like Esc) or `abandon` (a press that never dragged: no effect, its click still selects). */
+  function finish(effect: GestureEffect) {
+    const g = endGesture()
+    if (!g) return
+    if (g.kind === 'reorder') ctx.setIndicator(null)
+    if (effect === 'abandon') return
+    swallowClick = true
+    if (effect === 'cancel') {
+      if (g.kind !== 'reorder' && Object.keys(g.patch).length) dropPreview(g.nodeId)
+      return
+    }
+    commit(g)
+  }
+
+  /** The release: a handle drag commits its patch (one undo step), a reorder drag moves the node to the slot shown. */
+  function commit(g: Gesture) {
+    if (g.kind === 'reorder') {
+      if (g.slot) ctx.post({ type: 'bildr:drop', parentId: g.slot.parentId, index: g.slot.index, payload: JSON.stringify({ kind: 'node', id: g.nodeId }) })
+      return
+    }
+    const node = ctx.root() ? findNode(ctx.root()!, g.nodeId) : undefined
+    const changed = node ? changedPatch(node.style ?? {}, g.patch) : {}
+    if (Object.keys(changed).length) ctx.post({ type: 'bildr:style-commit', nodeId: g.nodeId, style: changed })
+    else if (Object.keys(g.patch).length) dropPreview(g.nodeId)
+  }
+
+  function dropPreview(nodeId: string) {
+    ctx.setPreview(nodeId, null)
+    ctx.post({ type: 'bildr:style-preview', nodeId, style: null })
+  }
+
+  /**
+   * A press in the active frame: on a handle it starts a resize or spacing drag (and is taken, so nothing
+   * else sees it: true), on the selection a pending drag-to-reorder (not taken, so its click still selects).
+   */
   function down(event: PointerEvent): boolean {
     if (event.button !== 0 || ctx.mode.value !== 'edit') return false
-    // A new press means the last one is over, even if its release never reached this frame.
-    if (gesture) end('cancel')
     swallowClick = false
+    // A new press means the last one is over, even if its release never reached this frame.
+    if (gesture) endBy('press')
+    const root = ctx.root()
     const id = editable.value
     const box = editableBox.value
-    if (!id || !box) return false
+    if (!root || !id || !box) return false
     const start = canvasPoint(event)
     const hit = handleAt(start)
-    if (!hit) return false
-    const base = { nodeId: id, pointerId: event.pointerId, start, patch: {} }
-    if ('handle' in hit) {
+    const base = { nodeId: id, pageId: ctx.fileId(), state: startGesture(event.pointerId, start, !!hit) }
+    if (hit && 'handle' in hit) {
       const drag: ResizeDrag = { handle: hit.handle, width: box.width, height: box.height, breakpoint: ctx.breakpoint(), basePx: spacingBasePx(ctx.theme()?.spacing ?? 'default'), fill: fillSize(id) }
-      gesture = { kind: 'resize', ...base, drag, cursor: handleCursor(hit.handle) }
-    } else {
-      const s = spacing.value!
+      gesture = { kind: 'resize', ...base, drag, patch: {}, cursor: handleCursor(hit.handle) }
+    } else if (hit && spacing.value) {
+      const s = spacing.value
       const handle = hit.spacing
       gesture = {
         kind: 'spacing',
         ...base,
         target: handle.kind === 'padding' ? { kind: 'padding', side: handle.side } : { kind: 'gap', axis: s.axis },
         startPx: handle.kind === 'padding' ? s.insets[handle.side] : s.gapPx,
+        patch: {},
         cursor: spacingCursor(handle),
         shown: { padding: s.showPadding, gap: s.showGap }
       }
+    } else {
+      const reached = ctx.reachableAt(event.target)
+      const node = findNode(root, id)
+      if (!reached || !node || !containsNode(node, reached)) return false
+      gesture = { kind: 'reorder', ...base, slot: null }
     }
-    try {
-      document.documentElement.setPointerCapture(event.pointerId)
-    } catch {
-      // The pointer is already gone; its pointerup ends the drag.
-    }
-    setCursor(gesture.cursor)
+    if (gesture.state.phase === 'active') beginDrag(gesture)
     window.addEventListener('pointermove', onMove)
     window.addEventListener('pointerup', onUp)
     window.addEventListener('pointercancel', onCancel)
     window.addEventListener('blur', onBlur)
-    return true
+    document.documentElement.addEventListener('lostpointercapture', onLostCapture)
+    return !!hit
   }
 
-  /** The pointer moved over the frame (not during a drag): remembers it, and shows the resize cursor over a handle. */
-  function moved(event: MouseEvent) {
+  /** The pointer moved over the frame: remembers it, and shows the resize cursor over a handle. True while a press or drag is running (the hover waits). */
+  function moved(event: MouseEvent): boolean {
     pointer = canvasPoint(event)
-    if (gesture) return
+    if (gesture) return true
     const over = ctx.mode.value === 'edit' ? handleAt(pointer) : null
     setCursor(over ? 'handle' in over ? handleCursor(over.handle) : spacingCursor(over.spacing) : null)
+    return false
   }
+
+  /** The pointer left the frame: a press that has not become a drag ends here (its release outside would never reach it). */
   function left() {
     pointer = null
+    endBy('leave')
     if (!gesture) setCursor(null)
   }
 
-  /** Esc cancels a drag in progress; true when there was one (the key is its own). */
+  /** Esc cancels a drag in progress (also the editor's `bildr:cancel-drag`); true when there was one (the key is its own). */
   function cancel(): boolean {
-    if (!gesture) return false
-    end('cancel')
-    return true
+    return endBy('escape') === 'cancel'
   }
 
   /** Whether the click that follows is the end of a drag, and so selects nothing; asking clears it. */
@@ -341,12 +433,15 @@ export function useHandles(ctx: HandlesContext) {
     return taken
   }
 
-  // The dragged node going (deselected, or no longer editable here) cancels the drag like Esc.
-  watch(editable, (id) => {
-    if (gesture && gesture.nodeId !== id) end('cancel')
+  // The dragged node going (deselected, deleted, another file, locked, or no longer editable here) cancels the drag like Esc.
+  watch([() => ctx.root(), ctx.selectedIds, editable], () => {
+    const g = gesture
+    if (g && (gestureTargetGone(g, { pageId: ctx.fileId(), root: ctx.root(), selectedIds: ctx.selectedIds.value }) || editable.value !== g.nodeId)) endBy('target-gone')
   })
 
-  const dispose = () => end('cancel')
+  const dispose = () => {
+    endGesture()
+  }
 
   return { editable, editableBox, spacing, resizeHandles, spacingHandleList, dragLabel, track, down, moved, left, cancel, takesClick, dispose }
 }

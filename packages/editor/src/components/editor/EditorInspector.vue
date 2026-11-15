@@ -34,8 +34,8 @@ import { sharedStyle } from '../../shared/panel.ts'
  * In the component and layout views the file's own sections follow (EditorComponentPanel:
  * an Instance's values, the variants, interactions and properties; EditorLayoutPanel:
  * slots and variables). With nothing selected they show for the root, where the hosted
- * editor shows only its hint: the hosted canvas has a variant board with its "+ Variant"
- * tile (U6), which the module's canvas does not have yet.
+ * editor shows only its hint (the variant board's "+ Variant" tile, on the canvas, adds a
+ * variant there too, but the board shows from two variants on and the panel is always at hand).
  */
 const editor = useEditor()
 

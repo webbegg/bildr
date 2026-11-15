@@ -1,10 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
-import type { DropdownMenuItem } from '@nuxt/ui'
+import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import { editorTakesKey, hasTextSelection } from '@bildr/editor-core/clipboardKeys'
 import ProblemsList from '../components/ProblemsList.vue'
-import CanvasFrame from '../design/CanvasFrame.vue'
 import FormActionDialog from '../design/FormActionDialog.vue'
 import RequiredValuesDialog from '../design/RequiredValuesDialog.vue'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
@@ -14,12 +12,12 @@ import { createEditor, provideEditor } from '../editor/useEditor.ts'
  * The Design screen (V1): the hosted editor's shell over the `.bildr/` model
  * (`pages/editor/[projectId].vue`, U-E1). The adapter (`createEditor`, over the design
  * store) is what the ported components call as `useEditor()`; the P4 panels that
- * U4–U6 replace still read the store (`useDesign()`), so both are provided. A
- * toolbar, the sidebar (Pages, Layers, Assets) and the canvas in the middle with its
- * floating bar, the inspector on the right. The Design view has the theme library on
- * the left and the theme's panel on the right, with the style guide in the canvas; the
- * Settings view takes the middle. Every edit is a module action; the canvas shows what
- * the model says.
+ * panels that read the store directly (the P5 binding panels) still use `useDesign()`, so both are
+ * provided. A toolbar, the sidebar (Pages, Layers, Assets) and the canvas in the middle
+ * (`EditorCanvas`: zoom and pan, a frame per device or the variant board, with its floating bar),
+ * the inspector on the right. The Design view has the theme library on the left and the
+ * theme's panel on the right, with the style guide in its own canvas; the Settings view takes the
+ * middle. Every edit is a module action; the canvas shows what the model says.
  */
 
 const design = createDesign()
@@ -93,30 +91,11 @@ function resizePanel(event: PointerEvent) {
   handle.addEventListener('pointerup', up)
 }
 
-/** The canvas's zoom menu (hosted: EditorCanvas): the P4 canvas only fits to its stage, so the zoom commands wait for the new canvas (U6). */
-const zoomItems = computed<DropdownMenuItem[][]>(() => [
-  [
-    { label: 'Zoom in', icon: 'i-lucide-zoom-in', kbds: ['meta', '+'], disabled: true },
-    { label: 'Zoom out', icon: 'i-lucide-zoom-out', kbds: ['meta', '-'], disabled: true }
-  ],
-  [
-    { label: 'Zoom to fit', kbds: ['shift', '1'], disabled: true },
-    { label: 'Zoom to selection', kbds: ['shift', '2'], disabled: true },
-    { label: 'Zoom to 50%', disabled: true },
-    { label: 'Zoom to 100%', kbds: ['shift', '0'], disabled: true },
-    { label: 'Zoom to 200%', disabled: true }
-  ],
-  [
-    { label: 'Select parent', kbds: ['escape'], disabled: !editor.selectedId || editor.selectedId === editor.page?.root.id, onSelect: () => editor.navigate('parent') }
-  ]
-])
-
 const preview = computed(() => editor.canvasMode === 'preview')
 
-// The Design view shows the theme's style guide in the canvas (the hosted one has a tokens canvas for it); the other views show the file.
-watch(() => editor.mode, (mode) => {
-  design.view.value = mode === 'design' ? 'tokens' : 'page'
-}, { immediate: true })
+/** A key the canvas frames could not use goes to the editor's shortcuts, as a key typed in the editor does (the hosted page's `@key`). */
+const canvasKey = (message: { key: string, code: string, meta: boolean, shift: boolean, alt: boolean }) =>
+  editor.shortcut(message.key, message.meta, message.shift, true, { code: message.code, alt: message.alt, canvas: true })
 </script>
 
 <template>
@@ -142,7 +121,6 @@ watch(() => editor.mode, (mode) => {
         >
           The app could not regenerate
         </span>
-        <EditorDeviceSwitch />
         <UTooltip :text="preview ? 'Back to editing' : 'Run the interactions on the canvas'">
           <EditorButton
             variant="ghost"
@@ -186,43 +164,24 @@ watch(() => editor.mode, (mode) => {
       >
         <EditorSidebar class="min-h-0 flex-1" />
       </aside>
-      <!-- Hidden, not unmounted, in the Settings view so the canvas does not reload. -->
+      <!-- Hidden, not unmounted, in the other views so the canvas does not reload. The canvas zooms and pans edge to edge. -->
       <main
-        v-show="editor.mode !== 'settings'"
+        v-show="editor.mode === 'build'"
         class="relative min-w-0 flex-1 bg-(--editor-canvas)"
         data-canvas-area
       >
         <EditorNodeMenu class="size-full">
-          <div class="flex size-full flex-col">
-            <CanvasFrame />
-          </div>
+          <EditorCanvas @key="canvasKey" />
         </EditorNodeMenu>
-        <div
-          v-if="editor.error"
-          class="absolute bottom-28 left-1/2 z-20 flex max-w-[min(32rem,90%)] -translate-x-1/2 items-center gap-1 rounded-xl bg-(--editor-bar) py-1 ps-3 pe-1 text-[12px] text-error shadow-[0_4px_16px_rgba(0,0,0,0.35)] ring ring-white/10"
-          role="alert"
-        >
-          <span
-            class="truncate"
-            :title="editor.error"
-            data-testid="design-error"
-          >
-            {{ editor.error }}
-          </span>
-          <EditorButton
-            variant="ghost"
-            size="xs"
-            icon="i-lucide-x"
-            aria-label="Dismiss"
-            data-testid="design-error-dismiss"
-            @click="editor.dismissError()"
-          />
-        </div>
-        <!-- Raised above the bottom edge, clear of the Nuxt DevTools pill in dev. -->
-        <EditorFloatingBar
-          :zoom="editor.zoom"
-          :zoom-items="zoomItems"
-          class="absolute bottom-14 left-1/2 z-20 -translate-x-1/2"
+      </main>
+      <main
+        v-if="editor.mode === 'design'"
+        class="min-w-0 flex-1 bg-(--editor-canvas) p-4"
+        data-design-area
+      >
+        <EditorCanvas
+          view="tokens"
+          class="size-full"
         />
       </main>
       <main
@@ -257,6 +216,27 @@ watch(() => editor.mode, (mode) => {
           <EditorInspector />
         </div>
       </aside>
+    </div>
+    <div
+      v-if="editor.error"
+      class="absolute bottom-28 left-1/2 z-20 flex max-w-[min(32rem,90%)] -translate-x-1/2 items-center gap-1 rounded-xl bg-(--editor-bar) py-1 ps-3 pe-1 text-[12px] text-error shadow-[0_4px_16px_rgba(0,0,0,0.35)] ring ring-white/10"
+      role="alert"
+    >
+      <span
+        class="truncate"
+        :title="editor.error"
+        data-testid="design-error"
+      >
+        {{ editor.error }}
+      </span>
+      <EditorButton
+        variant="ghost"
+        size="xs"
+        icon="i-lucide-x"
+        aria-label="Dismiss"
+        data-testid="design-error-dismiss"
+        @click="editor.dismissError()"
+      />
     </div>
     <RequiredValuesDialog />
     <FormActionDialog />

@@ -28,12 +28,11 @@ export const draggedNodeId = (types: readonly string[]): string | undefined => t
 
 /**
  * What a drag from the palette, Assets or the layers carries as `application/x-bildr`: the hosted
- * payload (`kind`), plus the P4 canvas's own key (`insert`, `component`, `move`) until the canvas
- * (U6) reads the hosted one, so a drop onto the canvas still inserts or moves.
+ * payload (`kind`), which the adapter's `drop` reads for a drop onto the canvas as well as the layers.
  */
-export const insertPayload = (type: string): string => JSON.stringify({ kind: 'component', type, insert: type })
-export const nodePayload = (id: string): string => JSON.stringify({ kind: 'node', id, move: id })
-export const instancePayload = (componentId: string): string => JSON.stringify({ kind: 'instance', componentId, component: componentId })
+export const insertPayload = (type: string): string => JSON.stringify({ kind: 'component', type })
+export const nodePayload = (id: string): string => JSON.stringify({ kind: 'node', id })
+export const instancePayload = (componentId: string): string => JSON.stringify({ kind: 'instance', componentId })
 
 /** Share of a container's size, at each edge, that drops beside it rather than inside. */
 const CONTAINER_EDGE = 0.25

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { allByTestId, byTestId, click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
 import DesignView from '../../src/views/DesignView.vue'
-import { baseHandlers, fromCanvas, indexPage, layer, menuItem, open, select, sent, setupHarness, showVariant, sidebarTab, world } from '../design/harness.ts'
+import { baseHandlers, chooseDevice, fromCanvas, indexPage, layer, menuItem, open, openDesignSystem, select, sent, setupHarness, showVariant, sidebarTab, world } from '../design/harness.ts'
 
 /**
  * The hosted shell over the module (U3): the toolbar, the sidebar (Pages, Layers), the node
@@ -95,15 +95,16 @@ describe('the toolbar', () => {
 
   it('offers the Canvas, Design and Settings views, and the Design view shows the theme library on the left and the theme\'s panel on the right', async () => {
     await open()
-    await sidebarTab('Assets')
-    await click(q('[data-assets-design-system]'))
+    await openDesignSystem()
     expect(q('[data-theme-library]')).not.toBeNull()
     expect(q('[data-design-panel]')).not.toBeNull()
     expect(q('[data-view-menu]')?.textContent?.trim()).toBe('Design')
     expect(q('[data-sidebar]')).toBeNull()
     expect(q('[data-right-panel]')).toBeNull()
     expect(q('[data-insert-button]')?.hasAttribute('disabled')).toBe(true)
+    // The style guide is a canvas of its own, which loads and is sent the theme as a token view.
     expect(sent('bildr:render').at(-1)?.view).toBe('tokens')
+    expect(q('iframe[title="Token preview"]')).not.toBeNull()
   })
 
   it('opens the Settings view from the view menu, which takes the canvas\'s place and leaves the canvas mounted', async () => {
@@ -121,11 +122,13 @@ describe('the toolbar', () => {
   })
 })
 
-describe('the canvas preview toggle and the device switch (interim, until the frame bar)', () => {
-  it('shows a hidden frame when its device is picked, and the layers then list the frames', async () => {
+describe('the device frames', () => {
+  it('shows a hidden frame when its device is added from a frame bar\'s "+", and the layers then list the frames', async () => {
     await open()
     expect(qa('[data-frame-row]')).toEqual([])
-    await click(byTestId('device-tablet'))
+    expect(qa('[data-frame-bar]').map(bar => bar.closest('[data-frame]')?.getAttribute('data-frame'))).toEqual(['mobile'])
+    await chooseDevice('tablet')
+    expect(qa('[data-frame-bar]').map(bar => bar.closest('[data-frame]')?.getAttribute('data-frame'))).toEqual(['tablet', 'mobile'])
     expect(qa('[data-frame-row]').map(row => row.getAttribute('data-frame-row')).sort()).toEqual(['mobile', 'tablet'])
     expect(q('[data-frame-row="tablet"]')?.getAttribute('data-active')).toBe('true')
     expect(q('[data-frame-row="tablet"]')?.textContent).toContain('Tablet')

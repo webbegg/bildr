@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { click, settle, typeInto } from '../helpers.ts'
-import { byLabel, inspectorHead, menuItem, menuLabels, open, pickOpenItem, postCard, propInput, propRow, propSelect, resetStyle, select, selectOption, setupHarness, showVariant, styleField, typeStyle } from '../design/harness.ts'
+import { byLabel, inspectorHead, menuItem, menuLabels, open, pickOpenItem, postCard, propInput, propRow, propSelect, resetStyle, select, selectLayer, selectOption, setupHarness, showVariant, styleField, typeStyle } from '../design/harness.ts'
 
 /**
  * The hosted inspector over the module (U4): the head, the Page section, the prop sections with the
@@ -321,7 +321,7 @@ describe('the binding dot and its chip', () => {
 })
 
 describe('the component and layout panels', () => {
-  it('mounts the component sections in the component view and the layout sections in the layout view, for the root when nothing is selected', async () => {
+  it('mounts the component sections in the component view, for the root when nothing is selected', async () => {
     await open({}, 'cmp_post_card')
     expect(q('[data-component-variants]')).not.toBeNull()
     expect(q('[data-component-interactions]')).not.toBeNull()
@@ -330,12 +330,15 @@ describe('the component and layout panels', () => {
     await select('n_title')
     expect(q('[data-component-variants]')).not.toBeNull()
     expect(section('Properties')).not.toBeNull()
+  })
+
+  it('mounts the layout sections in the layout view, for the root when nothing is selected', async () => {
     await open({}, 'lay_main')
     expect(q('[data-layout-settings]')).not.toBeNull()
     expect(q('[data-layout-slots]')).not.toBeNull()
     expect(q('[data-layout-variables]')).not.toBeNull()
     expect(q('[data-component-variants]')).toBeNull()
-    await select('n_nav')
+    await selectLayer('n_nav')
     expect(q('[data-layout-variables]')).not.toBeNull()
     expect(q('[data-layout-settings]')).toBeNull()
   })

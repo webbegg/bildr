@@ -8,7 +8,7 @@ import { canvasSrc } from '../../src/design/config.ts'
 import DesignView from '../../src/views/DesignView.vue'
 import { blogModelFiles } from '../canvas/fixture.ts'
 import { byTestId, click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
-import { byLabel, inspectorHead, insertType, propInput, sidebarTab, typeStyle } from './harness.ts'
+import { byLabel, chooseDevice, inspectorHead, insertType, propInput, sidebarTab, typeStyle } from './harness.ts'
 
 /**
  * The Design screen (P4b, V1): page picker, layers, the canvas frame, inspector,
@@ -71,19 +71,6 @@ const fromCanvas = async (message: CanvasToEditor, origin = window.location.orig
   await settle()
 }
 
-/** jsdom has no layout: the stage reports this width (0 = not measured, so the frame stays at 100%). */
-let stagePx = 0
-const stageWidth = (px: number) => {
-  stagePx = px
-}
-const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'clientWidth')
-Object.defineProperty(HTMLElement.prototype, 'clientWidth', {
-  configurable: true,
-  get(this: HTMLElement) {
-    return this.dataset.testid === 'stage' ? stagePx : originalClientWidth?.get?.call(this) ?? 0
-  }
-})
-
 const originalContentWindow = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'contentWindow')
 
 const handlers = () => ({
@@ -117,7 +104,7 @@ const handlers = () => ({
 
 beforeEach(() => {
   canvasSrc.value = 'about:blank'
-  stagePx = 0
+  localStorage.removeItem('bildr:frames')
   model = blank()
   posted = []
   FakeEventSource.instances = []
@@ -202,7 +189,7 @@ describe('Design screen', () => {
     await fromCanvas({ type: 'bildr:click', nodeId: 'n_head', shift: false, meta: false })
 
     await typeStyle('gap', '4')
-    await click(byTestId('device-tablet'))
+    await chooseDevice('tablet')
     await typeStyle('gap', '8')
 
     // The hosted fields write the key at the device (`md:gap`) into one patch.
@@ -262,8 +249,8 @@ describe('Design screen', () => {
 
   it('a palette drop on the canvas inserts at the slot; a layer dropped there moves', async () => {
     const { actions } = await open()
-    await fromCanvas({ type: 'bildr:drop', parentId: 'n_page', index: 1, payload: JSON.stringify({ insert: 'Text' }) })
-    await fromCanvas({ type: 'bildr:drop', parentId: 'n_page', index: 4, payload: JSON.stringify({ move: 'n_head' }) })
+    await fromCanvas({ type: 'bildr:drop', parentId: 'n_page', index: 1, payload: JSON.stringify({ kind: 'component', type: 'Text' }) })
+    await fromCanvas({ type: 'bildr:drop', parentId: 'n_page', index: 4, payload: JSON.stringify({ kind: 'node', id: 'n_head' }) })
 
     expect(actions.named('node_insert').map(call => call.input)).toEqual([{ file: 'pg_index', parentId: 'n_page', index: 1, type: 'Text' }])
     // n_head is the page's first child: moving it to slot 4 is index 3 once it is out.
@@ -365,30 +352,6 @@ describe('Design screen', () => {
     await click(layer('n_h1'))
     await click(control('Undo'))
     expect(byTestId('design-error')).toBeNull()
-  })
-
-  it('frames the canvas at the device width, never narrower', async () => {
-    await open()
-    await click(byTestId('device-desktop'))
-    const box = byTestId('canvas-frame')!.parentElement!
-    expect(box.style.width).toBe('1280px')
-    expect(box.style.maxWidth).not.toBe('100%')
-  })
-
-  it('scales the frame down to the stage, keeps its layout width, and tells the canvas and the toolbar the zoom', async () => {
-    stageWidth(1000)
-    await open()
-    await click(byTestId('device-desktop'))
-    const box = byTestId('canvas-frame')!.parentElement!
-    // 1000 px stage − 48 px padding = 952 px for a 1280 px device.
-    expect(box.style.width).toBe('1280px')
-    expect(box.style.transform).toBe('scale(0.74375)')
-    expect(box.parentElement!.style.width).toBe('952px')
-    expect(control('Zoom')?.textContent?.trim()).toBe('74%')
-    expect(sent('bildr:active').at(-1)).toMatchObject({ zoom: 0.74375 })
-    await click(byTestId('device-tablet'))
-    expect(control('Zoom')?.textContent?.trim()).toBe('100%')
-    expect(byTestId('canvas-frame')!.parentElement!.style.transform).toBe('')
   })
 
   it('the preview toggle switches the canvas mode', async () => {

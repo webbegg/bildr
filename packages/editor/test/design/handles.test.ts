@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { byTestId, click, Failure, settle } from '../helpers.ts'
-import { find, fromCanvas, indexPage, layer, open, openFile, select, sent, setupHarness, showVariant } from './harness.ts'
+import { chooseDevice, find, fromCanvas, indexPage, layer, open, openFile, select, sent, setupHarness, showVariant } from './harness.ts'
 
 /**
  * The editor's side of the canvas handle drags (P4c): a drag's patch is shown
@@ -25,7 +25,7 @@ describe('handle drags', () => {
   it('commits the release as one node_update_style with the keys the drag holds (already at its breakpoint), then drops the preview', async () => {
     const { actions } = await open({ node_update_style: ok })
     await fromCanvas({ type: 'bildr:style-preview', nodeId: 'n_h1', style: { 'md:w': '64' } })
-    await click(byTestId('device-tablet'))
+    await chooseDevice('tablet')
     await fromCanvas({ type: 'bildr:style-commit', nodeId: 'n_h1', style: { 'md:w': '64' } })
 
     expect(actions.named('node_update_style').map(call => call.input)).toEqual([{ file: 'pg_index', nodeIds: ['n_h1'], style: { 'md:w': '64' } }])
