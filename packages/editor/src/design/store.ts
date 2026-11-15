@@ -16,7 +16,8 @@ import type { ModelProblem } from '../types.ts'
 import type { Row } from '@bildr/codegen/query'
 import { designData, detailField, routeParams } from './data.ts'
 import { createLiveRows } from './liveRows.ts'
-import { findNode, findParent, moveTarget } from './tree.ts'
+import { topLevelSelection } from '../editor/selection.ts'
+import { findNode, findParent, moveTarget, nodeIds } from './tree.ts'
 import type { DropPosition } from './tree.ts'
 
 /**
@@ -98,6 +99,8 @@ export const createDesign = () => {
   const catalog = shallowRef<Catalog | null>(null)
   const history = ref({ undo: 0, redo: 0 })
   const clipboard = shallowRef<ModelNode | null>(null)
+  /** Every copied node (`clipboard` is the first), in document order. */
+  const clipboardNodes = shallowRef<ModelNode[]>([])
   /** The variant of the component being edited that edits are recorded in (null: the primary, whose edits change the component itself). */
   const variantId = ref<string | null>(null)
   /** Previews the project's dark colours in the canvas. */
@@ -440,14 +443,37 @@ export const createDesign = () => {
   const rename = async (id: string, name: string) => {
     await edit('node_rename', { file: fileInput(), nodeId: id, name: name.trim() || null })
   }
-  /** Copies node `id`, or the selected node. */
+  /**
+   * Copies node `id`, or the whole selection (its top-level nodes in document order, none inside another one, never
+   * the root). `clipboard` is the first of them; a paste inserts all of them.
+   */
   const copy = (id?: string) => {
-    const node = id ? file.value && findNode(file.value.root, id) : selected.value
-    if (node) clipboard.value = structuredClone(node)
+    const root = file.value?.root
+    if (!root) return
+    const ids = id ? [id] : selectedIds.value
+    const top = new Set(topLevelSelection(root, ids))
+    const nodes = nodeIds(root).filter(nodeId => top.has(nodeId)).map(nodeId => findNode(root, nodeId)!)
+    if (!nodes.length) {
+      const node = id ? findNode(root, id) : selected.value
+      if (node) {
+        clipboard.value = structuredClone(node)
+        clipboardNodes.value = [clipboard.value]
+      }
+      return
+    }
+    clipboardNodes.value = nodes.map(node => structuredClone(node))
+    clipboard.value = clipboardNodes.value[0]!
+  }
+  /** A paste over a node it copied lands after it (the last one of them), not inside it; elsewhere, where an insert would go. */
+  const pastePoint = (): { parentId?: string, index?: number } => {
+    const node = selected.value
+    const parent = selectedParent.value
+    if (node && parent && clipboardNodes.value.some(copied => copied.id === node.id)) return { parentId: parent.id, index: parent.children!.findIndex(child => child.id === node.id) + 1 }
+    return insertionPoint()
   }
   const paste = async () => {
-    if (!clipboard.value || !fileId.value) return
-    const out = await edit('node_insert', { file: fileInput(), ...insertionPoint(), exact: true, nodes: [toSpec(clipboard.value)] })
+    if (!clipboardNodes.value.length || !fileId.value) return
+    const out = await edit('node_insert', { file: fileInput(), ...pastePoint(), exact: true, nodes: clipboardNodes.value.map(toSpec) })
     if (Array.isArray(out?.nodeIds)) select(out.nodeIds as string[])
   }
 
@@ -503,7 +529,10 @@ export const createDesign = () => {
       void refresh().then(() => {
         if (files.value.some(entry => entry.id === event.target.file)) {
           fileId.value = event.target.file
+          // The variant of a component (null: the primary), and the editor says where it is now (`editor_context_get`).
+          variantId.value = event.target.variant ?? null
           selectedIds.value = event.target.nodeId ? [event.target.nodeId] : []
+          reportContext()
         }
       })
     }

@@ -260,6 +260,29 @@ describe('clipboard', () => {
     expect(editor.clipboard?.id).toBe('n_h1')
   })
 
+  it('a paste over the node it copied lands after it, not inside it (also a container)', async () => {
+    const { editor, actions } = await boot({ node_insert: ok({ nodeIds: ['n_copy'] }) }, 'pg_index')
+    const parent = editor.page!.root.children!.find(child => child.children?.some(grand => grand.id === 'n_head')) ?? editor.page!.root
+    editor.selectedId = 'n_head'
+    editor.copy()
+    await editor.paste()
+    const [call] = inputs(actions, 'node_insert') as Array<{ parentId?: string, index?: number }>
+    expect(call!.parentId).toBe(parent.id)
+    expect(call!.index).toBe(parent.children!.findIndex(child => child.id === 'n_head') + 1)
+  })
+
+  it('copying a multi-selection pastes all of it in one insert (one undo step), in document order', async () => {
+    const { editor, actions } = await boot({ node_insert: ok({ nodeIds: ['n_a', 'n_b'] }) }, 'pg_index')
+    editor.selectedIds = ['n_list', 'n_head']
+    editor.copy()
+    editor.selectedId = 'n_about'
+    await editor.paste()
+    const calls = inputs(actions, 'node_insert') as Array<{ nodes: Array<{ type: string }> }>
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.nodes.map(node => node.type)).toEqual(['Row', 'List'])
+    expect(editor.selectedIds).toEqual(['n_a', 'n_b'])
+  })
+
   it('copy(id) copies that node without selecting it', async () => {
     const { editor } = await boot({}, 'pg_index')
     editor.selectedId = 'n_head'

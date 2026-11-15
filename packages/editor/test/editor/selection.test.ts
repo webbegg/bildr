@@ -133,6 +133,14 @@ describe('the file being edited', () => {
     expect(editor.currentPage?.id).toBe('pg_new_post')
   })
 
+  it('a navigate event shows the variant it names and reports the new context (editor_context_get follows an agent)', async () => {
+    const { design, actions } = await boot({}, 'pg_index')
+    FakeEventSource.instances.at(-1)!.send({ type: 'navigate', target: { file: 'cmp_post_card', kind: 'component', nodeId: 'n_title', variant: 'var_hovered' } })
+    await settle()
+    expect(design.variantId.value).toBe('var_hovered')
+    expect(actions.named('editor_context_set').at(-1)?.input).toMatchObject({ file: 'cmp_post_card', nodeId: 'n_title', variant: 'var_hovered' })
+  })
+
   it('the canvas accent is the context purple inside a component or layout, and for instances', async () => {
     const { editor } = await boot({}, 'pg_index')
     expect(editor.canvasAccent).toBe('#09f')
