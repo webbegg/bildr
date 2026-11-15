@@ -85,7 +85,22 @@ await run('breakpoints-p2', async ({ page }) => {
   await page.locator(`[data-layer-id="${text}"]`).first().click()
   const handles = frame.locator('[data-resize-handle]')
   check(!!await until(async () => await handles.count() === 8), 'the text is selected on the Large phone canvas')
-  const box = await frame.locator('[data-resize-handle="e"]').boundingBox()
+  // Fitting all four frames shows the text about 3px tall, and a handle's hit zone inside a box is a quarter of its
+  // smaller side (handles.ts hitRadius): well under a screen pixel. Zoom to the selection (⇧2) before pressing it.
+  await page.locator('[data-canvas-stage]').hover({ position: { x: 10, y: 10 } })
+  const iframe = page.locator('iframe[title="Canvas"]')
+  const fitted = (await iframe.boundingBox()).width
+  await page.keyboard.press('Shift+Digit2')
+  // The zoom is asked of the frame (a measure round trip), so wait for it to change the frame's size, and to stop.
+  let lastWidth = fitted
+  check(!!await until(async () => {
+    const width = (await iframe.boundingBox()).width
+    const settled = width !== fitted && width === lastWidth
+    lastWidth = width
+    return settled
+  }), '⇧2 zooms to the selection')
+  const handle = frame.locator('[data-resize-handle="e"]')
+  const box = await handle.boundingBox()
   // The handle sits on the frame's edge: press a little inside it, so the pointer is in the iframe.
   const east = { x: box.x + box.width / 2 - 2, y: box.y + box.height / 2 }
   await page.mouse.move(east.x, east.y)
@@ -96,6 +111,7 @@ await run('breakpoints-p2', async ({ page }) => {
   const style = await until(() => styleOf()['sm:w'] ? styleOf() : null)
   check(!!style, `the resize at Large phone writes sm:w in the page file (${JSON.stringify(style ?? styleOf())})`)
   check(!!style && style.w === undefined && style['md:w'] === undefined, 'and no base or md key')
+  await page.keyboard.press('Shift+Digit1')
 
   // Hiding a frame from its bar's right-click menu; it stays hidden after a reload.
   await page.locator('[data-frame="tablet"] [data-frame-bar-row]').click({ button: 'right' })
