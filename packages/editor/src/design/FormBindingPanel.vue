@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ModelNode } from '@bildr/codegen/model'
+import { FIELD, FIELD_RING } from '../editorUi.ts'
 import { useDesign } from './store.ts'
 
 /**
  * A Form's action and fields (P5, mapping §4): the action the submit runs (picked among the actions of
  * the page's module that take an entity; setting it makes the page use it, in the same edit) and the fields of its entity the form
  * edits, in the entity's order (`fields`: field ids). Switching the action clears the fields:
- * they belong to the entity it creates.
+ * they belong to the entity it creates. It sits in the inspector's Behaviour section of a Form, in the kit's field look.
  */
 
 const props = defineProps<{ node: ModelNode }>()
 const design = useDesign()
-const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text-sm'
+const field = `${FIELD} ${FIELD_RING} w-full min-w-0 px-2 text-default`
 
 const module = computed(() => {
   const current = design.model.value
@@ -42,14 +43,17 @@ const toggle = (id: string, on: boolean) => {
 
 <template>
   <div
-    class="flex flex-col gap-2 border-t border-default pt-2"
+    class="flex flex-col gap-2"
     data-testid="form-binding"
   >
-    <label class="grid grid-cols-[6.5rem_1fr] items-center gap-2 text-xs text-muted">
-      Action
+    <EditorRow
+      label="Action"
+      title="The action the submit runs"
+    >
       <select
         data-testid="form-action"
         :class="field"
+        aria-label="Action"
         :value="chosen"
         @change="pick"
       >
@@ -64,17 +68,17 @@ const toggle = (id: string, on: boolean) => {
           {{ action.label }}
         </option>
       </select>
-    </label>
-    <div
+    </EditorRow>
+    <EditorRow
       v-if="entity"
-      class="grid grid-cols-[6.5rem_1fr] gap-2 text-xs text-muted"
+      label="Fields"
+      title="The fields of the action's entity this form edits"
     >
-      Fields
-      <div class="flex flex-col gap-1">
+      <div class="flex min-w-0 flex-1 flex-col gap-1 py-1.5">
         <label
           v-for="entry in editable"
           :key="entry.id"
-          class="flex items-center gap-2 text-default"
+          class="flex items-center gap-2 text-[12px] text-default"
         >
           <input
             type="checkbox"
@@ -86,6 +90,6 @@ const toggle = (id: string, on: boolean) => {
           {{ entry.name }}
         </label>
       </div>
-    </div>
+    </EditorRow>
   </div>
 </template>

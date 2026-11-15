@@ -8,7 +8,7 @@ import { canvasSrc } from '../../src/design/config.ts'
 import DesignView from '../../src/views/DesignView.vue'
 import { blogModelFiles } from '../canvas/fixture.ts'
 import { byTestId, click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
-import { insertType, sidebarTab } from './harness.ts'
+import { byLabel, inspectorHead, insertType, propInput, sidebarTab, typeStyle } from './harness.ts'
 
 /**
  * The Design screen (P4b, V1): page picker, layers, the canvas frame, inspector,
@@ -168,7 +168,7 @@ describe('Design screen', () => {
     await open()
     window.dispatchEvent(new MessageEvent('message', { data: { type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false }, source: window, origin: window.location.origin }))
     await fromCanvas({ type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false }, 'https://evil.example')
-    expect(byTestId('inspector-node')).toBeNull()
+    expect(inspectorHead()).toBeNull()
   })
 
   it('select in the canvas → layers highlight it and the inspector shows its props; the canvas is told', async () => {
@@ -176,10 +176,9 @@ describe('Design screen', () => {
     await fromCanvas({ type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false })
 
     expect(layer('n_h1')?.getAttribute('aria-selected')).toBe('true')
-    expect(byTestId('inspector-node')?.textContent).toContain('Heading')
-    expect((byTestId('prop-text')!.querySelector('input,textarea') ?? byTestId('prop-text')) instanceof HTMLElement).toBe(true)
-    const input = byTestId('prop-text') as HTMLInputElement
-    expect(input.value).toBe('Posts')
+    expect(inspectorHead()?.textContent).toContain('Heading')
+    expect(inspectorHead()?.textContent).toContain('n_h1')
+    expect(propInput('text')?.value).toBe('Posts')
     expect(sent('bildr:select').at(-1)).toMatchObject({ nodeId: 'n_h1', nodeIds: ['n_h1'] })
   })
 
@@ -188,7 +187,7 @@ describe('Design screen', () => {
     await fromCanvas({ type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false })
     const renders = sent('bildr:render').length
 
-    await typeInto(byTestId('prop-text'), 'Articles')
+    await typeInto(propInput('text'), 'Articles')
 
     expect(actions.named('node_update_props').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1', props: { text: 'Articles' } }])
     const last = sent('bildr:render').at(-1)!
@@ -200,15 +199,16 @@ describe('Design screen', () => {
 
   it('writes style tokens at the device\'s breakpoint, and the base token on the primary device', async () => {
     const { actions } = await open()
-    await fromCanvas({ type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false })
+    await fromCanvas({ type: 'bildr:click', nodeId: 'n_head', shift: false, meta: false })
 
-    await typeInto(byTestId('style-p'), '4')
+    await typeStyle('gap', '4')
     await click(byTestId('device-tablet'))
-    await typeInto(byTestId('style-p'), '8')
+    await typeStyle('gap', '8')
 
+    // The hosted fields write the key at the device (`md:gap`) into one patch.
     const calls = actions.named('node_update_style').map(call => call.input)
-    expect(calls[0]).toEqual({ file: 'pg_index', nodeIds: ['n_h1'], style: { p: '4' } })
-    expect(calls[1]).toEqual({ file: 'pg_index', nodeIds: ['n_h1'], breakpoint: 'md', style: { p: '8' } })
+    expect(calls[0]).toEqual({ file: 'pg_index', nodeIds: ['n_head'], style: { gap: '4' } })
+    expect(calls[1]).toEqual({ file: 'pg_index', nodeIds: ['n_head'], style: { 'md:gap': '8' } })
     expect(sent('bildr:render').at(-1)?.breakpointBase).toBe('mobile')
   })
 
@@ -235,7 +235,7 @@ describe('Design screen', () => {
     FakeEventSource.instances.at(-1)!.send({ type: 'regenerated', version: 8, ok: true })
     await settle()
 
-    expect(byTestId('inspector-node')).toBeNull()
+    expect(inspectorHead()).toBeNull()
     expect(sent('bildr:select').at(-1)).toMatchObject({ nodeId: null, nodeIds: [] })
   })
 
@@ -304,26 +304,25 @@ describe('Design screen', () => {
     expect(actions.named('node_move').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_about', parentId: 'n_page', index: 0 }])
   })
 
-  it('node actions: duplicate, delete, wrap and make component', async () => {
-    const { actions } = await open({
-      node_wrap: () => ({ nodeId: 'n_container_1', changed: [] }),
-      component_create: () => ({ componentId: 'cmp_x', nodeId: 'n_instance_1', filePath: 'x', changed: [] })
-    })
+  it('node actions: duplicate and delete in the inspector head (wrap and make component are the node menu\'s, see shell.test)', async () => {
+    const { actions } = await open()
     await fromCanvas({ type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false })
 
-    await click(byTestId('node-duplicate'))
-    expect(actions.named('node_duplicate').map(call => call.input)).toEqual([{ file: 'pg_index', nodeIds: ['n_h1'] }])
+    await click(byLabel('Duplicate', inspectorHead()!))
+    expect(actions.named('node_duplicate').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1' }])
     expect(sent('bildr:select').at(-1)).toMatchObject({ nodeId: 'n_h1_copy' })
 
     await fromCanvas({ type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false })
-    await click(byTestId('node-wrap'))
-    await fromCanvas({ type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false })
-    await click(byTestId('node-component'))
-    await fromCanvas({ type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false })
-    await click(byTestId('node-delete'))
-    expect(actions.named('node_wrap').map(call => call.input)).toEqual([{ file: 'pg_index', nodeIds: ['n_h1'], type: 'Container' }])
-    expect(actions.named('component_create').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1' }])
-    expect(actions.named('node_delete').map(call => call.input)).toEqual([{ file: 'pg_index', nodeIds: ['n_h1'] }])
+    await click(byLabel('Delete', inspectorHead()!))
+    expect(actions.named('node_delete').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1' }])
+  })
+
+  it('the page root has no Duplicate or Delete', async () => {
+    await open()
+    await fromCanvas({ type: 'bildr:click', nodeId: 'n_page', shift: false, meta: false })
+    expect(inspectorHead()).not.toBeNull()
+    expect(byLabel('Duplicate', inspectorHead()!)).toBeNull()
+    expect(byLabel('Delete', inspectorHead()!)).toBeNull()
   })
 
   it('keyboard: Delete removes the selection, Cmd+Z undoes, from the canvas or the editor', async () => {
@@ -339,30 +338,29 @@ describe('Design screen', () => {
 
     // Typing in a field is not a shortcut.
     await fromCanvas({ type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false })
-    const input = byTestId('prop-text') as HTMLInputElement
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', bubbles: true }))
+    propInput('text')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', code: 'Backspace', bubbles: true }))
     await settle()
     expect(actions.named('node_delete')).toHaveLength(1)
   })
 
   it('keeps a refused edit\'s message after a regenerated event', async () => {
-    const message = 'Can\'t make a component of n_quote: it binds "quote" (n_quote), defined outside it. A component sees only its own properties: pick nodes that don\'t use that name, or unbind it first'
-    await open({ component_create: () => new Failure(422, 'invalid', message) })
-    await click(layer('n_quote'))
-    await click(byTestId('node-component'))
+    const message = 'Can\'t change n_h1: the text must be a string'
+    await open({ node_update_props: () => new Failure(422, 'invalid', message) })
+    await click(layer('n_h1'))
+    await typeInto(propInput('text'), 'Articles')
     FakeEventSource.instances.at(-1)!.send({ type: 'regenerated', version: 9, ok: true })
     await settle()
     expect(byTestId('design-error')?.textContent?.trim()).toBe(message)
   })
 
   it('dismisses an action error, and the next edit clears it', async () => {
-    await open({ component_create: () => new Failure(422, 'invalid', 'nope') })
-    await click(layer('n_quote'))
-    await click(byTestId('node-component'))
+    await open({ node_update_props: () => new Failure(422, 'invalid', 'nope') })
+    await click(layer('n_h1'))
+    await typeInto(propInput('text'), 'Articles')
     expect(byTestId('design-error')?.textContent?.trim()).toBe('nope')
     await click(byTestId('design-error-dismiss'))
     expect(byTestId('design-error')).toBeNull()
-    await click(byTestId('node-component'))
+    await typeInto(propInput('text'), 'Articles 2')
     expect(byTestId('design-error')?.textContent?.trim()).toBe('nope')
     await click(layer('n_h1'))
     await click(control('Undo'))

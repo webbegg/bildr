@@ -5,7 +5,6 @@ import { useToast } from '@nuxt/ui/composables/useToast'
 import { editorTakesKey, hasTextSelection } from '@bildr/editor-core/clipboardKeys'
 import ProblemsList from '../components/ProblemsList.vue'
 import CanvasFrame from '../design/CanvasFrame.vue'
-import DesignInspector from '../design/DesignInspector.vue'
 import FormActionDialog from '../design/FormActionDialog.vue'
 import RequiredValuesDialog from '../design/RequiredValuesDialog.vue'
 import ThemePanel from '../design/ThemePanel.vue'
@@ -235,7 +234,7 @@ const preview = computed(() => editor.canvasMode === 'preview')
           @pointerdown.prevent="resizePanel"
         />
         <div class="flex h-full flex-col overflow-y-auto">
-          <DesignInspector />
+          <EditorInspector />
         </div>
       </aside>
     </div>

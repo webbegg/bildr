@@ -27,7 +27,7 @@ describe('the shell', () => {
     expect(q('[data-project-name]')?.textContent?.trim()).toBe('Blog')
     expect(q('[data-sidebar]')).not.toBeNull()
     expect(q('[data-canvas-area] [data-floating-bar]')).not.toBeNull()
-    expect(q('[data-right-panel]')?.querySelector('[data-testid="inspector-tab-file"]')).not.toBeNull()
+    expect(q('[data-right-panel]')?.textContent).toContain('Select an element to style it.')
     expect(q('[data-testid="design"]')?.getAttribute('data-editor-context')).toBe('page')
     expect(document.documentElement.classList.contains('bildr-editor')).toBe(true)
   })

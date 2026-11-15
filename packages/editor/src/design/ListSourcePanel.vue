@@ -3,7 +3,7 @@ import { computed, reactive, watch } from 'vue'
 import type { ModelNode, QueryFile, Value } from '@bildr/codegen/model'
 import { CONDITION_OPS } from '@bildr/codegen/model'
 import { entityFieldNames, queryBehind } from '@bildr/codegen/edit'
-import CommitInput from './CommitInput.vue'
+import { FIELD, FIELD_RING } from '../editorUi.ts'
 import { useDesign } from './store.ts'
 
 /**
@@ -11,13 +11,14 @@ import { useDesign } from './store.ts'
  * for an entity ("New from entity…"), and for each query behind it (a computed alias has two) its
  * sort, filter and limit. An edit goes to `query_update` for the use shown: in place when only
  * this use reads the query, a copy `q_<page>_<as>` when others do (Q5). A limit the query takes as
- * a parameter is the page's argument (`page_use_update`).
+ * a parameter is the page's argument (`page_use_update`). It sits in the inspector's Behaviour section
+ * of a List, in the kit's field look.
  */
 
 const props = defineProps<{ node: ModelNode }>()
 const design = useDesign()
-const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text-sm'
-const small = 'rounded-md border border-default bg-default px-1 py-1 text-xs'
+const field = `${FIELD} ${FIELD_RING} w-full min-w-0 px-2 text-default`
+const small = `${FIELD} ${FIELD_RING} min-w-0 px-1.5 text-default disabled:opacity-50`
 
 const isExpression = (value: unknown): value is Record<string, Value> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const page = computed(() => design.page.value)
@@ -147,14 +148,17 @@ const filterValue = (source: Source, event: Event) => editFilter(source, 'value'
 
 <template>
   <div
-    class="flex flex-col gap-2 border-t border-default pt-2"
+    class="flex flex-col gap-2"
     data-testid="list-source"
   >
-    <label class="grid grid-cols-[6.5rem_1fr] items-center gap-2 text-xs text-muted">
-      Items
+    <EditorRow
+      label="Items"
+      title="The list of records the List repeats over"
+    >
       <select
         data-testid="list-items"
         :class="field"
+        aria-label="Items"
         :value="current"
         @change="pickItems"
       >
@@ -179,19 +183,19 @@ const filterValue = (source: Source, event: Event) => editFilter(source, 'value'
           New from {{ entity.name }}…
         </option>
       </select>
-    </label>
+    </EditorRow>
 
     <div
       v-for="source in sources"
       :key="source.alias"
-      class="flex flex-col gap-1 rounded-md border border-default p-2 text-xs"
+      class="flex flex-col gap-1.5 rounded-lg bg-elevated/60 p-2 text-[12px]"
       data-testid="source"
       :data-alias="source.alias"
     >
-      <div class="font-medium">
-        {{ source.query.label }} <span class="text-muted">as {{ source.alias }}</span>
+      <div class="font-[550] text-highlighted">
+        {{ source.query.label }} <span class="font-normal text-dimmed">as {{ source.alias }}</span>
       </div>
-      <div class="grid grid-cols-[3.5rem_1fr_auto] items-center gap-1 text-muted">
+      <div class="grid grid-cols-[3.5rem_1fr_auto] items-center gap-1 text-dimmed">
         Sort
         <select
           :data-testid="`source-${source.alias}-sort-field`"
@@ -225,7 +229,7 @@ const filterValue = (source: Source, event: Event) => editFilter(source, 'value'
           </option>
         </select>
       </div>
-      <div class="grid grid-cols-[3.5rem_1fr] items-center gap-1 text-muted">
+      <div class="grid grid-cols-[3.5rem_1fr] items-center gap-1 text-dimmed">
         Filter
         <div class="flex gap-1">
           <select
@@ -267,7 +271,7 @@ const filterValue = (source: Source, event: Event) => editFilter(source, 'value'
         <span />
         <code
           v-if="paramValue(source)"
-          class="rounded-sm bg-elevated px-1 py-0.5 text-default"
+          class="rounded-sm bg-white/8 px-1 py-0.5 text-default"
         >{{ draftOf(source).value }}</code>
         <select
           v-else-if="typeOf(source, draftOf(source).field) === 'boolean'"
@@ -287,8 +291,9 @@ const filterValue = (source: Source, event: Event) => editFilter(source, 'value'
             false
           </option>
         </select>
-        <CommitInput
+        <EditorCommitInput
           v-else
+          size="xs"
           :data-testid="`source-${source.alias}-filter-value`"
           :model-value="draftOf(source).value"
           :placeholder="draftOf(source).op === 'in' ? 'a, b, c' : 'value'"
@@ -296,9 +301,10 @@ const filterValue = (source: Source, event: Event) => editFilter(source, 'value'
           @commit="editFilter(source, 'value', $event)"
         />
       </div>
-      <div class="grid grid-cols-[3.5rem_1fr] items-center gap-1 text-muted">
+      <div class="grid grid-cols-[3.5rem_1fr] items-center gap-1 text-dimmed">
         Limit
-        <CommitInput
+        <EditorCommitInput
+          size="xs"
           :data-testid="`source-${source.alias}-limit`"
           :model-value="limitText(source)"
           numeric

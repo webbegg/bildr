@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { LAYOUT_VARIABLE_KINDS } from '../../../codegen/src/model/schemas.ts'
 import { byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
-import { check, choose, fromCanvas, indexPage, mainLayout, menuItem, open, select, sent, setupHarness, sidebarTab } from './harness.ts'
+import { choose, fromCanvas, indexPage, mainLayout, menuItem, open, propInput, propRow, propSelect, select, selectOption, sent, setupHarness, sidebarTab, typeNumber } from './harness.ts'
 
 /**
  * Layouts in the Design screen (P4c, V1, V2): the Layouts section, a layout's
@@ -15,7 +15,6 @@ const ok = (extra: Record<string, unknown> = {}) => () => ({ changed: [], ...ext
 const layoutRow = (id: string) => document.body.querySelector<HTMLElement>(`[data-layout-id="${id}"]`)
 const actionsOf = (id: string) => layoutRow(id)!.querySelector('[aria-label="Layout actions"]')
 const pick = (selector: string) => document.body.querySelector<HTMLElement>(selector)
-const fileTab = () => click(byTestId('inspector-tab-file'))
 const MAIN = 'lay_main'
 
 describe('Layouts section', () => {
@@ -80,7 +79,6 @@ describe('Layouts section', () => {
 describe('Slots and variables of a layout', () => {
   it('adds a slot on the selected node, renames, rebinds and removes one', async () => {
     const { actions } = await open({ layout_slot_add: ok({ slotId: 'side' }), layout_slot_update: ok(), layout_slot_remove: ok() }, MAIN)
-    await fileTab()
     expect(byTestId('slot-name-children')).toBeNull()
     expect(byTestId('slot-add')).not.toBeNull()
     expect((byTestId('slot-add') as HTMLButtonElement).disabled).toBe(true)
@@ -102,7 +100,6 @@ describe('Slots and variables of a layout', () => {
 
   it('adds, updates and removes a variable; only the kinds a layout takes', async () => {
     const { actions } = await open({ layout_variable_add: ok({ variableId: 'prop_tagline' }), layout_variable_update: ok(), layout_variable_remove: ok() }, MAIN)
-    await fileTab()
     expect([...(byTestId('prop-add-kind') as HTMLSelectElement).options].map(option => option.value)).toEqual([...LAYOUT_VARIABLE_KINDS])
 
     await typeInto(byTestId('prop-add-name'), 'tagline')
@@ -118,13 +115,16 @@ describe('Slots and variables of a layout', () => {
 })
 
 describe('A page in a layout', () => {
-  it('picks the layout of a page, or none', async () => {
+  const layoutSelect = () => pick('[data-page-layout] [role="combobox"]')
+
+  it('picks the layout of a page, or none (asking first: the page would lose its layout values)', async () => {
     const { actions } = await open({ page_set_layout: ok() })
-    await fileTab()
-    expect((byTestId('layout-picker') as HTMLSelectElement).value).toBe(MAIN)
-    await choose('layout-picker', '')
-    await choose('layout-picker', MAIN)
-    expect(actions.named('page_set_layout').map(call => call.input)).toEqual([{ page: 'pg_index', layout: null }, { page: 'pg_index', layout: MAIN }])
+    await select('n_page')
+    expect(pick('[data-page-layout]')?.textContent).toContain('main')
+    await selectOption(layoutSelect(), 'None')
+    expect(actions.named('page_set_layout')).toEqual([])
+    await click(pick('[data-confirm-ok]'))
+    expect(actions.named('page_set_layout').map(call => call.input)).toEqual([{ page: 'pg_index', layout: null }])
   })
 
   it('sets the values of the layout\'s variables, typed by their kinds', async () => {
@@ -134,14 +134,14 @@ describe('A page in a layout', () => {
       { id: 'prop_tone', name: 'tone', kind: 'select', options: ['light', 'dark'] }
     )
     const { actions } = await open({ page_set_layout_values: ok() })
-    await fileTab()
-    expect((byTestId('layout-value-prop_title') as HTMLInputElement).value).toBe('Posts')
+    await select('n_page')
+    expect(propInput('prop_title')?.value).toBe('Posts')
 
-    await typeInto(byTestId('layout-value-prop_title'), 'Hello')
-    await check('layout-value-prop_wide', true)
-    await typeInto(byTestId('layout-value-prop_cols'), '3')
-    await choose('layout-value-prop_tone', 'dark')
-    await typeInto(byTestId('layout-value-prop_title'), '')
+    await typeInto(propInput('prop_title'), 'Hello')
+    await click([...propRow('prop_wide')!.querySelectorAll<HTMLElement>('button')].find(button => button.textContent?.trim() === 'On') ?? null)
+    await typeNumber(propRow('prop_cols'), '3')
+    await selectOption(propSelect('prop_tone'), 'dark')
+    await typeInto(propInput('prop_title'), '')
 
     expect(actions.named('page_set_layout_values').map(call => call.input)).toEqual([
       { page: 'pg_index', values: { prop_title: 'Hello' } },
@@ -156,27 +156,27 @@ describe('A page in a layout', () => {
     mainLayout().variables!.push({ id: 'prop_cols', name: 'cols', kind: 'number' })
     indexPage().layoutValues = { prop_cols: 7 }
     const { actions } = await open({ page_set_layout_values: ok() })
-    await fileTab()
-    expect((byTestId('layout-value-prop_cols') as HTMLInputElement).value).toBe('7')
+    await select('n_page')
+    expect(propInput('prop_cols')?.value).toBe('7')
 
-    await typeInto(byTestId('layout-value-prop_cols'), 'abc')
+    await typeNumber(propRow('prop_cols'), 'abc')
 
     expect(actions.named('page_set_layout_values')).toEqual([])
-    expect((byTestId('layout-value-prop_cols') as HTMLInputElement).value).toBe('7')
+    expect(propInput('prop_cols')?.value).toBe('7')
   })
 
-  it('fills a named slot with the page\'s own content, optionally moving the selection in, and clears it', async () => {
+  it('fills a named slot with the page\'s own content, and clears it', async () => {
     const { actions } = await open({ page_set_slot: ok({ fillId: 'n_fill' }) })
-    await fileTab()
-    expect(byTestId('slot-fill-children')).toBeNull()
-    await check('slot-fill-footer', true)
-    await select('n_about')
-    await click(byTestId('slot-fill-move-footer'))
-    await check('slot-fill-footer', false)
-    expect(actions.named('page_set_slot').map(call => call.input)).toEqual([
-      { page: 'pg_index', slot: 'footer', filled: true },
-      { page: 'pg_index', slot: 'footer', filled: true, nodeIds: ['n_about'] },
-      { page: 'pg_index', slot: 'footer', filled: false }
-    ])
+    await select('n_page')
+    await click(pick('[aria-label="footer: own content"]'))
+    expect(actions.named('page_set_slot').map(call => call.input)).toEqual([{ page: 'pg_index', slot: 'footer', filled: true }])
+  })
+
+  it('clears the page\'s own content of a slot it filled', async () => {
+    indexPage().root.children!.push({ id: 'n_fill_footer', type: 'SlotFill', props: { slot: 'footer' } })
+    const { actions } = await open({ page_set_slot: ok() })
+    await select('n_page')
+    await click(pick('[aria-label="footer: own content"]'))
+    expect(actions.named('page_set_slot').map(call => call.input)).toEqual([{ page: 'pg_index', slot: 'footer', filled: false }])
   })
 })

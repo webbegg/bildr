@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { LayoutFile, PropertyDef, Value } from '@bildr/codegen/model'
 import { useEditor } from '../../editor/useEditor.ts'
+import EditorPropField from './EditorPropField.vue'
 import { layoutChoiceHint, layoutItems, layoutValue, NO_LAYOUT, pageSlots, variableField } from '../../shared/layoutEditor.ts'
 
 /**

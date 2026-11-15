@@ -206,3 +206,90 @@ export const check = async (testId: string, on: boolean) => {
   element.dispatchEvent(new Event('change', { bubbles: true }))
   await settle()
 }
+
+/** A prop row of the hosted inspector (`data-prop-row`), e.g. `text` of a Heading. */
+export const propRow = (name: string) => document.body.querySelector<HTMLElement>(`[data-prop-row="${name}"]`)
+
+/** The text input of a prop row. */
+export const propInput = (name: string) => propRow(name)?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea') ?? null
+
+/** The inspector's head (`data-inspector-head`): the node's name and id, its breadcrumb and Duplicate and Delete. */
+export const inspectorHead = () => document.body.querySelector<HTMLElement>('[data-inspector-head]')
+
+/** A style field of the inspector (`data-style-key`, the token's key), e.g. `p`. */
+export const styleField = (key: string) => document.body.querySelector<HTMLElement>(`[data-style-key="${key}"]`)
+
+/** Types into a style scale field as a user does (focus, type, blur) and waits for the commit. */
+export const typeStyle = async (key: string, value: string) => {
+  const input = styleField(key)?.querySelector<HTMLInputElement>('input')
+  if (!input) throw new Error(`no style field ${key}`)
+  input.dispatchEvent(new Event('focus'))
+  await settle()
+  input.value = value
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  input.dispatchEvent(new Event('blur'))
+  await settle()
+}
+
+/** A control by its accessible name, inside `within` (the document by default). */
+export const byLabel = (label: string, within: ParentNode = document.body) => within.querySelector<HTMLElement>(`[aria-label="${label}"]`)
+
+/** Opens a dropdown from its trigger (the keyboard does, happy-dom's pointer events don't reach it) and lists its items' labels (their first line). */
+export const menuLabels = async (trigger: Element | null) => {
+  if (!trigger) throw new Error('no menu trigger')
+  trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await settle()
+  return [...document.body.querySelectorAll<HTMLElement>('[role^="menuitem"]')].map(item => item.querySelector<HTMLElement>('[data-slot="itemLabel"]')?.textContent?.trim() ?? item.textContent?.trim() ?? '')
+}
+
+/** The braces button of a prop row's text field (EditorVariablePicker). */
+export const variablePicker = (name: string) => propRow(name)?.querySelector<HTMLElement>('[data-variable-picker]') ?? null
+
+/** Puts the caret at the end of a prop row's text, where the variable picker types. */
+export const caretAtEnd = (name: string) => {
+  const input = propInput(name)
+  if (input) input.setSelectionRange(input.value.length, input.value.length)
+}
+
+/** Clicks the item of the open dropdown whose text starts with `label`. */
+export const pickOpenItem = async (label: string) => {
+  const item = [...document.body.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find(element => element.textContent?.trim().startsWith(label))
+  if (!item) throw new Error(`no menu item ${label}`)
+  item.click()
+  await settle()
+}
+
+/** Picks `label` in a kit select (USelect) by its trigger: the keyboard opens it, then the option is clicked. */
+export const selectOption = async (trigger: Element | null, label: string) => {
+  if (!trigger) throw new Error('no select trigger')
+  trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await settle()
+  const option = [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].find(element => element.textContent?.trim().startsWith(label))
+  if (!option) throw new Error(`no option ${label}`)
+  option.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }))
+  option.click()
+  await settle()
+}
+
+/** The select trigger of a prop row. */
+export const propSelect = (name: string) => propRow(name)?.querySelector<HTMLElement>('[role="combobox"]') ?? null
+
+/** Resets a style field to what it was before this device (alt-click on its blue label, as the user does). */
+export const resetStyle = async (key: string) => {
+  const label = document.body.querySelector<HTMLElement>(`[data-field-label="${key}"] [data-field-state="set"]`)
+  if (!label) throw new Error(`style field ${key} has no override to reset`)
+  label.dispatchEvent(new MouseEvent('click', { bubbles: true, altKey: true }))
+  await settle()
+}
+
+/** Types a number into a kit number field (UInputNumber) as a user does: type, then leave the field. */
+export const typeNumber = async (element: HTMLElement | null, value: string) => {
+  const input = element?.matches('input') ? element as HTMLInputElement : element?.querySelector<HTMLInputElement>('input')
+  if (!input) throw new Error('no number input')
+  input.focus()
+  input.value = value
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+  input.dispatchEvent(new Event('blur'))
+  await settle()
+}

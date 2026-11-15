@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { applyEdit } from '../../../codegen/src/edit/index.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 import { allByTestId, byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
-import { check, choose, insertComponent, insertType, open, select, setupHarness } from './harness.ts'
+import { caretAtEnd, check, choose, insertComponent, insertType, menuLabels, open, pickOpenItem, propInput, propRow, select, setupHarness, variablePicker } from './harness.ts'
 
 /**
  * The binding panels (P5, mapping §4): a List's source and its query's sort, filter and
@@ -20,8 +20,6 @@ const real = (name: Parameters<typeof applyEdit>[1], outcomes: unknown[] = []) =
   outcomes.push(outcome)
   return outcome.ok ? { changed: outcome.changes.map(change => change.path), ...outcome.result } : new Failure(422, outcome.code, outcome.message)
 }
-const nodeTab = () => click(byTestId('inspector-tab-node'))
-const fileTab = () => click(byTestId('inspector-tab-file'))
 const options = (id: string) => [...(byTestId(id) as HTMLSelectElement).options].map(option => option.value)
 
 describe('a List\'s source', () => {
@@ -102,40 +100,65 @@ describe('a List\'s source', () => {
 })
 
 describe('what a prop can bind', () => {
-  it('binds a Heading\'s text to a name in scope, or adds it to the text', async () => {
+  /** The text prop's value as the module keeps it, after an edit. */
+  const lastProps = (actions: Awaited<ReturnType<typeof open>>['actions']) => actions.named('node_update_props').at(-1)?.input
+
+  it('binds a Heading\'s text to a name in scope through the braces menu, as a template after the text', async () => {
     const { actions } = await open({ node_update_props: ok() }, 'pg_index')
     await select('n_h1')
-    expect(options('bind-text')).toContain('site.name')
-    expect(options('bind-text')).not.toContain('post.title')
-    await choose('bind-text', 'site.name')
-    expect(actions.named('node_update_props').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1', props: { text: { $template: 'Posts {site.name}' } } }])
+    caretAtEnd('text')
+    const labels = await menuLabels(variablePicker('text'))
+    expect(labels).toContain('site.name')
+    expect(labels).not.toContain('post.title')
+    await pickOpenItem('site.name')
+    expect(actions.named('node_update_props').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1', props: { text: { $template: 'Posts{site.name}' } } }])
   })
 
   it('offers a List\'s item to what is inside it (a link in a slot fill), and no list or record as text', async () => {
     const { actions } = await open({ node_update_props: ok() }, 'pg_index')
     await select('n_read_more')
-    expect(options('bind-text')).toContain('post.title')
-    expect(options('bind-text')).toContain('featured.length')
-    expect(options('bind-text')).not.toContain('featured')
-    expect(options('bind-text')).not.toContain('post')
-    await choose('bind-text', 'post.title')
-    expect(actions.named('node_update_props').at(-1)?.input).toEqual({ file: 'pg_index', nodeId: 'n_read_more', props: { text: { $template: 'Read more {post.title}' } } })
+    caretAtEnd('text')
+    const labels = await menuLabels(variablePicker('text'))
+    expect(labels).toContain('post.title')
+    expect(labels).toContain('featured.length')
+    expect(labels).not.toContain('featured')
+    expect(labels).not.toContain('post')
+    await pickOpenItem('post.title')
+    expect(lastProps(actions)).toEqual({ file: 'pg_index', nodeId: 'n_read_more', props: { text: { $template: 'Read more{post.title}' } } })
   })
 
-  it('shows what a text is bound to, and unbinds it', async () => {
+  it('writes one name alone as { $bind }, names among text as { $template }, and text without a name as text', async () => {
+    const { actions } = await open({ node_update_props: ok() }, 'pg_index')
+    await select('n_h1')
+    await typeInto(propInput('text'), '{site.name}')
+    expect(lastProps(actions)).toEqual({ file: 'pg_index', nodeId: 'n_h1', props: { text: { $bind: 'site.name' } } })
+    await typeInto(propInput('text'), 'By {site.name}')
+    expect(lastProps(actions)).toMatchObject({ props: { text: { $template: 'By {site.name}' } } })
+    // `{word}` is only a binding where it is a name the node can read; anything else stays the text typed.
+    await typeInto(propInput('text'), 'Set {braces} here')
+    expect(lastProps(actions)).toMatchObject({ props: { text: 'Set {braces} here' } })
+    await typeInto(propInput('text'), '')
+    expect(lastProps(actions)).toMatchObject({ props: { text: null } })
+  })
+
+  it('shows what a text is bound to as {name} text, and unbinds it with Reset to default', async () => {
     const { actions } = await open({ node_update_props: ok() }, 'pg_index')
     await select('n_quote')
-    expect(byTestId('prop-text-bound')?.textContent).toContain('{quote.text}')
-    await click(byTestId('prop-text-bound')!.querySelector('button'))
-    expect(actions.named('node_update_props').at(-1)?.input).toMatchObject({ nodeId: 'n_quote', props: { text: null } })
+    expect(propInput('text')?.value).toBe('“{quote.text}” — {quote.author}')
+    // Alt-click on the label resets (the label is blue: the prop differs from the default).
+    const label = propRow('text')!.querySelector<HTMLElement>('[data-field-state="set"]')!
+    label.dispatchEvent(new MouseEvent('click', { bubbles: true, altKey: true }))
+    await settle()
+    expect(lastProps(actions)).toMatchObject({ nodeId: 'n_quote', props: { text: null } })
   })
 
   it('binds in a layout through layout.x', async () => {
     const { actions } = await open({ node_update_props: ok() }, 'lay_main')
     await select('n_footer_link')
-    expect(options('bind-text')).toEqual(expect.arrayContaining(['layout.title', 'site.name']))
-    await choose('bind-text', 'layout.title')
-    expect(actions.named('node_update_props').at(-1)?.input).toMatchObject({ file: 'lay_main', nodeId: 'n_footer_link', props: { text: { $template: 'Built with Nuxt {layout.title}' } } })
+    caretAtEnd('text')
+    expect(await menuLabels(variablePicker('text'))).toEqual(expect.arrayContaining(['layout.title', 'site.name']))
+    await pickOpenItem('layout.title')
+    expect(lastProps(actions)).toMatchObject({ file: 'lay_main', nodeId: 'n_footer_link', props: { text: { $template: 'Built with Nuxt{layout.title}' } } })
   })
 })
 
@@ -251,9 +274,7 @@ describe('inserting a Form from the palette', () => {
 describe('the page\'s uses', () => {
   it('lists them with their arguments, adds a query and removes one', async () => {
     const { actions } = await open({ page_use_add: ok(), page_use_remove: ok(), page_use_update: ok() }, 'pg_index')
-    await nodeTab()
-    await select('n_h1')
-    await fileTab()
+    await select('n_page')
     expect(allByTestId('use-row').map(row => row.dataset.alias)).toEqual(['featured', 'all', 'quotes', 'preferences'])
     expect((byTestId('use-arg-featured-limit') as HTMLInputElement).value).toBe('6')
     await typeInto(byTestId('use-arg-featured-limit'), '8')

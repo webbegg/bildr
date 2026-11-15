@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { PageFile, Value } from '@bildr/codegen/model'
-import CommitInput from './CommitInput.vue'
+import { FIELD, FIELD_RING } from '../editorUi.ts'
 import { useDesign } from './store.ts'
 
 /**
  * What a page uses (P5, mapping §4): the queries it reads, with the arguments it gives their
  * parameters (`page_use_update`), the actions its forms and buttons run, and its state. Add a query or an
  * action under a name the page's bindings use (`page_use_add`); remove one nothing binds any more
- * (`page_use_remove`, refused otherwise).
+ * (`page_use_remove`, refused otherwise). It sits in the inspector's Page section under the detail
+ * page rows (EditorPageCollection), in the kit's field look.
  */
 
 const props = defineProps<{ page: PageFile }>()
 const design = useDesign()
-const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text-sm'
+const field = `${FIELD} ${FIELD_RING} w-full min-w-0 px-2 text-default`
 
 const module = computed(() => Object.values(design.model.value?.modules ?? {}).find(mod => mod.pages.some(entry => entry.id === props.page.id)))
 const queries = computed(() => props.page.uses?.queries ?? [])
@@ -56,23 +57,23 @@ const add = async () => {
     class="flex flex-col gap-2"
     data-testid="page-uses"
   >
-    <h3 class="text-xs font-semibold">
+    <h4 class="pt-1 text-[11px] font-[550] text-toned">
       Data this page uses
-    </h3>
+    </h4>
     <div
       v-for="row in rows"
       :key="row.as"
-      class="flex flex-col gap-1 rounded-md border border-default p-2 text-xs"
+      class="flex flex-col gap-1.5 rounded-lg bg-elevated/60 p-2 text-[12px]"
       data-testid="use-row"
       :data-alias="row.as"
     >
       <div class="flex items-center gap-2">
-        <code class="rounded-sm bg-elevated px-1 py-0.5">{{ row.as }}</code>
-        <span class="min-w-0 flex-1 truncate text-muted">{{ row.kind }} · {{ row.label }}</span>
+        <code class="rounded-sm bg-white/8 px-1 py-0.5 text-highlighted">{{ row.as }}</code>
+        <span class="min-w-0 flex-1 truncate text-dimmed">{{ row.kind }} · {{ row.label }}</span>
         <button
           v-if="row.removable"
           type="button"
-          class="text-muted hover:text-default"
+          class="grid size-5 place-items-center rounded-lg text-dimmed hover:bg-white/8 hover:text-highlighted"
           :aria-label="`Remove ${row.as}`"
           :data-testid="`use-remove-${row.as}`"
           @click="remove(row.as)"
@@ -86,15 +87,16 @@ const add = async () => {
       <label
         v-for="entry in row.kind === 'query' ? paramsOf(row.as) : []"
         :key="entry.param.name"
-        class="grid grid-cols-[5rem_1fr] items-center gap-2 text-muted"
+        class="grid grid-cols-[5rem_minmax(0,1fr)] items-center gap-2 text-dimmed"
       >
         {{ entry.param.name }}
         <code
           v-if="isExpression(entry.value)"
-          class="truncate rounded-sm bg-elevated px-1 py-0.5 text-default"
+          class="truncate rounded-sm bg-white/8 px-1 py-0.5 text-default"
         >{{ textOf(entry.value) }}</code>
-        <CommitInput
+        <EditorCommitInput
           v-else
+          size="xs"
           :data-testid="`use-arg-${row.as}-${entry.param.name}`"
           :model-value="textOf(entry.value)"
           :numeric="['integer', 'number'].includes(entry.param.type)"
@@ -133,17 +135,17 @@ const add = async () => {
         </optgroup>
       </select>
       <div class="flex gap-1">
-        <CommitInput
+        <EditorCommitInput
+          size="xs"
           data-testid="use-add-alias"
           :model-value="alias"
           placeholder="Name it binds by"
           @commit="alias = $event"
         />
-        <UButton
+        <EditorButton
           data-testid="use-add"
           label="Add"
-          size="xs"
-          color="neutral"
+          size="sm"
           variant="soft"
           :disabled="!source || !chosenName"
           @click="add"

@@ -2,6 +2,7 @@ import type { LayoutFile, Model, PageFile, PropertyDef, Value } from '@bildr/cod
 import { layoutDragPayload, parseLayoutPayload } from '../editor/drop.ts'
 import { CHILDREN_SLOT, layoutSelection, pageSlots } from '../editor/layouts.ts'
 import type { Command, CommandContext } from './commands.ts'
+import type { PropDef } from './nodeProps.ts'
 import { matches } from './sidebar.ts'
 
 /**
@@ -58,21 +59,13 @@ export function layoutChoiceHint(layout: Pick<LayoutFile, 'slots' | 'variables'>
 }
 
 /** What a page's variable row needs to show (the hosted `PropDef`): keyed by the variable id, its default and options from the model. */
-export interface VariableField {
-  name: string
-  label: string
-  kind: PropertyDef['kind']
-  description: string
-  placeholder?: string
-  default: Value | ''
-  options?: string[]
-}
+export type VariableField = PropDef
 
-/** A variable as a prop field of the page settings. */
+/** A variable as a prop field of the page settings (a layout variable takes the kinds `LAYOUT_VARIABLE_KINDS` lists, all of them prop kinds). */
 export const variableField = (layout: Pick<LayoutFile, 'name'>, variable: PropertyDef): VariableField => ({
   name: variable.id,
   label: variable.label ?? variable.name,
-  kind: variable.kind,
+  kind: variable.kind as PropDef['kind'],
   description: variable.description ?? `${variable.label ?? variable.name}, a variable of layout ${layout.name}`,
   ...(variable.placeholder ? { placeholder: variable.placeholder } : {}),
   default: variable.default ?? '',

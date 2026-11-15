@@ -1,5 +1,9 @@
-import type { ComponentFile, Model, ModelNode } from '@bildr/codegen/model'
+import { parseStyleKey } from '@bildr/codegen/design'
+import type { ComponentFile, Model, ModelNode, PropertyDef } from '@bildr/codegen/model'
+import { STRUCTURAL_PROPS } from '@bildr/codegen/render'
 import { insertableComponents } from '../editor/drop.ts'
+import { isStyleBinding } from './bindingDot.ts'
+import { propDefsOf } from './nodeProps.ts'
 import { matches } from './sidebar.ts'
 import type { Command, CommandContext } from './commands.ts'
 import { shortcutKeys } from './commands.ts'
@@ -209,6 +213,53 @@ export function componentCommands(model: Model, state: { editingId: string | nul
       run: () => actions.edit(def.id)
     }))
   ]
+}
+
+type PropertyBinding = NonNullable<PropertyDef['bindings']>[number]
+
+/** Whether a binding drives `key` of node `nodeId`: a prop, or with `target` `style` a style key. */
+export function bindsKey(binding: PropertyBinding, nodeId: string, key: string, target: 'prop' | 'style'): boolean {
+  return binding.nodeId === nodeId && binding.prop === key && isStyleBinding(binding) === (target === 'style')
+}
+
+/** The property (or layout variable) that drives `key` of node `nodeId`, a prop or a style key; a prop and a style key can share a name (`text`). */
+export function boundProperty(properties: readonly PropertyDef[], nodeId: string, key: string, target: 'prop' | 'style'): PropertyDef | undefined {
+  return properties.find(property => (property.bindings ?? []).some(binding => bindsKey(binding, nodeId, key, target)))
+}
+
+/** `base`, or `base 2`, `base 3`… when the list already has that name. */
+export function uniqueComponentName(base: string, taken: readonly { name: string }[]): string {
+  const names = new Set(taken.map(entry => entry.name))
+  let name = base
+  for (let n = 2; names.has(name); n++) name = `${base} ${n}`
+  return name
+}
+
+/** The `component_property_add` / `layout_variable_add` fields that turn a prop or style key into a property. */
+export interface BindingAdd {
+  name: string
+  kind: PropertyDef['kind']
+  bindings: PropertyBinding[]
+  /** A select property's values (the module refuses a select without them). */
+  options?: string[]
+}
+
+/**
+ * The fields that turn prop `prop` of `node` into a property (or variable): named after the prop,
+ * of its kind, bound to it. No stored default: the node's own value is the default, so editing
+ * it reaches every instance (or page). Undefined for a prop no property can drive.
+ */
+export function propBindingAdd(properties: readonly Pick<PropertyDef, 'name'>[], node: ModelNode, prop: string): BindingAdd | undefined {
+  const def = propDefsOf(node.type).find(entry => entry.name === prop)
+  // A prop that shapes the generated markup (a tag, a level, a link target) can't be driven by a property.
+  if (!def || def.kind === 'page' || def.numeric || STRUCTURAL_PROPS.includes(prop)) return undefined
+  return { name: uniqueComponentName(def.label, properties), kind: def.kind, bindings: [{ nodeId: node.id, prop }], ...(def.kind === 'select' ? { options: def.options ?? [] } : {}) }
+}
+
+/** The same for style key `key` (`bg`, `md:p`) of node `nodeId`: a select property over the key's token scale, bound with `target: 'style'`. */
+export function styleBindingAdd(properties: readonly Pick<PropertyDef, 'name'>[], nodeId: string, key: string): BindingAdd {
+  const token = parseStyleKey(key)?.token
+  return { name: uniqueComponentName(token?.label ?? key, properties), kind: 'select', bindings: [{ nodeId, prop: key, target: 'style' }], options: token ? [...token.values] : [] }
 }
 
 /** The `Primary` choice of the variant picker (select items cannot be empty). */

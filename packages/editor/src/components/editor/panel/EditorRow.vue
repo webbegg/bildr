@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { Provenance } from '@bildr/editor-core/styleFields'
+import EditorBindingDot from '../EditorBindingDot.vue'
+import EditorBindingValue from '../EditorBindingValue.vue'
 
 /**
  * One label-column row of the panel, Framer's layout: a grey label in a
