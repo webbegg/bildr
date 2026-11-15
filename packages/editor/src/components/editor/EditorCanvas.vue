@@ -287,6 +287,9 @@ const panning = ref(false)
 const pointerInStage = ref(false)
 const panMode = computed(() => pointerMode(editor.tool, spaceHeld.value) === 'pan')
 
+/** Ends the pan in progress, if any (set while one runs). */
+let endPan: (() => void) | null = null
+
 function onStagePointerDown(event: PointerEvent) {
   if (event.button !== 1 && !(event.button === 0 && panMode.value)) return
   event.preventDefault()
@@ -302,13 +305,24 @@ function onStagePointerDown(event: PointerEvent) {
   }
   const up = () => {
     panning.value = false
+    endPan = null
     target.removeEventListener('pointermove', move)
     target.removeEventListener('pointerup', up)
     target.removeEventListener('pointercancel', up)
+    target.removeEventListener('lostpointercapture', up)
   }
+  endPan?.()
+  endPan = up
   target.addEventListener('pointermove', move)
   target.addEventListener('pointerup', up)
   target.addEventListener('pointercancel', up)
+  target.addEventListener('lostpointercapture', up)
+}
+
+/** The window lost focus: its key-up and pointer-up may never come, so Space is no longer held and a pan ends (else the grab layer would stay over the frames). */
+function onWindowBlur() {
+  spaceHeld.value = false
+  endPan?.()
 }
 
 function isEditable(target: EventTarget | null): boolean {
@@ -515,6 +529,8 @@ function onMessage(event: MessageEvent) {
   const message = event.data
   const frame = frameAt(id)
   if (message.type === 'bildr:ready') {
+    // A frame that reloads mid-drag abandons it: drop the preview too, so `sync` does not show it to the new frame.
+    if (editor.dragging && editor.stylePreview) editor.previewStyle(editor.stylePreview.nodeId, null)
     editor.dragging = null
     sync(id ?? null, el)
   } else if (message.type === 'bildr:hover') {
@@ -607,6 +623,7 @@ onMounted(() => {
   }
   window.addEventListener('keydown', onWindowKeyDown)
   window.addEventListener('keyup', onWindowKeyUp)
+  window.addEventListener('blur', onWindowBlur)
   if (stage.value) observer?.observe(stage.value)
   editor.setMeasurer(measureNodes)
 })
@@ -615,6 +632,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('message', onMessage)
   window.removeEventListener('keydown', onWindowKeyDown)
   window.removeEventListener('keyup', onWindowKeyUp)
+  window.removeEventListener('blur', onWindowBlur)
+  endPan?.()
   observer?.disconnect()
   clearTimeout(slotTimer)
 })

@@ -439,8 +439,10 @@ export function useGestures(ctx: GesturesContext) {
     if (g && (gestureTargetGone(g, { pageId: ctx.fileId(), root: ctx.root(), selectedIds: ctx.selectedIds.value }) || editable.value !== g.nodeId)) endBy('target-gone')
   })
 
+  /** The frame going away mid-drag cancels it like Esc: the preview and the indicator are dropped, the listeners removed. */
   const dispose = () => {
-    endGesture()
+    if (gesture) endBy('escape')
+    else endGesture()
   }
 
   return { editable, editableBox, spacing, resizeHandles, spacingHandleList, dragLabel, track, down, moved, left, cancel, takesClick, dispose }

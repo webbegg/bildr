@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { byLabel, chooseDevice, fromCanvas, frames, menuItem, open, postCard, readyAll, select, sent, setupHarness, toggle, world } from './harness.ts'
 import { click, settle } from '../helpers.ts'
+import { DATA_REFRESH_DELAY_MS } from '../../src/design/store.ts'
+import { thumbnailSignature, thumbnailSnapshots, thumbnailSource } from '../../src/shared/thumbnails.ts'
 
 /**
  * The hosted canvas over the module (U6): `EditorCanvas` (a frame per device on a zoomed and
@@ -137,6 +139,37 @@ describe('zoom and pan', () => {
     expect(q('[data-pan-layer]')).not.toBeNull()
   })
 
+  it('drops the pan layer when the window loses focus, so it cannot stay over the frames (Space held, or a pan in progress)', async () => {
+    await open()
+    await fromCanvas({ type: 'bildr:space', down: true })
+    expect(q('[data-pan-layer]')).not.toBeNull()
+    window.dispatchEvent(new Event('blur'))
+    await settle()
+    expect(q('[data-pan-layer]')).toBeNull()
+
+    // A pan in progress (middle button): the blur ends it, and the drag no longer moves the surface.
+    q('[data-canvas-stage]')!.dispatchEvent(new PointerEvent('pointerdown', { button: 1, pointerId: 1, clientX: 0, clientY: 0, bubbles: true, cancelable: true }))
+    await settle()
+    expect(q('[data-pan-layer]')).not.toBeNull()
+    window.dispatchEvent(new Event('blur'))
+    await settle()
+    expect(q('[data-pan-layer]')).toBeNull()
+    q('[data-canvas-stage]')!.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 30, clientY: 30, bubbles: true }))
+    await settle()
+    expect(surface()).toBe('translate(0px, 0px) scale(1)')
+  })
+
+  it('ends a pan when the pointer capture is lost (the stage is gone, or the browser took it)', async () => {
+    await open()
+    const stage = q('[data-canvas-stage]')!
+    stage.dispatchEvent(new PointerEvent('pointerdown', { button: 1, pointerId: 1, clientX: 0, clientY: 0, bubbles: true, cancelable: true }))
+    await settle()
+    expect(q('[data-pan-layer]')).not.toBeNull()
+    stage.dispatchEvent(new PointerEvent('lostpointercapture', { pointerId: 1, bubbles: true }))
+    await settle()
+    expect(q('[data-pan-layer]')).toBeNull()
+  })
+
   it('zooms to the selection from the frame\'s measured box', async () => {
     stageOf(1000, 800)
     await open()
@@ -199,10 +232,30 @@ describe('what the frames report', () => {
     for (const call of spy.mock.calls) expect(call[1]).toBe(window.location.origin)
   })
 
-  it('runs an action a frame reports from the preview (so its rows are read again), and resets a drag when the frame reloads', async () => {
+  it('reads the app\'s rows again after a runAction a frame reports from the preview (and after nothing else)', async () => {
+    const rows = { items: [{ id: 'id-one', title: 'Post one', slug: 'one', body: '', published: true, publishedAt: '2026-11-10T09:00:00.000Z', createdAt: '2026-11-10T09:00:00.000Z', updatedAt: '2026-11-10T09:00:00.000Z' }], total: 1 }
+    const { actions } = await open({}, 'pg_index', { '/api/blog/posts': rows, '/api/blog/quotes': { items: [], total: 0 } })
+    const reads = () => actions.appCalls.length
+    const wait = () => new Promise(resolve => setTimeout(resolve, DATA_REFRESH_DELAY_MS + 150))
+    const initial = reads()
+    expect(initial).toBeGreaterThan(0)
+
+    await fromCanvas({ type: 'bildr:interaction', nodeId: 'n_any', on: 'click', step: { kind: 'navigate', to: '/' } })
+    await wait()
+    expect(reads()).toBe(initial)
+
+    await fromCanvas({ type: 'bildr:interaction', nodeId: 'n_any', on: 'submit', step: { kind: 'runAction', action: 'act_create_post' } })
+    await wait()
+    expect(reads()).toBeGreaterThan(initial)
+  })
+
+  it('resets a drag when a frame reloads: the abandoned preview is dropped, not shown again to the reloaded frame', async () => {
     await open()
     await fromCanvas({ type: 'bildr:style-preview', nodeId: 'n_h1', style: { w: '64' } })
+    await settle()
+    world.posted = []
     await fromCanvas({ type: 'bildr:ready' })
+    expect(sent('bildr:preview').filter(message => message.style)).toEqual([])
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
     await settle()
     // The drag ended with the reload: Esc is the usual one.
@@ -300,5 +353,66 @@ describe('the variant board', () => {
     expect(new Set(rendered)).toEqual(new Set([null, 'var_hovered', 'var_compact']))
     await toggle('[data-variant-board-toggle]')
     expect(qa('[data-frame]').map(frame => frame.dataset.frame)).toEqual(['mobile'])
+  })
+})
+
+describe('the Insert panel\'s thumbnails', () => {
+  const tile = (id: string) => q(`[data-palette-component="${id}"] [data-insert-thumb]`)
+  /** The hidden canvas that renders a tile's thumbnail, while it renders. */
+  const liveFrame = (id: string) => tile(id)?.querySelector<HTMLIFrameElement>('iframe')
+
+  /** Opens the Insert panel with its tiles in view (happy-dom has no layout to scroll them into). */
+  const openInsert = async () => {
+    vi.stubGlobal('IntersectionObserver', class {
+      constructor(private callback: IntersectionObserverCallback) {}
+      observe() {
+        this.callback([{ isIntersecting: true }] as IntersectionObserverEntry[], this as unknown as IntersectionObserver)
+      }
+
+      unobserve() {}
+      disconnect() {}
+    })
+    await open()
+    await click(q('[data-insert-button]'))
+  }
+  const BOX = { id: 'x', x: 0, y: 0, width: 300, height: 120 }
+  /** The live frame says it loaded, and later where its render is. */
+  const rendered = async (id: string) => {
+    await fromCanvas({ type: 'bildr:ready' }, undefined, liveFrame(id)!)
+    await fromCanvas({ type: 'bildr:rects', requestId: 1, rects: [BOX] }, undefined, liveFrame(id)!)
+  }
+
+  it('shows a finished thumbnail as a static document in a sandboxed frame that cannot run scripts', async () => {
+    await openInsert()
+    expect(tile(POST_CARD)?.dataset.insertThumb).toBe('loading')
+    await rendered(POST_CARD)
+    expect(tile(POST_CARD)?.dataset.insertThumb).toBe('ready')
+    const shown = tile(POST_CARD)!.querySelector('iframe')!
+    expect(shown.hasAttribute('srcdoc')).toBe(true)
+    expect(shown.hasAttribute('sandbox')).toBe(true)
+    expect(shown.getAttribute('sandbox')).not.toContain('allow-scripts')
+  })
+
+  it('stores a snapshot under the signature of what the frame rendered, even when the preview changed just before it loaded', async () => {
+    const card = POST_CARD
+    // The cache outlives a test: a theme of its own keeps this tile from finding the snapshot the last one left.
+    world.model.theme = { ...world.model.theme!, radius: world.model.theme!.radius === '0.125rem' ? '0.5rem' : '0.125rem' }
+    await openInsert()
+    const frame = liveFrame(card)!
+    const signatures = () => {
+      const source = thumbnailSource(world.model, 'component', card)!
+      return { light: thumbnailSignature(source, world.model.theme!, false), dark: thumbnailSignature(source, world.model.theme!, true) }
+    }
+    const { light, dark } = signatures()
+    // In one task: the preview turns dark, the frame loads (and is told dark), and its render is measured. The tile that
+    // renders on is the dark one, and it has the dark snapshot, not a stale one filed under the light signature.
+    q('[data-preview-theme]')!.click()
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'bildr:ready' }, source: frame.contentWindow, origin: window.location.origin }))
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'bildr:rects', requestId: 1, rects: [BOX] }, source: frame.contentWindow, origin: window.location.origin }))
+    await settle()
+    expect(thumbnailSnapshots.get(light)).toBeUndefined()
+    expect(thumbnailSnapshots.get(dark)).toBeDefined()
+    expect(tile(card)?.dataset.insertThumb).toBe('ready')
+    expect(sent('bildr:dark').at(-1)).toEqual({ type: 'bildr:dark', dark: true })
   })
 })

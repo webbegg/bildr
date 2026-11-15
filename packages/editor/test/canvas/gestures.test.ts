@@ -180,6 +180,63 @@ describe('drag-to-reorder of the selection', () => {
   })
 })
 
+describe('a reorder drag that ends any other way', () => {
+  const drag = async () => {
+    await select('n_h1')
+    pointerOver('n_toggle')
+    await press(node('n_h1'), 100, 60)
+    await move(300, 60)
+    expect(document.querySelector('[data-drop-indicator]')).not.toBeNull()
+  }
+  const expectCancelled = async () => {
+    expect(document.querySelector('[data-drop-indicator]')).toBeNull()
+    await release(300, 60)
+    expect(sent('bildr:drop')).toEqual([])
+  }
+
+  it('pointercancel, a window blur, a lost pointer capture and the node going each drop the indicator and drop nothing', async () => {
+    await drag()
+    window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }))
+    await settle()
+    await expectCancelled()
+
+    await drag()
+    window.dispatchEvent(new Event('blur'))
+    await settle()
+    await expectCancelled()
+
+    await drag()
+    document.documentElement.dispatchEvent(new PointerEvent('lostpointercapture', { pointerId: 1, bubbles: true }))
+    await settle()
+    await expectCancelled()
+
+    await drag()
+    await select('n_toggle')
+    await expectCancelled()
+  })
+
+  it('a press that is still under the threshold is abandoned by a blur: no drag starts, and its click still selects', async () => {
+    await select('n_h1')
+    await press(node('n_h1'), 100, 60)
+    window.dispatchEvent(new Event('blur'))
+    await settle()
+    pointerOver('n_toggle')
+    await move(300, 60)
+    expect(document.querySelector('[data-drop-indicator]')).toBeNull()
+    await release(300, 60)
+    expect(sent('bildr:drop')).toEqual([])
+  })
+
+  it('the frame going away mid-drag leaves no listener to drop the node later', async () => {
+    await drag()
+    wrapper?.unmount()
+    wrapper = undefined
+    await move(305, 60)
+    await release(305, 60)
+    expect(sent('bildr:drop')).toEqual([])
+  })
+})
+
 describe('the armed insert tool', () => {
   const clickAt = (target: Element, x: number, y: number) => settled(() => void target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, clientX: x, clientY: y })))
   const hoverAt = (target: Element, x: number, y: number) => settled(() => void target.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, cancelable: true, clientX: x, clientY: y })))

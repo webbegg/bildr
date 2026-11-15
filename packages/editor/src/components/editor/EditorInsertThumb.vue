@@ -53,11 +53,14 @@ function post(message: EditorToCanvas) {
   liveFrame.value?.contentWindow?.postMessage(JSON.parse(JSON.stringify(message)), window.location.origin)
 }
 
+/** What the live frame was told to render: its signature (the cache key of the snapshot it leaves) and its source. */
+let rendered: { key: string, source: NonNullable<typeof source.value> } | null = null
 let settle: ReturnType<typeof setTimeout> | undefined
 let giveUp: ReturnType<typeof setTimeout> | undefined
 const MEASURE_ID = 1
 
 function finish() {
+  rendered = null
   clearTimeout(settle)
   clearTimeout(giveUp)
   rendering.value = null
@@ -72,19 +75,22 @@ function onMessage(event: MessageEvent) {
   const shown = source.value
   if (!shown || !editor.model || !editor.theme) return
   if (message.type === 'bildr:ready') {
+    // The snapshot belongs to what is rendered now, which may already differ from what `renderLive` started for.
+    rendered = { key: thumbnailSignature(shown, editor.theme, editor.previewDark), source: shown }
     post({ type: 'bildr:render', file: shown.file, components: shown.components, layouts: shown.layouts, theme: editor.theme, breakpointBase: editor.breakpointBase, data: {}, view: 'page' })
     post({ type: 'bildr:dark', dark: editor.previewDark })
     post({ type: 'bildr:select', nodeId: null, nodeIds: [] })
   } else if (message.type === 'bildr:size') {
     // Measures once the render has settled (images and fonts may still grow it).
     clearTimeout(settle)
-    settle = setTimeout(() => post({ type: 'bildr:measure', requestId: MEASURE_ID, nodeIds: [shown.measureId] }), 150)
+    const measured = rendered?.source ?? shown
+    settle = setTimeout(() => post({ type: 'bildr:measure', requestId: MEASURE_ID, nodeIds: [measured.measureId] }), 150)
   } else if (message.type === 'bildr:rects' && message.requestId === MEASURE_ID) {
     const box = message.rects[0]
     const doc = frame.contentDocument
-    const key = rendering.value
-    if (box && doc && key) {
-      thumbnailSnapshots.set(key, { html: snapshotHtml(doc), box, width: shown.width })
+    const done = rendered
+    if (box && doc && done) {
+      thumbnailSnapshots.set(done.key, { html: snapshotHtml(doc), box, width: done.source.width })
       stored.value++
     } else {
       failed.value = true
@@ -139,6 +145,7 @@ onBeforeUnmount(() => {
     <iframe
       v-if="snapshot && fit"
       :srcdoc="snapshot.html"
+      sandbox="allow-same-origin"
       :width="snapshot.width"
       :height="Math.ceil(snapshot.box.y + snapshot.box.height)"
       tabindex="-1"

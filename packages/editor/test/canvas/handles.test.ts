@@ -194,6 +194,76 @@ describe('resize handles', () => {
   })
 })
 
+describe('everything that ends a gesture drops its preview', () => {
+  // A handle drag in flight: the east handle, previewing w-64.
+  const drag = async () => {
+    await select('n_h1')
+    await press(220, 60)
+    await move(280, 60)
+    expect(sent('bildr:style-preview').at(-1)).toEqual({ type: 'bildr:style-preview', nodeId: 'n_h1', style: { w: '64' } })
+  }
+  /** The drag is over: its preview was dropped, nothing commits, and no listener of it is left to preview again. */
+  const expectEnded = async () => {
+    expect(sent('bildr:style-preview').at(-1)).toEqual({ type: 'bildr:style-preview', nodeId: 'n_h1', style: null })
+    const before = posted.length
+    await move(300, 60)
+    await release(300, 60)
+    expect(sent('bildr:style-commit')).toEqual([])
+    expect(posted.slice(before).filter(message => message.type === 'bildr:style-preview')).toEqual([])
+    expect(document.querySelector('[data-drag-label]')).toBeNull()
+  }
+
+  it('pointercancel (the browser took the pointer) cancels the drag', async () => {
+    await drag()
+    window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }))
+    await settle()
+    await expectEnded()
+  })
+
+  it('the window losing focus cancels the drag', async () => {
+    await drag()
+    window.dispatchEvent(new Event('blur'))
+    await settle()
+    await expectEnded()
+  })
+
+  it('losing the pointer capture cancels the drag', async () => {
+    await drag()
+    document.documentElement.dispatchEvent(new PointerEvent('lostpointercapture', { pointerId: 1, bubbles: true }))
+    await settle()
+    await expectEnded()
+  })
+
+  it('another pointer\'s cancel, blur-less events or lost capture do not end it', async () => {
+    await drag()
+    window.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 2, bubbles: true }))
+    document.documentElement.dispatchEvent(new PointerEvent('lostpointercapture', { pointerId: 2, bubbles: true }))
+    await settle()
+    expect(sent('bildr:style-preview').at(-1)?.style).toEqual({ w: '64' })
+    await release(280, 60)
+    expect(sent('bildr:style-commit')).toHaveLength(1)
+  })
+
+  it('the dragged node going (another selection, or none) cancels the drag', async () => {
+    await drag()
+    await select('n_head')
+    await expectEnded()
+  })
+
+  it('the dragged node being deselected cancels the drag', async () => {
+    await drag()
+    await select()
+    await expectEnded()
+  })
+
+  it('the frame going away mid-drag (dispose) cancels it too: the preview is dropped, no listener is left', async () => {
+    await drag()
+    wrapper?.unmount()
+    wrapper = undefined
+    await expectEnded()
+  })
+})
+
 describe('padding and gap handles', () => {
   it('a padding handle drags the side\'s key inward, snapped to the scale', async () => {
     // happy-dom has no stylesheet: the padding the token class would give (8 px = 2 units).

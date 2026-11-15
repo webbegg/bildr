@@ -93,4 +93,32 @@ describe('insertTarget', () => {
   it('is null for an unknown node', () => {
     expect(insertTarget(tree, 'missing', { x: 0, y: 0 }, [], false)).toBeNull()
   })
+
+  it('does not count a child with no box (hidden at this breakpoint, or not rendered) as before the pointer', () => {
+    // n_a, then a hidden child, then n_b: a pointer between n_a and n_b inserts after n_a, marked by a child that is on screen.
+    const three: ModelNode = { id: 'n_col', type: 'Column', children: [{ id: 'n_a', type: 'Text' }, { id: 'n_h', type: 'Text' }, { id: 'n_b', type: 'Text' }] }
+    const hidden = [new DOMRect(0, 0, 300, 40), new DOMRect(0, 0, 0, 0), new DOMRect(0, 100, 300, 40)]
+    expect(insertTarget(three, 'n_col', { x: 10, y: 60 }, hidden, false)).toMatchObject({ parentId: 'n_col', index: 1, position: 'before', markId: 'n_b' })
+    expect(insertTarget(three, 'n_col', { x: 10, y: 60 }, [hidden[0]!, null, hidden[2]!], false)).toMatchObject({ parentId: 'n_col', index: 1, position: 'before', markId: 'n_b' })
+    // A hidden child last: a pointer past the last visible child inserts right after it, not after the hidden one.
+    const trailing = [new DOMRect(0, 0, 300, 40), new DOMRect(0, 50, 300, 40), new DOMRect(0, 0, 0, 0)]
+    const tail: ModelNode = { id: 'n_col', type: 'Column', children: [{ id: 'n_a', type: 'Text' }, { id: 'n_b', type: 'Text' }, { id: 'n_h', type: 'Text' }] }
+    expect(insertTarget(tail, 'n_col', { x: 10, y: 500 }, trailing, false)).toMatchObject({ parentId: 'n_col', index: 2, position: 'after', markId: 'n_b' })
+    // Nothing on screen: the end of the container.
+    expect(insertTarget(three, 'n_col', { x: 10, y: 60 }, [null, null, null], false)).toMatchObject({ parentId: 'n_col', index: 3, position: 'inside', markId: 'n_col' })
+  })
+
+  it('in a wrapping row, a child on a later line is never before a pointer on an earlier line', () => {
+    // Line 1 (y 0–40): n_x at x 0–100, n_y at x 120–220. Line 2 (y 50–90): n_z at x 0–100.
+    const wrapped: ModelNode = { id: 'n_row', type: 'Row', children: [{ id: 'n_x', type: 'Button' }, { id: 'n_y', type: 'Button' }, { id: 'n_z', type: 'Button' }] }
+    const lines = [new DOMRect(0, 0, 100, 40), new DOMRect(120, 0, 100, 40), new DOMRect(0, 50, 100, 40)]
+    // On line 1, right of n_y's middle but with n_z (line 2, x past the pointer or not) not before: the slot is before n_z.
+    expect(insertTarget(wrapped, 'n_row', { x: 300, y: 10 }, lines, true)).toMatchObject({ index: 2, position: 'before', markId: 'n_z' })
+    // On line 1, left of n_x's middle: first.
+    expect(insertTarget(wrapped, 'n_row', { x: 10, y: 10 }, lines, true)).toMatchObject({ index: 0, markId: 'n_x' })
+    // On line 2, right of n_z: after everything.
+    expect(insertTarget(wrapped, 'n_row', { x: 300, y: 60 }, lines, true)).toMatchObject({ index: 3, position: 'after', markId: 'n_z' })
+    // On line 2, left of n_z's middle: the children of line 1 are before it.
+    expect(insertTarget(wrapped, 'n_row', { x: 10, y: 60 }, lines, true)).toMatchObject({ index: 2, position: 'before', markId: 'n_z' })
+  })
 })

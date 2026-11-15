@@ -375,7 +375,7 @@ function insertAt(event: MouseEvent): { slot: DropSlot, indicator: Indicator } |
   const id = reachableAt(event.target)
   const node = tree && id && render.value?.view === 'page' ? findNode(tree, id) : undefined
   if (!tree || !node) return null
-  const childRects = (node.children ?? []).map(child => firstCopy(child.id)?.getBoundingClientRect() ?? new DOMRect())
+  const childRects = (node.children ?? []).map(child => firstCopy(child.id)?.getBoundingClientRect() ?? null)
   const hit = insertTarget(tree, node.id, { x: event.clientX, y: event.clientY }, childRects, isRow(node.id))
   if (!hit) return null
   const slot = { ...hit, horizontal: isRow(hit.parentId) }

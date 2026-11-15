@@ -50,7 +50,7 @@ export function nearestUnlocked(root: ModelNode, id: string): string | null {
  * along its layout axis (`row`; `childRects` are its children's boxes, in order); a leaf takes it right
  * after itself. The caller resolves locks (`nearestUnlocked`) first. Null for an unknown node.
  */
-export function insertTarget(root: ModelNode, overId: string, point: Point, childRects: readonly Box[], row: boolean): DropSlot | null {
+export function insertTarget(root: ModelNode, overId: string, point: Point, childRects: ReadonlyArray<Box | null>, row: boolean): DropSlot | null {
   const path = pathTo(root, overId)
   const over = path?.at(-1)
   if (!path || !over) return null
@@ -59,15 +59,28 @@ export function insertTarget(root: ModelNode, overId: string, point: Point, chil
     const at = (parent.children ?? []).findIndex(child => child.id === over.id)
     return { parentId: parent.id, index: at + 1, position: 'after', markId: over.id, horizontal: false }
   }
-  // A child is before the pointer when the pointer is past its middle, or (in a wrapping row) on a later line.
-  const before = (rect: Box) => (row && point.y > rect.y + rect.height)
-    || (row ? point.x > rect.x + rect.width / 2 : point.y > rect.y + rect.height / 2)
   const children = (over.children ?? []).slice(0, childRects.length)
-  const index = children.reduce((last, _, i) => (before(childRects[i]!) ? i + 1 : last), 0)
+  // A child with no box (hidden at this breakpoint, not rendered) is nowhere on screen: it is never before the pointer.
+  const boxes = children.map((_, i) => {
+    const rect = childRects[i]
+    return rect && (rect.width > 0 || rect.height > 0) ? rect : null
+  })
+  // A child is before the pointer when the pointer is past its middle; in a wrapping row, one on an earlier line is
+  // before it and one on a later line is not, and only children on the pointer's line compare x.
+  const before = (rect: Box) => {
+    if (!row) return point.y > rect.y + rect.height / 2
+    if (point.y > rect.y + rect.height) return true
+    if (point.y < rect.y) return false
+    return point.x > rect.x + rect.width / 2
+  }
+  const index = boxes.reduce((last, rect, i) => (rect && before(rect) ? i + 1 : last), 0)
   if (!children.length) return { parentId: over.id, index: 0, position: 'inside', markId: over.id, horizontal: row }
-  return index < children.length
-    ? { parentId: over.id, index, position: 'before', markId: children[index]!.id, horizontal: row }
-    : { parentId: over.id, index, position: 'after', markId: children.at(-1)!.id, horizontal: row }
+  // The indicator is drawn against a child that is on screen: the next one, else the last one before.
+  const next = boxes.findIndex((rect, i) => i >= index && rect)
+  if (next >= 0) return { parentId: over.id, index, position: 'before', markId: children[next]!.id, horizontal: row }
+  const prev = boxes.findLastIndex(rect => rect)
+  if (prev >= 0) return { parentId: over.id, index, position: 'after', markId: children[prev]!.id, horizontal: row }
+  return { parentId: over.id, index: children.length, position: 'inside', markId: over.id, horizontal: row }
 }
 
 export function dropTarget(
