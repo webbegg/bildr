@@ -348,9 +348,14 @@ export const inputOf = (selector: string): HTMLInputElement => {
   return (element.matches('input, textarea') ? element : element.querySelector('input, textarea')) as HTMLInputElement
 }
 
-/** Shows variant `id` (null: the primary) of the component being edited, by its row in the Variants section (the panel shows for the root when nothing is selected). */
+/** Shows variant `id` (null: the primary) of the component being edited, by its row in the Variants section (with nothing selected the panel shows only a hint, as the hosted editor's does, so the root is selected first). */
 export const showVariant = async (id: string | null) => {
-  must(`[data-variant-row="${id ?? 'primary'}"] button[aria-pressed]`).click()
+  const row = `[data-variant-row="${id ?? 'primary'}"] button[aria-pressed]`
+  if (!document.body.querySelector(row)) {
+    const owner = Object.values(world.model.modules).flatMap(entry => entry.components).find(component => id === null || component.variants.some(variant => variant.id === id))
+    if (owner) await select(owner.root.id)
+  }
+  must(row).click()
   await settle()
 }
 

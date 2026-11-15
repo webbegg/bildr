@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { useEditor } from '../../../editor/useEditor.ts'
+import { pagesUsingEntity } from '../../../shared/dataModel.ts'
 import type { DataConnection } from '../../../shared/dataModel.ts'
 
 /**
@@ -42,6 +43,17 @@ function show() {
  */
 async function remove() {
   const used = collections.value
+  // A page using one of them makes the module refuse that entity's delete: say so before anything is deleted.
+  const blocked = editor.model
+    ? used.flatMap((entry) => {
+        const pages = pagesUsingEntity(editor.model!, entry.id)
+        return pages.length ? [`${entry.name} (${pages.map(page => `"${page.name}"`).join(', ')})`] : []
+      })
+    : []
+  if (blocked.length) {
+    editor.error = `"${connection.name}" cannot be deleted: pages use its collections: ${blocked.join('; ')}. Change those pages first. Nothing was deleted`
+    return
+  }
   const names = used.map(entry => entry.name)
   const ok = await editor.confirm(used.length
     ? {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { applyEdit } from '../../../codegen/src/edit/index.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 import { allByTestId, byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
-import { caretAtEnd, check, choose, combo, insertComponent, insertType, menuLabels, open, optionLabels, pickOpenItem, propInput, propRow, select, selectOption, setupHarness, variablePicker } from './harness.ts'
+import { caretAtEnd, check, choose, combo, find, indexPage, insertComponent, insertType, menuLabels, open, optionLabels, pickOpenItem, propInput, propRow, propSelect, select, selectOption, setupHarness, variablePicker, world } from './harness.ts'
 
 /**
  * The binding panels (P5, mapping §4): a List's source and its query's sort, filter and
@@ -139,6 +139,104 @@ describe('what a prop can bind', () => {
     expect(lastProps(actions)).toMatchObject({ props: { text: 'Set {braces} here' } })
     await typeInto(propInput('text'), '')
     expect(lastProps(actions)).toMatchObject({ props: { text: null } })
+  })
+
+  it('refuses a text that binds a name next to a brace group that is no name (the model has no escape): a field error, nothing written, and the text typed stays', async () => {
+    const { actions } = await open({ node_update_props: ok() }, 'pg_index')
+    await select('n_h1')
+    await typeInto(propInput('text'), 'By {site.name} {braces}')
+    expect(actions.named('node_update_props')).toEqual([])
+    const error = propRow('text')!.querySelector<HTMLElement>('[data-field-error]')
+    expect(error?.textContent).toContain('"{braces}" is not a name this element can read')
+    expect(propInput('text')?.getAttribute('aria-invalid')).toBe('true')
+    expect(propInput('text')?.value).toBe('By {site.name} {braces}')
+
+    // Fixing the text clears the error and writes it.
+    await typeInto(propInput('text'), 'By {site.name}')
+    expect(propRow('text')!.querySelector('[data-field-error]')).toBeNull()
+    expect(propInput('text')?.getAttribute('aria-invalid')).toBeNull()
+    expect(lastProps(actions)).toMatchObject({ props: { text: { $template: 'By {site.name}' } } })
+  })
+
+  it('does not add a name from the binding dot to a text that holds a brace group that is no name (it would be an invalid template)', async () => {
+    find(indexPage().root, 'n_h1')!.props!.text = 'Set {braces}'
+    const { actions } = await open({ node_update_props: ok() }, 'pg_index')
+    await select('n_h1')
+    await menuLabels(propRow('text')!.querySelector('[data-binding-dot]'))
+    const item = [...document.body.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find(element => element.textContent?.trim().startsWith('Bind to data'))
+    expect(item?.getAttribute('data-disabled')).not.toBeNull()
+    expect(item?.textContent).toContain('{braces}')
+    expect(actions.named('node_update_props')).toEqual([])
+  })
+
+  it('shows a value with a name out of scope, or on a prop that is not bindable, as a read-only chip with Unbind: it is never turned into plain text by an edit', async () => {
+    find(indexPage().root, 'n_h1')!.props!.text = { $bind: 'ghost.title' }
+    find(indexPage().root, 'n_about_image')!.props!.alt = { $template: 'By {ghost.author}' }
+    const { actions } = await open({ node_update_props: ok() }, 'pg_index')
+    await select('n_h1')
+    const chip = propRow('text')!.querySelector<HTMLElement>('[data-binding-chip]')
+    expect(chip?.textContent).toContain('{ghost.title}')
+    expect(propInput('text')).toBeNull()
+    // The chip is read-only: its label opens nothing, and nothing was written.
+    expect(chip?.querySelector('[data-binding-chip-open]')).toBeNull()
+    expect(actions.named('node_update_props')).toEqual([])
+    await click(chip!.querySelector('[data-binding-chip-unbind]'))
+    expect(lastProps(actions)).toEqual({ file: 'pg_index', nodeId: 'n_h1', props: { text: null } })
+
+    await select('n_about_image')
+    expect(propRow('alt')!.querySelector('[data-binding-chip]')?.textContent).toContain('By {ghost.author}')
+    expect(propInput('alt')).toBeNull()
+  })
+
+  it('shows an expression on a prop a binding cannot fill (an Input\'s label) as a chip, and an expression a text cannot hold (a route name) too', async () => {
+    const page = world.model.modules.blog!.pages.find(entry => entry.id === 'pg_new_post')!
+    find(page.root, 'n_title')!.props!.label = { $bind: 'site.name' }
+    find(page.root, 'n_title')!.props!.placeholder = { $route: 'id' }
+    const { actions } = await open({ node_update_props: ok() }, 'pg_new_post')
+    await select('n_title')
+    expect(propRow('label')!.querySelector('[data-binding-chip]')?.textContent).toContain('{site.name}')
+    expect(propRow('placeholder')!.querySelector('[data-binding-chip]')?.textContent).toContain('$route')
+    expect(propInput('label')).toBeNull()
+    await click(propRow('label')!.querySelector('[data-binding-chip-unbind]'))
+    expect(lastProps(actions)).toEqual({ file: 'pg_new_post', nodeId: 'n_title', props: { label: null } })
+  })
+
+  it('shows an expression on a boolean, select, number or page prop as a chip, not as a value the control shows', async () => {
+    const root = indexPage().root
+    find(root, 'n_head')!.props = { ...find(root, 'n_head')!.props, wrap: { $bind: 'site.flag' } }
+    find(root, 'n_h1')!.props!.level = { $bind: 'site.level' }
+    find(root, 'n_read_more')!.props!.to = { $bind: 'site.target' }
+    const page = world.model.modules.blog!.pages.find(entry => entry.id === 'pg_new_post')!
+    find(page.root, 'n_title')!.props!.rows = { $bind: 'site.rows' }
+    const { actions } = await open({ node_update_props: ok() }, 'pg_index')
+    const chipOf = (name: string) => propRow(name)!.querySelector<HTMLElement>('[data-binding-chip]')
+
+    await select('n_head')
+    expect(chipOf('wrap')?.textContent).toContain('{site.flag}')
+    expect([...propRow('wrap')!.querySelectorAll('button')].map(button => button.textContent?.trim())).not.toEqual(expect.arrayContaining(['On', 'Off']))
+    await select('n_h1')
+    expect(chipOf('level')?.textContent).toContain('{site.level}')
+    expect(propSelect('level')).toBeNull()
+    await select('n_read_more')
+    expect(chipOf('to')?.textContent).toContain('{site.target}')
+    expect(propSelect('to')).toBeNull()
+    expect(actions.named('node_update_props')).toEqual([])
+
+    await open({ node_update_props: ok() }, 'pg_new_post')
+    await select('n_title')
+    expect(chipOf('rows')?.textContent).toContain('{site.rows}')
+    expect(propInput('rows')).toBeNull()
+  })
+
+  it('offers Bind to data only on a prop a binding can fill: a Heading\'s text, not an Input\'s label, a Button\'s URL or a Heading\'s level', async () => {
+    await open({ node_update_props: ok() }, 'pg_new_post')
+    await select('n_title')
+    expect(propRow('label')!.querySelector('[data-binding-dot]')).toBeNull()
+    expect(propRow('placeholder')!.querySelector('[data-binding-dot]')).toBeNull()
+    await select('n_submit')
+    expect(propRow('href')!.querySelector('[data-binding-dot]')).toBeNull()
+    // Its text is one a binding can fill.
+    expect(await menuLabels(propRow('text')!.querySelector('[data-binding-dot]'))).toEqual(['Bind to data'])
   })
 
   it('shows what a text is bound to as {name} text, and unbinds it with Reset to default', async () => {

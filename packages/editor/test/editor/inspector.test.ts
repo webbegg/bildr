@@ -1,5 +1,7 @@
+import { defineComponent, h } from 'vue'
 import { describe, expect, it } from 'vitest'
-import { click, settle, typeInto } from '../helpers.ts'
+import EditorCommitInput from '../../src/components/editor/EditorCommitInput.vue'
+import { click, mountWithApp, settle, typeInto } from '../helpers.ts'
 import { byLabel, inspectorHead, menuItem, menuLabels, open, pickOpenItem, postCard, propInput, propRow, propSelect, resetStyle, select, selectLayer, selectOption, setupHarness, showVariant, styleField, typeStyle } from '../design/harness.ts'
 
 /**
@@ -164,6 +166,20 @@ describe('the prop sections', () => {
   })
 })
 
+describe('Visible', () => {
+  // The hosted inspector has one Visible: the Styles row, which hides the node at the device. The module's own `visible`
+  // prop (a condition a name can drive) stays in Advanced, but under its own name: two rows called Visible read as a bug.
+  it('is one row, the Styles one; the prop that shows or hides a node by a condition is Show', async () => {
+    await open()
+    await select('n_h1')
+    const labels = qa('[data-field-label]').map(label => label.textContent?.trim())
+    expect(labels.filter(label => label === 'Visible')).toHaveLength(1)
+    expect(section('Styles')!.querySelector('[data-style-row="visible"]')).not.toBeNull()
+    expect(section('Advanced')!.querySelector('[data-prop-row="visible"]')?.textContent).toContain('Show')
+    expect(section('Advanced')!.textContent).not.toContain('Visible')
+  })
+})
+
 describe('the style sections', () => {
   it('shows Size, Layout, Styles and Typography, writes a scale field at the edited device and previews nothing it does not hold', async () => {
     const { actions } = await open({ node_update_style: ok() })
@@ -198,8 +214,8 @@ describe('the style sections', () => {
 
   it('shows the style of the node as the active variant has it, and a write is the variant\'s override', async () => {
     const { actions } = await open({ component_variant_set_override: ok() }, 'cmp_post_card')
-    await showVariant('var_compact')
     await select('n_card')
+    await showVariant('var_compact')
     expect(styleField('gap')!.querySelector('input')!.value).toBe('1')
     await typeStyle('gap', '4')
     expect(actions.named('component_variant_set_override').at(-1)?.input).toEqual({ component: 'cmp_post_card', variant: 'var_compact', nodeId: 'n_card', style: { gap: '4' } })
@@ -229,8 +245,8 @@ describe('the colour field of a Fill', () => {
 describe('the variant overrides', () => {
   it('lists what the active variant overrides on the node, and resets one or all (the override is removed)', async () => {
     const { actions } = await open({ component_variant_set_override: ok() }, 'cmp_post_card')
-    await showVariant('var_compact')
     await select('n_card')
+    await showVariant('var_compact')
     const rows = () => qa('[data-variant-overrides] [data-override]').map(row => row.dataset.override)
     expect(q('[data-variant-overrides]')?.getAttribute('data-style-section')).toBe('compact overrides')
     expect(rows()).toEqual(['style:gap', 'style:p'])
@@ -256,8 +272,8 @@ describe('the variant overrides', () => {
 
   it('writes a prop edit in the variant as its override, and Reset to default is a null override (the primary\'s value comes back)', async () => {
     const { actions } = await open({ component_variant_set_override: ok() }, 'cmp_post_card')
-    await showVariant('var_compact')
     await select('n_excerpt')
+    await showVariant('var_compact')
     // `hidden` is the variant's override of this node; the text prop is the primary's.
     await typeInto(propInput('text'), 'Short')
     expect(actions.named('component_variant_set_override').at(-1)?.input).toMatchObject({ variant: 'var_compact', nodeId: 'n_excerpt', props: { text: 'Short' } })
@@ -320,9 +336,27 @@ describe('the binding dot and its chip', () => {
   })
 })
 
+describe('a numeric commit field', () => {
+  // `Number('  ')` is 0: a field of spaces alone must reach its owner as blank, never as text it could turn into a number.
+  it('commits spaces alone as blank, a typo is refused and a number is kept', async () => {
+    const commits: string[] = []
+    await mountWithApp(defineComponent({ render: () => h(EditorCommitInput, { 'modelValue': '3', 'numeric': true, 'aria-label': 'Count', 'onCommit': (value: string) => commits.push(value) }) }))
+    const input = () => q('input[aria-label="Count"]') as HTMLInputElement
+    await typeInto(input(), '   ')
+    await typeInto(input(), 'abc')
+    await typeInto(input(), '7')
+    expect(commits).toEqual(['', '7'])
+  })
+})
+
 describe('the component and layout panels', () => {
-  it('mounts the component sections in the component view, for the root when nothing is selected', async () => {
+  it('shows only the hint when nothing is selected in the component view, as the hosted editor does, and the component sections once the root is', async () => {
     await open({}, 'cmp_post_card')
+    expect(q('[data-right-panel]')?.textContent).toContain('Select an element to style it.')
+    expect(q('[data-component-variants]')).toBeNull()
+    expect(q('[data-component-interactions]')).toBeNull()
+    expect(section('Component properties')).toBeNull()
+    await select('n_card')
     expect(q('[data-component-variants]')).not.toBeNull()
     expect(q('[data-component-interactions]')).not.toBeNull()
     expect(section('Component properties')).not.toBeNull()
@@ -332,8 +366,13 @@ describe('the component and layout panels', () => {
     expect(section('Properties')).not.toBeNull()
   })
 
-  it('mounts the layout sections in the layout view, for the root when nothing is selected', async () => {
+  it('shows only the hint when nothing is selected in the layout view, and the layout sections once the root is', async () => {
     await open({}, 'lay_main')
+    expect(q('[data-right-panel]')?.textContent).toContain('Select an element to style it.')
+    expect(q('[data-layout-settings]')).toBeNull()
+    expect(q('[data-layout-slots]')).toBeNull()
+    expect(q('[data-layout-variables]')).toBeNull()
+    await selectLayer('n_root')
     expect(q('[data-layout-settings]')).not.toBeNull()
     expect(q('[data-layout-slots]')).not.toBeNull()
     expect(q('[data-layout-variables]')).not.toBeNull()

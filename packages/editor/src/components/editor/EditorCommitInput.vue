@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { INPUT_UI, mergeUi, TEXTAREA_UI, VARIABLE_FIELD_UI } from '../../editorUi.ts'
+import { FIELD_INVALID, INPUT_UI, mergeUi, TEXTAREA_UI, VARIABLE_FIELD_UI } from '../../editorUi.ts'
 
 /**
  * A text field that commits on change (blur or Enter) rather than on every
@@ -9,10 +9,13 @@ import { INPUT_UI, mergeUi, TEXTAREA_UI, VARIABLE_FIELD_UI } from '../../editorU
  * Insert variable button (the names the selected node can read, see
  * EditorVariablePicker); an insert commits at once. `variant="outline"` is deprecated.
  * `numeric` (the module's number values): a typo (`abc`) is refused and the saved value shows
- * again, so it can never reach an action as `null` and remove the value.
+ * again, so it can never reach an action as `null` and remove the value. A text of spaces alone
+ * is blank like an empty one: it commits as `''`, never as a number (`Number('  ')` is 0).
+ * `invalid` marks the field as refused by its owner (which shows why); `edit` tells the owner the
+ * draft changed, so it can clear that.
  */
-const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft', variables?: boolean, numeric?: boolean }>(), { size: 'sm', variant: 'soft', variables: false })
-const emit = defineEmits<{ commit: [value: string] }>()
+const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft', variables?: boolean, numeric?: boolean, invalid?: boolean }>(), { size: 'sm', variant: 'soft', variables: false, invalid: false })
+const emit = defineEmits<{ commit: [value: string], edit: [] }>()
 
 const draft = ref(props.modelValue)
 watch(() => props.modelValue, (value) => {
@@ -22,7 +25,8 @@ watch(() => props.modelValue, (value) => {
 const ui = computed(() => {
   if (props.variant !== 'soft') return undefined
   const base = props.multiline ? TEXTAREA_UI : INPUT_UI
-  return props.variables ? mergeUi(base, VARIABLE_FIELD_UI) : base
+  const field = props.variables ? mergeUi(base, VARIABLE_FIELD_UI) : base
+  return props.invalid ? mergeUi(field, { base: FIELD_INVALID }) : field
 })
 
 function commit() {
@@ -31,7 +35,7 @@ function commit() {
     draft.value = props.modelValue
     return
   }
-  emit('commit', draft.value)
+  emit('commit', props.numeric && draft.value.trim() === '' ? '' : draft.value)
 }
 
 function insert(text: string) {
@@ -50,7 +54,9 @@ function insert(text: string) {
     :size="size"
     :variant="variant"
     :ui="ui"
+    :aria-invalid="invalid || undefined"
     class="w-full"
+    @update:model-value="emit('edit')"
     @change="commit"
   >
     <template
@@ -67,7 +73,9 @@ function insert(text: string) {
     :size="size"
     :variant="variant"
     :ui="ui"
+    :aria-invalid="invalid || undefined"
     class="w-full"
+    @update:model-value="emit('edit')"
     @change="commit"
     @keydown.esc="draft = modelValue"
   >

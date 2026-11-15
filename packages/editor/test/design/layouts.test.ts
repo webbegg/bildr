@@ -80,6 +80,9 @@ const rowOf = (name: string) => byLabel(name)!.closest<HTMLElement>('.group\\/ro
 describe('Slots and variables of a layout', () => {
   it('lists the slots and variables of the layout on its root, with its name; the children slot is the page content, not renamed or removed', async () => {
     await open({}, MAIN)
+    // With nothing selected the inspector shows only its hint (U-E2): the root is selected first.
+    expect(pick('[data-layout-settings]')).toBeNull()
+    await select('n_root')
     expect(must('[data-layout-settings]').textContent).toContain('Name')
     expect((byLabel('Layout name') as HTMLInputElement).value).toBe('main')
     expect(pick('[data-layout-slots]')?.getAttribute('data-style-section')).toBe('Slots')
@@ -100,6 +103,7 @@ describe('Slots and variables of a layout', () => {
   it('makes a container a slot named Slot, renames a slot and removes one', async () => {
     const { actions } = await open({ layout_slot_add: ok({ slotId: 'side' }), layout_slot_update: ok(), layout_slot_remove: ok() }, MAIN)
     // The root takes no slot of its own: its + has no menu.
+    await select('n_root')
     expect(pick('[data-layout-slots] [data-section-action="add"]')).toBeNull()
 
     await selectLayer('n_nav')
@@ -131,12 +135,14 @@ describe('Slots and variables of a layout', () => {
 
   it('renames the layout from its Name row', async () => {
     const { actions } = await open({ layout_rename: ok() }, MAIN)
+    await select('n_root')
     await typeInto(byLabel('Layout name'), 'site')
     expect(actions.named('layout_rename').map(call => call.input)).toEqual([{ layout: MAIN, name: 'site' }])
   })
 
   it('edits a variable in the variables modal: its default and its details, and deletes it after a confirm', async () => {
     const { actions } = await open({ layout_variable_update: ok(), layout_variable_remove: ok() }, MAIN)
+    await select('n_root')
     await click(must('[data-layout-variables] [data-section-action="edit"]'))
     expect(must('[data-properties-modal]').getAttribute('data-properties-kind')).toBe('layout')
     expect(must('[data-property-details]').dataset.propertyDetails).toBe('prop_title')

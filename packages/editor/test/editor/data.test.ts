@@ -4,7 +4,7 @@ import type { AppRoutes } from '../helpers.ts'
 import DataView from '../../src/views/DataView.vue'
 import App from '../../src/App.vue'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
-import { baseHandlers, byLabel, menuItem, selectOption, setupHarness, world } from '../design/harness.ts'
+import { baseHandlers, byLabel, indexPage, menuItem, selectOption, setupHarness, world } from '../design/harness.ts'
 import type { Handlers } from '../design/harness.ts'
 
 /**
@@ -29,6 +29,11 @@ const open = async (extra: Handlers = {}, routes: AppRoutes = {}) => {
   const actions = mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), ...extra }, routes)
   const mounted = await mountWithApp(DataView, '/data')
   return { actions, ...mounted }
+}
+
+/** The fixture's index page shows the latest quotes, and a page that uses a collection keeps its connection. */
+const freeQuotes = () => {
+  indexPage().uses!.queries = indexPage().uses!.queries!.filter(use => use.query !== 'q_latest_quotes')
 }
 
 const inputs = (actions: Awaited<ReturnType<typeof open>>['actions'], name: string) => actions.named(name).map(call => call.input)
@@ -107,7 +112,9 @@ describe('the rows table', () => {
     expect(text(q('[data-records-error]'))).toContain('Showing the model\'s fixtures')
     expect(text(q('[data-records-error]'))).toContain('The app\'s list route for posts could not be reached.')
     expect(text(q('[data-records-count]'))).toBe('2 items')
-    expect(q('[data-cell-toggle]')?.getAttribute('aria-checked')).toBe('true')
+    // A boolean is shown, not a control: nothing in a cell looks clickable.
+    expect(qa('[data-record] [data-cell-bool]').map(cell => cell.getAttribute('data-cell-bool'))).toEqual(['true', 'false'])
+    expect(q('[data-record] [role="switch"], [data-cell-bool] button, [data-record] input')).toBeNull()
     // Read-only: no add row, no cell editors, no bulk delete.
     expect(q('[data-add-row], [data-cell-input], [data-records-add], [data-records-delete]')).toBeNull()
   })
@@ -363,6 +370,7 @@ describe('connections', () => {
   })
 
   it('renames a connection, and deletes it with its collections after a confirmation', async () => {
+    freeQuotes()
     const { actions } = await open({ datasource_update: ok(), entity_delete: ok(), datasource_delete: ok({ database: true }) })
     q('[data-connection-name]')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     await settle()
@@ -377,6 +385,49 @@ describe('connections', () => {
       ['entity_delete', { entity: 'ent_quote' }],
       ['datasource_delete', { datasource: 'ds_quotes' }]
     ])
+  })
+})
+
+describe('deleting a connection', () => {
+  const deleteConnection = async () => menuItem(byLabel('Connection actions'), 'Delete')
+  const deleteAll = () => click(qa('button').find(button => button.textContent?.trim() === 'Delete all') ?? null)
+  /** A second collection over the same connection. */
+  const addSecondCollection = () => {
+    const mod = world.model.modules.blog!
+    const entity = structuredClone(mod.entities.find(entry => entry.id === 'ent_quote')!)
+    const repository = structuredClone(mod.repositories.find(entry => entry.id === 'repo_quote')!)
+    Object.assign(entity, { id: 'ent_note', name: 'Note', plural: 'notes' })
+    entity.fields.forEach((field, index) => Object.assign(field, { id: `fld_n_${index}` }))
+    Object.assign(repository, { id: 'repo_note', entity: 'ent_note' })
+    mod.entities.push(entity)
+    mod.repositories.push(repository)
+  }
+
+  it('refuses up front, naming the pages, when a page uses one of its collections: nothing is deleted', async () => {
+    // The fixture's index page shows the latest quotes.
+    expect(indexPage().uses!.queries!.some(use => use.query === 'q_latest_quotes')).toBe(true)
+    const { actions } = await open({ entity_delete: ok(), datasource_delete: ok() })
+    await deleteConnection()
+    expect(q('[data-confirm]')).toBeNull()
+    expect(q('[data-testid="design-error"]')?.textContent).toContain('"index"')
+    expect(q('[data-testid="design-error"]')?.textContent).toContain('Quote')
+    expect(actions.calls.filter(call => call.name === 'entity_delete' || call.name === 'datasource_delete')).toEqual([])
+  })
+
+  it('stops at the second collection the module refuses, and keeps the connection', async () => {
+    freeQuotes()
+    addSecondCollection()
+    const { actions } = await open({
+      entity_delete: input => input.entity === 'ent_note' ? new Failure(422, 'invalid', 'Entity Note is still used by cmp_x (properties). Change them first') : ok()(),
+      datasource_delete: ok({ database: true })
+    })
+    await deleteConnection()
+    await deleteAll()
+    expect(actions.calls.filter(call => call.name === 'entity_delete' || call.name === 'datasource_delete').map(call => [call.name, call.input])).toEqual([
+      ['entity_delete', { entity: 'ent_quote' }],
+      ['entity_delete', { entity: 'ent_note' }]
+    ])
+    expect(q('[data-testid="design-error"]')?.textContent).toContain('Entity Note is still used by')
   })
 })
 

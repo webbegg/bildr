@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Value } from '@bildr/codegen/model'
-import { boundPaths, insertAt, isExpression, isTextBinding, textValue, valueText, withPath } from '../../src/shared/bindings.ts'
+import { appendProblem, boundPaths, expressionText, insertAt, isExpression, isReadableBinding, isTextBinding, textProblem, textValue, valueText, withPath } from '../../src/shared/bindings.ts'
 
 /**
  * How a text field reads and writes a prop that can be bound: the model's `{ $bind }` and
@@ -52,6 +52,67 @@ describe('textValue', () => {
     for (const value of values) {
       expect(textValue(valueText(value), scope)).toEqual(value)
     }
+  })
+})
+
+describe('textProblem', () => {
+  // The model has no escape syntax: every `{...}` of a `$template` must be a path (load.ts), so a text that binds a name
+  // and holds another brace group cannot be written as one.
+  it('refuses a text that binds a name and holds a brace group that is no name in scope, naming the group', () => {
+    expect(textProblem('{post.title} {braces}', scope)).toBe('"{braces}" is not a name this element can read, so it can\'t sit in a text that binds names.')
+    expect(textProblem('By {post.author} {}', scope)).toContain('"{}"')
+    expect(textProblem('{ post.title } and {site.name}', scope)).toContain('"{ post.title }"')
+    expect(textProblem('{site.name} {missing.name}', scope)).toContain('"{missing.name}"')
+    // The model reads a group from a `{` to the next `}`, so an open brace before a name makes one group.
+    expect(textProblem('an open { brace and {site.name}', scope)).toContain('"{ brace and {site.name}"')
+  })
+
+  it('accepts a text that binds only names in scope, and plain text with braces (it stays a plain string)', () => {
+    expect(textProblem('{post.title}', scope)).toBeUndefined()
+    expect(textProblem('By {post.author} · {site.name}', scope)).toBeUndefined()
+    expect(textProblem('Set {braces} here', scope)).toBeUndefined()
+    expect(textProblem('{post.title}', [])).toBeUndefined()
+    expect(textProblem('an open brace { and {site.name', scope)).toBeUndefined()
+    expect(textProblem('', scope)).toBeUndefined()
+  })
+})
+
+describe('isReadableBinding', () => {
+  // A text field shows a { $bind } or { $template } as {name} text only when every name in it is one the node can read:
+  // else it stays an expression the field does not edit (it would be rewritten as plain text).
+  it('is true for a { $bind } or { $template } whose names are all in scope, and for a template with no name', () => {
+    expect(isReadableBinding({ $bind: 'post.title' }, scope)).toBe(true)
+    expect(isReadableBinding({ $template: 'By {post.author} · {site.name}' }, scope)).toBe(true)
+    expect(isReadableBinding({ $template: 'Just text' }, scope)).toBe(true)
+  })
+
+  it('is false when a name is out of scope, a group is no path, or the value is another expression or no expression', () => {
+    expect(isReadableBinding({ $bind: 'ghost.title' }, scope)).toBe(false)
+    expect(isReadableBinding({ $bind: 'post.title' }, [])).toBe(false)
+    expect(isReadableBinding({ $template: 'By {ghost.name}' }, scope)).toBe(false)
+    expect(isReadableBinding({ $template: '{post.title} {a b}' }, scope)).toBe(false)
+    expect(isReadableBinding({ $route: 'id' }, scope)).toBe(false)
+    expect(isReadableBinding('post.title', scope)).toBe(false)
+    expect(isReadableBinding(undefined, scope)).toBe(false)
+  })
+})
+
+describe('expressionText', () => {
+  it('shows a { $bind } as {name}, a { $template } as its text and another expression as the JSON it is', () => {
+    expect(expressionText({ $bind: 'post.title' })).toBe('{post.title}')
+    expect(expressionText({ $template: 'By {post.author}' })).toBe('By {post.author}')
+    expect(expressionText({ $route: 'id' })).toBe('{"$route":"id"}')
+  })
+})
+
+describe('appendProblem', () => {
+  it('refuses adding a name to a text when the result would hold a brace group that is no name in scope (an invalid template)', () => {
+    expect(appendProblem('Set {braces}', 'site.name', scope)).toContain('"{braces}"')
+    // An open brace joins the name added after it into one group.
+    expect(appendProblem('Set {braces', 'site.name', scope)).toContain('"{braces{site.name}"')
+    expect(appendProblem('Posts', 'site.name', scope)).toBeUndefined()
+    expect(appendProblem('By {post.author}', 'site.name', scope)).toBeUndefined()
+    expect(appendProblem('', 'site.name', scope)).toBeUndefined()
   })
 })
 

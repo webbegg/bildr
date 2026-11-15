@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { FOCUS_RING } from '../../editorUi.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import type { InteractionEvent } from '../../editor/useEditor.ts'
@@ -44,6 +44,11 @@ async function add(item: string) {
   const key = await editor.addInteraction(editor.variant?.id ?? null, item.slice(0, at) as InteractionEvent, item.slice(at + 1))
   if (key) openRow.value = key
 }
+
+// The key is the row's place in its list: when the editor drops the selection (a row went or came), the popover must not stay on whatever now holds that place.
+watch(() => editor.interactionId, (key) => {
+  if (openRow.value && key !== openRow.value) openRow.value = null
+})
 
 function setOpen(key: string, open: boolean) {
   openRow.value = open ? key : null

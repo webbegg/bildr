@@ -204,6 +204,14 @@ describe('editorCommands', () => {
     expect(find(root.commands, 'delete').enabled(root.ctx)).toBe(false)
   })
 
+  it('enables Preview unless a detail page has no record to show (the component view previews elsewhere)', () => {
+    expect(find(context().commands, 'preview').enabled(context().ctx)).toBe(true)
+    const none = context({ previewHint: 'Add a record to preview this detail page' })
+    expect(find(none.commands, 'preview').enabled(none.ctx)).toBe(false)
+    const inComponent = context({ previewHint: 'Add a record to preview this detail page', component: {} })
+    expect(find(inComponent.commands, 'preview').enabled(inComponent.ctx)).toBe(true)
+  })
+
   it('enables Undo and Redo by the history counts, and labels the toggles by their state', () => {
     const { ctx, commands } = context()
     expect(find(commands, 'undo').enabled(ctx)).toBe(true)

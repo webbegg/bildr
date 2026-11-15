@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Value } from '@bildr/codegen/model'
 import type { Provenance } from '@bildr/editor-core/styleFields'
 import { FIELD, SELECT_UI } from '../../editorUi.ts'
 import { useBinding } from '../../editor/useBinding.ts'
 import { useEditor } from '../../editor/useEditor.ts'
-import { isExpression, textValue, valueText } from '../../shared/bindings.ts'
+import { expressionText, isExpression, isReadableBinding, textProblem, textValue, valueText } from '../../shared/bindings.ts'
 import { BINDABLE } from '../../shared/nodeProps.ts'
 import type { PropDef } from '../../shared/nodeProps.ts'
 import { propOptions } from '../../shared/propGroups.ts'
@@ -24,6 +24,10 @@ import { propOptions } from '../../shared/propGroups.ts'
  * `{name}` tokens for the names in scope: the field shows a `{ $bind }` as `{name}`, a
  * `{ $template }` as its text, and gives the text back as the value it means (see
  * `textValue`), so a prop is never a string with `{{ }}`. An empty text removes the prop (`null`).
+ * A text the model cannot keep (a name next to a `{brace}` that is none) is refused with a field error, not
+ * written and not turned into plain text. An expression the control cannot hold (a name out of scope, a
+ * binding on a prop that is not bindable, any expression on a boolean, select, number, icon or page prop) shows
+ * as a read-only chip with Unbind, so an edit never replaces it by accident: only Unbind or a new commit does.
  * A link to a page is a `{ page }` value (`to`), the pages of the project listed by name.
  */
 const props = defineProps<{ def: PropDef, value: Value, changed: boolean, bindable?: boolean }>()
@@ -33,7 +37,7 @@ const binding = useBinding('prop', () => props.def.name)
 /** Bound to a property here: the property's chip takes the control's place. */
 const chipped = computed(() => !!props.bindable && !!binding.ownBound.value)
 
-const provenance = computed<Provenance>(() => (props.changed ? { state: 'set', key: props.def.name, value: valueText(props.value) || String(props.value) } : { state: 'unset' }))
+const provenance = computed<Provenance>(() => (props.changed ? { state: 'set', key: props.def.name, value: valueText(props.value) || (isExpression(props.value) ? expressionText(props.value) : String(props.value)) } : { state: 'unset' }))
 const BOOLEAN_ITEMS = [{ value: 'true', label: 'On' }, { value: 'false', label: 'Off' }]
 
 const NONE = '__none'
@@ -44,7 +48,22 @@ const scope = computed(() => {
   const node = editor.selected
   return props.bindable && node && BINDABLE[node.type]?.includes(props.def.name) ? editor.scopeOf(node.id).map(entry => entry.name) : []
 })
-const commitText = (entry: string) => emit('update', textValue(entry, scope.value))
+const TEXT_KINDS = ['text', 'textarea', 'image', 'link']
+/** Why the text typed was refused (a field error), until it is edited or the value changes. */
+const problem = ref('')
+watch(() => props.value, () => {
+  problem.value = ''
+})
+function commitText(entry: string) {
+  problem.value = textProblem(entry, scope.value) ?? ''
+  if (!problem.value) emit('update', textValue(entry, scope.value))
+}
+/** An expression the control cannot show or keep: its chip stands in, read-only, with Unbind. */
+const expression = computed(() => {
+  const value = props.value
+  if (!isExpression(value) || (props.def.kind === 'page' && typeof value.page === 'string')) return undefined
+  return TEXT_KINDS.includes(props.def.kind) && isReadableBinding(value, scope.value) ? undefined : value
+})
 
 const pageItems = computed(() => [{ label: 'None', value: NONE }, ...editor.pages.map(page => ({ label: `${page.name} (${page.path})`, value: page.id }))])
 const pageId = computed(() => (isExpression(props.value) && typeof props.value.page === 'string' ? props.value.page : NONE))
@@ -88,17 +107,35 @@ const setOption = (value: string) => emit('update', props.def.numeric ? Number(v
         mode="prop"
         :name="def.name"
       />
-      <EditorCommitInput
-        v-else-if="def.kind === 'text' || def.kind === 'textarea' || def.kind === 'image' || def.kind === 'link'"
-        :model-value="text"
-        :multiline="def.kind === 'textarea'"
-        :placeholder="def.placeholder ?? (def.kind === 'image' ? 'https://' : undefined)"
-        :aria-label="def.label"
-        :variables="scope.length > 0"
-        size="xs"
-        variant="soft"
-        @commit="commitText"
+      <EditorBindingValue
+        v-else-if="expression"
+        mode="prop"
+        :name="def.name"
+        :expression="expression"
+        @unbind="emit('update', null)"
       />
+      <template v-else-if="TEXT_KINDS.includes(def.kind)">
+        <EditorCommitInput
+          :model-value="text"
+          :multiline="def.kind === 'textarea'"
+          :placeholder="def.placeholder ?? (def.kind === 'image' ? 'https://' : undefined)"
+          :aria-label="def.label"
+          :variables="scope.length > 0"
+          :invalid="!!problem"
+          size="xs"
+          variant="soft"
+          @commit="commitText"
+          @edit="problem = ''"
+        />
+        <p
+          v-if="problem"
+          class="mt-1 text-[12px] leading-4 text-error"
+          role="alert"
+          data-field-error
+        >
+          {{ problem }}
+        </p>
+      </template>
       <EditorIconInput
         v-else-if="def.kind === 'icon'"
         :model-value="text"

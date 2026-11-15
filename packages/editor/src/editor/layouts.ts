@@ -28,9 +28,10 @@ const instances = (root: ModelNode, id: string): boolean => (root.type === INSTA
 
 /**
  * The first page that shows component `componentId`: directly, through its
- * layout, or inside another component shown there; null when no page does.
+ * layout, or inside another component shown there, among the pages `accept`s;
+ * null when no page does.
  */
-export const previewPageFor = (model: Model, componentId: string): PageFile | null => {
+export const previewPageFor = (model: Model, componentId: string, accept: (page: PageFile) => boolean = () => true): PageFile | null => {
   const components = Object.values(model.modules).flatMap(entry => entry.components)
   const shown = new Set<string>()
   const queue = [componentId]
@@ -44,5 +45,5 @@ export const previewPageFor = (model: Model, componentId: string): PageFile | nu
   const showsIn = (root: ModelNode) => [...shown].some(id => instances(root, id))
   const layouts = new Set(model.layouts.filter(layout => showsIn(layout.root)).map(layout => layout.id))
   const pages = Object.values(model.modules).flatMap(entry => entry.pages)
-  return pages.find(page => showsIn(page.root) || (!!page.layout && layouts.has(page.layout))) ?? null
+  return pages.find(page => accept(page) && (showsIn(page.root) || (!!page.layout && layouts.has(page.layout)))) ?? null
 }

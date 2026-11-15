@@ -133,12 +133,30 @@ async function create() {
   return await editor.run('entity_create', { name: typed, ...(plural ? { plural } : {}), source: props.connection.id, fields: fields.value, endpoints }) as { entityId: string } | undefined
 }
 
-/** The saved fields become the mapping one step at a time; the first refusal stops it and says why. */
+/** The saved fields become the mapping one step at a time; the first refusal stops it, says why and syncs the rows with what was saved. */
 async function applyMapping() {
   for (const step of fieldSteps(props.collection!.id, props.collection!.fields, rows.value)) {
-    if (!await editor.run(step.name, step.input)) return false
+    if (!await editor.run(step.name, step.input)) {
+      syncRows()
+      return false
+    }
   }
   return true
+}
+
+/** After a refusal partway: the steps already applied are the model's now. Rows of removed fields go, and a field added by hand takes its saved id, so a retry sends only the steps that remain (the edits not yet saved stay). */
+function syncRows() {
+  const saved = editor.collections.find(entry => entry.id === props.collection?.id)?.fields
+  if (!saved) return
+  const kept = rows.value.filter(row => !row.id || saved.some(field => field.id === row.id))
+  const claimed = new Set(kept.flatMap(row => row.id ? [row.id] : []))
+  rows.value = kept.map((row) => {
+    if (row.id) return row
+    const match = saved.find(field => !claimed.has(field.id) && field.name === row.name.trim() && (field.remote ?? field.name) === row.remote.trim())
+    if (!match) return row
+    claimed.add(match.id)
+    return { ...row, id: match.id }
+  })
 }
 
 async function save() {

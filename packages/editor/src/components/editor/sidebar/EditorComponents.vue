@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import type { ComponentFile } from '@bildr/codegen/model'
 import { useEditor } from '../../../editor/useEditor.ts'
-import { componentDeleteConfirm, componentFolders, insertableComponents, replaceChoiceHint, replaceChoices } from '../../../shared/componentEditor.ts'
+import { componentDeleteAsk, componentFolders, componentForceConfirm, insertableComponents, isInUseRefusal, replaceChoiceHint, replaceChoices } from '../../../shared/componentEditor.ts'
 import type { ComponentEntry, ComponentUsage } from '../../../shared/componentEditor.ts'
 import { DRAG_MIME, instancePayload } from '../../../shared/dropTarget.ts'
 
@@ -78,9 +78,14 @@ function keepRenameFocus(event: Event) {
   if (renamingId.value) event.preventDefault()
 }
 
-async function remove({ def, usages }: ComponentEntry) {
-  if (!await editor.confirm(componentDeleteConfirm(def, usages))) return
-  await editor.run('component_delete', { component: def.id, ...(usages.length ? { force: true } : {}) })
+/** Sends the delete unforced; only the module's own "in use" refusal offers `force`, and that confirm shows the refusal (the client's usage list can be stale). */
+async function remove({ def }: ComponentEntry) {
+  if (!await editor.confirm(componentDeleteAsk(def))) return
+  if (await editor.run('component_delete', { component: def.id })) return
+  const refusal = editor.error
+  if (!isInUseRefusal(refusal)) return
+  if (!await editor.confirm(componentForceConfirm(def, refusal.replace(/\.$/, '')))) return
+  await editor.run('component_delete', { component: def.id, force: true })
 }
 
 /** Replace all instances with ›: the other components, those that would contain themselves disabled; replaces from the first usage with `all`. */

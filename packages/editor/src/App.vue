@@ -13,7 +13,8 @@ const router = useRouter()
 const status = useStatus()
 
 // The Data view is its own screen: an editor that is asked for it (or for the Canvas, Design or Settings from there) opens the other one (editor/views.ts).
-onBeforeUnmount(registerScreens(screen => void router.push(screen === 'data' ? '/data' : '/design')))
+// The navigation's result goes back to views.ts, so a failed or cancelled one drops what was carried for the next screen.
+onBeforeUnmount(registerScreens(screen => router.push(screen === 'data' ? '/data' : '/design')))
 
 usePolling(status.refresh)
 

@@ -24,6 +24,23 @@ export const overrideInput = (patches: NodeOverridePatch[]): NodeOverridePatch |
   return changes.length === 1 ? changes[0]! : { overrides: changes }
 }
 
+/**
+ * What a style patch means for one node while a variant is active: a token set is the variant's override,
+ * clearing one the variant overrides gives back the primary's, and clearing one only the primary sets (it is
+ * in `shown`) removes it in the variant (`unset`). `own` is the node's overrides of the variant, `shown` the
+ * node's tokens as the variant shows it.
+ */
+export const variantStylePatch = (own: Record<string, string>, shown: Record<string, string>, style: Record<string, string | null>): OverridePatch => {
+  const set: Record<string, string | null> = {}
+  const unset: string[] = []
+  for (const [key, value] of Object.entries(style)) {
+    if (value !== null) set[key] = value
+    else if (key in own) set[key] = null
+    else if (key in shown) unset.push(key)
+  }
+  return { ...(Object.keys(set).length ? { style: set } : {}), ...(unset.length ? { unset } : {}) }
+}
+
 /** `Variant N`, N one more than the variants there are, or the next free number. */
 export const newVariantName = (component: Pick<ComponentFile, 'variants'>): string => {
   const taken = new Set(component.variants.map(variant => variant.name))

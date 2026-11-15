@@ -80,6 +80,21 @@ export function componentFolders(model: Pick<Model, 'modules' | 'layouts'>, quer
   return [...folders].filter(([, entries]) => entries.length).map(([name, entries]) => ({ name, entries }))
 }
 
+/** The first delete confirm: it names nothing the module hasn't said, because the client's usage list can be stale (the module refuses a delete while an instance uses the component). */
+export function componentDeleteAsk(def: Pick<ComponentFile, 'name'>): { title: string, description: string, items: string[], confirmLabel: string, danger: true } {
+  return { title: `Delete "${def.name}"?`, description: 'Undo brings it back. If an instance uses it, you are asked again before they go too.', items: [], confirmLabel: 'Delete component', danger: true }
+}
+
+/** Whether the module refused `component_delete` because instances use the component (the only refusal `force` answers). */
+export function isInUseRefusal(message: string | null): message is string {
+  return !!message && /^Component ".*" is used by \d+ instances?:/.test(message)
+}
+
+/** The second confirm, after the module's "in use" refusal: it shows that refusal, and Delete with its instances sends `force`. */
+export function componentForceConfirm(def: Pick<ComponentFile, 'name'>, refusal: string): { title: string, description: string, items: string[], confirmLabel: string, danger: true } {
+  return { title: `Delete "${def.name}" and its instances?`, description: `${refusal}. Deleting the component deletes them too; undo brings everything back.`, items: [], confirmLabel: 'Delete with its instances', danger: true }
+}
+
 /** The delete confirm (EditorConfirm): one item per place the component is used, counting its instances there. */
 export function componentDeleteConfirm(def: Pick<ComponentFile, 'name'>, usages: ComponentUsage[]): { title: string, description: string, items: string[], confirmLabel: string, danger: true } {
   const title = `Delete "${def.name}"?`

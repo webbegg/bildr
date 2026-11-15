@@ -218,6 +218,53 @@ describe('the mapping of a saved collection', () => {
   })
 })
 
+describe('a mapping save refused partway', () => {
+  const entity = () => Object.values(world.model.modules).flatMap(entry => entry.entities).find(candidate => candidate.id === 'ent_quote')!
+
+  it('refreshes from the model, so a retry sends only the steps that remain (never a field twice)', async () => {
+    let refuse = true
+    const actions = await open({
+      repository_endpoint_test: () => preview({ itemsPath: 'quotes', fields: [], items: [{ id: 1, quote: 'Hello', author: 'Ann' }] }),
+      entity_field_remove: (input) => {
+        entity().fields = entity().fields.filter(field => field.id !== input.field)
+        return { changed: [] }
+      },
+      entity_field_add: (input) => {
+        entity().fields.push({ id: 'fld_q_likes', name: String(input.name), type: input.type as 'text', remote: String(input.remote) } as never)
+        return { changed: [], fieldId: 'fld_q_likes' }
+      },
+      entity_field_update: () => {
+        if (refuse) return new Failure(422, 'invalid', 'quote is used by q_search: change them first')
+        return { changed: [] }
+      }
+    })
+    await click(q('[data-collection="quotes"]'))
+    await click(q('[data-data-tab="fields"]'))
+    await click(q('[data-fields-tab] [data-edit-mapping]'))
+    await click(q('[data-mapping-row="author"] [data-include]'))
+    await typeInto(byLabel('New field name'), 'likes')
+    await typeInto(byLabel('New field key'), 'like_count')
+    q('[data-api-add-field]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await settle()
+    await typeInto(q('[data-mapping-row="quote"] [data-path]'), 'quote_text')
+
+    await click(button('Save mapping'))
+    expect(text(q('[data-api-error]'))).toContain('quote is used by q_search')
+    // The remove went through, and the dialog shows the model's fields now (the removed one gone, the update still wanted).
+    expect(qa('[data-mapping-row]').map(row => row.getAttribute('data-mapping-row'))).not.toContain('author')
+
+    refuse = false
+    await click(button('Save mapping'))
+    expect(actions.calls.filter(call => call.name.startsWith('entity_field_')).map(call => [call.name, call.input])).toEqual([
+      ['entity_field_remove', { entity: 'ent_quote', field: 'fld_q_author' }],
+      ['entity_field_update', { entity: 'ent_quote', field: 'fld_q_text', remote: 'quote_text' }],
+      ['entity_field_update', { entity: 'ent_quote', field: 'fld_q_text', remote: 'quote_text' }],
+      ['entity_field_add', { entity: 'ent_quote', name: 'likes', type: 'text', remote: 'like_count' }]
+    ])
+    expect(q('[role="dialog"]')).toBeNull()
+  })
+})
+
 describe('Import from API', () => {
   const openImport = async () => {
     const trigger = q('[data-synced-add]')!
@@ -259,6 +306,16 @@ describe('Import from API', () => {
     await openImport()
     await fetchUrl('https://example.org/todos')
     await click(button('Cancel'))
+    expect(inputs(actions, 'datasource_delete')).toEqual([{ datasource: 'ds_example_org' }])
+  })
+
+  it('deletes the data source it made when the screen goes away with the dialog open (a route change)', async () => {
+    const actions = mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), datasource_create: ok({ datasourceId: 'ds_example_org' }), datasource_preview: () => preview(), datasource_delete: ok({ database: true }) })
+    const { wrapper } = await mountWithApp(DataView, '/data')
+    await openImport()
+    await fetchUrl('https://example.org/todos')
+    wrapper.unmount()
+    await settle()
     expect(inputs(actions, 'datasource_delete')).toEqual([{ datasource: 'ds_example_org' }])
   })
 

@@ -197,6 +197,31 @@ export const detailPagesOf = (model: Model, entityId: string): PageFile[] => {
     queries.find(query => query.id === use.query)?.from === entityId && Object.values(use.args ?? {}).some(value => isRecord(value) && typeof value.$route === 'string')))
 }
 
+const mentions = (value: unknown, ids: ReadonlySet<string>): boolean => {
+  if (typeof value === 'string') return ids.has(value)
+  if (Array.isArray(value)) return value.some(entry => mentions(entry, ids))
+  return isRecord(value) && Object.values(value).some(entry => mentions(entry, ids))
+}
+
+/**
+ * The pages that use an entity: they mention it, one of its fields, or a query or action over it, in
+ * their uses, params or nodes. The module refuses `entity_delete` for these (and more); this is the
+ * check made before anything is deleted, so a delete of several entities does not stop partway.
+ */
+export const pagesUsingEntity = (model: Model, entityId: string): PageFile[] => {
+  const modules = Object.values(model.modules)
+  const entity = modules.flatMap(mod => mod.entities).find(entry => entry.id === entityId)
+  if (!entity) return []
+  const repositories = modules.flatMap(mod => mod.repositories).filter(repository => repository.entity === entityId).map(repository => repository.id)
+  const ids = new Set([
+    entityId,
+    ...entity.fields.map(field => field.id),
+    ...modules.flatMap(mod => mod.queries).filter(query => query.from === entityId).map(query => query.id),
+    ...modules.flatMap(mod => mod.actions).filter(action => action.input.entity === entityId || action.steps.some(step => typeof step.repository === 'string' && repositories.includes(step.repository))).map(action => action.id)
+  ])
+  return modules.flatMap(mod => mod.pages).filter(page => mentions(page, ids))
+}
+
 /** Where a new collection is stored: the app database when the project has one, else a memory source. */
 export const defaultSourceOf = (model: Model): DataSourceFile | undefined =>
   model.datasources.find(source => source.kind === 'sqlite') ?? model.datasources.find(source => source.kind === 'memory')

@@ -60,16 +60,23 @@ export const createDataView = (design: Design, view: Ref<EditorView>) => {
     const current = model.value
     if (!current) return undefined
     let source = defaultSourceOf(current)?.id
+    let madeSource = false
     if (!source) {
       const made = await design.edit('datasource_create', { name: 'memory', kind: 'memory' })
       source = made?.datasourceId as string | undefined
       if (!source) return undefined
+      madeSource = true
     }
     const created = await design.edit('entity_create', { name, source, fields: [{ name: 'title', type: 'text' }] })
     const id = created?.entityId as string | undefined
     if (id) {
       collectionId.value = id
       connectionId.value = null
+    } else if (madeSource) {
+      // The source was made for this collection: no orphan is left behind, and the refusal that explains it stays.
+      const refusal = design.error.value
+      await design.edit('datasource_delete', { datasource: source })
+      design.error.value = refusal
     }
     return id
   }

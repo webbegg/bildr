@@ -26,6 +26,8 @@ const VIEWS: { value: EditorView, label: string, icon: string }[] = [
   { value: 'design', label: 'Design', icon: 'i-lucide-palette' },
   { value: 'settings', label: 'Settings', icon: 'i-lucide-settings' }
 ]
+/** Why Preview has nothing to open (a detail page with no record), or ''; the component view previews a page showing the component. */
+const cannotPreview = computed(() => editor.component ? '' : editor.previewHint)
 const viewLabel = computed(() => VIEWS.find(view => view.value === editor.mode)?.label)
 
 const TOOLS = [
@@ -144,16 +146,20 @@ function toggleTool(id: string) {
         />
       </UTooltip>
       <UTooltip
-        text="Preview the draft"
-        :kbds="['meta', 'p']"
+        :text="cannotPreview || 'Preview the draft'"
+        :kbds="cannotPreview ? undefined : ['meta', 'p']"
       >
-        <EditorButton
-          variant="ghost"
-          icon="i-lucide-play"
-          aria-label="Preview"
-          data-preview
-          @click="editor.openPreview()"
-        />
+        <!-- A disabled button gets no pointer events, so the tooltip hangs on this wrapper. -->
+        <span class="inline-flex">
+          <EditorButton
+            variant="ghost"
+            icon="i-lucide-play"
+            aria-label="Preview"
+            :disabled="!!cannotPreview"
+            data-preview
+            @click="editor.openPreview()"
+          />
+        </span>
       </UTooltip>
     </div>
   </header>

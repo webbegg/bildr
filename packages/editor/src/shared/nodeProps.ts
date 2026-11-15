@@ -84,8 +84,12 @@ export const NODE_PROP_DEFS: Record<string, PropDef[]> = {
   Form: []
 }
 
-/** `visible` is every node's (but an Instance's and a SlotFill's): false hides it in the app and on the canvas. */
-export const VISIBLE_DEF: PropDef = toggle('visible', 'Visible', true, { description: 'Off hides it in the app and on the canvas.' })
+/**
+ * `visible` is every node's (but an Instance's and a SlotFill's): false hides it in the app and on the canvas, and a
+ * property or a name can drive it. The hosted inspector has one Visible, the Styles row (hiding at a device); this
+ * prop is another thing, so its row is called Show.
+ */
+export const VISIBLE_DEF: PropDef = toggle('visible', 'Show', true, { description: 'Off hides it everywhere, in the app and on the canvas. Bind it to a property to show it on a condition. Visible, under Styles, hides it at one device.' })
 
 /** The props the inspector shows for a node type, `visible` last (not for an Instance or a SlotFill). */
 export function propDefsOf(type: string): PropDef[] {

@@ -22,6 +22,7 @@ import { collapsedAncestors, insertableComponents, movesIntoItself, moveSlot, ou
 import type { DropTarget } from './drop.ts'
 import { createFrames } from './frames.ts'
 import { layoutSelection, pageSlots, previewPageFor } from './layouts.ts'
+import { hasRouteParams, previewOf } from './preview.ts'
 import { canvasMovable, drillTarget, escapeSelection, navigateSelection, nearestUnlocked, selectAllSiblings, selectionAfterDelete, siblingParent, toggleSelection, topLevelSelection } from './selection.ts'
 import type { SelectionStep } from './selection.ts'
 import { isInsertTool, MOVE_TOOL, selectionAccent, toolForKey } from './tools.ts'
@@ -29,8 +30,8 @@ import type { ToolId } from './tools.ts'
 import { interactionKey, parseInteractionKey } from '../shared/interactionPanel.ts'
 import { layerName } from '../shared/layers.ts'
 import { createDataView } from './dataView.ts'
-import { requestView, screenOf, takeStart } from './views.ts'
-import { boardShown, newVariantName, overrideInput } from './variants.ts'
+import { carryPage, requestView, screenOf, takeStart } from './views.ts'
+import { boardShown, newVariantName, overrideInput, variantStylePatch } from './variants.ts'
 import type { NodeOverridePatch, OverridePatch } from './variants.ts'
 
 /**
@@ -204,17 +205,18 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   /** Shows a page; it also leaves the component and layout views. */
   const selectPage = (id: string) => {
     lastPage.value = id
+    carryPage(id)
     applyStack({ stack: [], restore: [] })
   }
 
   // The Data view is its own screen (`views.ts`): choosing a view the other screen shows opens that screen, which starts on it.
-  const handed = takeStart()
+  const handed = takeStart(options.view ? screenOf(options.view) : 'design')
   const mode = ref<EditorView>(options.view ?? handed.view ?? 'build')
   const screen = screenOf(mode.value)
   const importRequest = ref(screen === 'data' ? handed.data.importRequest ?? 0 : 0)
   const data = createDataView(design, mode)
   if (screen === 'data') data.collectionId.value = handed.data.collectionId ?? null
-  watch(mode, view => requestView(view, screen, { collectionId: data.collectionId.value, importRequest: importRequest.value }), { flush: 'sync' })
+  watch(mode, view => requestView(view, screen, { pageId: lastPage.value, collectionId: data.collectionId.value, importRequest: importRequest.value }), { flush: 'sync' })
 
   /** Opens a component in the component view, selecting `nodeId`. `nested` pushes it onto the breadcrumb; from Assets or ⌘K it replaces the levels. */
   const editComponent = (id: string, nodeId: string | null = null, { nested = false }: { nested?: boolean } = {}) => {
@@ -315,8 +317,10 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     return file ? layerName({ root: file.root, ...('layout' in file && typeof file.layout === 'string' ? { layout: file.layout } : {}) }, node, { components: design.components.value, layouts: design.layouts.value }) : design.nameOf(node) ?? node.type
   }
 
-  /** The draft preview of the current page: its route path in the app the dev server runs. */
-  const previewUrl = computed(() => currentPage.value?.path ?? '')
+  /** The draft preview of the current page in the app the dev server runs: its path, a detail page's with the picked record (else the first) filled in; none (with a hint) when no record can fill it. */
+  const preview = computed(() => previewOf(currentPage.value, design.detail.value, design.record.value))
+  const previewUrl = computed(() => preview.value.url)
+  const previewHint = computed(() => preview.value.hint)
 
   // Switching view returns to Move and closes Insert: the insert tools work on the Canvas only.
   watch(mode, () => {
@@ -337,12 +341,22 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     spacingOverlay.value = null
   }, { flush: 'sync' })
 
-  // A new component, variant list or undo can take the selected interaction away.
+  // An interaction has no id: its key is its place in the owner's list. A new component, variant list, undo or model event that adds or removes a row of the owner moves it, so the selection is dropped (never left on another interaction).
+  const interactionCount = (key: string | null): number | null => {
+    const parsed = key ? parseInteractionKey(key) : null
+    if (!parsed) return null
+    const owner = parsed.variantId ? component.value?.variants.find(entry => entry.id === parsed.variantId) : component.value
+    return owner?.interactions?.length ?? null
+  }
+  let selectedInteractionCount: number | null = null
+  watch(interactionId, (key) => {
+    selectedInteractionCount = interactionCount(key)
+  }, { flush: 'sync' })
   watch(() => [component.value?.id, component.value], () => {
     const parsed = interactionId.value ? parseInteractionKey(interactionId.value) : null
     if (!parsed) return
     const owner = parsed.variantId ? component.value?.variants.find(entry => entry.id === parsed.variantId) : component.value
-    if (!owner?.interactions?.[parsed.index]) interactionId.value = null
+    if (!owner?.interactions?.[parsed.index] || owner.interactions.length !== selectedInteractionCount) interactionId.value = null
   }, { flush: 'sync' })
 
   // ── Running actions ─────────────────────────────────────────────────────
@@ -483,7 +497,15 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   /** The tokens of one node written at once, or the same patch on several (one undo step); with a variant active they are its overrides. */
   const updateStyle = async (nodeIds: string | string[], style: StylePatch) => {
     const ids = typeof nodeIds === 'string' ? [nodeIds] : nodeIds
-    await styles.commit(nodeIds, style, () => design.setStyle(style, undefined, ids))
+    const active = design.variant.value
+    const tree = root()
+    // Several nodes in a variant are one batched override (one undo step, all or nothing), as `updateStyles` is; one node goes through the store.
+    await styles.commit(nodeIds, style, () => active && tree && ids.length > 1
+      ? setOverrides(ids.map(id => ({
+          nodeId: id,
+          ...variantStylePatch(active.overrides[id]?.style ?? {}, design.inspected.value?.id === id ? design.inspected.value.style ?? {} : findNode(tree, id)?.style ?? {}, style)
+        })))
+      : design.setStyle(style, undefined, ids))
   }
 
   /**
@@ -791,7 +813,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
 
   /** Opens the app on the first page showing component `id` (the one being edited), or says how to get one. */
   const previewInteractions = (id: string | undefined = component.value?.id) => {
-    const shown = model.value && id ? previewPageFor(model.value, id) : null
+    const shown = model.value && id ? previewPageFor(model.value, id, page => !hasRouteParams(page.path)) : null
     if (shown) {
       window.open(shown.path, '_blank')
       return
@@ -877,8 +899,13 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     if (deviceId.value === id) setDevice(primaryFrame(breakpointBase.value))
   }
 
-  /** Opens the app on the current page in a new tab, or with a frame's `width` in a popup that wide. */
+  /** Opens the app on the current page in a new tab, or with a frame's `width` in a popup that wide; in the component view, on a page showing the component (its interactions run there). */
   const openPreview = (width?: number) => {
+    if (component.value) return previewInteractions()
+    if (!previewUrl.value) {
+      notify({ title: 'Nothing to preview yet', description: previewHint.value, icon: 'i-lucide-play' })
+      return
+    }
     if (width) window.open(previewUrl.value, `bildr-preview-${width}`, previewWindowFeatures(width, window.screen.availHeight))
     else window.open(previewUrl.value, '_blank')
   }
@@ -910,6 +937,8 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
 
   const start = async () => {
     await design.start()
+    // The page chosen on the other screen (⌘K → a page) is the one this screen opens.
+    if (handed.data.pageId && pages.value.some(entry => entry.id === handed.data.pageId)) selectPage(handed.data.pageId)
     await reloadEnv()
   }
 
@@ -934,9 +963,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
       return true
     }
     if (meta && !shift && lower === 'p') {
-      // In the component view the preview goes where the component's interactions run: a page showing it.
-      if (component.value) previewInteractions()
-      else openPreview()
+      openPreview()
       return true
     }
     if (meta && !shift && lower === 'k') {
@@ -982,7 +1009,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     // The project and the file being edited. `project` is `model` (a `.bildr` model, not a hosted Project); `treeRef` is `{ file }`; `page` is the file as authored (no `slug`: see `currentPage.path`).
     model, pages, pageId, componentId, component, layoutId, layout, editStack, createRequest, propertiesRequest, confirmRequest, canvasAccent, variantId: design.variantId, variant: design.variant, variantBoard, interactionId, currentPage, treeRef, page,
     // Selection and canvas UI state.
-    selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard: design.clipboard, history: design.history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, breakpointBase, deviceId, device: design.device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, selected, selectedNodes, nodeName, theme,
+    selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard: design.clipboard, history: design.history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, previewHint, breakpointBase, deviceId, device: design.device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, selected, selectedNodes, nodeName, theme,
     importRequest, variablesRequest, env,
     // The Data view: collections are entities, connections REST data sources; the rows are the app's or the fixtures, never written (U7).
     collections: data.collections, connections: data.connections, collectionId: data.collectionId, collection: data.collection, connectionId: data.connectionId, connection: data.connection, recordId: data.recordId, collectionRows: data.collectionRows, rowsSource: data.rowsSource, recordsError: data.recordsError, recordsTotal: data.recordsTotal, recordsLoading: data.recordsLoading, collectionCounts: data.collectionCounts, reloadRecords: data.reloadRecords, createCollection: data.createCollection,

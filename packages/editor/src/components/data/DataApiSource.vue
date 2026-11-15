@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import { callAction, errorMessage } from '../../api.ts'
 import { useEditor } from '../../editor/useEditor.ts'
@@ -171,6 +171,11 @@ watch(open, (isOpen) => {
   if (isOpen) reset()
   else if (!saved) void dropSource()
 }, { immediate: true })
+
+// A route change takes the dialog away while it is open: the source it made goes too.
+onBeforeUnmount(() => {
+  if (!saved) void dropSource()
+})
 </script>
 
 <template>

@@ -229,6 +229,10 @@ export interface CommandEditor {
   history: { undo: number, redo: number }
   deepSelect: boolean
   previewDark: boolean
+  /** Why Preview has nothing to open on this page (a detail page with no record), or ''. */
+  previewHint?: string
+  /** The component being edited: its view previews a page showing it, whatever the page says. */
+  component?: unknown
   /** Bumped to ask the Settings view to scroll to its Variables section. */
   variablesRequest: number
   /** Bumped to ask the Data view for its Import from API dialog. */
@@ -318,7 +322,7 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
     action('select-parent', 'Select parent', 'i-lucide-arrow-up-left', ['up'], c => onCanvas(c) && !!c.editor.selectedId && c.editor.selectedId !== c.editor.page?.root.id, ({ editor }) => editor.navigate('parent')),
     action('undo', 'Undo', 'i-lucide-undo-2', [], c => c.editor.history.undo > 0, ({ editor }) => editor.undo()),
     action('redo', 'Redo', 'i-lucide-redo-2', [], c => c.editor.history.redo > 0, ({ editor }) => editor.redo()),
-    action('preview', 'Preview', 'i-lucide-play', ['open', 'draft'], c => !!c.editor.page, ({ editor }) => editor.openPreview()),
+    action('preview', 'Preview', 'i-lucide-play', ['open', 'draft'], c => !!c.editor.page && (!c.editor.previewHint || !!c.editor.component), ({ editor }) => editor.openPreview()),
     action('zoom-fit', 'Zoom to fit', 'i-lucide-scan', ['fit'], onCanvas, ({ editor }) => editor.requestZoom('fit')),
     action('zoom-selection', 'Zoom to selection', 'i-lucide-scan-search', ['selected', 'focus'], c => onCanvas(c) && c.editor.selectedIds.length > 0, ({ editor }) => editor.requestZoom('selection')),
     action('zoom-100', 'Zoom to 100%', 'i-lucide-zoom-in', ['reset', 'actual'], onCanvas, ({ editor }) => editor.requestZoom('reset')),

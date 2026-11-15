@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { cellText } from '../../../shared/dataTable.ts'
 import type { DataField } from '../../../shared/dataModel.ts'
 
-/** One table cell, read-only (rows are app data, E2): the value, a toggle that shows its state, or an image. The hosted inline editor is not ported. */
+/** One table cell, read-only (rows are app data, E2): the value, a check or a dash for a boolean (shown, not a control: nothing in a cell looks clickable), or an image. The hosted inline editor is not ported. */
 const props = defineProps<{ field: DataField, value: unknown }>()
 
 const text = computed(() => cellText(props.field.type, props.value))
@@ -11,23 +11,23 @@ const raw = computed(() => props.value === null || props.value === undefined ? '
 </script>
 
 <template>
-  <button
+  <span
     v-if="field.type === 'boolean'"
-    type="button"
-    role="switch"
-    :aria-checked="value === true"
-    :aria-label="field.label"
-    disabled
-    class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors disabled:cursor-default"
-    :class="value === true ? 'bg-primary' : 'bg-white/14'"
-    tabindex="-1"
-    data-cell-toggle
+    role="img"
+    :aria-label="`${field.label}: ${value === true ? 'true' : 'false'}`"
+    class="inline-flex size-4 items-center justify-center"
+    :data-cell-bool="value === true ? 'true' : 'false'"
   >
-    <span
-      class="size-3 rounded-full bg-white shadow transition-transform"
-      :class="value === true ? 'translate-x-3.5' : 'translate-x-0.5'"
+    <UIcon
+      v-if="value === true"
+      name="i-lucide-check"
+      class="size-3.5 text-toned"
     />
-  </button>
+    <span
+      v-else
+      class="h-px w-2.5 bg-white/25"
+    />
+  </span>
   <img
     v-else-if="field.type === 'image' && text"
     :src="raw"

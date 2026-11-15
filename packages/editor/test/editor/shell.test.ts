@@ -67,10 +67,24 @@ describe('the toolbar', () => {
 
   it('opens the draft in a new tab with Preview, at the current page\'s path', async () => {
     const opened = vi.spyOn(window, 'open').mockReturnValue(null)
+    await open({}, 'pg_new_post')
+    await click(q('[data-preview]'))
+    expect(opened).toHaveBeenCalledWith('/posts/new', '_blank')
+    opened.mockRestore()
+  })
+
+  it('previews a detail page on its first record, never on the route pattern, and is disabled with a hint when it has none', async () => {
+    const opened = vi.spyOn(window, 'open').mockReturnValue(null)
     await open({}, 'pg_post_detail')
     await click(q('[data-preview]'))
-    expect(opened).toHaveBeenCalledWith('/posts/:slug', '_blank')
+    expect(opened).toHaveBeenCalledWith('/posts/hello-bildr', '_blank')
     opened.mockRestore()
+  })
+
+  it('disables Preview on a detail page with no record', async () => {
+    world.model.modules.blog!.fixtures = []
+    await open({}, 'pg_post_detail')
+    expect(q('[data-preview]')?.hasAttribute('disabled')).toBe(true)
   })
 
   it('opens the Insert panel and inserts the matching built-in with Enter; the Frame and Text tools arm and hint', async () => {

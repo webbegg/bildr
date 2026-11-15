@@ -33,9 +33,8 @@ import { sharedStyle } from '../../shared/panel.ts'
  *
  * In the component and layout views the file's own sections follow (EditorComponentPanel:
  * an Instance's values, the variants, interactions and properties; EditorLayoutPanel:
- * slots and variables). With nothing selected they show for the root, where the hosted
- * editor shows only its hint (the variant board's "+ Variant" tile, on the canvas, adds a
- * variant there too, but the board shows from two variants on and the panel is always at hand).
+ * slots and variables). With nothing selected only the hint shows, as in the hosted editor
+ * (U-E2): select the root (its layer or the canvas) for the file's own sections.
  */
 const editor = useEditor()
 
@@ -96,10 +95,6 @@ function renamePage(field: 'name' | 'path', value: string) {
     <p class="p-4 text-xs text-dimmed">
       Select an element to style it.
     </p>
-    <template v-if="editor.page && (editor.component || editor.layout)">
-      <EditorComponentPanel :node="editor.page.root" />
-      <EditorLayoutPanel :node="editor.page.root" />
-    </template>
   </div>
   <div v-else>
     <div

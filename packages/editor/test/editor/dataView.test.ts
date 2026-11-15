@@ -172,6 +172,28 @@ describe('creating a collection', () => {
   })
 })
 
+describe('creating a collection on a data source it made', () => {
+  it('deletes the memory source it made when entity_create is refused', async () => {
+    world.model.datasources = world.model.datasources.filter(source => source.kind !== 'sqlite')
+    const { editor, actions } = await bootData({}, {
+      datasource_create: () => ({ datasourceId: 'ds_memory', filePath: '.bildr/datasources/memory.json', database: false }),
+      entity_create: () => new Failure(422, 'invalid', 'Module "blog" already has the entity Untitled (ent_untitled)'),
+      datasource_delete: () => ({ changed: [], database: false })
+    })
+    expect(await editor.createCollection('Untitled')).toBeUndefined()
+    expect(actions.named('datasource_delete').map(call => call.input)).toEqual([{ datasource: 'ds_memory' }])
+    // The refusal that explains it stays.
+    expect(editor.error).toContain('already has the entity')
+  })
+
+  it('keeps a source the project already had when entity_create is refused', async () => {
+    const { editor, actions } = await bootData({}, { entity_create: () => new Failure(422, 'invalid', 'nope'), datasource_delete: () => ({ changed: [] }) })
+    expect(await editor.createCollection('Untitled')).toBeUndefined()
+    expect(actions.named('datasource_delete')).toEqual([])
+    expect(editor.error).toContain('nope')
+  })
+})
+
 describe('env and errors', () => {
   it('reads the env status the connection panel shows', async () => {
     const { editor } = await bootData({}, { env_status: () => ({ variables: [{ name: 'NUXT_DATASOURCES_QUOTES_API_KEY', datasource: 'ds_quotes', setting: 'apiKey', secret: true, hasDefault: false, set: false, from: null }] }) })
@@ -235,6 +257,53 @@ describe('the Data and the Design views are two screens', () => {
       const later = await bootData({}, {}, 'data')
       expect(later.editor.collectionId).toBeNull()
       expect(later.editor.importRequest).toBe(0)
+    } finally {
+      off()
+    }
+  })
+
+  it('forgets what it carried when the navigation fails or is cancelled', async () => {
+    for (const outcome of [() => Promise.resolve(new Error('navigation cancelled')), () => Promise.reject(new Error('boom'))]) {
+      const off = registerScreens(outcome)
+      try {
+        const { editor } = await bootData()
+        editor.mode = 'data'
+        await settle()
+        expect(takeStart().view).toBeNull()
+      } finally {
+        off()
+      }
+    }
+  })
+
+  it('is taken by the editor of the screen it was for, and an editor of the other screen drops it', async () => {
+    const off = registerScreens(() => Promise.resolve(undefined))
+    try {
+      const { editor } = await bootData()
+      editor.collectionId = 'ent_quote'
+      editor.mode = 'data'
+      // A Design editor made meanwhile (a stale navigation) must not start on Data, nor leave it for a later screen.
+      const other = await bootData()
+      expect(other.editor.mode).toBe('build')
+      const data = await bootData({}, {}, 'data')
+      expect(data.editor.collectionId).toBeNull()
+    } finally {
+      off()
+    }
+  })
+
+  it('carries the page chosen, so the Design screen opens that page and not the first', async () => {
+    const off = registerScreens(() => Promise.resolve(undefined))
+    try {
+      for (const pageFirst of [false, true]) {
+        const { editor } = await bootData({}, {}, 'data')
+        if (pageFirst) editor.selectPage('pg_new_post')
+        editor.mode = 'build'
+        if (!pageFirst) editor.selectPage('pg_new_post')
+        await settle()
+        const next = await bootData()
+        expect(next.editor.pageId).toBe('pg_new_post')
+      }
     } finally {
       off()
     }

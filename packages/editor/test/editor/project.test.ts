@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, isReactive, isRef } from 'vue'
 import { mount } from '@vue/test-utils'
 import { settle } from '../helpers.ts'
-import { boot, find, indexPage, ok, setupHarness } from './boot.ts'
+import { boot, find, indexPage, ok, setupHarness, world } from './boot.ts'
 import { EDITOR_KEY, provideEditor, useEditor } from '../../src/editor/useEditor.ts'
 
 /**
@@ -217,5 +217,52 @@ describe('shape', () => {
     expect(editor.model).toEqual(design.model.value)
     expect(editor.selected).toEqual(find(indexPage().root, 'n_head'))
     expect(editor.page?.root).toEqual(indexPage().root)
+  })
+})
+
+describe('the preview of a page', () => {
+  it('a detail page previews the picked record, else the first one, never the route pattern', async () => {
+    const { editor } = await boot({}, 'pg_post_detail')
+    const first = String(editor.records[0]?.slug)
+    const second = String(editor.records[1]?.slug)
+    expect(first).not.toBe('undefined')
+    expect(editor.previewUrl).toBe(`/posts/${first}`)
+    await editor.setPreviewRecord(second)
+    expect(editor.previewUrl).toBe(`/posts/${second}`)
+    expect(editor.previewHint).toBe('')
+  })
+
+  it('a detail page without a record has no preview, and says why', async () => {
+    const { editor } = await boot({}, 'pg_post_detail')
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    world.model.modules.blog!.fixtures = world.model.modules.blog!.fixtures.filter(entry => entry.entity !== editor.detail?.entity)
+    await editor.reload()
+    await settle()
+    expect(editor.previewUrl).toBe('')
+    expect(editor.previewHint).toContain('record')
+    editor.openPreview()
+    expect(open).not.toHaveBeenCalled()
+    open.mockRestore()
+  })
+
+  it('the component view previews where the component runs, from the toolbar button or the shortcut', async () => {
+    const { editor } = await boot({}, 'pg_new_post')
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    editor.editComponent('cmp_post_card')
+    await settle()
+    editor.openPreview()
+    editor.shortcut('p', true, false)
+    expect(open.mock.calls).toEqual([['/', '_blank'], ['/', '_blank']])
+    open.mockRestore()
+  })
+
+  it('the interactions preview skips a page whose route needs a parameter', async () => {
+    indexPage().path = '/:id'
+    const { editor, toasts } = await boot({}, 'pg_new_post')
+    const open = vi.spyOn(window, 'open').mockReturnValue(null)
+    editor.previewInteractions('cmp_post_card')
+    expect(open).not.toHaveBeenCalled()
+    expect(toasts.map(toast => toast.title)).toEqual(['Nothing to preview yet'])
+    open.mockRestore()
   })
 })

@@ -10,8 +10,9 @@ import { useBinding } from '../../editor/useBinding.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import type { BindingDotAction } from '../../shared/bindingDot.ts'
 import { propertyValues, styleBindCandidates, unbindLabel, variantOverridden } from '../../shared/bindingDot.ts'
-import { pathToken, textValue, valueText } from '../../shared/bindings.ts'
+import { appendProblem, pathToken, textValue, valueText } from '../../shared/bindings.ts'
 import { propBindingAdd, styleBindingAdd } from '../../shared/componentEditor.ts'
+import { BINDABLE } from '../../shared/nodeProps.ts'
 import type { PropDef } from '../../shared/nodeProps.ts'
 
 type PropertyBinding = NonNullable<PropertyDef['bindings']>[number]
@@ -111,6 +112,8 @@ const candidates = computed(() => {
 })
 
 const TEXT_KINDS = new Set(['text', 'textarea', 'image'])
+/** Whether a name in scope can fill this prop: the same `BINDABLE` rule the field uses for its `{name}` text. */
+const dataBindable = computed(() => !!props.prop && TEXT_KINDS.has(props.prop.kind) && !!single.value && BINDABLE[single.value.type]?.includes(props.name) === true)
 /** Whether a property can drive this prop (a tag, a level or a link target shapes the generated markup, so none can). */
 const driveable = computed(() => props.mode === 'style' || (!!single.value && !!propBindingAdd([], single.value, props.name)))
 /** The names the node can read: a text prop binds one of them (`$bind`, or in its text a `$template`). */
@@ -158,10 +161,13 @@ const items = computed<DropdownMenuItem[][]>(() => {
       { label: `Create ${o.noun}`, icon: 'i-lucide-plus', description: o.kind === 'component' ? 'Instances can set it' : 'Each page can set it', onSelect: () => create(add.key) }
     ])
   }
-  if (props.mode === 'prop' && props.prop && TEXT_KINDS.has(props.prop.kind)) {
+  if (props.mode === 'prop' && dataBindable.value) {
     // The hosted dot inserted `{{ env.X }}` here; the model binds a name in scope (`{ $bind }`, or a `{ $template }` after text).
-    const names = readable.value.map(path => ({ label: path, icon: 'i-lucide-database', onSelect: () => emit('update', textValue(`${valueText(props.value)}${pathToken(path)}`, scopeNames.value)) }))
-    groups.push([{ label: 'Bind to data', icon: 'i-lucide-braces', disabled: !names.length, children: names }])
+    const text = valueText(props.value)
+    const names = readable.value.map(path => ({ label: path, icon: 'i-lucide-database', onSelect: () => emit('update', textValue(`${text}${pathToken(path)}`, scopeNames.value)) }))
+    // A brace group that is no name cannot sit in a template (the model has no escape): the text must change first.
+    const problem = readable.value.length ? appendProblem(text, readable.value[0]!, scopeNames.value) : undefined
+    groups.push([{ label: 'Bind to data', icon: 'i-lucide-braces', disabled: !names.length || !!problem, ...(problem ? { description: problem } : {}), children: names }])
   }
   return groups
 })

@@ -21,6 +21,12 @@ const qa = (selector: string) => [...document.body.querySelectorAll<HTMLElement>
 /** A row of a section's list: the row that holds the field with this accessible name. */
 const rowOf = (name: string) => byLabel(name)!.closest<HTMLElement>('.group\\/row')!
 const rows = (section: string) => qa(`[${section}] [aria-label$=" property name"], [${section}] [aria-label$=" variable name"]`).map(input => input.getAttribute('aria-label'))
+/** Opens the PostCard component with its root selected: with nothing selected the inspector shows only its hint (U-E2), as the hosted editor does. */
+const openRoot = async (extra: Parameters<typeof open>[0] = {}) => {
+  const mounted = await open(extra, POST_CARD)
+  await select('n_card')
+  return mounted
+}
 
 describe('Components section', () => {
   it('lists the components with where each is used; a row opens the component in the canvas', async () => {
@@ -63,22 +69,26 @@ describe('Components section', () => {
 
     expect(actions.named('component_rename').map(call => call.input)).toEqual([{ component: POST_CARD, name: 'Card' }])
     expect(actions.named('component_duplicate').map(call => call.input)).toEqual([{ component: POST_CARD }])
-    // Tip is used on the new-post page, so the confirm names it and the delete takes its instance too.
-    expect(actions.named('component_delete').map(call => call.input)).toEqual([{ component: 'cmp_tip', force: true }])
+    // The first delete is never forced: only the module's own in-use refusal leads to a forced one.
+    expect(actions.named('component_delete').map(call => call.input)).toEqual([{ component: 'cmp_tip' }])
   })
 
-  it('asks before deleting a component in use, naming where, and deletes its instances too', async () => {
-    const { actions } = await open({ component_delete: ok({ deletedInstances: ['pg_index (n_card)'] }) })
+  it('deletes a component in use only after the module refuses it and the refusal is confirmed, then with its instances', async () => {
+    const refusal = 'Component "PostCard" is used by 1 instance: pg_index (n_card). Delete it first'
+    const { actions } = await open({
+      component_delete: (input: { force?: boolean }) => input.force ? { changed: [], deletedInstances: ['pg_index (n_card)'] } : new Failure(422, 'invalid', refusal)
+    })
     await sidebarTab('Assets')
 
     await menuItem(actionsOf(POST_CARD), 'Delete')
-    const dialog = document.body.querySelector('[data-confirm]')!
-    expect(dialog.textContent).toContain('Used by 1 instance')
-    expect(dialog.querySelector('[data-confirm-items]')?.textContent).toContain('page "index"')
     expect(actions.named('component_delete')).toEqual([])
     await confirmOk()
+    expect(actions.named('component_delete').map(call => call.input)).toEqual([{ component: POST_CARD }])
 
-    expect(actions.named('component_delete').map(call => call.input)).toEqual([{ component: POST_CARD, force: true }])
+    // The second confirm shows what the module refused, not the editor's own (possibly stale) usage list.
+    expect(document.body.querySelector('[data-confirm]')?.textContent).toContain('pg_index (n_card)')
+    await confirmOk()
+    expect(actions.named('component_delete').map(call => call.input)).toEqual([{ component: POST_CARD }, { component: POST_CARD, force: true }])
   })
 
   it('shows a refusal of the module in the editor', async () => {
@@ -99,7 +109,7 @@ describe('Component canvas and the variant being edited', () => {
   const renderedVariant = (id: string | null) => sent('bildr:render').findLast(message => message.variant?.id === id)?.variant
 
   it('shows every variant on the board, a frame with its chip each (a state under its base), each rendering its own variant; the Variants section picks the active one', async () => {
-    await open({}, POST_CARD)
+    await openRoot()
     await readyAll()
     expect(qa('[data-component-variants] [data-variant-row]').map(row => row.dataset.variantRow)).toEqual(['primary', 'var_compact', 'var_hovered'])
     expect(qa('[data-board-label]').map(element => element.textContent?.trim())).toEqual(['Primary', 'hovered', 'compact'])
@@ -116,14 +126,14 @@ describe('Component canvas and the variant being edited', () => {
   })
 
   it('makes a frame\'s variant the active one with a click on its chip', async () => {
-    await open({}, POST_CARD)
+    await openRoot()
     await click(chip('compact')!)
     expect(activeChip()).toBe('compact')
     expect(q('[data-component-variants] [data-variant-row="var_compact"] button[aria-pressed]')?.getAttribute('aria-pressed')).toBe('true')
   })
 
   it('has no variants or chip on a page, and a variant is dropped when its file is left', async () => {
-    await open({}, POST_CARD)
+    await openRoot()
     await showVariant('var_compact')
     await openFile('pg_index')
     expect(q('[data-component-variants]')).toBeNull()
@@ -323,13 +333,13 @@ describe('The properties modal', () => {
 
 describe('Variants and states', () => {
   it('adds a variant from the section\'s + (named like the primary\'s next), and shows it', async () => {
-    const { actions } = await open({ component_variant_add: ok({ variantId: 'var_large' }) }, POST_CARD)
+    const { actions } = await openRoot({ component_variant_add: ok({ variantId: 'var_large' }) })
     await menuItem(sectionAdd('data-component-variants'), 'New variant')
     expect(actions.named('component_variant_add').map(call => call.input)).toEqual([{ component: POST_CARD, name: 'Variant 3' }])
   })
 
   it('renames a variant from its menu, and deletes it after a confirm', async () => {
-    const { actions } = await open({ component_variant_rename: ok(), component_variant_delete: ok() }, POST_CARD)
+    const { actions } = await openRoot({ component_variant_rename: ok(), component_variant_delete: ok() })
     await menuItem(byLabel('compact variant actions'), 'Rename')
     await typeInto(must('input[aria-label="compact variant name"]'), 'dense')
     await menuItem(byLabel('compact variant actions'), 'Delete')
@@ -341,7 +351,7 @@ describe('Variants and states', () => {
   })
 
   it('cannot rename or delete the primary: it is the component itself', async () => {
-    await open({}, POST_CARD)
+    await openRoot()
     await click(byLabel('Primary variant actions'))
     await settle()
     const item = (label: string) => qa('[role^="menuitem"]').find(element => element.textContent?.trim().startsWith(label))
@@ -350,7 +360,7 @@ describe('Variants and states', () => {
   })
 
   it('adds a pressed state to the primary and a hover state to a variant; a state that exists is disabled, and a state has none', async () => {
-    const { actions } = await open({ component_state_add: ok({ variantId: 'var_x' }) }, POST_CARD)
+    const { actions } = await openRoot({ component_state_add: ok({ variantId: 'var_x' }) })
     await menuItem(byLabel('Primary variant actions'), 'Add pressed state')
     await menuItem(byLabel('compact variant actions'), 'Add hover state')
     expect(actions.named('component_state_add').map(call => call.input)).toEqual([
@@ -371,7 +381,7 @@ describe('Variants and states', () => {
   })
 
   it('edits of the style and props of a node while a variant is active are that variant\'s overrides', async () => {
-    const { actions } = await open({ component_variant_set_override: ok(), node_update_style: ok(), node_update_props: ok() }, POST_CARD)
+    const { actions } = await openRoot({ component_variant_set_override: ok(), node_update_style: ok(), node_update_props: ok() })
     await showVariant('var_compact')
     await select('n_title')
 
@@ -387,7 +397,7 @@ describe('Variants and states', () => {
   })
 
   it('shows the node with the active variant\'s overrides applied, and a breakpoint-prefixed key at the device', async () => {
-    const { actions } = await open({ component_variant_set_override: ok() }, POST_CARD)
+    const { actions } = await openRoot({ component_variant_set_override: ok() })
     await showVariant('var_compact')
     await select('n_card')
     expect(styleField('p')!.querySelector('input')!.value).toBe('3')
@@ -400,7 +410,7 @@ describe('Variants and states', () => {
   })
 
   it('clearing a token the variant overrides gives back the primary\'s; clearing one only the primary sets unsets it', async () => {
-    const { actions } = await open({ component_variant_set_override: ok() }, POST_CARD)
+    const { actions } = await openRoot({ component_variant_set_override: ok() })
     await showVariant('var_compact')
     await select('n_card')
     await resetStyle('padding')
@@ -414,7 +424,7 @@ describe('Variants and states', () => {
   })
 
   it('lists what the active variant overrides once, in the inspector\'s section, each resettable', async () => {
-    const { actions } = await open({ component_variant_set_override: ok() }, POST_CARD)
+    const { actions } = await openRoot({ component_variant_set_override: ok() })
     await showVariant('var_compact')
     await select('n_card')
     expect(qa('[data-variant-overrides]')).toHaveLength(1)
@@ -445,7 +455,7 @@ describe('Interactions and transition', () => {
   })
 
   it('offers a variant as a target, never a state, and a state\'s own list says it shows from the pointer', async () => {
-    await open({}, POST_CARD)
+    await openRoot()
     await click(sectionAdd('data-component-interactions'))
     expect(qa('[role^="menuitem"]').map(item => item.textContent?.trim().split(/\s/)[0])).toEqual(expect.arrayContaining(['Click', 'Mouse', 'Appear']))
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -456,7 +466,7 @@ describe('Interactions and transition', () => {
 
   it('lists the interactions of the active variant as rows, edits one in its popover and removes it', async () => {
     postCard().variants[0]!.interactions = [{ on: 'click', do: [{ kind: 'setVariant', to: '' }] }]
-    const { actions } = await open({
+    const { actions } = await openRoot({
       component_interaction_update: (input) => {
         const interaction = postCard().variants[0]!.interactions![Number(input.index)]!
         if (input.on) interaction.on = input.on as 'click'
@@ -466,7 +476,7 @@ describe('Interactions and transition', () => {
         return { changed: [] }
       },
       component_interaction_remove: ok()
-    }, POST_CARD)
+    })
     await showVariant('var_compact')
     expect(qa('[data-interaction-row]').map(row => row.dataset.interactionRow)).toEqual(['var_compact:0'])
     expect(q('[data-interaction-row]')?.textContent).toContain('Click → Primary')
@@ -486,20 +496,20 @@ describe('Interactions and transition', () => {
 
   it('removes an interaction from its row\'s ×', async () => {
     postCard().interactions = [{ on: 'appear', do: [{ kind: 'setVariant', to: 'var_compact' }] }]
-    const { actions } = await open({ component_interaction_remove: ok() }, POST_CARD)
+    const { actions } = await openRoot({ component_interaction_remove: ok() })
     expect(q('[data-interaction-row=":0"]')?.textContent).toContain('Appear → compact')
     await click(byLabel('Remove Appear → compact'))
     expect(actions.named('component_interaction_remove').map(call => call.input)).toEqual([{ component: POST_CARD, variant: '', index: 0 }])
   })
 
   it('sets the transition of the component: ease keeps its duration and easing, spring takes the defaults, instant is one', async () => {
-    const { actions } = await open({
+    const { actions } = await openRoot({
       component_transition_set: (input) => {
         if (input.transition) postCard().transition = input.transition as never
         else delete postCard().transition
         return { changed: [] }
       }
-    }, POST_CARD)
+    })
     expect(must('[data-transition-row]').textContent).toContain('Ease 0.2s')
     await click(must('[data-transition-row]'))
     await typeInto(must('[data-transition-duration]'), '0.5')
@@ -516,7 +526,7 @@ describe('Interactions and transition', () => {
   })
 
   it('sets the transition of a variant, shown as Inherit until it has its own, and clears it with Inherit', async () => {
-    const { actions } = await open({ component_transition_set: ok() }, POST_CARD)
+    const { actions } = await openRoot({ component_transition_set: ok() })
     await showVariant('var_compact')
     expect(must('[data-transition-row]').textContent).toContain('Inherit')
     await click(must('[data-transition-row]'))
@@ -583,6 +593,16 @@ describe('A typo in a number field is refused, never committed as a removal', ()
     expect(actions.named('instance_set_values').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_card', values: { prop_count: 5 } }])
   })
 
+  it('does not turn a field of spaces into the number 0 (REL-005): an instance\'s number keeps its value', async () => {
+    postCard().properties.push({ id: 'prop_count', name: 'count', kind: 'number', default: 3 })
+    const { actions } = await open({ instance_set_values: ok() })
+    await select('n_card')
+
+    await typeNumber(propRow('prop_count'), '   ')
+    expect(actions.named('instance_set_values')).toEqual([])
+    expect(propInput('prop_count')?.value).toBe('3')
+  })
+
   it('keeps a number prop of a node (an Input\'s rows)', async () => {
     const { actions } = await open({ node_update_props: ok() }, 'pg_new_post')
     await select('n_title')
@@ -598,7 +618,7 @@ describe('A typo in a number field is refused, never committed as a removal', ()
   it('keeps the numbers of a transition and the delay of an interaction in the model\'s range: a blank one goes back to its default, a too big one is clamped', async () => {
     postCard().transition = { type: 'ease', duration: 0.2, easing: 'ease-out' }
     postCard().interactions = [{ on: 'click', do: [{ kind: 'setVariant', to: 'var_compact' }] }]
-    const { actions } = await open({ component_interaction_update: ok(), component_transition_set: ok() }, POST_CARD)
+    const { actions } = await openRoot({ component_interaction_update: ok(), component_transition_set: ok() })
 
     await click(must('[data-transition-row]'))
     await typeInto(must('[data-transition-duration]'), '99')
