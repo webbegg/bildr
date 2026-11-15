@@ -1,7 +1,9 @@
-import type { LayoutFile, Model, PageFile, PropertyDef, Value } from '@bildr/codegen/model'
+import type { LayoutFile, Model, ModelNode, PageFile, PropertyDef, Value } from '@bildr/codegen/model'
 import { layoutDragPayload, parseLayoutPayload } from '../editor/drop.ts'
 import { CHILDREN_SLOT, layoutSelection, pageSlots } from '../editor/layouts.ts'
+import { boundProperty, propertyField } from './componentEditor.ts'
 import type { Command, CommandContext } from './commands.ts'
+import { propDefsOf } from './nodeProps.ts'
 import type { PropDef } from './nodeProps.ts'
 import { matches } from './sidebar.ts'
 
@@ -61,16 +63,29 @@ export function layoutChoiceHint(layout: Pick<LayoutFile, 'slots' | 'variables'>
 /** What a page's variable row needs to show (the hosted `PropDef`): keyed by the variable id, its default and options from the model. */
 export type VariableField = PropDef
 
-/** A variable as a prop field of the page settings (a layout variable takes the kinds `LAYOUT_VARIABLE_KINDS` lists, all of them prop kinds). */
-export const variableField = (layout: Pick<LayoutFile, 'name'>, variable: PropertyDef): VariableField => ({
-  name: variable.id,
-  label: variable.label ?? variable.name,
-  kind: variable.kind as PropDef['kind'],
-  description: variable.description ?? `${variable.label ?? variable.name}, a variable of layout ${layout.name}`,
-  ...(variable.placeholder ? { placeholder: variable.placeholder } : {}),
-  default: variable.default ?? '',
-  ...(variable.options ? { options: variable.options } : {})
-})
+/**
+ * A variable as a prop field of the page settings (a layout variable takes the kinds `LAYOUT_VARIABLE_KINDS`
+ * lists, all of them prop kinds): keyed by its id, its default and options from the first bound prop or
+ * style key of the layout's node (`propertyField`).
+ */
+export const variableField = (layout: Pick<LayoutFile, 'name'> & Partial<Pick<LayoutFile, 'root'>>, variable: PropertyDef): VariableField => {
+  const root: ModelNode = layout.root ?? { id: '', type: 'Container' }
+  return propertyField({ name: layout.name, root }, variable, 'variable', `layout ${layout.name}`) ?? { name: variable.id, label: variable.label ?? variable.name, kind: 'text', default: '' }
+}
+
+/** The slot bound to layout node `nodeId`, if any. */
+export const slotOf = (layout: Pick<LayoutFile, 'slots'>, nodeId: string): LayoutFile['slots'][number] | undefined => layout.slots.find(slot => slot.nodeId === nodeId)
+
+/** The node of the layout's children slot, where each page's content shows (the layout view draws a placeholder on it). */
+export const childrenSlotNode = (layout: Pick<LayoutFile, 'slots'> | null | undefined): string | null => layout?.slots.find(slot => slot.id === CHILDREN_SLOT)?.nodeId ?? null
+
+/** The props of a layout node that "+" can turn into a variable; the ones a variable drives already are disabled. */
+export function variableAddItems(layout: Pick<LayoutFile, 'variables'>, node: ModelNode): { id: string, label: string, disabled: boolean, hint?: string }[] {
+  if (node.type === 'Instance' || node.type === 'SlotFill') return []
+  // A style binding of the same name (style `text` is the font size) leaves the prop free.
+  const bound = (prop: string) => !!boundProperty(layout.variables ?? [], node.id, prop, 'prop')
+  return propDefsOf(node.type).map(def => ({ id: def.name, label: def.label, disabled: bound(def.name), ...(bound(def.name) ? { hint: 'Already a variable' } : {}) }))
+}
 
 /** The page's own value for a variable; undefined when the default applies. */
 export const layoutValue = (page: Pick<PageFile, 'layoutValues'>, variable: Pick<PropertyDef, 'id'>): Value | undefined => page.layoutValues?.[variable.id]

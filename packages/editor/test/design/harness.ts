@@ -293,3 +293,47 @@ export const typeNumber = async (element: HTMLElement | null, value: string) => 
   input.dispatchEvent(new Event('blur'))
   await settle()
 }
+
+/** The element a selector finds in the document, or an error naming it. */
+export const must = (selector: string): HTMLElement => {
+  const element = document.body.querySelector<HTMLElement>(selector)
+  if (!element) throw new Error(`nothing matches ${selector}`)
+  return element
+}
+
+/** The input (or textarea) a selector finds: the element itself, or the one inside it. */
+export const inputOf = (selector: string): HTMLInputElement => {
+  const element = must(selector)
+  return (element.matches('input, textarea') ? element : element.querySelector('input, textarea')) as HTMLInputElement
+}
+
+/** Shows variant `id` (null: the primary) of the component being edited, by its row in the Variants section (the panel shows for the root when nothing is selected). */
+export const showVariant = async (id: string | null) => {
+  must(`[data-variant-row="${id ?? 'primary'}"] button[aria-pressed]`).click()
+  await settle()
+}
+
+/** The "+" of a panel section (`data-component-variants`, `data-component-properties`…). */
+export const sectionAdd = (section: string) => must(`[${section}] [data-section-action="add"]`)
+
+/** The trigger of a kit select (USelect) found by a selector: the select itself, or the combobox inside it. */
+export const combo = (selector: string): HTMLElement => {
+  const element = must(selector)
+  return element.matches('[role="combobox"]') ? element : element.querySelector<HTMLElement>('[role="combobox"]') ?? element
+}
+
+/** Flips a kit switch (USwitch) found by a selector: the switch itself, or the button inside it. */
+export const toggle = async (selector: string) => {
+  const element = must(selector)
+  const button = element.matches('button') ? element : element.querySelector<HTMLElement>('button') ?? element
+  button.click()
+  await settle()
+}
+
+/** The labels of a kit select's options, once the keyboard has opened it (the menu is left open). */
+export const optionLabels = async (trigger: Element | null) => {
+  if (!trigger) throw new Error('no select trigger')
+  trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await settle()
+  return [...document.body.querySelectorAll<HTMLElement>('[role="option"]')].map(option => option.querySelector<HTMLElement>('[data-slot="itemLabel"]')?.textContent?.trim() ?? option.textContent?.trim() ?? '')
+}

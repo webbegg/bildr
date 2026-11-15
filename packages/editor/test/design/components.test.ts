@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { PROPERTY_KINDS } from '../../../codegen/src/model/schemas.ts'
 import { allByTestId, byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
-import { check, choose, inspectorHead, layer, menuItem, open, openFile, postCard, propInput, propRow, propSelect, resetStyle, select, typeNumber, selectOption, sent, setupHarness, sidebarTab, styleField, typeStyle } from './harness.ts'
+import { byLabel, combo, inputOf, inspectorHead, layer, menuItem, must, open, openFile, optionLabels, postCard, propInput, propRow, propSelect, resetStyle, sectionAdd, select, selectOption, sent, setupHarness, showVariant, sidebarTab, styleField, toggle, typeNumber, typeStyle } from './harness.ts'
 
 /**
- * Components in the Design screen (P4c, V1, V2): the Components section,
- * a component's properties, variants (with the overrides an edit makes while
- * one is active), states, interactions and transition, and an instance's slots.
+ * Components in the Design screen (P4c, U5, V1, V2): the Components section, the hosted component
+ * panel over the module (an Instance's values, the variants with the overrides an edit makes while one is
+ * active, their states, the interactions and the transition, the properties on the root and the ones
+ * bound to a node, the properties modal) and the variant chip over the canvas.
  */
 
 setupHarness()
@@ -16,6 +16,11 @@ const component = (id: string) => document.body.querySelector<HTMLElement>(`[dat
 const actionsOf = (id: string) => component(id)!.querySelector('[aria-label="Component actions"]')
 const confirmOk = () => click(document.body.querySelector<HTMLElement>('[data-confirm-ok]'))
 const POST_CARD = 'cmp_post_card'
+const q = (selector: string) => document.body.querySelector<HTMLElement>(selector)
+const qa = (selector: string) => [...document.body.querySelectorAll<HTMLElement>(selector)]
+/** A row of a section's list: the row that holds the field with this accessible name. */
+const rowOf = (name: string) => byLabel(name)!.closest<HTMLElement>('.group\\/row')!
+const rows = (section: string) => qa(`[${section}] [aria-label$=" property name"], [${section}] [aria-label$=" variable name"]`).map(input => input.getAttribute('aria-label'))
 
 describe('Components section', () => {
   it('lists the components with where each is used; a row opens the component in the canvas', async () => {
@@ -86,140 +91,272 @@ describe('Components section', () => {
   })
 })
 
-describe('Component canvas and variant switcher', () => {
-  it('shows the primary variant, and each variant the switcher over the canvas picks', async () => {
+describe('Component canvas and the variant being edited', () => {
+  it('shows the primary variant, and each variant its row in the Variants section picks, with its chip over the frame', async () => {
     await open({}, POST_CARD)
     expect(sent('bildr:render').at(-1)?.variant).toEqual({ id: null, label: 'default' })
-    expect([...byTestId('variant-bar')!.querySelectorAll('button')].map(tab => tab.textContent?.trim())).toEqual(['default', 'compact', 'hovered'])
+    expect(qa('[data-component-variants] [data-variant-row]').map(row => row.dataset.variantRow)).toEqual(['primary', 'var_compact', 'var_hovered'])
+    expect(q('[data-board-label]')?.textContent?.trim()).toBe('Primary')
 
-    await click(byTestId('variant-tab-var_compact'))
+    await showVariant('var_compact')
     expect(sent('bildr:render').at(-1)?.variant).toEqual({ id: 'var_compact', label: 'compact' })
-    await click(byTestId('variant-tab-'))
+    expect(q('[data-board-label]')?.textContent?.trim()).toBe('compact')
+    await showVariant(null)
     expect(sent('bildr:render').at(-1)?.variant).toEqual({ id: null, label: 'default' })
   })
 
-  it('has no switcher on a page, and a variant is dropped when its file is left', async () => {
+  it('has no variants or chip on a page, and a variant is dropped when its file is left', async () => {
     await open({}, POST_CARD)
-    await click(byTestId('variant-tab-var_compact'))
+    await showVariant('var_compact')
     await openFile('pg_index')
-    expect(byTestId('variant-bar')).toBeNull()
+    expect(q('[data-component-variants]')).toBeNull()
+    expect(q('[data-board-bar]')).toBeNull()
     await openFile(POST_CARD)
     expect(sent('bildr:render').at(-1)?.variant).toEqual({ id: null, label: 'default' })
+  })
+
+  it('renames the variant being edited from its chip (a double-click), but not the primary', async () => {
+    const { actions } = await open({ component_variant_rename: ok() }, POST_CARD)
+    q('[data-board-label]')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await settle()
+    expect(q('[data-board-rename]')).toBeNull()
+
+    await showVariant('var_compact')
+    q('[data-board-label]')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await settle()
+    await typeInto(q('[data-board-rename]'), 'dense')
+
+    expect(actions.named('component_variant_rename').map(call => call.input)).toEqual([{ component: POST_CARD, variant: 'var_compact', name: 'dense' }])
   })
 })
 
 describe('Properties', () => {
-  const addProperty = async (kind: string, name = 'subtitle') => {
-    await typeInto(byTestId('prop-add-name'), name)
-    await choose('prop-add-kind', kind)
+  it('lists the properties of the component on its root, each labelled by what it sets', async () => {
+    await open({}, POST_CARD)
+    await select('n_card')
+    expect(q('[data-component-properties]')?.getAttribute('data-style-section')).toBe('Component properties')
+    expect(rows('data-component-properties')).toEqual(['post property name', 'cover property name', 'draftLabel property name', 'actions property name'])
+    expect(rowOf('post property name').textContent).toContain('Record')
+    expect(rowOf('cover property name').textContent).toContain('Image')
+    expect(rowOf('draftLabel property name').textContent).toContain('Text')
+    expect(rowOf('actions property name').textContent).toContain('Slot')
+  })
+
+  it('shows on another node the properties bound to it (a slot property names its container)', async () => {
+    await open({}, POST_CARD)
+    await select('n_draft')
+    expect(q('[data-component-properties]')?.getAttribute('data-style-section')).toBe('Properties')
+    expect(rows('data-component-properties')).toEqual(['draftLabel property name'])
+    await select('n_actions')
+    expect(rows('data-component-properties')).toEqual(['actions property name'])
+  })
+
+  it('adds a property from a prop of the selected node, named after it and bound to it', async () => {
+    const { actions } = await open({ component_property_add: ok({ propertyId: 'prop_text' }) }, POST_CARD)
+    await select('n_title')
+    await menuItem(sectionAdd('data-component-properties'), 'Text')
+    expect(actions.named('component_property_add').map(call => call.input)).toEqual([{ component: POST_CARD, name: 'Text', kind: 'text', bindings: [{ nodeId: 'n_title', prop: 'text' }] }])
+  })
+
+  it('adds one from a style key (a select over its scale), and a slot from the children of a container', async () => {
+    const { actions } = await open({ component_property_add: ok({ propertyId: 'prop_x' }) }, POST_CARD)
+    await select('n_card')
+    await menuItem(sectionAdd('data-component-properties'), 'Style · Gap')
+    await menuItem(sectionAdd('data-component-properties'), 'Slot (children)')
+    const [gap, slot] = actions.named('component_property_add').map(call => call.input)
+    expect(gap).toMatchObject({ component: POST_CARD, name: 'Gap', kind: 'select', bindings: [{ nodeId: 'n_card', prop: 'gap', target: 'style' }] })
+    expect((gap!.options as string[])).toContain('4')
+    expect(slot).toEqual({ component: POST_CARD, name: 'Content', kind: 'slot', nodeId: 'n_card' })
+  })
+
+  it('offers a prop a property already drives as disabled, and a container that is a slot already', async () => {
+    await open({}, POST_CARD)
+    await select('n_draft')
+    await click(sectionAdd('data-component-properties'))
+    const item = (label: string) => qa('[role^="menuitem"]').find(element => element.textContent?.trim().startsWith(label))
+    expect(item('Text')?.getAttribute('data-disabled')).not.toBeNull()
+    expect(item('Text')?.textContent).toContain('Already a property')
+  })
+
+  it('adds a record or a list of an entity of the model: the module\'s entity properties', async () => {
+    const { actions } = await open({ component_property_add: ok({ propertyId: 'prop_x' }) }, POST_CARD)
+    await select('n_card')
+    await menuItem(sectionAdd('data-component-properties'), 'List')
+    await click(qa('[role^="menuitem"]').find(element => element.textContent?.trim().startsWith('Post')) ?? null)
+    expect(actions.named('component_property_add').map(call => call.input)).toEqual([{ component: POST_CARD, name: 'posts', kind: 'entity', entity: 'ent_post', many: true }])
+  })
+
+  it('renames and removes a property from its row', async () => {
+    const { actions } = await open({ component_property_update: ok(), component_property_remove: ok() }, POST_CARD)
+    await select('n_card')
+    await typeInto(byLabel('cover property name'), 'image')
+    await click(rowOf('draftLabel property name').querySelector<HTMLElement>('[data-row-remove]'))
+    expect(actions.named('component_property_update').map(call => call.input)).toEqual([{ component: POST_CARD, property: 'prop_cover', name: 'image' }])
+    expect(actions.named('component_property_remove').map(call => call.input)).toEqual([{ component: POST_CARD, property: 'prop_draft_label' }])
+  })
+
+  it('renames the component from the root\'s Name row', async () => {
+    const { actions } = await open({ component_rename: ok() }, POST_CARD)
+    await select('n_card')
+    await typeInto(byLabel('Component name'), 'Card')
+    expect(actions.named('component_rename').map(call => call.input)).toEqual([{ component: POST_CARD, name: 'Card' }])
+  })
+})
+
+describe('The properties modal', () => {
+  const openModal = async (extra: Record<string, () => unknown> = {}, property?: string) => {
+    const mounted = await open({ component_property_update: ok(), component_property_remove: ok(), ...extra }, POST_CARD)
+    await select('n_card')
+    await click(must('[data-component-properties] [data-section-action="edit"]'))
+    if (property) await click(must(`[data-property-row="${property}"] button`))
+    return mounted
   }
 
-  it('offers every property kind of the model', async () => {
-    await open({}, POST_CARD)
-    const options = [...(byTestId('prop-add-kind') as HTMLSelectElement).options].map(option => option.value)
-    expect(options).toEqual([...PROPERTY_KINDS])
+  it('lists the properties of the component, the first one\'s details beside them, and closes with Done', async () => {
+    await openModal()
+    expect(must('[data-properties-modal]').getAttribute('data-properties-kind')).toBe('component')
+    expect(qa('[data-property-row]').map(row => row.dataset.propertyRow)).toEqual(['prop_post', 'prop_cover', 'prop_draft_label', 'prop_actions'])
+    expect(must('[data-property-details]').dataset.propertyDetails).toBe('prop_post')
+    expect(must('[data-property-type]').textContent).toBe('Record')
+    await click(must('[data-properties-done]'))
+    expect(q('[data-properties-modal]')).toBeNull()
   })
 
-  it('adds a text property', async () => {
-    const { actions } = await open({ component_property_add: ok({ propertyId: 'prop_subtitle' }) }, POST_CARD)
-    await addProperty('text')
-    await click(byTestId('prop-add'))
-    expect(actions.named('component_property_add').map(call => call.input)).toEqual([{ component: POST_CARD, name: 'subtitle', kind: 'text' }])
-  })
-
-  it('adds a select with its options, an entity list with its entity, and a slot', async () => {
-    const { actions } = await open({ component_property_add: ok({ propertyId: 'prop_x' }) }, POST_CARD)
-    await addProperty('select', 'size')
-    await typeInto(byTestId('prop-add-options'), 'small, large')
-    await click(byTestId('prop-add'))
-    await addProperty('entity', 'posts')
-    await choose('prop-add-entity', 'ent_post')
-    await check('prop-add-many', true)
-    await click(byTestId('prop-add'))
-    await addProperty('slot', 'footer')
-    await click(byTestId('prop-add'))
-    expect(actions.named('component_property_add').map(call => call.input)).toEqual([
-      { component: POST_CARD, name: 'size', kind: 'select', options: ['small', 'large'] },
-      { component: POST_CARD, name: 'posts', kind: 'entity', entity: 'ent_post', many: true },
-      { component: POST_CARD, name: 'footer', kind: 'slot' }
-    ])
-  })
-
-  it('renames, labels, sets the default of and removes a property', async () => {
-    const { actions } = await open({ component_property_update: ok(), component_property_remove: ok() }, POST_CARD)
-    await typeInto(byTestId('property-name-prop_cover'), 'image')
-    await typeInto(byTestId('property-default-prop_draft_label'), 'Draft!')
-    await check('property-optional-prop_cover', true)
-    await click(byTestId('property-remove-prop_cover'))
+  it('edits the name, the description and Optional of a property, each one update', async () => {
+    const { actions } = await openModal({}, 'prop_draft_label')
+    await typeInto(must('[data-property-name]'), 'badge')
+    await typeInto(must('[data-property-description]'), '  Shown on a draft ')
+    await toggle('[data-property-optional]')
+    await typeInto(must('[data-property-placeholder]'), '')
     expect(actions.named('component_property_update').map(call => call.input)).toEqual([
-      { component: POST_CARD, property: 'prop_cover', name: 'image' },
-      { component: POST_CARD, property: 'prop_draft_label', default: 'Draft!' },
-      { component: POST_CARD, property: 'prop_cover', optional: true }
+      { component: POST_CARD, property: 'prop_draft_label', name: 'badge' },
+      { component: POST_CARD, property: 'prop_draft_label', description: 'Shown on a draft' },
+      // The property is optional already: the switch turns it off, which removes the flag.
+      { component: POST_CARD, property: 'prop_draft_label', optional: null },
+      { component: POST_CARD, property: 'prop_draft_label', placeholder: null }
     ])
-    expect(actions.named('component_property_remove').map(call => call.input)).toEqual([{ component: POST_CARD, property: 'prop_cover' }])
   })
 
-  it('binds a property to a prop or a style key of the selected node, and unbinds', async () => {
-    const { actions } = await open({
-      component_property_update: (input) => {
-        const property = postCard().properties.find(entry => entry.id === input.property)!
-        if (input.bindings === null) delete property.bindings
-        else property.bindings = input.bindings as never
-        return { changed: [] }
-      }
-    }, POST_CARD)
-    await select('n_title')
+  it('sets the default of a property in a field of its kind, and resets it', async () => {
+    const { actions } = await openModal({}, 'prop_draft_label')
+    await typeInto(must('[data-property-default] input'), 'Draft!')
+    expect(actions.named('component_property_update').at(-1)?.input).toEqual({ component: POST_CARD, property: 'prop_draft_label', default: 'Draft!' })
+  })
 
-    await choose('property-bind-target-prop_draft_label', 'prop:text')
-    await click(byTestId('property-bind-prop_draft_label'))
-    await choose('property-bind-target-prop_draft_label', 'style:bg')
-    await click(byTestId('property-bind-prop_draft_label'))
-    await click(byTestId('property-unbind-prop_draft_label-0'))
+  it('keeps the default of a number property when a typo is typed, puts the saved value back, and takes a real number', async () => {
+    postCard().properties.push({ id: 'prop_count', name: 'count', kind: 'number', default: 3 })
+    const { actions } = await openModal({}, 'prop_count')
+    const field = () => must('[data-property-default] input') as HTMLInputElement
+    expect(field().value).toBe('3')
 
-    const bound = { nodeId: 'n_draft', prop: 'text' }
-    const title = { nodeId: 'n_title', prop: 'text' }
-    const background = { nodeId: 'n_title', prop: 'bg', target: 'style' }
+    await typeNumber(must('[data-property-default]'), 'abc')
+    expect(actions.named('component_property_update')).toEqual([])
+    expect(field().value).toBe('3')
+
+    await typeNumber(must('[data-property-default]'), '4')
+    expect(actions.named('component_property_update').map(call => call.input)).toEqual([{ component: POST_CARD, property: 'prop_count', default: 4 }])
+  })
+
+  it('edits a select\'s options as a comma list, and an entity property\'s entity and whether it is a list', async () => {
+    postCard().properties.push({ id: 'prop_size', name: 'size', kind: 'select', options: ['small', 'large'] })
+    const { actions } = await openModal({}, 'prop_size')
+    expect(inputOf('[data-property-options]').value).toBe('small, large')
+    await typeInto(must('[data-property-options]'), 'small, large, huge')
+    await typeInto(must('[data-property-options]'), '')
+    await click(must('[data-property-row="prop_post"] button'))
+    await toggle('[data-property-many]')
+    await selectOption(combo('[data-property-entity]'), 'Quote')
+
     expect(actions.named('component_property_update').map(call => call.input)).toEqual([
-      { component: POST_CARD, property: 'prop_draft_label', bindings: [bound, title] },
-      { component: POST_CARD, property: 'prop_draft_label', bindings: [bound, title, background] },
-      { component: POST_CARD, property: 'prop_draft_label', bindings: [title, background] }
+      { component: POST_CARD, property: 'prop_size', options: ['small', 'large', 'huge'] },
+      { component: POST_CARD, property: 'prop_size', options: null },
+      { component: POST_CARD, property: 'prop_post', many: true },
+      { component: POST_CARD, property: 'prop_post', entity: 'ent_quote' }
     ])
   })
 
-  it('points a slot property at the selected container', async () => {
-    const { actions } = await open({ component_property_update: ok() }, POST_CARD)
-    await select('n_card')
-    await click(byTestId('property-slot-prop_actions'))
-    expect(actions.named('component_property_update').map(call => call.input)).toEqual([{ component: POST_CARD, property: 'prop_actions', nodeId: 'n_card' }])
+  it('deletes a property after a confirm, naming what instances lose', async () => {
+    const { actions } = await openModal({}, 'prop_actions')
+    await click(must('[data-property-delete]'))
+    expect(must('[data-confirm]').textContent).toContain('their own content')
+    expect(actions.named('component_property_remove')).toEqual([])
+    await confirmOk()
+    expect(actions.named('component_property_remove').map(call => call.input)).toEqual([{ component: POST_CARD, property: 'prop_actions' }])
+  })
+
+  it('moves a property by dragging its row onto another (its new position is the update\'s index)', async () => {
+    const { actions } = await openModal()
+    const from = must('[data-property-row="prop_actions"]')
+    const to = must('[data-property-row="prop_post"]')
+    from.dispatchEvent(new Event('dragstart', { bubbles: true }))
+    to.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }))
+    to.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(actions.named('component_property_update').map(call => call.input)).toEqual([{ component: POST_CARD, property: 'prop_actions', index: 0 }])
+  })
+
+  it('opens by itself right after the binding dot creates a property, on the component\'s properties', async () => {
+    const { actions } = await open({ component_property_add: ok({ propertyId: 'prop_text' }) }, POST_CARD)
+    await select('n_excerpt')
+    expect(q('[data-properties-modal]')).toBeNull()
+    await menuItem(propRow('text')!.querySelector('[data-binding-dot]'), 'Create property')
+    expect(actions.named('component_property_add')).toHaveLength(1)
+    expect(must('[data-properties-modal]').getAttribute('data-properties-kind')).toBe('component')
   })
 })
 
 describe('Variants and states', () => {
-  it('adds, renames and deletes a variant', async () => {
-    const { actions } = await open({ component_variant_add: ok({ variantId: 'var_large' }), component_variant_rename: ok(), component_variant_delete: ok() }, POST_CARD)
-    await typeInto(byTestId('variant-add-name'), 'large')
-    await click(byTestId('variant-add'))
-    await typeInto(byTestId('variant-rename-var_compact'), 'dense')
-    await click(byTestId('variant-delete-var_compact'))
-    expect(actions.named('component_variant_add').map(call => call.input)).toEqual([{ component: POST_CARD, name: 'large' }])
+  it('adds a variant from the section\'s + (named like the primary\'s next), and shows it', async () => {
+    const { actions } = await open({ component_variant_add: ok({ variantId: 'var_large' }) }, POST_CARD)
+    await menuItem(sectionAdd('data-component-variants'), 'New variant')
+    expect(actions.named('component_variant_add').map(call => call.input)).toEqual([{ component: POST_CARD, name: 'Variant 3' }])
+  })
+
+  it('renames a variant from its menu, and deletes it after a confirm', async () => {
+    const { actions } = await open({ component_variant_rename: ok(), component_variant_delete: ok() }, POST_CARD)
+    await menuItem(byLabel('compact variant actions'), 'Rename')
+    await typeInto(must('input[aria-label="compact variant name"]'), 'dense')
+    await menuItem(byLabel('compact variant actions'), 'Delete')
+    expect(must('[data-confirm]').textContent).toContain('fall back to Primary')
+    expect(actions.named('component_variant_delete')).toEqual([])
+    await confirmOk()
     expect(actions.named('component_variant_rename').map(call => call.input)).toEqual([{ component: POST_CARD, variant: 'var_compact', name: 'dense' }])
     expect(actions.named('component_variant_delete').map(call => call.input)).toEqual([{ component: POST_CARD, variant: 'var_compact' }])
   })
 
-  it('adds a pressed state to the primary and a hover state to a variant; a state that exists has no button', async () => {
+  it('cannot rename or delete the primary: it is the component itself', async () => {
+    await open({}, POST_CARD)
+    await click(byLabel('Primary variant actions'))
+    await settle()
+    const item = (label: string) => qa('[role^="menuitem"]').find(element => element.textContent?.trim().startsWith(label))
+    expect(item('Rename')?.getAttribute('data-disabled')).not.toBeNull()
+    expect(item('Delete')?.getAttribute('data-disabled')).not.toBeNull()
+  })
+
+  it('adds a pressed state to the primary and a hover state to a variant; a state that exists is disabled, and a state has none', async () => {
     const { actions } = await open({ component_state_add: ok({ variantId: 'var_x' }) }, POST_CARD)
-    expect(byTestId('state-add--hover')).toBeNull()
-    await click(byTestId('state-add--pressed'))
-    await click(byTestId('state-add-var_compact-hover'))
+    await menuItem(byLabel('Primary variant actions'), 'Add pressed state')
+    await menuItem(byLabel('compact variant actions'), 'Add hover state')
     expect(actions.named('component_state_add').map(call => call.input)).toEqual([
       { component: POST_CARD, baseVariant: '', kind: 'pressed' },
       { component: POST_CARD, baseVariant: 'var_compact', kind: 'hover' }
     ])
+
+    // The primary has a hover state already.
+    byLabel('Primary variant actions')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await settle()
+    expect(qa('[role^="menuitem"]').find(element => element.textContent?.trim().startsWith('Add hover state'))?.getAttribute('data-disabled')).not.toBeNull()
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await settle()
+    // A state (hovered) shows by itself from the pointer: its menu has no state to add.
+    byLabel('hovered variant actions')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await settle()
+    expect(qa('[role^="menuitem"]').some(element => element.textContent?.includes('state'))).toBe(false)
   })
 
   it('edits of the style and props of a node while a variant is active are that variant\'s overrides', async () => {
     const { actions } = await open({ component_variant_set_override: ok(), node_update_style: ok(), node_update_props: ok() }, POST_CARD)
-    await click(byTestId('variant-activate-var_compact'))
+    await showVariant('var_compact')
     await select('n_title')
 
     await typeStyle('w', 'full')
@@ -235,7 +372,7 @@ describe('Variants and states', () => {
 
   it('shows the node with the active variant\'s overrides applied, and a breakpoint-prefixed key at the device', async () => {
     const { actions } = await open({ component_variant_set_override: ok() }, POST_CARD)
-    await click(byTestId('variant-activate-var_compact'))
+    await showVariant('var_compact')
     await select('n_card')
     expect(styleField('p')!.querySelector('input')!.value).toBe('3')
 
@@ -246,10 +383,10 @@ describe('Variants and states', () => {
 
   it('clearing a token the variant overrides gives back the primary\'s; clearing one only the primary sets unsets it', async () => {
     const { actions } = await open({ component_variant_set_override: ok() }, POST_CARD)
-    await click(byTestId('variant-activate-var_compact'))
+    await showVariant('var_compact')
     await select('n_card')
     await resetStyle('padding')
-    await click(byTestId('variant-tab-var_hovered'))
+    await showVariant('var_hovered')
     await resetStyle('padding')
 
     expect(actions.named('component_variant_set_override').map(call => call.input)).toEqual([
@@ -258,29 +395,48 @@ describe('Variants and states', () => {
     ])
   })
 
-  it('lists the active variant\'s overrides, each resettable', async () => {
+  it('lists what the active variant overrides once, in the inspector\'s section, each resettable', async () => {
     const { actions } = await open({ component_variant_set_override: ok() }, POST_CARD)
-    await click(byTestId('variant-activate-var_compact'))
-    expect(allByTestId('override').map(row => row.textContent?.replace(/\s+/g, ' ').trim())).toEqual(expect.arrayContaining([expect.stringContaining('gap'), expect.stringContaining('hidden')]))
+    await showVariant('var_compact')
+    await select('n_card')
+    expect(qa('[data-variant-overrides]')).toHaveLength(1)
+    expect(allByTestId('override')).toEqual([])
+    expect(qa('[data-variant-overrides] [data-override]').map(row => row.dataset.override)).toEqual(['style:gap', 'style:p'])
 
-    await click(byTestId('override-reset-n_card-gap'))
-    await click(byTestId('override-reset-n_excerpt-hidden'))
+    await select('n_excerpt')
+    qa('[data-variant-overrides] [data-field-state="set"]')[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true, altKey: true }))
+    await settle()
 
     expect(actions.named('component_variant_set_override').map(call => call.input)).toEqual([
-      { component: POST_CARD, variant: 'var_compact', nodeId: 'n_card', style: { gap: null } },
       { component: POST_CARD, variant: 'var_compact', nodeId: 'n_excerpt', props: { hidden: null } }
     ])
   })
 })
 
 describe('Interactions and transition', () => {
-  it('adds an interaction to the primary, going to the first variant', async () => {
+  const pickTarget = async (event: string, target: string) => {
+    await menuItem(sectionAdd('data-component-interactions'), event)
+    await click(qa('[role^="menuitem"]').find(element => element.textContent?.trim().startsWith(target)) ?? null)
+  }
+
+  it('adds an interaction to the primary from "+": the event, then the variant it goes to', async () => {
     const { actions } = await open({ component_interaction_add: ok({ index: 0 }) }, POST_CARD)
-    await click(byTestId('interaction-add'))
-    expect(actions.named('component_interaction_add').map(call => call.input)).toEqual([{ component: POST_CARD, variant: '', on: 'click', to: 'var_compact' }])
+    await select('n_card')
+    await pickTarget('Click', 'compact')
+    expect(actions.named('component_interaction_add').map(call => call.input)).toEqual([{ component: POST_CARD, on: 'click', to: 'var_compact' }])
   })
 
-  it('edits and removes an interaction of a variant', async () => {
+  it('offers a variant as a target, never a state, and a state\'s own list says it shows from the pointer', async () => {
+    await open({}, POST_CARD)
+    await click(sectionAdd('data-component-interactions'))
+    expect(qa('[role^="menuitem"]').map(item => item.textContent?.trim().split(/\s/)[0])).toEqual(expect.arrayContaining(['Click', 'Mouse', 'Appear']))
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await settle()
+    await showVariant('var_hovered')
+    expect(must('[data-component-interactions]').textContent).toContain('A state shows from the pointer')
+  })
+
+  it('lists the interactions of the active variant as rows, edits one in its popover and removes it', async () => {
     postCard().variants[0]!.interactions = [{ on: 'click', do: [{ kind: 'setVariant', to: '' }] }]
     const { actions } = await open({
       component_interaction_update: (input) => {
@@ -293,22 +449,32 @@ describe('Interactions and transition', () => {
       },
       component_interaction_remove: ok()
     }, POST_CARD)
-    await click(byTestId('variant-activate-var_compact'))
+    await showVariant('var_compact')
+    expect(qa('[data-interaction-row]').map(row => row.dataset.interactionRow)).toEqual(['var_compact:0'])
+    expect(q('[data-interaction-row]')?.textContent).toContain('Click → Primary')
 
-    await choose('interaction-on-0', 'mouseenter')
-    await choose('interaction-to-0', 'var_compact')
-    await typeInto(byTestId('interaction-delay-0'), '0.5')
-    await typeInto(byTestId('interaction-delay-0'), '')
-    await click(byTestId('interaction-remove-0'))
+    await click(byLabel('Edit Click → Primary'))
+    await selectOption(combo('[data-interaction-on]'), 'Mouse enter')
+    await typeInto(must('[data-interaction-delay]'), '0.5')
+    await typeInto(must('[data-interaction-delay]'), '')
+    await click(must('[data-interaction-remove]'))
 
     const base = { component: POST_CARD, variant: 'var_compact', index: 0 }
     expect(actions.named('component_interaction_update').map(call => call.input)).toEqual([
-      { ...base, on: 'mouseenter' }, { ...base, to: 'var_compact' }, { ...base, delay: 0.5 }, { ...base, delay: null }
+      { ...base, on: 'mouseenter' }, { ...base, delay: 0.5 }, { ...base, delay: null }
     ])
     expect(actions.named('component_interaction_remove').map(call => call.input)).toEqual([base])
   })
 
-  it('sets the transition of the component: ease keeps its duration and easing, spring takes stiffness and damping, none removes it', async () => {
+  it('removes an interaction from its row\'s ×', async () => {
+    postCard().interactions = [{ on: 'appear', do: [{ kind: 'setVariant', to: 'var_compact' }] }]
+    const { actions } = await open({ component_interaction_remove: ok() }, POST_CARD)
+    expect(q('[data-interaction-row=":0"]')?.textContent).toContain('Appear → compact')
+    await click(byLabel('Remove Appear → compact'))
+    expect(actions.named('component_interaction_remove').map(call => call.input)).toEqual([{ component: POST_CARD, variant: '', index: 0 }])
+  })
+
+  it('sets the transition of the component: ease keeps its duration and easing, spring takes the defaults, instant is one', async () => {
     const { actions } = await open({
       component_transition_set: (input) => {
         if (input.transition) postCard().transition = input.transition as never
@@ -316,16 +482,29 @@ describe('Interactions and transition', () => {
         return { changed: [] }
       }
     }, POST_CARD)
-    await typeInto(byTestId('transition-duration'), '0.5')
-    await choose('transition-easing', 'linear')
-    await choose('transition-type', 'spring')
-    await choose('transition-type', 'none')
+    expect(must('[data-transition-row]').textContent).toContain('Ease 0.2s')
+    await click(must('[data-transition-row]'))
+    await typeInto(must('[data-transition-duration]'), '0.5')
+    await selectOption(combo('[data-transition-easing]'), 'Linear')
+    const type = (label: string) => click(qa('[data-transition-type] button').find(button => button.textContent?.trim() === label) ?? null)
+    await type('Spring')
+    await type('Instant')
     expect(actions.named('component_transition_set').map(call => call.input)).toEqual([
-      { component: POST_CARD, variant: '', transition: { type: 'ease', duration: 0.5, easing: 'ease-out' } },
-      { component: POST_CARD, variant: '', transition: { type: 'ease', duration: 0.5, easing: 'linear' } },
-      { component: POST_CARD, variant: '', transition: { type: 'spring', stiffness: 400, damping: 25 } },
-      { component: POST_CARD, variant: '', transition: null }
+      { component: POST_CARD, transition: { type: 'ease', duration: 0.5, easing: 'ease-out' } },
+      { component: POST_CARD, transition: { type: 'ease', duration: 0.5, easing: 'linear' } },
+      { component: POST_CARD, transition: { type: 'spring', stiffness: 300, damping: 30 } },
+      { component: POST_CARD, transition: { type: 'instant' } }
     ])
+  })
+
+  it('sets the transition of a variant, shown as Inherit until it has its own, and clears it with Inherit', async () => {
+    const { actions } = await open({ component_transition_set: ok() }, POST_CARD)
+    await showVariant('var_compact')
+    expect(must('[data-transition-row]').textContent).toContain('Inherit')
+    await click(must('[data-transition-row]'))
+    expect(q('[data-transition-inherit]')).toBeNull()
+    await click(qa('[data-transition-type] button').find(button => button.textContent?.trim() === 'Instant') ?? null)
+    expect(actions.named('component_transition_set').map(call => call.input)).toEqual([{ component: POST_CARD, variant: 'var_compact', transition: { type: 'instant' } }])
   })
 })
 
@@ -337,20 +516,34 @@ describe('Instance inspector', () => {
     expect(inspectorHead()?.textContent).toContain('PostCard')
   })
 
+  it('has a Component section with the component and its Edit button, which opens it on top of the page', async () => {
+    await open()
+    await select('n_card')
+    expect(must('[data-component-instance]').textContent).toContain('PostCard')
+    await click(must('[data-component-instance] button'))
+    expect(sent('bildr:render').at(-1)?.file.id).toBe(POST_CARD)
+  })
+
   it('offers the variants of the component, not its states (those follow the pointer)', async () => {
     await open()
     await select('n_card')
-    const options = [...(byTestId('instance-variant') as HTMLSelectElement).options].map(option => option.value)
-    expect(options).toEqual(['', 'var_compact'])
+    expect(await optionLabels(combo('[data-instance-variant]'))).toEqual(['Primary', 'compact'])
+  })
+
+  it('picks the variant of an instance, and goes back to the primary with Reset', async () => {
+    const { actions } = await open({ instance_set_values: ok() })
+    await select('n_card')
+    await selectOption(combo('[data-instance-variant]'), 'compact')
+    expect(actions.named('instance_set_values').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_card', variant: 'var_compact' }])
   })
 
   it('clears and fills a slot, detaches, and replaces the component', async () => {
     const { actions } = await open({ instance_set_slot: ok({ fillId: null }), instance_detach: ok(), instance_replace: ok() })
     await select('n_card')
 
-    await check('instance-slot-prop_actions', false)
-    await click(byTestId('instance-detach'))
-    await choose('instance-replace', 'cmp_tip')
+    await toggle('[data-instance-slot="prop_actions"]')
+    await click(must('[data-instance-detach]'))
+    await selectOption(combo('[data-instance-replace]'), 'Tip')
 
     expect(actions.named('instance_set_slot').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_card', slot: 'prop_actions', filled: false }])
     expect(actions.named('instance_detach').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_card' }])
@@ -359,34 +552,16 @@ describe('Instance inspector', () => {
 })
 
 describe('A typo in a number field is refused, never committed as a removal', () => {
-  const value = (testId: string) => (byTestId(testId) as HTMLInputElement).value
-
-  it('keeps the default of a number property, puts the saved value back, and takes a real number', async () => {
-    postCard().properties.push({ id: 'prop_count', name: 'count', kind: 'number', default: 3 })
-    const { actions } = await open({ component_property_update: ok() }, POST_CARD)
-
-    await typeInto(byTestId('property-default-prop_count'), 'abc')
-    expect(actions.named('component_property_update')).toEqual([])
-    expect(value('property-default-prop_count')).toBe('3')
-
-    await typeInto(byTestId('property-default-prop_count'), '4')
-    await typeInto(byTestId('property-default-prop_count'), '')
-    expect(actions.named('component_property_update').map(call => call.input)).toEqual([
-      { component: POST_CARD, property: 'prop_count', default: 4 },
-      { component: POST_CARD, property: 'prop_count', default: null }
-    ])
-  })
-
-  it('keeps the value an instance gives a number property', async () => {
+  it('keeps the value an instance gives a number property (the field shows the default while it has none)', async () => {
     postCard().properties.push({ id: 'prop_count', name: 'count', kind: 'number', default: 3 })
     const { actions } = await open({ instance_set_values: ok() })
     await select('n_card')
 
-    await typeInto(byTestId('value-count'), 'abc')
+    await typeNumber(propRow('prop_count'), 'abc')
     expect(actions.named('instance_set_values')).toEqual([])
-    expect(value('value-count')).toBe('')
+    expect(propInput('prop_count')?.value).toBe('3')
 
-    await typeInto(byTestId('value-count'), '5')
+    await typeNumber(propRow('prop_count'), '5')
     expect(actions.named('instance_set_values').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_card', values: { prop_count: 5 } }])
   })
 
@@ -402,16 +577,25 @@ describe('A typo in a number field is refused, never committed as a removal', ()
     expect(actions.named('node_update_props').map(call => call.input)).toEqual([{ file: 'pg_new_post', nodeId: 'n_title', props: { rows: 4 } }])
   })
 
-  it('keeps the delay of an interaction and the numbers of a transition', async () => {
+  it('keeps the numbers of a transition and the delay of an interaction in the model\'s range: a blank one goes back to its default, a too big one is clamped', async () => {
     postCard().transition = { type: 'ease', duration: 0.2, easing: 'ease-out' }
     postCard().interactions = [{ on: 'click', do: [{ kind: 'setVariant', to: 'var_compact' }] }]
     const { actions } = await open({ component_interaction_update: ok(), component_transition_set: ok() }, POST_CARD)
 
-    await typeInto(byTestId('transition-duration'), 'fast')
-    expect(actions.named('component_transition_set')).toEqual([])
-    expect(value('transition-duration')).toBe('0.2')
-    await typeInto(byTestId('interaction-delay-0'), 'soon')
-    expect(actions.named('component_interaction_update')).toEqual([])
-    expect(value('interaction-delay-0')).toBe('')
+    await click(must('[data-transition-row]'))
+    await typeInto(must('[data-transition-duration]'), '99')
+    await typeInto(must('[data-transition-duration]'), '')
+    await click(byLabel('Edit Click → compact'))
+    await typeInto(must('[data-interaction-delay]'), '99')
+    await typeInto(must('[data-interaction-delay]'), '')
+
+    expect(actions.named('component_transition_set').map(call => call.input)).toEqual([
+      { component: POST_CARD, transition: { type: 'ease', duration: 10, easing: 'ease-out' } },
+      { component: POST_CARD, transition: { type: 'ease', easing: 'ease-out' } }
+    ])
+    expect(actions.named('component_interaction_update').map(call => call.input)).toEqual([
+      { component: POST_CARD, variant: '', index: 0, delay: 10 },
+      { component: POST_CARD, variant: '', index: 0, delay: null }
+    ])
   })
 })

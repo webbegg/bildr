@@ -26,6 +26,7 @@ import { canvasMovable, drillTarget, escapeSelection, navigateSelection, nearest
 import type { SelectionStep } from './selection.ts'
 import { isInsertTool, MOVE_TOOL, selectionAccent, toolForKey } from './tools.ts'
 import type { ToolId } from './tools.ts'
+import { interactionKey, parseInteractionKey } from '../shared/interactionPanel.ts'
 import { layerName } from '../shared/layers.ts'
 import { boardShown, newVariantName, overrideInput } from './variants.ts'
 import type { NodeOverridePatch, OverridePatch } from './variants.ts'
@@ -96,7 +97,15 @@ export type Transition = { type: 'instant' } | { type: 'ease', duration?: number
 export interface EnvStatusEntry {
   name: string
   set: boolean
-  from: string | null
+  /** Where it is set: the process env, the project's `.env`, or nowhere. */
+  from: 'env' | '.env' | null
+  /** The data source that reads it, and the setting of it (`baseUrl`, `secret`...). */
+  datasource?: string
+  setting?: string
+  /** The auth secret. */
+  secret?: boolean
+  /** The model has a non-secret default for it, used when it is not set. */
+  hasDefault?: boolean
   [key: string]: unknown
 }
 
@@ -118,13 +127,8 @@ const remember = (key: string, value: string) => {
   }
 }
 
-/** An interaction has no id in the model: it is the `index`th of its variant (`''` the primary), written `<variant>:<index>`. */
-export const interactionKey = (variantId: string | null, index: number): string => `${variantId ?? ''}:${index}`
-export const parseInteractionKey = (key: string): { variantId: string, index: number } | null => {
-  const at = key.lastIndexOf(':')
-  const index = Number(key.slice(at + 1))
-  return at < 0 || !Number.isInteger(index) ? null : { variantId: key.slice(0, at), index }
-}
+/** An interaction has no id in the model: it is the `index`th of its variant (`''` the primary), written `<variant>:<index>` (see `shared/interactionPanel.ts`). */
+export { interactionKey, parseInteractionKey }
 
 export const createEditor = (design: Design, options: EditorOptions = {}) => {
   const notify = options.toast ?? (() => undefined)

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import { editorTakesKey, hasTextSelection } from '@bildr/editor-core/clipboardKeys'
@@ -7,8 +7,6 @@ import ProblemsList from '../components/ProblemsList.vue'
 import CanvasFrame from '../design/CanvasFrame.vue'
 import FormActionDialog from '../design/FormActionDialog.vue'
 import RequiredValuesDialog from '../design/RequiredValuesDialog.vue'
-import ThemePanel from '../design/ThemePanel.vue'
-import VariantBar from '../design/VariantBar.vue'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
 import { createEditor, provideEditor } from '../editor/useEditor.ts'
 
@@ -18,8 +16,10 @@ import { createEditor, provideEditor } from '../editor/useEditor.ts'
  * store) is what the ported components call as `useEditor()`; the P4 panels that
  * U4–U6 replace still read the store (`useDesign()`), so both are provided. A
  * toolbar, the sidebar (Pages, Layers, Assets) and the canvas in the middle with its
- * floating bar, the inspector on the right. Every edit is a module action; the
- * canvas shows what the model says.
+ * floating bar, the inspector on the right. The Design view has the theme library on
+ * the left and the theme's panel on the right, with the style guide in the canvas; the
+ * Settings view takes the middle. Every edit is a module action; the canvas shows what
+ * the model says.
  */
 
 const design = createDesign()
@@ -112,6 +112,11 @@ const zoomItems = computed<DropdownMenuItem[][]>(() => [
 ])
 
 const preview = computed(() => editor.canvasMode === 'preview')
+
+// The Design view shows the theme's style guide in the canvas (the hosted one has a tokens canvas for it); the other views show the file.
+watch(() => editor.mode, (mode) => {
+  design.view.value = mode === 'design' ? 'tokens' : 'page'
+}, { immediate: true })
 </script>
 
 <template>
@@ -153,6 +158,7 @@ const preview = computed(() => editor.canvasMode === 'preview')
     </EditorToolbar>
     <EditorQuickActions />
     <EditorCreateDialog />
+    <EditorPropertiesModal />
     <EditorConfirm />
     <div
       v-if="editor.problems.length"
@@ -170,24 +176,24 @@ const preview = computed(() => editor.canvasMode === 'preview')
     >
       <aside
         v-if="editor.mode === 'design'"
-        class="flex w-64 shrink-0 flex-col overflow-y-auto border-r border-default"
+        class="flex w-64 shrink-0 flex-col border-r border-default"
       >
-        <ThemePanel />
+        <DesignLibrary class="min-h-0 flex-1" />
       </aside>
       <aside
-        v-else
+        v-else-if="editor.mode === 'build'"
         class="flex w-64 shrink-0 flex-col border-r border-default"
       >
         <EditorSidebar class="min-h-0 flex-1" />
       </aside>
-      <!-- The canvas stays mounted in the other views so it does not reload. -->
+      <!-- Hidden, not unmounted, in the Settings view so the canvas does not reload. -->
       <main
+        v-show="editor.mode !== 'settings'"
         class="relative min-w-0 flex-1 bg-(--editor-canvas)"
         data-canvas-area
       >
         <EditorNodeMenu class="size-full">
           <div class="flex size-full flex-col">
-            <VariantBar />
             <CanvasFrame />
           </div>
         </EditorNodeMenu>
@@ -219,6 +225,20 @@ const preview = computed(() => editor.canvasMode === 'preview')
           class="absolute bottom-14 left-1/2 z-20 -translate-x-1/2"
         />
       </main>
+      <main
+        v-if="editor.mode === 'settings'"
+        class="min-w-0 flex-1 overflow-y-auto"
+      >
+        <EditorSettings />
+      </main>
+      <aside
+        v-if="editor.mode === 'design'"
+        class="shrink-0 overflow-y-auto border-l border-default"
+        :style="{ width: `${panelWidth}px` }"
+        data-design-panel-area
+      >
+        <EditorDesignPanel />
+      </aside>
       <aside
         v-if="editor.mode === 'build'"
         class="relative shrink-0 border-l border-default"

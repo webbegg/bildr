@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { allByTestId, byTestId, click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
 import DesignView from '../../src/views/DesignView.vue'
-import { baseHandlers, fromCanvas, indexPage, layer, menuItem, open, select, sent, setupHarness, sidebarTab, world } from '../design/harness.ts'
+import { baseHandlers, fromCanvas, indexPage, layer, menuItem, open, select, sent, setupHarness, showVariant, sidebarTab, world } from '../design/harness.ts'
 
 /**
  * The hosted shell over the module (U3): the toolbar, the sidebar (Pages, Layers), the node
@@ -36,7 +36,7 @@ describe('the shell', () => {
     await open({}, 'cmp_post_card')
     expect(q('[data-testid="design"]')?.getAttribute('data-editor-context')).toBe('component')
     expect(q('[data-testid="design"]')?.hasAttribute('data-editor-variant')).toBe(false)
-    await click(byTestId('variant-tab-var_compact'))
+    await showVariant('var_compact')
     expect(q('[data-testid="design"]')?.hasAttribute('data-editor-variant')).toBe(true)
   })
 
@@ -93,14 +93,31 @@ describe('the toolbar', () => {
     expect(q('[data-tool-hint]')).toBeNull()
   })
 
-  it('offers the Canvas and Design views, and the Design view shows the theme panel in the sidebar', async () => {
+  it('offers the Canvas, Design and Settings views, and the Design view shows the theme library on the left and the theme\'s panel on the right', async () => {
     await open()
     await sidebarTab('Assets')
     await click(q('[data-assets-design-system]'))
-    expect(q('[data-testid="theme-panel"]') ?? q('[data-testid="theme-radius"]')).not.toBeNull()
+    expect(q('[data-theme-library]')).not.toBeNull()
+    expect(q('[data-design-panel]')).not.toBeNull()
     expect(q('[data-view-menu]')?.textContent?.trim()).toBe('Design')
     expect(q('[data-sidebar]')).toBeNull()
+    expect(q('[data-right-panel]')).toBeNull()
     expect(q('[data-insert-button]')?.hasAttribute('disabled')).toBe(true)
+    expect(sent('bildr:render').at(-1)?.view).toBe('tokens')
+  })
+
+  it('opens the Settings view from the view menu, which takes the canvas\'s place and leaves the canvas mounted', async () => {
+    await open()
+    await menuItem(q('[data-view-menu]'), 'Settings')
+    expect(q('[data-settings]')).not.toBeNull()
+    expect(q('[data-view-menu]')?.textContent?.trim()).toBe('Settings')
+    expect(q('[data-sidebar]')).toBeNull()
+    expect(q('[data-right-panel]')).toBeNull()
+    expect(q('[data-canvas-area]')?.style.display).toBe('none')
+    await menuItem(q('[data-view-menu]'), 'Canvas')
+    expect(q('[data-settings]')).toBeNull()
+    expect(q('[data-canvas-area]')?.style.display).not.toBe('none')
+    expect(sent('bildr:render').at(-1)?.view).toBe('page')
   })
 })
 

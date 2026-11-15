@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { LAYOUT_VARIABLE_KINDS } from '../../../codegen/src/model/schemas.ts'
 import { byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
-import { choose, fromCanvas, indexPage, mainLayout, menuItem, open, propInput, propRow, propSelect, select, selectOption, sent, setupHarness, sidebarTab, typeNumber } from './harness.ts'
+import { byLabel, fromCanvas, indexPage, mainLayout, menuItem, must, open, propInput, propRow, propSelect, sectionAdd, select, selectOption, sent, setupHarness, sidebarTab, typeNumber } from './harness.ts'
 
 /**
  * Layouts in the Design screen (P4c, V1, V2): the Layouts section, a layout's
@@ -76,39 +75,75 @@ describe('Layouts section', () => {
   })
 })
 
+const rowOf = (name: string) => byLabel(name)!.closest<HTMLElement>('.group\\/row')!
+
 describe('Slots and variables of a layout', () => {
-  it('adds a slot on the selected node, renames, rebinds and removes one', async () => {
+  it('lists the slots and variables of the layout on its root, with its name; the children slot is the page content, not renamed or removed', async () => {
+    await open({}, MAIN)
+    expect(must('[data-layout-settings]').textContent).toContain('Name')
+    expect((byLabel('Layout name') as HTMLInputElement).value).toBe('main')
+    expect(pick('[data-layout-slots]')?.getAttribute('data-style-section')).toBe('Slots')
+    expect([...document.body.querySelectorAll('[data-layout-slots] [aria-label$=" slot name"]')].map(input => input.getAttribute('aria-label'))).toEqual(['children slot name', 'footer slot name'])
+    expect(rowOf('children slot name').textContent).toContain('Page content')
+    expect(rowOf('children slot name').querySelector('[data-row-remove]')).toBeNull()
+    expect((byLabel('children slot name') as HTMLInputElement).disabled).toBe(true)
+    expect(rowOf('title variable name').textContent).toContain('Text')
+  })
+
+  it('explains the page content slot when its container is selected', async () => {
+    await open({}, MAIN)
+    expect(pick('[data-layout-page-content]')).toBeNull()
+    await select('n_main')
+    expect(pick('[data-layout-page-content]')?.textContent).toContain('3 pages now')
+  })
+
+  it('makes a container a slot named Slot, renames a slot and removes one', async () => {
     const { actions } = await open({ layout_slot_add: ok({ slotId: 'side' }), layout_slot_update: ok(), layout_slot_remove: ok() }, MAIN)
-    expect(byTestId('slot-name-children')).toBeNull()
-    expect(byTestId('slot-add')).not.toBeNull()
-    expect((byTestId('slot-add') as HTMLButtonElement).disabled).toBe(true)
+    // The root takes no slot of its own: its + has no menu.
+    expect(pick('[data-layout-slots] [data-section-action="add"]')).toBeNull()
 
     await select('n_nav')
-    await typeInto(byTestId('slot-add-name'), 'sidebar')
-    await click(byTestId('slot-add'))
-    await typeInto(byTestId('slot-name-footer'), 'bottom')
-    await click(byTestId('slot-rebind-footer'))
-    await click(byTestId('slot-remove-footer'))
+    await menuItem(sectionAdd('data-layout-slots'), 'Make slot')
+    await select('n_root')
+    await typeInto(byLabel('footer slot name'), 'bottom')
+    await click(rowOf('footer slot name').querySelector<HTMLElement>('[data-row-remove]'))
 
-    expect(actions.named('layout_slot_add').map(call => call.input)).toEqual([{ layout: MAIN, name: 'sidebar', nodeId: 'n_nav' }])
-    expect(actions.named('layout_slot_update').map(call => call.input)).toEqual([
-      { layout: MAIN, slot: 'footer', name: 'bottom' },
-      { layout: MAIN, slot: 'footer', nodeId: 'n_nav' }
-    ])
+    expect(actions.named('layout_slot_add').map(call => call.input)).toEqual([{ layout: MAIN, name: 'Slot', nodeId: 'n_nav' }])
+    expect(actions.named('layout_slot_update').map(call => call.input)).toEqual([{ layout: MAIN, slot: 'footer', name: 'bottom' }])
     expect(actions.named('layout_slot_remove').map(call => call.input)).toEqual([{ layout: MAIN, slot: 'footer' }])
   })
 
-  it('adds, updates and removes a variable; only the kinds a layout takes', async () => {
-    const { actions } = await open({ layout_variable_add: ok({ variableId: 'prop_tagline' }), layout_variable_update: ok(), layout_variable_remove: ok() }, MAIN)
-    expect([...(byTestId('prop-add-kind') as HTMLSelectElement).options].map(option => option.value)).toEqual([...LAYOUT_VARIABLE_KINDS])
+  it('turns a prop or a style key of the selected node into a variable, renames one and removes one', async () => {
+    const { actions } = await open({ layout_variable_add: ok({ variableId: 'prop_label' }), layout_variable_update: ok(), layout_variable_remove: ok() }, MAIN)
+    await select('n_brand')
+    await menuItem(sectionAdd('data-layout-variables'), 'Label')
+    await menuItem(sectionAdd('data-layout-variables'), 'Style · Background')
+    await select('n_root')
+    await typeInto(byLabel('title variable name'), 'tagline')
+    await click(rowOf('title variable name').querySelector<HTMLElement>('[data-row-remove]'))
 
-    await typeInto(byTestId('prop-add-name'), 'tagline')
-    await choose('prop-add-kind', 'textarea')
-    await click(byTestId('prop-add'))
-    await typeInto(byTestId('property-default-prop_title'), 'Blog!')
-    await click(byTestId('property-remove-prop_title'))
+    const [prop, style] = actions.named('layout_variable_add').map(call => call.input)
+    expect(prop).toEqual({ layout: MAIN, name: 'Label', kind: 'text', bindings: [{ nodeId: 'n_brand', prop: 'text' }] })
+    expect(style).toMatchObject({ layout: MAIN, name: 'Background', kind: 'select', bindings: [{ nodeId: 'n_brand', prop: 'bg', target: 'style' }] })
+    expect(actions.named('layout_variable_update').map(call => call.input)).toEqual([{ layout: MAIN, variable: 'prop_title', name: 'tagline' }])
+    expect(actions.named('layout_variable_remove').map(call => call.input)).toEqual([{ layout: MAIN, variable: 'prop_title' }])
+  })
 
-    expect(actions.named('layout_variable_add').map(call => call.input)).toEqual([{ layout: MAIN, name: 'tagline', kind: 'textarea' }])
+  it('renames the layout from its Name row', async () => {
+    const { actions } = await open({ layout_rename: ok() }, MAIN)
+    await typeInto(byLabel('Layout name'), 'site')
+    expect(actions.named('layout_rename').map(call => call.input)).toEqual([{ layout: MAIN, name: 'site' }])
+  })
+
+  it('edits a variable in the variables modal: its default and its details, and deletes it after a confirm', async () => {
+    const { actions } = await open({ layout_variable_update: ok(), layout_variable_remove: ok() }, MAIN)
+    await click(must('[data-layout-variables] [data-section-action="edit"]'))
+    expect(must('[data-properties-modal]').getAttribute('data-properties-kind')).toBe('layout')
+    expect(must('[data-property-details]').dataset.propertyDetails).toBe('prop_title')
+    expect((must('[data-property-description]') as HTMLTextAreaElement).value).toBe('Shown in the header next to the blog name.')
+    await typeInto(must('[data-property-default] input'), 'Blog!')
+    await click(must('[data-property-delete]'))
+    await click(pick('[data-confirm-ok]'))
     expect(actions.named('layout_variable_update').map(call => call.input)).toEqual([{ layout: MAIN, variable: 'prop_title', default: 'Blog!' }])
     expect(actions.named('layout_variable_remove').map(call => call.input)).toEqual([{ layout: MAIN, variable: 'prop_title' }])
   })

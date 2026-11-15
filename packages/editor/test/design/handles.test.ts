@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { byTestId, click, Failure, settle } from '../helpers.ts'
-import { find, fromCanvas, indexPage, layer, open, openFile, select, sent, setupHarness } from './harness.ts'
+import { find, fromCanvas, indexPage, layer, open, openFile, select, sent, setupHarness, showVariant } from './harness.ts'
 
 /**
  * The editor's side of the canvas handle drags (P4c): a drag's patch is shown
@@ -34,7 +34,7 @@ describe('handle drags', () => {
 
   it('records the release in the active variant of a component', async () => {
     const { actions } = await open({ component_variant_set_override: ok }, 'cmp_post_card')
-    await click(byTestId('variant-tab-var_compact'))
+    await showVariant('var_compact')
     await fromCanvas({ type: 'bildr:style-commit', nodeId: 'n_card', style: { pt: '6' } })
     expect(actions.named('component_variant_set_override').map(call => call.input)).toEqual([{ component: 'cmp_post_card', variant: 'var_compact', nodeId: 'n_card', style: { pt: '6' } }])
   })

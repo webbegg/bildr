@@ -5,8 +5,8 @@
  * over the model's files). Pure, so the editor passes in a context; every
  * command mutates through the editor's own methods.
  *
- * Not in the module: Publish, the Data and Settings views (U7, U5), collections
- * (the entity UI is U7) and deleting the project.
+ * Not in the module: Publish, the Data view (U7), collections (the entity UI is
+ * U7) and deleting the project.
  */
 import type { BreakpointBase } from '@bildr/codegen/design'
 import type { ModelNode } from '@bildr/codegen/model'
@@ -228,6 +228,8 @@ export interface CommandEditor {
   history: { undo: number, redo: number }
   deepSelect: boolean
   previewDark: boolean
+  /** Bumped to ask the Settings view to scroll to its Variables section. */
+  variablesRequest: number
   sidebarPanel: SidebarPanel
   /** The device frame being edited. */
   deviceId: DeviceId
@@ -276,7 +278,8 @@ function selectsSiblings(ctx: CommandContext): boolean {
 
 const VIEWS: { id: EditorView, label: string, icon: string }[] = [
   { id: 'build', label: 'Canvas view', icon: 'i-lucide-frame' },
-  { id: 'design', label: 'Design view', icon: 'i-lucide-palette' }
+  { id: 'design', label: 'Design view', icon: 'i-lucide-palette' },
+  { id: 'settings', label: 'Settings view', icon: 'i-lucide-settings' }
 ]
 
 /**
@@ -344,6 +347,18 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
         editor.mode = view.id
       }
     })),
+    {
+      id: 'settings:variables',
+      group: 'goto',
+      label: 'Environment variables',
+      icon: 'i-lucide-variable',
+      keywords: ['env', 'secret', 'api key', 'settings'],
+      enabled: always,
+      run: ({ editor }) => {
+        editor.mode = 'settings'
+        editor.variablesRequest++
+      }
+    },
     {
       id: 'design-system',
       group: 'goto',

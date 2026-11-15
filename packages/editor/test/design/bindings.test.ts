@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { applyEdit } from '../../../codegen/src/edit/index.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 import { allByTestId, byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
-import { caretAtEnd, check, choose, insertComponent, insertType, menuLabels, open, pickOpenItem, propInput, propRow, select, setupHarness, variablePicker } from './harness.ts'
+import { caretAtEnd, check, choose, combo, insertComponent, insertType, menuLabels, open, optionLabels, pickOpenItem, propInput, propRow, select, selectOption, setupHarness, variablePicker } from './harness.ts'
 
 /**
  * The binding panels (P5, mapping §4): a List's source and its query's sort, filter and
@@ -166,9 +166,9 @@ describe('an instance\'s entity values', () => {
   it('shows the bound record of an entity property and rebinds it to another record in scope', async () => {
     const { actions } = await open({ instance_set_values: ok() }, 'pg_index')
     await select('n_card')
-    expect((byTestId('value-post') as HTMLSelectElement).value).toBe('post')
-    expect(options('value-post')).toEqual(['', 'post'])
-    await choose('value-post', '')
+    expect(combo('[data-instance-entity="prop_post"]').textContent).toContain('post')
+    expect(await optionLabels(combo('[data-instance-entity="prop_post"]'))).toEqual(['None', 'post'])
+    await selectOption(combo('[data-instance-entity="prop_post"]'), 'None')
     expect(actions.named('instance_set_values').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_card', values: { prop_post: null } }])
   })
 })

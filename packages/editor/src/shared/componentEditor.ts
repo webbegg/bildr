@@ -1,9 +1,12 @@
 import { parseStyleKey } from '@bildr/codegen/design'
 import type { ComponentFile, Model, ModelNode, PropertyDef } from '@bildr/codegen/model'
 import { STRUCTURAL_PROPS } from '@bildr/codegen/render'
+import { findNode } from '../design/tree.ts'
 import { insertableComponents } from '../editor/drop.ts'
 import { isStyleBinding } from './bindingDot.ts'
 import { propDefsOf } from './nodeProps.ts'
+import type { PropDef } from './nodeProps.ts'
+import { targetLabel } from './propertyLabels.ts'
 import { matches } from './sidebar.ts'
 import type { Command, CommandContext } from './commands.ts'
 import { shortcutKeys } from './commands.ts'
@@ -227,12 +230,54 @@ export function boundProperty(properties: readonly PropertyDef[], nodeId: string
   return properties.find(property => (property.bindings ?? []).some(binding => bindsKey(binding, nodeId, key, target)))
 }
 
-/** `base`, or `base 2`, `base 3`… when the list already has that name. */
+/**
+ * `base`, or `base 2`, `base 3`… when the list already has that name. Names compare as the module
+ * keeps them (camelCased), so `Text` is taken by `text`.
+ */
 export function uniqueComponentName(base: string, taken: readonly { name: string }[]): string {
-  const names = new Set(taken.map(entry => entry.name))
+  const key = (name: string) => name.replace(/\s+/g, '').toLowerCase()
+  const names = new Set(taken.map(entry => key(entry.name)))
   let name = base
-  for (let n = 2; names.has(name); n++) name = `${base} ${n}`
+  for (let n = 2; names.has(key(name)); n++) name = `${base} ${n}`
   return name
+}
+
+/** A record property (`entity`) or a list of them (`many`) the "+" menu adds, named after the entity. */
+export interface EntityAdd {
+  name: string
+  kind: 'entity'
+  entity: string
+  many?: true
+}
+
+const lowerFirst = (name: string) => `${name[0]!.toLowerCase()}${name.slice(1)}`
+
+/** The ids of the "+" menu's entity items: `entity:<id>` is one record, `entities:<id>` a list of them. */
+export const ENTITY_ITEM = 'entity:'
+export const ENTITIES_ITEM = 'entities:'
+
+/**
+ * The "+" menu's Record › and List › submenus, one item per entity of the model: the module's
+ * entity properties, which an instance binds to a record in scope (no hosted equivalent: the
+ * hosted editor's properties are bound to a node prop, a style key or a slot). Empty without entities.
+ */
+export function entityAddItems(model: Pick<Model, 'modules'> | null | undefined): { id: string, label: string, hint: string, children: { id: string, label: string }[] }[] {
+  const entities = Object.values(model?.modules ?? {}).flatMap(entry => entry.entities)
+  if (!entities.length) return []
+  return [
+    { id: 'record', label: 'Record', hint: 'An instance binds one record', children: entities.map(entity => ({ id: `${ENTITY_ITEM}${entity.id}`, label: entity.name })) },
+    { id: 'list', label: 'List', hint: 'An instance binds a list of records', children: entities.map(entity => ({ id: `${ENTITIES_ITEM}${entity.id}`, label: entity.name })) }
+  ]
+}
+
+/** The fields that add the entity property an `entityAddItems` item names; undefined for another item. */
+export function entityBindingAdd(model: Pick<Model, 'modules'> | null | undefined, properties: readonly Pick<PropertyDef, 'name'>[], item: string): EntityAdd | undefined {
+  const many = item.startsWith(ENTITIES_ITEM)
+  if (!many && !item.startsWith(ENTITY_ITEM)) return undefined
+  const id = item.slice(many ? ENTITIES_ITEM.length : ENTITY_ITEM.length)
+  const entity = Object.values(model?.modules ?? {}).flatMap(entry => entry.entities).find(entry => entry.id === id)
+  if (!entity) return undefined
+  return { name: uniqueComponentName(many ? entity.plural : lowerFirst(entity.name), properties), kind: 'entity', entity: entity.id, ...(many ? { many: true as const } : {}) }
 }
 
 /** The `component_property_add` / `layout_variable_add` fields that turn a prop or style key into a property. */
@@ -278,4 +323,78 @@ export function variantItems(def: Pick<ComponentFile, 'variants'>): { label: str
     { label: 'Primary', value: PRIMARY_VARIANT, description: 'The component as defined' },
     ...def.variants.map(variant => ({ label: variant.name, value: variant.id, description: describe(variant) }))
   ]
+}
+
+/** The `instance_set_values` variant for a chosen item: `''` for the primary. */
+export const instanceVariantValue = (item: string): string => item === PRIMARY_VARIANT ? '' : item
+
+/** The property kinds an instance (or a page, for a layout variable) sets with a prop field; `entity` and `field` have their own rows. */
+const FIELD_KINDS: readonly PropertyDef['kind'][] = ['text', 'textarea', 'number', 'boolean', 'select', 'link', 'image', 'icon']
+
+/**
+ * A non-slot property as a prop field of its instances (the hosted `propertyField`): keyed by the
+ * property id, its default and options from the first binding: a bound prop, or for a style
+ * binding the bound style key (its token scale). Its description (the field's tooltip) and
+ * placeholder come from the property. Null for the kinds without a field (`entity`, `field`, `slot`).
+ */
+export function propertyField(def: Pick<ComponentFile, 'name' | 'root'>, property: PropertyDef, noun = 'property', owner = def.name): PropDef | null {
+  if (!FIELD_KINDS.includes(property.kind)) return null
+  const binding = property.bindings?.[0]
+  const target = binding ? findNode(def.root, binding.nodeId) : undefined
+  const label = property.label ?? property.name
+  const common = {
+    name: property.id,
+    label,
+    kind: property.kind as PropDef['kind'],
+    description: property.description ?? `${label}, a ${noun} of ${owner}`,
+    ...(property.placeholder ? { placeholder: property.placeholder } : {})
+  }
+  if (binding && isStyleBinding(binding)) {
+    const token = parseStyleKey(binding.prop)?.token
+    return {
+      ...common,
+      default: property.default ?? target?.style?.[binding.prop] ?? '',
+      ...(token && property.kind === 'select' ? { options: [...token.values] } : {})
+    }
+  }
+  const targetDef = target && binding ? propDefsOf(target.type).find(entry => entry.name === binding.prop) : undefined
+  const options = property.kind === 'select' ? property.options ?? targetDef?.options : targetDef?.options
+  return {
+    ...common,
+    default: property.default ?? (target && binding ? target.props?.[binding.prop] : undefined) ?? targetDef?.default ?? '',
+    ...(options ? { options } : {})
+  }
+}
+
+/** What a binding drives, for a tooltip: `Heading · text`, `Heading · style text`, a slot's container alone; a named layer is `Footer (Container)`. */
+export function bindingLabel(root: ModelNode, binding: PropertyBinding | undefined): string {
+  if (!binding) return 'Not bound'
+  const target = findNode(root, binding.nodeId)
+  if (!target) return 'Missing node'
+  const label = targetLabel(target)
+  if (isStyleBinding(binding)) return `${label} · style ${binding.prop}`
+  return binding.prop === 'children' ? label : `${label} · ${binding.prop}`
+}
+
+/** Style keys "+" offers besides the ones a node sets, so an unstyled node can still get a style property. */
+const COMMON_STYLE_KEYS = ['bg', 'color']
+
+/** The id prefix of `styleAddItems` items. */
+export const STYLE_ITEM = 'style:'
+
+/**
+ * The style choices of the Properties (or Variables) "+" menu, as the binding dot offers on every
+ * style row: each style key node `node` sets, then Background and Text color. A key some property
+ * already drives is disabled. Ids are `style:<key>`.
+ */
+export function styleAddItems(properties: readonly PropertyDef[], node: ModelNode, noun = 'property'): { id: string, label: string, disabled: boolean, hint: string }[] {
+  if (node.type === 'Instance' || node.type === 'SlotFill') return []
+  const keys = [...new Set([...Object.keys(node.style ?? {}), ...COMMON_STYLE_KEYS])]
+  return keys.flatMap((key) => {
+    const parsed = parseStyleKey(key)
+    if (!parsed) return []
+    const bound = !!boundProperty(properties, node.id, key, 'style')
+    const label = `Style · ${parsed.token.label}${parsed.breakpoint ? ` (${parsed.breakpoint})` : ''}`
+    return [{ id: `${STYLE_ITEM}${key}`, label, disabled: bound, hint: bound ? `Already a ${noun}` : noun === 'property' ? 'Instances can set it' : 'Each page can set it' }]
+  })
 }

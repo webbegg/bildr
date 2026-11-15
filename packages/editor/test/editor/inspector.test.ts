@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { byTestId, click, settle, typeInto } from '../helpers.ts'
-import { byLabel, inspectorHead, menuItem, menuLabels, open, pickOpenItem, postCard, propInput, propRow, propSelect, resetStyle, select, selectOption, setupHarness, styleField, typeNumber, typeStyle } from '../design/harness.ts'
+import { click, settle, typeInto } from '../helpers.ts'
+import { byLabel, inspectorHead, menuItem, menuLabels, open, pickOpenItem, postCard, propInput, propRow, propSelect, resetStyle, select, selectOption, setupHarness, showVariant, styleField, typeStyle } from '../design/harness.ts'
 
 /**
  * The hosted inspector over the module (U4): the head, the Page section, the prop sections with the
  * module's data panels in them (S4), the style sections, the binding dot and its chip, the variant
- * overrides, and the interim U5 panels. Mounted as the Design screen over the mocked actions (which check
+ * overrides, and the component and layout panels' mounts (U5). Mounted as the Design screen over the mocked actions (which check
  * every call against the real schemas).
  */
 
@@ -198,7 +198,7 @@ describe('the style sections', () => {
 
   it('shows the style of the node as the active variant has it, and a write is the variant\'s override', async () => {
     const { actions } = await open({ component_variant_set_override: ok() }, 'cmp_post_card')
-    await click(byTestId('variant-activate-var_compact'))
+    await showVariant('var_compact')
     await select('n_card')
     expect(styleField('gap')!.querySelector('input')!.value).toBe('1')
     await typeStyle('gap', '4')
@@ -229,7 +229,7 @@ describe('the colour field of a Fill', () => {
 describe('the variant overrides', () => {
   it('lists what the active variant overrides on the node, and resets one or all (the override is removed)', async () => {
     const { actions } = await open({ component_variant_set_override: ok() }, 'cmp_post_card')
-    await click(byTestId('variant-activate-var_compact'))
+    await showVariant('var_compact')
     await select('n_card')
     const rows = () => qa('[data-variant-overrides] [data-override]').map(row => row.dataset.override)
     expect(q('[data-variant-overrides]')?.getAttribute('data-style-section')).toBe('compact overrides')
@@ -249,14 +249,14 @@ describe('the variant overrides', () => {
     await open({}, 'cmp_post_card')
     await select('n_card')
     expect(q('[data-variant-overrides]')).toBeNull()
-    await click(byTestId('variant-activate-var_compact'))
+    await showVariant('var_compact')
     await select('n_cover')
     expect(q('[data-variant-overrides]')?.textContent).toContain('Same as the primary')
   })
 
   it('writes a prop edit in the variant as its override, and Reset to default is a null override (the primary\'s value comes back)', async () => {
     const { actions } = await open({ component_variant_set_override: ok() }, 'cmp_post_card')
-    await click(byTestId('variant-activate-var_compact'))
+    await showVariant('var_compact')
     await select('n_excerpt')
     // `hidden` is the variant's override of this node; the text prop is the primary's.
     await typeInto(propInput('text'), 'Short')
@@ -320,29 +320,39 @@ describe('the binding dot and its chip', () => {
   })
 })
 
-describe('the interim panels (U5 replaces them)', () => {
-  it('mounts the P4 component panel in the component view, and the layout panel in the layout view, with or without a selection', async () => {
+describe('the component and layout panels', () => {
+  it('mounts the component sections in the component view and the layout sections in the layout view, for the root when nothing is selected', async () => {
     await open({}, 'cmp_post_card')
-    expect(byTestId('component-panel')).not.toBeNull()
-    await select('n_card')
-    expect(byTestId('component-panel')).not.toBeNull()
+    expect(q('[data-component-variants]')).not.toBeNull()
+    expect(q('[data-component-interactions]')).not.toBeNull()
+    expect(section('Component properties')).not.toBeNull()
+    expect(q('[data-layout-variables]')).toBeNull()
+    await select('n_title')
+    expect(q('[data-component-variants]')).not.toBeNull()
+    expect(section('Properties')).not.toBeNull()
     await open({}, 'lay_main')
-    expect(byTestId('layout-panel')).not.toBeNull()
+    expect(q('[data-layout-settings]')).not.toBeNull()
+    expect(q('[data-layout-slots]')).not.toBeNull()
+    expect(q('[data-layout-variables]')).not.toBeNull()
+    expect(q('[data-component-variants]')).toBeNull()
     await select('n_nav')
-    expect(byTestId('layout-panel')).not.toBeNull()
+    expect(q('[data-layout-variables]')).not.toBeNull()
+    expect(q('[data-layout-settings]')).toBeNull()
   })
 
-  it('shows an Instance\'s values as the P4 panel did: the variant, the entity record, the slots, Detach and Replace', async () => {
+  it('shows nothing of them on a page, where an Instance has its own Component section', async () => {
     postCard().properties.push({ id: 'prop_count', name: 'count', kind: 'number', default: 3 })
     await open({}, 'pg_index')
+    expect(q('[data-component-variants]')).toBeNull()
+    expect(q('[data-layout-slots]')).toBeNull()
     await select('n_card')
-    expect(section('Component')).not.toBeNull()
-    expect(byTestId('instance-variant')).not.toBeNull()
-    expect(byTestId('value-post')).not.toBeNull()
-    expect(byTestId('value-count')).not.toBeNull()
-    expect(byTestId('instance-slot-prop_actions')).not.toBeNull()
-    expect(byTestId('instance-detach')).not.toBeNull()
-    expect(byTestId('instance-replace')).not.toBeNull()
-    await typeNumber(byTestId('value-count'), '9')
+    expect(q('[data-component-instance]')).not.toBeNull()
+    expect(q('[data-instance-variant]')).not.toBeNull()
+    expect(q('[data-instance-entity="prop_post"]')).not.toBeNull()
+    expect(propRow('prop_count')).not.toBeNull()
+    expect(q('[data-instance-slot="prop_actions"]')).not.toBeNull()
+    expect(q('[data-instance-detach]')).not.toBeNull()
+    expect(q('[data-instance-replace]')).not.toBeNull()
+    expect(q('[data-component-variants]')).toBeNull()
   })
 })

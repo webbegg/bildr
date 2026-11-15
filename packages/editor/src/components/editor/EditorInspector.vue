@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { Value } from '@bildr/codegen/model'
-import ComponentPanel from '../../design/ComponentPanel.vue'
 import FormBindingPanel from '../../design/FormBindingPanel.vue'
-import LayoutPanel from '../../design/LayoutPanel.vue'
 import ListSourcePanel from '../../design/ListSourcePanel.vue'
 import { FOCUS_RING } from '../../editorUi.ts'
 import { useEditor } from '../../editor/useEditor.ts'
@@ -33,9 +31,11 @@ import { sharedStyle } from '../../shared/panel.ts'
  * source (ListSourcePanel) and a Form's action and fields (FormBindingPanel) in
  * Behaviour, what a page uses (PageUsesPanel) under the page's rows.
  *
- * Interim (U5 replaces them with EditorComponentPanel and EditorLayoutPanel): an
- * Instance's values (EditorInstancePanel), and in the component and layout views the
- * P4 panels of the file (properties, variants, motion; slots and variables).
+ * In the component and layout views the file's own sections follow (EditorComponentPanel:
+ * an Instance's values, the variants, interactions and properties; EditorLayoutPanel:
+ * slots and variables). With nothing selected they show for the root, where the hosted
+ * editor shows only its hint: the hosted canvas has a variant board with its "+ Variant"
+ * tile (U6), which the module's canvas does not have yet.
  */
 const editor = useEditor()
 
@@ -96,14 +96,10 @@ function renamePage(field: 'name' | 'path', value: string) {
     <p class="p-4 text-xs text-dimmed">
       Select an element to style it.
     </p>
-    <ComponentPanel
-      v-if="editor.component"
-      :component="editor.component"
-    />
-    <LayoutPanel
-      v-else-if="editor.layout"
-      :layout="editor.layout"
-    />
+    <template v-if="editor.page && (editor.component || editor.layout)">
+      <EditorComponentPanel :node="editor.page.root" />
+      <EditorLayoutPanel :node="editor.page.root" />
+    </template>
   </div>
   <div v-else>
     <div
@@ -230,19 +226,8 @@ function renamePage(field: 'name' | 'path', value: string) {
           <EditorPageCollection />
         </EditorStyleSection>
 
-        <!-- Interim (U5): the P4 panels of the component or layout being edited, and an Instance's values. -->
-        <ComponentPanel
-          v-if="editor.component"
-          :component="editor.component"
-        />
-        <LayoutPanel
-          v-else-if="editor.layout"
-          :layout="editor.layout"
-        />
-        <EditorInstancePanel
-          v-if="node.type === 'Instance'"
-          :node="node"
-        />
+        <EditorComponentPanel :node="node" />
+        <EditorLayoutPanel :node="node" />
         <EditorVariantOverrides :node="node" />
 
         <EditorStyleSection

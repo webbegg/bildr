@@ -6,7 +6,7 @@ import type { EditorView } from '../../editor/useEditor.ts'
 import { MOVE_TOOL } from '../../editor/tools.ts'
 
 /**
- * The top bar, Framer's. Left: the "Canvas ▾" view menu (Canvas, Design),
+ * The top bar, Framer's. Left: the "Canvas ▾" view menu (Canvas, Design, Settings),
  * named after the current view, then the insert icons: + opens the Insert panel
  * (`I`), Frame and Text arm their tools (`F`, `T`). Centre: the project name; while
  * editing a component or a layout, the breadcrumb (EditorBreadcrumb) instead.
@@ -16,13 +16,14 @@ import { MOVE_TOOL } from '../../editor/tools.ts'
  * device switch, the regenerate and problems status).
  *
  * Not in the module: Publish, the project menu (rename, all projects, open the
- * published app) and the Data and Settings views (U7, U5).
+ * published app) and the Data view (U7). The project's name is edited in Settings.
  */
 const editor = useEditor()
 
 const VIEWS: { value: EditorView, label: string, icon: string }[] = [
   { value: 'build', label: 'Canvas', icon: 'i-lucide-pen-tool' },
-  { value: 'design', label: 'Design', icon: 'i-lucide-palette' }
+  { value: 'design', label: 'Design', icon: 'i-lucide-palette' },
+  { value: 'settings', label: 'Settings', icon: 'i-lucide-settings' }
 ]
 const viewLabel = computed(() => VIEWS.find(view => view.value === editor.mode)?.label)
 

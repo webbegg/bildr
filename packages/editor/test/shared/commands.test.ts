@@ -144,12 +144,21 @@ describe('editorCommands', () => {
     expect(editor.insert).toHaveBeenCalledWith('Card')
   })
 
-  it('offers no Publish, Data, Settings or collection commands: the module has none', () => {
+  it('offers no Publish, Data or collection commands: the module has none (the Settings view has two)', () => {
     const { commands } = context()
     const ids = commands.map(command => command.id)
     expect(ids).not.toContain('publish')
-    expect(ids.filter(id => id.startsWith('data:') || id.startsWith('collection:') || id.startsWith('settings:'))).toEqual([])
-    expect(ids).toEqual(expect.arrayContaining(['view:build', 'view:design', 'design-system', 'help:shortcuts']))
+    expect(ids.filter(id => id.startsWith('data:') || id.startsWith('collection:'))).toEqual([])
+    expect(ids).not.toContain('view:data')
+    expect(ids).toEqual(expect.arrayContaining(['view:build', 'view:design', 'view:settings', 'settings:variables', 'design-system', 'help:shortcuts']))
+  })
+
+  it('opens the Settings view, and Environment variables asks it to scroll to them', () => {
+    const { ctx, editor, commands } = context({ variablesRequest: 0 })
+    find(commands, 'view:settings').run(ctx)
+    expect(editor.mode).toBe('settings')
+    find(commands, 'settings:variables').run(ctx)
+    expect(editor.variablesRequest).toBe(1)
   })
 
   it('goes to a page by its name or path, and is disabled on the page that shows', () => {

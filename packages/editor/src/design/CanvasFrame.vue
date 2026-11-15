@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from
 import { activeMessage } from '@bildr/editor-core/viewport'
 import { isCanvasMessage } from '../canvas/protocol.ts'
 import type { CanvasToEditor, EditorToCanvas, RenderMessage } from '../canvas/protocol.ts'
+import { useEditor } from '../editor/useEditor.ts'
 import { canvasSrc } from './config.ts'
 import { fitScale } from './scale.ts'
 import { useDesign } from './store.ts'
@@ -15,9 +16,16 @@ import { useDesign } from './store.ts'
  * tall as its content (`bildr:size`); when the stage is narrower it is scaled
  * down visually (`scale.ts`). The stage scrolls: the canvas hands wheel
  * gestures over (it never scrolls itself).
+ *
+ * In the component view the variant being edited has the hosted board's label chip
+ * (EditorVariantBar) above the frame, to rename it; the board of every variant side by
+ * side is the hosted canvas's (U6).
  */
 
 const design = useDesign()
+const editor = useEditor()
+/** The chip over the frame: the variant being edited (Primary when none), in the component view only. */
+const chip = computed(() => editor.component ? { label: editor.variant?.name ?? 'Primary', primary: !editor.variant, id: editor.variant?.id ?? null } : null)
 const frame = useTemplateRef<HTMLIFrameElement>('frame')
 const stage = useTemplateRef<HTMLDivElement>('stage')
 const ready = ref(false)
@@ -142,10 +150,20 @@ onBeforeUnmount(() => {
     data-testid="stage"
   >
     <div
-      class="mx-auto shadow-lg ring ring-default"
+      class="relative mx-auto shadow-lg ring ring-default"
       :style="{ width: `${design.device.value.width * scale}px`, height: `${height * scale}px` }"
       data-testid="canvas-box"
     >
+      <EditorVariantBar
+        v-if="chip"
+        :label="chip.label"
+        :primary="chip.primary"
+        :active="true"
+        :zoom="1"
+        :width="design.device.value.width * scale"
+        @activate="editor.selectVariant(chip.id)"
+        @rename="chip.id && editor.renameVariant(chip.id, $event)"
+      />
       <div
         class="origin-top-left"
         :style="{ width: `${design.device.value.width}px`, ...(scale === 1 ? {} : { transform: `scale(${scale})` }) }"
