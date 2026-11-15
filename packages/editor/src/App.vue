@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { sessionEnded } from './api.ts'
+import { registerScreens } from './editor/views.ts'
 import { routes } from './router.ts'
 import { usePolling, useStatus } from './status.ts'
 
 /** The editor shell: left nav, the pending-migration banner on every screen, and the current screen; one notice instead, once the session ended. */
 
 const route = useRoute()
+const router = useRouter()
 const status = useStatus()
+
+// The Data view is its own screen: an editor that is asked for it (or for the Canvas, Design or Settings from there) opens the other one (editor/views.ts).
+onBeforeUnmount(registerScreens(screen => void router.push(screen === 'data' ? '/data' : '/design')))
 
 usePolling(status.refresh)
 

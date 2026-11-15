@@ -28,6 +28,8 @@ import { isInsertTool, MOVE_TOOL, selectionAccent, toolForKey } from './tools.ts
 import type { ToolId } from './tools.ts'
 import { interactionKey, parseInteractionKey } from '../shared/interactionPanel.ts'
 import { layerName } from '../shared/layers.ts'
+import { createDataView } from './dataView.ts'
+import { requestView, screenOf, takeStart } from './views.ts'
 import { boardShown, newVariantName, overrideInput } from './variants.ts'
 import type { NodeOverridePatch, OverridePatch } from './variants.ts'
 
@@ -58,6 +60,8 @@ export interface EditorToast {
 export interface EditorOptions {
   /** Shows a toast. The hosted `useToast().add`; without it notices are dropped. */
   toast?: (toast: EditorToast) => void
+  /** The view the editor starts on (the Data screen starts on `data`); default: the one that asked for this screen, else Canvas. */
+  view?: EditorView
 }
 
 /** A confirm dialog (EditorConfirm) the editor asks instead of the browser's `confirm()`. */
@@ -203,7 +207,14 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     applyStack({ stack: [], restore: [] })
   }
 
-  const mode = ref<EditorView>('build')
+  // The Data view is its own screen (`views.ts`): choosing a view the other screen shows opens that screen, which starts on it.
+  const handed = takeStart()
+  const mode = ref<EditorView>(options.view ?? handed.view ?? 'build')
+  const screen = screenOf(mode.value)
+  const importRequest = ref(screen === 'data' ? handed.data.importRequest ?? 0 : 0)
+  const data = createDataView(design, mode)
+  if (screen === 'data') data.collectionId.value = handed.data.collectionId ?? null
+  watch(mode, view => requestView(view, screen, { collectionId: data.collectionId.value, importRequest: importRequest.value }), { flush: 'sync' })
 
   /** Opens a component in the component view, selecting `nodeId`. `nested` pushes it onto the breadcrumb; from Assets or ⌘K it replaces the levels. */
   const editComponent = (id: string, nodeId: string | null = null, { nested = false }: { nested?: boolean } = {}) => {
@@ -273,7 +284,6 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   const sidebarPanel = ref<SidebarPanel>('pages')
   const quickOpen = ref(false)
   const zoomRequest = shallowRef<{ command: ZoomCommand } | null>(null)
-  const importRequest = ref(0)
   const variablesRequest = ref(0)
   const interactionId = ref<string | null>(null)
   const boardChoices = ref<Record<string, boolean>>({})
@@ -974,6 +984,8 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     // Selection and canvas UI state.
     selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard: design.clipboard, history: design.history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, breakpointBase, deviceId, device: design.device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, selected, selectedNodes, nodeName, theme,
     importRequest, variablesRequest, env,
+    // The Data view: collections are entities, connections REST data sources; the rows are the app's or the fixtures, never written (U7).
+    collections: data.collections, connections: data.connections, collectionId: data.collectionId, collection: data.collection, connectionId: data.connectionId, connection: data.connection, recordId: data.recordId, collectionRows: data.collectionRows, rowsSource: data.rowsSource, recordsError: data.recordsError, recordsTotal: data.recordsTotal, recordsLoading: data.recordsLoading, collectionCounts: data.collectionCounts, reloadRecords: data.reloadRecords, createCollection: data.createCollection,
     // The app's data (P5): the detail page's records stand where the hosted Data mode's collection records did.
     records: design.records, record: design.record, pickRecord: design.pickRecord, rowsOf: design.rowsOf, detail: design.detail, data: design.data, detailCollection: design.detail, detailRecords: design.records, previewRecord: design.record, reloadDetailRecords, setPreviewRecord, setPageCollection, createDetailPage,
     // The store's own state the ported panels read (P4/P5 logic stays behind the adapter).

@@ -153,8 +153,15 @@ describe('the app\'s data', () => {
 describe('what is not here', () => {
   it('has no hosted member that wrote to the hosted server: publish, project delete, records, theme library', async () => {
     const { editor } = await boot({}, 'pg_index')
-    for (const name of ['publish', 'projectId', 'project', 'runData', 'runEnv', 'reloadRecords', 'loadMoreRecords', 'recordsTotal', 'recordsHasMore', 'recordsLimit', 'recordsError', 'recordId', 'collectionId', 'collection', 'connectionId', 'connection', 'listCollections', 'lists', 'reloadListRecords', 'publicEnv', 'variantPage']) {
+    for (const name of ['publish', 'projectId', 'project', 'runData', 'runEnv', 'loadMoreRecords', 'recordsHasMore', 'recordsLimit', 'listCollections', 'lists', 'reloadListRecords', 'publicEnv', 'variantPage']) {
       expect(editor, name).not.toHaveProperty(name)
+    }
+  })
+
+  it('has the Data view\'s collections, connections and rows (U7), which only read: no record write', async () => {
+    const { editor } = await boot({}, 'pg_index')
+    for (const name of ['collections', 'collection', 'collectionId', 'connections', 'connection', 'connectionId', 'recordId', 'collectionRows', 'recordsTotal', 'recordsError', 'reloadRecords', 'createCollection']) {
+      expect(editor, name).toHaveProperty(name)
     }
   })
 

@@ -116,6 +116,9 @@ describe('editorCommands', () => {
       previewDark: false,
       sidebarPanel: 'pages',
       deviceId: 'mobile',
+      importRequest: 0,
+      collections: [{ name: 'Post' }],
+      createCollection: vi.fn(),
       insert: vi.fn(),
       group: vi.fn(),
       autoLayout: vi.fn(),
@@ -144,13 +147,34 @@ describe('editorCommands', () => {
     expect(editor.insert).toHaveBeenCalledWith('Card')
   })
 
-  it('offers no Publish, Data or collection commands: the module has none (the Settings view has two)', () => {
+  it('offers no Publish command: the module has none; the Data view and its two commands are back', () => {
     const { commands } = context()
     const ids = commands.map(command => command.id)
     expect(ids).not.toContain('publish')
-    expect(ids.filter(id => id.startsWith('data:') || id.startsWith('collection:'))).toEqual([])
-    expect(ids).not.toContain('view:data')
-    expect(ids).toEqual(expect.arrayContaining(['view:build', 'view:design', 'view:settings', 'settings:variables', 'design-system', 'help:shortcuts']))
+    expect(ids.filter(id => id.startsWith('data:'))).toEqual(['data:new-collection', 'data:import-api'])
+    expect(ids).toEqual(expect.arrayContaining(['view:build', 'view:data', 'view:design', 'view:settings', 'settings:variables', 'design-system', 'help:shortcuts']))
+  })
+
+  it('opens the Data view, which is its own screen', () => {
+    const { ctx, editor, commands } = context()
+    expect(find(commands, 'view:data').label).toBe('Data view')
+    find(commands, 'view:data').run(ctx)
+    expect(editor.mode).toBe('data')
+  })
+
+  it('Import from API asks the Data view for its dialog first, so the screen that opens has the request', () => {
+    const { ctx, editor, commands } = context()
+    const seen: number[] = []
+    Object.defineProperty(editor, 'mode', { configurable: true, get: () => 'build', set: () => seen.push(editor.importRequest) })
+    find(commands, 'data:import-api').run(ctx)
+    expect(seen).toEqual([1])
+  })
+
+  it('New collection makes an "Untitled" one (numbered while the name is taken), then opens the Data view', async () => {
+    const { ctx, editor, commands } = context({ collections: [{ name: 'Untitled' }] })
+    await find(commands, 'data:new-collection').run(ctx)
+    expect(editor.createCollection).toHaveBeenCalledWith('Untitled2')
+    expect(editor.mode).toBe('data')
   })
 
   it('opens the Settings view, and Environment variables asks it to scroll to them', () => {

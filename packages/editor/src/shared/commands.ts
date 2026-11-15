@@ -5,8 +5,8 @@
  * over the model's files). Pure, so the editor passes in a context; every
  * command mutates through the editor's own methods.
  *
- * Not in the module: Publish, the Data view (U7), collections (the entity UI is
- * U7) and deleting the project.
+ * Not in the module: Publish and deleting the project. The Data view is its own screen
+ * (`editor/views.ts`); choosing it opens that screen.
  */
 import type { BreakpointBase } from '@bildr/codegen/design'
 import type { ModelNode } from '@bildr/codegen/model'
@@ -15,6 +15,7 @@ import { DEFAULT_FRAMES, defaultFrames, frameShortcut, visibleFrames } from '@bi
 import type { DeviceId } from '@bildr/editor-core/styleFields'
 import type { SelectionStep } from '../editor/selection.ts'
 import { siblingParent, topLevelSelection } from '../editor/selection.ts'
+import { uniqueEntityName } from './dataModel.ts'
 
 export type CommandGroup = 'insert' | 'actions' | 'goto' | 'help'
 
@@ -230,6 +231,11 @@ export interface CommandEditor {
   previewDark: boolean
   /** Bumped to ask the Settings view to scroll to its Variables section. */
   variablesRequest: number
+  /** Bumped to ask the Data view for its Import from API dialog. */
+  importRequest: number
+  /** The model's collections (entities), so a new one gets a free name. */
+  collections: readonly { name: string }[]
+  createCollection: (name: string) => unknown
   sidebarPanel: SidebarPanel
   /** The device frame being edited. */
   deviceId: DeviceId
@@ -278,6 +284,7 @@ function selectsSiblings(ctx: CommandContext): boolean {
 
 const VIEWS: { id: EditorView, label: string, icon: string }[] = [
   { id: 'build', label: 'Canvas view', icon: 'i-lucide-frame' },
+  { id: 'data', label: 'Data view', icon: 'i-lucide-database' },
   { id: 'design', label: 'Design view', icon: 'i-lucide-palette' },
   { id: 'settings', label: 'Settings view', icon: 'i-lucide-settings' }
 ]
@@ -347,6 +354,15 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
         editor.mode = view.id
       }
     })),
+    action('data:new-collection', 'New collection', 'i-lucide-database', ['collection', 'data', 'entity', 'add', 'cms'], always, async ({ editor }) => {
+      await editor.createCollection(uniqueEntityName('Untitled', editor.collections))
+      editor.mode = 'data'
+    }),
+    // The request first: the Data view is another screen, which starts with it.
+    action('data:import-api', 'Import from API', 'i-lucide-globe', ['collection', 'data', 'synced', 'json', 'endpoint'], always, ({ editor }) => {
+      editor.importRequest++
+      editor.mode = 'data'
+    }),
     {
       id: 'settings:variables',
       group: 'goto',

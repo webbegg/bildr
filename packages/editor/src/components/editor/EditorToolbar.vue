@@ -22,6 +22,7 @@ const editor = useEditor()
 
 const VIEWS: { value: EditorView, label: string, icon: string }[] = [
   { value: 'build', label: 'Canvas', icon: 'i-lucide-pen-tool' },
+  { value: 'data', label: 'Data', icon: 'i-lucide-database' },
   { value: 'design', label: 'Design', icon: 'i-lucide-palette' },
   { value: 'settings', label: 'Settings', icon: 'i-lucide-settings' }
 ]

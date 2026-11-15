@@ -4,6 +4,7 @@ import type { RouteRecordRaw } from 'vue-router'
 export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/design' },
   { path: '/design', name: 'design', component: () => import('./views/DesignView.vue'), meta: { label: 'Design', icon: 'i-lucide-pen-tool' } },
+  { path: '/data', name: 'data', component: () => import('./views/DataView.vue'), meta: { label: 'Data', icon: 'i-lucide-database' } },
   { path: '/model', name: 'model', component: () => import('./views/ModelView.vue'), meta: { label: 'Model', icon: 'i-lucide-boxes' } },
   { path: '/code', name: 'code', component: () => import('./views/CodeView.vue'), meta: { label: 'View code', icon: 'i-lucide-file-code' } },
   { path: '/health', name: 'health', component: () => import('./views/HealthView.vue'), meta: { label: 'Health', icon: 'i-lucide-heart-pulse' } },
