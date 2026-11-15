@@ -232,3 +232,25 @@ describe('padding and gap handles', () => {
     expect(sent('bildr:style-commit').at(-1)).toEqual({ type: 'bildr:style-commit', nodeId: 'n_head', style: { gap: '4' } })
   })
 })
+
+describe('the gesture lifecycle acts only on checked messages (U-E1, V6)', () => {
+  const other = { postMessage: () => {} } as unknown as Window
+  it('a cancel-drag from another origin, a null origin, another window or a null source does not cancel the drag', async () => {
+    await select('n_h1')
+    await press(220, 60)
+    await move(280, 60)
+    const forged = { type: 'bildr:cancel-drag' }
+    for (const [source, origin] of [[window.parent, 'https://evil.test'], [window.parent, 'null'], [other, window.location.origin], [null, window.location.origin]] as const)
+      window.dispatchEvent(new MessageEvent('message', { data: forged, source: source as Window | null, origin }))
+    await settle()
+    expect(sent('bildr:style-preview').at(-1)).toEqual({ type: 'bildr:style-preview', nodeId: 'n_h1', style: { w: '64' } })
+    await release(280, 60)
+    expect(sent('bildr:style-commit')).toEqual([{ type: 'bildr:style-commit', nodeId: 'n_h1', style: { w: '64' } }])
+  })
+
+  it('a forged bildr:select from another window shows no handles', async () => {
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'bildr:select', nodeId: 'n_h1', nodeIds: ['n_h1'] }, source: other, origin: window.location.origin }))
+    await settle()
+    expect(document.querySelectorAll('[data-resize-handle]')).toHaveLength(0)
+  })
+})
