@@ -9,6 +9,7 @@ import type { Theme } from '@bildr/codegen/design'
 import type { ComponentFile, LayoutFile, Model, ModelNode, PageFile } from '@bildr/codegen/model'
 import { DEVICES } from '@bildr/editor-core/styleFields'
 import type { Rect } from '@bildr/editor-core/viewport'
+import { layoutNodeId } from '../canvas/ids.ts'
 
 export type ThumbnailKind = 'component' | 'layout'
 
@@ -17,7 +18,7 @@ export interface ThumbnailSource {
   file: PageFile
   /** The layouts it renders in (the one layout, for a layout tile). */
   layouts: LayoutFile[]
-  /** The node whose box the thumbnail shows: the component's instance, or the layout root. */
+  /** The `data-node` id of the node whose box the thumbnail shows: the component's instance, or the layout root (which the canvas draws as `<page root>/@<layout root>`). */
   measureId: string
   /** The components its instances render from, nested ones included, in model order. */
   components: ComponentFile[]
@@ -58,7 +59,7 @@ export function thumbnailSource(model: Pick<Model, 'modules' | 'layouts'>, kind:
   return {
     file,
     layouts: kind === 'layout' ? [item as LayoutFile] : [],
-    measureId: kind === 'component' ? instance.id : item.root.id,
+    measureId: kind === 'component' ? instance.id : layoutNodeId(root.id, item.root.id),
     components: usedComponents(components, kind === 'component' ? instance : item.root),
     width: widthOf(kind === 'component' ? 'mobile' : 'desktop')
   }

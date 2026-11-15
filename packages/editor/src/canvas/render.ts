@@ -5,6 +5,7 @@ import {
   DEFAULT_TRANSITION, displayOf, fallbackStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, isSafeUrl, LINK_CLASS,
   LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses
 } from '@bildr/codegen/render'
+import { INSTANCE_ID_SEPARATOR, layoutNodeId } from './ids.ts'
 
 /**
  * The canvas renderer's pure half (P4a, spec V4): a `.bildr` page, component
@@ -30,8 +31,7 @@ import {
  *   the first.
  */
 
-export const INSTANCE_ID_SEPARATOR = '/'
-export const LAYOUT_ID_MARKER = '@'
+export { INSTANCE_ID_SEPARATOR, LAYOUT_ID_MARKER } from './ids.ts'
 /** Nested component depth beyond which an instance is not expanded (the model refuses cycles). */
 export const MAX_INSTANCE_DEPTH = 8
 
@@ -696,7 +696,7 @@ export function renderPlan(input: RenderInput): PlanElement[] {
     shell: layoutShell(layout),
     scope: layoutScope(layout, page.layoutValues ?? {}, data),
     variant: 'default',
-    id: node => `${page.root.id}${INSTANCE_ID_SEPARATOR}${LAYOUT_ID_MARKER}${node.id}`,
+    id: node => layoutNodeId(page.root.id, node.id),
     label: 'Layout',
     layoutSlots: slots,
     depth: 0

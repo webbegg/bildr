@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { ComponentFile, LayoutFile, Model, ModelNode } from '@bildr/codegen/model'
 import { DEFAULT_THEME } from '@bildr/codegen/design'
+import { renderPlan } from '../../src/canvas/render.ts'
+import type { PlanChild, PlanElement } from '../../src/canvas/render.ts'
 import { createLimiter, ThumbnailCache, thumbnailFit, thumbnailSignature, thumbnailSource } from '../../src/shared/thumbnails.ts'
 
 /** Ported from the hosted `test/editor/thumbnails.test.ts`, over the model's component and layout files. */
@@ -29,10 +31,32 @@ describe('thumbnailSource', () => {
     const site = thumbnailSource(m, 'layout', 'lay')!
     expect(site.file).toMatchObject({ layout: 'lay', root: { type: 'Page' } })
     expect(site.layouts.map(l => l.id)).toEqual(['lay'])
-    expect(site.measureId).toBe('lr')
+    expect(site.measureId).toBe(`${site.file.root.id}/@lr`)
     expect(site.components.map(c => c.id)).toEqual(['cmp_badge', 'cmp_card'])
     expect(site.width).toBe(1280)
     expect(thumbnailSource(m, 'component', 'cmp_missing')).toBeNull()
+  })
+})
+
+/** The `data-node` ids the canvas draws for a source: what `bildr:measure` can find. */
+const renderedIds = (source: NonNullable<ReturnType<typeof thumbnailSource>>) => {
+  const ids: string[] = []
+  const visit = (children: PlanChild[]) => {
+    for (const child of children) {
+      if (typeof child === 'string') continue
+      if ((child as PlanElement).node) ids.push((child as PlanElement).node!)
+      visit(child.children)
+    }
+  }
+  visit(renderPlan({ file: source.file, components: source.components, layouts: source.layouts, data: {} }))
+  return ids
+}
+
+describe('thumbnailSource measures a node the canvas renders (U8, layouts-p2)', () => {
+  // The thumbnail asks the canvas for the box of `measureId`; a node it never draws has no box, and the tile ends `failed`.
+  it.each([['component', 'cmp_card'], ['layout', 'lay']] as const)('the %s thumbnail\'s measured node is drawn in its render', (kind, id) => {
+    const source = thumbnailSource(model(), kind, id)!
+    expect(renderedIds(source)).toContain(source.measureId)
   })
 })
 
