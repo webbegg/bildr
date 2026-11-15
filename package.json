@@ -9,6 +9,7 @@
     "dev": "nuxt dev",
     "e2e": "node e2e/all.mjs",
     "e2e:generated": "node e2e/generated.mjs",
+    "e2e:module": "node e2e/module/all.mjs",
     "preview": "nuxt preview",
     "palettes": "node --experimental-strip-types scripts/generate-palettes.ts",
     "postinstall": "nuxt prepare",

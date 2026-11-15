@@ -21,6 +21,7 @@ logs
 
 # Browser test screenshots
 e2e/.shots
+e2e/module/.shots
 
 # Local env files
 .env
