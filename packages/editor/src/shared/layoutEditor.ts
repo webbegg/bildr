@@ -1,0 +1,125 @@
+import type { LayoutFile, Model, PageFile, PropertyDef, Value } from '@bildr/codegen/model'
+import { layoutDragPayload, parseLayoutPayload } from '../editor/drop.ts'
+import { CHILDREN_SLOT, layoutSelection, pageSlots } from '../editor/layouts.ts'
+import type { Command, CommandContext } from './commands.ts'
+import { matches } from './sidebar.ts'
+
+/**
+ * The layout editor's pure parts (the hosted `composables/layoutEditor.ts`, over the
+ * model's files): the Assets list of layouts (with the pages using each), the delete
+ * confirmation, the page's Layout select, variable fields and the quick actions. The
+ * drag payload, `layoutSelection` and `pageSlots` live in `editor/`.
+ */
+
+export { layoutDragPayload, layoutSelection, pageSlots, parseLayoutPayload }
+
+export interface LayoutEntry {
+  layout: LayoutFile
+  /** The pages that use it, in page order: they detach when it is deleted. */
+  pages: PageFile[]
+}
+
+const pagesOf = (model: Pick<Model, 'modules'>): PageFile[] => Object.values(model.modules).flatMap(entry => entry.pages)
+
+export const layoutPages = (model: Pick<Model, 'modules'>, layoutId: string): PageFile[] => pagesOf(model).filter(page => page.layout === layoutId)
+
+/** The layouts whose name matches `query`, with their pages. */
+export const layoutEntries = (model: Pick<Model, 'modules' | 'layouts'>, query: string): LayoutEntry[] => model.layouts.filter(layout => matches(query, layout.name)).map(layout => ({ layout, pages: layoutPages(model, layout.id) }))
+
+/** The delete confirm (EditorConfirm): the pages that will detach. */
+export function layoutDeleteConfirm(layout: Pick<LayoutFile, 'name'>, pages: Pick<PageFile, 'name'>[]): { title: string, description: string, items: string[], confirmLabel: string, danger: true } {
+  const n = pages.length
+  return {
+    title: `Delete "${layout.name}"?`,
+    description: n
+      ? `Used by ${n} page${n === 1 ? '' : 's'}. ${n === 1 ? 'It keeps its' : 'They keep their'} content and lose${n === 1 ? 's' : ''} the layout; undo brings it back.`
+      : 'No page uses it. Undo brings it back.',
+    items: pages.map(page => page.name),
+    confirmLabel: 'Delete layout',
+    danger: true
+  }
+}
+
+/** The `<USelect>` value of "no layout" (select items cannot be empty). */
+export const NO_LAYOUT = '__none'
+
+/** The page's Layout select: None, then each layout with the number of pages using it. */
+export const layoutItems = (model: Pick<Model, 'modules' | 'layouts'>): { label: string, value: string, pages?: number }[] =>
+  [{ label: 'None', value: NO_LAYOUT }, ...model.layouts.map(layout => ({ label: layout.name, value: layout.id, pages: layoutPages(model, layout.id).length }))]
+
+const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+
+/** A layout choice's second line: the pages using it, then what a page can set in it (its named slots, the children slot aside, and its variables). */
+export function layoutChoiceHint(layout: Pick<LayoutFile, 'slots' | 'variables'>, pages: number): string {
+  const slots = layout.slots.filter(slot => slot.id !== CHILDREN_SLOT).length
+  const variables = layout.variables?.length ?? 0
+  const sets = slots || variables ? [slots && count(slots, 'slot'), variables && count(variables, 'variable')].filter(Boolean).join(', ') : 'No slots or variables'
+  return `${pages ? count(pages, 'page') : 'No pages'} · ${sets}`
+}
+
+/** What a page's variable row needs to show (the hosted `PropDef`): keyed by the variable id, its default and options from the model. */
+export interface VariableField {
+  name: string
+  label: string
+  kind: PropertyDef['kind']
+  description: string
+  placeholder?: string
+  default: Value | ''
+  options?: string[]
+}
+
+/** A variable as a prop field of the page settings. */
+export const variableField = (layout: Pick<LayoutFile, 'name'>, variable: PropertyDef): VariableField => ({
+  name: variable.id,
+  label: variable.label ?? variable.name,
+  kind: variable.kind,
+  description: variable.description ?? `${variable.label ?? variable.name}, a variable of layout ${layout.name}`,
+  ...(variable.placeholder ? { placeholder: variable.placeholder } : {}),
+  default: variable.default ?? '',
+  ...(variable.options ? { options: variable.options } : {})
+})
+
+/** The page's own value for a variable; undefined when the default applies. */
+export const layoutValue = (page: Pick<PageFile, 'layoutValues'>, variable: Pick<PropertyDef, 'id'>): Value | undefined => page.layoutValues?.[variable.id]
+
+export interface LayoutCommandActions {
+  create: () => unknown
+  createFromSelection: () => unknown
+  edit: (layoutId: string) => unknown
+  setPageLayout: (layoutId: string | null) => unknown
+}
+
+const onCanvas = ({ editor }: CommandContext) => editor.mode === 'build' && !!editor.page
+
+/**
+ * The quick actions for layouts: New layout, Create layout from selection
+ * (when `fromSelection`), "Edit layout <name>" (not the one being edited),
+ * and "Set page layout › <name>" for the current page (not its current one).
+ */
+export function layoutCommands(model: Pick<Model, 'layouts'>, state: { editingId: string | null, pageLayoutId: string | undefined, fromSelection: boolean }, actions: LayoutCommandActions): Command<CommandContext>[] {
+  const icon = 'i-lucide-layout-template'
+  const choices = [{ id: null, name: 'None' }, ...model.layouts]
+  return [
+    { id: 'layout:new', group: 'actions', label: 'New layout', icon, keywords: ['layout', 'frame', 'template', 'add'], enabled: () => true, run: () => actions.create() },
+    { id: 'layout:from-selection', group: 'actions', label: 'Create layout from selection', icon, keywords: ['layout', 'nav', 'footer', 'share'], enabled: c => onCanvas(c) && state.fromSelection, run: () => actions.createFromSelection() },
+    ...model.layouts.map((layout): Command<CommandContext> => ({
+      id: `layout:edit:${layout.id}`,
+      group: 'goto',
+      label: `Edit layout ${layout.name}`,
+      hint: 'Layout',
+      icon,
+      keywords: ['layout', 'edit'],
+      enabled: c => !(c.editor.mode === 'build' && state.editingId === layout.id),
+      run: () => actions.edit(layout.id)
+    })),
+    ...choices.map((choice): Command<CommandContext> => ({
+      id: `layout:set:${choice.id ?? 'none'}`,
+      group: 'actions',
+      label: `Set page layout › ${choice.name}`,
+      icon,
+      keywords: ['layout', 'page'],
+      enabled: c => onCanvas(c) && (state.pageLayoutId ?? null) !== choice.id,
+      run: () => actions.setPageLayout(choice.id)
+    }))
+  ]
+}

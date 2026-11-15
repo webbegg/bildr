@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { applyEdit } from '../../../codegen/src/edit/index.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 import { allByTestId, byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
-import { check, choose, open, select, setupHarness } from './harness.ts'
+import { check, choose, insertComponent, insertType, open, select, setupHarness } from './harness.ts'
 
 /**
  * The binding panels (P5, mapping §4): a List's source and its query's sort, filter and
@@ -154,7 +154,7 @@ describe('inserting a component that needs a record', () => {
   it('asks for the record first: outside a List nothing can be bound, inside one the item is offered', async () => {
     const { actions } = await open({ node_insert: ok({ nodeId: 'n_instance_1' }) }, 'pg_index')
     await select('n_h1')
-    await click(byTestId('palette-component-cmp_post_card'))
+    await insertComponent('cmp_post_card')
     expect(byTestId('required-dialog')).not.toBeNull()
     expect(options('required-post')).toEqual([''])
     expect(byTestId('required-none')).not.toBeNull()
@@ -162,7 +162,7 @@ describe('inserting a component that needs a record', () => {
     expect(actions.named('node_insert')).toEqual([])
 
     await select('n_list')
-    await click(byTestId('palette-component-cmp_post_card'))
+    await insertComponent('cmp_post_card')
     expect(options('required-post')).toEqual(['', 'post'])
     expect((byTestId('required-confirm') as HTMLButtonElement).disabled).toBe(true)
     await choose('required-post', 'post')
@@ -175,7 +175,7 @@ describe('inserting a component that needs a record', () => {
 
   it('asks for a required text too, and the insert waits for it', async () => {
     const { actions } = await open({ node_insert: ok({ nodeId: 'n_instance_1' }) }, 'pg_index')
-    await click(byTestId('palette-component-cmp_tip'))
+    await insertComponent('cmp_tip')
     expect((byTestId('required-confirm') as HTMLButtonElement).disabled).toBe(true)
     await typeInto(byTestId('required-title'), 'Hello')
     await click(byTestId('required-confirm'))
@@ -187,7 +187,7 @@ describe('inserting a component that needs a record', () => {
   it('inserts at once a component that needs nothing', async () => {
     const { actions } = await open({ node_insert: ok({ nodeId: 'n_instance_1' }) }, 'pg_index')
     // A component with no required property: PostCard's record is, so drop in a plain node instead.
-    await click(byTestId('palette-Text'))
+    await insertType('Text')
     await settle()
     expect(byTestId('required-dialog')).toBeNull()
     expect(actions.named('node_insert')).toHaveLength(1)
@@ -217,7 +217,7 @@ describe('a Form\'s action and fields', () => {
 describe('inserting a Form from the palette', () => {
   it('asks which action it runs, and inserts it with that action and no fields', async () => {
     const { actions } = await open({ node_insert: ok({ nodeId: 'n_form_2' }) }, 'pg_new_post')
-    await click(byTestId('palette-Form'))
+    await insertType('Form')
     expect(byTestId('form-dialog')).not.toBeNull()
     expect(actions.named('node_insert')).toEqual([])
     expect((byTestId('form-dialog-confirm') as HTMLButtonElement).disabled).toBe(true)
@@ -232,7 +232,7 @@ describe('inserting a Form from the palette', () => {
 
   it('inserts nothing when the dialog is cancelled', async () => {
     const { actions } = await open({ node_insert: ok() }, 'pg_new_post')
-    await click(byTestId('palette-Form'))
+    await insertType('Form')
     await click(byTestId('form-dialog-cancel'))
     expect(actions.named('node_insert')).toEqual([])
     expect(byTestId('form-dialog')).toBeNull()
@@ -241,7 +241,7 @@ describe('inserting a Form from the palette', () => {
   it('is accepted by the real edit: the page uses the action and the model builds', async () => {
     const outcomes: unknown[] = []
     await open({ node_insert: real('node_insert', outcomes) }, 'pg_index')
-    await click(byTestId('palette-Form'))
+    await insertType('Form')
     await choose('form-dialog-action', 'act_create_post')
     await click(byTestId('form-dialog-confirm'))
     expect(outcomes).toMatchObject([{ ok: true }])

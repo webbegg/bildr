@@ -100,6 +100,22 @@ export const escapeSelection = (root: ModelNode, ids: readonly string[]): string
   return parent ? [parent.id] : []
 }
 
+/** The ids of the nodes of `root` that `test` accepts, in document order. */
+const collect = (root: ModelNode, test: (node: ModelNode) => boolean): string[] => [...(test(root) ? [root.id] : []), ...childrenOf(root).flatMap(child => collect(child, test))]
+
+/** Select ▸ Same type: every node of `id`'s type, in document order. */
+export const sameTypeNodes = (root: ModelNode, id: string): string[] => {
+  const node = findNode(root, id)
+  return node ? collect(root, other => other.type === node.type) : []
+}
+
+/** Select ▸ Same component: every instance of `id`'s component, in document order; none when `id` is not an instance. */
+export const sameComponentNodes = (root: ModelNode, id: string): string[] => {
+  const node = findNode(root, id)
+  if (node?.type !== 'Instance') return []
+  return collect(root, other => other.type === 'Instance' && other.props?.component === node.props?.component)
+}
+
 /** The parent shared by all `ids` (siblings only); undefined for none, the root, or nodes of different parents. */
 export const siblingParent = (root: ModelNode, ids: readonly string[]): ModelNode | undefined => {
   const parents = ids.map(id => findParent(root, id))

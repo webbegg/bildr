@@ -37,6 +37,13 @@ export const toolForKey = ({ key, meta, shift, alt, typing }: KeyInput): ToolId 
 /** True for a tool that inserts a component (not Move or Hand). */
 export const isInsertTool = (id: ToolId): boolean => id !== MOVE_TOOL && id !== HAND_TOOL
 
+/** The floating bar's hint for an armed insert tool, which only the keyboard arms; null otherwise. */
+export const toolHint = (id: ToolId): string | null => {
+  if (!isInsertTool(id)) return null
+  const label = INSERT_TOOLS.find(tool => tool.id === id)?.label ?? id
+  return `${label} · click to insert · Esc`
+}
+
 /** The hosted editor's two accents: blue on pages, purple inside a component or a layout (or on instances). */
 export const SELECTION_ACCENT = '#09f'
 export const CONTEXT_ACCENT = '#85f'

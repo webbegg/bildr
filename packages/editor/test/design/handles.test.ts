@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { allByTestId, byTestId, click, Failure, settle } from '../helpers.ts'
-import { find, fromCanvas, indexPage, open, select, sent, setupHarness } from './harness.ts'
+import { byTestId, click, Failure, settle } from '../helpers.ts'
+import { find, fromCanvas, indexPage, layer, open, openFile, select, sent, setupHarness } from './harness.ts'
 
 /**
  * The editor's side of the canvas handle drags (P4c): a drag's patch is shown
@@ -64,7 +64,7 @@ describe('Esc during a drag', () => {
     expect(sent('bildr:select').at(-1)).toMatchObject({ nodeIds: ['n_h1'] })
   })
 
-  it('is the usual Esc again once the drag ended: it deselects and cancels nothing', async () => {
+  it('is the usual Esc again once the drag ended: it selects the parent (Framer\'s) and cancels nothing', async () => {
     await open()
     await select('n_h1')
     await fromCanvas({ type: 'bildr:style-preview', nodeId: 'n_h1', style: { 'lg:w': '96' } })
@@ -73,7 +73,7 @@ describe('Esc during a drag', () => {
     await escape()
 
     expect(sent('bildr:cancel-drag')).toEqual([])
-    expect(sent('bildr:select').at(-1)).toMatchObject({ nodeId: null, nodeIds: [] })
+    expect(sent('bildr:select').at(-1)).toMatchObject({ nodeId: 'n_head', nodeIds: ['n_head'] })
   })
 
   it('a commit ends the drag too', async () => {
@@ -88,25 +88,44 @@ describe('Esc during a drag', () => {
   })
 })
 
-describe('breadcrumbs', () => {
-  it('show the path from the root to the selected layer, and a click selects that ancestor', async () => {
-    await open()
-    expect(byTestId('breadcrumbs')).toBeNull()
-    await select('n_h1')
-    expect(allByTestId('breadcrumb').map(crumb => crumb.textContent?.trim())).toEqual(['Page', 'Row', 'Heading'])
-    expect(byTestId('breadcrumb-n_h1')?.getAttribute('aria-current')).toBe('true')
+describe('breadcrumb', () => {
+  const crumbs = () => [...document.body.querySelectorAll('[data-breadcrumb] [data-crumb]')].map(crumb => crumb.textContent?.trim())
 
-    await click(byTestId('breadcrumb-n_head'))
-    expect(sent('bildr:select').at(-1)).toMatchObject({ nodeId: 'n_head', nodeIds: ['n_head'] })
-    expect(allByTestId('breadcrumb').map(crumb => crumb.textContent?.trim())).toEqual(['Page', 'Row'])
+  it('shows the component being edited over its page, and a click goes back a level; Esc with nothing selected goes up one', async () => {
+    await open()
+    expect(document.body.querySelector('[data-breadcrumb]')).toBeNull()
+    await openFile('cmp_post_card')
+    expect(crumbs()).toEqual(['index', 'PostCard'])
+    expect(document.body.querySelector('[data-breadcrumb-reach]')?.textContent).toBe('1 instance')
+    expect(sent('bildr:render').at(-1)?.file.id).toBe('cmp_post_card')
+
+    await click(document.body.querySelector('[data-breadcrumb] button[data-crumb="page"]'))
+    expect(document.body.querySelector('[data-breadcrumb]')).toBeNull()
+    expect(sent('bildr:render').at(-1)?.file.id).toBe('pg_index')
+
+    await openFile('cmp_post_card')
+    await select('n_card')
+    await click(document.body.querySelector('[data-breadcrumb-done]'))
+    expect(sent('bildr:render').at(-1)?.file.id).toBe('pg_index')
   })
 
-  it('use a layer\'s own name where it has one, and a component\'s for its instance', async () => {
+  it('selects the parent with Esc, up to the root, one level at a time', async () => {
+    await open()
+    await select('n_h1')
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
+    await settle()
+    expect(sent('bildr:select').at(-1)).toMatchObject({ nodeId: 'n_head' })
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
+    await settle()
+    expect(sent('bildr:select').at(-1)).toMatchObject({ nodeId: 'n_page' })
+  })
+
+  it('names a layer by its own name where it has one, and an instance by its component', async () => {
     find(indexPage().root, 'n_h1')!.name = 'Title'
     await open()
-    await select('n_card')
-    expect(allByTestId('breadcrumb').map(crumb => crumb.textContent?.trim())).toEqual(['Page', 'List', 'PostCard'])
-    await select('n_h1')
-    expect(allByTestId('breadcrumb').at(-1)?.textContent?.trim()).toBe('Title')
+    // The name, then the node's text in italics.
+    expect(layer('n_h1')?.querySelector('[data-layer-name] > span')?.textContent?.trim()).toBe('Title')
+    expect(layer('n_h1')?.querySelector('[data-layer-name]')?.textContent).toContain('Posts')
+    expect(layer('n_card')?.querySelector('[data-layer-name] > span')?.textContent?.trim()).toBe('PostCard')
   })
 })

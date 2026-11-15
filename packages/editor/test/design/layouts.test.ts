@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { LAYOUT_VARIABLE_KINDS } from '../../../codegen/src/model/schemas.ts'
-import { allByTestId, byTestId, click, Failure, typeInto } from '../helpers.ts'
-import { check, choose, fromCanvas, indexPage, mainLayout, open, select, sent, setupHarness } from './harness.ts'
+import { byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
+import { check, choose, fromCanvas, indexPage, mainLayout, menuItem, open, select, sent, setupHarness, sidebarTab } from './harness.ts'
 
 /**
  * Layouts in the Design screen (P4c, V1, V2): the Layouts section, a layout's
@@ -12,48 +12,64 @@ import { check, choose, fromCanvas, indexPage, mainLayout, open, select, sent, s
 setupHarness()
 
 const ok = (extra: Record<string, unknown> = {}) => () => ({ changed: [], ...extra })
-const openTab = (name: string) => click(byTestId(`tab-${name}`))
+const layoutRow = (id: string) => document.body.querySelector<HTMLElement>(`[data-layout-id="${id}"]`)
+const actionsOf = (id: string) => layoutRow(id)!.querySelector('[aria-label="Layout actions"]')
+const pick = (selector: string) => document.body.querySelector<HTMLElement>(selector)
 const fileTab = () => click(byTestId('inspector-tab-file'))
 const MAIN = 'lay_main'
 
 describe('Layouts section', () => {
-  it('lists the layouts; a row opens the layout in the canvas', async () => {
+  it('lists the layouts with the pages using each; a row opens the layout in the canvas', async () => {
     await open()
-    await openTab('layouts')
-    expect(allByTestId('layout-row').map(row => row.textContent?.trim())).toEqual(['main'])
-    await click(byTestId(`layout-open-${MAIN}`))
+    await sidebarTab('Assets')
+    expect([...document.body.querySelectorAll('[data-layout-id]')].map(row => row.getAttribute('data-layout-id'))).toEqual([MAIN])
+    expect(layoutRow(MAIN)!.textContent).toContain('main')
+    expect(layoutRow(MAIN)!.querySelector('[data-layout-pages]')?.getAttribute('data-layout-pages')).toBe('3')
+    await click(layoutRow(MAIN)!.querySelector('button'))
     expect(sent('bildr:render').at(-1)?.file.id).toBe(MAIN)
   })
 
-  it('creates a layout, named or not', async () => {
+  it('creates a layout, named in the dialog', async () => {
     const { actions } = await open({ layout_create: ok({ layoutId: 'lay_docs', slotNodeId: 'n', filePath: 'x' }) })
-    await openTab('layouts')
-    await click(byTestId('layout-new'))
-    await typeInto(byTestId('layout-new-name'), 'docs')
-    await click(byTestId('layout-new'))
-    expect(actions.named('layout_create').map(call => call.input)).toEqual([{}, { name: 'docs' }])
+    await sidebarTab('Assets')
+    await click(pick('[aria-label="New layout"]'))
+    expect(pick('[data-create-dialog="layout"]')).not.toBeNull()
+    await typeInto(pick('[data-create-name]'), 'docs')
+    await click(pick('[data-create-submit]'))
+    expect(actions.named('layout_create').map(call => call.input)).toEqual([{ name: 'docs' }])
   })
 
   it('creates a layout from the top-level layers selected on a page without one', async () => {
     delete indexPage().layout
     const { actions } = await open({ layout_create_from_selection: ok({ layoutId: 'lay_site', slotNodeId: 'n', filePath: 'x' }) })
-    await openTab('layouts')
-    expect((byTestId('layout-from-selection') as HTMLButtonElement).disabled).toBe(true)
     await select('n_head')
     await fromCanvas({ type: 'bildr:click', nodeId: 'n_list', shift: true, meta: false })
-    await typeInto(byTestId('layout-new-name'), 'site')
-    await click(byTestId('layout-from-selection'))
+    // The node menu's "Create layout from selection…" on a selected layer opens the dialog.
+    const row = document.body.querySelector<HTMLElement>('[data-layer-id="n_head"]')!
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await settle()
+    const item = [...document.body.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find(element => element.textContent?.includes('Create layout from selection'))
+    expect(item?.getAttribute('data-disabled')).toBeNull()
+    await click(item!)
+    await typeInto(pick('[data-create-name]'), 'site')
+    await click(pick('[data-create-submit]'))
     expect(actions.named('layout_create_from_selection').map(call => call.input)).toEqual([{ page: 'pg_index', nodeIds: ['n_head', 'n_list'], name: 'site' }])
   })
 
   it('renames, duplicates and deletes a layout, showing the refusal of a delete in use', async () => {
     const message = 'Layout "main" is used by 1 page: pg_index. Give them another layout first'
     const { actions } = await open({ layout_rename: ok(), layout_duplicate: ok({ layoutId: 'lay_x', filePath: 'x' }), layout_delete: () => new Failure(422, 'invalid', message) })
-    await openTab('layouts')
-    await click(byTestId(`layout-rename-${MAIN}`))
-    await typeInto(byTestId('layout-rename-input'), 'site')
-    await click(byTestId(`layout-duplicate-${MAIN}`))
-    await click(byTestId(`layout-delete-${MAIN}`))
+    await sidebarTab('Assets')
+    await menuItem(actionsOf(MAIN), 'Rename')
+    const name = pick('input[aria-label="Layout name"]')!
+    await typeInto(name, 'site')
+    name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await settle()
+    await menuItem(actionsOf(MAIN), 'Duplicate')
+    await menuItem(actionsOf(MAIN), 'Delete')
+    // The confirm names the pages that would lose the layout, then the module's refusal shows.
+    expect(pick('[data-confirm-items]')?.textContent).toContain('index')
+    await click(pick('[data-confirm-ok]'))
     expect(actions.named('layout_rename').map(call => call.input)).toEqual([{ layout: MAIN, name: 'site' }])
     expect(actions.named('layout_duplicate').map(call => call.input)).toEqual([{ layout: MAIN }])
     expect(actions.named('layout_delete').map(call => call.input)).toEqual([{ layout: MAIN }])

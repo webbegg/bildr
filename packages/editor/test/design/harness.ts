@@ -100,17 +100,92 @@ export const setupHarness = () => {
   })
 }
 
-/** Mounts the Design screen with the base handlers plus `extra`, and opens `file` (the first page by default). */
+/** A layers row of the hosted editor (`data-layer-id`), shown while the sidebar is on Layers. */
+export const layer = (id: string) => document.body.querySelector<HTMLElement>(`[data-layer-id="${id}"]`)
+
+/** Opens the Insert panel from the toolbar (the palette), if it is not open. */
+const openInsert = async () => {
+  if (!document.body.querySelector('[data-insert-panel]')) {
+    document.body.querySelector<HTMLElement>('[data-insert-button]')!.click()
+    await settle()
+  }
+}
+
+/** Inserts a built-in node type from the Insert panel, as a click on its row does. */
+export const insertType = async (type: string) => {
+  await openInsert()
+  const row = document.body.querySelector<HTMLElement>(`[data-palette-type="${type}"]`)
+  if (!row) throw new Error(`no palette row for ${type}`)
+  row.click()
+  await settle()
+}
+
+/** Inserts an instance of a component from the Insert panel's tiles. */
+export const insertComponent = async (id: string) => {
+  await openInsert()
+  const tile = document.body.querySelector<HTMLElement>(`[data-palette-component="${id}"]`)
+  if (!tile) throw new Error(`no palette tile for ${id}`)
+  tile.click()
+  await settle()
+}
+
+/** Opens a dropdown from its trigger and picks the item whose text starts with `label`, as a user does. */
+export const menuItem = async (trigger: Element | null, label: string) => {
+  if (!trigger) throw new Error('no menu trigger')
+  // The keyboard opens it (happy-dom's pointer events don't reach the trigger's handler).
+  trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+  await settle()
+  const item = [...document.body.querySelectorAll<HTMLElement>('[role^="menuitem"]')].find(element => element.textContent?.trim().startsWith(label))
+  if (!item) throw new Error(`no menu item ${label}`)
+  item.click()
+  await settle()
+}
+
+/** Picks a sidebar tab (Pages, Layers or Assets) as a user does. */
+export const sidebarTab = async (name: 'Pages' | 'Layers' | 'Assets') => {
+  const tab = [...document.body.querySelectorAll<HTMLElement>('[data-sidebar-switcher] [role="tab"]')].find(element => element.textContent?.trim() === name)
+  if (!tab) throw new Error(`no sidebar tab ${name}`)
+  tab.click()
+  await settle()
+}
+
+/** Opens the Design view (the theme) from the Assets panel's Design system row, as a user does. */
+export const openDesignSystem = async () => {
+  await sidebarTab('Assets')
+  const row = document.body.querySelector<HTMLElement>('[data-assets-design-system]')
+  if (!row) throw new Error('no Design system row')
+  row.click()
+  await settle()
+}
+
+/** Opens a page (Pages), a component or a layout (Assets) by clicking its sidebar row; leaves the sidebar on Layers. */
+export const openFile = async (file: string) => {
+  const row = (selector: string) => {
+    const element = document.body.querySelector<HTMLElement>(selector)
+    if (!element) throw new Error(`no sidebar row for ${file}`)
+    return element
+  }
+  if (world.model.layouts.some(entry => entry.id === file)) {
+    await sidebarTab('Assets')
+    row(`[data-layout-id="${file}"] button`).click()
+  } else if (Object.values(world.model.modules).some(entry => entry.components.some(component => component.id === file))) {
+    await sidebarTab('Assets')
+    row(`[data-component-id="${file}"] button[draggable]`).click()
+  } else {
+    await sidebarTab('Pages')
+    row(`[data-page-id="${file}"] button`).click()
+  }
+  await settle()
+  await sidebarTab('Layers')
+}
+
+/** Mounts the Design screen with the base handlers plus `extra`, and opens `file` (the first page by default); the sidebar shows the layers. */
 export const open = async (extra: Handlers = {}, file?: string, routes: AppRoutes = {}) => {
   const actions = mockActions({ ...baseHandlers(), ...extra }, routes)
   const mounted = await mountWithApp(DesignView, '/design')
   await fromCanvas({ type: 'bildr:ready' })
-  if (file) {
-    const picker = document.body.querySelector<HTMLSelectElement>('[data-testid="file-picker"]')!
-    picker.value = file
-    picker.dispatchEvent(new Event('change', { bubbles: true }))
-    await settle()
-  }
+  if (file) await openFile(file)
+  else await sidebarTab('Layers')
   return { actions, ...mounted }
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PROPERTY_KINDS } from '../../../codegen/src/model/schemas.ts'
 import { allByTestId, byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
-import { check, choose, open, postCard, select, sent, setupHarness } from './harness.ts'
+import { check, choose, layer, menuItem, open, openFile, postCard, select, sent, setupHarness, sidebarTab } from './harness.ts'
 
 /**
  * Components in the Design screen (P4c, V1, V2): the Components section,
@@ -12,18 +12,23 @@ import { check, choose, open, postCard, select, sent, setupHarness } from './har
 setupHarness()
 
 const ok = (extra: Record<string, unknown> = {}) => () => ({ changed: [], ...extra })
-const openTab = (name: string) => click(byTestId(`tab-${name}`))
+const component = (id: string) => document.body.querySelector<HTMLElement>(`[data-component-id="${id}"]`)
+const actionsOf = (id: string) => component(id)!.querySelector('[aria-label="Component actions"]')
+const confirmOk = () => click(document.body.querySelector<HTMLElement>('[data-confirm-ok]'))
 const fileTab = () => click(byTestId('inspector-tab-file'))
 const nodeTab = () => click(byTestId('inspector-tab-node'))
 const POST_CARD = 'cmp_post_card'
 
 describe('Components section', () => {
-  it('lists the components; a row opens the component in the canvas', async () => {
+  it('lists the components with where each is used; a row opens the component in the canvas', async () => {
     await open()
-    await openTab('components')
-    expect(allByTestId('component-row').map(row => row.textContent?.trim())).toEqual(['PostCard', 'Tip'])
+    await sidebarTab('Assets')
+    expect([...document.body.querySelectorAll('[data-component-id]')].map(row => row.getAttribute('data-component-id'))).toEqual([POST_CARD, 'cmp_tip'])
+    expect(component(POST_CARD)!.textContent).toContain('PostCard')
+    expect(component(POST_CARD)!.querySelector('[data-usage-count]')?.getAttribute('data-usage-count')).toBe('1')
+    expect(component('cmp_tip')!.querySelector('[data-usage-count]')?.getAttribute('data-usage-count')).toBe('1')
 
-    await click(byTestId(`component-open-${POST_CARD}`))
+    await click(component(POST_CARD)!.querySelector('button[draggable]'))
 
     expect(sent('bildr:render').at(-1)?.file.id).toBe(POST_CARD)
   })
@@ -31,38 +36,55 @@ describe('Components section', () => {
   it('makes a component from the selection, with the typed name', async () => {
     const { actions } = await open({ component_create: ok({ componentId: 'cmp_badge', nodeId: 'n_instance_1', filePath: 'x' }) })
     await select('n_h1')
-    await openTab('components')
-    await typeInto(byTestId('component-new-name'), 'Badge')
-    await click(byTestId('component-new'))
+    await sidebarTab('Assets')
+    await click(document.body.querySelector('[aria-label="Create component"]'))
+    // The dialog opens with the layer's name, selected for typing.
+    expect(document.body.querySelector<HTMLInputElement>('[data-create-name]')?.value).toBe('Heading')
+    await typeInto(document.body.querySelector<HTMLElement>('[data-create-name]'), 'Badge')
+    await click(document.body.querySelector('[data-create-submit]'))
     expect(actions.named('component_create').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1', name: 'Badge' }])
   })
 
   it('renames, duplicates and deletes a component', async () => {
     const { actions } = await open({ component_rename: ok(), component_duplicate: ok({ componentId: 'cmp_x', filePath: 'x' }), component_delete: ok({ deletedInstances: [] }) })
-    await openTab('components')
+    await sidebarTab('Assets')
 
-    await click(byTestId(`component-rename-${POST_CARD}`))
-    await typeInto(byTestId('component-rename-input'), 'Card')
-    await click(byTestId(`component-duplicate-${POST_CARD}`))
-    await click(byTestId('component-delete-cmp_tip'))
+    await menuItem(actionsOf(POST_CARD), 'Rename')
+    const name = document.body.querySelector<HTMLInputElement>('input[aria-label="Component name"]')!
+    await typeInto(name, 'Card')
+    name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await settle()
+    await menuItem(actionsOf(POST_CARD), 'Duplicate')
+    await menuItem(actionsOf('cmp_tip'), 'Delete')
+    await confirmOk()
 
     expect(actions.named('component_rename').map(call => call.input)).toEqual([{ component: POST_CARD, name: 'Card' }])
     expect(actions.named('component_duplicate').map(call => call.input)).toEqual([{ component: POST_CARD }])
-    expect(actions.named('component_delete').map(call => call.input)).toEqual([{ component: 'cmp_tip' }])
+    // Tip is used on the new-post page, so the confirm names it and the delete takes its instance too.
+    expect(actions.named('component_delete').map(call => call.input)).toEqual([{ component: 'cmp_tip', force: true }])
   })
 
-  it('shows the refusal of a delete in use, and offers to delete the instances too', async () => {
-    const message = 'Component "PostCard" is used by 1 instance: pg_index (n_card). Delete it first'
-    let refuse = true
-    const { actions } = await open({ component_delete: () => refuse ? new Failure(422, 'invalid', message) : ok({ deletedInstances: ['pg_index (n_card)'] })() })
-    await openTab('components')
+  it('asks before deleting a component in use, naming where, and deletes its instances too', async () => {
+    const { actions } = await open({ component_delete: ok({ deletedInstances: ['pg_index (n_card)'] }) })
+    await sidebarTab('Assets')
 
-    await click(byTestId(`component-delete-${POST_CARD}`))
+    await menuItem(actionsOf(POST_CARD), 'Delete')
+    const dialog = document.body.querySelector('[data-confirm]')!
+    expect(dialog.textContent).toContain('Used by 1 instance')
+    expect(dialog.querySelector('[data-confirm-items]')?.textContent).toContain('page "index"')
+    expect(actions.named('component_delete')).toEqual([])
+    await confirmOk()
+
+    expect(actions.named('component_delete').map(call => call.input)).toEqual([{ component: POST_CARD, force: true }])
+  })
+
+  it('shows a refusal of the module in the editor', async () => {
+    const message = 'Component "Tip" is used by 1 instance: pg_about (n_tip). Delete it first'
+    await open({ component_delete: () => new Failure(422, 'invalid', message) })
+    await sidebarTab('Assets')
+    await menuItem(actionsOf('cmp_tip'), 'Delete')
+    await confirmOk()
     expect(byTestId('design-error')?.textContent?.trim()).toBe(message)
-    refuse = false
-    await click(byTestId(`component-delete-force-${POST_CARD}`))
-
-    expect(actions.named('component_delete').map(call => call.input)).toEqual([{ component: POST_CARD }, { component: POST_CARD, force: true }])
   })
 })
 
@@ -81,14 +103,9 @@ describe('Component canvas and variant switcher', () => {
   it('has no switcher on a page, and a variant is dropped when its file is left', async () => {
     await open({}, POST_CARD)
     await click(byTestId('variant-tab-var_compact'))
-    const picker = byTestId('file-picker') as HTMLSelectElement
-    picker.value = 'pg_index'
-    picker.dispatchEvent(new Event('change', { bubbles: true }))
-    await settle()
+    await openFile('pg_index')
     expect(byTestId('variant-bar')).toBeNull()
-    picker.value = POST_CARD
-    picker.dispatchEvent(new Event('change', { bubbles: true }))
-    await settle()
+    await openFile(POST_CARD)
     expect(sent('bildr:render').at(-1)?.variant).toEqual({ id: null, label: 'default' })
   })
 })
@@ -335,7 +352,7 @@ describe('Interactions and transition', () => {
 describe('Instance inspector', () => {
   it('names an instance by its component in the layers and the inspector', async () => {
     await open()
-    expect(document.body.querySelector('[data-testid="layer"][data-node-id="n_card"]')?.textContent).toContain('PostCard')
+    expect(layer('n_card')?.textContent).toContain('PostCard')
     await select('n_card')
     expect(byTestId('inspector-node')?.textContent).toContain('PostCard')
   })

@@ -26,6 +26,7 @@ import { canvasMovable, drillTarget, escapeSelection, navigateSelection, nearest
 import type { SelectionStep } from './selection.ts'
 import { isInsertTool, MOVE_TOOL, selectionAccent, toolForKey } from './tools.ts'
 import type { ToolId } from './tools.ts'
+import { layerName } from '../shared/layers.ts'
 import { boardShown, newVariantName, overrideInput } from './variants.ts'
 import type { NodeOverridePatch, OverridePatch } from './variants.ts'
 
@@ -295,7 +296,10 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   const treeRef = computed(() => ({ file: design.fileId.value }))
 
   /** What the layers and the inspector call a node: its layer name, an instance's component's name, else its type. */
-  const nodeName = (node: ModelNode): string => design.nameOf(node) ?? node.type
+  const nodeName = (node: ModelNode): string => {
+    const file = design.file.value
+    return file ? layerName({ root: file.root, ...('layout' in file && typeof file.layout === 'string' ? { layout: file.layout } : {}) }, node, { components: design.components.value, layouts: design.layouts.value }) : design.nameOf(node) ?? node.type
+  }
 
   /** The draft preview of the current page: its route path in the app the dev server runs. */
   const previewUrl = computed(() => currentPage.value?.path ?? '')

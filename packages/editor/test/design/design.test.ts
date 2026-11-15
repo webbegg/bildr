@@ -7,7 +7,8 @@ import type { CanvasToEditor, EditorToCanvas } from '../../src/canvas/protocol.t
 import { canvasSrc } from '../../src/design/config.ts'
 import DesignView from '../../src/views/DesignView.vue'
 import { blogModelFiles } from '../canvas/fixture.ts'
-import { allByTestId, byTestId, click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
+import { byTestId, click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
+import { insertType, sidebarTab } from './harness.ts'
 
 /**
  * The Design screen (P4b, V1): page picker, layers, the canvas frame, inspector,
@@ -133,19 +134,27 @@ const open = async (extra: Record<string, (input: Record<string, unknown>) => un
   const actions = mockActions({ ...handlers(), ...extra })
   const mounted = await mountWithApp(DesignView, '/design')
   await fromCanvas({ type: 'bildr:ready' })
+  await sidebarTab('Layers')
   return { actions, ...mounted }
 }
 
-const layer = (id: string) => document.body.querySelector<HTMLElement>(`[data-testid="layer"][data-node-id="${id}"]`)
+const layer = (id: string) => document.body.querySelector<HTMLElement>(`[data-layer-id="${id}"]`)
+const control = (label: string) => document.body.querySelector<HTMLElement>(`[aria-label="${label}"]`)
 
 describe('Design screen', () => {
   it('lists the pages, defaults to the first one and renders it in the canvas with its project context', async () => {
     await open()
 
-    const picker = byTestId('file-picker') as HTMLSelectElement
-    expect([...picker.options].map(option => option.value)).toEqual(expect.arrayContaining(['pg_index', 'pg_post_detail', 'cmp_post_card', 'lay_main']))
+    // The page switcher names the current page by its path, and the Pages panel lists them all.
+    expect(document.body.querySelector('[data-page-switcher]')?.textContent).toContain('Home')
+    await sidebarTab('Pages')
+    expect([...document.body.querySelectorAll('[data-page-id]')].map(row => row.getAttribute('data-page-id'))).toEqual(expect.arrayContaining(['pg_index', 'pg_post_detail']))
+    expect(document.body.querySelector('[data-page-id="pg_index"] button')?.getAttribute('aria-current')).toBe('page')
+    await sidebarTab('Assets')
+    expect(document.body.querySelector('[data-component-id="cmp_post_card"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-layout-id="lay_main"]')).not.toBeNull()
     const [render] = sent('bildr:render').slice(-1)
-    expect(render?.file.id).toBe(picker.value)
+    expect(render?.file.id).toBe('pg_index')
     expect(render?.components.map(component => component.id)).toContain('cmp_post_card')
     expect(render?.layouts.map(entry => entry.id)).toContain('lay_main')
     expect(render?.theme).toBeDefined()
@@ -233,8 +242,8 @@ describe('Design screen', () => {
   it('undo and redo call history_undo and history_redo, then refresh', async () => {
     const { actions } = await open()
     const reads = actions.named('model_get').length
-    await click(byTestId('undo'))
-    await click(byTestId('redo'))
+    await click(control('Undo'))
+    await click(control('Redo'))
     expect(actions.named('history_undo')).toHaveLength(1)
     expect(actions.named('history_redo')).toHaveLength(1)
     expect(actions.named('model_get').length).toBeGreaterThan(reads)
@@ -244,7 +253,7 @@ describe('Design screen', () => {
     const { actions } = await open()
     await fromCanvas({ type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false })
 
-    await click(byTestId('palette-Button'))
+    await insertType('Button')
 
     // n_h1 is a leaf in n_head (index 0): the new node goes right after it.
     expect(actions.named('node_insert').map(call => call.input)).toEqual([{ file: 'pg_index', parentId: 'n_head', index: 1, type: 'Button' }])
@@ -262,13 +271,27 @@ describe('Design screen', () => {
   })
 
   it('renames, locks and reorders layers through node_rename, node_set_locked and node_move', async () => {
-    const { actions } = await open()
-    await click(byTestId('layer-lock-n_h1'))
-    expect(actions.named('node_set_locked').map(call => call.input)).toEqual([{ file: 'pg_index', nodeIds: ['n_h1'], locked: true }])
-
-    layer('n_h1')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    const { actions } = await open({
+      node_set_locked: (input) => {
+        find(indexPage().root, String(input.nodeId))!.locked = input.locked === true
+        return { changed: [] }
+      }
+    })
+    // Cmd+L locks the selection; its row then shows a lock that unlocks it.
+    await click(layer('n_h1'))
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'l', code: 'KeyL', metaKey: true, bubbles: true }))
     await settle()
-    await typeInto(byTestId('layer-rename'), 'Title')
+    expect(actions.named('node_set_locked').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1', locked: true }])
+    expect(layer('n_h1')?.hasAttribute('data-layer-locked')).toBe(true)
+    await click(layer('n_h1')!.querySelector('[data-layer-lock]'))
+    expect(actions.named('node_set_locked').at(-1)?.input).toEqual({ file: 'pg_index', nodeId: 'n_h1', locked: false })
+
+    layer('n_h1')!.querySelector('[data-layer-name]')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    await settle()
+    const field = layer('n_h1')!.querySelector<HTMLInputElement>('[data-layer-rename]')!
+    await typeInto(field, 'Title')
+    field.dispatchEvent(new Event('blur'))
+    await settle()
     expect(actions.named('node_rename').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1', name: 'Title' }])
 
     const dataTransfer = new DataTransfer()
@@ -312,7 +335,7 @@ describe('Design screen', () => {
 
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', code: 'Delete', bubbles: true }))
     await settle()
-    expect(actions.named('node_delete').map(call => call.input)).toEqual([{ file: 'pg_index', nodeIds: ['n_h1'] }])
+    expect(actions.named('node_delete').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1' }])
 
     // Typing in a field is not a shortcut.
     await fromCanvas({ type: 'bildr:click', nodeId: 'n_h1', shift: false, meta: false })
@@ -342,7 +365,7 @@ describe('Design screen', () => {
     await click(byTestId('node-component'))
     expect(byTestId('design-error')?.textContent?.trim()).toBe('nope')
     await click(layer('n_h1'))
-    await click(byTestId('undo'))
+    await click(control('Undo'))
     expect(byTestId('design-error')).toBeNull()
   })
 
@@ -363,10 +386,10 @@ describe('Design screen', () => {
     expect(box.style.width).toBe('1280px')
     expect(box.style.transform).toBe('scale(0.74375)')
     expect(box.parentElement!.style.width).toBe('952px')
-    expect(byTestId('zoom')?.textContent?.trim()).toBe('74%')
+    expect(control('Zoom')?.textContent?.trim()).toBe('74%')
     expect(sent('bildr:active').at(-1)).toMatchObject({ zoom: 0.74375 })
     await click(byTestId('device-tablet'))
-    expect(byTestId('zoom')?.textContent?.trim()).toBe('100%')
+    expect(control('Zoom')?.textContent?.trim()).toBe('100%')
     expect(byTestId('canvas-frame')!.parentElement!.style.transform).toBe('')
   })
 
@@ -378,13 +401,13 @@ describe('Design screen', () => {
     expect(sent('bildr:mode').at(-1)).toEqual({ type: 'bildr:mode', mode: 'edit' })
   })
 
-  it('lists the layers of the selected file and switches file from the picker', async () => {
+  it('lists the layers of the selected file and switches file from the sidebar', async () => {
     await open()
-    expect(allByTestId('layer').map(row => row.getAttribute('data-node-id'))).toEqual(expect.arrayContaining(['n_page', 'n_head', 'n_h1']))
-    const picker = byTestId('file-picker') as HTMLSelectElement
-    picker.value = 'cmp_post_card'
-    picker.dispatchEvent(new Event('change', { bubbles: true }))
-    await settle()
+    expect([...document.body.querySelectorAll('[data-layer-id]')].map(row => row.getAttribute('data-layer-id'))).toEqual(expect.arrayContaining(['n_page', 'n_head', 'n_h1']))
+    await sidebarTab('Assets')
+    await click(document.body.querySelector('[data-component-id="cmp_post_card"] button[draggable]'))
     expect(sent('bildr:render').at(-1)?.file.id).toBe('cmp_post_card')
+    await sidebarTab('Layers')
+    expect(layer('n_card')).not.toBeNull()
   })
 })

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { THEME_PRESETS } from '../../../codegen/src/edit/theme.ts'
 import { DEFAULT_THEME, themeOptions } from '../../../codegen/src/design/index.ts'
 import { allByTestId, byTestId, click, typeInto } from '../helpers.ts'
-import { check, choose, open, sent, setupHarness, world } from './harness.ts'
+import { check, choose, open, openDesignSystem, sent, setupHarness, world } from './harness.ts'
 
 /**
  * The design system in the Design screen (P4c, V1, V2): the Theme panel (semantic
@@ -21,7 +21,7 @@ const handlers = () => ({
 })
 const openTheme = async (extra: Record<string, () => unknown> = {}) => {
   const mounted = await open({ ...handlers(), ...extra })
-  await click(byTestId('tab-theme'))
+  await openDesignSystem()
   return mounted
 }
 
