@@ -29,11 +29,11 @@ const titleVariants = {
 </script>
 
 <template>
-  <div class="ring ring-default group/post-card transition-[padding,box-shadow] duration-200 ease-[ease-out] bg-default rounded-lg overflow-hidden" :class="cardVariants[props.variant]">
-    <div class="flex transition-[gap] duration-200 ease-[ease-out] flex-col" :class="cardStackVariants[props.variant]">
+  <div class="ring ring-default group/post-card transition-[padding,box-shadow] duration-200 ease-[ease-out] motion-reduce:duration-0 bg-default rounded-lg overflow-hidden" :class="cardVariants[props.variant]">
+    <div class="flex transition-[gap] duration-200 ease-[ease-out] motion-reduce:duration-0 flex-col" :class="cardStackVariants[props.variant]">
       <img v-if="props.cover" :src="props.cover" :alt="props.post.title" class="block max-w-full rounded-md">
       <ULink :to="{ name: 'posts-slug', params: { slug: props.post.slug } }" class="underline-offset-4 hover:underline">
-        <h2 class="transition-[color] duration-200 ease-[ease-out] text-lg font-semibold tracking-tight" :class="titleVariants[props.variant]">{{ props.post.title }}</h2>
+        <h2 class="transition-[color] duration-200 ease-[ease-out] motion-reduce:duration-0 text-lg font-semibold tracking-tight" :class="titleVariants[props.variant]">{{ props.post.title }}</h2>
       </ULink>
       <p v-if="props.variant !== 'compact'" class="whitespace-pre-line text-muted">{{ props.post.body }}</p>
       <p v-if="!props.post.published" class="whitespace-pre-line px-2 py-0.5 bg-elevated text-xs rounded-sm self-start">{{ props.draftLabel ?? 'Draft' }}</p>

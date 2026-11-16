@@ -8,11 +8,10 @@ import { posts } from '../db/schema'
 /** PostRepository over the app database (Drizzle + libSQL). */
 export const drizzlePostRepository = (db: LibSQLDatabase): PostRepository => ({
   async list({ limit, offset }) {
-    const [items, [total]] = await Promise.all([
+    return Promise.all([
       db.select().from(posts).orderBy(desc(posts.createdAt)).limit(limit).offset(offset),
       db.select({ value: count() }).from(posts)
-    ])
-    return { items, total: total?.value ?? 0 }
+    ]).then(([items, [total]]) => ({ items, total: total?.value ?? 0 }))
   },
   async get(id) {
     return db.select().from(posts).where(eq(posts.id, id)).get()

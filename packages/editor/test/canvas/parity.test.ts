@@ -46,7 +46,7 @@ describe('canvas render parity with the generated app', () => {
     const rendered = canvas(page('index'), { site, preferences: { showDrafts: false }, featured: [draft], all: [hello, draft], quotes: [quote] })
     expect(rendered).toEqual(normalized(generated))
     // Known lines, from the fixture's generated files: the card's root (its CSS hover state), the slot fill's link.
-    expect(rendered).toContain('div: bg-default duration-200 ease-[ease-out] group/post-card hover:shadow-md overflow-hidden p-5 ring ring-default rounded-lg transition-[padding,box-shadow]')
+    expect(rendered).toContain('div: bg-default duration-200 ease-[ease-out] group/post-card hover:shadow-md motion-reduce:duration-0 overflow-hidden p-5 ring ring-default rounded-lg transition-[padding,box-shadow]')
     expect(rendered).toContain('ULink: gap-1 hover:underline inline-flex items-center text-primary text-sm underline-offset-4')
     expect(rendered).toContain('p: text-muted whitespace-pre-line')
     expect(rendered.length).toBe(32)

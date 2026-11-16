@@ -27,7 +27,7 @@ const tipBgClasses = {
 </script>
 
 <template>
-  <div class="flex transition-[gap,padding-top,padding-bottom] duration-200 ease-[ease-in-out] px-4 rounded-md flex-col" :class="[tipVariants[variant], tipBgClasses[props.tone]]" v-on="on">
+  <div class="flex transition-[gap,padding-top,padding-bottom] duration-200 ease-[ease-in-out] motion-reduce:duration-0 px-4 rounded-md flex-col" :class="[tipVariants[variant], tipBgClasses[props.tone]]" v-on="on">
     <div class="flex flex-row items-center justify-between self-stretch">
       <p class="whitespace-pre-line font-medium">{{ props.title }}</p>
       <UButton :label="({ default: 'Hide', collapsed: 'Show' })[variant]" color="neutral" variant="ghost" size="xs" :icon="props.icon" />

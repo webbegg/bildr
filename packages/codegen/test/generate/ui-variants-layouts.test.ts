@@ -122,7 +122,7 @@ describe('generateUi: variants', () => {
       '} as const'
     ].join('\n'))
     expect(code).not.toContain('group-')
-    expect(code).toContain('<div class="flex transition-[padding-left,padding-right] duration-200 ease-[ease-out] flex-row" :class="[badgeVariants[props.variant], badgeBgClasses[props.tone]]">')
+    expect(code).toContain('<div class="flex transition-[padding-left,padding-right] duration-200 ease-[ease-out] motion-reduce:duration-0 flex-row" :class="[badgeVariants[props.variant], badgeBgClasses[props.tone]]">')
     expect(code).not.toContain('useVariantState')
   })
 
@@ -161,8 +161,21 @@ describe('generateUi: variants', () => {
       '  }',
       '}, \'variantRoot\')'
     ].join('\n'))
-    expect(code).toContain('<div ref="variantRoot" class="flex transition-[padding-left,padding-right,padding-top,padding-bottom] duration-300 ease-[ease] flex-row" :class="[badgeVariants[variant], badgeBgClasses[props.tone]]" v-on="on">')
+    expect(code).toContain('<div ref="variantRoot" class="flex transition-[padding-left,padding-right,padding-top,padding-bottom] duration-300 ease-[ease] motion-reduce:duration-0 flex-row" :class="[badgeVariants[variant], badgeBgClasses[props.tone]]" v-on="on">')
     expect(code).toContain('({ default: \'Badge\', loud: \'LOUD\' })[variant]')
+  })
+
+  // prefers-reduced-motion: reduce makes every animated element instant, whatever its variant's timing (Tailwind's `motion-reduce:` variant: no bildr runtime).
+  it('makes every transition instant under prefers-reduced-motion', () => {
+    const animated = (code: string) => [...code.matchAll(/class="([^"]*\btransition-\[[^"]*)"/g)].map(match => match[1]!.split(' '))
+    const timed = badgeOut((component) => {
+      component.variants.push({ id: 'var_hover', name: 'hovered', overrides: { n_badge: { style: { px: '3' } } }, state: { of: '', kind: 'hover' } })
+      component.transition = { type: 'ease', duration: 0.2, easing: 'ease-out' }
+    })
+    expect(animated(timed)).toHaveLength(1)
+    const golden = out(() => {}, 'components/blog/PostCard.vue')
+    expect(animated(golden)).toHaveLength(3)
+    for (const classes of [...animated(timed), ...animated(golden)]) expect(classes).toContain('motion-reduce:duration-0')
   })
 
   it('uses the composable for a state it can\'t express in CSS (a prop override)', () => {

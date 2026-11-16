@@ -107,42 +107,55 @@ export const portFile = (context: ModuleContext, entity: EntityFile, repository:
 
 // ── Drizzle adapter ────────────────────────────────────────────────────
 
-const orderExpression = (entity: EntityFile, repository: RepositoryFile, drizzle: Set<string>) => (repository.list?.orderBy ?? [])
+const orderExpression = (table: string, repository: RepositoryFile, drizzle: Set<string>) => (repository.list?.orderBy ?? [])
   .map((order) => {
     drizzle.add(order.direction)
-    return `${order.direction}(${entity.plural}.${order.field})`
+    return `${order.direction}(${table}.${order.field})`
   })
+
+/** The first of `name`, `nameSuffix`, `nameSuffixSuffix`… that isn't taken. */
+const freeName = (name: string, suffix: string, taken: ReadonlySet<string>) => {
+  let free = name
+  while (taken.has(free)) free += suffix
+  return free
+}
+
+/** What the Drizzle adapter's module scope and method parameters already bind, besides the entity. */
+const ADAPTER_NAMES = ['asc', 'count', 'db', 'desc', 'eq', 'id', 'limit', 'offset']
 
 export const drizzleRepositoryFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
   const names = entityNames(entity)
   const drizzle = new Set<string>()
-  const table = entity.plural
+  const finders = finderFields(entity, repository)
+  // Whatever the entity is called, its table and its row never share a name with an import, a parameter or each other.
+  const taken = new Set([...ADAPTER_NAMES, ...finders.map(field => field.name)])
+  const row = freeName(names.variable, 'Row', taken)
+  const table = freeName(entity.plural, 'Table', new Set([...taken, row]))
   const body: string[] = []
   if (has(repository, 'list')) {
     drizzle.add('count')
-    const order = orderExpression(entity, repository, drizzle)
+    const order = orderExpression(table, repository, drizzle)
+    // The destructured names live only in the callback, where the table is not used.
     body.push(
       '  async list({ limit, offset }) {',
-      '    const [items, [total]] = await Promise.all([',
+      '    return Promise.all([',
       `      db.select().from(${table})${order.length ? `.orderBy(${order.join(', ')})` : ''}.limit(limit).offset(offset),`,
       `      db.select({ value: count() }).from(${table})`,
-      '    ])',
-      '    return { items, total: total?.value ?? 0 }',
+      '    ]).then(([items, [total]]) => ({ items, total: total?.value ?? 0 }))',
       '  }'
     )
   }
-  const finders = finderFields(entity, repository)
   const lookups = [...(has(repository, 'get') ? [{ method: 'get', column: 'id', arg: 'id' }] : []), ...finders.map(field => ({ method: findBy(field), column: field.name, arg: field.name }))]
   for (const lookup of lookups) {
     drizzle.add('eq')
     body.push(`  async ${lookup.method}(${lookup.arg}) {`, `    return db.select().from(${table}).where(eq(${table}.${lookup.column}, ${lookup.arg})).get()`, '  }')
   }
   if (has(repository, 'create')) {
-    body.push(`  async create(${names.variable}: ${names.type}) {`, `    await db.insert(${table}).values(${names.variable})`, `    return ${names.variable}`, '  }')
+    body.push(`  async create(${row}: ${names.type}) {`, `    await db.insert(${table}).values(${row})`, `    return ${row}`, '  }')
   }
   if (has(repository, 'update')) {
     drizzle.add('eq')
-    body.push(`  async update(id, ${names.variable}: ${names.type}) {`, `    await db.update(${table}).set(${names.variable}).where(eq(${table}.id, id))`, `    return ${names.variable}`, '  }')
+    body.push(`  async update(id, ${row}: ${names.type}) {`, `    await db.update(${table}).set(${row}).where(eq(${table}.id, id))`, `    return ${row}`, '  }')
   }
   if (has(repository, 'delete')) {
     drizzle.add('eq')
@@ -158,7 +171,7 @@ export const drizzleRepositoryFile = (context: ModuleContext, entity: EntityFile
       'import type { LibSQLDatabase } from \'drizzle-orm/libsql\'',
       usesType && `import type { ${names.type} } from '#${context.name}/domain/${names.file}'`,
       `import type { ${names.port} } from '../../application/ports/${names.portFile}'`,
-      `import { ${table} } from '../db/schema'`,
+      `import { ${table === entity.plural ? table : `${entity.plural} as ${table}`} } from '../db/schema'`,
       '',
       `/** ${names.port} over the app database (Drizzle + libSQL). */`,
       `export const drizzle${names.port} = (db: LibSQLDatabase): ${names.port} => ({`,

@@ -421,9 +421,12 @@ export function springSettle(stiffness: number, damping: number): { duration: nu
   return { duration: round(duration), overshoot: round(peak - 1) }
 }
 
+/** Under `prefers-reduced-motion: reduce` a timed transition is instant: a Tailwind variant, so the generated app needs no runtime for it. */
+const REDUCED_MOTION_CLASS = 'motion-reduce:duration-0'
+
 /**
- * The Tailwind timing classes of a transition (`duration-300 ease-[ease]`),
- * empty for an instant one. Easings are the CSS keywords (arbitrary values:
+ * The Tailwind timing classes of a transition (`duration-300 ease-[ease]
+ * motion-reduce:duration-0`), empty for an instant one. Easings are the CSS keywords (arbitrary values:
  * Tailwind's own `ease-in`… are other curves); a spring is its settle time
  * with the cubic-bezier the canvas falls back to without `linear()`.
  */
@@ -432,10 +435,10 @@ export function transitionTimingClasses(transition: TransitionSpec): string {
   if (transition.type === 'spring') {
     const { duration, overshoot } = springSettle(transition.stiffness ?? 300, transition.damping ?? 30)
     const bezier = overshoot > 0.001 ? `cubic-bezier(0.3,${round(1 + Math.min(overshoot * 2.6, 1.5))},0.6,1)` : 'cubic-bezier(0.25,0.1,0.25,1)'
-    return `duration-${Math.round(duration * 1000)} ease-[${bezier}]`
+    return `duration-${Math.round(duration * 1000)} ease-[${bezier}] ${REDUCED_MOTION_CLASS}`
   }
   const easing = transition.easing ?? 'ease'
-  return `duration-${Math.round((transition.duration ?? 0.3) * 1000)} ${easing === 'linear' ? 'ease-linear' : `ease-[${easing}]`}`
+  return `duration-${Math.round((transition.duration ?? 0.3) * 1000)} ${easing === 'linear' ? 'ease-linear' : `ease-[${easing}]`} ${REDUCED_MOTION_CLASS}`
 }
 
 /**

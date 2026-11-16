@@ -28,12 +28,12 @@
     },
     "layers/blog/app/components/blog/PostCard.vue": {
       "owner": "managed",
-      "sha256": "88fcb826ad622a031c87d7028133a1cba54cf5a9076d76bb7c591d824138f0c1",
+      "sha256": "f89ea6eba666f96dfd1a00582e7467e79f69b99580b2643985b8efc9a7eaf84e",
       "source": ".bildr/modules/blog/components/post-card.json"
     },
     "layers/blog/app/components/blog/Tip.vue": {
       "owner": "managed",
-      "sha256": "372f79024c577cb6b09ac7bd7c22520807bc2ca70f278e9285a8e3b5928f6ac7",
+      "sha256": "1efc953108fee7cf65431e1cab596f80b3052df9d4109572686b1682a45aeea7",
       "source": ".bildr/modules/blog/components/tip.json"
     },
     "layers/blog/app/composables/blog/useAllPosts.ts": {
@@ -168,7 +168,7 @@
     },
     "layers/blog/server/infrastructure/repositories/post.drizzle.ts": {
       "owner": "managed",
-      "sha256": "28353f1d7507c490a619324b7292272a5148992771ed2627e0448891e55a0129",
+      "sha256": "69014b2c68a0d344b988ea1bf1817e903f776107d52c267f6f5ce3a8322643e0",
       "source": ".bildr/modules/blog/repositories/post.json"
     },
     "layers/blog/server/infrastructure/repositories/post.memory.ts": {
