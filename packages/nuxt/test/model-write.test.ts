@@ -6,11 +6,9 @@ import { createProject } from '../../create-bildr/src/create'
 import { deleteModelFile, saveModelFile } from '../src/node/editor-io'
 
 /**
- * The write rule of `saveModelFile` and `deleteModelFile`:
- * - a valid model stays valid;
- * - a model that already has problems takes a write that is itself sound (it parses, and the file has no problem of its
- *   own) and adds no problem to any other file, and says the problems that remain, so two broken files can be fixed one
- *   after the other.
+ * The write rule of `saveModelFile` and `deleteModelFile` is strict: a change is accepted only when the model is valid
+ * after it. Otherwise it is refused (`json` for text that is not JSON, else `invalid`, with the problems the model would
+ * have) and nothing changes, whatever state the model is in now.
  */
 
 const INDEX = '.bildr/modules/main/pages/index.json'
@@ -46,6 +44,11 @@ describe('a valid model', () => {
     expect(json(ABOUT).seo.title).toBe('About')
   })
 
+  it('writes the file in its canonical form', () => {
+    save(ABOUT, JSON.stringify(pageLike('about')))
+    expect(read(ABOUT)).toMatch(/^\{\n {2}"id": "pg_about",/)
+  })
+
   it('refuses a write that breaks it, with the problems, and writes nothing', () => {
     const before = read(ABOUT)
     const outcome = save(ABOUT, noLayout('about'))
@@ -65,38 +68,20 @@ describe('a valid model', () => {
 })
 
 describe('a model with problems', () => {
-  it('takes the fix of one of two broken files, and reports the other\'s problem', () => {
+  it('refuses the fix of one of two broken files while the other stays broken, and names the other\'s problem', () => {
     disk(ABOUT, noLayout('about'))
     disk(CONTACT, noLayout('contact'))
     const outcome = save(ABOUT, pageLike('about'))
-    expect(outcome).toMatchObject({ ok: true, problems: [{ path: CONTACT, message: 'layout: Unknown layout "lay_nope"' }] })
-    expect(json(ABOUT).layout).toBe('lay_main')
-    // The last one fixes the model: nothing remains.
-    const last = save(CONTACT, pageLike('contact'))
-    expect(last).toMatchObject({ ok: true })
-    expect(last).not.toHaveProperty('problems')
+    expect(outcome).toMatchObject({ ok: false, reason: 'invalid', problems: [{ path: CONTACT, message: 'layout: Unknown layout "lay_nope"' }] })
+    expect(json(ABOUT).layout).toBe('lay_nope')
   })
 
-  it('takes the fix of a file that is not JSON while another is not JSON either', () => {
-    disk(ABOUT, '{ "id": ')
-    disk(CONTACT, '{ nope')
+  it('takes the fix that makes the model valid, and then reports no problems', () => {
+    disk(ABOUT, noLayout('about'))
     const outcome = save(ABOUT, pageLike('about'))
     expect(outcome).toMatchObject({ ok: true })
-    expect(problemPaths(outcome)).toEqual([CONTACT])
-    expect(json(ABOUT).id).toBe('pg_about')
-  })
-
-  it('takes the fix of a file that is not JSON while another has a schema problem, and the other way round', () => {
-    disk(ABOUT, '{ "id": ')
-    disk(CONTACT, { ...pageLike('contact'), name: 5 })
-    const first = save(ABOUT, pageLike('about'))
-    expect(first).toMatchObject({ ok: true })
-    expect(problemPaths(first)).toEqual([CONTACT])
-    disk(ABOUT, { ...pageLike('about'), name: 5 })
-    disk(CONTACT, '{ nope')
-    const second = save(CONTACT, pageLike('contact'))
-    expect(second).toMatchObject({ ok: true })
-    expect(problemPaths(second)).toEqual([ABOUT])
+    expect(outcome).not.toHaveProperty('problems')
+    expect(json(ABOUT).layout).toBe('lay_main')
   })
 
   it('refuses a write whose own file still has problems, and writes nothing', () => {
@@ -130,7 +115,7 @@ describe('a model with problems', () => {
     expect(read(ABOUT)).toBe(before)
   })
 
-  it('cannot tell a file is sound while the project file is not JSON, so it refuses the file but takes the project file\'s fix', () => {
+  it('refuses a file while the project file is not JSON, but takes the project file\'s fix', () => {
     const project = json('.bildr/bildr.json')
     disk('.bildr/bildr.json', '{ nope')
     expect(save(ABOUT, pageLike('about'))).toMatchObject({ ok: false, reason: 'invalid' })
@@ -153,7 +138,7 @@ describe('a model with problems', () => {
     expect(read(ABOUT)).toBe(before)
   })
 
-  it('cannot judge a file while the project file parses but does not load (not an object, or a newer schemaVersion)', () => {
+  it('refuses a file while the project file parses but does not load (not an object, or a newer schemaVersion)', () => {
     const project = json('.bildr/bildr.json')
     for (const broken of ['[]', JSON.stringify({ ...project, schemaVersion: 99 })]) {
       disk('.bildr/bildr.json', broken)
@@ -161,74 +146,71 @@ describe('a model with problems', () => {
     }
     expect(json(ABOUT).id).toBe('pg_about')
   })
+})
 
-  it('takes the fixes of a schema problem and a dangling reference in either order, when each fix is clean', () => {
-    const broken = () => {
-      disk(CONTACT, { ...pageLike('contact'), name: 5 })
-      disk(ABOUT, noLayout('about'))
+describe('an invalid model takes no write that leaves it invalid', () => {
+  it('refuses a broken write over a file that is not JSON while another file is not JSON either', () => {
+    disk(ABOUT, '{ nope')
+    disk(CONTACT, '{ nope')
+    for (const content of [{ totally: 'garbage' }, noLayout('about'), { ...pageLike('about'), id: 'pg_index' }]) {
+      expect(save(ABOUT, content)).toMatchObject({ ok: false, reason: 'invalid' })
+      expect(read(ABOUT)).toBe('{ nope')
     }
-    broken()
-    const first = save(CONTACT, pageLike('contact'))
-    expect(first).toMatchObject({ ok: true })
-    expect(problemPaths(first)).toEqual([ABOUT])
-    expect(save(ABOUT, pageLike('about'))).not.toHaveProperty('problems')
-    broken()
-    const second = save(ABOUT, pageLike('about'))
-    expect(second).toMatchObject({ ok: true })
-    expect(problemPaths(second)).toEqual([CONTACT])
-    expect(save(CONTACT, pageLike('contact'))).not.toHaveProperty('problems')
   })
 
-  it('takes the fix of the project file or the delete of a stray file, though they hide other problems', () => {
-    const project = json('.bildr/bildr.json')
-    disk(ABOUT, noLayout('about'))
-    disk('.bildr/bildr.json', '[]')
-    const fixed = save('.bildr/bildr.json', project)
-    expect(fixed).toMatchObject({ ok: true })
-    expect(problemPaths(fixed)).toEqual([ABOUT])
+  it('refuses a broken write over a file that is not JSON while a stray file is in .bildr/', () => {
+    disk(ABOUT, '{ nope')
     disk('.bildr/notes.json', { hi: 1 })
-    const deleted = deleteModelFile(dir, '.bildr/notes.json')
-    expect(deleted).toMatchObject({ ok: true })
-    expect(problemPaths(deleted as { problems?: Array<{ path: string }> })).toEqual([ABOUT])
-    expect(existsSync(join(dir, '.bildr/notes.json'))).toBe(false)
+    expect(save(ABOUT, { totally: 'garbage' })).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(read(ABOUT)).toBe('{ nope')
   })
 
-  it('takes a page edit while its layout is broken, as long as the reference to the layout stays what it was', () => {
-    disk(LAYOUT, { ...json(LAYOUT), name: 5 })
-    const title = { ...json(ABOUT), seo: { title: 'About' } }
-    // The pages' reference to the broken layout is as it was: the page can be edited, not pointed elsewhere.
-    expect(save(ABOUT, title)).toMatchObject({ ok: true })
-    expect(json(ABOUT).seo.title).toBe('About')
-    expect(save(ABOUT, { ...title, layout: 'lay_other' })).toMatchObject({ ok: false, reason: 'invalid' })
-    expect(json(ABOUT).layout).toBe('lay_main')
+  it('refuses a project file that does not load while another file is not JSON', () => {
+    const project = json('.bildr/bildr.json')
+    for (const broken of [{ garbage: true }, { ...project, schemaVersion: 99 }, '[]']) {
+      disk('.bildr/bildr.json', '{ nope')
+      disk(CONTACT, '{ nope')
+      expect(save('.bildr/bildr.json', broken)).toMatchObject({ ok: false, reason: 'invalid' })
+      expect(read('.bildr/bildr.json')).toBe('{ nope')
+    }
   })
 
-  it('refuses changing the id of a file that was broken while the files that point at it stay', () => {
-    disk(LAYOUT, { ...json(LAYOUT), name: 5 })
-    expect(save(LAYOUT, { ...json(LAYOUT), name: 'main', id: 'lay_other' })).toMatchObject({ ok: false, reason: 'invalid' })
-    expect(save(LAYOUT, { ...json(LAYOUT), name: 'main' })).toMatchObject({ ok: true })
+  it('refuses deleting a layout the pages use that is not JSON, whether or not another file is not JSON', () => {
+    const truncated = read(LAYOUT).slice(0, 40)
+    disk(LAYOUT, truncated)
+    disk(CONTACT, '{ nope')
+    expect(deleteModelFile(dir, LAYOUT)).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(read(LAYOUT)).toBe(truncated)
   })
 
-  it('writes the file in its canonical form', () => {
-    disk(CONTACT, noLayout('contact'))
-    save(ABOUT, JSON.stringify(pageLike('about')))
-    expect(read(ABOUT)).toMatch(/^\{\n {2}"id": "pg_about",/)
+  it('takes the fix that makes the model valid', () => {
+    const project = json('.bildr/bildr.json')
+    disk('.bildr/bildr.json', '{ nope')
+    expect(save('.bildr/bildr.json', project)).toMatchObject({ ok: true })
   })
 })
 
 describe('deleting from a model', () => {
-  it('stays as strict for a valid model: the rest must stay valid', () => {
+  it('refuses a delete that breaks a valid model: the rest must stay valid', () => {
     expect(deleteModelFile(dir, LAYOUT)).toMatchObject({ ok: false, reason: 'invalid' })
     expect(existsSync(join(dir, LAYOUT))).toBe(true)
   })
 
-  it('takes the delete of a broken file while another is broken, and reports the other\'s problem', () => {
+  it('takes the delete of a broken file when the rest is valid, and of a stray file that is the only problem', () => {
+    disk(ABOUT, '{ "id": ')
+    const outcome = deleteModelFile(dir, ABOUT)
+    expect(outcome).toEqual({ ok: true })
+    expect(existsSync(join(dir, ABOUT))).toBe(false)
+    disk('.bildr/notes.json', { hi: 1 })
+    expect(deleteModelFile(dir, '.bildr/notes.json')).toEqual({ ok: true })
+    expect(existsSync(join(dir, '.bildr/notes.json'))).toBe(false)
+  })
+
+  it('refuses the delete of a broken file while another is broken', () => {
     disk(ABOUT, '{ "id": ')
     disk(CONTACT, noLayout('contact'))
-    const outcome = deleteModelFile(dir, ABOUT)
-    expect(outcome).toMatchObject({ ok: true })
-    expect(problemPaths(outcome as { problems?: Array<{ path: string }> })).toEqual([CONTACT])
-    expect(existsSync(join(dir, ABOUT))).toBe(false)
+    expect(deleteModelFile(dir, ABOUT)).toMatchObject({ ok: false, reason: 'invalid', problems: [{ path: CONTACT }] })
+    expect(existsSync(join(dir, ABOUT))).toBe(true)
   })
 
   it('refuses deleting a layout the pages use while another file has a schema problem', () => {
@@ -239,8 +221,7 @@ describe('deleting from a model', () => {
 
   it('refuses a delete that adds a problem to another file', () => {
     disk(CONTACT, noLayout('contact'))
-    const outcome = deleteModelFile(dir, LAYOUT)
-    expect(outcome).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(deleteModelFile(dir, LAYOUT)).toMatchObject({ ok: false, reason: 'invalid' })
     expect(existsSync(join(dir, LAYOUT))).toBe(true)
   })
 })

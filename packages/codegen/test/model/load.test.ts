@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { fileKind, inspectModel, loadModel } from '../../src/model/load'
+import { fileKind, loadModel } from '../../src/model/load'
 import { fixtureModelFiles } from './fixture'
 
 const load = (files: Record<string, string>) => loadModel(files)
@@ -213,52 +213,5 @@ describe('loadModel problems', () => {
       .toEqual(['.bildr/datasources/quotes.json: defaults.apiKey: "apiKey" is a secret: set it with NUXT_DATASOURCES_QUOTES_API_KEY, never in the model'])
     expect(problems(edit('.bildr/datasources/quotes.json', { 'env.apiKey': 'sk-live-123' })))
       .toEqual([expect.stringMatching(/^\.bildr\/datasources\/quotes\.json: env\.apiKey: /)])
-  })
-})
-
-describe('inspectModel', () => {
-  const POST = '.bildr/modules/blog/entities/post.json'
-  const PROJECT = '.bildr/bildr.json'
-  const inspect = (files: Record<string, string>) => inspectModel(files)
-
-  it('is loaded for a valid model, with the same model as loadModel', () => {
-    const files = fixtureModelFiles()
-    const result = inspect(files)
-    expect(result).toMatchObject({ stage: 'loaded', problems: [], own: [] })
-    expect(load(files)).toEqual({ ok: true, model: result.model })
-  })
-
-  it('stops at files that are unknown or not JSON, and tells the schema problems of the others', () => {
-    const files = { ...edit(POST, { name: 5 }), '.bildr/notes.json': '{"hi":1}', '.bildr/layouts/broken.json': '{ nope' }
-    const result = inspect(files)
-    expect(result.stage).toBe('files')
-    expect(result.problems.map(problem => problem.path)).toEqual(['.bildr/layouts/broken.json', '.bildr/notes.json'])
-    expect(result.own.map(problem => problem.path).sort()).toEqual(['.bildr/layouts/broken.json', POST, '.bildr/notes.json'])
-    expect(load(files)).toEqual({ ok: false, problems: result.problems })
-  })
-
-  it('stops at a project file that is not an object or is newer, whatever else is wrong', () => {
-    const project = JSON.parse(fixtureModelFiles()[PROJECT]!)
-    for (const broken of ['[]', JSON.stringify({ ...project, schemaVersion: 99 })]) {
-      const result = inspect({ ...edit(POST, { name: 5 }), [PROJECT]: broken })
-      expect(result.stage).toBe('project')
-      expect(result.problems.map(problem => problem.path)).toEqual([PROJECT])
-      expect(result.own.some(problem => problem.path === POST)).toBe(true)
-    }
-  })
-
-  it('stops at the schema, then at the references, naming the files with problems of their own', () => {
-    const schema = inspect(edit(POST, { name: 5 }))
-    expect(schema).toMatchObject({ stage: 'schema' })
-    expect(schema.own).toEqual(schema.problems)
-    expect(schema.own.every(problem => problem.path === POST)).toBe(true)
-    const references = inspect(edit('.bildr/modules/blog/queries/all-posts.json', { from: 'ent_nope' }))
-    expect(references).toMatchObject({ stage: 'references', own: [], problems: [{ path: '.bildr/modules/blog/queries/all-posts.json', message: 'from: Unknown entity "ent_nope"' }] })
-  })
-
-  it('reports a missing project file at the files stage, as a problem of no existing file', () => {
-    const { [PROJECT]: _project, ...files } = fixtureModelFiles()
-    const result = inspect(files)
-    expect(result).toMatchObject({ stage: 'files', problems: [{ path: PROJECT, message: 'Missing project file' }], own: [] })
   })
 })

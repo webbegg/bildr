@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { MANIFEST_FILE, PROJECT_FILE, fileKind, inspectModel, serializeModel, stringifyModelFile } from '@bildr/codegen/model'
-import type { Model, ModelProblem } from '@bildr/codegen/model'
+import { MANIFEST_FILE, fileKind, loadModel, serializeModel } from '@bildr/codegen/model'
+import type { ModelProblem } from '@bildr/codegen/model'
 import type { DriftFile } from '@bildr/codegen/sync'
 import { readHealth } from './health.ts'
 import { PENDING_FILE } from './migrations.ts'
@@ -11,7 +11,7 @@ import { readManifest, sha256, writeAtomically } from './sync.ts'
 /**
  * What the editor's surfaces (the `/api/*` routes and the actions) read and
  * write on disk, so both keep the same rules: only `.bildr/` model files, the
- * model gets no new problem (`judge`), canonical atomic writes, no symlink escapes.
+ * whole model stays valid after every write, canonical atomic writes, no symlink escapes.
  */
 
 /** A `.bildr/` model file the editor may write: never the manifest, the cache or project files. Paths must be normalized. */
@@ -21,100 +21,25 @@ const UNSAFE_PATH = /[\u0000-\u001f\u007f\\]/
 
 export const isModelFilePath = (path: string): boolean => !UNSAFE_PATH.test(path) && path !== MANIFEST_FILE && fileKind(path) !== undefined
 
-const parses = (text: string): boolean => {
-  try {
-    JSON.parse(text)
-    return true
-  } catch {
-    return false
-  }
-}
-
-const problemKey = (problem: ModelProblem): string => `${problem.path}\n${problem.message}`
-
-const without = (files: Record<string, string>, paths: ReadonlySet<string>): Record<string, string> =>
-  Object.fromEntries(Object.entries(files).filter(([path]) => !paths.has(path)))
-
-const pathsOf = (problems: readonly ModelProblem[]): Set<string> => new Set(problems.map(problem => problem.path))
-
-/** The ids a file's text declares (`"id": "…"`, at any depth): read from the text, so a file that is not JSON still gives them. */
-const declaredIds = (text: string | undefined): Set<string> =>
-  new Set(text === undefined ? [] : Array.from(text.matchAll(/"id"\s*:\s*"((?:[^"\\]|\\.)*)"/g), match => match[1]!))
-
-const mentionsAny = (problem: ModelProblem, ids: ReadonlySet<string>): boolean => Array.from(ids).some(id => problem.message.includes(`"${id}"`))
-
-type Verdict = { ok: true, model: Model | undefined, remaining: ModelProblem[] } | { ok: false, blocking: ModelProblem[] }
-
-/**
- * The write rule, for a change from `before` to `after` (path → text) that writes the file `path`, or deletes it
- * (it is missing from `after`). The loader stops at the first stage that has problems (files that are unknown or not JSON, the project
- * file, the schemas, then the references between files), so what a stage reports hides every later stage. A change is
- * accepted only when it can be judged:
- * 1. The model is valid after it: accepted.
- * 2. Gates. The loader stops after the change at the files stage or the project stage: nothing else can be judged, so
- *    the change is accepted only when it fixes that stage: the model stopped at the same stage before, `path` was
- *    named by its problems and no longer is, and no problem is new. (Fixing `bildr.json`, fixing or deleting a file
- *    that is not JSON, deleting a stray file.) Anything else is refused with the problems of the stage.
- * 3. Full judgement. The files that are broken themselves (not JSON, or failing their schema) are left out of the
- *    model, and the rest is loaded in full, references included. Refused when:
- *    - `path` is itself broken (its own problems are returned), or the project file is broken and `path` is not it: the
- *      rest cannot be loaded without it;
- *    - a problem names `path`, unless it is a reference to a file left out that `path` already had (see below);
- *    - a problem is new: the model before, with its broken files left out the same way, did not have it (the same file
- *      and message). So a reference to a broken file's id is accepted only as it was before. When the model before
- *      cannot be loaded that way (its project file or the files stage is broken, and this change fixes it) nothing
- *      is new, as there is no baseline, and only the problems that name `path` count;
- *    - a problem mentions an id the file `path` declared before, when it was broken, or when there is no baseline:
- *      the file changed or went away, and what pointed at it is not sound.
- *    Otherwise it is accepted, and the model's own problems that remain are returned.
- * The files left out are not judged: a change cannot be checked against a file that is itself broken.
- */
-const judge = (before: Record<string, string>, after: Record<string, string>, path: string): Verdict => {
-  const now = inspectModel(after)
-  if (now.model) return { ok: true, model: now.model, remaining: [] }
-  const was = inspectModel(before)
-  if (now.stage === 'files' || now.stage === 'project') {
-    const had = new Set(was.problems.map(problemKey))
-    const fixes = was.stage === now.stage && pathsOf(was.problems).has(path) && !pathsOf(now.problems).has(path) && now.problems.every(problem => had.has(problemKey(problem)))
-    return fixes ? { ok: true, model: undefined, remaining: now.problems } : { ok: false, blocking: now.problems }
-  }
-  const broken = pathsOf(now.own)
-  if (broken.has(path) || broken.has(PROJECT_FILE)) return { ok: false, blocking: now.own.filter(problem => problem.path === path || problem.path === PROJECT_FILE) }
-  const rest = inspectModel(without(after, broken))
-  const base = inspectModel(without(before, pathsOf(was.own)))
-  const had = base.stage === 'references' || base.stage === 'loaded' ? new Set(base.problems.map(problemKey)) : undefined
-  const gone = had === undefined || pathsOf(was.own).has(path) ? declaredIds(before[path]) : new Set<string>()
-  const hidden = new Set(Array.from(broken, file => Array.from(declaredIds(before[file]))).flat())
-  const blocks = (problem: ModelProblem): boolean => {
-    if (mentionsAny(problem, gone)) return true
-    if (had === undefined) return problem.path === path
-    if (!had.has(problemKey(problem))) return true
-    return problem.path === path && !mentionsAny(problem, hidden)
-  }
-  const blocking = rest.problems.filter(blocks)
-  return blocking.length ? { ok: false, blocking } : { ok: true, model: undefined, remaining: now.problems }
-}
-
 export type SaveOutcome
-  = | { ok: true, sha256: string, /** What is still wrong with the model, in other files; none when it is valid. */ problems?: ModelProblem[] }
+  = | { ok: true, sha256: string }
     | { ok: false, reason: 'json' | 'outside', message: string }
     | { ok: false, reason: 'invalid', problems: ModelProblem[] }
 
-/**
- * Saves one model file (`isModelFilePath`) under the write rule (`judge`): a valid model stays valid; one with problems takes
- * a file that is sound and adds none elsewhere, and the problems that remain are returned. Written canonically and atomically.
- */
+/** Saves one model file (`isModelFilePath`), only if the whole model is valid after it (strict: a model with problems takes nothing that leaves it invalid). Written canonically and atomically. */
 export const saveModelFile = (root: string, path: string, text: string): SaveOutcome => {
-  if (!parses(text)) return { ok: false, reason: 'json', message: 'Invalid JSON' }
-  const before = readModelFiles(root)
-  const verdict = judge(before, { ...before, [path]: text }, path)
-  if (!verdict.ok) return { ok: false, reason: 'invalid', problems: verdict.blocking }
+  try {
+    JSON.parse(text)
+  } catch {
+    return { ok: false, reason: 'json', message: 'Invalid JSON' }
+  }
+  const result = loadModel({ ...readModelFiles(root), [path]: text })
+  if (!result.ok) return { ok: false, reason: 'invalid', problems: result.problems }
   const target = join(root, path)
   if (!resolvesInside(join(root, '.bildr'), target)) return { ok: false, reason: 'outside', message: `${path} resolves outside .bildr/ (symlink)` }
-  // The model's own serialization applies the schema; while the model has problems the file is only reformatted.
-  const canonical = verdict.model ? serializeModel(verdict.model)[path]! : stringifyModelFile(JSON.parse(text))
+  const canonical = serializeModel(result.model)[path]!
   writeAtomically(target, canonical)
-  return { ok: true, sha256: sha256(canonical), ...(verdict.remaining.length ? { problems: verdict.remaining } : {}) }
+  return { ok: true, sha256: sha256(canonical) }
 }
 
 /** The project, theme, manifest and module files hold the model together: deleting them is never an artifact edit. */
@@ -128,22 +53,21 @@ export const isDeletableModelPath = (path: string): boolean => {
 }
 
 export type DeleteOutcome
-  = | { ok: true, problems?: ModelProblem[] }
+  = | { ok: true }
     | { ok: false, reason: 'missing' | 'outside', message: string }
     | { ok: false, reason: 'invalid', problems: ModelProblem[] }
 
-/** Deletes one artifact file (`isDeletableModelPath`) under the write rule (`judge`): it may add no problem to the rest of the model. Never through a symlink. */
+/** Deletes one artifact file (`isDeletableModelPath`), only if the rest of the model is valid without it. Never through a symlink. */
 export const deleteModelFile = (root: string, path: string): DeleteOutcome => {
   const target = join(root, path)
   if (!resolvesInside(join(root, '.bildr'), dirname(target))) return { ok: false, reason: 'outside', message: `${path} resolves outside .bildr/ (symlink)` }
   const stat = lstatSync(target, { throwIfNoEntry: false })
   if (stat?.isSymbolicLink()) return { ok: false, reason: 'outside', message: `${path} is a symlink: bildr only deletes model files it can read` }
   if (!stat?.isFile()) return { ok: false, reason: 'missing', message: `${path} doesn't exist` }
-  const before = readModelFiles(root)
-  const verdict = judge(before, Object.fromEntries(Object.entries(before).filter(([file]) => file !== path)), path)
-  if (!verdict.ok) return { ok: false, reason: 'invalid', problems: verdict.blocking }
+  const result = loadModel(Object.fromEntries(Object.entries(readModelFiles(root)).filter(([file]) => file !== path)))
+  if (!result.ok) return { ok: false, reason: 'invalid', problems: result.problems }
   rmSync(target)
-  return { ok: true, ...(verdict.remaining.length ? { problems: verdict.remaining } : {}) }
+  return { ok: true }
 }
 
 /**

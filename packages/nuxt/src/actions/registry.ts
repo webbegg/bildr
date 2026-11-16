@@ -62,7 +62,7 @@ const modelGet = defineAction({
 
 const modelFilePut = defineAction({
   name: 'model_file_put',
-  description: 'Create or replace one .bildr/ model file with the given JSON, in canonical form; the app regenerates from it. A valid model must stay valid. A model that already has problems takes a file that has none of its own and adds none to another file (files that are broken themselves are left out of that check); when the model cannot be judged at all (a file that is unknown or not JSON, or a project file that does not load, other than the one this write fixes) it is refused. The problems that remain are returned as `problems`. `base` is the file the edit started from (its JSON, its text when it was not valid JSON, null when it did not exist): the write is refused as a conflict when the file is not that any more.',
+  description: 'Create or replace one .bildr/ model file with the given JSON, in canonical form; the app regenerates from it. Saved only when the whole model is valid after the write, so the model is valid after every save: otherwise it is refused as `invalid` with the problems the model would have (including those of other files), and nothing is written. That also holds while the model already has problems: a write that leaves any file broken is refused, so fix the other files first. `base` is the file the edit started from (its JSON, its text when it was not valid JSON, null when it did not exist): the write is refused as a conflict when the file is not that any more.',
   input: z.object({
     path: modelPath,
     content: z.record(z.string(), z.unknown()).describe('The file\'s JSON object'),
@@ -78,7 +78,7 @@ const modelFilePut = defineAction({
     if (saved.ok) {
       const after = readFileSync(join(root, path), 'utf8')
       if (before[path] !== after) changed(ctx, 'model_file_put', before, [{ path, content: after }])
-      return { sha256: saved.sha256, ...(saved.problems ? { problems: saved.problems } : {}) }
+      return { sha256: saved.sha256 }
     }
     if (saved.reason === 'invalid') throw new ActionError('invalid', `The model would have problems, ${path} was not saved`, saved.problems)
     throw new ActionError(saved.reason === 'json' ? 'invalid_input' : 'forbidden', saved.message)
@@ -87,7 +87,7 @@ const modelFilePut = defineAction({
 
 const modelFileDelete = defineAction({
   name: 'model_file_delete',
-  description: 'Delete one artifact file of the model (a data source, a layout, or an entity, repository, query, action, state, component, page or fixtures file of a module). Never bildr.json, theme.json, the manifest or a module.json. Refused when it would add a problem to the rest of the model (a model with problems already may lose a broken file; the problems that remain are returned as `problems`).',
+  description: 'Delete one artifact file of the model (a data source, a layout, or an entity, repository, query, action, state, component, page or fixtures file of a module). Never bildr.json, theme.json, the manifest or a module.json. Refused as `invalid`, with the problems, unless the whole model is valid without the file; nothing is deleted then.',
   input: z.object({ path: modelPath }),
   run: ({ path }, ctx) => {
     const { root } = ctx
@@ -97,7 +97,7 @@ const modelFileDelete = defineAction({
     const deleted = deleteModelFile(root, path)
     if (deleted.ok) {
       changed(ctx, 'model_file_delete', before, [{ path, content: null }])
-      return deleted.problems ? { problems: deleted.problems } : {}
+      return {}
     }
     if (deleted.reason === 'invalid') throw new ActionError('invalid', `The rest of the model would have problems, ${path} was not deleted`, deleted.problems)
     throw new ActionError(deleted.reason === 'missing' ? 'not_found' : 'forbidden', deleted.message)

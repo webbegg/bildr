@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, toRef, watch } from 'vue'
 import { ActionCallError, callAction, errorMessage } from '../api.ts'
+import { filesLocationQuery } from '../editor/dataLocation.ts'
 import { jsonErrorMessage } from '../editor/jsonError.ts'
 import { useEditor } from '../editor/useEditor.ts'
 import { useFileText } from '../editor/useFileText.ts'
@@ -17,7 +18,8 @@ import ProblemsList from './ProblemsList.vue'
  * then says so and waits for the user to take the new version or keep their edits, which Save waits for too. Save also
  * sends the file it started from (`base`), so the module refuses a write over a file that changed in the meantime. Edits
  * that are not saved are reported to the editor (`dataDirty`), which asks before the workspace moves away from them. The
- * module validates the model on a save and answers with the problems, shown here with the text kept.
+ * module takes a save only when the whole model is valid after it, and otherwise answers with the problems, shown here with
+ * the text kept. The files other than this one that have problems are links that open them in All model files.
  */
 const props = withDefaults(defineProps<{
   files: Record<string, Json>
@@ -40,7 +42,7 @@ const editor = useEditor()
 const file = useFileText({ path: toRef(props, 'path'), files: () => props.files, invalid: () => props.invalid })
 const { content, external, unreadable } = file
 const saving = ref(false)
-const error = ref<{ message: string, problems: ModelProblem[] } | null>(null)
+const error = ref<{ message: string, problems: ModelProblem[], /** The other files that keep a save from leaving the model valid, once per file. */ others: string[] } | null>(null)
 const done = ref<string | null>(null)
 /** The editor's height follows the window: what is left under the chrome, never less than a dozen lines. */
 const TEXT_HEIGHT = 'h-[max(12rem,calc(100dvh-24rem))]'
@@ -64,14 +66,15 @@ watch(() => props.path, (next, previous) => {
   done.value = null
 })
 
-const left = (problems: ModelProblem[] | undefined) => !problems?.length ? '' : problems.length === 1 ? ' 1 problem is left in other files.' : ` ${problems.length} problems are left in other files.`
+/** The files with problems other than `path`, once each: what a refused save lists as links. */
+const otherFiles = (path: string, problems: ModelProblem[]): string[] => Array.from(new Set(problems.map(problem => problem.path))).filter(file => file !== path && file.startsWith('.bildr/'))
 
 const run = async (name: 'model_file_put' | 'model_file_delete') => {
   error.value = null
   done.value = null
   const path = props.path
   if (!path.startsWith('.bildr/')) {
-    error.value = { message: 'Enter a path under .bildr/', problems: [] }
+    error.value = { message: 'Enter a path under .bildr/', problems: [], others: [] }
     return
   }
   let input: Record<string, unknown> = { path }
@@ -83,7 +86,7 @@ const run = async (name: 'model_file_put' | 'model_file_delete') => {
       const base = file.base.value
       input = { ...input, content: parsed, ...(base === null || typeof base === 'string' || (typeof base === 'object' && !Array.isArray(base)) ? { base } : {}) }
     } catch (caught) {
-      error.value = { message: caught instanceof SyntaxError ? jsonErrorMessage(content.value, caught) : `Invalid JSON: ${errorMessage(caught)}`, problems: [] }
+      error.value = { message: caught instanceof SyntaxError ? jsonErrorMessage(content.value, caught) : `Invalid JSON: ${errorMessage(caught)}`, problems: [], others: [] }
       return
     }
   } else if (props.confirmDelete && !(await props.confirmDelete(path))) {
@@ -91,9 +94,9 @@ const run = async (name: 'model_file_put' | 'model_file_delete') => {
   }
   saving.value = true
   try {
-    const result = await callAction<{ problems?: ModelProblem[] } | undefined>(name, input)
+    await callAction(name, input)
     if (name === 'model_file_put') {
-      done.value = `Saved.${left(result?.problems)}`
+      done.value = 'Saved.'
       file.saved()
       emit('saved', path)
     } else {
@@ -103,7 +106,9 @@ const run = async (name: 'model_file_put' | 'model_file_delete') => {
       emit('deleted', path)
     }
   } catch (caught) {
-    error.value = { message: errorMessage(caught), problems: caught instanceof ActionCallError ? caught.problems ?? [] : [] }
+    const problems = caught instanceof ActionCallError ? caught.problems ?? [] : []
+    // Only a save that is refused for other files' problems lists them: a refused delete's problems are what the delete would break.
+    error.value = { message: errorMessage(caught), problems, others: name === 'model_file_put' ? otherFiles(path, problems) : [] }
     if (caught instanceof ActionCallError && caught.code === 'conflict') emit('conflict')
   } finally {
     saving.value = false
@@ -174,7 +179,31 @@ const run = async (name: 'model_file_put' | 'model_file_delete') => {
       title="Not saved"
       :message="error.message"
       :problems="error.problems"
-    />
+    >
+      <div
+        v-if="error.others.length"
+        class="mt-2 space-y-1"
+        data-other-problems
+      >
+        <p>The model must be valid after a save. These files also have problems — fix them here, or in your code editor (the dev server picks it up).</p>
+        <ul class="list-disc space-y-0.5 pl-4">
+          <li
+            v-for="other in error.others"
+            :key="other"
+          >
+            <UButton
+              :to="{ path: '/data', query: filesLocationQuery(other) }"
+              :label="other"
+              color="error"
+              variant="link"
+              size="xs"
+              class="p-0 font-mono"
+              :data-problem-file="other"
+            />
+          </li>
+        </ul>
+      </div>
+    </ProblemsList>
     <UAlert
       v-else-if="done"
       color="success"

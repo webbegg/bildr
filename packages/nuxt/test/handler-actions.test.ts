@@ -200,15 +200,15 @@ describe('model_file_put', () => {
     expect(page().layout).toBe('lay_main')
   })
 
-  it('says the problems that remain in other files when it fixes one of two broken ones', async () => {
+  it('refuses the fix of one of two broken files, names the other file\'s problem, and writes nothing', async () => {
     const about = '.bildr/modules/main/pages/about.json'
     const contact = '.bildr/modules/main/pages/contact.json'
     const broken = (name: string) => ({ ...page(), id: `pg_${name}`, name, path: `/${name}`, layout: 'lay_nope' })
     writeFileSync(join(dir, about), JSON.stringify(broken('about')))
     writeFileSync(join(dir, contact), JSON.stringify(broken('contact')))
-    const got = await result(await act('model_file_put', { path: about, content: { ...broken('about'), layout: 'lay_main' } }))
-    expect(got).toEqual({ sha256: expect.any(String), problems: [{ path: contact, message: 'layout: Unknown layout "lay_nope"' }] })
-    expect(JSON.parse(readFileSync(join(dir, about), 'utf8')).layout).toBe('lay_main')
+    const body = await failure(await act('model_file_put', { path: about, content: { ...broken('about'), layout: 'lay_main' } }), 422, 'invalid')
+    expect(body.problems).toEqual([{ path: contact, message: 'layout: Unknown layout "lay_nope"' }])
+    expect(JSON.parse(readFileSync(join(dir, about), 'utf8')).layout).toBe('lay_nope')
   })
 
   describe('with a base (the file the edit started from)', () => {
@@ -287,13 +287,14 @@ describe('model_file_delete', () => {
     expect(existsSync(join(dir, '.bildr/layouts/main.json'))).toBe(true)
   })
 
-  it('deletes a broken file while another is broken, and says the other\'s problems', async () => {
+  it('refuses to delete a broken file while another is broken, names the other\'s problems, and keeps the file', async () => {
     const about = '.bildr/modules/main/pages/about.json'
     const contact = '.bildr/modules/main/pages/contact.json'
     writeFileSync(join(dir, about), '{ "id": ')
     writeFileSync(join(dir, contact), JSON.stringify({ ...page(), id: 'pg_contact', name: 'contact', path: '/contact', layout: 'lay_nope' }))
-    expect(await result(await act('model_file_delete', { path: about }))).toEqual({ problems: [{ path: contact, message: 'layout: Unknown layout "lay_nope"' }] })
-    expect(existsSync(join(dir, about))).toBe(false)
+    const body = await failure(await act('model_file_delete', { path: about }), 422, 'invalid')
+    expect(body.problems).toEqual([{ path: contact, message: 'layout: Unknown layout "lay_nope"' }])
+    expect(existsSync(join(dir, about))).toBe(true)
   })
 
   it('never deletes the project, theme, manifest or module file, or anything outside the model', async () => {

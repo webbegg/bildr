@@ -1575,7 +1575,7 @@ describe('the JSON tab and All model files (S3)', () => {
           model_get: () => ({ ok: false, problems: [{ path: ABOUT, message: 'Invalid JSON: Expected property name' }], files: { ...modelGet().files, ...(state.text === null ? { [ABOUT]: { id: 'pg_about' } } : {}) }, invalid: state.text === null ? {} : { [ABOUT]: state.text }, database: false }),
           model_file_put: () => {
             state.text = null
-            return { sha256: 'd'.repeat(64), problems: [] }
+            return { sha256: 'd'.repeat(64) }
           }
         } satisfies Handlers
       }
@@ -1608,12 +1608,43 @@ describe('the JSON tab and All model files (S3)', () => {
       expect(text(q('[data-data-files]'))).toContain('Saved.')
     })
 
-    it('says how many problems are left when the module took the fix and other files still have problems', async () => {
+    it('is not saved while another file has problems: the other file is listed as a link that opens it, and the edit is kept', async () => {
       const module = brokenModule()
-      await open({ ...module.handlers, model_file_put: () => ({ sha256: 'e'.repeat(64), problems: [{ path: POST, message: 'fields: Too small' }] }) }, {}, `/data?item=files&file=${encodeURIComponent(ABOUT)}`)
+      const refused = new Failure(422, 'invalid', 'The model would have problems, .bildr/modules/blog/pages/about.json was not saved', [{ path: POST, message: 'fields: Too small' }])
+      const { actions, router } = await open({ ...module.handlers, model_file_put: () => refused }, {}, `/data?item=files&file=${encodeURIComponent(ABOUT)}`)
       await typeInto(q('[data-testid="raw-content"]'), '{ "id": "pg_about" }')
       await click(q('[data-testid="raw-save"]'))
-      expect(text(q('[data-data-files]'))).toContain('Saved. 1 problem is left in other files')
+      expect(inputs(actions, 'model_file_put')).toHaveLength(1)
+      const files = text(q('[data-data-files]'))
+      expect(files).toContain('Not saved')
+      expect(files).not.toContain('Saved.')
+      expect(text(q('[data-other-problems]'))).toContain('The model must be valid after a save. These files also have problems — fix them here, or in your code editor (the dev server picks it up).')
+      expect(rawText()!.value).toBe('{ "id": "pg_about" }')
+      const link = q(`[data-other-problems] [data-problem-file="${POST}"]`)
+      expect(link?.textContent).toContain(POST)
+      // The link opens the other file in All model files; what was typed is asked about first.
+      await click(link)
+      await vi.waitFor(() => expect(q('[data-confirm]')).not.toBeNull())
+      await click(q('[data-confirm-ok]'))
+      await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({ item: 'files', file: POST }))
+      await vi.waitFor(() => expect(shownFile()).toMatchObject({ id: 'ent_post' }))
+      expect(text(q('[data-file-path]'))).toBe(POST)
+    })
+
+    it('lists no link for the file that is being saved, and none for a refused delete', async () => {
+      const own = [{ path: INDEX_PAGE, message: 'root: Unknown node type "Wat"' }, { path: POST, message: 'fields: Too small' }]
+      const { actions } = await open({
+        model_file_put: () => new Failure(422, 'invalid', 'The model would have problems', own),
+        model_file_delete: () => new Failure(422, 'invalid', 'The rest of the model would have problems', own)
+      }, {}, `/data?item=files&file=${encodeURIComponent(INDEX_PAGE)}`)
+      await typeInto(q('[data-testid="raw-content"]'), '{ "id": "pg_index" }')
+      await click(q('[data-testid="raw-save"]'))
+      expect(Array.from(document.querySelectorAll('[data-problem-file]'), element => element.getAttribute('data-problem-file'))).toEqual([POST])
+      await click(q('[data-testid="raw-delete"]'))
+      await click(q('[data-confirm-ok]'))
+      expect(actions.named('model_file_delete')).toHaveLength(1)
+      expect(q('[data-other-problems]')).toBeNull()
+      expect(text(q('[data-data-files]'))).toContain('Not saved')
     })
   })
 

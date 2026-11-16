@@ -115,102 +115,63 @@ const folderOf = (path: string) => /^\.bildr\/modules\/[^/]+\/([^/]+)\//.exec(pa
 const issueProblems = (path: string, error: z.ZodError): ModelProblem[] =>
   error.issues.map(issue => ({ path, message: issue.path.length ? `${issue.path.join('.')}: ${issue.message}` : issue.message }))
 
-/** How far loading got: it stops at the first stage that has problems (a stage's problems hide every later stage's). */
-export type LoadStage
-  = /** Files that are unknown or not JSON, or no project file. */ 'files'
-    | /** The project file does not load: not an object, a newer schemaVersion, or a migration fails. */ 'project'
-    | /** Files that fail their schema. */ 'schema'
-    /** Cross-file references and uniqueness. */
-    | 'references'
-    | /** No problems. */ 'loaded'
-
-export interface ModelInspection {
-  stage: LoadStage
-  /** The problems `loadModel` reports: those of `stage`. */
-  problems: ModelProblem[]
-  /**
-   * The problems of single files whatever the stage: an unknown file, one that is not JSON, or one that fails its schema.
-   * Past the stage that stopped loading they are told as best as can be (the files of a project that does not load are
-   * checked as they are, without migrations), and they name the files that cannot be part of a model.
-   */
-  own: ModelProblem[]
-  model?: Model
-}
-
-/**
- * `loadModel` with where it stopped (`stage`) and the problems of single files (`own`), so a caller can judge a change
- * to the files without letting an earlier stage hide the later ones. `problems` is what `loadModel` reports.
- */
-export const inspectModel = (files: Record<string, string>, options: LoadOptions = {}): ModelInspection => {
-  const { current: supported = CURRENT_SCHEMA_VERSION, migrations = MODEL_MIGRATIONS } = options
-  const paths = Object.keys(files).filter(isModelPath).sort()
-  const problems: ModelProblem[] = []
-  const own: ModelProblem[] = []
-  const raw: Record<string, unknown> = {}
-  const validate = (current: Record<string, unknown>) => {
-    const parsed: Record<string, unknown> = {}
-    const found: ModelProblem[] = []
-    for (const path of Object.keys(current).sort()) {
-      const result = SCHEMAS[fileKind(path)!].safeParse(current[path])
-      if (result.success) parsed[path] = result.data
-      else found.push(...issueProblems(path, result.error))
-    }
-    return { parsed, found }
-  }
-  const stopped = (stage: LoadStage, stopProblems: ModelProblem[]): ModelInspection => ({ stage, problems: stopProblems, own: [...own, ...validate(raw).found] })
-
-  if (!(PROJECT_FILE in files)) problems.push({ path: PROJECT_FILE, message: 'Missing project file' })
-  for (const path of paths) {
-    if (!fileKind(path)) {
-      own.push({ path, message: 'Unknown model file' })
-      continue
-    }
-    try {
-      raw[path] = JSON.parse(files[path]!)
-    } catch (error) {
-      own.push({ path, message: `Invalid JSON: ${(error as Error).message}` })
-    }
-  }
-  problems.push(...own)
-  if (problems.length) return stopped('files', problems)
-
-  const project = raw[PROJECT_FILE]
-  if (project !== undefined && (typeof project !== 'object' || project === null || Array.isArray(project))) {
-    return stopped('project', [{ path: PROJECT_FILE, message: 'The project file must be a JSON object' }])
-  }
-  const version = (project as { schemaVersion?: unknown } | undefined)?.schemaVersion
-  if (typeof version === 'number' && version > supported) {
-    return stopped('project', [{ path: PROJECT_FILE, message: `schemaVersion ${version} is newer than this bildr supports (${supported}). Update bildr.` }])
-  }
-  let current = raw
-  if (typeof version === 'number') {
-    for (let from = version; from < supported; from++) {
-      const migrate = migrations[from]
-      if (!migrate) return stopped('project', [{ path: PROJECT_FILE, message: `No migration from schemaVersion ${from} to ${from + 1}` }])
-      try {
-        current = migrate(current)
-      } catch (error) {
-        return stopped('project', [{ path: PROJECT_FILE, message: `Migrating from schemaVersion ${from} failed: ${(error as Error).message}` }])
-      }
-    }
-  }
-
-  const { parsed, found } = validate(current)
-  if (found.length) return { stage: 'schema', problems: found, own: found }
-
-  const { model, entries } = assemble(parsed)
-  const crossProblems = crossCheck(model, entries)
-  return crossProblems.length ? { stage: 'references', problems: crossProblems, own: [] } : { stage: 'loaded', problems: [], own: [], model }
-}
-
 /**
  * Loads a project's `.bildr/` files (path → text) into one validated model.
  * Pure: the caller reads the files. All file problems are reported together;
  * cross-file references are checked only once every file parses.
  */
 export const loadModel = (files: Record<string, string>, options: LoadOptions = {}): LoadResult => {
-  const inspection = inspectModel(files, options)
-  return inspection.model ? { ok: true, model: inspection.model } : { ok: false, problems: inspection.problems }
+  const { current: supported = CURRENT_SCHEMA_VERSION, migrations = MODEL_MIGRATIONS } = options
+  const paths = Object.keys(files).filter(isModelPath).sort()
+  const problems: ModelProblem[] = []
+  const raw: Record<string, unknown> = {}
+
+  if (!(PROJECT_FILE in files)) problems.push({ path: PROJECT_FILE, message: 'Missing project file' })
+  for (const path of paths) {
+    if (!fileKind(path)) {
+      problems.push({ path, message: 'Unknown model file' })
+      continue
+    }
+    try {
+      raw[path] = JSON.parse(files[path]!)
+    } catch (error) {
+      problems.push({ path, message: `Invalid JSON: ${(error as Error).message}` })
+    }
+  }
+  if (problems.length) return { ok: false, problems }
+
+  const project = raw[PROJECT_FILE]
+  if (project !== undefined && (typeof project !== 'object' || project === null || Array.isArray(project))) {
+    return { ok: false, problems: [{ path: PROJECT_FILE, message: 'The project file must be a JSON object' }] }
+  }
+  const version = (project as { schemaVersion?: unknown } | undefined)?.schemaVersion
+  if (typeof version === 'number' && version > supported) {
+    return { ok: false, problems: [{ path: PROJECT_FILE, message: `schemaVersion ${version} is newer than this bildr supports (${supported}). Update bildr.` }] }
+  }
+  let current = raw
+  if (typeof version === 'number') {
+    for (let from = version; from < supported; from++) {
+      const migrate = migrations[from]
+      if (!migrate) return { ok: false, problems: [{ path: PROJECT_FILE, message: `No migration from schemaVersion ${from} to ${from + 1}` }] }
+      try {
+        current = migrate(current)
+      } catch (error) {
+        return { ok: false, problems: [{ path: PROJECT_FILE, message: `Migrating from schemaVersion ${from} failed: ${(error as Error).message}` }] }
+      }
+    }
+  }
+
+  const parsed: Record<string, unknown> = {}
+  for (const path of Object.keys(current).sort()) {
+    const result = SCHEMAS[fileKind(path)!].safeParse(current[path])
+    if (result.success) parsed[path] = result.data
+    else problems.push(...issueProblems(path, result.error))
+  }
+  if (problems.length) return { ok: false, problems }
+
+  const { model, entries } = assemble(parsed)
+  problems.push(...crossCheck(model, entries))
+  return problems.length ? { ok: false, problems } : { ok: true, model }
 }
 
 const emptyModule = (module: ModuleFile): ModuleModel => ({
