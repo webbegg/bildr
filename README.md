@@ -136,7 +136,7 @@ Once:
 
 Each release:
 
-1. Set the same `version` in the four `packages/*/package.json`, and commit.
+1. Set the same `version` in every `packages/*/package.json` (the tag check reads all five, the private `editor-core` too), and commit.
 2. `git tag v<version> && git push origin v<version>`.
 
 The workflow refuses a tag that differs from the package versions, runs lint, typecheck and tests, and publishes with provenance. To look at a package before releasing it: `pnpm --filter <package> pack`, then list the tarball.
