@@ -6,8 +6,8 @@
  *   the new page-level query; a Text row bound to the item);
  * - the running app's HTML (the generated Nuxt app, as a browser renders it) shows the heading, its
  *   `text-center` class and one row per post of the app's database (V2: the change is in the app);
- * - the generated page file (`layers/blog/app/pages/<name>.vue`) has them, and the editor's View code
- *   screen and the `code_view` action show the same generated page (V1: one app, View code beside the canvas);
+ * - the generated page file (`layers/blog/app/pages/<name>.vue`) has them, and the editor's Code
+ *   screen and the `code_view` action show the same generated page (V1: one app, Code beside the canvas);
  * - undo takes the visual edit back out of the file, and the app follows.
  * The row's text is bound to the item with the `node_insert` action (the binding dot's popover is covered
  * by the inspector's unit tests); everything else is done through the UI.
@@ -19,8 +19,12 @@ await run('visual-editor', async ({ page, browser, errors }) => {
   await seedPosts([{ title: 'Hello bildr', slug: 'hello-bildr', published: true }, { title: 'A draft', slug: 'a-draft' }])
   await openEditor(page)
   check(await page.locator('[data-testid="design"]').count() === 1, 'one editor: the Design screen opens on the project (V1)')
-  const nav = await page.locator('nav a, nav [role=menuitem]').allInnerTexts()
-  check(['Design', 'Data', 'Model', 'View code', 'Health'].every(label => nav.some(text => text.includes(label))), `the same app has Design, Data, Model, View code and Health (${nav.map(t => t.trim()).join(', ')})`)
+  // S1: the top bar's menu is the only navigation (no left nav), and it lists the six destinations once each.
+  check(await page.locator('nav').count() === 0, 'no left nav: the top bar menu is the only navigation')
+  await page.locator('[data-view-menu]').click()
+  const entries = (await page.locator('[role^=menuitem]').allInnerTexts()).map(text => text.trim())
+  check(entries.join(',') === 'Canvas,Design system,Data,Code,Checks,Settings', `the menu lists Canvas, Design system, Data, Code, Checks and Settings (${entries.join(', ')})`)
+  await page.keyboard.press('Escape')
 
   // Add a page.
   await page.locator('[aria-label="Add page"]:visible').first().click()
@@ -93,14 +97,16 @@ await run('visual-editor', async ({ page, browser, errors }) => {
   const codeFile = (code.files ?? code).find?.(entry => entry.path?.endsWith('specials.vue'))
   check(!!codeFile && (codeFile.content ?? '').includes('Our specials'), 'the code_view action returns the generated page (V1)')
 
-  // V1: View code in the editor shows the generated page next to the canvas.
-  await page.goto(`${page.url().split('#')[0]}#/code`)
+  // V1: Code in the editor shows the generated page next to the canvas; the menu's Code entry opens it, labelled Code.
+  await page.locator('[data-view-menu]').click()
+  await page.locator('[role^=menuitem]').filter({ hasText: /^\s*Code\s*$/ }).click()
   await page.locator('[data-testid="code-empty"]').waitFor()
+  check((await page.locator('[data-view-menu]').innerText()).trim() === 'Code' && page.url().endsWith('#/code'), 'the Code entry opens #/code, and the menu is labelled Code')
   await page.locator('button, [role=combobox]').filter({ hasText: 'Choose a model file' }).first().click()
   await page.getByRole('option').filter({ hasText: /specials/i }).first().click()
   await page.locator('[data-testid="code-file"]').first().waitFor()
   const shown = await page.locator('[data-testid="code-file"]').allInnerTexts()
-  check(shown.some(textOf => textOf.includes('Our specials')), 'the View code screen shows the generated page with the heading text')
+  check(shown.some(textOf => textOf.includes('Our specials')), 'the Code screen shows the generated page with the heading text')
   await shot(page, 'visual-editor-code')
 
   // Undo takes the edit out of the file, and the app follows.

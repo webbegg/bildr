@@ -72,7 +72,7 @@ onMounted(() => {
   <div class="space-y-6 p-6">
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-xl font-semibold">
-        Health
+        Checks
       </h1>
       <span
         v-if="health?.updatedAt"

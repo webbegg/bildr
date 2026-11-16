@@ -35,7 +35,7 @@ await run('design', async ({ page, browser, errors }) => {
   check(compactPadding === '12.8px', `compact density: p-4 = ${compactPadding} (12.8px)`)
 
   // Through the UI: the Design view (the canvas stays mounted behind it).
-  await toView(page, 'Design')
+  await toView(page, 'Design system')
   await page.locator('[data-theme-color="primary"]').click()
   await page.getByRole('option', { name: 'emerald', exact: true }).click()
   theme = await until(() => themeOf().colors.primary === 'emerald' && themeOf())

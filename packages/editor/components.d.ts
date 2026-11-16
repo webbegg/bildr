@@ -128,7 +128,6 @@ declare module 'vue' {
     UInputNumber: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/InputNumber.vue')['default']
     UKbd: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Kbd.vue')['default']
     UModal: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Modal.vue')['default']
-    UNavigationMenu: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/NavigationMenu.vue')['default']
     UPopover: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Popover.vue')['default']
     USelect: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Select.vue')['default']
     USelectMenu: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/SelectMenu.vue')['default']

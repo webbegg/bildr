@@ -107,12 +107,12 @@ describe('the toolbar', () => {
     expect(q('[data-tool-hint]')).toBeNull()
   })
 
-  it('offers the Canvas, Design and Settings views, and the Design view shows the theme library on the left and the theme\'s panel on the right', async () => {
+  it('offers the Canvas, Design system and Settings views, and the Design system view shows the theme library on the left and the theme\'s panel on the right', async () => {
     await open()
     await openDesignSystem()
     expect(q('[data-theme-library]')).not.toBeNull()
     expect(q('[data-design-panel]')).not.toBeNull()
-    expect(q('[data-view-menu]')?.textContent?.trim()).toBe('Design')
+    expect(q('[data-view-menu]')?.textContent?.trim()).toBe('Design system')
     expect(q('[data-sidebar]')).toBeNull()
     expect(q('[data-right-panel]')).toBeNull()
     expect(q('[data-insert-button]')?.hasAttribute('disabled')).toBe(true)

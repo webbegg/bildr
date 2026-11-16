@@ -11,7 +11,7 @@ Both sides got the same content through each one's actions: a Column (padding 4,
 
 | Where | Hosted | Module |
 | --- | --- | --- |
-| Left of the shell | none | the module nav rail (Design, Data, Model, View code, Health, Migrations), 208 px, so the canvas stage is narrower and the fit zoom is lower (81% / 26% / 57% hosted against 81% / 18% / 39% module on the same frames) |
+| Left of the shell | none | none: the nav rail is gone (S1), the top bar's view menu (Canvas, Design system, Data, Code, Checks, Settings) is the only navigation, so the canvas stage has the full width. The fit-zoom figures measured with the 208 px rail (81% / 26% / 57% hosted against 81% / 18% / 39% module) predate that |
 | Toolbar, centre | project name and `/slug` | project name only ("Blog") |
 | Toolbar, right | Publish button (blue, purple in a component) | no Publish (the app is the project's own `nuxt dev`); an "agent" sparkles icon instead |
 | Bottom of the canvas | a perf chip ("42 ms") | none |

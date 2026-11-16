@@ -99,7 +99,7 @@ await run('colors-p1', async ({ context, page, errors }) => {
   check(s.node(card).style.bg === 'muted', 'nodes outside the selection keep their colours')
 
   // #12: the Design view lists the custom colour; removing it while used is refused, with the reason.
-  await toView(page, 'Design')
+  await toView(page, 'Design system')
   const row = page.locator('[data-custom-color-row="brand-orange"]')
   await row.waitFor()
   check(await row.isVisible() && (await row.innerText()).toLowerCase().includes('brand-orange'), 'the Design view lists the custom colour')

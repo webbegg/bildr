@@ -90,10 +90,10 @@ describe('the Data screen', () => {
     }
   })
 
-  it('is reached from the app\'s navigation, and the Design screen\'s view menu offers Data', async () => {
+  it('is reached from the Design screen\'s view menu, the only navigation', async () => {
     mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }) })
     const { router } = await mountWithApp(App, '/design')
-    expect(text(q('nav'))).toContain('Data')
+    expect(q('nav')).toBeNull()
     await menuItem(q('[data-view-menu]'), 'Data')
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data'))
     await settle()

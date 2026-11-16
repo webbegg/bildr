@@ -60,7 +60,7 @@ await run('kit', async ({ page, errors }) => {
 
   // The Design view's theme editor, then the canvas view: the page rename, ⌘K and the shortcuts sheet.
   await openEditor(page, about.pageId)
-  await toView(page, 'Design')
+  await toView(page, 'Design system')
   await soft(page.locator('[data-theme-color="primary"]'), 'theme editor')
   await toView(page, 'Canvas')
 

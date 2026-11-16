@@ -85,7 +85,7 @@ await run('real-browser', async ({ page, errors }) => {
   const zoomOf = () => page.locator('[data-canvas-content]').evaluate(el => Number(/scale\(([\d.]+)\)/.exec(el.style.transform)?.[1]))
   // (No manual zoom first: the view keeps fitting the frames until the user zooms or pans, as it does when a project opens.)
   const wide = await zoomOf()
-  await toView(page, 'Design')
+  await toView(page, 'Design system')
   await page.setViewportSize({ width: 1000, height: 640 })
   await page.waitForTimeout(500)
   await toView(page, 'Canvas')

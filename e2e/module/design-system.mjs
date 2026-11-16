@@ -22,7 +22,7 @@ await run('design-system', async ({ page, errors }) => {
 
   // Open it from the view menu.
   await openEditor(page, p.pageId)
-  await toView(page, 'Design')
+  await toView(page, 'Design system')
   await guide(page).locator('[data-style-guide]').waitFor()
   check(await page.locator('[data-theme-library]').isVisible() && await page.locator('[data-design-panel]').isVisible(), 'the view menu opens the Design view: library, style guide and controls')
   const guideCounts = await guide(page).locator('[data-style-guide]').evaluate(el => ({

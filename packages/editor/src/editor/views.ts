@@ -53,10 +53,9 @@ export const carryPage = (pageId: string): void => {
   if (pending) pending.data.pageId = pageId
 }
 
-/** `view` was chosen in an editor that is on `from`: opens the other screen when it is the one that shows `view`. */
-export const requestView = (view: EditorView, from: Screen, data: DataStart = {}): void => {
-  const screen = screenOf(view)
-  if (screen === from || !open) return
+/** Opens the screen that shows `view`, carrying the view and `data` for the editor created there. */
+const start = (view: EditorView, data: DataStart): void => {
+  if (!open) return
   const request = { view, data }
   pending = request
   const forget = () => {
@@ -64,8 +63,16 @@ export const requestView = (view: EditorView, from: Screen, data: DataStart = {}
   }
   // A navigation that fails or is cancelled leaves nothing to start the next editor on.
   try {
-    Promise.resolve(open(screen)).then(failure => failure ? forget() : undefined, forget)
+    Promise.resolve(open(screenOf(view))).then(failure => failure ? forget() : undefined, forget)
   } catch {
     forget()
   }
 }
+
+/** `view` was chosen in an editor that is on `from`: opens the other screen when it is the one that shows `view`. */
+export const requestView = (view: EditorView, from: Screen, data: DataStart = {}): void => {
+  if (screenOf(view) !== from) start(view, data)
+}
+
+/** `view` was chosen where no editor is (the Code, Checks, Migrations and Model screens): opens the screen that shows it, started on it. */
+export const openView = (view: EditorView): void => start(view, {})

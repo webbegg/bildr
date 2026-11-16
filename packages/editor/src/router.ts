@@ -1,13 +1,17 @@
 import type { RouteRecordRaw } from 'vue-router'
 
-/** The editor's screens. `main.ts` uses hash history, so the module only serves one page. */
+/**
+ * The editor's screens. `main.ts` uses hash history, so the module only serves one page.
+ * Navigation is the top bar's view menu (`editor/menu.ts`), not this list: `bar` marks the screens that
+ * have no editor toolbar of their own and get the ScreenBar, and `title` names the screens the menu has no entry for.
+ */
 export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/design' },
-  { path: '/design', name: 'design', component: () => import('./views/DesignView.vue'), meta: { label: 'Design', icon: 'i-lucide-pen-tool' } },
-  { path: '/data', name: 'data', component: () => import('./views/DataView.vue'), meta: { label: 'Data', icon: 'i-lucide-database' } },
-  { path: '/model', name: 'model', component: () => import('./views/ModelView.vue'), meta: { label: 'Model', icon: 'i-lucide-boxes' } },
-  { path: '/code', name: 'code', component: () => import('./views/CodeView.vue'), meta: { label: 'View code', icon: 'i-lucide-file-code' } },
-  { path: '/health', name: 'health', component: () => import('./views/HealthView.vue'), meta: { label: 'Health', icon: 'i-lucide-heart-pulse' } },
-  { path: '/migrations', name: 'migrations', component: () => import('./views/MigrationsView.vue'), meta: { label: 'Migrations', icon: 'i-lucide-database-zap' } },
+  { path: '/design', name: 'design', component: () => import('./views/DesignView.vue') },
+  { path: '/data', name: 'data', component: () => import('./views/DataView.vue') },
+  { path: '/model', name: 'model', component: () => import('./views/ModelView.vue'), meta: { bar: true, title: 'Model' } },
+  { path: '/code', name: 'code', component: () => import('./views/CodeView.vue'), meta: { bar: true } },
+  { path: '/health', name: 'health', component: () => import('./views/HealthView.vue'), meta: { bar: true } },
+  { path: '/migrations', name: 'migrations', component: () => import('./views/MigrationsView.vue'), meta: { bar: true, title: 'Migrations' } },
   { path: '/:rest(.*)*', redirect: '/design' }
 ]

@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { DropdownMenuItem } from '@nuxt/ui'
 import { useEditor } from '../../editor/useEditor.ts'
-import type { EditorView } from '../../editor/useEditor.ts'
 import { MOVE_TOOL } from '../../editor/tools.ts'
+import ViewMenu from '../../shell/ViewMenu.vue'
 
 /**
- * The top bar, Framer's. Left: the "Canvas ▾" view menu (Canvas, Design, Settings),
+ * The top bar, Framer's. Left: the brand and the "Canvas ▾" view menu (ViewMenu: the editor's one navigation),
  * named after the current view, then the insert icons: + opens the Insert panel
  * (`I`), Frame and Text arm their tools (`F`, `T`). Centre: the project name; while
  * editing a component or a layout, the breadcrumb (EditorBreadcrumb) instead.
@@ -20,32 +19,13 @@ import { MOVE_TOOL } from '../../editor/tools.ts'
  */
 const editor = useEditor()
 
-const VIEWS: { value: EditorView, label: string, icon: string }[] = [
-  { value: 'build', label: 'Canvas', icon: 'i-lucide-pen-tool' },
-  { value: 'data', label: 'Data', icon: 'i-lucide-database' },
-  { value: 'design', label: 'Design', icon: 'i-lucide-palette' },
-  { value: 'settings', label: 'Settings', icon: 'i-lucide-settings' }
-]
 /** Why Preview has nothing to open (a detail page with no record), or ''; the component view previews a page showing the component. */
 const cannotPreview = computed(() => editor.component ? '' : editor.previewHint)
-const viewLabel = computed(() => VIEWS.find(view => view.value === editor.mode)?.label)
 
 const TOOLS = [
   { id: 'Container', label: 'Frame', icon: 'i-lucide-frame', kbd: 'f' },
   { id: 'Text', label: 'Text', icon: 'i-lucide-type', kbd: 't' }
 ]
-
-const viewMenu = computed<DropdownMenuItem[][]>(() => [
-  VIEWS.map(view => ({
-    label: view.label,
-    icon: view.icon,
-    type: 'checkbox',
-    checked: editor.mode === view.value,
-    onSelect: () => {
-      editor.mode = view.value
-    }
-  }))
-])
 
 function toggleTool(id: string) {
   editor.setTool(editor.tool === id ? MOVE_TOOL : id)
@@ -55,20 +35,7 @@ function toggleTool(id: string) {
 <template>
   <header class="grid h-12 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-default px-2">
     <div class="flex min-w-0 items-center gap-1">
-      <EditorMenu :items="viewMenu">
-        <EditorButton
-          variant="ghost"
-          trailing-icon="i-lucide-chevron-down"
-          class="bg-white/6 font-[550] text-highlighted hover:bg-white/10 aria-expanded:bg-white/10"
-          data-view-menu
-        >
-          <UIcon
-            name="i-lucide-blocks"
-            class="size-4 text-highlighted"
-          />
-          {{ viewLabel }}
-        </EditorButton>
-      </EditorMenu>
+      <ViewMenu />
       <span class="mx-1 h-4 w-px bg-(--ui-border)" />
       <UPopover
         v-model:open="editor.insertOpen"

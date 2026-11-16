@@ -64,7 +64,7 @@ watch(path, load)
   <div class="space-y-4 p-6">
     <div class="flex flex-wrap items-center gap-3">
       <h1 class="text-xl font-semibold">
-        View code
+        Code
       </h1>
       <USelectMenu
         :model-value="choices.find(choice => choice.value === path)"
