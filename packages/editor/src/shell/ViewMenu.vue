@@ -19,16 +19,16 @@ const route = useRoute()
 const router = useRouter()
 const editor = inject(EDITOR_KEY, null)
 
-const current = computed(() => currentEntry(route.path, editor?.mode ?? null))
-const label = computed(() => current.value?.label ?? String(route.meta.title ?? ''))
+const current = computed(() => currentEntry(route.name, editor?.mode ?? null))
+const label = computed(() => current.value?.label ?? route.meta.title ?? '')
 
 const choose = (entry: MenuEntry) => {
-  if (entry.route) {
-    if (route.path !== entry.route) void router.push(entry.route)
+  if ('route' in entry) {
+    if (route.name !== entry.route) void router.push({ name: entry.route })
   } else if (editor) {
-    editor.mode = entry.view!
+    editor.mode = entry.view
   } else {
-    openView(entry.view!)
+    openView(entry.view)
   }
 }
 

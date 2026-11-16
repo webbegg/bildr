@@ -30,7 +30,7 @@ describe('searchCommands', () => {
     cmd('insert:Card', 'insert', 'Card'),
     cmd('insert:Button', 'insert', 'Button'),
     cmd('action:dark', 'actions', 'Toggle dark preview'),
-    cmd('view:design', 'goto', 'Design view'),
+    cmd('view:design', 'goto', 'Design system'),
     cmd('help:shortcuts', 'help', 'Keyboard shortcuts')
   ]
 
@@ -153,12 +153,21 @@ describe('editorCommands', () => {
     const ids = commands.map(command => command.id)
     expect(ids).not.toContain('publish')
     expect(ids.filter(id => id.startsWith('data:'))).toEqual(['data:new-collection', 'data:import-api'])
-    expect(ids).toEqual(expect.arrayContaining(['view:build', 'view:data', 'view:design', 'view:settings', 'settings:variables', 'design-system', 'help:shortcuts']))
+    expect(ids).toEqual(expect.arrayContaining(['view:build', 'view:data', 'view:design', 'view:settings', 'settings:variables', 'help:shortcuts']))
+  })
+
+  it('names each view as the menu does, once: no "view" suffix and no second Design system command', () => {
+    const { commands } = context()
+    expect(commands.filter(command => command.id.startsWith('view:')).map(command => command.label)).toEqual(['Canvas', 'Design system', 'Data', 'Settings'])
+    expect(commands.map(command => command.id)).not.toContain('design-system')
+    const labels = commands.filter(command => command.group === 'goto').map(command => command.label)
+    expect(labels.filter(label => label === 'Design system')).toHaveLength(1)
+    expect(find(commands, 'view:design').keywords).toEqual(expect.arrayContaining(['theme', 'styles']))
   })
 
   it('opens the Data view, which is its own screen', () => {
     const { ctx, editor, commands } = context()
-    expect(find(commands, 'view:data').label).toBe('Data view')
+    expect(find(commands, 'view:data').label).toBe('Data')
     find(commands, 'view:data').run(ctx)
     expect(editor.mode).toBe('data')
   })
@@ -231,7 +240,7 @@ describe('editorCommands', () => {
   it('switches the view, and leaves Canvas-only commands off in the Design view', () => {
     const { ctx, editor, commands } = context({ mode: 'design' })
     expect(find(commands, 'insert:Text').enabled(ctx)).toBe(false)
-    expect(find(commands, 'design-system').enabled(ctx)).toBe(false)
+    expect(find(commands, 'view:design').enabled(ctx)).toBe(false)
     find(commands, 'view:build').run(ctx)
     expect(editor.mode).toBe('build')
   })

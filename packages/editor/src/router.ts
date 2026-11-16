@@ -1,5 +1,14 @@
 import type { RouteRecordRaw } from 'vue-router'
 
+declare module 'vue-router' {
+  interface RouteMeta {
+    /** The screen has no editor toolbar of its own, so it gets the ScreenBar. */
+    bar?: boolean
+    /** What the view menu shows for a screen it has no entry for. */
+    title?: string
+  }
+}
+
 /**
  * The editor's screens. `main.ts` uses hash history, so the module only serves one page.
  * Navigation is the top bar's view menu (`editor/menu.ts`), not this list: `bar` marks the screens that

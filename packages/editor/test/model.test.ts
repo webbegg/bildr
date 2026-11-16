@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import ModelView from '../src/views/ModelView.vue'
 import { MAIN_PATH, POST_PATH, modelResult, postFile } from './fixtures.ts'
 import { Failure, byTestId, click, mockActions, mountWithApp, typeInto } from './helpers.ts'
@@ -72,6 +72,18 @@ describe('Model screen', () => {
     const shown = byTestId('form-problems')
     expect(shown?.textContent).toContain('The model would be invalid')
     expect(shown?.textContent).toContain('Unknown entity "ent_missing" in relations')
+  })
+
+  it('opens the selected artifact in the Code screen, with a button named after it', async () => {
+    mockActions({ model_get: modelResult, code_view: () => ({ files: [] }) })
+    const { router } = await mountWithApp(ModelView, '/model')
+
+    await click(byTestId('module-blog')!.querySelector(`[data-path="${POST_PATH}"]`))
+    const button = [...document.body.querySelectorAll('button')].find(element => element.textContent?.trim() === 'Open in Code')
+    expect([...document.body.querySelectorAll('button')].some(element => element.textContent?.includes('View code'))).toBe(false)
+    await click(button ?? null)
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/code'))
+    expect(router.currentRoute.value.query.path).toBe(POST_PATH)
   })
 
   it('deletes the selected artifact after a confirmation', async () => {

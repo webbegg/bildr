@@ -144,9 +144,20 @@ const canvasKey = (message: { key: string, code: string, meta: boolean, shift: b
       data-testid="design-problems"
     >
       <ProblemsList
-        title="The model has problems, so there is nothing to design until they are fixed (Model screen)"
+        title="The model has problems, so there is nothing to design until they are fixed"
         :problems="editor.problems"
-      />
+      >
+        <UButton
+          to="/model"
+          label="Open model files"
+          icon="i-lucide-file-json"
+          color="error"
+          variant="soft"
+          size="sm"
+          class="mt-2"
+          data-testid="open-model"
+        />
+      </ProblemsList>
     </div>
     <div
       v-else

@@ -65,10 +65,13 @@ describe('the Data screen', () => {
   })
 
   it('shows a model with problems as the list of them, and links to the Model screen', async () => {
-    const { actions } = await open({ model_get: () => ({ ok: false, problems: [{ path: '.bildr/modules/blog/entities/post.json', message: 'bad entity' }], files: {}, database: false }) })
+    const { actions, router } = await open({ model_get: () => ({ ok: false, problems: [{ path: '.bildr/modules/blog/entities/post.json', message: 'bad entity' }], files: {}, database: false }) })
     expect(q('[data-testid="data-problems"]')?.textContent).toContain('bad entity')
     expect(actions.named('model_get').length).toBeGreaterThan(0)
     expect(q('[data-records]')).toBeNull()
+    expect(q('[data-testid="data-problems"]')?.textContent).not.toContain('(Model screen)')
+    await click(q('[data-testid="open-model"]'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/model'))
   })
 
   it('links to the raw model files on the Model screen', async () => {

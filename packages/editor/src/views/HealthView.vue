@@ -8,7 +8,7 @@ import { useStatus } from '../status.ts'
 import { CHECK_NAMES } from '../types.ts'
 import type { CheckName, CheckResult, DriftReport } from '../types.ts'
 
-/** The Health report (RA §7): model status, drift with diffs, and the project's checks with a Run button each. Health never blocks editing. */
+/** The Checks screen (RA §7, the Health report): model status, drift with diffs, and the project's checks with a Run button each. Checks never block editing. */
 
 const status = useStatus()
 const health = status.health
@@ -91,7 +91,7 @@ onMounted(() => {
 
     <ProblemsList
       v-if="status.healthError.value"
-      title="Could not read the Health report"
+      title="Could not read the Checks report"
       :message="status.healthError.value"
     />
     <ProblemsList

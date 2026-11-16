@@ -54,7 +54,7 @@ export const carryPage = (pageId: string): void => {
 }
 
 /** Opens the screen that shows `view`, carrying the view and `data` for the editor created there. */
-const start = (view: EditorView, data: DataStart): void => {
+const beginOpen = (view: EditorView, data: DataStart): void => {
   if (!open) return
   const request = { view, data }
   pending = request
@@ -71,8 +71,8 @@ const start = (view: EditorView, data: DataStart): void => {
 
 /** `view` was chosen in an editor that is on `from`: opens the other screen when it is the one that shows `view`. */
 export const requestView = (view: EditorView, from: Screen, data: DataStart = {}): void => {
-  if (screenOf(view) !== from) start(view, data)
+  if (screenOf(view) !== from) beginOpen(view, data)
 }
 
 /** `view` was chosen where no editor is (the Code, Checks, Migrations and Model screens): opens the screen that shows it, started on it. */
-export const openView = (view: EditorView): void => start(view, {})
+export const openView = (view: EditorView): void => beginOpen(view, {})

@@ -86,9 +86,20 @@ const panelWidth = ref(Math.min(480, Math.max(280, Math.round(Number(localStorag
       data-testid="data-problems"
     >
       <ProblemsList
-        title="The model has problems, so there is nothing to show until they are fixed (Model screen)"
+        title="The model has problems, so there is nothing to show until they are fixed"
         :problems="editor.problems"
-      />
+      >
+        <UButton
+          to="/model"
+          label="Open model files"
+          icon="i-lucide-file-json"
+          color="error"
+          variant="soft"
+          size="sm"
+          class="mt-2"
+          data-testid="open-model"
+        />
+      </ProblemsList>
     </div>
     <div
       v-else-if="!editor.model"

@@ -13,7 +13,7 @@ const files = [
   }
 ]
 
-describe('View code screen', () => {
+describe('Code screen', () => {
   it('shows each generated file of the selected artifact with its state, and the diff of a detached one', async () => {
     const actions = mockActions({ model_get: modelResult, code_view: () => ({ files }) })
     await mountWithApp(CodeView, `/code?path=${encodeURIComponent(POST_PATH)}`)

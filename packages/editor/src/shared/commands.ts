@@ -286,11 +286,12 @@ function selectsSiblings(ctx: CommandContext): boolean {
   return onCanvas(ctx) && !!root && ids.length > 0 && !!siblingParent(root, ids)
 }
 
-const VIEWS: { id: EditorView, label: string, icon: string }[] = [
-  { id: 'build', label: 'Canvas view', icon: 'i-lucide-frame' },
-  { id: 'data', label: 'Data view', icon: 'i-lucide-database' },
-  { id: 'design', label: 'Design view', icon: 'i-lucide-palette' },
-  { id: 'settings', label: 'Settings view', icon: 'i-lucide-settings' }
+/** The editor's views, named as the top bar's menu names them (`editor/menu.ts`): one command per destination. */
+const VIEWS: { id: EditorView, label: string, icon: string, keywords?: string[] }[] = [
+  { id: 'build', label: 'Canvas', icon: 'i-lucide-frame' },
+  { id: 'design', label: 'Design system', icon: 'i-lucide-palette', keywords: ['styles', 'theme', 'themes', 'library', 'colors', 'fonts'] },
+  { id: 'data', label: 'Data', icon: 'i-lucide-database' },
+  { id: 'settings', label: 'Settings', icon: 'i-lucide-settings' }
 ]
 
 /**
@@ -352,7 +353,7 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
       group: 'goto',
       label: view.label,
       icon: view.icon,
-      keywords: ['view', 'mode'],
+      keywords: ['view', 'mode', ...view.keywords ?? []],
       enabled: c => c.editor.mode !== view.id,
       run: ({ editor }) => {
         editor.mode = view.id
@@ -377,17 +378,6 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
       run: ({ editor }) => {
         editor.mode = 'settings'
         editor.variablesRequest++
-      }
-    },
-    {
-      id: 'design-system',
-      group: 'goto',
-      label: 'Design system',
-      icon: 'i-lucide-swatch-book',
-      keywords: ['styles', 'theme', 'themes', 'library', 'colors', 'fonts'],
-      enabled: c => c.editor.mode !== 'design',
-      run: ({ editor }) => {
-        editor.mode = 'design'
       }
     },
     {

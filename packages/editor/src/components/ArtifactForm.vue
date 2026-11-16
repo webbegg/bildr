@@ -166,7 +166,7 @@ const viewCode = () => {
           color="neutral"
           variant="outline"
           icon="i-lucide-file-code"
-          label="View code"
+          label="Open in Code"
           @click="viewCode"
         />
         <UButton

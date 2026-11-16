@@ -487,6 +487,15 @@ describe('what the editor adds to the hosted one (S4)', () => {
     expect(q('[data-sidebar]')).toBeNull()
   })
 
+  it('links the model\'s problems to the Model screen, where the files can be fixed', async () => {
+    mockActions({ ...baseHandlers(), model_get: () => ({ ok: false, problems: [{ path: '.bildr/modules/blog/pages/index.json', message: 'Unknown node type "Wat"' }] }) })
+    const { router } = await mountWithApp(DesignView, '/design')
+    await fromCanvas({ type: 'bildr:ready' })
+    expect(byTestId('design-problems')?.textContent).not.toContain('(Model screen)')
+    await click(byTestId('open-model'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/model'))
+  })
+
   it('says when the app could not regenerate, with the reason', async () => {
     await open()
     expect(byTestId('regenerate-error')).toBeNull()

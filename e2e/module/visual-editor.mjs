@@ -20,7 +20,8 @@ await run('visual-editor', async ({ page, browser, errors }) => {
   await openEditor(page)
   check(await page.locator('[data-testid="design"]').count() === 1, 'one editor: the Design screen opens on the project (V1)')
   // S1: the top bar's menu is the only navigation (no left nav), and it lists the six destinations once each.
-  check(await page.locator('nav').count() === 0, 'no left nav: the top bar menu is the only navigation')
+  // Not `nav` itself: the editor's breadcrumbs are <nav>s (of buttons). The old rail was a <nav> of links to the screens.
+  check(await page.locator('nav a').count() === 0 && await page.locator('[data-view-menu]').count() === 1, 'no left nav: no <nav> holds a link to a screen, and the top bar menu is the only navigation')
   await page.locator('[data-view-menu]').click()
   const entries = (await page.locator('[role^=menuitem]').allInnerTexts()).map(text => text.trim())
   check(entries.join(',') === 'Canvas,Design system,Data,Code,Checks,Settings', `the menu lists Canvas, Design system, Data, Code, Checks and Settings (${entries.join(', ')})`)

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { click, mockActions, mountWithApp, settle } from '../helpers.ts'
 import App from '../../src/App.vue'
+import DesignView from '../../src/views/DesignView.vue'
 import { healthReport, pendingPlan } from '../fixtures.ts'
 import { baseHandlers, menuItem, setupHarness } from '../design/harness.ts'
 
@@ -17,18 +18,25 @@ const text = (element: Element | null) => element?.textContent?.replace(/\s+/g, 
 
 const ENTRIES = ['Canvas', 'Design system', 'Data', 'Code', 'Checks', 'Settings']
 
-/** Mounts the whole App at `path`, over a project with a database and nothing pending. */
-const open = async (path: string, pending: unknown = null) => {
+/** Mounts the whole App at `path`, over a project with a database (unless `database` is false) and nothing pending. */
+const open = async (path: string, pending: unknown = null, database = true) => {
   const actions = mockActions({
     ...baseHandlers(),
     env_status: () => ({ variables: [] }),
     health_get: healthReport,
-    migration_pending_get: () => ({ pending, database: true }),
+    migration_pending_get: () => ({ pending, database }),
     code_view: () => ({ files: [] })
   })
   const mounted = await mountWithApp(App, path)
   return { actions, ...mounted }
 }
+
+/** The mode of the editor the Design or Data screen created, read from the screen that provides it. */
+const modeOf = (mounted: Awaited<ReturnType<typeof open>>) =>
+  (mounted.wrapper.findComponent(DesignView).vm as unknown as { editor: { mode: string } }).editor.mode
+
+/** The links the page's navigation landmarks hold: a left rail of screens would be a `<nav>` of links; the breadcrumbs are buttons. */
+const navLinks = () => qa('nav a[href]').map(link => link.getAttribute('href'))
 
 /** The labels the view menu lists, in order (it is opened with the keyboard, as the other menu tests do). */
 const menuLabels = async () => {
@@ -40,7 +48,8 @@ const menuLabels = async () => {
 describe('the top bar menu is the only navigation', () => {
   it('lists Canvas, Design system, Data, Code, Checks and Settings, once each, and renders no left nav', async () => {
     await open('/design')
-    expect(q('nav')).toBeNull()
+    // The editor's breadcrumbs are <nav>s, so the old rail is told by what it held: a <nav> of links to screens.
+    expect(navLinks()).toEqual([])
     expect(qa('[data-view-menu]')).toHaveLength(1)
     expect(await menuLabels()).toEqual(ENTRIES)
   })
@@ -61,18 +70,19 @@ describe('the top bar menu is the only navigation', () => {
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe(path))
     await settle()
     expect(text(q('[data-view-menu]'))).toBe(label)
-    expect(q('nav')).toBeNull()
+    expect(navLinks()).toEqual([])
   })
 
   it.each([
     ['Design system', 'design'],
     ['Settings', 'settings'],
     ['Canvas', 'build']
-  ])('keeps %s on the Design screen', async (label) => {
-    const { router } = await open('/design')
+  ])('keeps %s on the Design screen, in the %s mode', async (label, mode) => {
+    const mounted = await open('/design')
     await menuItem(q('[data-view-menu]'), label)
-    expect(router.currentRoute.value.path).toBe('/design')
+    expect(mounted.router.currentRoute.value.path).toBe('/design')
     expect(text(q('[data-view-menu]'))).toBe(label)
+    expect(modeOf(mounted)).toBe(mode)
   })
 
   it.each([
@@ -101,7 +111,41 @@ describe('the top bar menu is the only navigation', () => {
     expect(router.currentRoute.value.fullPath).toBe(link)
     expect(text(q('[data-view-menu]'))).toBe(label)
     expect(text(q('[data-brand]'))).toBe('bildr')
-    expect(q('nav')).toBeNull()
+    expect(navLinks()).toEqual([])
+  })
+
+  it.each([
+    ['/design/', 'Canvas'],
+    ['/data/', 'Data'],
+    ['/code/', 'Code'],
+    ['/health/', 'Checks'],
+    ['/migrations/', 'Migrations'],
+    ['/model/', 'Model']
+  ])('names the screen of the deep link %s with a trailing slash: %s', async (link, label) => {
+    await open(link)
+    expect(text(q('[data-view-menu]'))).toBe(label)
+  })
+
+  it('goes back to the Design screen from Code, with the menu naming what the screen then shows', async () => {
+    const { router } = await open('/design')
+    await menuItem(q('[data-view-menu]'), 'Design system')
+    await menuItem(q('[data-view-menu]'), 'Code')
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/code'))
+    await settle()
+    router.back()
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/design'))
+    await settle()
+    // Going back creates a new editor, which starts on the Canvas: the history keeps the screen, not the view.
+    expect(text(q('[data-view-menu]'))).toBe('Canvas')
+    expect(qa('[data-view-menu]')).toHaveLength(1)
+  })
+
+  it('renders no migrations banner and no Review link when the project has no database and nothing is pending', async () => {
+    await open('/design', null, false)
+    expect(q('[data-testid="migration-banner"]')).toBeNull()
+    expect(qa('a').filter(link => link.getAttribute('href') === '/migrations')).toEqual([])
+    expect(qa('a').filter(link => text(link) === 'Review')).toEqual([])
+    expect(await menuLabels()).not.toContain('Migrations')
   })
 
   it('reaches Migrations only through the banner, which links to it', async () => {

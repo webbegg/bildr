@@ -45,7 +45,7 @@ await run('design-system', async ({ page, errors }) => {
   await page.locator('[data-quick-actions] input').fill('Design system')
   await page.locator('[data-quick-actions] [role=option][data-highlighted]').filter({ hasText: 'Design system' }).waitFor()
   await page.locator('[data-quick-actions] input').press('Enter')
-  check(await until(() => page.locator('[data-view-menu]').filter({ hasText: 'Design' }).isVisible()), '⌘K "Design system" opens the Design view')
+  check(await until(() => page.locator('[data-view-menu]').filter({ hasText: /^\s*Design system\s*$/ }).isVisible()), '⌘K "Design system" opens the Design view')
   await guide(page).locator('[data-style-guide]').waitFor()
 
   // A primary change restyles the style guide.

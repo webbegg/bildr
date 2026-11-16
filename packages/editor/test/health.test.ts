@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import HealthView from '../src/views/HealthView.vue'
 import { healthReport } from './fixtures.ts'
-import { byTestId, click, mockActions, mountWithApp, settle } from './helpers.ts'
+import { byTestId, click, Failure, mockActions, mountWithApp, settle } from './helpers.ts'
 
 const typesResult = { name: 'types', ok: true, startedAt: '2026-11-13T09:01:00.000Z', durationMs: 6300, summary: 'No type errors', findings: [] }
 
-describe('Health screen', () => {
+describe('Checks screen', () => {
+  it('names the screen Checks when the report cannot be read', async () => {
+    mockActions({
+      health_get: () => {
+        throw new Failure(500, 'internal', 'boom')
+      }
+    })
+    await mountWithApp(HealthView, '/health')
+    const text = document.body.textContent ?? ''
+    expect(text).toContain('Could not read the Checks report')
+    expect(text).not.toContain('Health')
+  })
+
   it('shows the model status, the drift with its diff and each check with its findings', async () => {
     mockActions({ health_get: healthReport })
     await mountWithApp(HealthView, '/health')
