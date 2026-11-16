@@ -295,7 +295,7 @@ export const RepositoryFileSchema = z.object({
   expose: z.object({ list: z.boolean() }).optional()
 })
 
-const ParamSchema = z.object({
+export const ParamSchema = z.object({
   name: CamelNameSchema,
   type: z.enum(FIELD_TYPES),
   default: ValueSchema.optional(),

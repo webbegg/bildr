@@ -177,6 +177,12 @@ describe('loadModel problems', () => {
     }
   })
 
+  it('accepts an action whose work is a return step (a blank action), and still refuses one that only validates', () => {
+    const path = '.bildr/modules/blog/actions/create-post.json'
+    expect(problems(edit(path, { steps: [{ kind: 'validate' }, { kind: 'return', if: true, value: null }] }))).toEqual([])
+    expect(problems(edit(path, { steps: [{ kind: 'validate' }] }))).toHaveLength(1)
+  })
+
   it('keeps the repository step last: the use-case returns its result, so later steps would never run', () => {
     const path = '.bildr/modules/blog/actions/create-post.json'
     const steps = JSON.parse(fixtureModelFiles()[path]!).steps

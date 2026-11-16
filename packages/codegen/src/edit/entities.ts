@@ -5,6 +5,7 @@ import { camel, defineEdit, fail, kebab, pascal, uniqueName } from './core.ts'
 import type { Draft } from './core.ts'
 import { datasourceById, DataSourceRef } from './datasources.ts'
 import { walk } from './tree.ts'
+import { idUses, mentions, useLabels } from './usage.ts'
 
 /**
  * Entities (P3c; the hosted collections and fields). One `entity_create` writes the entity
@@ -54,7 +55,7 @@ export const entityById = (draft: Draft, id: string): { entity: EntityFile, modu
   return fail('not_found', `No entity "${id}"`)
 }
 
-const repositoryOf = (draft: Draft, entityId: string) => Object.values(draft.model.modules)
+export const repositoryOf = (draft: Draft, entityId: string) => Object.values(draft.model.modules)
   .flatMap(mod => mod.repositories).find(repository => repository.entity === entityId)
 
 const fieldOf = (entity: EntityFile, id: string): Field => entity.fields.find(field => field.id === id) ?? fail('not_found', `Entity ${entity.name} has no field "${id}"`)
@@ -62,26 +63,31 @@ const fieldOf = (entity: EntityFile, id: string): Field => entity.fields.find(fi
 const queries = (draft: Draft) => Object.values(draft.model.modules).flatMap(mod => mod.queries)
 const actions = (draft: Draft) => Object.values(draft.model.modules).flatMap(mod => mod.actions)
 
-/** Whether `value` holds the string `id` anywhere. */
-const mentions = (value: unknown, ids: Set<string>): boolean => {
-  if (typeof value === 'string') return ids.has(value)
-  if (!value || typeof value !== 'object') return false
-  return Object.values(value).some(item => mentions(item, ids))
-}
-
-/** Where pages, components and layouts use one of `ids` (queries, actions, fields, the entity), as `file (where)`. */
-const treeUsers = (draft: Draft, ids: Set<string>): string[] => draft.trees().flatMap((tree) => {
-  const found: string[] = []
-  const owner = tree.owner as { uses?: unknown, params?: unknown, properties?: unknown, variables?: unknown }
-  if (mentions(owner.uses, ids) || mentions(owner.params, ids)) found.push(`${tree.file} (uses)`)
-  if (mentions(owner.properties, ids)) found.push(`${tree.file} (properties)`)
-  walk(tree.root, (node) => {
-    if (mentions(node.props, ids) || mentions(node.interactions, ids)) found.push(`${tree.file} (${node.id})`)
-  })
-  return found
-})
+/** Where pages, components and layouts use one of `ids` (queries, actions, fields, the entity), as `file (where)`: the shared usage index, in words. */
+const treeUsers = (draft: Draft, ids: Set<string>): string[] => useLabels(idUses(draft.model, ids))
 
 const listOf = (users: string[]) => users.join(', ')
+
+/** Refuses a route another action of the module already answers (two use-cases can't share a method and path). */
+export const checkRouteFree = (moduleActions: ActionFile[], method: string, path: string, self?: string): void => {
+  const clash = moduleActions.find(action => action.id !== self && action.http.method === method && action.http.path === path)
+  if (clash) fail('invalid', `The action ${clash.id} already answers ${method} ${path}`)
+}
+
+/**
+ * What creating a row of `entity` is, for entity_create and action_create's "create" template: POST /<plural> validates
+ * the body against the entity (its key included, which a client generates for a uuid), and the repository creates it;
+ * a listed entity's client inserts it optimistically.
+ */
+export const createAction = (entity: EntityFile, repositoryId: string, listed: boolean, own: { id: string, name: string, label: string }): ActionFile => ({
+  ...own,
+  http: { method: 'POST', path: `/${kebab(entity.plural)}` },
+  input: { entity: entity.id, pick: [...(entity.idStrategy === 'external' ? [] : ['id']), ...entity.fields.map(field => field.name)] },
+  output: { entity: entity.id },
+  errors: [],
+  steps: [{ kind: 'validate' }, { kind: 'repository', repository: repositoryId, op: 'create' }],
+  client: { ...(listed ? { optimistic: { kind: 'insert', entity: entity.id } } : {}), invalidates: [entity.id] }
+})
 
 // ── Names ────────────────────────────────────────────────────────────────
 
@@ -99,7 +105,7 @@ const fieldName = (given: string) => {
 }
 
 /** The key the entity's queries and actions take: a uuid, or the type of the `id` field its source owns. */
-const keyType = (entity: EntityFile): Field['type'] => entity.idStrategy === 'uuid' ? 'uuid' : entity.fields.find(field => field.name === 'id')?.type ?? 'text'
+export const keyType = (entity: EntityFile): Field['type'] => entity.idStrategy === 'uuid' ? 'uuid' : entity.fields.find(field => field.name === 'id')?.type ?? 'text'
 
 // ── Values against field types ───────────────────────────────────────────
 
@@ -108,7 +114,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/
 const DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/
 
 /** Whether a stored value fits a field type (null fits a field that may be empty). */
-const fits = (type: Field['type'], value: Value, optional: boolean): boolean => {
+export const fits = (type: Field['type'], value: Value, optional: boolean): boolean => {
   if (value === null) return optional
   if (type === 'integer') return Number.isInteger(value)
   if (type === 'number') return typeof value === 'number'
@@ -120,7 +126,7 @@ const fits = (type: Field['type'], value: Value, optional: boolean): boolean => 
   return true
 }
 
-const isExpression = (value: unknown) => typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).some(key => key.startsWith('$'))
+export const isExpression = (value: unknown) => typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).some(key => key.startsWith('$'))
 
 /** Why `field` (as it would be) doesn't fit the values the model already has for it: its default, the fixtures rows, query conditions. */
 const valueProblems = (draft: Draft, entity: EntityFile, field: Field): string[] => {
@@ -227,21 +233,13 @@ export const entityCreate = defineEdit({
 
     let actionId: string | undefined
     if (operations.includes('create')) {
-      const path = `/${kebab(plural)}`
-      const clash = mod.actions.find(action => action.http.method === 'POST' && action.http.path === path)
-      if (clash) fail('invalid', `The action ${clash.id} already answers POST ${path}`)
+      checkRouteFree(mod.actions, 'POST', `/${kebab(plural)}`)
       actionId = draft.mint('act', `create ${name}`)
-      const action: ActionFile = {
+      const action = createAction(entity, repositoryId, listed, {
         id: actionId,
         name: uniqueName(`create${name}`, mod.actions.map(entry => entry.name)),
-        label: sentence(`create ${spaced(name)}`),
-        http: { method: 'POST', path },
-        input: { entity: entityId, pick: [...(external ? [] : ['id']), ...names] },
-        output: { entity: entityId },
-        errors: [],
-        steps: [{ kind: 'validate' }, { kind: 'repository', repository: repositoryId, op: 'create' }],
-        client: { ...(listed ? { optimistic: { kind: 'insert', entity: entityId } } : {}), invalidates: [entityId] }
-      }
+        label: sentence(`create ${spaced(name)}`)
+      })
       mod.actions.push(action)
       draft.place(actionId, `${folder}/actions`, kebab(action.name))
     }

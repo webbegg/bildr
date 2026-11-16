@@ -81,6 +81,29 @@ describe('MCP', () => {
     await client.close()
   })
 
+  it('creates, renames and deletes a query and an action through their tools (D10a)', async () => {
+    const client = await connect()
+    const call = async (name: string, args: Record<string, unknown>) => await client.callTool({ name, arguments: args }) as { isError?: boolean, content: { text: string }[] }
+    const ok = async (name: string, args: Record<string, unknown>) => {
+      const result = await call(name, args)
+      expect(result.isError, result.content[0]!.text).toBeFalsy()
+      return text(result) as Record<string, unknown>
+    }
+    const source = await ok('datasource_create', { name: 'local', kind: 'memory' })
+    await ok('entity_create', { name: 'note', source: source.datasourceId, fields: [{ name: 'text', type: 'text' }] })
+    expect(await ok('query_create', { entity: 'ent_note', result: 'many', name: 'pinnedNotes' })).toMatchObject({ queryId: 'q_pinned_notes', changed: ['.bildr/modules/main/queries/pinned-notes.json'] })
+    expect(await ok('query_rename', { query: 'q_pinned_notes', name: 'starred' })).toMatchObject({ name: 'starred', previousName: 'pinnedNotes' })
+    expect(await ok('action_create', { entity: 'ent_note', template: 'blank', name: 'tidy' })).toMatchObject({ actionId: 'act_tidy' })
+    const refused = await call('query_create', { entity: 'ent_note', result: 'many', name: 'createNote' })
+    expect(refused.isError).toBe(true)
+    expect(refused.content[0]!.text).toBe('invalid: Module "main" already has the action createNote (act_create_note)')
+    const bad = await call('action_create', { entity: 'ent_note', template: 'nope', name: 'x' })
+    expect(bad.isError).toBe(true)
+    expect(await ok('action_delete', { action: 'act_tidy' })).toEqual({ deleted: ['act_tidy'], changed: ['.bildr/modules/main/actions/tidy.json'] })
+    expect(await ok('query_delete', { query: 'q_pinned_notes' })).toMatchObject({ deleted: ['q_pinned_notes'] })
+    await client.close()
+  })
+
   it('reports action errors as tool errors', async () => {
     const client = await connect()
     const failed = await client.callTool({ name: 'model_file_delete', arguments: { path: '.bildr/bildr.json' } }) as { isError?: boolean, content: { text: string }[] }

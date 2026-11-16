@@ -96,6 +96,24 @@ export interface Tree {
 const KIND_ROOT: Record<TreeKind, string> = { page: 'page root', component: 'component root', layout: 'layout root' }
 export const rootName = (tree: Tree) => KIND_ROOT[tree.kind]
 
+/** Every page, component and layout of `model`, by artifact id. */
+export const treesOf = (model: Model): Tree[] => {
+  const trees: Tree[] = []
+  // `root` reads the owner's, so an edit that replaces a root is seen.
+  const tree = (file: string, kind: TreeKind, owner: Tree['owner'], module?: string): Tree => ({
+    file, kind, owner, ...(module ? { module } : {}),
+    get root() {
+      return owner.root
+    }
+  })
+  for (const [module, mod] of Object.entries(model.modules)) {
+    for (const page of mod.pages) trees.push(tree(page.id, 'page', page, module))
+    for (const component of mod.components) trees.push(tree(component.id, 'component', component, module))
+  }
+  for (const layout of model.layouts) trees.push(tree(layout.id, 'layout', layout))
+  return trees.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0))
+}
+
 /** File base names Windows reserves for devices, with any extension. */
 const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i
 
@@ -146,20 +164,7 @@ export class Draft {
 
   /** Every page, component and layout. */
   trees(): Tree[] {
-    const trees: Tree[] = []
-    // `root` reads the owner's, so an edit that replaces a root is seen.
-    const tree = (file: string, kind: TreeKind, owner: Tree['owner'], module?: string): Tree => ({
-      file, kind, owner, ...(module ? { module } : {}),
-      get root() {
-        return owner.root
-      }
-    })
-    for (const [module, mod] of Object.entries(this.model.modules)) {
-      for (const page of mod.pages) trees.push(tree(page.id, 'page', page, module))
-      for (const component of mod.components) trees.push(tree(component.id, 'component', component, module))
-    }
-    for (const layout of this.model.layouts) trees.push(tree(layout.id, 'layout', layout))
-    return trees.sort((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : 0))
+    return treesOf(this.model)
   }
 
   tree(file: string): Tree {

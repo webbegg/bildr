@@ -305,7 +305,8 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       if (action.output) ref(path, 'output.entity', 'entity', action.output.entity, 'entity')
       action.client.invalidates.forEach((id, index) => ref(path, `client.invalidates.${index}`, 'entity', id, 'entity'))
       // The repository step is what the use-case does and returns; without one it would only check its input.
-      if (!action.steps.some(step => step.kind === 'repository')) report(path, 'steps', 'An action needs a "repository" step (create, update or delete) to do its work')
+      // A "return" step also makes it do something (a blank action starts with one); validate and assert alone only check.
+      if (!action.steps.some(step => step.kind === 'repository' || step.kind === 'return')) report(path, 'steps', 'An action needs a "repository" step (create, update or delete) to do its work')
       // It returns the use-case's result, so it must be last: one repository step per action.
       action.steps.forEach((step, index) => {
         if (step.kind === 'repository' && index !== action.steps.length - 1) report(path, `steps.${index}`, 'A "repository" step must be the last step: the use-case returns its result')

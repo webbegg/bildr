@@ -1,11 +1,14 @@
 import { z } from 'zod'
-import { ArtifactIdSchema, CamelNameSchema, CONDITION_OPS, LocalIdSchema, ValueSchema } from '../model/schemas.ts'
+import { ArtifactIdSchema, CamelNameSchema, CONDITION_OPS, LocalIdSchema, ModuleNameSchema, ParamSchema, ValueSchema } from '../model/schemas.ts'
 import type { EntityFile, ModelNode, PageFile, QueryFile, Value } from '../model/schemas.ts'
 import { mapNodePaths, mapPaths, rootOf } from './bindings.ts'
 import { camel, defineEdit, fail, kebab, uniqueName } from './core.ts'
 import type { Draft } from './core.ts'
+import { entityById, fits, isExpression, keyType, repositoryOf } from './entities.ts'
+import { callableName, checkCallableFree, composableOf, isUnusable } from './naming.ts'
 import { PageRef } from './pages.ts'
 import { walk } from './tree.ts'
+import { describeUses, usesOf as artifactUsesOf } from './usage.ts'
 
 /**
  * Queries and what a page uses (P5, mapping §4). A List's source is a query the page uses
@@ -50,7 +53,7 @@ const fieldNames = (entity: EntityFile): string[] => [...new Set(['id', ...entit
 const entityOf = (draft: Draft, id: string): EntityFile =>
   Object.values(draft.model.modules).flatMap(mod => mod.entities).find(entity => entity.id === id) ?? fail('not_found', `No entity "${id}"`)
 
-const findQuery = (draft: Draft, id: string): { query: QueryFile, module: string } => {
+export const findQuery = (draft: Draft, id: string): { query: QueryFile, module: string } => {
   for (const [module, mod] of Object.entries(draft.model.modules)) {
     const query = mod.queries.find(entry => entry.id === id)
     if (query) return { query, module }
@@ -84,18 +87,62 @@ const checkParam = (query: QueryFile, value: Value | null | undefined, where: st
 
 // ── Editing a query ──────────────────────────────────────────────────────
 
+const NUMERIC = ['integer', 'number']
+
+/** What a query condition or ordering may name has this type: the entity's key, a timestamp, or the field's own. */
+const typeOfField = (entity: EntityFile, name: string): string | undefined =>
+  name === 'id' ? keyType(entity) : (name === 'createdAt' || name === 'updatedAt') && entity.timestamps ? 'datetime' : entity.fields.find(field => field.name === name)?.type
+
+const checkParams = (params: QueryFile['params']) => {
+  const seen = new Set<string>()
+  for (const param of params) {
+    if (!/^[a-z][A-Za-z0-9]*$/.test(param.name) || isUnusable(param.name)) fail('invalid', `"${param.name}" can't be a parameter name: use camelCase, like "limit"`)
+    if (seen.has(param.name)) fail('invalid', `Two parameters are named "${param.name}"`)
+    seen.add(param.name)
+    if (param.default !== undefined && !fits(param.type, param.default, false)) fail('invalid', `parameter ${param.name}: its default ${JSON.stringify(param.default)} doesn't fit ${param.type}`)
+  }
+}
+
+/**
+ * A condition's field and value against the entity: the field exists and a parameter it names is the query's; unless
+ * `lenient`, a literal fits the field's type and a parameter has it. (The canvas's list filter sends a list's items as text,
+ * so its edits, which name the page use they are for, keep the looser check they always had.)
+ */
+const checkCondition = (query: QueryFile, entity: EntityFile, where: NonNullable<QueryFile['where']>, lenient: boolean) => {
+  const type = typeOfField(entity, where.field) ?? fail('invalid', `where: ${entity.name} has no field "${where.field}" (${fieldNames(entity).join(', ')})`)
+  const value = where.value
+  checkParam(query, value, 'where')
+  if (lenient) return
+  if (isObject(value) && typeof value.$param === 'string') {
+    const param = query.params.find(entry => entry.name === value.$param)!
+    if (param.type !== type && !(NUMERIC.includes(param.type) && NUMERIC.includes(type))) fail('invalid', `where: the parameter "${param.name}" is ${param.type} but ${where.field} is ${type}`)
+  } else if (!isExpression(value)) {
+    const values = where.op === 'in' && Array.isArray(value) ? value : [value]
+    const bad = values.findIndex(item => !fits(type as never, item as Value, true))
+    if (bad !== -1) fail('invalid', `where: ${JSON.stringify(values[bad])} doesn't fit ${where.field} (${type})`)
+  }
+}
+
+// The name is checked in the edit, so a bad one is a refusal of the model (422), not of the input shape.
+const AllowedParam = ParamSchema.omit({ from: true, name: true }).extend({ name: z.string().min(1).max(60) })
+
 export const queryUpdate = defineEdit({
   input: z.object({
     query: QueryRef,
     page: PageRef.optional().describe('With as: the page use this edit is for. A query several uses read is copied for this use (q_<page>_<as>), so the others keep theirs; without them the query is edited in place'),
     as: Alias.optional(),
+    inPlace: z.boolean().optional().describe('true: edit the query itself, never a copy (what the Data workspace does); refused together with page and as'),
     label: z.string().min(1).max(100).optional(),
+    description: z.string().max(500).nullable().optional().describe('What the query returns, in words (the composable\'s doc comment); null removes it'),
+    result: z.enum(['one', 'many']).optional().describe('one row or many; refused while a page reads the query, since it changes what the page binds'),
+    params: z.array(AllowedParam).max(20).optional().describe('The whole list of parameters ({ name, type, default?, reactive? }); refused while the query, or a page\'s arguments, still use one it drops'),
     where: Condition.nullable().optional().describe('The condition rows must meet ({ op, field, value }, a value is a literal or { "$param": name }); null removes it'),
     orderBy: z.array(Order).nullable().optional().describe('The ordering, most significant first; null or [] removes it'),
     limit: ValueSchema.nullable().optional().describe('At most this many rows: a whole number or { "$param": name }; null removes the limit')
   }),
-  apply: (draft, { query: id, page: pageId, as, label, where, orderBy, limit }) => {
+  apply: (draft, { query: id, page: pageId, as, inPlace, label, description, result, params, where, orderBy, limit }) => {
     if ((pageId === undefined) !== (as === undefined)) fail('invalid', 'page and as go together: they name the use the edit is for')
+    if (inPlace && pageId !== undefined) fail('invalid', 'inPlace edits the query itself: page and as name a use to copy it for, so leave them out')
     const found = findQuery(draft, id)
     const { module } = found
     let { query } = found
@@ -123,11 +170,23 @@ export const queryUpdate = defineEdit({
       if (!known.includes(field)) fail('invalid', `${what}: ${entity.name} has no field "${field}" (${known.join(', ')})`)
     }
     if (label !== undefined) query.label = label
+    if (description !== undefined) {
+      if (description === null) delete query.description
+      else query.description = description
+    }
+    if (result !== undefined && result !== query.result) {
+      const readers = artifactUsesOf(draft.model, query.id).filter(use => use.via === 'uses')
+      if (readers.length) fail('invalid', `The query ${query.name} (${query.id}) is read by ${readers.map(use => `${use.kind} "${use.name}" (${use.id}) as "${use.as}"`).join(', ')}: changing it to ${result} changes what they bind. Change them first`)
+      query.result = result
+    }
+    if (params !== undefined) {
+      checkParams(params)
+      query.params = params.map(param => ({ ...param }))
+    }
     if (where !== undefined) {
       if (where === null) delete query.where
       else {
-        check(where.field, 'where')
-        checkParam(query, where.value, 'where')
+        checkCondition(query, entity, where, pageId !== undefined)
         query.where = where
       }
     }
@@ -147,6 +206,16 @@ export const queryUpdate = defineEdit({
         checkParam(query, limit, 'limit')
         query.limit = limit
       } else fail('invalid', 'limit is a whole number or { "$param": name }')
+    }
+    if (params !== undefined) {
+      // What the query reads, and the arguments pages give, must still be parameters.
+      if (query.where) checkParam(query, query.where.value, 'where')
+      checkParam(query, query.limit, 'limit')
+      const names = new Set(query.params.map(param => param.name))
+      const passing = draft.pages().flatMap(page => (page.uses?.queries ?? [])
+        .filter(use => use.query === query.id && Object.keys(use.args ?? {}).some(name => !names.has(name)))
+        .map(use => `page "${page.name}" (${page.id}) passes it as "${use.as}"`))
+      if (passing.length) fail('invalid', `The query ${query.name} (${query.id}) would no longer take every argument it is given, but ${passing.join(', ')}: change them first`)
     }
     return { queryId: query.id, forked }
   }
@@ -195,6 +264,69 @@ export const queryCreateForList = defineEdit({
       list.props = props
     }
     return { queryId: query.id, as }
+  }
+})
+
+// ── Queries of their own (D10a) ─────────────────────────────────────────────
+
+export const queryCreate = defineEdit({
+  input: z.object({
+    module: ModuleNameSchema.optional().describe('The module it belongs to: the one of its entity (a module\'s queries read its own entities)'),
+    entity: ArtifactIdSchema.describe('The entity whose rows it reads (ent_*); it needs an exposed list'),
+    result: z.enum(['one', 'many']).describe('many: all the entity\'s rows, to be narrowed with query_update; one: the row whose id is the id parameter'),
+    name: z.string().min(1).max(60).describe('camelCased, e.g. "recent posts" → "recentPosts"; unique among the module\'s queries and actions. The client composable is use<Name>; the id is q_<name>'),
+    label: z.string().min(1).max(100).optional().describe('A human name; defaults to the name in words')
+  }),
+  apply: (draft, { module: given, entity: entityId, result, name: givenName, label }) => {
+    if (given !== undefined) draft.module(given)
+    const { entity, module: owner } = entityById(draft, entityId)
+    const module = given ?? owner
+    if (module !== owner) fail('invalid', `${entity.name} isn't in module "${module}": a module's queries read its own entities`)
+    const mod = draft.module(module)
+    const repository = repositoryOf(draft, entityId)
+    if (!repository?.expose?.list || !repository.operations.includes('list')) fail('invalid', `${entity.name} has no list the app can read: expose its list in the collection's JSON tab, under Repository`)
+    const name = callableName(givenName, 'query')
+    checkCallableFree(draft, module, name)
+    const query: QueryFile = {
+      id: draft.mint('q', name),
+      name,
+      label: label ?? sentence(spaced(name)),
+      from: entityId,
+      params: result === 'one' ? [{ name: 'id', type: keyType(entity), reactive: true }] : [],
+      ...(result === 'one' ? { where: { op: 'eq' as const, field: 'id', value: { $param: 'id' } } } : {}),
+      result
+    }
+    mod.queries.push(query)
+    const filePath = draft.place(query.id, `.bildr/modules/${module}/queries`, kebab(name))
+    return { queryId: query.id, filePath }
+  }
+})
+
+export const queryRename = defineEdit({
+  input: z.object({
+    query: QueryRef,
+    name: z.string().min(1).max(60).describe('The new name, camelCased; unique among the module\'s queries and actions')
+  }),
+  apply: (draft, { query: id, name: given }) => {
+    const { query, module } = findQuery(draft, id)
+    const name = callableName(given, 'query')
+    checkCallableFree(draft, module, name, id)
+    const previousName = query.name
+    // Pages hold the id and their own alias, so nothing else in the model names it: only the generated composable changes.
+    query.name = name
+    return { queryId: id, name, previousName, composable: composableOf(name), previousComposable: composableOf(previousName) }
+  }
+})
+
+export const queryDelete = defineEdit({
+  input: z.object({ query: QueryRef }),
+  apply: (draft, { query: id }) => {
+    const { query, module } = findQuery(draft, id)
+    const uses = artifactUsesOf(draft.model, id)
+    if (uses.length) fail('invalid', `Query ${query.name} (${id}) is still used: ${describeUses(uses)}. Change them first`)
+    const mod = draft.module(module)
+    mod.queries.splice(mod.queries.indexOf(query), 1)
+    return { deleted: [id] }
   }
 })
 

@@ -175,6 +175,90 @@ describe('queries and page uses (P5)', () => {
   })
 })
 
+describe('queries and actions of their own (D10a)', () => {
+  const QUERIES = '.bildr/modules/main/queries'
+  const ACTIONS = '.bildr/modules/main/actions'
+  const listed = async () => {
+    const made = await ok('datasource_create', { name: 'local', kind: 'memory' })
+    await ok('entity_create', { name: 'note', source: made.datasourceId, fields: [{ name: 'text', type: 'text', required: true }] })
+  }
+
+  it('query_create writes the file, says which, and undoes as one step', async () => {
+    await listed()
+    const made = await ok('query_create', { entity: 'ent_note', result: 'one', name: 'noteById2', label: 'A note' })
+    expect(made).toEqual({ queryId: 'q_note_by_id2', filePath: `${QUERIES}/note-by-id2.json`, changed: [`${QUERIES}/note-by-id2.json`] })
+    expect(json(made.filePath)).toMatchObject({ id: 'q_note_by_id2', label: 'A note', result: 'one', params: [{ name: 'id', type: 'uuid', reactive: true }], where: { op: 'eq', field: 'id', value: { $param: 'id' } } })
+    expect((await ok('history_get')).undo[0]).toMatchObject({ action: 'query_create' })
+    await ok('history_undo')
+    expect(existsSync(join(dir, made.filePath))).toBe(false)
+  })
+
+  it('query_update with inPlace edits the definition; query_rename keeps ids and aliases, and says what to rename in code', async () => {
+    await listed()
+    const list = await ok('node_insert', { file: 'pg_index', type: 'List' })
+    const created = await ok('query_create_for_list', { page: 'pg_index', entity: 'ent_note', nodeId: list.nodeId })
+    const pageBefore = read(pagePath)
+    const updated = await ok('query_update', { query: created.queryId, inPlace: true, result: 'many', description: 'The newest notes.', params: [{ name: 'size', type: 'integer', default: 5 }], limit: { $param: 'size' } })
+    expect(updated).toMatchObject({ queryId: 'q_index_notes', forked: false })
+    expect(json(`${QUERIES}/index-notes.json`)).toMatchObject({ description: 'The newest notes.', params: [{ name: 'size', type: 'integer', default: 5 }], limit: { $param: 'size' } })
+    const renamed = await ok('query_rename', { query: 'q_index_notes', name: 'newestNotes' })
+    expect(renamed).toEqual({ queryId: 'q_index_notes', name: 'newestNotes', previousName: 'indexNotes', composable: 'useNewestNotes', previousComposable: 'useIndexNotes', changed: [`${QUERIES}/index-notes.json`] })
+    expect(json(`${QUERIES}/index-notes.json`)).toMatchObject({ id: 'q_index_notes', name: 'newestNotes' })
+    expect(read(pagePath)).toBe(pageBefore)
+    // The app regenerates under the new name, and the page still builds (it reads the query by its alias).
+    const result = await regenerate(dir)
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    expect(existsSync(join(dir, 'layers/main/app/composables/main/useNewestNotes.ts'))).toBe(true)
+    expect(read('layers/main/app/pages/index.vue')).toContain('useNewestNotes(')
+  })
+
+  it('query_delete is refused (422) while a page uses it, naming the page, and deletes the file once it doesn\'t', async () => {
+    await listed()
+    await ok('query_create_for_list', { page: 'pg_index', entity: 'ent_note' })
+    const refused = await failure('query_delete', { query: 'q_index_notes' }, 422, 'invalid')
+    expect(refused.message).toBe('Query indexNotes (q_index_notes) is still used: page "index" (pg_index) uses it as "notes". Change them first')
+    expect(existsSync(join(dir, `${QUERIES}/index-notes.json`))).toBe(true)
+    await ok('page_use_remove', { page: 'pg_index', as: 'notes' })
+    expect(await ok('query_delete', { query: 'q_index_notes' })).toEqual({ deleted: ['q_index_notes'], changed: [`${QUERIES}/index-notes.json`] })
+    expect(existsSync(join(dir, `${QUERIES}/index-notes.json`))).toBe(false)
+  })
+
+  it('action_create makes a valid action from each template; update, rename and delete work on it', async () => {
+    await listed()
+    const blank = await ok('action_create', { entity: 'ent_note', template: 'blank', name: 'tidyNotes' })
+    expect(blank).toEqual({ actionId: 'act_tidy_notes', filePath: `${ACTIONS}/tidy-notes.json`, changed: [`${ACTIONS}/tidy-notes.json`] })
+    expect(json(blank.filePath).steps).toEqual([{ kind: 'return', if: true, value: { $var: 'undefined' } }])
+    const removed = await ok('action_create', { entity: 'ent_note', template: 'delete', name: 'removeNote' })
+    expect(json(removed.filePath)).toMatchObject({ http: { method: 'DELETE', path: '/notes/:id' } })
+    await failure('action_create', { entity: 'ent_note', template: 'update', name: 'updateNote' }, 422, 'invalid')
+    await ok('action_update', { action: 'act_tidy_notes', label: 'Tidy', description: 'Removes nothing yet.', http: { path: '/notes/tidy' } })
+    expect(json(blank.filePath)).toMatchObject({ label: 'Tidy', description: 'Removes nothing yet.', http: { method: 'POST', path: '/notes/tidy' } })
+    const renamed = await ok('action_rename', { action: 'act_tidy_notes', name: 'cleanUp' })
+    expect(renamed).toMatchObject({ actionId: 'act_tidy_notes', name: 'cleanUp', composable: 'useCleanUp', changed: [blank.filePath] })
+    const result = await regenerate(dir)
+    expect(result.ok, JSON.stringify(result)).toBe(true)
+    expect(existsSync(join(dir, 'layers/main/server/application/actions/clean-up.ts'))).toBe(true)
+    expect(await ok('action_delete', { action: 'act_tidy_notes' })).toEqual({ deleted: ['act_tidy_notes'], changed: [blank.filePath] })
+    expect(existsSync(join(dir, blank.filePath))).toBe(false)
+  })
+
+  it('action_delete is refused while a page uses the action; invalid input is 400, a missing target 404', async () => {
+    await listed()
+    await ok('page_use_add', { page: 'pg_index', as: 'create', action: 'act_create_note' })
+    const refused = await failure('action_delete', { action: 'act_create_note' }, 422, 'invalid')
+    expect(refused.message).toBe('Action createNote (act_create_note) is still used: page "index" (pg_index) uses it as "create". Change them first')
+    await failure('action_rename', { action: 'act_create_note', name: 'notes' }, 422, 'invalid')
+    await failure('action_create', { entity: 'ent_note', template: 'nope', name: 'x' }, 400, 'invalid_input')
+    await failure('action_create', { entity: 'ent_note', template: 'blank' }, 400, 'invalid_input')
+    await failure('query_create', { entity: 'ent_note', result: 'some', name: 'x' }, 400, 'invalid_input')
+    await failure('query_update', { query: 'q_notes', params: [{ name: 'a', type: 'nope' }] }, 400, 'invalid_input')
+    await failure('action_update', { action: 'act_create_note', steps: [] }, 400, 'invalid_input')
+    await failure('query_delete', { query: 'q_nope' }, 404, 'not_found')
+    await failure('action_update', { action: 'act_nope', label: 'x' }, 404, 'not_found')
+    await failure('query_create', { entity: 'ent_nope', result: 'many', name: 'x' }, 404, 'not_found')
+  })
+})
+
 describe('editor context and navigate', () => {
   it('store what the editor shows in .bildr/.cache/session.json and read it back with the selected node', async () => {
     expect(await ok('editor_context_get')).toBeNull()

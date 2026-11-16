@@ -15,7 +15,8 @@ import {
 } from './layouts.ts'
 import { catalogGet, projectUpdate, themeApply, themeGet, themePresetsList, themeUpdate } from './theme.ts'
 import { datasourceCreate, datasourceDelete, datasourceUpdate } from './datasources.ts'
-import { pageUseAdd, pageUseRemove, pageUseUpdate, queryCreateForList, queryUpdate } from './queries.ts'
+import { actionCreate, actionDelete, actionRename, actionUpdate } from './actions.ts'
+import { pageUseAdd, pageUseRemove, pageUseUpdate, queryCreate, queryCreateForList, queryDelete, queryRename, queryUpdate } from './queries.ts'
 import { entityCreate, entityDelete, entityFieldAdd, entityFieldMove, entityFieldRemove, entityFieldUpdate, entityUpdate } from './entities.ts'
 
 /**
@@ -99,6 +100,14 @@ export const EDITS = {
   // Queries and page uses (P5): a list's source, its sort, filter and limit, what a page reads and runs.
   query_create_for_list: queryCreateForList,
   query_update: queryUpdate,
+  // Queries and actions of their own (D10a): the Data workspace's Queries and Actions sections.
+  query_create: queryCreate,
+  query_rename: queryRename,
+  query_delete: queryDelete,
+  action_create: actionCreate,
+  action_update: actionUpdate,
+  action_rename: actionRename,
+  action_delete: actionDelete,
   page_use_add: pageUseAdd,
   page_use_update: pageUseUpdate,
   page_use_remove: pageUseRemove
@@ -125,6 +134,8 @@ export const applyEdit = (files: Record<string, string>, name: EditName, input: 
 export { mintId } from './core.ts'
 export { bindingPaths, bindingScope, entityFieldNames, queryBehind } from './scope.ts'
 export type { ScopeName } from './scope.ts'
+export { describeUse, idUses, usesOf } from './usage.ts'
+export type { ArtifactUse, UseKind, UseVia } from './usage.ts'
 export { datasourceEnvVars } from './datasources.ts'
 export type { DataSourceEnvVar } from './datasources.ts'
 export { detectItems, inferFields, isUnder, remoteUrl } from './remote.ts'

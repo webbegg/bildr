@@ -87,7 +87,9 @@ const NAMES = [
   'entity_field_add', 'entity_field_update', 'entity_field_move', 'entity_field_remove',
   'datasource_preview', 'repository_endpoint_test', 'env_status',
   // P5: a list's query and what a page uses.
-  'query_create_for_list', 'query_update', 'page_use_add', 'page_use_update', 'page_use_remove'
+  'query_create_for_list', 'query_update', 'page_use_add', 'page_use_update', 'page_use_remove',
+  // D10a: queries and actions of their own.
+  'query_create', 'query_rename', 'query_delete', 'action_create', 'action_update', 'action_rename', 'action_delete'
 ].sort()
 
 // T10a (S11, D12): every editor operation is an action, callable over HTTP.
@@ -108,6 +110,24 @@ describe('action list', () => {
     expect(byName.model_file_put!.readOnly).toBe(false)
     expect(byName.migration_confirm!.readOnly).toBe(false)
     expect(byName.model_file_put!.inputSchema).toMatchObject({ properties: { path: { type: 'string' } }, required: ['path', 'content'] })
+  })
+
+  // D10a: additive contracts, each with a description and an input schema that says what it takes.
+  it('lists the queries and actions of their own with the input each takes', async () => {
+    const list = await (await request('/__bildr/api/actions')).json() as { name: string, description: string, readOnly: boolean, inputSchema: { required?: string[], properties: Record<string, { enum?: string[], type?: string }> } }[]
+    const byName = Object.fromEntries(list.map(action => [action.name, action]))
+    expect(byName.query_create!.inputSchema.required).toEqual(['entity', 'result', 'name'])
+    expect(byName.query_create!.inputSchema.properties.result!.enum).toEqual(['one', 'many'])
+    expect(byName.query_rename!.inputSchema.required).toEqual(['query', 'name'])
+    expect(byName.query_delete!.inputSchema.required).toEqual(['query'])
+    expect(byName.action_create!.inputSchema.required).toEqual(['entity', 'template', 'name'])
+    expect(byName.action_create!.inputSchema.properties.template!.enum).toEqual(['create', 'update', 'delete', 'blank'])
+    expect(byName.action_update!.inputSchema.required).toEqual(['action'])
+    expect(Object.keys(byName.action_update!.inputSchema.properties)).toEqual(['action', 'label', 'description', 'input', 'steps', 'http', 'errors', 'client'])
+    expect(byName.action_rename!.inputSchema.required).toEqual(['action', 'name'])
+    expect(byName.action_delete!.inputSchema.required).toEqual(['action'])
+    expect(Object.keys(byName.query_update!.inputSchema.properties)).toEqual(expect.arrayContaining(['inPlace', 'result', 'params', 'description']))
+    for (const name of ['query_create', 'query_rename', 'query_delete', 'action_create', 'action_update', 'action_rename', 'action_delete']) expect(byName[name]!.readOnly, name).toBe(false)
   })
 })
 
