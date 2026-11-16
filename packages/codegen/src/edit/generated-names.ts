@@ -1,6 +1,7 @@
 import { entityNames, moduleContext } from '../generate/context.ts'
 import { camel, pascal } from '../generate/text.ts'
 import type { Model } from '../model/load.ts'
+import { composableNameProblem, declaredNameProblem } from './reserved-names.ts'
 
 /**
  * The names a module's generated server code already declares at the top of a file: the composition root's
@@ -33,5 +34,9 @@ export const generatedNames = (model: Model, module: string): Map<string, string
 /** Why `name` can't be an action of `module`, or undefined when no generated code is named so. */
 export const actionNameProblem = (model: Model, module: string, name: string): string | undefined => {
   const what = generatedNames(model, module).get(name)
-  return what ? `"${name}" is already the name of ${what}, which the generated code declares next to the action: pick another` : undefined
+  if (what) return `"${name}" is already the name of ${what}, which the generated code declares next to the action: pick another`
+  return declaredNameProblem(name) ?? composableNameProblem(name)
 }
+
+/** Why `name` can't be a query (only its composable use<Name> is generated), or undefined. */
+export const queryNameProblem = (name: string): string | undefined => composableNameProblem(name)

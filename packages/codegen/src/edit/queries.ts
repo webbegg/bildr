@@ -5,7 +5,7 @@ import { mapNodePaths, mapPaths, rootOf } from './bindings.ts'
 import { camel, defineEdit, fail, kebab, uniqueName } from './core.ts'
 import type { Draft } from './core.ts'
 import { entityById, fits, isExpression, keyType, repositoryOf } from './entities.ts'
-import { callableName, checkCallableFree, composableOf, isUnusable } from './naming.ts'
+import { callableName, checkCallableFree, checkQueryName, composableOf, isUnusable } from './naming.ts'
 import { PageRef } from './pages.ts'
 import { walk } from './tree.ts'
 import { describeUses, usesOf as artifactUsesOf } from './usage.ts'
@@ -305,6 +305,7 @@ export const queryCreate = defineEdit({
     if (!repository?.expose?.list || !repository.operations.includes('list')) fail('invalid', `${entity.name} has no list the app can read: expose its list in the collection's JSON tab, under Repository`)
     const name = callableName(givenName, 'query')
     checkCallableFree(draft, module, name)
+    checkQueryName(name)
     const query: QueryFile = {
       id: draft.mint('q', name),
       name,
@@ -329,6 +330,7 @@ export const queryRename = defineEdit({
     const { query, module } = findQuery(draft, id)
     const name = callableName(given, 'query')
     checkCallableFree(draft, module, name, id)
+    checkQueryName(name)
     const previousName = query.name
     // Pages hold the id and their own alias, so nothing else in the model names it: only the generated composable changes.
     query.name = name

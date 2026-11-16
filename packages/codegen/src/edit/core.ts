@@ -6,7 +6,7 @@ import { loadModel, MANIFEST_FILE } from '../model/load.ts'
 import type { Model, ModelProblem, ModuleModel } from '../model/load.ts'
 import type { ComponentFile, LayoutFile, ModelNode, PageFile } from '../model/schemas.ts'
 import { serializeModel } from '../model/serialize.ts'
-import { actionNameProblem } from './generated-names.ts'
+import { actionNameProblem, queryNameProblem } from './generated-names.ts'
 import { walk } from './tree.ts'
 
 /**
@@ -243,19 +243,25 @@ const problemsText = (problems: ModelProblem[]): string => {
  */
 const generationProblem = (model: Model): ModelProblem | undefined => {
   try {
+    // Paths are compared ignoring case, as Draft.place does for model files: two that differ only by case are one file on a case-insensitive file system.
     const seen = new Map<string, string | undefined>()
     for (const file of generate(model)) {
-      if (seen.has(file.path)) {
-        const other = seen.get(file.path)
+      const key = file.path.toLowerCase()
+      if (seen.has(key)) {
+        const other = seen.get(key)
         const sources = [file.source, other].filter((source): source is string => source !== undefined)
         return { path: sources[0] ?? MANIFEST_FILE, message: `${sources.join(' and ') || 'Two files'} would both generate ${file.path}: one of the names or routes has to change` }
       }
-      seen.set(file.path, file.source)
+      seen.set(key, file.source)
     }
     for (const module of Object.keys(model.modules)) {
       for (const action of model.modules[module]!.actions) {
         const problem = actionNameProblem(model, module, action.name)
         if (problem) return { path: model.paths[action.id] ?? MANIFEST_FILE, message: `${model.paths[action.id] ?? action.id}: ${problem}` }
+      }
+      for (const query of model.modules[module]!.queries) {
+        const problem = queryNameProblem(query.name)
+        if (problem) return { path: model.paths[query.id] ?? MANIFEST_FILE, message: `${model.paths[query.id] ?? query.id}: ${problem}` }
       }
     }
     return undefined

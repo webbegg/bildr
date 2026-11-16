@@ -1,7 +1,7 @@
 import { pascal } from '../generate/text.ts'
 import { camel, fail } from './core.ts'
 import type { Draft } from './core.ts'
-import { actionNameProblem } from './generated-names.ts'
+import { actionNameProblem, queryNameProblem } from './generated-names.ts'
 
 /**
  * Names of queries and actions (D10a). Both become code: a query the composable `use<Name>`, an
@@ -54,6 +54,12 @@ export const checkCallableFree = (draft: Draft, module: string, name: string, se
 /** Refuses an action name the module's generated code already declares (its composition root, adapters, error factories…). */
 export const checkActionName = (draft: Draft, module: string, name: string): void => {
   const problem = actionNameProblem(draft.model, module, name)
+  if (problem) fail('invalid', problem)
+}
+
+/** Refuses a query name whose composable (use<Name>) the app already has or the generated composables already import. */
+export const checkQueryName = (name: string): void => {
+  const problem = queryNameProblem(name)
   if (problem) fail('invalid', problem)
 }
 
