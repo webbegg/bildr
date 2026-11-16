@@ -23,7 +23,7 @@ import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
  * not answer (`rowsFallback`: the choice stays Live, so choosing it again retries).
  *
  * The Data workspace (S2) shows one item at a time, a connection or a collection, on one of the
- * tabs its kind has (`dataItem`, `dataTabs`, `dataTab`); `editor/dataLocation.ts` mirrors that in
+ * tabs its kind has (`dataItem`, `dataTabs`, `dataTab`), or All model files (`dataFiles`, S3) in its place; `editor/dataLocation.ts` mirrors that in
  * the URL. Read the item through `dataCollection` / `dataConnection`, which are narrowed to it.
  */
 
@@ -40,9 +40,21 @@ export const createDataView = (design: Design, view: Ref<EditorView>) => {
    * meant when none is chosen or the chosen one is gone: the first. Everything else reads `collection`,
    * or `dataCollection` when it needs the collection the workspace shows.
    */
-  const collectionId = ref<string | null>(null)
+  const chosenCollection = ref<string | null>(null)
   /** The connection the right panel shows (its folder was clicked); null shows the collection. */
-  const connectionId = ref<string | null>(null)
+  const chosenConnection = ref<string | null>(null)
+  /** All model files (S3) is shown instead of the item, and the `.bildr/` file chosen in it. Choosing a collection or a connection, however it is chosen, shows it. */
+  const dataFiles = ref(false)
+  const dataFile = ref<string | null>(null)
+  const chooser = (chosen: Ref<string | null>) => computed<string | null>({
+    get: () => chosen.value,
+    set: (id) => {
+      chosen.value = id
+      dataFiles.value = false
+    }
+  })
+  const collectionId = chooser(chosenCollection)
+  const connectionId = chooser(chosenConnection)
   /** The row the right panel shows; null shows the collection and its fields. */
   const recordId = ref<string | null>(null)
 
@@ -135,5 +147,5 @@ export const createDataView = (design: Design, view: Ref<EditorView>) => {
     if (view.value === 'data') void live.refresh()
   })
 
-  return { collections, connections, collectionId, connectionId, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
+  return { collections, connections, collectionId, connectionId, dataFiles, dataFile, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
 }

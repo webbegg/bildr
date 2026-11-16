@@ -64,7 +64,7 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
           class="text-xs text-muted"
           data-testid="form-dialog-none"
         >
-          This module has no action that takes an entity. Add one (a create action comes with every entity in the Model screen) and insert the form again.
+          This module has no action that takes an entity. Add one (a create action comes with every collection) and insert the form again.
         </p>
       </div>
     </template>

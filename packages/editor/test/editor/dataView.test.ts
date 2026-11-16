@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDesign } from '../../src/design/store.ts'
 import { createEditor } from '../../src/editor/useEditor.ts'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
-import { dataLocationQuery, parseDataLocation } from '../../src/editor/dataLocation.ts'
+import { dataLocationQuery, filesLocationQuery, parseDataLocation } from '../../src/editor/dataLocation.ts'
 import { liveRows } from '../../src/design/liveRows.ts'
 import { Failure, mockActions, settle } from '../helpers.ts'
 import { baseHandlers, setupHarness, world } from '../design/harness.ts'
@@ -472,5 +472,53 @@ describe('the Data location in the URL query (S2)', () => {
     const query = dataLocationQuery({ kind: 'connection', id: 'ds_quotes' }, 'endpoints')
     expect(query).toEqual({ item: 'connection:ds_quotes', tab: 'endpoints' })
     expect(parseDataLocation(query)).toEqual({ item: { kind: 'connection', id: 'ds_quotes' }, tab: 'endpoints' })
+  })
+
+  it('reads All model files, and the file chosen in it (S3)', () => {
+    expect(parseDataLocation({ item: 'files' })).toEqual({ files: true })
+    expect(parseDataLocation({ item: 'files', file: '.bildr/theme.json' })).toEqual({ files: true, file: '.bildr/theme.json' })
+    // A tab belongs to a collection or a connection, not to the files.
+    expect(parseDataLocation({ item: 'files', tab: 'fields' })).toEqual({ files: true })
+  })
+
+  it('takes only a .bildr/ path for the file, and only with All model files', () => {
+    for (const file of ['', 'package.json', '../.bildr/x.json', ['.bildr/theme.json'], 7]) expect(parseDataLocation({ item: 'files', file })).toEqual({ files: true })
+    expect(parseDataLocation({ item: 'collection:ent_post', file: '.bildr/theme.json' })).toEqual({ item: { kind: 'collection', id: 'ent_post' } })
+    expect(parseDataLocation({ file: '.bildr/theme.json' })).toEqual({})
+  })
+
+  it('writes All model files back as it was read, with the file when one is chosen', () => {
+    expect(filesLocationQuery(null)).toEqual({ item: 'files' })
+    expect(filesLocationQuery('.bildr/theme.json')).toEqual({ item: 'files', file: '.bildr/theme.json' })
+    expect(parseDataLocation(filesLocationQuery('.bildr/theme.json'))).toEqual({ files: true, file: '.bildr/theme.json' })
+  })
+})
+
+describe('All model files in the Data workspace (S3)', () => {
+  it('is shown instead of the item, which it keeps, and has no tabs', async () => {
+    const { editor } = await bootData()
+    expect(editor.dataFiles).toBe(false)
+    editor.dataFiles = true
+    expect(editor.dataFiles).toBe(true)
+    expect(editor.dataItem).toEqual({ kind: 'collection', id: 'ent_post' })
+    expect(editor.dataFile).toBeNull()
+  })
+
+  it('gives way to a collection or a connection chosen, however it is chosen', async () => {
+    const { editor } = await bootData()
+    editor.dataFiles = true
+    editor.collectionId = 'ent_post'
+    expect(editor.dataFiles).toBe(false)
+    editor.dataFiles = true
+    editor.connectionId = 'ds_quotes'
+    expect(editor.dataFiles).toBe(false)
+    expect(editor.dataItem).toEqual({ kind: 'connection', id: 'ds_quotes' })
+  })
+
+  it('is shown for a new collection, which is chosen', async () => {
+    const { editor } = await bootData({}, { entity_create: () => ({ entityId: 'ent_untitled' }) })
+    editor.dataFiles = true
+    await editor.createCollection('Untitled')
+    expect(editor.dataFiles).toBe(false)
   })
 })

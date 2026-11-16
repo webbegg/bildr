@@ -6,7 +6,7 @@ import { useEditor } from '../../../editor/useEditor.ts'
  * The Assets panel: Components (see `EditorComponents`), Layouts (see
  * `EditorLayouts`) and one Design system row, which opens the Design view
  * (the theme, its style guide and the theme library); filtered by the
- * sidebar search. Data (entities and data sources) lives in the Model screen.
+ * sidebar search. Data (collections and connections) lives in the Data screen.
  */
 const { query = '' } = defineProps<{ query?: string }>()
 const editor = useEditor()

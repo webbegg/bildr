@@ -166,7 +166,7 @@ async function test(op: EndpointOperation) {
       v-if="list"
       class="text-[11px] leading-4 text-dimmed"
     >
-      Endpoints are set when the collection is created; they can be edited as a raw file on the Model screen.
+      Endpoints are set when the collection is created; they can be edited in the JSON tab, under Repository.
     </p>
     <EditorButton
       icon="i-lucide-pencil"

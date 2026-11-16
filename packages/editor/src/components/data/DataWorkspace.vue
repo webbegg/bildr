@@ -4,12 +4,15 @@ import { DATA_TAB_LABELS } from '../../editor/dataTabs.ts'
 import { rovingTarget } from '../../editor/rovingKeys.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { FOCUS_RING } from '../../editorUi.ts'
+import DataFiles from './DataFiles.vue'
+import DataJson from './DataJson.vue'
 
 /**
  * The Data workspace's centre (S2): the item chosen in the tree, with the tabs its kind has. A
  * collection has Rows (the read-only table), Fields (the field editor, its settings beside it),
- * Endpoints (the repository's, when it is read through a connection) and JSON; a connection has
- * Endpoints (its settings and its collections' endpoints) and JSON. With nothing to show it is
+ * Endpoints (the repository's, when it is read through a connection) and JSON (its file, S3); a connection has
+ * Endpoints (its settings and its collections' endpoints) and JSON. With All model files chosen in the tree it
+ * is the list of the model's files and their editor instead. With nothing to show it is
  * the empty start. The tab strip is one tab stop: Left and Right move along it (and wrap), Home and End go to its ends.
  */
 const editor = useEditor()
@@ -20,6 +23,11 @@ const collection = computed(() => editor.dataCollection)
 const title = computed(() => connection.value?.name ?? collection.value?.name ?? '')
 const kind = computed(() => connection.value ? 'Connection' : 'Collection')
 const icon = computed(() => connection.value ? 'i-lucide-server' : collection.value?.kind === 'rest' ? 'i-lucide-globe' : 'i-lucide-database')
+/** The shown item's own `.bildr/` file: what the JSON tab edits. */
+const itemFile = computed(() => {
+  const id = connection.value?.id ?? collection.value?.id
+  return id ? editor.model?.paths[id] : undefined
+})
 
 async function onTabKeyDown(event: KeyboardEvent) {
   const tabs = editor.dataTabs
@@ -41,7 +49,11 @@ async function onTabKeyDown(event: KeyboardEvent) {
     class="flex min-w-0 flex-col"
     data-data-workspace
   >
-    <DataEmpty v-if="!editor.dataItem" />
+    <DataFiles
+      v-if="editor.dataFiles"
+      class="min-h-0 flex-1"
+    />
+    <DataEmpty v-else-if="!editor.dataItem" />
     <template v-else>
       <header class="flex h-12 shrink-0 items-center gap-4 border-b border-default ps-4 pe-3">
         <div
@@ -129,22 +141,12 @@ async function onTabKeyDown(event: KeyboardEvent) {
               {{ collection.name }} has no endpoints: its rows are stored by the app. Only a collection read through a connection has them.
             </DataEmptyState>
           </div>
-          <DataEmptyState
+          <DataJson
             v-else-if="editor.dataTab === 'json'"
-            icon="i-lucide-file-json"
-            title="JSON"
-            data-data-json
-          >
-            Edit this {{ kind.toLowerCase() }}'s file in
-            <RouterLink
-              to="/model"
-              class="text-toned underline underline-offset-2 hover:text-highlighted"
-              :class="FOCUS_RING"
-              data-raw-model-link
-            >
-              Raw model files
-            </RouterLink>
-          </DataEmptyState>
+            :key="itemFile"
+            :path="itemFile"
+            :linked="!!collection"
+          />
         </div>
         <DataPanel />
       </div>

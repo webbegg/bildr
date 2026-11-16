@@ -11,7 +11,6 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    ArtifactForm: typeof import('./src/components/ArtifactForm.vue')['default']
     ConfirmModal: typeof import('./src/components/ConfirmModal.vue')['default']
     DataApiSource: typeof import('./src/components/data/DataApiSource.vue')['default']
     DataCollectionRow: typeof import('./src/components/data/sidebar/DataCollectionRow.vue')['default']
@@ -21,6 +20,8 @@ declare module 'vue' {
     DataEmpty: typeof import('./src/components/data/DataEmpty.vue')['default']
     DataEmptyState: typeof import('./src/components/data/DataEmptyState.vue')['default']
     DataFieldsTab: typeof import('./src/components/data/DataFieldsTab.vue')['default']
+    DataFiles: typeof import('./src/components/data/DataFiles.vue')['default']
+    DataJson: typeof import('./src/components/data/DataJson.vue')['default']
     DataMappingPreview: typeof import('./src/components/data/DataMappingPreview.vue')['default']
     DataMappingTable: typeof import('./src/components/data/DataMappingTable.vue')['default']
     DataPanel: typeof import('./src/components/data/DataPanel.vue')['default']
@@ -107,7 +108,6 @@ declare module 'vue' {
     EditorVariables: typeof import('./src/components/editor/settings/EditorVariables.vue')['default']
     EditorVariantBar: typeof import('./src/components/editor/canvas/EditorVariantBar.vue')['default']
     EditorVariantOverrides: typeof import('./src/components/editor/EditorVariantOverrides.vue')['default']
-    FieldsEditor: typeof import('./src/components/FieldsEditor.vue')['default']
     ProblemsList: typeof import('./src/components/ProblemsList.vue')['default']
     RawFileEditor: typeof import('./src/components/RawFileEditor.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
@@ -118,8 +118,6 @@ declare module 'vue' {
     UBadge: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Badge.vue')['default']
     UButton: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Button.vue')['default']
     UCard: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Card.vue')['default']
-    UCheckbox: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Checkbox.vue')['default']
-    UCheckboxGroup: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/CheckboxGroup.vue')['default']
     UColorPicker: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/ColorPicker.vue')['default']
     UCommandPalette: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/CommandPalette.vue')['default']
     UContextMenu: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/ContextMenu.vue')['default']

@@ -137,8 +137,13 @@ await run('data', async ({ page, browser, errors }) => {
   await page.keyboard.press('ArrowRight')
   check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'endpoints' && await page.locator('[data-endpoints-empty]').count() === 1, 'the arrow keys move along the tab strip: Endpoints says a stored collection has none')
   await page.keyboard.press('End')
-  const json = await page.locator('[data-data-json]').innerText()
-  check(json.includes('Raw model files') && await page.locator('[data-data-json] a').getAttribute('href').then(href => href?.endsWith('#/model')), `the JSON tab points to the raw model files (${json.replace(/\s+/g, ' ')})`)
+  // The JSON tab (S3) edits the collection's own file, with a switcher to the files it is linked to.
+  await page.locator('[data-data-json] [data-file-path]').waitFor()
+  const switcher = (await page.locator('[data-file-switcher] button').allInnerTexts()).map(name => name.trim())
+  check(await page.locator('[data-data-json] [data-file-path]').innerText() === '.bildr/modules/blog/entities/dish.json' && switcher.slice(0, 2).join('|') === 'Collection|Repository', `the JSON tab shows Dish's own file, with the files it is linked to (${switcher})`)
+  check(await page.locator('[data-data-json] [data-testid="raw-save"]').count() === 1 && await page.locator('[data-data-json] [data-testid="raw-delete"]').count() === 0, 'with the raw editor, which saves and does not delete')
+  await page.waitForTimeout(400)
+  await shot(page, 'd3-json-tab')
   const treeItem = () => page.evaluate(() => document.activeElement?.hasAttribute('data-tree-item') ? document.activeElement.getAttribute('title') : false)
   const stops = await page.locator('[data-data-tree] [role=treeitem][tabindex="0"]').count()
   check(await page.locator('[data-data-tree]').getAttribute('role') === 'tree' && stops === 1, `the tree is one tab stop (${stops})`)
@@ -167,6 +172,61 @@ await run('data', async ({ page, browser, errors }) => {
   await page.waitForTimeout(400)
   await shot(page, 'data-tree-connection')
 
+  // ── The JSON tab and All model files (S3) ────────────────────────────────────────────────
+  // An edit of Menu's file in the JSON tab shows in its Fields tab (Menu has no rows, so a new column is a plain addition).
+  const rawContent = page.locator('textarea[data-testid="raw-content"], [data-testid="raw-content"] textarea').first()
+  await page.locator('[data-collection="menus"]').click()
+  await page.locator('[role=tab][data-data-tab="json"]').click()
+  await rawContent.waitFor()
+  const menuFile = JSON.parse(await rawContent.inputValue())
+  check(menuFile.id === menu.id && !menuFile.fields.some(field => field.name === 'price'), 'the JSON tab of Menu holds its entity file')
+  menuFile.fields.push({ id: 'fld_price', name: 'price', type: 'number' })
+  await rawContent.fill(JSON.stringify(menuFile))
+  await page.locator('[data-testid="raw-save"]').click()
+  check(await until(() => bildr('modules/blog/entities/menu.json').fields.some(field => field.name === 'price')), 'saving the JSON writes the entity file')
+  check((await page.locator('[data-data-json]').innerText()).includes('Saved.'), 'and the tab says it is saved')
+  await page.locator('[role=tab][data-data-tab="fields"]').click()
+  check(await until(async () => await page.locator('[data-fields-tab] [data-field="price"]').count() === 1), 'the Fields tab shows the field the JSON added')
+  await page.locator('[role=tab][data-data-tab="json"]').click()
+  await rawContent.waitFor()
+  const reread = JSON.parse(await rawContent.inputValue())
+  check(reread.fields.some(field => field.name === 'price'), 'and the JSON tab shows the file as the module saved it')
+
+  // A problem the module refuses is shown inline, and the text stays.
+  await rawContent.fill(JSON.stringify({ ...reread, idStrategy: 'ent_missing' }))
+  await page.locator('[data-testid="raw-save"]').click()
+  await page.locator('[data-data-json]').getByText('Not saved').first().waitFor()
+  const refusal = await page.locator('[data-data-json]').innerText()
+  check(refusal.includes('idStrategy') && (await rawContent.inputValue()).includes('ent_missing'), `a save the module refuses shows its problem and keeps the text (${refusal.replace(/\s+/g, ' ').slice(-200)})`)
+  check(bildr('modules/blog/entities/menu.json').idStrategy === 'uuid', 'and the file is as it was')
+
+  // All model files: every file by kind, the editor beside it, the selection in the URL.
+  await page.locator('[data-raw-model]').click()
+  await page.locator('[data-data-files] [data-files-group]').first().waitFor()
+  const pageFile = p.filePath.startsWith('.bildr/') ? p.filePath : `.bildr/${p.filePath}`
+  const groups = (await page.locator('[data-files-group] h3').allInnerTexts()).map(name => name.trim())
+  check(groups.includes('Collections') && groups.includes('Pages') && groups.includes('Queries') && await page.locator('[data-data-tree]').count() === 1 && await page.locator('[role=tablist]').count() === 0, `All model files lists the files by kind inside the Data workspace (${groups})`)
+  check(await page.locator('[data-raw-model]').getAttribute('aria-selected') === 'true' && (await page.locator('[data-raw-model]').innerText()).trim() === 'All model files', 'it is the tree\'s last entry and shows as chosen')
+  await page.locator(`[data-file="${pageFile}"]`).click()
+  await rawContent.waitFor()
+  check(JSON.parse(await rawContent.inputValue()).id === p.pageId, 'a page, which has no collection, opens in the raw editor')
+  check(decodeURIComponent(page.url()).endsWith(`#/data?item=files&file=${pageFile}`), `the file is in the URL (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
+  await page.waitForTimeout(400)
+  await shot(page, 'd3-all-files')
+  await page.reload()
+  await rawContent.waitFor()
+  check(JSON.parse(await rawContent.inputValue()).id === p.pageId && await page.locator(`[data-file="${pageFile}"]`).getAttribute('aria-current') === 'true', 'a reload restores the file')
+
+  // The Model screen is retired: its deep link opens All model files, keeping the path.
+  await page.goto(editorUrl('/model'))
+  await page.locator('[data-data-files]').waitFor()
+  check(decodeURIComponent(page.url()).endsWith('#/data?item=files'), `/model redirects to All model files (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
+  await page.goto(editorUrl(`/model?path=${encodeURIComponent(pageFile)}`))
+  await rawContent.waitFor()
+  check(decodeURIComponent(page.url()).endsWith(`#/data?item=files&file=${pageFile}`) && JSON.parse(await rawContent.inputValue()).id === p.pageId, '/model?path= redirects to that file')
+  await quiesce(60_000)
+  await quiet()
+
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 // A new entity regenerates the app and restarts the dev server: its event stream ends mid-request.
-}, { ignore: [/ERR_INCOMPLETE_CHUNKED_ENCODING/, /ERR_CONNECTION_(REFUSED|RESET)/] })
+}, { ignore: [/ERR_INCOMPLETE_CHUNKED_ENCODING/, /ERR_CONNECTION_(REFUSED|RESET)/, /status of 422 \(Unprocessable Entity\)/] })

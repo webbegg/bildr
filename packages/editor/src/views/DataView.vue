@@ -2,6 +2,7 @@
 import { onBeforeUnmount, onMounted, provide } from 'vue'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import ProblemsList from '../components/ProblemsList.vue'
+import DataFiles from '../components/data/DataFiles.vue'
 import DataWorkspace from '../components/data/DataWorkspace.vue'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
 import { useDataLocation } from '../editor/dataLocation.ts'
@@ -14,7 +15,9 @@ import { createEditor, provideEditor } from '../editor/useEditor.ts'
  * action (`entity_*`, `datasource_*`); the rows are the app's or the entity's sample data, read-only (E2).
  * The tree on the left lists the Collections and Connections, and the item chosen shows its tabs beside it
  * (Rows · Fields · Endpoints · JSON for a collection, Endpoints · JSON for a connection). The item and the
- * tab are in the URL query (`?item=collection:ent_post&tab=fields`). The raw model files stay on the Model screen.
+ * tab are in the URL query (`?item=collection:ent_post&tab=fields`). The tree ends with All model files (S3,
+ * `?item=files&file=<path>`): every `.bildr/` file as JSON, which is also how a model with problems is fixed: the
+ * problems are listed, and the files and their editor stay beside them.
  *
  * It is its own screen, not a mode of `DesignView`: the adapter opens it when the view changes to
  * Data (`editor/views.ts`), and the editor made here starts on it.
@@ -81,24 +84,33 @@ onBeforeUnmount(() => {
     <EditorConfirm />
     <div
       v-if="editor.problems.length"
-      class="p-4"
-      data-testid="data-problems"
+      class="flex min-h-0 flex-1 flex-col"
     >
-      <ProblemsList
-        title="The model has problems, so there is nothing to show until they are fixed"
-        :problems="editor.problems"
+      <div
+        class="max-h-[40%] shrink-0 overflow-y-auto p-4"
+        data-testid="data-problems"
       >
-        <UButton
-          to="/model"
-          label="Open model files"
-          icon="i-lucide-file-json"
-          color="error"
-          variant="soft"
-          size="sm"
-          class="mt-2"
-          data-testid="open-model"
-        />
-      </ProblemsList>
+        <ProblemsList
+          title="The model has problems, so there is nothing to show until they are fixed"
+          :problems="editor.problems"
+        >
+          <UButton
+            v-if="!editor.dataFiles"
+            :to="{ path: '/data', query: { item: 'files' } }"
+            label="Open model files"
+            icon="i-lucide-file-json"
+            color="error"
+            variant="soft"
+            size="sm"
+            class="mt-2"
+            data-testid="open-model"
+          />
+        </ProblemsList>
+      </div>
+      <DataFiles
+        v-if="editor.dataFiles"
+        class="min-h-0 flex-1 border-t border-default"
+      />
     </div>
     <div
       v-else-if="!editor.model"

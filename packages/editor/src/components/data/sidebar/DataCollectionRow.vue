@@ -17,7 +17,7 @@ const { collection, count, indent = false } = defineProps<{ collection: DataColl
 const editor = useEditor()
 const key = computed(() => dataItemKey({ kind: 'collection', id: collection.id }))
 const stop = inject(TREE_STOP, ref(''))
-const shown = computed(() => editor.dataItem?.kind === 'collection' && editor.dataItem.id === collection.id)
+const shown = computed(() => !editor.dataFiles && editor.dataItem?.kind === 'collection' && editor.dataItem.id === collection.id)
 const renaming = ref(false)
 const renameValue = ref('')
 

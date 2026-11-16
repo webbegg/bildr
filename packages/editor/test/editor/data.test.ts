@@ -4,7 +4,7 @@ import type { AppRoutes } from '../helpers.ts'
 import DataView from '../../src/views/DataView.vue'
 import App from '../../src/App.vue'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
-import { baseHandlers, byLabel, indexPage, menuItem, selectOption, setupHarness, world } from '../design/harness.ts'
+import { FakeEventSource, baseHandlers, byLabel, indexPage, menuItem, modelGet, selectOption, setupHarness, world } from '../design/harness.ts'
 import type { Handlers } from '../design/harness.ts'
 
 /**
@@ -40,7 +40,7 @@ const inputs = (actions: Awaited<ReturnType<typeof open>>['actions'], name: stri
 const collection = (plural: string) => q(`[data-collection="${plural}"]`)
 
 /** The tree's items by name: `data-tree-item` is the item's key (`collection:<id>`, `connection:<id>`). */
-const ITEMS = { post: 'collection:ent_post', quote: 'collection:ent_quote', quotes: 'connection:ds_quotes' }
+const ITEMS = { post: 'collection:ent_post', quote: 'collection:ent_quote', quotes: 'connection:ds_quotes', files: 'files' }
 const treeItem = (name: keyof typeof ITEMS) => q(`[data-tree-item="${ITEMS[name]}"]`)
 const tabNames = () => qa('[role="tab"][data-data-tab]').map(tab => tab.getAttribute('data-data-tab'))
 const activeTab = () => q('[role="tab"][aria-selected="true"]')?.getAttribute('data-data-tab')
@@ -86,20 +86,22 @@ describe('the Data screen', () => {
     expect(text(collection('quotes')?.querySelector('[data-collection-count]') ?? null)).toBe('')
   })
 
-  it('shows a model with problems as the list of them, and links to the Model screen', async () => {
+  it('shows a model with problems as the list of them, and links to All model files', async () => {
     const { actions, router } = await open({ model_get: () => ({ ok: false, problems: [{ path: '.bildr/modules/blog/entities/post.json', message: 'bad entity' }], files: {}, database: false }) })
     expect(q('[data-testid="data-problems"]')?.textContent).toContain('bad entity')
     expect(actions.named('model_get').length).toBeGreaterThan(0)
     expect(q('[data-records]')).toBeNull()
     expect(q('[data-testid="data-problems"]')?.textContent).not.toContain('(Model screen)')
     await click(q('[data-testid="open-model"]'))
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/model'))
+    await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({ item: 'files' }))
+    expect(router.currentRoute.value.path).toBe('/data')
   })
 
-  it('links to the raw model files on the Model screen', async () => {
+  it('links to All model files at the bottom of the tree', async () => {
     const { router } = await open()
     await click(q('[data-raw-model]'))
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/model'))
+    await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({ item: 'files' }))
+    expect(router.currentRoute.value.path).toBe('/data')
   })
 
   it('opens the other screen for a view the Data screen does not show, through the view menu', async () => {
@@ -131,7 +133,8 @@ describe('the Data workspace (S2)', () => {
   /** Everything the screen says: its text, and the titles, labels and placeholders a user reads or hears (not the rows, which are the project's data). */
   const said = () => {
     const page = document.body.cloneNode(true) as HTMLElement
-    for (const rows of page.querySelectorAll('[data-records-table]')) rows.remove()
+    // The rows, and the paths of the files, are the project's own: they are not the screen's words.
+    for (const own of page.querySelectorAll('[data-records-table], [data-file-path]')) own.remove()
     return [page.textContent ?? '', ...[...page.querySelectorAll('[title], [aria-label], [placeholder]')].flatMap(element => ['title', 'aria-label', 'placeholder'].map(name => element.getAttribute(name) ?? ''))].join(' | ')
   }
 
@@ -163,27 +166,18 @@ describe('the Data workspace (S2)', () => {
     expect(q('[data-records]')).toBeNull()
   })
 
-  it('switches the tab: Fields edits the fields, Endpoints lists them, JSON points to the raw model files', async () => {
-    const { router } = await open()
+  it('switches the tab: Fields edits the fields, Endpoints lists them, JSON edits the file', async () => {
+    await open()
     await click(tab('fields'))
     expect(activeTab()).toBe('fields')
     expect(q('[role="tabpanel"] [data-fields-tab]')).not.toBeNull()
     expect(q('[data-records]')).toBeNull()
     await click(tab('json'))
-    expect(text(q('[data-data-json]'))).toContain('Edit this collection\'s file in Raw model files')
+    expect(q('[data-data-json] [data-testid="raw-content"]')).not.toBeNull()
     expect(q('[data-data-json]')?.textContent).not.toContain('Coming in a later step')
+    expect(q('[data-data-json]')?.textContent).not.toContain('Raw model files')
     await click(tab('rows'))
     expect(q('[data-records]')).not.toBeNull()
-    await click(tab('json'))
-    await click(q('[data-data-json] a'))
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/model'))
-  })
-
-  it('says what the JSON tab of a connection edits', async () => {
-    await open()
-    await click(treeItem('quotes'))
-    await click(tab('json'))
-    expect(text(q('[data-data-json]'))).toContain('Edit this connection\'s file in Raw model files')
   })
 
   it('says what a collection with no endpoints is: its rows are not read through a connection', async () => {
@@ -237,13 +231,17 @@ describe('the Data workspace (S2)', () => {
 
   it('moves through the tree with the arrow keys, stopping at the ends, and picks with Enter', async () => {
     await open()
-    expect(qa('[data-tree-item]').map(item => item.getAttribute('data-tree-item'))).toEqual([ITEMS.post, ITEMS.quotes, ITEMS.quote])
+    expect(qa('[data-tree-item]').map(item => item.getAttribute('data-tree-item'))).toEqual([ITEMS.post, ITEMS.quotes, ITEMS.quote, ITEMS.files])
     treeItem('post')!.focus()
     await key(treeItem('post'), 'ArrowDown')
     expect(document.activeElement).toBe(treeItem('quotes'))
     await key(treeItem('quotes'), 'ArrowDown')
     expect(document.activeElement).toBe(treeItem('quote'))
     await key(treeItem('quote'), 'ArrowDown')
+    expect(document.activeElement).toBe(treeItem('files'))
+    await key(treeItem('files'), 'ArrowDown')
+    expect(document.activeElement).toBe(treeItem('files'))
+    await key(treeItem('files'), 'ArrowUp')
     expect(document.activeElement).toBe(treeItem('quote'))
     await key(treeItem('quote'), 'ArrowUp')
     expect(document.activeElement).toBe(treeItem('quotes'))
@@ -254,7 +252,7 @@ describe('the Data workspace (S2)', () => {
     await key(treeItem('post'), 'ArrowUp')
     expect(document.activeElement).toBe(treeItem('post'))
     await key(treeItem('post'), 'End')
-    expect(document.activeElement).toBe(treeItem('quote'))
+    expect(document.activeElement).toBe(treeItem('files'))
     await key(treeItem('post'), 'Enter')
     expect(q('[data-records]')).not.toBeNull()
   })
@@ -952,5 +950,342 @@ describe('endpoints', () => {
     test.click()
     await settle()
     expect(actions.named('repository_endpoint_test')).toEqual([])
+  })
+})
+
+/**
+ * S3: the JSON tab edits the file of the item shown, and "All model files" lists every `.bildr/` file; both with the one
+ * raw editor (`model_file_put` / `model_file_delete`), whose problems are shown inline. The module serves the files back, so
+ * a put here keeps what was saved, as the module does.
+ */
+describe('the JSON tab and All model files (S3)', () => {
+  const POST = '.bildr/modules/blog/entities/post.json'
+  const POST_REPOSITORY = '.bildr/modules/blog/repositories/post.json'
+  const POST_FIXTURES = '.bildr/modules/blog/fixtures/post.json'
+  const QUOTES = '.bildr/datasources/quotes.json'
+  const INDEX_PAGE = '.bildr/modules/blog/pages/index.json'
+  const LAYOUT = '.bildr/layouts/main.json'
+  const rawText = () => {
+    const element = q('[data-testid="raw-content"]')
+    return (element?.matches('textarea') ? element : element?.querySelector('textarea')) as HTMLTextAreaElement | null
+  }
+  const rawPath = () => {
+    const element = q('[data-testid="raw-path"]')
+    return (element?.matches('input') ? element : element?.querySelector('input')) as HTMLInputElement | null
+  }
+  type FileJson = Record<string, unknown> & { fields: Array<Record<string, unknown>> }
+  const shownFile = () => JSON.parse(rawText()!.value) as FileJson
+  const saved = (() => {
+    let files: Record<string, unknown> = {}
+    return { reset: () => (files = {}), files: () => files }
+  })()
+  /** A module that keeps what is put: the next `model_get` returns the file as saved (and `edit` runs for the model's own change). */
+  const keeping = (edit: (path: string, content: FileJson) => void = () => {}, extra: Handlers = {}): Handlers => ({
+    model_get: () => ({ ...modelGet(), files: { ...modelGet().files, ...saved.files() } }),
+    model_file_put: (input) => {
+      saved.files()[input.path as string] = input.content
+      edit(input.path as string, input.content as FileJson)
+      return { sha256: 'a'.repeat(64) }
+    },
+    ...extra
+  })
+  const addField = (_path: string, content: FileJson) => {
+    world.model.modules.blog!.entities.find(entity => entity.id === 'ent_post')!.fields.push(content.fields.at(-1) as never)
+  }
+  const withExtraField = () => {
+    const file = shownFile()
+    file.fields.push({ id: 'fld_extra', name: 'extra', type: 'text' })
+    return file
+  }
+  const json = async (extra: Handlers = {}, path = '/data') => {
+    saved.reset()
+    const mounted = await open({ ...keeping(addField), ...extra }, {}, path)
+    await click(tab('json'))
+    return mounted
+  }
+  const group = (kind: string) => q(`[data-files-group="${kind}"]`)
+  const fileButton = (path: string) => q(`[data-file="${path}"]`)
+
+  describe('the JSON tab', () => {
+    it('shows the collection\'s own file in the raw editor: its path, no path to type, and no delete', async () => {
+      await json()
+      expect(text(q('[data-data-json] [data-file-path]'))).toBe(POST)
+      expect(shownFile()).toMatchObject({ id: 'ent_post', name: 'Post' })
+      expect(q('[data-testid="raw-path"]')).toBeNull()
+      expect(q('[data-testid="raw-delete"]')).toBeNull()
+      expect(q('[data-data-json] [data-open-in-code]')?.getAttribute('href')).toBe(`/code?path=${POST}`)
+    })
+
+    it('saves the edit to the file, and Fields shows the change', async () => {
+      const { actions } = await json()
+      const edited = withExtraField()
+      await typeInto(q('[data-testid="raw-content"]'), JSON.stringify(edited))
+      const reads = actions.named('model_get').length
+      await click(q('[data-testid="raw-save"]'))
+      expect(inputs(actions, 'model_file_put')).toEqual([{ path: POST, content: edited }])
+      expect(text(q('[data-data-json]'))).toContain('Saved.')
+      expect(actions.named('model_get').length).toBeGreaterThan(reads)
+      await click(tab('fields'))
+      expect(byLabel('Type of extra')).not.toBeNull()
+      // The file is read back as the module saved it.
+      await click(tab('json'))
+      expect(shownFile().fields.map(field => field.name)).toContain('extra')
+    })
+
+    it('shows the problems of a refused save inline, keeps the text, and changes nothing', async () => {
+      const problems = [{ path: POST, message: 'Unknown entity "ent_missing" in relations' }]
+      const { actions } = await json({ model_file_put: () => new Failure(422, 'invalid', 'The model would have problems, .bildr/modules/blog/entities/post.json was not saved', problems) })
+      const edited = withExtraField()
+      await typeInto(q('[data-testid="raw-content"]'), JSON.stringify(edited))
+      const reads = actions.named('model_get').length
+      await click(q('[data-testid="raw-save"]'))
+      expect(text(q('[data-data-json]'))).toContain('was not saved')
+      expect(text(q('[data-data-json]'))).toContain('Unknown entity "ent_missing" in relations')
+      expect(JSON.parse(rawText()!.value)).toEqual(edited)
+      expect(actions.named('model_get')).toHaveLength(reads)
+      await click(tab('fields'))
+      expect(byLabel('Type of extra')).toBeNull()
+    })
+
+    it('says text that is not JSON is not, keeps it, and asks the module nothing', async () => {
+      const { actions } = await json()
+      await typeInto(q('[data-testid="raw-content"]'), '{ "id": ')
+      await click(q('[data-testid="raw-save"]'))
+      expect(text(q('[data-data-json]'))).toContain('Invalid JSON')
+      expect(rawText()!.value).toBe('{ "id": ')
+      expect(actions.named('model_file_put')).toEqual([])
+    })
+
+    it('shows the file as it is when the model changes elsewhere, and leaves what is being typed alone', async () => {
+      const { actions } = await json()
+      const changed = { ...shownFile(), plural: 'articles' }
+      const change = async () => {
+        saved.files()[POST] = changed
+        FakeEventSource.instances.at(-1)!.send({ type: 'model', version: 9, files: [POST], source: 'disk' })
+        await settle()
+      }
+      const reads = actions.named('model_get').length
+      await change()
+      expect(actions.named('model_get').length).toBeGreaterThan(reads)
+      expect(shownFile().plural).toBe('articles')
+      await typeInto(q('[data-testid="raw-content"]'), '{ "draft": true }')
+      saved.files()[POST] = { ...changed, plural: 'notes' }
+      FakeEventSource.instances.at(-1)!.send({ type: 'model', version: 10, files: [POST], source: 'disk' })
+      await settle()
+      expect(rawText()!.value).toBe('{ "draft": true }')
+    })
+
+    it('has a switcher for the files the collection is linked to, its own first, one at a time', async () => {
+      const { actions } = await json()
+      const labels = () => qa('[data-file-switcher] button').map(button => text(button))
+      expect(labels().slice(0, 3)).toEqual(['Collection', 'Repository', 'Sample data'])
+      expect(labels().slice(3).every(label => label.startsWith('Query '))).toBe(true)
+      expect(labels().length).toBeGreaterThan(3)
+      expect(q('[data-file-switcher] [aria-pressed="true"]')?.textContent?.trim()).toBe('Collection')
+      await click(qa('[data-file-switcher] button').find(button => text(button) === 'Repository')!)
+      expect(text(q('[data-file-path]'))).toBe(POST_REPOSITORY)
+      expect(shownFile()).toMatchObject({ id: 'repo_post', entity: 'ent_post' })
+      expect(q('[data-file-switcher] [aria-pressed="true"]')?.textContent?.trim()).toBe('Repository')
+      await typeInto(q('[data-testid="raw-content"]'), JSON.stringify({ ...shownFile(), table: 'blog_articles' }))
+      await click(q('[data-testid="raw-save"]'))
+      expect(inputs(actions, 'model_file_put').map(input => input.path)).toEqual([POST_REPOSITORY])
+      await click(qa('[data-file-switcher] button').find(button => text(button) === 'Sample data')!)
+      expect(text(q('[data-file-path]'))).toBe(POST_FIXTURES)
+      expect(shownFile().entity).toBe('ent_post')
+    })
+
+    it('starts each collection on its own file', async () => {
+      await json()
+      await click(qa('[data-file-switcher] button').find(button => text(button) === 'Repository')!)
+      await click(treeItem('quote'))
+      expect(text(q('[data-file-path]'))).toBe('.bildr/modules/blog/entities/quote.json')
+      expect(q('[data-file-switcher] [aria-pressed="true"]')?.textContent?.trim()).toBe('Collection')
+    })
+
+    it('edits a connection\'s own file, with nothing to switch to', async () => {
+      const { actions } = await json()
+      await click(treeItem('quotes'))
+      expect(activeTab()).toBe('json')
+      expect(text(q('[data-file-path]'))).toBe(QUOTES)
+      expect(shownFile()).toMatchObject({ id: 'ds_quotes', kind: 'rest' })
+      expect(q('[data-file-switcher]')).toBeNull()
+      const edited = { ...shownFile(), defaults: { baseUrl: 'https://quotes.test' } }
+      await typeInto(q('[data-testid="raw-content"]'), JSON.stringify(edited))
+      await click(q('[data-testid="raw-save"]'))
+      expect(inputs(actions, 'model_file_put')).toEqual([{ path: QUOTES, content: edited }])
+    })
+  })
+
+  describe('All model files', () => {
+    it('is the last entry of the tree, named so, where Raw model files was', async () => {
+      await open()
+      const entries = qa('[data-tree-item]')
+      expect(entries.at(-1)?.getAttribute('data-raw-model')).toBe('')
+      expect(text(entries.at(-1) ?? null)).toBe('All model files')
+      expect(document.body.textContent).not.toContain('Raw model files')
+    })
+
+    it('lists every model file by kind, inside the workspace, with the one raw editor', async () => {
+      const { router } = await open()
+      await click(q('[data-raw-model]'))
+      expect(router.currentRoute.value.path).toBe('/data')
+      expect(q('[data-data-files]')).not.toBeNull()
+      expect(q('[data-data-tree]')).not.toBeNull()
+      expect(q('[role="tablist"]')).toBeNull()
+      expect(q('[data-raw-model]')?.getAttribute('aria-selected')).toBe('true')
+      expect(treeItem('post')?.getAttribute('aria-selected')).toBe('false')
+      expect(qa('[data-files-group] h3').map(heading => text(heading))).toEqual(['Project', 'Theme', 'Connections', 'Layouts', 'Modules', 'Collections', 'Repositories', 'Queries', 'Actions', 'State', 'Components', 'Pages', 'Sample data'])
+      expect(text(group('page'))).toContain('index')
+      expect(fileButton(INDEX_PAGE)).not.toBeNull()
+      expect(fileButton('.bildr/manifest.json')).toBeNull()
+      // No file is chosen yet: the editor waits for one, or for a path.
+      expect(rawText()?.value).toBe('')
+    })
+
+    it('opens the file chosen in the editor, with its path in the URL, and saves it', async () => {
+      const { actions, router } = await open(keeping())
+      await click(q('[data-raw-model]'))
+      await click(fileButton(INDEX_PAGE))
+      expect(router.currentRoute.value.query).toEqual({ item: 'files', file: INDEX_PAGE })
+      expect(fileButton(INDEX_PAGE)?.getAttribute('aria-current')).toBe('true')
+      expect(rawPath()?.value).toBe(INDEX_PAGE)
+      expect(shownFile()).toMatchObject({ id: 'pg_index', name: 'index' })
+      const edited = { ...shownFile(), title: 'Home' }
+      await typeInto(q('[data-testid="raw-content"]'), JSON.stringify(edited))
+      await click(q('[data-testid="raw-save"]'))
+      expect(inputs(actions, 'model_file_put')).toEqual([{ path: INDEX_PAGE, content: edited }])
+      expect(text(q('[data-data-files]'))).toContain('Saved.')
+    })
+
+    it('shows the problems of a refused save, and keeps the text', async () => {
+      const problems = [{ path: INDEX_PAGE, message: 'root: Unknown node type "Wat"' }]
+      await open({ model_file_put: () => new Failure(422, 'invalid', 'The model would have problems', problems) }, {}, `/data?item=files&file=${encodeURIComponent(INDEX_PAGE)}`)
+      await typeInto(q('[data-testid="raw-content"]'), '{ "id": "pg_index" }')
+      await click(q('[data-testid="raw-save"]'))
+      expect(text(q('[data-data-files]'))).toContain('root: Unknown node type "Wat"')
+      expect(rawText()!.value).toBe('{ "id": "pg_index" }')
+    })
+
+    it('opens a file by its path, even one the model has not got yet', async () => {
+      const { actions } = await open(keeping(), {}, '/data?item=files')
+      await typeInto(q('[data-testid="raw-path"]'), '.bildr/modules/blog/pages/about.json')
+      await typeInto(q('[data-testid="raw-content"]'), '{ "id": "pg_about" }')
+      await click(q('[data-testid="raw-save"]'))
+      expect(inputs(actions, 'model_file_put')).toEqual([{ path: '.bildr/modules/blog/pages/about.json', content: { id: 'pg_about' } }])
+    })
+
+    it('deletes the file only after it is confirmed', async () => {
+      const { actions } = await open({ model_file_delete: () => ({}) }, {}, `/data?item=files&file=${encodeURIComponent(INDEX_PAGE)}`)
+      await click(q('[data-testid="raw-delete"]'))
+      expect(actions.named('model_file_delete')).toEqual([])
+      await click(q('[data-confirm-cancel]'))
+      expect(actions.named('model_file_delete')).toEqual([])
+      await click(q('[data-testid="raw-delete"]'))
+      await click(q('[data-confirm-ok]'))
+      expect(inputs(actions, 'model_file_delete')).toEqual([{ path: INDEX_PAGE }])
+    })
+
+    it('keeps its selection in the URL, both ways', async () => {
+      const { router } = await open({}, {}, `/data?item=files&file=${encodeURIComponent(LAYOUT)}`)
+      expect(q('[data-raw-model]')?.getAttribute('aria-selected')).toBe('true')
+      expect(shownFile()).toMatchObject({ id: 'lay_main' })
+      expect(fileButton(LAYOUT)?.getAttribute('aria-current')).toBe('true')
+      expect(router.currentRoute.value.query).toEqual({ item: 'files', file: LAYOUT })
+      // A collection is shown, with its own tab and none of the file.
+      await click(treeItem('post'))
+      expect(router.currentRoute.value.query).toEqual({ item: ITEMS.post, tab: 'rows' })
+      expect(q('[data-data-files]')).toBeNull()
+      // Back to the files, on the file it was on.
+      await click(q('[data-raw-model]'))
+      expect(router.currentRoute.value.query).toEqual({ item: 'files', file: LAYOUT })
+      // The URL changing (Back, a link) moves the screen.
+      await router.replace({ path: '/data', query: { item: 'files', file: INDEX_PAGE } })
+      await settle()
+      expect(shownFile()).toMatchObject({ id: 'pg_index' })
+      await router.replace({ path: '/data', query: { item: ITEMS.quote, tab: 'fields' } })
+      await settle()
+      expect(q('[data-data-files]')).toBeNull()
+      expect(activeTab()).toBe('fields')
+    })
+
+    it('shows no file, and drops it from the URL, for one the model does not have', async () => {
+      const { router } = await open({}, {}, '/data?item=files&file=.bildr%2Fnope.json')
+      expect(q('[data-data-files]')).not.toBeNull()
+      expect(rawText()?.value).toBe('')
+      expect(router.currentRoute.value.query).toEqual({ item: 'files' })
+    })
+
+    it('is reached with no collection and no connection', async () => {
+      world.model.modules.blog!.entities = []
+      world.model.modules.blog!.repositories = []
+      world.model.datasources = []
+      await open({}, {}, '/data?item=files')
+      expect(q('[data-data-files]')).not.toBeNull()
+      expect(q('[data-data-empty]')).toBeNull()
+    })
+  })
+
+  describe('a model with problems', () => {
+    const PROBLEM = { path: POST, message: 'fields: Too small' }
+    /** The module's answer: broken until `fixed`, then the model as it is. */
+    const broken = () => {
+      const state = { fixed: false }
+      return {
+        state,
+        handlers: {
+          model_get: () => state.fixed ? modelGet() : { ok: false, problems: [PROBLEM], files: modelGet().files, database: false },
+          model_file_put: () => {
+            state.fixed = true
+            return { sha256: 'b'.repeat(64) }
+          }
+        } satisfies Handlers
+      }
+    }
+
+    it('lists the files and edits one from the problems list, and is the Data workspace again once the file is fixed', async () => {
+      const module = broken()
+      const { actions, router } = await open(module.handlers)
+      expect(q('[data-testid="data-problems"]')?.textContent).toContain('fields: Too small')
+      expect(q('[data-data-tree]')).toBeNull()
+      await click(q('[data-testid="open-model"]'))
+      await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({ item: 'files' }))
+      // The problems stay on show, and the files and the editor beside them work.
+      expect(q('[data-testid="data-problems"]')?.textContent).toContain('fields: Too small')
+      expect(fileButton(POST)).not.toBeNull()
+      await click(fileButton(POST))
+      expect(router.currentRoute.value.query).toEqual({ item: 'files', file: POST })
+      expect(shownFile()).toMatchObject({ id: 'ent_post' })
+      await typeInto(q('[data-testid="raw-content"]'), JSON.stringify(shownFile()))
+      await click(q('[data-testid="raw-save"]'))
+      expect(inputs(actions, 'model_file_put').map(input => input.path)).toEqual([POST])
+      await vi.waitFor(() => expect(q('[data-testid="data-problems"]')).toBeNull())
+      expect(q('[data-data-tree]')).not.toBeNull()
+      expect(q('[data-data-files]')).not.toBeNull()
+      expect(router.currentRoute.value.query).toEqual({ item: 'files', file: POST })
+    })
+
+    it('keeps what is typed, and the problems, when the fix is refused', async () => {
+      const module = broken()
+      await open({ ...module.handlers, model_file_put: () => new Failure(422, 'invalid', 'The model would have problems', [{ path: POST, message: 'fields: Too small' }]) }, {}, `/data?item=files&file=${encodeURIComponent(POST)}`)
+      await typeInto(q('[data-testid="raw-content"]'), '{ "id": "ent_post" }')
+      await click(q('[data-testid="raw-save"]'))
+      expect(text(q('[data-data-files]'))).toContain('Not saved')
+      expect(rawText()!.value).toBe('{ "id": "ent_post" }')
+      expect(q('[data-testid="data-problems"]')).not.toBeNull()
+    })
+
+    it('opens All model files from the /model deep link too, and from a file the problems name', async () => {
+      const module = broken()
+      const { router } = await open(module.handlers, {}, `/model?path=${encodeURIComponent(POST)}`)
+      expect(router.currentRoute.value.path).toBe('/data')
+      expect(q('[data-testid="data-problems"]')).not.toBeNull()
+      expect(shownFile()).toMatchObject({ id: 'ent_post' })
+    })
+
+    it('does not offer the link to the files where the files are already shown', async () => {
+      const module = broken()
+      await open(module.handlers, {}, '/data?item=files')
+      expect(q('[data-testid="open-model"]')).toBeNull()
+    })
   })
 })

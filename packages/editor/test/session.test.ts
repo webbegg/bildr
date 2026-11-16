@@ -13,7 +13,7 @@ afterEach(() => {
 describe('Ended session', () => {
   it('replaces the screen with one notice when a call gets 401, and shows no per-call error', async () => {
     mockActions({ model_get: () => UNAUTHORIZED, health_get: () => UNAUTHORIZED, migration_pending_get: () => UNAUTHORIZED })
-    await mountWithApp(App, '/model')
+    await mountWithApp(App, '/data')
 
     expect(byTestId('session-ended')?.textContent).toContain(NOTICE)
     expect(document.body.textContent).not.toContain(SESSION_401_MESSAGE)

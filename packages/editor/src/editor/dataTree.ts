@@ -4,8 +4,12 @@ import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
 
 /**
  * The Data tree's model: which items it lists, in order, for the keys that move along it
- * (`components/data/DataTree.vue`). An item is named by its key (`dataItemKey`), the one the URL uses.
+ * (`components/data/DataTree.vue`). An item is named by its key (`dataItemKey`), the one the URL uses;
+ * All model files (S3), the tree's last entry, is `files`.
  */
+
+/** The key of the "All model files" entry. */
+export const FILES_KEY = 'files'
 
 /** The last Import from API request each editor's Data tree answered, so a request made before it mounts (⌘K from the Canvas) still opens the dialog. */
 export const answeredImports = new WeakMap<object, number>()
@@ -22,7 +26,8 @@ export interface TreeItem {
 
 /**
  * The items the tree lists, top to bottom: the collections the app stores, then each connection followed by
- * the collections read through it (none while it is collapsed: `collapsed` holds the connection ids).
+ * the collections read through it (none while it is collapsed: `collapsed` holds the connection ids), then
+ * All model files.
  */
 export function treeItems(collections: readonly DataCollection[], connections: readonly DataConnection[], collapsed: ReadonlySet<string>): TreeItem[] {
   const stored = collections.filter(entry => entry.kind !== 'rest').map(entry => ({ key: dataItemKey({ kind: 'collection', id: entry.id }), expandable: false, open: false }))
@@ -32,7 +37,7 @@ export function treeItems(collections: readonly DataCollection[], connections: r
     const read = open ? collections.filter(entry => entry.datasource === connection.id).map(entry => ({ key: dataItemKey({ kind: 'collection', id: entry.id }), parent: key, expandable: false, open: false })) : []
     return [{ key, expandable: true, open }, ...read]
   })
-  return [...stored, ...folders]
+  return [...stored, ...folders, { key: FILES_KEY, expandable: false, open: false }]
 }
 
 /** The key of the one item that is a tab stop (`tabindex="0"`), given to the tree's items. */

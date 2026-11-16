@@ -18,7 +18,8 @@ export const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/design' },
   { path: '/design', name: 'design', component: () => import('./views/DesignView.vue') },
   { path: '/data', name: 'data', component: () => import('./views/DataView.vue') },
-  { path: '/model', name: 'model', component: () => import('./views/ModelView.vue'), meta: { bar: true, title: 'Model' } },
+  // The Model screen is retired (S3): its files are All model files in the Data workspace, and a deep link's `?path=` is its `file=`.
+  { path: '/model', redirect: to => ({ path: '/data', query: { item: 'files', ...(typeof to.query.path === 'string' && to.query.path ? { file: to.query.path } : {}) } }) },
   { path: '/code', name: 'code', component: () => import('./views/CodeView.vue'), meta: { bar: true } },
   { path: '/health', name: 'health', component: () => import('./views/HealthView.vue'), meta: { bar: true } },
   { path: '/migrations', name: 'migrations', component: () => import('./views/MigrationsView.vue'), meta: { bar: true, title: 'Migrations' } },

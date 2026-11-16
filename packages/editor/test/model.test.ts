@@ -1,114 +1,95 @@
-import { describe, expect, it, vi } from 'vitest'
-import ModelView from '../src/views/ModelView.vue'
-import { MAIN_PATH, POST_PATH, modelResult, postFile } from './fixtures.ts'
-import { Failure, byTestId, click, mockActions, mountWithApp, typeInto } from './helpers.ts'
+import { describe, expect, it } from 'vitest'
+import { artifactLabel, entityFiles, groupFiles, kindOfPath } from '../src/model.ts'
+import { MAIN_PATH, POST_PATH, mainFile, moduleFile, postFile } from './fixtures.ts'
 
-describe('Model screen', () => {
-  it('lists the artifacts grouped by module, plus the top-level data sources', async () => {
-    mockActions({ model_get: modelResult })
-    await mountWithApp(ModelView, '/model')
+/**
+ * The `.bildr/` model files the Data screen's "All model files" lists (S3): which kind a path is, the files
+ * grouped by kind, and the files a collection is linked to. They are read from the files `model_get` returns,
+ * so they hold while the model has problems.
+ */
 
-    const blog = byTestId('module-blog')
-    expect(blog?.textContent).toContain('Blog')
-    expect(blog?.querySelector(`[data-path="${POST_PATH}"]`)?.textContent).toContain('Post')
-    expect(byTestId('datasources')?.querySelector(`[data-path="${MAIN_PATH}"]`)?.textContent).toContain('main')
-    for (const kind of ['entity', 'repository', 'query', 'action']) expect(byTestId(`new-blog-${kind}`)).not.toBeNull()
+const REPOSITORY_PATH = '.bildr/modules/blog/repositories/post.json'
+const FIXTURES_PATH = '.bildr/modules/blog/fixtures/post.json'
+const QUERY_PATH = '.bildr/modules/blog/queries/featured-posts.json'
+const OTHER_QUERY_PATH = '.bildr/modules/blog/queries/latest-quotes.json'
+const PAGE_PATH = '.bildr/modules/blog/pages/index.json'
+
+const files = () => ({
+  '.bildr/bildr.json': { schemaVersion: 1 },
+  '.bildr/theme.json': { colors: {} },
+  [MAIN_PATH]: mainFile(),
+  [POST_PATH]: postFile(),
+  '.bildr/modules/blog/module.json': moduleFile(),
+  [REPOSITORY_PATH]: { id: 'repo_post', entity: 'ent_post', datasource: 'ds_main' },
+  [FIXTURES_PATH]: { entity: 'ent_post', rows: [] },
+  [QUERY_PATH]: { id: 'q_featured_posts', name: 'featuredPosts', label: 'Featured posts', from: 'ent_post' },
+  [OTHER_QUERY_PATH]: { id: 'q_latest_quotes', name: 'latestQuotes', from: 'ent_quote' },
+  [PAGE_PATH]: { id: 'pg_index', name: 'index' },
+  '.bildr/layouts/main.json': { id: 'lay_main', name: 'main' }
+})
+
+describe('the kind of a model file', () => {
+  it.each([
+    ['.bildr/bildr.json', 'project'],
+    ['.bildr/theme.json', 'theme'],
+    [MAIN_PATH, 'datasource'],
+    ['.bildr/layouts/main.json', 'layout'],
+    ['.bildr/modules/blog/module.json', 'module'],
+    [POST_PATH, 'entity'],
+    [REPOSITORY_PATH, 'repository'],
+    [QUERY_PATH, 'query'],
+    ['.bildr/modules/blog/actions/create-post.json', 'action'],
+    ['.bildr/modules/blog/state/preferences.json', 'state'],
+    ['.bildr/modules/blog/components/tip.json', 'component'],
+    [PAGE_PATH, 'page'],
+    [FIXTURES_PATH, 'fixtures']
+  ])('is read from the path %s: %s', (path, kind) => {
+    expect(kindOfPath(path)).toBe(kind)
   })
 
-  it('saves an edited entity to its own path as canonical JSON', async () => {
-    const actions = mockActions({ model_get: modelResult, model_file_put: () => ({ sha256: 'a'.repeat(64) }) })
-    await mountWithApp(ModelView, '/model')
+  it('is none for what is not a model file, or is not a normalized path', () => {
+    for (const path of ['.bildr/manifest.json', '.bildr/.cache/x.json', '.bildr/modules/blog/notes/x.json', '.bildr/modules/../x/entities/a.json', 'package.json']) expect(kindOfPath(path)).toBeUndefined()
+  })
+})
 
-    await click(byTestId('module-blog')!.querySelector(`[data-path="${POST_PATH}"]`))
-    await typeInto(byTestId('input-plural'), 'articles')
-    await typeInto(byTestId('field-0-name'), 'headline')
-    await click(byTestId('save'))
-
-    const [put] = actions.named('model_file_put')
-    expect(put?.input.path).toBe(POST_PATH)
-    const expected = postFile()
-    expected.plural = 'articles'
-    expected.fields[0]!.name = 'headline'
-    // The action takes the file's JSON object (model_file_put's zod input), not its text.
-    expect(put?.input.content).toEqual(expected)
-    expect(Object.keys(put?.input.content as object)).toEqual(Object.keys(expected))
+describe('the files grouped by kind', () => {
+  it('lists every model file under its kind, named for the item, in the order a person looks for them', () => {
+    const groups = groupFiles(files())
+    expect(groups.map(group => group.label)).toEqual(['Project', 'Theme', 'Connections', 'Layouts', 'Modules', 'Collections', 'Repositories', 'Queries', 'Pages', 'Sample data'])
+    expect(groups.find(group => group.kind === 'entity')?.files).toEqual([{ path: POST_PATH, label: 'Post' }])
+    expect(groups.find(group => group.kind === 'query')?.files.map(file => file.label)).toEqual(['featuredPosts', 'latestQuotes'])
+    expect(groups.find(group => group.kind === 'fixtures')?.files).toEqual([{ path: FIXTURES_PATH, label: 'post' }])
   })
 
-  it('creates a new entity at .bildr/modules/<module>/entities/<kebab-name>.json', async () => {
-    const actions = mockActions({ model_get: modelResult, model_file_put: () => ({ sha256: 'b'.repeat(64) }) })
-    await mountWithApp(ModelView, '/model')
-
-    await click(byTestId('new-blog-entity'))
-    await typeInto(byTestId('input-id'), 'ent_blog_note')
-    await typeInto(byTestId('input-name'), 'BlogNote')
-    await typeInto(byTestId('input-plural'), 'blogNotes')
-    await click(byTestId('save'))
-
-    const [put] = actions.named('model_file_put')
-    expect(put?.input.path).toBe('.bildr/modules/blog/entities/blog-note.json')
-    expect(put?.input.content).toMatchObject({ $schema: 'https://bildr.dev/schema/entity.v1.json', id: 'ent_blog_note', name: 'BlogNote', plural: 'blogNotes', idStrategy: 'uuid' })
+  it('leaves out the manifest and anything that is not a model file, and has no group for a kind with no file', () => {
+    const groups = groupFiles({ ...files(), '.bildr/manifest.json': {}, '.bildr/.cache/x.json': {} })
+    expect(groups.flatMap(group => group.files.map(file => file.path))).not.toContain('.bildr/manifest.json')
+    expect(groups.flatMap(group => group.files.map(file => file.path))).not.toContain('.bildr/.cache/x.json')
+    expect(groups.some(group => group.kind === 'action')).toBe(false)
   })
 
-  it('creates a new data source at .bildr/datasources/<name>.json', async () => {
-    const actions = mockActions({ model_get: modelResult, model_file_put: () => ({ sha256: 'c'.repeat(64) }) })
-    await mountWithApp(ModelView, '/model')
+  it('still lists a file whose JSON is not the shape of its kind (a broken model)', () => {
+    const groups = groupFiles({ [POST_PATH]: 'oops' as never })
+    expect(groups).toEqual([{ kind: 'entity', label: 'Collections', files: [{ path: POST_PATH, label: 'post' }] }])
+    expect(artifactLabel(undefined, POST_PATH)).toBe('post')
+  })
+})
 
-    await click(byTestId('new-datasource'))
-    await typeInto(byTestId('input-id'), 'ds_api')
-    await typeInto(byTestId('input-name'), 'api')
-    await click(byTestId('save'))
-
-    expect(actions.named('model_file_put')[0]?.input.path).toBe('.bildr/datasources/api.json')
+describe('the files a collection is linked to', () => {
+  it('starts with its own file, then its repository, its sample data and the queries that read it', () => {
+    expect(entityFiles(files(), POST_PATH)).toEqual([
+      { path: POST_PATH, label: 'Collection' },
+      { path: REPOSITORY_PATH, label: 'Repository' },
+      { path: FIXTURES_PATH, label: 'Sample data' },
+      { path: QUERY_PATH, label: 'Query featuredPosts' }
+    ])
   })
 
-  it('shows the invalid problems next to the form', async () => {
-    const problems = [{ path: POST_PATH, message: 'Unknown entity "ent_missing" in relations' }]
-    mockActions({ model_get: modelResult, model_file_put: () => new Failure(422, 'invalid', 'The model would be invalid', problems) })
-    await mountWithApp(ModelView, '/model')
-
-    await click(byTestId('module-blog')!.querySelector(`[data-path="${POST_PATH}"]`))
-    await click(byTestId('save'))
-
-    const shown = byTestId('form-problems')
-    expect(shown?.textContent).toContain('The model would be invalid')
-    expect(shown?.textContent).toContain('Unknown entity "ent_missing" in relations')
+  it('is just its own file when nothing else names it', () => {
+    expect(entityFiles({ [POST_PATH]: postFile() }, POST_PATH)).toEqual([{ path: POST_PATH, label: 'Collection' }])
   })
 
-  it('opens the selected artifact in the Code screen, with a button named after it', async () => {
-    mockActions({ model_get: modelResult, code_view: () => ({ files: [] }) })
-    const { router } = await mountWithApp(ModelView, '/model')
-
-    await click(byTestId('module-blog')!.querySelector(`[data-path="${POST_PATH}"]`))
-    const button = [...document.body.querySelectorAll('button')].find(element => element.textContent?.trim() === 'Open in Code')
-    expect([...document.body.querySelectorAll('button')].some(element => element.textContent?.includes('View code'))).toBe(false)
-    await click(button ?? null)
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/code'))
-    expect(router.currentRoute.value.query.path).toBe(POST_PATH)
-  })
-
-  it('deletes the selected artifact after a confirmation', async () => {
-    const actions = mockActions({ model_get: modelResult, model_file_delete: () => ({}) })
-    await mountWithApp(ModelView, '/model')
-
-    await click(byTestId('module-blog')!.querySelector(`[data-path="${POST_PATH}"]`))
-    await click(byTestId('delete'))
-    expect(actions.named('model_file_delete')).toHaveLength(0)
-    await click(byTestId('confirm-delete'))
-
-    expect(actions.named('model_file_delete')[0]?.input).toEqual({ path: POST_PATH })
-  })
-
-  it('shows the model problems when the model does not load, and still allows editing a file', async () => {
-    const problems = [{ path: POST_PATH, message: 'fields: Too small' }]
-    const actions = mockActions({ model_get: () => ({ ok: false, problems }), model_file_put: () => ({ sha256: 'd'.repeat(64) }) })
-    await mountWithApp(ModelView, '/model')
-
-    expect(byTestId('model-problems')?.textContent).toContain('fields: Too small')
-    await typeInto(byTestId('raw-path'), POST_PATH)
-    await typeInto(byTestId('raw-content'), JSON.stringify(postFile()))
-    await click(byTestId('raw-save'))
-
-    const [put] = actions.named('model_file_put')
-    expect(put?.input).toEqual({ path: POST_PATH, content: postFile() })
+  it('is just the file when it does not say which collection it is', () => {
+    expect(entityFiles({ [POST_PATH]: { name: 'Post' }, [REPOSITORY_PATH]: { entity: 'ent_post' } }, POST_PATH)).toEqual([{ path: POST_PATH, label: 'Collection' }])
   })
 })

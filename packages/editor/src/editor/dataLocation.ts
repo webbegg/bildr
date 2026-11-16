@@ -7,13 +7,19 @@ import type { Editor } from './useEditor.ts'
 /**
  * Where the Data workspace is (S2) in the URL query (`/data?item=collection:ent_post&tab=fields`): the
  * item selected in its tree and the tab shown for it, so a deep link or a reload opens the same item on
- * the same tab. The tab model (which tabs an item has) is `editor/dataTabs.ts`.
+ * the same tab. All model files (S3) is `?item=files`, with the file chosen in it as `&file=<path>`. The
+ * tab model (which tabs an item has) is `editor/dataTabs.ts`.
  */
 
 /** What the URL query asks for: the parts that are well formed (anything else is left out, never an error). */
-export function parseDataLocation(query: Record<string, unknown>): { item?: DataItem, tab?: DataTab } {
-  const found: { item?: DataItem, tab?: DataTab } = {}
+export function parseDataLocation(query: Record<string, unknown>): { item?: DataItem, tab?: DataTab, files?: true, file?: string } {
+  const found: { item?: DataItem, tab?: DataTab, files?: true, file?: string } = {}
   const raw = query.item
+  if (raw === 'files') {
+    found.files = true
+    if (typeof query.file === 'string' && query.file.startsWith('.bildr/')) found.file = query.file
+    return found
+  }
   if (typeof raw === 'string') {
     const split = raw.indexOf(':')
     const kind = raw.slice(0, split)
@@ -27,17 +33,26 @@ export function parseDataLocation(query: Record<string, unknown>): { item?: Data
 /** The URL query that shows `item` on `tab`. */
 export const dataLocationQuery = (item: DataItem, tab: DataTab): { item: string, tab: string } => ({ item: dataItemKey(item), tab })
 
+/** The URL query that shows All model files, on `file` when one is chosen. */
+export const filesLocationQuery = (file: string | null): { item: 'files', file?: string } => file ? { item: 'files', file } : { item: 'files' }
+
 /**
  * Keeps `editor`'s selection and the route's query the same, both ways. The query is read once
  * when the screen opens and again when it changes (Back, Forward, a link); the selection is
- * written once the model is loaded, with `replace` since choosing an item is not a navigation.
+ * written once the model is loaded (All model files needs no model: it is how a broken one is fixed),
+ * with `replace` since choosing an item is not a navigation.
  */
 export function useDataLocation(editor: Editor): void {
   const route = useRoute()
   const router = useRouter()
 
   const apply = (query: Record<string, unknown>) => {
-    const { item, tab } = parseDataLocation(query)
+    const { item, tab, files, file } = parseDataLocation(query)
+    if (files) {
+      editor.dataFiles = true
+      editor.dataFile = file ?? null
+      return
+    }
     if (item?.kind === 'collection') {
       editor.collectionId = item.id
       editor.connectionId = null
@@ -48,13 +63,17 @@ export function useDataLocation(editor: Editor): void {
     if (tab && tab !== editor.dataTab) editor.dataTab = tab
   }
 
-  const wanted = computed(() => editor.model && editor.dataItem ? dataLocationQuery(editor.dataItem, editor.dataTab) : null)
+  const wanted = computed<Record<string, string> | null>(() => editor.dataFiles
+    ? filesLocationQuery(editor.dataFile)
+    : editor.model && editor.dataItem ? dataLocationQuery(editor.dataItem, editor.dataTab) : null)
 
   const write = () => {
     const query = wanted.value
     if (!query || route.name !== 'data') return
-    if (route.query.item === query.item && route.query.tab === query.tab) return
-    void router.replace({ query: { ...route.query, ...query } })
+    if (route.query.item === query.item && route.query.tab === query.tab && route.query.file === query.file) return
+    // A tab and a file belong to the item the query names: the other's are dropped.
+    const { tab: _tab, file: _file, ...rest } = route.query
+    void router.replace({ query: { ...rest, ...query } })
   }
 
   apply(route.query)

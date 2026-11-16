@@ -13,7 +13,7 @@ import { openView } from '../editor/views.ts'
  * The editor's one navigation: the brand and the "Canvas ▾" menu, named after the current view.
  * On the editor's screens a view entry sets the editor's mode (which opens the other screen when it
  * shows that view); on the other screens, where there is no editor, it opens the screen that does.
- * A screen with no entry (Migrations, Model) shows its own name.
+ * A screen with no entry (Migrations) shows its own name.
  */
 const route = useRoute()
 const router = useRouter()

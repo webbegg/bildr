@@ -2,7 +2,7 @@
 import { computed, provide, reactive, ref, useTemplateRef, watch } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { dataItemKey } from '../../editor/dataTabs.ts'
-import { TREE_STOP, answeredImports, treeItems } from '../../editor/dataTree.ts'
+import { FILES_KEY, TREE_STOP, answeredImports, treeItems } from '../../editor/dataTree.ts'
 import { rovingTarget } from '../../editor/rovingKeys.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { FOCUS_RING } from '../../editorUi.ts'
@@ -14,7 +14,8 @@ import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
  * REST API) as a folder of the collections read through it. Choosing an item shows it in the
  * workspace beside the tree, on the tabs its kind has. The Connections `+` makes a new
  * connection (an inline name, then the base URL in its Endpoints tab) or opens the Import from URL
- * dialog (also opened by each `editor.importRequest`). The raw model files stay on the Model screen.
+ * dialog (also opened by each `editor.importRequest`). **All model files** (S3) ends the tree: the artifacts with no
+ * collection or connection (pages, queries, actions…) and every file as JSON.
  *
  * It is a tree with one tab stop (a roving tabindex: the item that has the focus, else the one shown):
  * Up and Down move between the items and stop at the ends, Home and End go to the first and last,
@@ -32,7 +33,7 @@ function toggle(id: string) {
   if (!collapsed.delete(id)) collapsed.add(id)
 }
 
-const shownKey = computed(() => editor.dataItem ? dataItemKey(editor.dataItem) : null)
+const shownKey = computed(() => editor.dataFiles ? FILES_KEY : editor.dataItem ? dataItemKey(editor.dataItem) : null)
 const focusedKey = ref<string | null>(null)
 /** The tab stop: the item with the focus, else the one shown, else the first: always one that is listed. */
 const stop = computed(() => {
@@ -271,19 +272,27 @@ function cancelAdd() {
         </p>
       </section>
 
-      <RouterLink
-        to="/model"
-        class="mt-3 flex h-9 items-center gap-2.5 rounded-lg ms-2 ps-3 pe-3 text-[12px] text-dimmed hover:bg-white/4 hover:text-toned"
-        :class="FOCUS_RING"
-        title="Edit the collections, repositories and connections as raw files"
-        data-raw-model
-      >
-        <UIcon
-          name="i-lucide-file-json"
-          class="size-4 shrink-0"
-        />
-        Raw model files
-      </RouterLink>
+      <div class="mt-3 px-2">
+        <button
+          type="button"
+          class="flex h-9 w-full items-center gap-2.5 rounded-lg ps-3 pe-3 text-left text-[12px]"
+          :class="[FOCUS_RING, editor.dataFiles ? 'bg-white/8 font-medium text-highlighted' : 'text-dimmed hover:bg-white/4 hover:text-toned']"
+          title="Every model file as JSON: the pages, queries, actions and the rest"
+          role="treeitem"
+          aria-level="1"
+          :aria-selected="editor.dataFiles"
+          :tabindex="stop === FILES_KEY ? 0 : -1"
+          :data-tree-item="FILES_KEY"
+          data-raw-model
+          @click="editor.dataFiles = true"
+        >
+          <UIcon
+            name="i-lucide-file-json"
+            class="size-4 shrink-0"
+          />
+          All model files
+        </button>
+      </div>
     </div>
 
     <DataApiSource

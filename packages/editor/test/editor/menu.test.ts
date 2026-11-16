@@ -89,7 +89,7 @@ describe('the top bar menu is the only navigation', () => {
     ['Canvas', '/code', '/design'],
     ['Settings', '/health', '/design'],
     ['Design system', '/migrations', '/design'],
-    ['Data', '/model', '/data'],
+    ['Data', '/code', '/data'],
     ['Checks', '/code', '/health']
   ])('chooses %s from the screen at %s, and lands on %s', async (label, from, to) => {
     const { router } = await open(from)
@@ -103,8 +103,7 @@ describe('the top bar menu is the only navigation', () => {
     ['/design', 'Canvas'],
     ['/code?path=.bildr%2Fmodules%2Fblog%2Fentities%2Fpost.json', 'Code'],
     ['/health', 'Checks'],
-    ['/migrations', 'Migrations'],
-    ['/model', 'Model']
+    ['/migrations', 'Migrations']
   ])('opens the deep link %s as it is, with the menu showing %s', async (link, label) => {
     const { router } = await open(link)
     expect(router.currentRoute.value.fullPath).toBe(link)
@@ -129,10 +128,29 @@ describe('the top bar menu is the only navigation', () => {
     ['/code/', 'Code'],
     ['/health/', 'Checks'],
     ['/migrations/', 'Migrations'],
-    ['/model/', 'Model']
+    ['/model/', 'Data']
   ])('names the screen of the deep link %s with a trailing slash: %s', async (link, label) => {
     await open(link)
     expect(text(q('[data-view-menu]'))).toBe(label)
+  })
+
+  it('retires the Model screen: /model opens All model files in the Data workspace, which the menu names Data (S3)', async () => {
+    const { router } = await open('/model')
+    const route = router.currentRoute.value
+    expect(route.path).toBe('/data')
+    expect(route.query).toEqual({ item: 'files' })
+    expect(text(q('[data-view-menu]'))).toBe('Data')
+    expect(q('[data-data-files]')).not.toBeNull()
+    expect(router.hasRoute('model')).toBe(false)
+    expect(await menuLabels()).not.toContain('Model')
+  })
+
+  it('keeps the file a /model deep link names, as file= (S3)', async () => {
+    const { router } = await open('/model?path=.bildr%2Flayouts%2Fmain.json')
+    expect(router.currentRoute.value.path).toBe('/data')
+    expect(router.currentRoute.value.query).toEqual({ item: 'files', file: '.bildr/layouts/main.json' })
+    const content = q('[data-testid="raw-content"]')
+    expect((content?.matches('textarea') ? content : content?.querySelector('textarea')) as HTMLTextAreaElement | null).toHaveProperty('value', expect.stringContaining('"lay_main"'))
   })
 
   it('goes back to the Design screen from Code, with the menu naming what the screen then shows', async () => {

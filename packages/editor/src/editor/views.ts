@@ -74,5 +74,5 @@ export const requestView = (view: EditorView, from: Screen, data: DataStart = {}
   if (screenOf(view) !== from) beginOpen(view, data)
 }
 
-/** `view` was chosen where no editor is (the Code, Checks, Migrations and Model screens): opens the screen that shows it, started on it. */
+/** `view` was chosen where no editor is (the Code, Checks and Migrations screens): opens the screen that shows it, started on it. */
 export const openView = (view: EditorView): void => beginOpen(view, {})

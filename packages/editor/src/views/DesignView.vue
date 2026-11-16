@@ -147,7 +147,7 @@ const canvasKey = (message: { key: string, code: string, meta: boolean, shift: b
         :problems="editor.problems"
       >
         <UButton
-          to="/model"
+          :to="{ path: '/data', query: { item: 'files' } }"
           label="Open model files"
           icon="i-lucide-file-json"
           color="error"
