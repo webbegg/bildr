@@ -54,11 +54,12 @@ export function hitPoint<T extends Point>(points: readonly T[], point: Point, ra
 /**
  * The handle hit radius at `point`: `radius` outside the box, and inside it
  * at most a quarter of its smaller side, so the middle of a box that is small
- * on screen (zoomed out) still starts a drag of the node, not a resize.
+ * on screen (zoomed out) still starts a drag of the node, not a resize. Never
+ * less than `floor` (half the drawn handle): a handle you can see can be pressed.
  */
-export function hitRadius(rect: Rect, point: Point, radius: number): number {
+export function hitRadius(rect: Rect, point: Point, radius: number, floor = 0): number {
   const inside = point.x > rect.x && point.x < rect.x + rect.width && point.y > rect.y && point.y < rect.y + rect.height
-  return inside ? Math.min(radius, Math.min(rect.width, rect.height) / 4) : radius
+  return inside ? Math.max(floor, Math.min(radius, Math.min(rect.width, rect.height) / 4)) : radius
 }
 
 /** The resize handle of `rect` under `point` (the nearest within `radius`), or null. */

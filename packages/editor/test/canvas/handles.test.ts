@@ -152,19 +152,20 @@ describe('resize handles', () => {
     expect(sent('bildr:style-commit').at(-1)).toMatchObject({ nodeId: 'n_h1', style: { [key]: expect.any(String) } })
   })
 
-  it('zoomed far out (fit-all) a handle is hit only within a quarter of the box\'s smaller side, on every frame', async () => {
-    // At zoom 0.14 the 6 px screen radius would be 43 canvas px, but inside a 200 × 40 box it is capped at 10 (hitRadius).
+  it('zoomed far out (fit-all) the drawn handle dot is always pressable, and deeper inside the box the press drags the node, on every frame', async () => {
+    // At zoom 0.14 the 7 px dot is 25 canvas px across each side of the handle. Inside a 200 × 40 box a quarter of the
+    // smaller side (10) would make the dot unpressable; the hit zone is never smaller than the dot (hitRadius floor).
     for (const width of [400, 800, 700]) {
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: width })
       await send({ type: 'bildr:active', active: true, zoom: 0.14, viewportHeight: 800 })
       await select('n_h1')
       await press(206, 60)
       await move(150, 60)
-      expect(document.querySelector('[data-drag-label]'), `${width}px, 14 px inside the handle`).toBeNull()
+      expect(document.querySelector('[data-drag-label]'), `${width}px, 14 px inside the handle (on the dot)`).not.toBeNull()
       await release(150, 60)
-      await press(214, 60)
+      await press(180, 60)
       await move(150, 60)
-      expect(document.querySelector('[data-drag-label]'), `${width}px, 6 px inside the handle`).not.toBeNull()
+      expect(document.querySelector('[data-drag-label]'), `${width}px, 40 px inside the handle (past the dot)`).toBeNull()
       await release(150, 60)
     }
   })

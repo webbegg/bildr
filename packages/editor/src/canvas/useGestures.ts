@@ -165,7 +165,7 @@ export function useGestures(ctx: GesturesContext) {
       ...resizeHandles.value.map(h => ({ x: h.x, y: h.y, hit: { handle: h.handle } as const })),
       ...spacingHandleList.value.map(h => ({ x: h.x, y: h.y, hit: { spacing: h } }))
     ]
-    return hitPoint(candidates, point, hitRadius(toRect(box), point, HANDLE_HIT_PX / ctx.zoom.value))?.hit ?? null
+    return hitPoint(candidates, point, hitRadius(toRect(box), point, HANDLE_HIT_PX / ctx.zoom.value, HANDLE_PX / 2 / ctx.zoom.value))?.hit ?? null
   }
 
   /** The padding and flex gaps of node `id`'s element, in canvas px. */
