@@ -1,8 +1,9 @@
 # @bildr/editor-core
 
-The format-independent core of the bildr visual editor (feature P1). The hosted
-editor and `@bildr/editor` both use it, so P4 can port the hosted UI into
-`packages/editor` without porting this logic twice.
+The format-independent core of the bildr visual editor (feature P1): the
+geometry, canvas protocol, style panel and colour logic that `@bildr/editor`
+(the editor SPA) and its canvas build on. It was shared with the hosted editor
+until that app was retired; `@bildr/editor` is now its only consumer.
 
 - **Pure TypeScript.** No Vue, no Nuxt, no document format.
 - **Allowed imports:** relative files and `@bildr/codegen/design` (tokens, theme).
@@ -10,9 +11,11 @@ editor and `@bildr/editor` both use it, so P4 can port the hosted UI into
   `optionValueAt`); each one says so in its doc comment.
 - **Workspace only:** `private: true`, no build. Import a module by its name:
   `@bildr/editor-core/viewport`.
-
-The hosted app's old paths (`shared/editor/<name>.ts`) re-export these modules
-in one line. Its imports and its unit tests (`test/editor/*`) are unchanged.
+- **Tests:** `test/<module>.test.ts` next to the sources, run by the root
+  `pnpm test` (Node, no DOM). `test/design/` and `test/env/` hold the tests of
+  the `@bildr/codegen/design` token registry and theme model and of
+  `@bildr/codegen/env`, which had no package tests when the hosted app's
+  `test/` folder was removed; they can move to `packages/codegen/test/`.
 
 ## What is in it
 
@@ -37,36 +40,6 @@ in one line. Its imports and its unit tests (`test/editor/*`) are unchanged.
 | `names` | Component and layout name checks |
 | `labelPlacement` | Where the canvas puts a box's type label |
 | `measuredSizes` | The measured W/H of the selection, without stale results |
-
-## What stays in the hosted app (porting map for P3/P4)
-
-These modules depend on the hosted document (`#shared/document/*`: `DocNode`,
-`Page`, `ComponentDefinition`, the `COMPONENTS` registry, `tree`). They can't
-move until P3 has the editing operations on `.bildr` `ModelNode` documents.
-Each one is ported against `ModelNode` in P3 or P4, not moved.
-
-**`shared/editor/*`:**
-
-| File | Why it stays |
-|---|---|
-| `protocol.ts` (`bildr:render`, `EditorToCanvas`) | The render payload is the hosted `Page`, `ComponentDefinition`, `Layout` and `DataRecord`. Mapping spec §6 reshapes it to `{file, components, layouts, theme, …, data}` |
-| `preview.ts` (`previewTree`, `settlePreviews`) | Walks a `DocNode` tree |
-| `accent.ts` | `INSTANCE_TYPE` from the hosted registry |
-| `bindingDot.ts` | `{{ item.x }}` bindings over the hosted schema and usages; `.bildr` uses `$bind` |
-| `clipboard.ts` | Copies and pastes `DocNode` subtrees |
-| `commands.ts` | The command list over the hosted registry and collections |
-| `detailPages.ts` | Hosted collections and detail pages (mapped to Queries in P5) |
-| `dropTarget.ts`, `insertTools.ts`, `reorder.ts`, `gesture.ts` | Drop and insert math over `DocNode` trees and `isContainerType`. The geometry inside them could split out in P4 |
-| `formSubmit.ts` | The hosted `record_create` and public endpoint; retired with collections (E2) |
-| `interactionArrows.ts`, `interactionPanel.ts`, `variantBoard.ts` | Hosted component variants and interactions (`state`, `interactions`, `transition`) |
-| `layers.ts`, `selection.ts`, `selectionColors.ts`, `thumbnails.ts` | Walk `DocNode` trees and the registry |
-| `navigate.ts`, `sidebar.ts` | Hosted `Page` and `factory` |
-| `panel.ts`, `propGroups.ts`, `propertyLabels.ts` | The hosted registry's `PropDef` and prop kinds |
-
-**`shared/runtime/*`:** every file stays (`bindings`, `detail`, `form`,
-`instances`, `interactions`, `layouts`, `list`, `loadMore`, `render`, `visitor`,
-`webmcp`). Each one reads the hosted `DocNode` and `DataRecord`, or the
-collections. The canvas interpreter for `ModelNode` replaces them in P4/P5.
 
 **Render rules** shared by the generator and the canvas (elements and token
 fallbacks) live in `@bildr/codegen/render`, not here. Its `KNOWN_DIVERGENCES`

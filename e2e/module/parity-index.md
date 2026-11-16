@@ -1,6 +1,8 @@
 # Editor UI parity: hosted editor vs module editor (S1, U8)
 
-Made by `e2e/module/parity.mjs` (branch `test/editor-ui-e2e`, on `c9ceb7c`); this file is `e2e/module/parity-index.md`, which the script copies next to the screenshots. For each flow, the hosted editor (`pnpm dev --port 3200`) and the module editor (`/__bildr` on a created blog project) in the same state, in a 1400×850 Chromium.
+> **Historical note.** The hosted multi-project app is retired, and `e2e/module/parity.mjs`, the script that made these pairs, is gone with it. The hosted editor can be rebuilt from git history (before the commit that retired it) if a pair has to be redone. The screenshots were never kept in the repository. This file is the record of the differences that were accepted.
+
+Made by `e2e/module/parity.mjs` (branch `test/editor-ui-e2e`, on `c9ceb7c`), which copied this file next to the screenshots. For each flow, the hosted editor (`pnpm dev --port 3200`) and the module editor (`/__bildr` on a created blog project) in the same state, in a 1400×850 Chromium.
 Each flow has `<flow>-hosted.png`, `<flow>-module.png` and `<flow>-pair.png` (hosted left, module right).
 
 Both sides got the same content through each one's actions: a Column (padding 4, gap 2) with a Heading "Welcome to the blog", a Text and a Button "Read more"; a Card with a Heading "Latte", made into a component "Latte card" with a "Hover" variant; for Data, the Post collection with rows.

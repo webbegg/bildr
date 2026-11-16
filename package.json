@@ -3,36 +3,20 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "nuxt build",
     "build:editor": "pnpm --filter @bildr/editor build",
     "build:packages": "pnpm --filter './packages/**' build",
-    "dev": "nuxt dev",
-    "e2e": "node e2e/all.mjs",
     "e2e:generated": "node e2e/generated.mjs",
     "e2e:module": "node e2e/module/all.mjs",
-    "preview": "nuxt preview",
     "palettes": "node --experimental-strip-types scripts/generate-palettes.ts",
-    "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "test": "vitest run",
-    "tokens:css": "node --experimental-strip-types scripts/generate-token-css.ts",
-    "typecheck": "nuxt typecheck && pnpm --filter './packages/**' typecheck"
-  },
-  "dependencies": {
-    "@bildr/codegen": "workspace:*",
-    "@bildr/editor-core": "workspace:*",
-    "@iconify-json/lucide": "^1.2.147",
-    "@iconify-json/simple-icons": "^1.2.100",
-    "@modelcontextprotocol/sdk": "^1.32.2",
-    "@nuxt/ui": "^4.12.0",
-    "nuxt": "^4.6.3",
-    "tailwindcss": "^4.3.3",
-    "zod": "^4.6.7"
+    "typecheck": "pnpm --filter './packages/**' typecheck"
   },
   "devDependencies": {
-    "@nuxt/eslint": "^1.17.0",
+    "@nuxt/eslint-config": "^1.17.0",
     "eslint": "^10.13.0",
     "eslint-plugin-better-tailwindcss": "^4.10.0",
+    "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vitest": "^5.1.0",
     "vue-tsc": "^3.3.13"

@@ -1,7 +1,8 @@
 /**
  * Shared harness of the module editor's browser suite (e2e/module/*.mjs, U8).
- * The scripts are the hosted editor's e2e scripts (e2e/*.mjs) ported to the
- * module's editor at `/__bildr`: same flows, same hosted testids, over `.bildr/`.
+ * The scripts are the former hosted editor's e2e scripts, ported to the
+ * module's editor at `/__bildr` (the hosted app is retired): same flows, same
+ * testids, over `.bildr/`.
  *
  * It boots its own project, as e2e/generated.mjs does:
  * 1. `create-bildr` writes a Blog project into $E2E_TMP (default: the OS temp
@@ -10,7 +11,7 @@
  *    editor's `model_file_put` action, and the app regenerates;
  * 3. `nuxt dev` runs on a free port (never 3000); the `/__bildr?token=` URL is
  *    read from its log;
- * 4. Playwright (PLAYWRIGHT_CORE, CHROMIUM, the same defaults as e2e/lib.mjs)
+ * 4. Playwright (PLAYWRIGHT_CORE, CHROMIUM, the same defaults as e2e/generated.mjs)
  *    drives the editor, and the app next to it.
  *
  * `run(name, body)` is what every script calls: it attaches to the project

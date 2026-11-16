@@ -93,6 +93,7 @@ describe('shortcuts', () => {
   it('lists the ⌥ + digit of the visible frames only', () => {
     const labels = (frames: Parameters<typeof shortcutsFor>[0]) => shortcutsFor(frames).filter(entry => entry.id.startsWith('device:')).map(entry => entry.id)
     expect(labels(['mobile'])).toEqual(['device:mobile'])
+    expect(shortcutsFor(['desktop'], 'desktop').filter(entry => entry.id.startsWith('device:')).map(entry => entry.id)).toEqual(['device:desktop'])
     expect(labels(['mobile', 'tablet', 'desktop']).sort()).toEqual(['device:desktop', 'device:mobile', 'device:tablet'])
     expect(SHORTCUTS.map(entry => entry.id)).toContain('quick-actions')
     expect(shortcutKeys('quick-actions')).toEqual(['meta', 'k'])

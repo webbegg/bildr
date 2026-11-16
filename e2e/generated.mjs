@@ -2,7 +2,7 @@
 /**
  * End-to-end check of a generated bildr app (T11, specs S1 and S2): from an
  * empty directory to a built, booted app that lists, shows and creates a
- * record. Standalone: it needs no running bildr server (unlike e2e/all.mjs).
+ * record. Standalone: it needs no running bildr server.
  *
  *   node e2e/generated.mjs [--install] [--packed] [--keep] [--database none]
  *   pnpm e2e:generated
@@ -39,9 +39,10 @@
  * E2E_MUTATE=a,b     break the generated app on purpose, to prove the checks catch it:
  *                    `submit` (the create form doesn't submit), `list` (list cards lose the title),
  *                    `hover` (the card's hover state is dropped)
- * PLAYWRIGHT_CORE, CHROMIUM  as in e2e/lib.mjs
+ * PLAYWRIGHT_CORE  the playwright-core index.mjs (default: ~/.t3/runtime/versions/0.1.6/node_modules/playwright-core/index.mjs)
+ * CHROMIUM         a Chromium binary
  *
- * PASS/FAIL lines and the exit code work like e2e/lib.mjs. Every child process
+ * It prints PASS and FAIL lines and exits 1 on any failure. Every child process
  * runs in its own process group and is killed on exit, failure or Ctrl-C.
  */
 import { execFileSync, spawn } from 'node:child_process'

@@ -9,7 +9,7 @@
  *   pnpm e2e:module shell design    # some of them
  *
  * With E2E_MODULE_URL and E2E_MODULE_DIR set (as `node e2e/module/serve.mjs` prints them) it uses that server
- * instead of booting one. E2E_TMP is the scratch parent; PLAYWRIGHT_CORE and CHROMIUM as in e2e/lib.mjs.
+ * instead of booting one. E2E_TMP is the scratch parent; PLAYWRIGHT_CORE and CHROMIUM as in e2e/generated.mjs.
  */
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
