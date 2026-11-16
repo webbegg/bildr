@@ -62,7 +62,7 @@ const modelGet = defineAction({
 
 const modelFilePut = defineAction({
   name: 'model_file_put',
-  description: 'Create or replace one .bildr/ model file with the given JSON, in canonical form; the app regenerates from it. A valid model must stay valid. A model that already has problems takes a file that has none of its own and adds none to another file; the problems that remain are returned as `problems`. `base` is the file the edit started from (its JSON, its text when it was not valid JSON, null when it did not exist): the write is refused as a conflict when the file is not that any more.',
+  description: 'Create or replace one .bildr/ model file with the given JSON, in canonical form; the app regenerates from it. A valid model must stay valid. A model that already has problems takes a file that has none of its own and adds none to another file (files that are broken themselves are left out of that check); when the model cannot be judged at all (a file that is unknown or not JSON, or a project file that does not load, other than the one this write fixes) it is refused. The problems that remain are returned as `problems`. `base` is the file the edit started from (its JSON, its text when it was not valid JSON, null when it did not exist): the write is refused as a conflict when the file is not that any more.',
   input: z.object({
     path: modelPath,
     content: z.record(z.string(), z.unknown()).describe('The file\'s JSON object'),

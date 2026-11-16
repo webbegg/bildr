@@ -137,6 +137,78 @@ describe('a model with problems', () => {
     expect(save('.bildr/bildr.json', project)).toMatchObject({ ok: true })
   })
 
+  it('refuses a dangling reference or a duplicate id in the file written while another file has a schema problem', () => {
+    disk(CONTACT, { ...pageLike('contact'), name: 5 })
+    const before = read(ABOUT)
+    expect(save(ABOUT, { ...pageLike('about'), layout: 'lay_nope' })).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(save(ABOUT, { ...pageLike('about'), id: 'pg_index' })).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(read(ABOUT)).toBe(before)
+  })
+
+  it('refuses any file whose schema fails while an unknown JSON file is in .bildr/', () => {
+    disk('.bildr/notes.json', { hi: 1 })
+    const before = read(ABOUT)
+    expect(save(ABOUT, { totally: 'garbage' })).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(save('.bildr/bildr.json', { schemaVersion: 99 })).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(read(ABOUT)).toBe(before)
+  })
+
+  it('cannot judge a file while the project file parses but does not load (not an object, or a newer schemaVersion)', () => {
+    const project = json('.bildr/bildr.json')
+    for (const broken of ['[]', JSON.stringify({ ...project, schemaVersion: 99 })]) {
+      disk('.bildr/bildr.json', broken)
+      expect(save(ABOUT, { totally: 'garbage' })).toMatchObject({ ok: false, reason: 'invalid' })
+    }
+    expect(json(ABOUT).id).toBe('pg_about')
+  })
+
+  it('takes the fixes of a schema problem and a dangling reference in either order, when each fix is clean', () => {
+    const broken = () => {
+      disk(CONTACT, { ...pageLike('contact'), name: 5 })
+      disk(ABOUT, noLayout('about'))
+    }
+    broken()
+    const first = save(CONTACT, pageLike('contact'))
+    expect(first).toMatchObject({ ok: true })
+    expect(problemPaths(first)).toEqual([ABOUT])
+    expect(save(ABOUT, pageLike('about'))).not.toHaveProperty('problems')
+    broken()
+    const second = save(ABOUT, pageLike('about'))
+    expect(second).toMatchObject({ ok: true })
+    expect(problemPaths(second)).toEqual([CONTACT])
+    expect(save(CONTACT, pageLike('contact'))).not.toHaveProperty('problems')
+  })
+
+  it('takes the fix of the project file or the delete of a stray file, though they hide other problems', () => {
+    const project = json('.bildr/bildr.json')
+    disk(ABOUT, noLayout('about'))
+    disk('.bildr/bildr.json', '[]')
+    const fixed = save('.bildr/bildr.json', project)
+    expect(fixed).toMatchObject({ ok: true })
+    expect(problemPaths(fixed)).toEqual([ABOUT])
+    disk('.bildr/notes.json', { hi: 1 })
+    const deleted = deleteModelFile(dir, '.bildr/notes.json')
+    expect(deleted).toMatchObject({ ok: true })
+    expect(problemPaths(deleted as { problems?: Array<{ path: string }> })).toEqual([ABOUT])
+    expect(existsSync(join(dir, '.bildr/notes.json'))).toBe(false)
+  })
+
+  it('takes a page edit while its layout is broken, as long as the reference to the layout stays what it was', () => {
+    disk(LAYOUT, { ...json(LAYOUT), name: 5 })
+    const title = { ...json(ABOUT), seo: { title: 'About' } }
+    // The pages' reference to the broken layout is as it was: the page can be edited, not pointed elsewhere.
+    expect(save(ABOUT, title)).toMatchObject({ ok: true })
+    expect(json(ABOUT).seo.title).toBe('About')
+    expect(save(ABOUT, { ...title, layout: 'lay_other' })).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(json(ABOUT).layout).toBe('lay_main')
+  })
+
+  it('refuses changing the id of a file that was broken while the files that point at it stay', () => {
+    disk(LAYOUT, { ...json(LAYOUT), name: 5 })
+    expect(save(LAYOUT, { ...json(LAYOUT), name: 'main', id: 'lay_other' })).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(save(LAYOUT, { ...json(LAYOUT), name: 'main' })).toMatchObject({ ok: true })
+  })
+
   it('writes the file in its canonical form', () => {
     disk(CONTACT, noLayout('contact'))
     save(ABOUT, JSON.stringify(pageLike('about')))
@@ -157,6 +229,12 @@ describe('deleting from a model', () => {
     expect(outcome).toMatchObject({ ok: true })
     expect(problemPaths(outcome as { problems?: Array<{ path: string }> })).toEqual([CONTACT])
     expect(existsSync(join(dir, ABOUT))).toBe(false)
+  })
+
+  it('refuses deleting a layout the pages use while another file has a schema problem', () => {
+    disk(CONTACT, { ...pageLike('contact'), name: 5 })
+    expect(deleteModelFile(dir, LAYOUT)).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(existsSync(join(dir, LAYOUT))).toBe(true)
   })
 
   it('refuses a delete that adds a problem to another file', () => {
