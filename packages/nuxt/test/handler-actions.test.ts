@@ -167,6 +167,20 @@ describe('model_get', () => {
     expect(got.problems).toEqual([{ path: pagePath, message: 'layout: Unknown layout "lay_nope"' }])
     expect(got.model).toBeUndefined()
   })
+
+  it('lists a file that is not valid JSON too, with its text, so it can be opened and fixed', async () => {
+    const about = '.bildr/modules/main/pages/about.json'
+    writeFileSync(join(dir, about), '{ "id": ')
+    const got = await result(await act('model_get'))
+    expect(got.ok).toBe(false)
+    expect(got.invalid).toEqual({ [about]: '{ "id": ' })
+    expect(Object.keys(got.files as Record<string, unknown>)).not.toContain(about)
+    expect(got.problems).toEqual([{ path: about, message: expect.stringMatching(/^Invalid JSON/) }])
+  })
+
+  it('has no invalid files when every file parses', async () => {
+    expect((await result(await act('model_get'))).invalid).toEqual({})
+  })
 })
 
 describe('model_file_put', () => {
@@ -184,6 +198,57 @@ describe('model_file_put', () => {
     const body = await failure(await act('model_file_put', { path: pagePath, content: { ...page(), layout: 'lay_nope' } }), 422, 'invalid')
     expect(body.problems).toEqual([{ path: pagePath, message: 'layout: Unknown layout "lay_nope"' }])
     expect(page().layout).toBe('lay_main')
+  })
+
+  it('says the problems that remain in other files when it fixes one of two broken ones', async () => {
+    const about = '.bildr/modules/main/pages/about.json'
+    const contact = '.bildr/modules/main/pages/contact.json'
+    const broken = (name: string) => ({ ...page(), id: `pg_${name}`, name, path: `/${name}`, layout: 'lay_nope' })
+    writeFileSync(join(dir, about), JSON.stringify(broken('about')))
+    writeFileSync(join(dir, contact), JSON.stringify(broken('contact')))
+    const got = await result(await act('model_file_put', { path: about, content: { ...broken('about'), layout: 'lay_main' } }))
+    expect(got).toEqual({ sha256: expect.any(String), problems: [{ path: contact, message: 'layout: Unknown layout "lay_nope"' }] })
+    expect(JSON.parse(readFileSync(join(dir, about), 'utf8')).layout).toBe('lay_main')
+  })
+
+  describe('with a base (the file the edit started from)', () => {
+    it('writes when the file is still the base, and when no base is given', async () => {
+      const changed = page()
+      changed.seo.title = 'Mine'
+      await result(await act('model_file_put', { path: pagePath, content: changed, base: page() }))
+      expect(page().seo.title).toBe('Mine')
+      changed.seo.title = 'Again'
+      await result(await act('model_file_put', { path: pagePath, content: changed }))
+      expect(page().seo.title).toBe('Again')
+    })
+
+    it('refuses to overwrite a file that changed since, with a clear message, and writes nothing', async () => {
+      const opened = page()
+      const external = { ...page(), seo: { title: 'Someone else' } }
+      writeFileSync(join(dir, pagePath), JSON.stringify(external))
+      const mine = { ...opened, seo: { title: 'Mine' } }
+      const body = await failure(await act('model_file_put', { path: pagePath, content: mine, base: opened }), 409, 'conflict')
+      expect(body.message).toBe(`${pagePath} changed since it was opened, so it was not saved`)
+      expect(page().seo.title).toBe('Someone else')
+    })
+
+    it('refuses a file that was removed or that appeared since', async () => {
+      const about = '.bildr/modules/main/pages/about.json'
+      await failure(await act('model_file_put', { path: pagePath, content: page(), base: null }), 409, 'conflict')
+      await failure(await act('model_file_put', { path: about, content: { ...page(), id: 'pg_about', name: 'about', path: '/about' }, base: page() }), 409, 'conflict')
+      expect(existsSync(join(dir, about))).toBe(false)
+      await result(await act('model_file_put', { path: about, content: { ...page(), id: 'pg_about', name: 'about', path: '/about' }, base: null }))
+      expect(existsSync(join(dir, about))).toBe(true)
+    })
+
+    it('takes the text of a file that was not valid JSON as its base', async () => {
+      const about = '.bildr/modules/main/pages/about.json'
+      writeFileSync(join(dir, about), '{ "id": ')
+      const fixed = { ...page(), id: 'pg_about', name: 'about', path: '/about' }
+      await failure(await act('model_file_put', { path: about, content: fixed, base: '{ "id": "x"' }), 409, 'conflict')
+      await result(await act('model_file_put', { path: about, content: fixed, base: '{ "id": ' }))
+      expect(JSON.parse(readFileSync(join(dir, about), 'utf8')).id).toBe('pg_about')
+    })
   })
 
   it('only writes model files', async () => {
@@ -220,6 +285,15 @@ describe('model_file_delete', () => {
     const body = await failure(await act('model_file_delete', { path: '.bildr/layouts/main.json' }), 422, 'invalid')
     expect(body.problems).toEqual([{ path: pagePath, message: 'layout: Unknown layout "lay_main"' }])
     expect(existsSync(join(dir, '.bildr/layouts/main.json'))).toBe(true)
+  })
+
+  it('deletes a broken file while another is broken, and says the other\'s problems', async () => {
+    const about = '.bildr/modules/main/pages/about.json'
+    const contact = '.bildr/modules/main/pages/contact.json'
+    writeFileSync(join(dir, about), '{ "id": ')
+    writeFileSync(join(dir, contact), JSON.stringify({ ...page(), id: 'pg_contact', name: 'contact', path: '/contact', layout: 'lay_nope' }))
+    expect(await result(await act('model_file_delete', { path: about }))).toEqual({ problems: [{ path: contact, message: 'layout: Unknown layout "lay_nope"' }] })
+    expect(existsSync(join(dir, about))).toBe(false)
   })
 
   it('never deletes the project, theme, manifest or module file, or anything outside the model', async () => {

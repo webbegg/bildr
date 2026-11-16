@@ -3,7 +3,7 @@ import type { Ref } from 'vue'
 import type { Row } from '@bildr/codegen/query'
 import { createLiveRows } from '../design/liveRows.ts'
 import type { Design } from '../design/store.ts'
-import type { EditorView } from './useEditor.ts'
+import type { ConfirmOptions, EditorView } from './useEditor.ts'
 import { tabsOf } from './dataTabs.ts'
 import type { DataItem, DataTab } from './dataTabs.ts'
 import { collectionsOf, connectionsOf, defaultSourceOf, fixtureRowsOf } from '../shared/dataModel.ts'
@@ -25,12 +25,16 @@ import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
  * The Data workspace (S2) shows one item at a time, a connection or a collection, on one of the
  * tabs its kind has (`dataItem`, `dataTabs`, `dataTab`), or All model files (`dataFiles`, S3) in its place; `editor/dataLocation.ts` mirrors that in
  * the URL. Read the item through `dataCollection` / `dataConnection`, which are narrowed to it.
+ *
+ * Edits to a model file that are not saved (`dataDirty`, which the raw editor reports) are not lost silently: every
+ * way of moving the workspace (the item, the tab, All model files, the file in it) goes through `leaveData`, which
+ * asks first and moves only when the user discards them.
  */
 
 /** Where rows come from: the app's list route (Live) or the collection's own (Sample data). */
 export type RowsSource = 'live' | 'sample'
 
-export const createDataView = (design: Design, view: Ref<EditorView>) => {
+export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (options: ConfirmOptions) => Promise<boolean>) => {
   const model = design.model
   const collections = computed<DataCollection[]>(() => model.value ? collectionsOf(model.value) : [])
   const connections = computed<DataConnection[]>(() => model.value ? connectionsOf(model.value) : [])
@@ -43,14 +47,56 @@ export const createDataView = (design: Design, view: Ref<EditorView>) => {
   const chosenCollection = ref<string | null>(null)
   /** The connection the right panel shows (its folder was clicked); null shows the collection. */
   const chosenConnection = ref<string | null>(null)
+
+  /** The `.bildr/` file whose JSON has edits that are not saved, reported by the raw editor; null when there are none. */
+  const dataDirty = ref<string | null>(null)
+  /** How many times the user kept their edits instead of leaving: what moved the screen (the URL) is put back. */
+  const leaveDeclined = ref(0)
+  let deciding: Promise<boolean> | null = null
+  /**
+   * Moves the workspace with `apply`, after asking the user to discard their unsaved edits when there are some and the move
+   * `changes` something. Several moves asked in a row (a collection and no connection) share the one question, and are made in
+   * order when it is confirmed, or none is when it is declined. Resolves whether the move was made.
+   */
+  const leaveData = (apply: () => void, changes = true): Promise<boolean> => {
+    if (deciding === null && (dataDirty.value === null || !changes)) {
+      apply()
+      return Promise.resolve(true)
+    }
+    deciding ??= confirm({ title: `Discard unsaved changes to ${dataDirty.value}?`, description: 'Cancel keeps what you typed; discarding loses it.', confirmLabel: 'Discard changes', danger: true }).then((ok) => {
+      deciding = null
+      if (ok) dataDirty.value = null
+      else leaveDeclined.value++
+      return ok
+    })
+    return deciding.then((ok) => {
+      if (ok) apply()
+      return ok
+    })
+  }
+
   /** All model files (S3) is shown instead of the item, and the `.bildr/` file chosen in it. Choosing a collection or a connection, however it is chosen, shows it. */
-  const dataFiles = ref(false)
-  const dataFile = ref<string | null>(null)
+  const filesShown = ref(false)
+  const dataFiles = computed<boolean>({
+    get: () => filesShown.value,
+    set: (shown) => {
+      void leaveData(() => (filesShown.value = shown), shown !== filesShown.value)
+    }
+  })
+  const chosenFile = ref<string | null>(null)
+  const dataFile = computed<string | null>({
+    get: () => chosenFile.value,
+    set: (path) => {
+      void leaveData(() => (chosenFile.value = path), path !== chosenFile.value)
+    }
+  })
   const chooser = (chosen: Ref<string | null>) => computed<string | null>({
     get: () => chosen.value,
     set: (id) => {
-      chosen.value = id
-      dataFiles.value = false
+      void leaveData(() => {
+        chosen.value = id
+        filesShown.value = false
+      }, id !== chosen.value || filesShown.value)
     }
   })
   const collectionId = chooser(chosenCollection)
@@ -75,7 +121,7 @@ export const createDataView = (design: Design, view: Ref<EditorView>) => {
   const dataTab = computed<DataTab>({
     get: () => dataTabs.value.includes(chosenTab.value) ? chosenTab.value : dataTabs.value[0] ?? chosenTab.value,
     set: (tab) => {
-      chosenTab.value = tab
+      void leaveData(() => (chosenTab.value = tab), tab !== dataTab.value)
     }
   })
   /** The user's choice: Live shows the app's rows when it answers; Sample data shows the entity's fixtures (a REST collection has none). */
@@ -147,5 +193,5 @@ export const createDataView = (design: Design, view: Ref<EditorView>) => {
     if (view.value === 'data') void live.refresh()
   })
 
-  return { collections, connections, collectionId, connectionId, dataFiles, dataFile, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
+  return { collections, connections, collectionId, connectionId, dataFiles, dataFile, dataDirty, leaveData, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
 }

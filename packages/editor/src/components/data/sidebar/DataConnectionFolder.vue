@@ -4,6 +4,7 @@ import type { DropdownMenuItem } from '@nuxt/ui'
 import { dataItemKey } from '../../../editor/dataTabs.ts'
 import { TREE_STOP } from '../../../editor/dataTree.ts'
 import { useEditor } from '../../../editor/useEditor.ts'
+import { SELECTED_ITEM } from '../../../editorUi.ts'
 import { pagesUsingEntity } from '../../../shared/dataModel.ts'
 import type { DataConnection } from '../../../shared/dataModel.ts'
 
@@ -97,7 +98,7 @@ const menu = computed<DropdownMenuItem[]>(() => [
       <div
         v-else
         class="flex h-9 min-w-0 flex-1 items-center rounded-lg ps-1 pe-3 text-[12px]"
-        :class="shown ? 'bg-white/8 font-medium text-highlighted' : 'text-toned hover:bg-white/4'"
+        :class="shown ? SELECTED_ITEM : 'text-toned hover:bg-white/4'"
       >
         <button
           type="button"

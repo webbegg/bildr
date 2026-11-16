@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, provide } from 'vue'
+import { onBeforeRouteLeave } from 'vue-router'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import ProblemsList from '../components/ProblemsList.vue'
 import DataFiles from '../components/data/DataFiles.vue'
@@ -17,7 +18,8 @@ import { createEditor, provideEditor } from '../editor/useEditor.ts'
  * (Rows · Fields · Endpoints · JSON for a collection, Endpoints · JSON for a connection). The item and the
  * tab are in the URL query (`?item=collection:ent_post&tab=fields`). The tree ends with All model files (S3,
  * `?item=files&file=<path>`): every `.bildr/` file as JSON, which is also how a model with problems is fixed: the
- * problems are listed, and the files and their editor stay beside them.
+ * problems are listed, and the files and their editor stay beside them. They are shown too when the model could
+ * not be read at all, or the module said it is not ok without naming a problem: never an endless spinner.
  *
  * It is its own screen, not a mode of `DesignView`: the adapter opens it when the view changes to
  * Data (`editor/views.ts`), and the editor made here starts on it.
@@ -28,6 +30,8 @@ provide(DESIGN_KEY, design)
 const toast = useToast()
 const editor = provideEditor(createEditor(design, { toast: notice => toast.add(notice), view: 'data' }))
 useDataLocation(editor)
+// Leaving the screen is a move away from unsaved edits too.
+onBeforeRouteLeave(() => editor.dataDirty === null || editor.leaveData(() => {}))
 
 function isEditable(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -113,7 +117,7 @@ onBeforeUnmount(() => {
       />
     </div>
     <div
-      v-else-if="!editor.model"
+      v-else-if="editor.loading"
       class="flex flex-1 items-center justify-center"
       data-testid="data-loading"
     >
@@ -121,6 +125,40 @@ onBeforeUnmount(() => {
         name="i-lucide-loader-circle"
         class="size-6 animate-spin text-dimmed"
       />
+    </div>
+    <DataFiles
+      v-else-if="!editor.model && editor.dataFiles"
+      class="min-h-0 flex-1"
+    />
+    <div
+      v-else-if="!editor.model"
+      class="p-4"
+      data-testid="data-unreadable"
+    >
+      <ProblemsList
+        title="The model could not be read"
+        :message="editor.error ?? 'The module answered that the model is not ok, and named no problem.'"
+      >
+        <div class="mt-2 flex gap-2">
+          <UButton
+            label="Retry"
+            icon="i-lucide-refresh-cw"
+            color="error"
+            variant="soft"
+            size="sm"
+            @click="editor.reload()"
+          />
+          <UButton
+            :to="{ path: '/data', query: { item: 'files' } }"
+            label="Open model files"
+            icon="i-lucide-file-json"
+            color="error"
+            variant="soft"
+            size="sm"
+            data-testid="open-model"
+          />
+        </div>
+      </ProblemsList>
     </div>
     <div
       v-else

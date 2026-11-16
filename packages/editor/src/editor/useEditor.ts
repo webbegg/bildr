@@ -214,7 +214,8 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   const mode = ref<EditorView>(options.view ?? handed.view ?? 'build')
   const screen = screenOf(mode.value)
   const importRequest = ref(screen === 'data' ? handed.data.importRequest ?? 0 : 0)
-  const data = createDataView(design, mode)
+  // `confirm` is made below: it is only asked once the editor is in use.
+  const data = createDataView(design, mode, options => confirm(options))
   if (screen === 'data') data.collectionId.value = handed.data.collectionId ?? null
   watch(mode, view => requestView(view, screen, { pageId: lastPage.value, collectionId: data.collectionId.value, importRequest: importRequest.value }), { flush: 'sync' })
 
@@ -1012,7 +1013,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard: design.clipboard, history: design.history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, previewHint, breakpointBase, deviceId, device: design.device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, selected, selectedNodes, nodeName, theme,
     importRequest, variablesRequest, env,
     // The Data view: collections are entities, connections REST data sources; the rows are the app's or the fixtures, never written (U7).
-    collections: data.collections, connections: data.connections, collectionId: data.collectionId, collection: data.collection, connectionId: data.connectionId, connection: data.connection, dataFiles: data.dataFiles, dataFile: data.dataFile, dataItem: data.dataItem, dataCollection: data.dataCollection, dataConnection: data.dataConnection, dataTabs: data.dataTabs, dataTab: data.dataTab, rowsPreference: data.rowsPreference, recordId: data.recordId, collectionRows: data.collectionRows, rowsSource: data.rowsSource, rowsFallback: data.rowsFallback, recordsError: data.recordsError, recordsTotal: data.recordsTotal, recordsLoading: data.recordsLoading, collectionCounts: data.collectionCounts, reloadRecords: data.reloadRecords, createCollection: data.createCollection,
+    collections: data.collections, connections: data.connections, collectionId: data.collectionId, collection: data.collection, connectionId: data.connectionId, connection: data.connection, dataFiles: data.dataFiles, dataFile: data.dataFile, dataDirty: data.dataDirty, leaveData: data.leaveData, leaveDeclined: data.leaveDeclined, dataItem: data.dataItem, dataCollection: data.dataCollection, dataConnection: data.dataConnection, dataTabs: data.dataTabs, dataTab: data.dataTab, rowsPreference: data.rowsPreference, recordId: data.recordId, collectionRows: data.collectionRows, rowsSource: data.rowsSource, rowsFallback: data.rowsFallback, recordsError: data.recordsError, recordsTotal: data.recordsTotal, recordsLoading: data.recordsLoading, collectionCounts: data.collectionCounts, reloadRecords: data.reloadRecords, createCollection: data.createCollection,
     // The app's data (P5): the detail page's records stand where the hosted Data mode's collection records did.
     records: design.records, record: design.record, pickRecord: design.pickRecord, rowsOf: design.rowsOf, detail: design.detail, data: design.data, detailCollection: design.detail, detailRecords: design.records, previewRecord: design.record, reloadDetailRecords, setPreviewRecord, setPageCollection, createDetailPage,
     // The store's own state the ported panels read (P4/P5 logic stays behind the adapter).

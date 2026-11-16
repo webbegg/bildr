@@ -1,7 +1,7 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import { MANIFEST_FILE, fileKind, loadModel, serializeModel } from '@bildr/codegen/model'
-import type { ModelProblem } from '@bildr/codegen/model'
+import { MANIFEST_FILE, PROJECT_FILE, fileKind, loadModel, serializeModel, stringifyModelFile } from '@bildr/codegen/model'
+import type { Model, ModelProblem } from '@bildr/codegen/model'
 import type { DriftFile } from '@bildr/codegen/sync'
 import { readHealth } from './health.ts'
 import { PENDING_FILE } from './migrations.ts'
@@ -11,7 +11,7 @@ import { readManifest, sha256, writeAtomically } from './sync.ts'
 /**
  * What the editor's surfaces (the `/api/*` routes and the actions) read and
  * write on disk, so both keep the same rules: only `.bildr/` model files, the
- * whole model stays valid, canonical atomic writes, no symlink escapes.
+ * model gets no new problem (`judge`), canonical atomic writes, no symlink escapes.
  */
 
 /** A `.bildr/` model file the editor may write: never the manifest, the cache or project files. Paths must be normalized. */
@@ -21,25 +21,68 @@ const UNSAFE_PATH = /[\u0000-\u001f\u007f\\]/
 
 export const isModelFilePath = (path: string): boolean => !UNSAFE_PATH.test(path) && path !== MANIFEST_FILE && fileKind(path) !== undefined
 
+const parses = (text: string): boolean => {
+  try {
+    JSON.parse(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const problemKey = (problem: ModelProblem): string => `${problem.path}\n${problem.message}`
+
+/**
+ * The problems of `files` with none of them hiding another: the loader reports files that are not JSON before any
+ * schema problem, and schema problems before the references between files, so the files that are not JSON are left
+ * out here (they are problems of their own, kept in the loader's own report).
+ */
+const visibleProblems = (files: Record<string, string>): ModelProblem[] => {
+  const result = loadModel(Object.fromEntries(Object.entries(files).filter(([, text]) => parses(text))))
+  return result.ok ? [] : result.problems
+}
+
+/**
+ * The write rule, for a change from `before` to `after` (path → text) that writes `written` (a path) or deletes a file
+ * (`written` null). The change is accepted when:
+ * - the model is valid after it; or
+ * - the model had problems, and the file written has none of its own (it parses, and no problem names it), and no
+ *   problem exists that the model did not already have: a problem is the same when its file and message are.
+ * Otherwise the problems that stop it are returned. A model that is valid stays valid: it had no problems, so none may appear.
+ * The problems are compared with the files that are not JSON left out (`visibleProblems`), so a file that is still
+ * broken does not hide that another is sound. The file written can only be judged with a project file that parses.
+ */
+const judge = (before: Record<string, string>, after: Record<string, string>, written: string | null): { ok: true, model: Model | undefined, remaining: ModelProblem[] } | { ok: false, blocking: ModelProblem[] } => {
+  const loaded = loadModel(after)
+  if (loaded.ok) return { ok: true, model: loaded.model, remaining: [] }
+  const shown = visibleProblems(after)
+  const project = after[PROJECT_FILE]
+  if (written !== null && written !== PROJECT_FILE && !(project !== undefined && parses(project))) return { ok: false, blocking: shown }
+  const had = new Set(visibleProblems(before).map(problemKey))
+  const blocking = shown.filter(problem => problem.path === written || !had.has(problemKey(problem)))
+  return blocking.length ? { ok: false, blocking } : { ok: true, model: undefined, remaining: loaded.problems }
+}
+
 export type SaveOutcome
-  = | { ok: true, sha256: string }
+  = | { ok: true, sha256: string, /** What is still wrong with the model, in other files; none when it is valid. */ problems?: ModelProblem[] }
     | { ok: false, reason: 'json' | 'outside', message: string }
     | { ok: false, reason: 'invalid', problems: ModelProblem[] }
 
-/** Saves one model file (`isModelFilePath`), only if the whole model stays valid. Written canonically and atomically. */
+/**
+ * Saves one model file (`isModelFilePath`) under the write rule (`judge`): a valid model stays valid; one with problems takes
+ * a file that is sound and adds none elsewhere, and the problems that remain are returned. Written canonically and atomically.
+ */
 export const saveModelFile = (root: string, path: string, text: string): SaveOutcome => {
-  try {
-    JSON.parse(text)
-  } catch {
-    return { ok: false, reason: 'json', message: 'Invalid JSON' }
-  }
-  const result = loadModel({ ...readModelFiles(root), [path]: text })
-  if (!result.ok) return { ok: false, reason: 'invalid', problems: result.problems }
+  if (!parses(text)) return { ok: false, reason: 'json', message: 'Invalid JSON' }
+  const before = readModelFiles(root)
+  const verdict = judge(before, { ...before, [path]: text }, path)
+  if (!verdict.ok) return { ok: false, reason: 'invalid', problems: verdict.blocking }
   const target = join(root, path)
   if (!resolvesInside(join(root, '.bildr'), target)) return { ok: false, reason: 'outside', message: `${path} resolves outside .bildr/ (symlink)` }
-  const canonical = serializeModel(result.model)[path]!
+  // The model's own serialization applies the schema; while the model has problems the file is only reformatted.
+  const canonical = verdict.model ? serializeModel(verdict.model)[path]! : stringifyModelFile(JSON.parse(text))
   writeAtomically(target, canonical)
-  return { ok: true, sha256: sha256(canonical) }
+  return { ok: true, sha256: sha256(canonical), ...(verdict.remaining.length ? { problems: verdict.remaining } : {}) }
 }
 
 /** The project, theme, manifest and module files hold the model together: deleting them is never an artifact edit. */
@@ -53,21 +96,36 @@ export const isDeletableModelPath = (path: string): boolean => {
 }
 
 export type DeleteOutcome
-  = | { ok: true }
+  = | { ok: true, problems?: ModelProblem[] }
     | { ok: false, reason: 'missing' | 'outside', message: string }
     | { ok: false, reason: 'invalid', problems: ModelProblem[] }
 
-/** Deletes one artifact file (`isDeletableModelPath`), only if the rest of the model stays valid. Never through a symlink. */
+/** Deletes one artifact file (`isDeletableModelPath`) under the write rule (`judge`): it may add no problem to the rest of the model. Never through a symlink. */
 export const deleteModelFile = (root: string, path: string): DeleteOutcome => {
   const target = join(root, path)
   if (!resolvesInside(join(root, '.bildr'), dirname(target))) return { ok: false, reason: 'outside', message: `${path} resolves outside .bildr/ (symlink)` }
   const stat = lstatSync(target, { throwIfNoEntry: false })
   if (stat?.isSymbolicLink()) return { ok: false, reason: 'outside', message: `${path} is a symlink: bildr only deletes model files it can read` }
   if (!stat?.isFile()) return { ok: false, reason: 'missing', message: `${path} doesn't exist` }
-  const result = loadModel(Object.fromEntries(Object.entries(readModelFiles(root)).filter(([file]) => file !== path)))
-  if (!result.ok) return { ok: false, reason: 'invalid', problems: result.problems }
+  const before = readModelFiles(root)
+  const verdict = judge(before, Object.fromEntries(Object.entries(before).filter(([file]) => file !== path)), null)
+  if (!verdict.ok) return { ok: false, reason: 'invalid', problems: verdict.blocking }
   rmSync(target)
-  return { ok: true }
+  return { ok: true, ...(verdict.remaining.length ? { problems: verdict.remaining } : {}) }
+}
+
+/**
+ * Whether a file is still what an edit started from (`base`): its parsed JSON when the file was valid JSON, its text when it
+ * was not, null when it did not exist. `disk` is the file's text now, undefined when it does not exist.
+ */
+export const matchesBase = (disk: string | undefined, base: Record<string, unknown> | string | null): boolean => {
+  if (base === null || disk === undefined) return base === null && disk === undefined
+  if (typeof base === 'string') return disk === base
+  try {
+    return JSON.stringify(JSON.parse(disk)) === JSON.stringify(base)
+  } catch {
+    return false
+  }
 }
 
 /** One file of an edit's change set (`@bildr/codegen/edit`): its canonical text, or null to delete it. */

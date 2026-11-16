@@ -165,7 +165,7 @@ export const queryCreateForList = defineEdit({
     const { name: module, mod } = moduleOfPage(draft, page)
     const entity = mod.entities.find(entry => entry.id === entityId) ?? fail('invalid', `${entityOf(draft, entityId).name} isn't in module "${module}", where the page is: a page reads the queries of its own module`)
     const repository = mod.repositories.find(entry => entry.entity === entityId)
-    if (!repository?.expose?.list || !repository.operations.includes('list')) fail('invalid', `${entity.name} has no list the app can read: expose its list in the Model screen first`)
+    if (!repository?.expose?.list || !repository.operations.includes('list')) fail('invalid', `${entity.name} has no list the app can read: expose its list in the collection's JSON tab, under Repository`)
     let list: ModelNode | undefined
     if (nodeId !== undefined) {
       walk(page.root, (node) => {

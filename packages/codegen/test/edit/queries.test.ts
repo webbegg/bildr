@@ -107,6 +107,14 @@ describe('query_create_for_list', () => {
     p.refuse('query_create_for_list', { page: 'pg_index', entity: 'ent_post', as: 'more', nodeId: 'n_h1' }, 'invalid')
     p.refuse('query_create_for_list', { page: 'pg_index', entity: 'ent_nope' }, 'not_found')
   })
+
+  it('says where to expose the list of an entity that has none: the collection\'s JSON tab, under Repository', () => {
+    const p = project()
+    p.edit('entity_create', { name: 'blog tag', source: 'ds_main', expose: false, fields: [{ name: 'label', type: 'text', required: true }] })
+    const message = p.refuse('query_create_for_list', { page: 'pg_index', entity: 'ent_blog_tag' }, 'invalid').message
+    expect(message).toBe('BlogTag has no list the app can read: expose its list in the collection\'s JSON tab, under Repository')
+    expect(message).not.toContain('Model screen')
+  })
 })
 
 describe('page_use_add, page_use_update and page_use_remove', () => {

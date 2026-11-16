@@ -6,7 +6,7 @@ import { MANIFEST_FILE, fileKind, loadModel } from '@bildr/codegen/model'
 import type { DataSourceFile } from '@bildr/codegen/model'
 import { CHECK_NAMES, readHealth } from '../node/health.ts'
 import type { CheckName } from '../node/health.ts'
-import { codeView, deleteModelFile, isDeletableModelPath, isModelFilePath, pendingMigration, saveModelFile } from '../node/editor-io.ts'
+import { codeView, deleteModelFile, isDeletableModelPath, isModelFilePath, matchesBase, pendingMigration, saveModelFile } from '../node/editor-io.ts'
 import { readModelFiles } from '../node/project.ts'
 import { ActionError, defineAction } from './define.ts'
 import type { ActionDef } from './define.ts'
@@ -23,18 +23,19 @@ import { HISTORY_ACTIONS, changed, historyReady } from './history.ts'
 
 const modelPath = z.string().min(1).describe('A .bildr/ model file, relative to the project root, e.g. ".bildr/modules/main/pages/index.json"')
 
-/** Each model file as its parsed JSON; files that don't parse are left out (the problems name them). */
-const parsedFiles = (files: Record<string, string>): Record<string, unknown> => {
+/** Each model file as its parsed JSON, and the text of the ones that don't parse (`invalid`, which the problems name too). */
+const readableFiles = (files: Record<string, string>): { parsed: Record<string, unknown>, invalid: Record<string, string> } => {
   const parsed: Record<string, unknown> = {}
+  const invalid: Record<string, string> = {}
   for (const [path, text] of Object.entries(files)) {
     if (!isModelFilePath(path)) continue
     try {
       parsed[path] = JSON.parse(text) as unknown
     } catch {
-      // Reported by loadModel.
+      invalid[path] = text
     }
   }
-  return parsed
+  return { parsed, invalid }
 }
 
 /**
@@ -47,35 +48,37 @@ const databaseOf = (parsed: Record<string, unknown>) => hasDatabase({
 
 const modelGet = defineAction({
   name: 'model_get',
-  description: 'Read the project\'s .bildr/ model: the validated model and every model file as JSON, or the problems that keep it from loading (the files are returned too, so they can be fixed). `database` says whether the project has an app database (a sqlite data source); without one there are no migrations.',
+  description: 'Read the project\'s .bildr/ model: the validated model and every model file as JSON, or the problems that keep it from loading (the files are returned too, so they can be fixed). A file that is not valid JSON is not in `files`: `invalid` has its text by path. `database` says whether the project has an app database (a sqlite data source); without one there are no migrations.',
   input: z.object({}),
   readOnly: true,
   run: (_input, { root }) => {
     const files = readModelFiles(root)
     const result = loadModel(files)
-    const parsed = parsedFiles(files)
+    const { parsed, invalid } = readableFiles(files)
     const database = databaseOf(parsed)
-    return result.ok ? { ok: true, model: result.model, files: parsed, database } : { ok: false, problems: result.problems, files: parsed, database }
+    return result.ok ? { ok: true, model: result.model, files: parsed, invalid, database } : { ok: false, problems: result.problems, files: parsed, invalid, database }
   }
 })
 
 const modelFilePut = defineAction({
   name: 'model_file_put',
-  description: 'Create or replace one .bildr/ model file with the given JSON. Saved only when the whole model stays valid (problems otherwise), in canonical form; the app regenerates from it.',
+  description: 'Create or replace one .bildr/ model file with the given JSON, in canonical form; the app regenerates from it. A valid model must stay valid. A model that already has problems takes a file that has none of its own and adds none to another file; the problems that remain are returned as `problems`. `base` is the file the edit started from (its JSON, its text when it was not valid JSON, null when it did not exist): the write is refused as a conflict when the file is not that any more.',
   input: z.object({
     path: modelPath,
-    content: z.record(z.string(), z.unknown()).describe('The file\'s JSON object')
+    content: z.record(z.string(), z.unknown()).describe('The file\'s JSON object'),
+    base: z.union([z.record(z.string(), z.unknown()), z.string(), z.null()]).optional().describe('The file as it was read: its JSON, its text when it was not valid JSON, or null when it did not exist. Omit it to replace the file whatever it holds')
   }),
-  run: ({ path, content }, ctx) => {
+  run: ({ path, content, base }, ctx) => {
     const { root } = ctx
     if (!isModelFilePath(path)) throw new ActionError('forbidden', 'Only .bildr/ model files can be written (not the manifest, the cache or project files)')
     historyReady(ctx)
     const before = readModelFiles(root)
+    if (base !== undefined && !matchesBase(before[path], base)) throw new ActionError('conflict', `${path} changed since it was opened, so it was not saved`)
     const saved = saveModelFile(root, path, JSON.stringify(content))
     if (saved.ok) {
       const after = readFileSync(join(root, path), 'utf8')
       if (before[path] !== after) changed(ctx, 'model_file_put', before, [{ path, content: after }])
-      return { sha256: saved.sha256 }
+      return { sha256: saved.sha256, ...(saved.problems ? { problems: saved.problems } : {}) }
     }
     if (saved.reason === 'invalid') throw new ActionError('invalid', `The model would have problems, ${path} was not saved`, saved.problems)
     throw new ActionError(saved.reason === 'json' ? 'invalid_input' : 'forbidden', saved.message)
@@ -84,7 +87,7 @@ const modelFilePut = defineAction({
 
 const modelFileDelete = defineAction({
   name: 'model_file_delete',
-  description: 'Delete one artifact file of the model (a data source, a layout, or an entity, repository, query, action, state, component, page or fixtures file of a module). Never bildr.json, theme.json, the manifest or a module.json. Refused when the rest of the model would have problems.',
+  description: 'Delete one artifact file of the model (a data source, a layout, or an entity, repository, query, action, state, component, page or fixtures file of a module). Never bildr.json, theme.json, the manifest or a module.json. Refused when it would add a problem to the rest of the model (a model with problems already may lose a broken file; the problems that remain are returned as `problems`).',
   input: z.object({ path: modelPath }),
   run: ({ path }, ctx) => {
     const { root } = ctx
@@ -94,7 +97,7 @@ const modelFileDelete = defineAction({
     const deleted = deleteModelFile(root, path)
     if (deleted.ok) {
       changed(ctx, 'model_file_delete', before, [{ path, content: null }])
-      return {}
+      return deleted.problems ? { problems: deleted.problems } : {}
     }
     if (deleted.reason === 'invalid') throw new ActionError('invalid', `The rest of the model would have problems, ${path} was not deleted`, deleted.problems)
     throw new ActionError(deleted.reason === 'missing' ? 'not_found' : 'forbidden', deleted.message)
@@ -140,7 +143,7 @@ const migrationPendingGet = defineAction({
   input: z.object({}),
   readOnly: true,
   run: (_input, { root }) => {
-    const database = databaseOf(parsedFiles(readModelFiles(root)))
+    const database = databaseOf(readableFiles(readModelFiles(root)).parsed)
     return { pending: database ? pendingMigration(root) : null, database }
   }
 })

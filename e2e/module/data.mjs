@@ -192,16 +192,27 @@ await run('data', async ({ page, browser, errors }) => {
   const reread = JSON.parse(await rawContent.inputValue())
   check(reread.fields.some(field => field.name === 'price'), 'and the JSON tab shows the file as the module saved it')
 
-  // A problem the module refuses is shown inline, and the text stays.
+  // A problem the module refuses is shown inline, and the text stays. The refusal is answered 422, which Chromium logs as a console error: this step expects it, and no other does.
+  const refused = /status of 422 \(Unprocessable Entity\)/
+  const errorsBefore = errors.length
   await rawContent.fill(JSON.stringify({ ...reread, idStrategy: 'ent_missing' }))
   await page.locator('[data-testid="raw-save"]').click()
   await page.locator('[data-data-json]').getByText('Not saved').first().waitFor()
+  errors.push(...errors.splice(errorsBefore).filter(message => !refused.test(message)))
   const refusal = await page.locator('[data-data-json]').innerText()
   check(refusal.includes('idStrategy') && (await rawContent.inputValue()).includes('ent_missing'), `a save the module refuses shows its problem and keeps the text (${refusal.replace(/\s+/g, ' ').slice(-200)})`)
   check(bildr('modules/blog/entities/menu.json').idStrategy === 'uuid', 'and the file is as it was')
 
+  // The text is not saved: moving away asks first, and Cancel keeps it.
+  await page.locator('[data-raw-model]').click()
+  await page.locator('[data-confirm]').waitFor()
+  check((await page.locator('[role=dialog]').innerText()).includes('Discard unsaved changes to .bildr/modules/blog/entities/menu.json?'), 'leaving the JSON tab with unsaved edits asks to discard them')
+  await page.locator('[data-confirm-cancel]').click()
+  check(await page.locator('[data-data-json]').count() === 1 && (await rawContent.inputValue()).includes('ent_missing'), 'Cancel keeps the tab and the text')
+
   // All model files: every file by kind, the editor beside it, the selection in the URL.
   await page.locator('[data-raw-model]').click()
+  await page.locator('[data-confirm-ok]').click()
   await page.locator('[data-data-files] [data-files-group]').first().waitFor()
   const pageFile = p.filePath.startsWith('.bildr/') ? p.filePath : `.bildr/${p.filePath}`
   const groups = (await page.locator('[data-files-group] h3').allInnerTexts()).map(name => name.trim())
@@ -217,6 +228,15 @@ await run('data', async ({ page, browser, errors }) => {
   await rawContent.waitFor()
   check(JSON.parse(await rawContent.inputValue()).id === p.pageId && await page.locator(`[data-file="${pageFile}"]`).getAttribute('aria-current') === 'true', 'a reload restores the file')
 
+  // A new file's path is typed behind "New file…": the URL names it once it is saved, and choosing the file again goes back to it.
+  await page.getByRole('button', { name: 'New file…' }).click()
+  await page.locator('[data-testid="raw-path"] input, input[data-testid="raw-path"]').first().fill('.bildr/modules/blog/pages/typed.json')
+  await page.locator('[data-testid="raw-path-open"]').click()
+  check(await page.locator('[data-data-files] [data-file-path]').innerText() === '.bildr/modules/blog/pages/typed.json' && decodeURIComponent(page.url()).endsWith('#/data?item=files') && await page.locator('[data-file][aria-current="true"]').count() === 0, `a typed path is shown, and not in the URL (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
+  await page.locator(`[data-file="${pageFile}"]`).click()
+  await rawContent.waitFor()
+  check(JSON.parse(await rawContent.inputValue()).id === p.pageId && decodeURIComponent(page.url()).endsWith(`#/data?item=files&file=${pageFile}`), 'choosing the chosen file again goes back to it')
+
   // The Model screen is retired: its deep link opens All model files, keeping the path.
   await page.goto(editorUrl('/model'))
   await page.locator('[data-data-files]').waitFor()
@@ -229,4 +249,4 @@ await run('data', async ({ page, browser, errors }) => {
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 // A new entity regenerates the app and restarts the dev server: its event stream ends mid-request.
-}, { ignore: [/ERR_INCOMPLETE_CHUNKED_ENCODING/, /ERR_CONNECTION_(REFUSED|RESET)/, /status of 422 \(Unprocessable Entity\)/] })
+}, { ignore: [/ERR_INCOMPLETE_CHUNKED_ENCODING/, /ERR_CONNECTION_(REFUSED|RESET)/] })

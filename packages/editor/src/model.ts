@@ -1,19 +1,22 @@
+import { fileKind } from '@bildr/codegen/model'
+import type { FileKind as CodegenFileKind } from '@bildr/codegen/model'
 import type { Json, JsonObject } from './types.ts'
 
 /**
  * The `.bildr/` model files as the Data screen's "All model files" (S3) and its JSON tab list them: what
  * kind a path holds, the files grouped by kind, and the files a collection is linked to. Everything is
- * read from the files `model_get` returns (path → parsed JSON), so it holds while the model has problems.
- * The kinds and paths mirror `fileKind` in `@bildr/codegen/model` (`load.ts`), which the package does not export.
+ * read from the files `model_get` returns (path → parsed JSON, and the text of the ones that are not JSON), so it
+ * holds while the model has problems. The kind of a path is `fileKind` of `@bildr/codegen/model`, the module's own.
  */
 
-export type FileKind = 'project' | 'theme' | 'datasource' | 'layout' | 'module' | 'entity' | 'repository' | 'query' | 'action' | 'state' | 'component' | 'page' | 'fixtures'
+/** The kinds of model file the list names: the codegen's, but for the manifest, which bildr writes and the list leaves out. */
+export type FileKind = Exclude<CodegenFileKind, 'manifest'>
 
-/** The kinds in the order "All model files" lists them, with the name its heading uses ("Connections" and "Sample data" are the Data workspace's words). */
+/** The kinds in the order "All model files" lists them, with the name its heading uses ("Connections and storage" is the datasources: REST connections, sqlite and memory storage; "Sample data" is the Data workspace's word). */
 const KIND_LABELS: Record<FileKind, string> = {
   project: 'Project',
   theme: 'Theme',
-  datasource: 'Connections',
+  datasource: 'Connections and storage',
   layout: 'Layouts',
   module: 'Modules',
   entity: 'Collections',
@@ -27,26 +30,19 @@ const KIND_LABELS: Record<FileKind, string> = {
 }
 const KIND_ORDER = Object.keys(KIND_LABELS) as FileKind[]
 
-const FOLDER_KINDS: Record<string, FileKind> = { entities: 'entity', repositories: 'repository', queries: 'query', actions: 'action', state: 'state', components: 'component', pages: 'page', fixtures: 'fixtures' }
-
 /** The kind of a `.bildr/` model file from its path, or none for the manifest, the cache and anything else (only normalized paths count). */
 export const kindOfPath = (path: string): FileKind | undefined => {
-  if (path.split('/').some(part => part === '' || part === '.' || part === '..')) return undefined
-  if (path === '.bildr/bildr.json') return 'project'
-  if (path === '.bildr/theme.json') return 'theme'
-  if (/^\.bildr\/datasources\/[^/]+\.json$/.test(path)) return 'datasource'
-  if (/^\.bildr\/layouts\/[^/]+\.json$/.test(path)) return 'layout'
-  if (/^\.bildr\/modules\/[^/]+\/module\.json$/.test(path)) return 'module'
-  const folder = /^\.bildr\/modules\/[^/]+\/([^/]+)\/[^/]+\.json$/.exec(path)?.[1]
-  return folder !== undefined && Object.hasOwn(FOLDER_KINDS, folder) ? FOLDER_KINDS[folder] : undefined
+  const kind = fileKind(path)
+  // A name an object inherits (a folder called `constructor`) is not a kind.
+  return KIND_ORDER.find(known => known === kind)
 }
 
 export const isObject = (value: unknown): value is JsonObject => typeof value === 'object' && value !== null && !Array.isArray(value)
 
-/** A short label for a file in a list. */
+/** A short label for a file in a list: its name, or for a query its label (people read it; the name is generated from it), or its id, or its file name. */
 export const artifactLabel = (file: Json | undefined, path: string): string => {
   if (isObject(file)) {
-    for (const key of ['name', 'label', 'id']) {
+    for (const key of kindOfPath(path) === 'query' ? ['label', 'name', 'id'] : ['name', 'label', 'id']) {
       const value = file[key]
       if (typeof value === 'string' && value) return value
     }
@@ -57,6 +53,8 @@ export const artifactLabel = (file: Json | undefined, path: string): string => {
 export interface FileEntry {
   path: string
   label: string
+  /** The file on disk is not valid JSON (listed so it can be opened and fixed). */
+  invalid?: true
 }
 
 export interface FileGroup {
@@ -65,11 +63,11 @@ export interface FileGroup {
   files: FileEntry[]
 }
 
-/** The model files by kind (the kinds with no file are left out), each kind's files by path. */
-export const groupFiles = (files: Record<string, Json>): FileGroup[] => {
-  const paths = Object.keys(files).sort()
+/** The model files by kind (the kinds with no file are left out), each kind's files by path; `invalid` are the files that are not valid JSON (path → text), listed among them and marked. */
+export const groupFiles = (files: Record<string, Json>, invalid: Record<string, string> = {}): FileGroup[] => {
+  const paths = [...new Set([...Object.keys(files), ...Object.keys(invalid)])].sort()
   return KIND_ORDER.flatMap((kind) => {
-    const listed = paths.filter(path => kindOfPath(path) === kind).map(path => ({ path, label: artifactLabel(files[path], path) }))
+    const listed = paths.filter(path => kindOfPath(path) === kind).map((path): FileEntry => Object.hasOwn(invalid, path) ? { path, label: artifactLabel(undefined, path), invalid: true } : { path, label: artifactLabel(files[path], path) })
     return listed.length ? [{ kind, label: KIND_LABELS[kind], files: listed }] : []
   })
 }

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
 import type { AppRoutes } from '../helpers.ts'
 import DataView from '../../src/views/DataView.vue'
@@ -135,6 +135,8 @@ describe('the Data workspace (S2)', () => {
     const page = document.body.cloneNode(true) as HTMLElement
     // The rows, and the paths of the files, are the project's own: they are not the screen's words.
     for (const own of page.querySelectorAll('[data-records-table], [data-file-path]')) own.remove()
+    // The files' buttons carry their path as the title.
+    for (const own of page.querySelectorAll('[data-file], [data-file-switch]')) own.removeAttribute('title')
     return [page.textContent ?? '', ...[...page.querySelectorAll('[title], [aria-label], [placeholder]')].flatMap(element => ['title', 'aria-label', 'placeholder'].map(name => element.getAttribute(name) ?? ''))].join(' | ')
   }
 
@@ -969,16 +971,16 @@ describe('the JSON tab and All model files (S3)', () => {
     const element = q('[data-testid="raw-content"]')
     return (element?.matches('textarea') ? element : element?.querySelector('textarea')) as HTMLTextAreaElement | null
   }
-  const rawPath = () => {
-    const element = q('[data-testid="raw-path"]')
-    return (element?.matches('input') ? element : element?.querySelector('input')) as HTMLInputElement | null
-  }
   type FileJson = Record<string, unknown> & { fields: Array<Record<string, unknown>> }
   const shownFile = () => JSON.parse(rawText()!.value) as FileJson
   const saved = (() => {
     let files: Record<string, unknown> = {}
     return { reset: () => (files = {}), files: () => files }
   })()
+  // What one test saved is not on another's disk.
+  beforeEach(() => saved.reset())
+  /** The file as the module first returns it (what an edit of it starts from, and what the module sees as the base). */
+  const original = (path: string) => structuredClone(modelGet().files[path as keyof ReturnType<typeof modelGet>['files']])
   /** A module that keeps what is put: the next `model_get` returns the file as saved (and `edit` runs for the model's own change). */
   const keeping = (edit: (path: string, content: FileJson) => void = () => {}, extra: Handlers = {}): Handlers => ({
     model_get: () => ({ ...modelGet(), files: { ...modelGet().files, ...saved.files() } }),
@@ -1022,7 +1024,7 @@ describe('the JSON tab and All model files (S3)', () => {
       await typeInto(q('[data-testid="raw-content"]'), JSON.stringify(edited))
       const reads = actions.named('model_get').length
       await click(q('[data-testid="raw-save"]'))
-      expect(inputs(actions, 'model_file_put')).toEqual([{ path: POST, content: edited }])
+      expect(inputs(actions, 'model_file_put')).toEqual([{ path: POST, content: edited, base: original(POST) }])
       expect(text(q('[data-data-json]'))).toContain('Saved.')
       expect(actions.named('model_get').length).toBeGreaterThan(reads)
       await click(tab('fields'))
@@ -1068,6 +1070,7 @@ describe('the JSON tab and All model files (S3)', () => {
       await change()
       expect(actions.named('model_get').length).toBeGreaterThan(reads)
       expect(shownFile().plural).toBe('articles')
+      expect(q('[data-file-changed]')).toBeNull()
       await typeInto(q('[data-testid="raw-content"]'), '{ "draft": true }')
       saved.files()[POST] = { ...changed, plural: 'notes' }
       FakeEventSource.instances.at(-1)!.send({ type: 'model', version: 10, files: [POST], source: 'disk' })
@@ -1075,8 +1078,31 @@ describe('the JSON tab and All model files (S3)', () => {
       expect(rawText()!.value).toBe('{ "draft": true }')
     })
 
-    it('has a switcher for the files the collection is linked to, its own first, one at a time', async () => {
+    it('reads the model once more, not twice, after a save: the files and the editor\'s model share the read', async () => {
       const { actions } = await json()
+      await typeInto(q('[data-testid="raw-content"]'), JSON.stringify(withExtraField()))
+      const reads = actions.named('model_get').length
+      await click(q('[data-testid="raw-save"]'))
+      // The editor reads its model once and the files once: the files' own watch on the model does not read a third time.
+      expect(actions.named('model_get').length - reads).toBe(2)
+    })
+
+    it('shows a parse error with its line and column', async () => {
+      await json()
+      await typeInto(q('[data-testid="raw-content"]'), '{\n  "id": 1,\n  "name" 2\n}')
+      await click(q('[data-testid="raw-save"]'))
+      expect(text(q('[data-data-json]'))).toMatch(/Invalid JSON.*line 3, column 10/)
+    })
+
+    it('has an editor as tall as the window allows, not a fixed number of rows', async () => {
+      await json()
+      expect(rawText()!.getAttribute('rows')).not.toBe('18')
+      expect(rawText()!.className).toMatch(/h-\[/)
+    })
+
+    it('has a switcher for the files the collection is linked to, its own first, one at a time', async () => {
+      // The module keeps what it is given, whatever the file is.
+      const { actions } = await json(keeping())
       const labels = () => qa('[data-file-switcher] button').map(button => text(button))
       expect(labels().slice(0, 3)).toEqual(['Collection', 'Repository', 'Sample data'])
       expect(labels().slice(3).every(label => label.startsWith('Query '))).toBe(true)
@@ -1084,6 +1110,7 @@ describe('the JSON tab and All model files (S3)', () => {
       expect(q('[data-file-switcher] [aria-pressed="true"]')?.textContent?.trim()).toBe('Collection')
       await click(qa('[data-file-switcher] button').find(button => text(button) === 'Repository')!)
       expect(text(q('[data-file-path]'))).toBe(POST_REPOSITORY)
+      expect(qa('[data-file-path]')).toHaveLength(1)
       expect(shownFile()).toMatchObject({ id: 'repo_post', entity: 'ent_post' })
       expect(q('[data-file-switcher] [aria-pressed="true"]')?.textContent?.trim()).toBe('Repository')
       await typeInto(q('[data-testid="raw-content"]'), JSON.stringify({ ...shownFile(), table: 'blog_articles' }))
@@ -1112,7 +1139,7 @@ describe('the JSON tab and All model files (S3)', () => {
       const edited = { ...shownFile(), defaults: { baseUrl: 'https://quotes.test' } }
       await typeInto(q('[data-testid="raw-content"]'), JSON.stringify(edited))
       await click(q('[data-testid="raw-save"]'))
-      expect(inputs(actions, 'model_file_put')).toEqual([{ path: QUOTES, content: edited }])
+      expect(inputs(actions, 'model_file_put')).toEqual([{ path: QUOTES, content: edited, base: original(QUOTES) }])
     })
   })
 
@@ -1134,7 +1161,7 @@ describe('the JSON tab and All model files (S3)', () => {
       expect(q('[role="tablist"]')).toBeNull()
       expect(q('[data-raw-model]')?.getAttribute('aria-selected')).toBe('true')
       expect(treeItem('post')?.getAttribute('aria-selected')).toBe('false')
-      expect(qa('[data-files-group] h3').map(heading => text(heading))).toEqual(['Project', 'Theme', 'Connections', 'Layouts', 'Modules', 'Collections', 'Repositories', 'Queries', 'Actions', 'State', 'Components', 'Pages', 'Sample data'])
+      expect(qa('[data-files-group] h3').map(heading => text(heading))).toEqual(['Project', 'Theme', 'Connections and storage', 'Layouts', 'Modules', 'Collections', 'Repositories', 'Queries', 'Actions', 'State', 'Components', 'Pages', 'Sample data'])
       expect(text(group('page'))).toContain('index')
       expect(fileButton(INDEX_PAGE)).not.toBeNull()
       expect(fileButton('.bildr/manifest.json')).toBeNull()
@@ -1148,12 +1175,12 @@ describe('the JSON tab and All model files (S3)', () => {
       await click(fileButton(INDEX_PAGE))
       expect(router.currentRoute.value.query).toEqual({ item: 'files', file: INDEX_PAGE })
       expect(fileButton(INDEX_PAGE)?.getAttribute('aria-current')).toBe('true')
-      expect(rawPath()?.value).toBe(INDEX_PAGE)
+      expect(text(q('[data-file-path]'))).toBe(INDEX_PAGE)
       expect(shownFile()).toMatchObject({ id: 'pg_index', name: 'index' })
       const edited = { ...shownFile(), title: 'Home' }
       await typeInto(q('[data-testid="raw-content"]'), JSON.stringify(edited))
       await click(q('[data-testid="raw-save"]'))
-      expect(inputs(actions, 'model_file_put')).toEqual([{ path: INDEX_PAGE, content: edited }])
+      expect(inputs(actions, 'model_file_put')).toEqual([{ path: INDEX_PAGE, content: edited, base: original(INDEX_PAGE) }])
       expect(text(q('[data-data-files]'))).toContain('Saved.')
     })
 
@@ -1166,12 +1193,72 @@ describe('the JSON tab and All model files (S3)', () => {
       expect(rawText()!.value).toBe('{ "id": "pg_index" }')
     })
 
-    it('opens a file by its path, even one the model has not got yet', async () => {
-      const { actions } = await open(keeping(), {}, '/data?item=files')
-      await typeInto(q('[data-testid="raw-path"]'), '.bildr/modules/blog/pages/about.json')
+    it('shows the chosen file\'s path, read only, and asks for a path only behind New file…', async () => {
+      await open(keeping(), {}, `/data?item=files&file=${encodeURIComponent(INDEX_PAGE)}`)
+      expect(text(q('[data-file-path]'))).toBe(INDEX_PAGE)
+      expect(q('[data-testid="raw-path"]')).toBeNull()
+      expect(text(textButton('New file…'))).toBe('New file…')
+    })
+
+    it('opens a file by its path, even one the model has not got yet, and puts it in the URL once it is saved', async () => {
+      const { actions, router } = await open(keeping(), {}, '/data?item=files')
+      const about = '.bildr/modules/blog/pages/about.json'
+      await click(textButton('New file…'))
+      await typeInto(q('[data-testid="raw-path"]'), about)
+      await click(q('[data-testid="raw-path-open"]'))
+      expect(text(q('[data-file-path]'))).toBe(about)
+      // A path that is typed is not a file yet: the URL does not name it.
+      expect(router.currentRoute.value.query).toEqual({ item: 'files' })
       await typeInto(q('[data-testid="raw-content"]'), '{ "id": "pg_about" }')
       await click(q('[data-testid="raw-save"]'))
-      expect(inputs(actions, 'model_file_put')).toEqual([{ path: '.bildr/modules/blog/pages/about.json', content: { id: 'pg_about' } }])
+      // A file that was not there is created: the base says so.
+      expect(inputs(actions, 'model_file_put')).toEqual([{ path: about, content: { id: 'pg_about' }, base: null }])
+      await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({ item: 'files', file: about }))
+      expect(fileButton(about)?.getAttribute('aria-current')).toBe('true')
+    })
+
+    it('opens the file a typed path names when the model has it, and asks for a path under .bildr/', async () => {
+      const { router } = await open(keeping(), {}, '/data?item=files')
+      await click(textButton('New file…'))
+      await typeInto(q('[data-testid="raw-path"]'), 'package.json')
+      await click(q('[data-testid="raw-path-open"]'))
+      expect(text(q('[data-data-files]'))).toContain('Enter a path under .bildr/')
+      expect(q('[data-file-path]')).toBeNull()
+      await typeInto(q('[data-testid="raw-path"]'), INDEX_PAGE)
+      await click(q('[data-testid="raw-path-open"]'))
+      expect(router.currentRoute.value.query).toEqual({ item: 'files', file: INDEX_PAGE })
+      expect(shownFile()).toMatchObject({ id: 'pg_index' })
+    })
+
+    it('goes back to the chosen file when it is chosen again after another path was typed', async () => {
+      const { router } = await open(keeping(), {}, `/data?item=files&file=${encodeURIComponent(INDEX_PAGE)}`)
+      await click(textButton('New file…'))
+      await typeInto(q('[data-testid="raw-path"]'), '.bildr/modules/blog/pages/about.json')
+      await click(q('[data-testid="raw-path-open"]'))
+      expect(text(q('[data-file-path]'))).toBe('.bildr/modules/blog/pages/about.json')
+      // The list shows nothing chosen, and the URL does not disagree with what is shown after a reload.
+      expect(qa('[data-file][aria-current="true"]')).toEqual([])
+      expect(router.currentRoute.value.query).toEqual({ item: 'files' })
+      await click(fileButton(INDEX_PAGE))
+      expect(text(q('[data-file-path]'))).toBe(INDEX_PAGE)
+      expect(shownFile()).toMatchObject({ id: 'pg_index' })
+      expect(router.currentRoute.value.query).toEqual({ item: 'files', file: INDEX_PAGE })
+    })
+
+    it('scrolls the chosen file into view in the list', async () => {
+      const scrolled: Element[] = []
+      const original = Element.prototype.scrollIntoView
+      Element.prototype.scrollIntoView = function (this: Element) {
+        scrolled.push(this)
+      }
+      try {
+        await open(keeping(), {}, `/data?item=files&file=${encodeURIComponent(INDEX_PAGE)}`)
+        expect(scrolled.at(-1)).toBe(fileButton(INDEX_PAGE))
+        await click(fileButton(LAYOUT))
+        expect(scrolled.at(-1)).toBe(fileButton(LAYOUT))
+      } finally {
+        Element.prototype.scrollIntoView = original
+      }
     })
 
     it('deletes the file only after it is confirmed', async () => {
@@ -1183,6 +1270,26 @@ describe('the JSON tab and All model files (S3)', () => {
       await click(q('[data-testid="raw-delete"]'))
       await click(q('[data-confirm-ok]'))
       expect(inputs(actions, 'model_file_delete')).toEqual([{ path: INDEX_PAGE }])
+    })
+
+    it('after a delete reads the files again, and the file is gone from the list, nothing is chosen, the URL says so, and "Deleted." stays', async () => {
+      let deleted = false
+      const { actions, router } = await open({
+        model_get: () => deleted ? { ...modelGet(), files: Object.fromEntries(Object.entries(modelGet().files).filter(([path]) => path !== INDEX_PAGE)) } : modelGet(),
+        model_file_delete: () => {
+          deleted = true
+          return {}
+        }
+      }, {}, `/data?item=files&file=${encodeURIComponent(INDEX_PAGE)}`)
+      const reads = actions.named('model_get').length
+      await click(q('[data-testid="raw-delete"]'))
+      await click(q('[data-confirm-ok]'))
+      await vi.waitFor(() => expect(fileButton(INDEX_PAGE)).toBeNull())
+      expect(actions.named('model_get').length).toBeGreaterThan(reads)
+      expect(router.currentRoute.value.query).toEqual({ item: 'files' })
+      expect(q('[data-file-path]')).toBeNull()
+      expect(rawText()?.value).toBe('')
+      expect(text(q('[data-data-files]'))).toContain('Deleted.')
     })
 
     it('keeps its selection in the URL, both ways', async () => {
@@ -1222,6 +1329,343 @@ describe('the JSON tab and All model files (S3)', () => {
       await open({}, {}, '/data?item=files')
       expect(q('[data-data-files]')).not.toBeNull()
       expect(q('[data-data-empty]')).toBeNull()
+    })
+  })
+
+  describe('the JSON tab\'s switcher', () => {
+    const switcherLabels = () => qa('[data-file-switch]').map(button => text(button))
+
+    it('names a query by its label, not the name generated for it, and keeps its path as the title', async () => {
+      await json()
+      expect(switcherLabels()).toContain('Query All posts')
+      expect(switcherLabels().join(' ')).not.toContain('allPosts')
+      const button = qa('[data-file-switch]').find(entry => text(entry) === 'Query All posts')
+      expect(button?.getAttribute('title')).toBe('.bildr/modules/blog/queries/all-posts.json')
+      expect(qa('[data-file-switch]').find(entry => text(entry) === 'Repository')?.getAttribute('title')).toBe(POST_REPOSITORY)
+    })
+
+    it('keeps the queries in the strip up to three, and puts them in one select beyond that, so the strip does not wrap', async () => {
+      const more = Object.fromEntries([1, 2, 3].map(index => [`.bildr/modules/blog/queries/more-${index}.json`, { id: `q_more_${index}`, name: `more${index}`, label: `More ${index}`, from: 'ent_post' }]))
+      saved.reset()
+      await open({ ...keeping(addField), model_get: () => ({ ...modelGet(), files: { ...modelGet().files, ...more } }) })
+      await click(tab('json'))
+      expect(switcherLabels()).toEqual(['Collection', 'Repository', 'Sample data'])
+      const select = q('[data-file-switcher] [data-queries-select]')
+      expect(select).not.toBeNull()
+      expect(text(select)).toContain('Queries')
+      await selectOption(select!.querySelector('[role="combobox"]') ?? select, 'Query More 2')
+      expect(text(q('[data-file-path]'))).toBe('.bildr/modules/blog/queries/more-2.json')
+      expect(shownFile()).toMatchObject({ id: 'q_more_2' })
+      // The select says which query is shown, and the strip says no button is.
+      expect(q('[data-file-switcher] [aria-pressed="true"]')).toBeNull()
+    })
+  })
+
+  /** The save the module would refuse as stale when the file is not what the edit started from, as the real action does. */
+  const checkingBase = (disk: { files: () => Record<string, unknown> }): Handlers => ({
+    model_get: () => ({ ...modelGet(), files: { ...modelGet().files, ...disk.files() } }),
+    model_file_put: (input) => {
+      const path = input.path as string
+      const now = disk.files()[path] ?? modelGet().files[path as keyof ReturnType<typeof modelGet>['files']]
+      if ('base' in input && JSON.stringify(input.base) !== JSON.stringify(now)) return new Failure(409, 'conflict', `${path} changed since it was opened, so it was not saved`)
+      disk.files()[path] = input.content
+      return { sha256: 'c'.repeat(64) }
+    }
+  })
+  const confirmText = () => text(q('[data-confirm]')?.closest('[role="dialog"]') ?? null)
+
+  describe('unsaved edits (S3)', () => {
+    const edit = async () => typeInto(q('[data-testid="raw-content"]'), '{ "draft": true }')
+    const DISCARD = `Discard unsaved changes to ${POST}?`
+
+    it('asks before another file is chosen in All model files, keeps the text when it is declined, and shows the other file when it is confirmed', async () => {
+      const { router } = await open(keeping(), {}, `/data?item=files&file=${encodeURIComponent(POST)}`)
+      await edit()
+      await click(fileButton(INDEX_PAGE))
+      expect(confirmText()).toContain(DISCARD)
+      await click(q('[data-confirm-cancel]'))
+      expect(rawText()!.value).toBe('{ "draft": true }')
+      expect(text(q('[data-file-path]'))).toBe(POST)
+      expect(router.currentRoute.value.query).toEqual({ item: 'files', file: POST })
+      await click(fileButton(INDEX_PAGE))
+      await click(q('[data-confirm-ok]'))
+      expect(text(q('[data-file-path]'))).toBe(INDEX_PAGE)
+      expect(shownFile()).toMatchObject({ id: 'pg_index' })
+      expect(router.currentRoute.value.query).toEqual({ item: 'files', file: INDEX_PAGE })
+    })
+
+    it('does not ask when nothing was typed, or after the text was saved', async () => {
+      const { actions } = await open(keeping(), {}, `/data?item=files&file=${encodeURIComponent(POST)}`)
+      await click(fileButton(INDEX_PAGE))
+      expect(q('[data-confirm]')).toBeNull()
+      expect(text(q('[data-file-path]'))).toBe(INDEX_PAGE)
+      await typeInto(q('[data-testid="raw-content"]'), JSON.stringify({ ...shownFile(), title: 'Home' }))
+      await click(q('[data-testid="raw-save"]'))
+      expect(actions.named('model_file_put')).toHaveLength(1)
+      await click(fileButton(POST))
+      expect(q('[data-confirm]')).toBeNull()
+      expect(text(q('[data-file-path]'))).toBe(POST)
+    })
+
+    it('asks before another file is chosen in the JSON tab\'s switcher', async () => {
+      await json()
+      await edit()
+      const repository = qa('[data-file-switch]').find(button => text(button) === 'Repository')!
+      await click(repository)
+      expect(confirmText()).toContain(DISCARD)
+      await click(q('[data-confirm-cancel]'))
+      expect(text(q('[data-file-path]'))).toBe(POST)
+      expect(rawText()!.value).toBe('{ "draft": true }')
+      await click(repository)
+      await click(q('[data-confirm-ok]'))
+      expect(text(q('[data-file-path]'))).toBe(POST_REPOSITORY)
+      expect(shownFile()).toMatchObject({ id: 'repo_post' })
+    })
+
+    it('asks before the JSON tab is left for another tab', async () => {
+      const { router } = await json()
+      await edit()
+      await click(tab('fields'))
+      expect(confirmText()).toContain(DISCARD)
+      await click(q('[data-confirm-cancel]'))
+      expect(activeTab()).toBe('json')
+      expect(rawText()!.value).toBe('{ "draft": true }')
+      expect(router.currentRoute.value.query).toEqual({ item: ITEMS.post, tab: 'json' })
+      await click(tab('fields'))
+      await click(q('[data-confirm-ok]'))
+      expect(activeTab()).toBe('fields')
+      await click(tab('json'))
+      expect(rawText()!.value).not.toBe('{ "draft": true }')
+    })
+
+    it('asks before another item is chosen in the tree, and before All model files', async () => {
+      await json()
+      await edit()
+      await click(treeItem('quote'))
+      expect(confirmText()).toContain(DISCARD)
+      await click(q('[data-confirm-cancel]'))
+      expect(text(q('[data-file-path]'))).toBe(POST)
+      expect(treeItem('post')?.getAttribute('aria-selected')).toBe('true')
+      await click(treeItem('quotes'))
+      await click(q('[data-confirm-cancel]'))
+      expect(treeItem('post')?.getAttribute('aria-selected')).toBe('true')
+      await click(q('[data-raw-model]'))
+      expect(confirmText()).toContain(DISCARD)
+      await click(q('[data-confirm-cancel]'))
+      expect(q('[data-data-files]')).toBeNull()
+      // Confirmed, the other collection opens on its own file.
+      await click(treeItem('quote'))
+      await click(q('[data-confirm-ok]'))
+      expect(text(q('[data-file-path]'))).toBe('.bildr/modules/blog/entities/quote.json')
+    })
+
+    it('asks before the URL moves the screen away (Back, a link), and puts the URL back when it is declined', async () => {
+      const { router } = await json()
+      await edit()
+      await router.replace({ path: '/data', query: { item: ITEMS.quote, tab: 'json' } })
+      await settle()
+      expect(confirmText()).toContain(DISCARD)
+      await click(q('[data-confirm-cancel]'))
+      expect(router.currentRoute.value.query).toEqual({ item: ITEMS.post, tab: 'json' })
+      expect(rawText()!.value).toBe('{ "draft": true }')
+      await router.replace({ path: '/data', query: { item: ITEMS.quote, tab: 'json' } })
+      await settle()
+      await click(q('[data-confirm-ok]'))
+      expect(text(q('[data-file-path]'))).toBe('.bildr/modules/blog/entities/quote.json')
+    })
+
+    it('asks before the screen is left for another one', async () => {
+      saved.reset()
+      mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), ...keeping(addField) })
+      const { router } = await mountWithApp(App, '/data')
+      await click(tab('json'))
+      await edit()
+      const leaving = router.push('/code')
+      await settle()
+      expect(confirmText()).toContain(DISCARD)
+      await click(q('[data-confirm-cancel]'))
+      await leaving
+      expect(router.currentRoute.value.path).toBe('/data')
+      expect(rawText()!.value).toBe('{ "draft": true }')
+    })
+  })
+
+  describe('the file changing elsewhere while it is edited (S3)', () => {
+    const external = async (disk: { files: () => Record<string, unknown> }, path: string, file: unknown, version = 20) => {
+      disk.files()[path] = file
+      FakeEventSource.instances.at(-1)!.send({ type: 'model', version, files: [path], source: 'disk' })
+      await settle()
+    }
+
+    it('says so, leaves the edits, and offers the new version or keeping the edits; saving waits for the choice', async () => {
+      const disk = { files: () => saved.files() }
+      const { actions } = await open(checkingBase(disk), {}, `/data?item=files&file=${encodeURIComponent(INDEX_PAGE)}`)
+      await typeInto(q('[data-testid="raw-content"]'), '{ "mine": true }')
+      await external(disk, INDEX_PAGE, { ...original(INDEX_PAGE) as object, seo: { title: 'Elsewhere' } })
+      expect(text(q('[data-file-changed]'))).toContain('This file changed since you opened it')
+      expect(textButton('Load the new version')).not.toBeNull()
+      expect(textButton('Keep my edits')).not.toBeNull()
+      expect(rawText()!.value).toBe('{ "mine": true }')
+      // Save does not overwrite what is there without a choice.
+      expect(q('[data-testid="raw-save"]')?.hasAttribute('disabled')).toBe(true)
+      await click(q('[data-testid="raw-save"]'))
+      expect(actions.named('model_file_put')).toEqual([])
+      expect(JSON.stringify(saved.files()[INDEX_PAGE])).toContain('Elsewhere')
+    })
+
+    it('loads the new version over the edits on request', async () => {
+      const disk = { files: () => saved.files() }
+      await open(checkingBase(disk), {}, `/data?item=files&file=${encodeURIComponent(INDEX_PAGE)}`)
+      await typeInto(q('[data-testid="raw-content"]'), '{ "mine": true }')
+      await external(disk, INDEX_PAGE, { id: 'pg_index', name: 'index', seo: { title: 'Elsewhere' } })
+      await click(textButton('Load the new version'))
+      expect(q('[data-file-changed]')).toBeNull()
+      expect(shownFile()).toMatchObject({ seo: { title: 'Elsewhere' } })
+      // Nothing is left to lose: moving on asks nothing.
+      await click(fileButton(POST))
+      expect(q('[data-confirm]')).toBeNull()
+    })
+
+    it('keeps the edits on request, and then a save replaces the file on purpose, from the new version', async () => {
+      const disk = { files: () => saved.files() }
+      const { actions } = await open(checkingBase(disk), {}, `/data?item=files&file=${encodeURIComponent(INDEX_PAGE)}`)
+      await typeInto(q('[data-testid="raw-content"]'), '{ "id": "pg_index", "name": "mine" }')
+      const elsewhere = { id: 'pg_index', name: 'index', seo: { title: 'Elsewhere' } }
+      await external(disk, INDEX_PAGE, elsewhere)
+      await click(textButton('Keep my edits'))
+      expect(q('[data-file-changed]')).toBeNull()
+      expect(rawText()!.value).toBe('{ "id": "pg_index", "name": "mine" }')
+      await click(q('[data-testid="raw-save"]'))
+      expect(inputs(actions, 'model_file_put')).toEqual([{ path: INDEX_PAGE, content: { id: 'pg_index', name: 'mine' }, base: elsewhere }])
+      expect(text(q('[data-data-files]'))).toContain('Saved.')
+    })
+
+    it('is refused by the module when the change was not read yet, says why, and then shows the notice: a dirty edit, then an outside change, then a save does not clobber', async () => {
+      const disk = { files: () => saved.files() }
+      const { actions } = await open(checkingBase(disk), {}, `/data?item=files&file=${encodeURIComponent(INDEX_PAGE)}`)
+      await typeInto(q('[data-testid="raw-content"]'), '{ "mine": true }')
+      // The file changes on disk, and the editor has not heard of it yet.
+      saved.files()[INDEX_PAGE] = { id: 'pg_index', name: 'index', seo: { title: 'Elsewhere' } }
+      await click(q('[data-testid="raw-save"]'))
+      expect(inputs(actions, 'model_file_put')).toEqual([{ path: INDEX_PAGE, content: { mine: true }, base: original(INDEX_PAGE) }])
+      expect(text(q('[data-data-files]'))).toContain('changed since it was opened, so it was not saved')
+      expect(saved.files()[INDEX_PAGE]).toEqual({ id: 'pg_index', name: 'index', seo: { title: 'Elsewhere' } })
+      expect(rawText()!.value).toBe('{ "mine": true }')
+      await vi.waitFor(() => expect(q('[data-file-changed]')).not.toBeNull())
+    })
+
+    it('is said in the JSON tab too, and a regeneration that changes the file is the same', async () => {
+      const disk = { files: () => saved.files() }
+      await open(checkingBase(disk))
+      await click(tab('json'))
+      await typeInto(q('[data-testid="raw-content"]'), '{ "mine": true }')
+      await external(disk, POST, { ...original(POST) as object, plural: 'articles' })
+      expect(text(q('[data-data-json] [data-file-changed]'))).toContain('This file changed since you opened it')
+    })
+  })
+
+  describe('a file that is not valid JSON (S3)', () => {
+    const ABOUT = '.bildr/modules/blog/pages/about.json'
+    const RAW = '{ "id": "pg_about", '
+    const brokenModule = () => {
+      const state = { text: RAW as string | null }
+      return {
+        state,
+        handlers: {
+          model_get: () => ({ ok: false, problems: [{ path: ABOUT, message: 'Invalid JSON: Expected property name' }], files: { ...modelGet().files, ...(state.text === null ? { [ABOUT]: { id: 'pg_about' } } : {}) }, invalid: state.text === null ? {} : { [ABOUT]: state.text }, database: false }),
+          model_file_put: () => {
+            state.text = null
+            return { sha256: 'd'.repeat(64), problems: [] }
+          }
+        } satisfies Handlers
+      }
+    }
+
+    it('is listed with a marker, opens with its text, and says it is not valid JSON', async () => {
+      const module = brokenModule()
+      await open(module.handlers, {}, '/data?item=files')
+      expect(group('page')?.querySelector(`[data-file="${ABOUT}"]`)).not.toBeNull()
+      expect(text(fileButton(ABOUT))).toContain('not valid JSON')
+      await click(fileButton(ABOUT))
+      expect(rawText()!.value).toBe(RAW)
+      expect(text(q('[data-file-invalid]'))).toContain('This file is not valid JSON')
+    })
+
+    it('is not cleared from the URL when a link names it', async () => {
+      const module = brokenModule()
+      const { router } = await open(module.handlers, {}, `/data?item=files&file=${encodeURIComponent(ABOUT)}`)
+      expect(router.currentRoute.value.query).toEqual({ item: 'files', file: ABOUT })
+      expect(rawText()!.value).toBe(RAW)
+      expect(fileButton(ABOUT)?.getAttribute('aria-current')).toBe('true')
+    })
+
+    it('is fixed by saving: the module is told it started from the text', async () => {
+      const module = brokenModule()
+      const { actions } = await open(module.handlers, {}, `/data?item=files&file=${encodeURIComponent(ABOUT)}`)
+      await typeInto(q('[data-testid="raw-content"]'), '{ "id": "pg_about" }')
+      await click(q('[data-testid="raw-save"]'))
+      expect(inputs(actions, 'model_file_put')).toEqual([{ path: ABOUT, content: { id: 'pg_about' }, base: RAW }])
+      expect(text(q('[data-data-files]'))).toContain('Saved.')
+    })
+
+    it('says how many problems are left when the module took the fix and other files still have problems', async () => {
+      const module = brokenModule()
+      await open({ ...module.handlers, model_file_put: () => ({ sha256: 'e'.repeat(64), problems: [{ path: POST, message: 'fields: Too small' }] }) }, {}, `/data?item=files&file=${encodeURIComponent(ABOUT)}`)
+      await typeInto(q('[data-testid="raw-content"]'), '{ "id": "pg_about" }')
+      await click(q('[data-testid="raw-save"]'))
+      expect(text(q('[data-data-files]'))).toContain('Saved. 1 problem is left in other files')
+    })
+  })
+
+  describe('what is shown while the model does not load (S3)', () => {
+    it('shows All model files, not a spinner, when the model could not be read at all', async () => {
+      let reads = 0
+      await open({ model_get: () => (++reads === 1 ? new Failure(500, 'write_failed', 'The module is restarting') : modelGet()) }, {}, '/data?item=files')
+      expect(q('[data-testid="data-loading"]')).toBeNull()
+      expect(q('[data-data-files]')).not.toBeNull()
+      expect(fileButton(INDEX_PAGE)).not.toBeNull()
+    })
+
+    it('shows All model files, not a spinner, when the module says the model is not ok and names no problem', async () => {
+      await open({ model_get: () => ({ ok: false, problems: [], files: modelGet().files, database: false }) }, {}, '/data?item=files')
+      expect(q('[data-testid="data-loading"]')).toBeNull()
+      expect(q('[data-data-files]')).not.toBeNull()
+      expect(fileButton(INDEX_PAGE)).not.toBeNull()
+    })
+
+    it('says the model could not be read instead of spinning, and offers the files, outside All model files too', async () => {
+      await open({ model_get: () => new Failure(500, 'write_failed', 'The module is restarting') })
+      expect(q('[data-testid="data-loading"]')).toBeNull()
+      expect(text(q('[data-testid="data-unreadable"]'))).toContain('The model could not be read')
+      expect(q('[data-testid="open-model"]')).not.toBeNull()
+    })
+
+    it('shows the files\' own load failure, with a Retry that reads again', async () => {
+      let reads = 0
+      // The editor\'s own read answers; the files\' read fails once.
+      await open({ model_get: () => (++reads === 2 ? new Failure(500, 'write_failed', 'The module is restarting') : modelGet()) }, {}, '/data?item=files')
+      expect(text(q('[data-files-error]'))).toContain('Could not read the model files')
+      expect(text(q('[data-files-error]'))).toContain('The module is restarting')
+      await click(textButton('Retry'))
+      await vi.waitFor(() => expect(q('[data-files-error]')).toBeNull())
+      expect(fileButton(INDEX_PAGE)).not.toBeNull()
+    })
+
+    it('shows the same error block, with a Retry, in the JSON tab', async () => {
+      let reads = 0
+      await open({ model_get: () => (++reads === 2 ? new Failure(500, 'write_failed', 'The module is restarting') : modelGet()) })
+      await click(tab('json'))
+      expect(text(q('[data-data-json] [data-files-error]'))).toContain('Could not read the model files')
+      await click(textButton('Retry'))
+      await vi.waitFor(() => expect(q('[data-files-error]')).toBeNull())
+      expect(q('[data-testid="raw-content"]')).not.toBeNull()
+    })
+
+    it('ignores a /model link\'s path that is not under .bildr/', async () => {
+      const { router } = await open({}, {}, '/model?path=package.json')
+      expect(router.currentRoute.value.query).toEqual({ item: 'files' })
+      expect(q('[data-file-path]')).toBeNull()
+      expect(rawText()?.value).toBe('')
     })
   })
 

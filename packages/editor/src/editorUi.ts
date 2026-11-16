@@ -49,6 +49,8 @@ export const FIELD_MONO = 'h-[30px] rounded-lg bg-elevated font-mono text-[12px]
 export const FIELD_RING = 'ring-inset hover:ring-1 hover:ring-white/10 focus-visible:ring-1 focus-visible:ring-(color:--editor-selection)'
 /** The keyboard focus ring of any other focusable control: buttons, rows, segments, crumbs. */
 export const FOCUS_RING = 'outline-none focus-visible:ring-1 focus-visible:ring-(color:--editor-selection)'
+/** The row of a list or tree that is the one shown (the Data tree's items, All model files' list). */
+export const SELECTED_ITEM = 'bg-white/8 font-medium text-highlighted'
 /** A field whose value is refused. */
 export const FIELD_INVALID = 'ring-1 ring-error hover:ring-error focus-visible:ring-error'
 /** A field shell around a custom control (EditorField): it rings when anything inside has focus. */

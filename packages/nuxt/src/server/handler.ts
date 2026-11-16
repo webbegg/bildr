@@ -270,7 +270,7 @@ const drift = (root: string) => {
   return { detached, deleted, missingManifest: Object.keys(manifest).length === 0 }
 }
 
-/** Saves one `.bildr/` model file, only if the whole model stays valid. Written canonically and atomically. */
+/** Saves one `.bildr/` model file under the write rule of `saveModelFile` (a valid model stays valid; a model with problems takes a sound file that adds none). Written canonically and atomically. */
 const writeModelFile = async (root: string, path: string | null, request: Request) => {
   if (!path || !isModelFilePath(path)) return fail(400, 'Only .bildr/ model files can be written (not the manifest, the cache or project files)')
   if (!(request.headers.get('content-type') ?? '').startsWith('application/json')) return fail(415, 'Send the file as application/json')
@@ -278,7 +278,7 @@ const writeModelFile = async (root: string, path: string | null, request: Reques
   const text = await request.text()
   if (text.length > MAX_BODY) return fail(413, 'File too large')
   const saved = saveModelFile(root, path, text)
-  if (saved.ok) return json(200, { ok: true, sha256: saved.sha256 })
+  if (saved.ok) return json(200, { ok: true, sha256: saved.sha256, ...(saved.problems ? { problems: saved.problems } : {}) })
   if (saved.reason === 'invalid') return json(422, { ok: false, problems: saved.problems })
   return fail(400, saved.message)
 }

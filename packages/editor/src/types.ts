@@ -30,9 +30,10 @@ export interface Model {
   paths: Record<string, string>
 }
 
+/** `files` are the model files that are valid JSON; `invalid` is the text of the ones that are not (a model with problems has them). */
 export type ModelGetResult
-  = | { ok: true, model: Model, files: Record<string, Json> }
-    | { ok: false, problems: ModelProblem[], files?: Record<string, Json> }
+  = | { ok: true, model: Model, files: Record<string, Json>, invalid?: Record<string, string> }
+    | { ok: false, problems: ModelProblem[], files?: Record<string, Json>, invalid?: Record<string, string> }
 
 export type FileState = 'managed' | 'scaffold' | 'detached' | 'deleted' | 'orphaned' | 'pending' | (string & {})
 

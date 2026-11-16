@@ -7,7 +7,8 @@ import type { Editor } from './useEditor.ts'
 /**
  * Where the Data workspace is (S2) in the URL query (`/data?item=collection:ent_post&tab=fields`): the
  * item selected in its tree and the tab shown for it, so a deep link or a reload opens the same item on
- * the same tab. All model files (S3) is `?item=files`, with the file chosen in it as `&file=<path>`. The
+ * the same tab. All model files (S3) is `?item=files`, with the file chosen in it as `&file=<path>` (a path that
+ * is typed is in it once the file is saved, so a reload shows what the URL says). The
  * tab model (which tabs an item has) is `editor/dataTabs.ts`.
  */
 
@@ -81,6 +82,8 @@ export function useDataLocation(editor: Editor): void {
   watch(() => route.fullPath, () => {
     if (route.name !== 'data') return
     apply(route.query)
-    write()
+    // With edits that are not saved the move waits for the user: the URL follows the screen once it moves (`wanted`), or goes back when it was declined.
+    if (editor.dataDirty === null) write()
   })
+  watch(() => editor.leaveDeclined, write)
 }
