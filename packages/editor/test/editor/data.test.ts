@@ -25,9 +25,9 @@ const post = (slug: string) => ({ id: `id-${slug}`, title: `Post ${slug}`, slug,
 const quotes = [{ id: 1, text: 'Q one', author: 'Ann' }, { id: 2, text: 'Q two', author: 'Bob' }]
 
 /** Mounts the Data screen with the base handlers plus `extra`. */
-const open = async (extra: Handlers = {}, routes: AppRoutes = {}) => {
+const open = async (extra: Handlers = {}, routes: AppRoutes = {}, path = '/data') => {
   const actions = mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), ...extra }, routes)
-  const mounted = await mountWithApp(DataView, '/data')
+  const mounted = await mountWithApp(DataView, path)
   return { actions, ...mounted }
 }
 
@@ -54,6 +54,9 @@ describe('the Data screen', () => {
     expect(text(q('[data-collections-synced]'))).toContain('quotes')
     expect(text(q('[data-connection="ds_quotes"]'))).toContain('Quote')
     expect(q('[data-records]')).not.toBeNull()
+    // The side panel is for an open row and for the collection's settings in Fields: Rows with none open has none.
+    expect(q('[data-data-panel]')).toBeNull()
+    await click(q('[data-data-tab="fields"]'))
     expect(q('[data-data-panel] [data-collection-panel]')).not.toBeNull()
     expect(q('[data-data-panel]')?.style.width).toBe('320px')
   })
@@ -105,14 +108,213 @@ describe('the Data screen', () => {
   })
 })
 
+describe('the Data workspace (S2)', () => {
+  const tabNames = () => qa('[role="tab"][data-data-tab]').map(tab => tab.getAttribute('data-data-tab'))
+  const activeTab = () => q('[role="tab"][aria-selected="true"]')?.getAttribute('data-data-tab')
+  const tab = (name: string) => q(`[role="tab"][data-data-tab="${name}"]`)
+  const key = async (element: Element | null, name: string) => {
+    element!.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }))
+    await settle()
+  }
+  /** Everything the screen says: its text, and the titles, labels and placeholders a user reads or hears (not the rows, which are the project's data). */
+  const said = () => {
+    const page = document.body.cloneNode(true) as HTMLElement
+    for (const rows of page.querySelectorAll('[data-records-table]')) rows.remove()
+    return [page.textContent ?? '', ...[...page.querySelectorAll('[title], [aria-label], [placeholder]')].flatMap(element => ['title', 'aria-label', 'placeholder'].map(name => element.getAttribute(name) ?? ''))].join(' | ')
+  }
+
+  it('has a tree with the sections Collections and Connections, and their items', async () => {
+    await open()
+    expect(text(q('[data-collections-internal]'))).toMatch(/^Collections\b/)
+    expect(qa('[data-collections-internal] [data-collection]').map(item => item.getAttribute('data-collection'))).toEqual(['posts'])
+    expect(text(q('[data-collections-synced]'))).toMatch(/^Connections\b/)
+    expect(qa('[data-collections-synced] [data-connection-name]').map(item => text(item))).toEqual(['quotes'])
+    expect(qa('[data-collections-synced] [data-collection]').map(item => item.getAttribute('data-collection'))).toEqual(['quotes'])
+  })
+
+  it('shows Rows, Fields, Endpoints and JSON for a collection, starting on Rows', async () => {
+    await open()
+    expect(q('[role="tablist"]')).not.toBeNull()
+    expect(tabNames()).toEqual(['rows', 'fields', 'endpoints', 'json'])
+    expect(qa('[role="tab"]').map(item => text(item))).toEqual(['Rows', 'Fields', 'Endpoints', 'JSON'])
+    expect(activeTab()).toBe('rows')
+    expect(q('[role="tabpanel"] [data-records]')).not.toBeNull()
+  })
+
+  it('shows Endpoints and JSON for a connection, starting on Endpoints', async () => {
+    await open()
+    await click(q('[data-connection-name]'))
+    expect(tabNames()).toEqual(['endpoints', 'json'])
+    expect(activeTab()).toBe('endpoints')
+    expect(q('[data-connection-panel]')).not.toBeNull()
+    expect(qa('[data-connection-endpoints] [data-endpoint="list"]')).toHaveLength(1)
+    expect(q('[data-records]')).toBeNull()
+  })
+
+  it('switches the tab: Fields edits the fields, Endpoints lists them, JSON is a placeholder', async () => {
+    await open()
+    await click(tab('fields'))
+    expect(activeTab()).toBe('fields')
+    expect(q('[role="tabpanel"] [data-fields-tab]')).not.toBeNull()
+    expect(q('[data-records]')).toBeNull()
+    await click(tab('json'))
+    expect(text(q('[data-testid="data-json-tab"]'))).toContain('Coming in a later step')
+    await click(tab('rows'))
+    expect(q('[data-records]')).not.toBeNull()
+  })
+
+  it('says what a collection with no endpoints is: its rows are not read through a connection', async () => {
+    await open()
+    await click(tab('endpoints'))
+    expect(q('[data-endpoints-empty]')).not.toBeNull()
+    await click(collection('quotes'))
+    expect(q('[data-endpoints-empty]')).toBeNull()
+    expect(q('[data-endpoint="list"]')).not.toBeNull()
+  })
+
+  it('puts the item and the tab in the URL query as they change', async () => {
+    const { router } = await open()
+    expect(router.currentRoute.value.query).toEqual({ item: 'collection:ent_post', tab: 'rows' })
+    await click(tab('fields'))
+    expect(router.currentRoute.value.query).toEqual({ item: 'collection:ent_post', tab: 'fields' })
+    await click(collection('quotes'))
+    expect(router.currentRoute.value.query).toEqual({ item: 'collection:ent_quote', tab: 'fields' })
+    await click(q('[data-connection-name]'))
+    expect(router.currentRoute.value.query).toEqual({ item: 'connection:ds_quotes', tab: 'endpoints' })
+  })
+
+  it('restores the item and the tab from a deep link, as a reload does', async () => {
+    const { router } = await open({}, {}, '/data?item=collection:ent_quote&tab=fields')
+    expect(activeTab()).toBe('fields')
+    expect(text(q('[data-data-title] h2'))).toBe('Quote')
+    expect(router.currentRoute.value.query).toEqual({ item: 'collection:ent_quote', tab: 'fields' })
+  })
+
+  it('restores a connection from a deep link', async () => {
+    await open({}, {}, '/data?item=connection:ds_quotes&tab=json')
+    expect(activeTab()).toBe('json')
+    expect(q('[data-testid="data-json-tab"]')).not.toBeNull()
+    expect(tabNames()).toEqual(['endpoints', 'json'])
+  })
+
+  it('falls back to the first item, on Rows, for a deep link to one that is gone', async () => {
+    const { router } = await open({}, {}, '/data?item=collection:ent_gone&tab=nope')
+    expect(router.currentRoute.value.query).toEqual({ item: 'collection:ent_post', tab: 'rows' })
+    expect(tabNames()).toEqual(['rows', 'fields', 'endpoints', 'json'])
+    expect(text(q('[data-records]'))).toContain('Hello bildr')
+  })
+
+  it('follows the URL when it changes (Back and Forward)', async () => {
+    const { router } = await open()
+    await router.replace({ path: '/data', query: { item: 'collection:ent_quote', tab: 'endpoints' } })
+    await settle()
+    expect(activeTab()).toBe('endpoints')
+    expect(q('[data-endpoint="list"]')).not.toBeNull()
+  })
+
+  it('moves through the tree with the arrow keys and picks with Enter', async () => {
+    await open()
+    const items = () => qa('[data-tree-item]')
+    expect(items().map(item => text(item).replace(/\d+$/, '').trim())).toEqual(['Post', 'quotes', 'Quote'])
+    items()[0]!.focus()
+    await key(items()[0]!, 'ArrowDown')
+    expect(document.activeElement).toBe(items()[1])
+    await key(items()[1]!, 'ArrowDown')
+    expect(document.activeElement).toBe(items()[2])
+    await key(items()[2]!, 'ArrowDown')
+    expect(document.activeElement).toBe(items()[2])
+    await key(items()[2]!, 'ArrowUp')
+    expect(document.activeElement).toBe(items()[1])
+    await key(items()[1]!, 'Enter')
+    expect(q('[data-connection-panel]')).not.toBeNull()
+    await key(items()[2]!, 'Home')
+    expect(document.activeElement).toBe(items()[0])
+    await key(items()[0]!, 'Enter')
+    expect(q('[data-records]')).not.toBeNull()
+  })
+
+  it('reaches the tab strip by keyboard: one tab stop, the arrows move and pick', async () => {
+    await open()
+    expect(qa('[role="tab"]').map(item => item.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1'])
+    tab('rows')!.focus()
+    await key(tab('rows'), 'ArrowRight')
+    expect(document.activeElement).toBe(tab('fields'))
+    expect(activeTab()).toBe('fields')
+    await key(tab('fields'), 'End')
+    expect(activeTab()).toBe('json')
+    await key(tab('json'), 'ArrowRight')
+    expect(activeTab()).toBe('rows')
+    await key(tab('rows'), 'ArrowLeft')
+    expect(activeTab()).toBe('json')
+  })
+
+  it('has one name per concept: Collection, Connection and Sample data, never Synced, fixtures or data source', async () => {
+    await open()
+    const unwanted = /synced|fixtures?\b|data source/i
+    expect(said()).not.toMatch(unwanted)
+    for (const name of ['fields', 'endpoints', 'json', 'rows']) {
+      await click(tab(name))
+      expect(said()).not.toMatch(unwanted)
+    }
+    await click(collection('quotes'))
+    for (const name of ['rows', 'fields', 'endpoints']) {
+      await click(tab(name))
+      expect(said()).not.toMatch(unwanted)
+    }
+    await click(q('[data-connection-name]'))
+    expect(said()).not.toMatch(unwanted)
+    expect(byLabel('Add connection')).not.toBeNull()
+  })
+
+  it('says what is empty in each section', async () => {
+    world.model.modules.blog!.entities = []
+    world.model.modules.blog!.repositories = []
+    world.model.datasources = world.model.datasources.filter(source => source.kind !== 'rest')
+    await open()
+    expect(q('[data-data-empty]')).not.toBeNull()
+    expect(text(q('[data-collections-internal]'))).toContain('No collections yet')
+    expect(text(q('[data-collections-synced]'))).toContain('No connections yet')
+    expect(q('[role="tablist"]')).toBeNull()
+  })
+
+  it('starts empty when only a connection exists, and says its endpoints are none until a collection reads through it', async () => {
+    world.model.modules.blog!.entities = []
+    world.model.modules.blog!.repositories = []
+    await open()
+    expect(q('[data-data-empty]')).not.toBeNull()
+    expect(tabNames()).toEqual([])
+    await click(q('[data-connection-name]'))
+    expect(tabNames()).toEqual(['endpoints', 'json'])
+    expect(q('[data-data-empty]')).toBeNull()
+    expect(text(q('[data-connection-endpoints-empty]'))).toContain('No collection reads through this connection yet')
+  })
+
+  it('labels the rows source switch Live / Sample data, and shows the sample data on Sample data', async () => {
+    await open({}, { '/api/blog/posts': { items: [post('one'), post('two'), post('draft')], total: 3 } })
+    const pressed = () => qa('[data-live-badge] button').filter(button => button.getAttribute('aria-pressed') === 'true').map(button => button.getAttribute('aria-label'))
+    expect(qa('[data-live-badge] button').map(button => button.getAttribute('aria-label'))).toEqual(['Live', 'Sample data'])
+    expect(pressed()).toEqual(['Live'])
+    expect(q('[data-live-badge]')?.getAttribute('data-source')).toBe('live')
+    expect(qa('[data-record]')).toHaveLength(3)
+    await click(byLabel('Sample data', q('[data-live-badge]')!))
+    expect(pressed()).toEqual(['Sample data'])
+    expect(q('[data-live-badge]')?.getAttribute('data-source')).toBe('fixtures')
+    expect(qa('[data-record]')).toHaveLength(2)
+    expect(q('[data-records-error]')).toBeNull()
+    await click(byLabel('Live', q('[data-live-badge]')!))
+    expect(pressed()).toEqual(['Live'])
+    expect(qa('[data-record]')).toHaveLength(3)
+  })
+})
+
 describe('the rows table', () => {
-  it('shows the entity\'s fixtures as read-only rows, badged Fixtures, with why the app\'s rows are not shown', async () => {
+  it('shows the entity\'s sample data as read-only rows, on the Sample data side of the switch, with why the app\'s rows are not shown', async () => {
     await open()
     expect(qa('[data-records-header]').map(header => text(header))).toEqual(['Title', 'Slug', 'Body', 'Published', 'Published at'])
     expect(qa('[data-record]')).toHaveLength(2)
     expect(text(q('[data-record] [data-cell="0-0"]'))).toBe('Hello bildr')
-    expect(text(q('[data-live-badge]'))).toBe('Fixtures')
-    expect(text(q('[data-records-error]'))).toContain('Showing the model\'s fixtures')
+    expect(q('[data-live-badge]')?.getAttribute('data-source')).toBe('fixtures')
+    expect(text(q('[data-records-error]'))).toContain('Showing the sample data.')
     expect(text(q('[data-records-error]'))).toContain('The app\'s list route for posts could not be reached.')
     expect(text(q('[data-records-count]'))).toBe('2 items')
     // A boolean is shown, not a control: nothing in a cell looks clickable.
@@ -124,7 +326,7 @@ describe('the rows table', () => {
 
   it('shows the app\'s rows when its list route answers', async () => {
     await open({}, { '/api/blog/posts': { items: [post('one'), post('two'), post('draft')], total: 3 } })
-    expect(text(q('[data-live-badge]'))).toBe('App data')
+    expect(q('[data-live-badge]')?.getAttribute('data-source')).toBe('live')
     expect(q('[data-records-error]')).toBeNull()
     expect(qa('[data-record]')).toHaveLength(3)
     expect(text(collection('posts')?.querySelector('[data-collection-count]') ?? null)).toBe('3')
@@ -153,13 +355,14 @@ describe('the rows table', () => {
     expect(panel.querySelector('input, textarea, [role="switch"]')).toBeNull()
     await click(q('[data-record-close]'))
     expect(q('[data-record-panel]')).toBeNull()
-    expect(q('[data-collection-panel]')).not.toBeNull()
+    expect(q('[data-data-panel]')).toBeNull()
   })
 
-  it('shows a REST collection as Remote, with the reason the app\'s rows could not be read', async () => {
+  it('shows a REST collection as Live only, with the reason the app\'s rows could not be read', async () => {
     await open()
     await click(collection('quotes'))
-    expect(text(q('[data-live-badge]'))).toBe('Remote')
+    expect(text(q('[data-live-badge]'))).toBe('Live')
+    expect(q('[data-live-badge] button')).toBeNull()
     expect(text(q('[data-records-error]'))).toContain('The app\'s list route for quotes could not be reached.')
     expect(text(q('[data-records-empty]'))).toBe('The API returned no items.')
   })
@@ -233,7 +436,8 @@ describe('fields', () => {
   it('lists the fields of the shown collection with their types', async () => {
     await open()
     await fieldsTab()
-    expect(text(q('[data-fields-title]'))).toBe('Post')
+    expect(text(q('[data-data-title] h2'))).toBe('Post')
+    expect(text(q('[data-fields-title]'))).toBe('5 fields')
     expect(qa('[data-fields-tab] [data-field]').map(entry => entry.getAttribute('data-field'))).toEqual(['title', 'slug', 'body', 'published', 'publishedAt'])
   })
 
@@ -293,28 +497,35 @@ describe('fields', () => {
   })
 })
 
-describe('the collection panel', () => {
+describe('the collection panel (beside the Fields tab)', () => {
+  /** The panel is the Fields tab's side: the Rows tab has none. */
+  const openFields = async (extra: Handlers = {}) => {
+    const mounted = await open(extra)
+    await click(q('[data-data-tab="fields"]'))
+    return mounted
+  }
+
   it('edits the name, the plural and whether the app serves the list: each one entity_update', async () => {
-    const { actions } = await open({ entity_update: ok() })
+    const { actions } = await openFields({ entity_update: ok() })
     const panel = q('[data-collection-panel]')!
     await typeInto(panel.querySelector('[aria-label="Collection name"]'), 'Article')
     await click(panel.querySelector('[data-flag="expose"]'))
     expect(inputs(actions, 'entity_update')).toEqual([{ entity: 'ent_post', name: 'Article' }, { entity: 'ent_post', expose: false }])
   })
 
-  it('shows what stores it, its create action and its fields, and opens the Fields tab', async () => {
-    await open()
+  it('shows what stores it and its create action, next to the fields', async () => {
+    await openFields()
     expect(text(q('[data-stored-in]'))).toBe('main (sqlite)')
     expect(text(q('[data-create-action]'))).toBe('act_create_post')
-    await click(q('[data-show-fields]'))
     expect(q('[data-fields-tab]')).not.toBeNull()
+    expect(q('[data-show-fields]')).toBeNull()
   })
 
   it('opens the detail page of a collection on the Canvas', async () => {
     const opened = vi.fn()
     const off = registerScreens(opened)
     try {
-      await open()
+      await openFields()
       expect(text(q('[data-open-detail-page]'))).toBe('posts-slug')
       await click(q('[data-open-detail-page="pg_post_detail"]'))
       expect(opened).toHaveBeenCalledWith('design')
@@ -324,7 +535,7 @@ describe('the collection panel', () => {
   })
 
   it('says how to make a detail page for a collection with none, instead of offering to create one', async () => {
-    await open()
+    await openFields()
     await click(collection('quotes'))
     expect(q('[data-create-detail-page]')).toBeNull()
     expect(q('[data-no-detail-page]')?.textContent).toContain('route parameter')
@@ -438,6 +649,7 @@ describe('endpoints', () => {
   const toQuote = async (extra: Handlers = {}, routes: AppRoutes = {}) => {
     const mounted = await open(extra, routes)
     await click(collection('quotes'))
+    await click(q('[data-data-tab="endpoints"]'))
     return mounted
   }
 

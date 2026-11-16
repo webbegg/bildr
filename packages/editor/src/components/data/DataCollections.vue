@@ -1,22 +1,39 @@
 <script setup lang="ts">
 import { computed, ref, useTemplateRef, watch } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
-import { answeredImports, useDataSidebarTab } from '../../editor/dataSidebar.ts'
+import { answeredImports } from '../../editor/dataSidebar.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { FOCUS_RING } from '../../editorUi.ts'
 import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
 
 /**
- * The Data view sidebar, Framer CMS's: Collections / Fields as text tabs. Collections lists
- * **Collections** (entities stored by the app: its database or memory, then `+ Add…` for an
- * inline name) and **Synced**: each connection (a REST data source) as a folder of its
- * collections. The Synced `+` makes a new connection (an inline name, then the base URL in the
- * right panel) or opens the Import from URL dialog (also opened by each `editor.importRequest`).
- * Fields edits the shown collection's fields. The raw model files stay on the Model screen.
+ * The Data workspace's tree, Framer CMS's: **Collections** (entities stored by the app: its
+ * database or memory, then `+ Add…` for an inline name) and **Connections**: each connection (a
+ * REST API) as a folder of the collections read through it. Choosing an item shows it in the
+ * workspace beside the tree, on the tabs its kind has. The Connections `+` makes a new
+ * connection (an inline name, then the base URL in its Endpoints tab) or opens the Import from URL
+ * dialog (also opened by each `editor.importRequest`). The raw model files stay on the Model screen.
+ *
+ * Up and Down move between the items, Home and End go to the first and last, and Enter picks.
  */
 const editor = useEditor()
-const tab = useDataSidebarTab()
-const TABS = [{ value: 'collections', label: 'Collections' }, { value: 'fields', label: 'Fields' }] as const
+const tree = useTemplateRef<HTMLElement>('tree')
+
+function onKeyDown(event: KeyboardEvent) {
+  const item = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-tree-item]')
+  if (!item || !tree.value) return
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    item.click()
+    return
+  }
+  const items = [...tree.value.querySelectorAll<HTMLElement>('[data-tree-item]')]
+  const at = items.indexOf(item)
+  const to = ({ ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 } as Record<string, number | undefined>)[event.key]
+  if (to === undefined) return
+  event.preventDefault()
+  items[Math.min(items.length - 1, Math.max(0, to))]?.focus()
+}
 
 const internal = computed(() => editor.collections.filter(entry => entry.kind !== 'rest'))
 const connections = computed(() => editor.connections)
@@ -36,7 +53,7 @@ watch(addingToConnection, (connection) => {
   if (connection) dialogConnection.value = connection
 })
 
-const syncedMenu: DropdownMenuItem[] = [
+const connectionMenu: DropdownMenuItem[] = [
   { label: 'New connection', icon: 'i-lucide-server', onSelect: () => (addingConnection.value = true) },
   { label: 'Import from URL', icon: 'i-lucide-globe', slot: 'from-api', onSelect: () => (fromApi.value = true) }
 ]
@@ -59,7 +76,7 @@ function cancelConnection() {
 const connectionInput = useTemplateRef<{ focus: () => void }>('connectionInput')
 
 /** The menu hands focus back to its `+` on close, which blurred (and so cancelled) the new connection's name; give it to the name instead. */
-function syncedMenuClosed(event: Event) {
+function connectionMenuClosed(event: Event) {
   if (!addingConnection.value) return
   event.preventDefault()
   connectionInput.value?.focus()
@@ -88,36 +105,21 @@ function cancelAdd() {
 <template>
   <div class="flex flex-col">
     <div
-      class="flex items-center gap-0.5 border-b border-default p-2"
-      role="tablist"
-      aria-label="Data sidebar"
-    >
-      <button
-        v-for="item in TABS"
-        :key="item.value"
-        type="button"
-        role="tab"
-        :aria-selected="tab === item.value"
-        class="h-7 rounded-lg px-2.5 text-[12px] font-[550] transition-colors"
-        :class="[FOCUS_RING, tab === item.value ? 'bg-white/8 text-highlighted' : 'text-muted hover:text-default']"
-        :data-data-tab="item.value"
-        @click="tab = item.value"
-      >
-        {{ item.label }}
-      </button>
-    </div>
-
-    <DataSidebarFields
-      v-if="tab === 'fields'"
-      class="min-h-0 flex-1"
-    />
-    <div
-      v-show="tab === 'collections'"
+      ref="tree"
       class="min-h-0 flex-1 overflow-y-auto pb-2"
+      aria-label="Data items"
+      data-data-tree
+      @keydown="onKeyDown"
     >
       <section data-collections-internal>
         <p class="ps-3.5 pe-2 pt-3 pb-1 text-xs font-medium text-dimmed">
           Collections
+        </p>
+        <p
+          v-if="!internal.length && !adding"
+          class="ps-3.5 pe-3 py-1.5 text-xs text-dimmed"
+        >
+          No collections yet.
         </p>
         <DataCollectionRow
           v-for="collection in internal"
@@ -164,18 +166,18 @@ function cancelAdd() {
       >
         <div class="flex items-center ps-3.5 pe-3 pt-1 pb-0.5">
           <p class="flex-1 text-xs font-medium text-dimmed">
-            Synced
+            Connections
           </p>
           <EditorMenu
-            :items="syncedMenu"
+            :items="connectionMenu"
             :content="{ align: 'end' }"
-            :on-close-auto-focus="syncedMenuClosed"
+            :on-close-auto-focus="connectionMenuClosed"
           >
             <EditorButton
               icon="i-lucide-plus"
               variant="ghost"
               size="xs"
-              aria-label="Add synced data"
+              aria-label="Add connection"
               data-synced-add
             />
             <template #from-api-label>
@@ -210,7 +212,7 @@ function cancelAdd() {
           v-if="!connections.length && !addingConnection"
           class="ps-3.5 pe-3 py-1.5 text-xs text-dimmed"
         >
-          Connect an API with +.
+          No connections yet. Add one with +.
         </p>
       </section>
 
@@ -218,7 +220,7 @@ function cancelAdd() {
         to="/model"
         class="mt-3 flex h-9 items-center gap-2.5 rounded-lg ms-2 ps-3 pe-3 text-[12px] text-dimmed hover:bg-white/4 hover:text-toned"
         :class="FOCUS_RING"
-        title="Edit the entities, repositories and data sources as raw files"
+        title="Edit the collections, repositories and connections as raw files"
         data-raw-model
       >
         <UIcon

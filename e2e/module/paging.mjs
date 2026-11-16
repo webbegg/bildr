@@ -37,6 +37,8 @@ await run('paging', async ({ page, errors }) => {
     }, 60_000)
     const count = page.locator('[data-records-count]')
     check(await until(async () => /^60\b/.test((await count.innerText()).trim())), `the table shows the rows and their total ("${(await count.innerText()).trim()}", ${await page.locator('[data-record]').count()} rows)`)
+    // The collection's endpoints are their own tab now.
+    await page.locator('[role=tab][data-data-tab="endpoints"]').click()
     const summary = page.locator('[data-paging-summary]')
     check(await summary.count() > 0 && /offset/i.test(await summary.innerText()), `the Endpoints panel says the list pages by offset ("${(await summary.first().innerText().catch(() => '')).trim()}")`)
     await shot(page, 'paging-panel')

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDesign } from '../../src/design/store.ts'
 import { createEditor } from '../../src/editor/useEditor.ts'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
+import { dataLocationQuery, parseDataLocation } from '../../src/editor/dataLocation.ts'
 import { liveRows } from '../../src/design/liveRows.ts'
 import { Failure, mockActions, settle } from '../helpers.ts'
 import { baseHandlers, setupHarness, world } from '../design/harness.ts'
@@ -313,5 +314,79 @@ describe('the Data and the Design views are two screens', () => {
     const { editor } = await bootData()
     editor.mode = 'data'
     expect(editor.mode).toBe('data')
+  })
+})
+
+describe('the Data workspace selection (S2)', () => {
+  it('gives a collection Rows, Fields, Endpoints and JSON, and a connection Endpoints and JSON', async () => {
+    const { editor } = await bootData()
+    expect(editor.dataItem).toEqual({ kind: 'collection', id: 'ent_post' })
+    expect(editor.dataTabs).toEqual(['rows', 'fields', 'endpoints', 'json'])
+    expect(editor.dataTab).toBe('rows')
+    editor.connectionId = 'ds_quotes'
+    expect(editor.dataItem).toEqual({ kind: 'connection', id: 'ds_quotes' })
+    expect(editor.dataTabs).toEqual(['endpoints', 'json'])
+    expect(editor.dataTab).toBe('endpoints')
+  })
+
+  it('keeps the tab chosen across collections, and falls back to the first one a connection has', async () => {
+    const { editor } = await bootData()
+    editor.dataTab = 'fields'
+    editor.collectionId = 'ent_quote'
+    expect(editor.dataTab).toBe('fields')
+    editor.connectionId = 'ds_quotes'
+    expect(editor.dataTab).toBe('endpoints')
+    editor.dataTab = 'json'
+    editor.connectionId = null
+    expect(editor.dataTab).toBe('json')
+  })
+
+  it('has no item and no tab when the project has no collection and no connection is chosen', async () => {
+    world.model.modules.blog!.entities = []
+    world.model.modules.blog!.repositories = []
+    const { editor } = await bootData()
+    expect(editor.dataItem).toBeNull()
+    expect(editor.dataTabs).toEqual([])
+  })
+
+  it('shows the sample data on the Sample data side of the switch even when the app answers, and the app\'s rows on Live', async () => {
+    const { editor } = await bootData({ '/api/blog/posts': { items: [post('one'), post('two'), post('three')], total: 3 } })
+    editor.mode = 'data'
+    await settle()
+    expect(editor.rowsSource).toBe('live')
+    editor.rowsPreference = 'sample'
+    expect(editor.rowsSource).toBe('fixtures')
+    expect(editor.collectionRows.map(row => row.slug)).toEqual(['hello-bildr', 'a-draft'])
+    editor.rowsPreference = 'live'
+    expect(editor.rowsSource).toBe('live')
+  })
+
+  it('has no sample data for a REST collection: it is always Live', async () => {
+    const { editor } = await bootData({ '/api/blog/quotes': { items: [{ id: 1, text: 'Q', author: 'A' }], total: 1 } })
+    editor.mode = 'data'
+    editor.collectionId = 'ent_quote'
+    editor.rowsPreference = 'sample'
+    await settle()
+    expect(editor.rowsSource).toBe('live')
+  })
+})
+
+describe('the Data location in the URL query (S2)', () => {
+  it('reads the item and the tab', () => {
+    expect(parseDataLocation({ item: 'collection:ent_post', tab: 'fields' })).toEqual({ item: { kind: 'collection', id: 'ent_post' }, tab: 'fields' })
+    expect(parseDataLocation({ item: 'connection:ds_quotes', tab: 'json' })).toEqual({ item: { kind: 'connection', id: 'ds_quotes' }, tab: 'json' })
+  })
+
+  it('ignores what is malformed or unknown instead of failing', () => {
+    expect(parseDataLocation({})).toEqual({})
+    expect(parseDataLocation({ item: 'page:pg_index', tab: 'nope' })).toEqual({})
+    expect(parseDataLocation({ item: 'collection:', tab: ['rows', 'fields'] })).toEqual({})
+    expect(parseDataLocation({ item: ['collection:ent_post'] })).toEqual({})
+  })
+
+  it('writes the item and the tab back as they were read', () => {
+    const query = dataLocationQuery({ kind: 'connection', id: 'ds_quotes' }, 'endpoints')
+    expect(query).toEqual({ item: 'connection:ds_quotes', tab: 'endpoints' })
+    expect(parseDataLocation(query)).toEqual({ item: { kind: 'connection', id: 'ds_quotes' }, tab: 'endpoints' })
   })
 })

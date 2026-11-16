@@ -1,18 +1,20 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { onBeforeUnmount, onMounted, provide } from 'vue'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import ProblemsList from '../components/ProblemsList.vue'
-import DataTable from '../components/data/DataView.vue'
+import DataWorkspace from '../components/data/DataView.vue'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
+import { useDataLocation } from '../editor/dataLocation.ts'
 import { createEditor, provideEditor } from '../editor/useEditor.ts'
 
 /**
- * The Data screen (U7, `/data`): the hosted editor's Data view over the `.bildr/` model, with the
- * hosted page's chrome (the toolbar, whose view menu goes back to the Canvas, Design and Settings,
- * and ⌘K). Collections are entities, connections are REST data sources, and every edit is a module
- * action (`entity_*`, `datasource_*`); the rows are the app's or the entity's fixtures, read-only
- * (E2). The sidebar lists them, the table shows the rows, the right panel the collection, a
- * connection or a row. The raw model files stay on the Model screen.
+ * The Data screen (U7, `/data`), the Data workspace (S2): the hosted editor's Data view over the `.bildr/`
+ * model, with the hosted page's chrome (the toolbar, whose view menu goes back to the Canvas, Design and
+ * Settings, and ⌘K). Collections are entities, connections are REST data sources, and every edit is a module
+ * action (`entity_*`, `datasource_*`); the rows are the app's or the entity's sample data, read-only (E2).
+ * The tree on the left lists the Collections and Connections, and the item chosen shows its tabs beside it
+ * (Rows · Fields · Endpoints · JSON for a collection, Endpoints · JSON for a connection). The item and the
+ * tab are in the URL query (`?item=collection:ent_post&tab=fields`). The raw model files stay on the Model screen.
  *
  * It is its own screen, not a mode of `DesignView`: the adapter opens it when the view changes to
  * Data (`editor/views.ts`), and the editor made here starts on it.
@@ -22,6 +24,7 @@ const design = createDesign()
 provide(DESIGN_KEY, design)
 const toast = useToast()
 const editor = provideEditor(createEditor(design, { toast: notice => toast.add(notice), view: 'data' }))
+useDataLocation(editor)
 
 function isEditable(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null
@@ -56,10 +59,6 @@ onBeforeUnmount(() => {
   document.documentElement.classList.remove('bildr-editor')
   editor.dispose()
 })
-
-// The right panel is as wide as the Canvas view's (280–480px, remembered across reloads).
-const PANEL_KEY = 'bildr:panel-width'
-const panelWidth = ref(Math.min(480, Math.max(280, Math.round(Number(localStorage.getItem(PANEL_KEY)) || 320))))
 </script>
 
 <template>
@@ -118,20 +117,9 @@ const panelWidth = ref(Math.min(480, Math.max(280, Math.round(Number(localStorag
       <aside class="flex w-64 shrink-0 flex-col border-r border-default">
         <DataCollections class="min-h-0 flex-1" />
       </aside>
-      <main
-        class="min-w-0 flex-1 overflow-hidden bg-(--editor-canvas)"
-        data-data-area
-      >
-        <DataTable class="size-full" />
+      <main class="flex min-w-0 flex-1 bg-(--editor-canvas)">
+        <DataWorkspace class="min-w-0 flex-1" />
       </main>
-      <aside
-        v-if="editor.collection || editor.connection"
-        class="shrink-0 overflow-y-auto border-l border-default"
-        :style="{ width: `${panelWidth}px` }"
-        data-data-panel
-      >
-        <DataPanel />
-      </aside>
     </div>
     <div
       v-if="editor.error"

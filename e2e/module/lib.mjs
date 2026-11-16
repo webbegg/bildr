@@ -388,6 +388,8 @@ export async function openData(page) {
   await page.goto(editorUrl('/data'))
   await page.locator('[data-testid="data"]').waitFor()
   await page.locator('[data-testid="data-loading"]').waitFor({ state: 'detached' })
+  // The workspace: its tree of Collections and Connections, and the tab strip of the item shown (the URL query keeps it).
+  await page.locator('[data-data-tree]').waitFor()
 }
 
 /** Switches the editor view through the toolbar's view menu. */

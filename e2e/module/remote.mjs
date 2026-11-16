@@ -23,7 +23,7 @@ await run('remote', async ({ page, errors }) => {
     await openData(page)
 
     // A connection; its new name field stays open (L75).
-    await page.getByLabel('Add synced data').click()
+    await page.getByLabel('Add connection').click()
     await page.locator('[role^=menuitem]').filter({ hasText: 'New connection' }).click()
     const nameField = page.getByLabel('New connection name')
     await nameField.waitFor()

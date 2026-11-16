@@ -6,7 +6,7 @@ import { pagesUsingEntity } from '../../../shared/dataModel.ts'
 import type { DataConnection } from '../../../shared/dataModel.ts'
 
 /**
- * A connection in the Synced section, Framer's folder: a chevron that shows or hides its
+ * A connection in the Connections section, Framer's folder: a chevron that shows or hides its
  * collections, the name (click shows the connection in the right panel, double-click renames)
  * and a hover `…` menu. Its collections sit indented under it with their counts, then `+ Add…`
  * (emits `add`). A connection is a REST data source: renaming is `datasource_update`.
@@ -15,7 +15,7 @@ const { connection, counts } = defineProps<{ connection: DataConnection, counts:
 const emit = defineEmits<{ add: [] }>()
 const editor = useEditor()
 const open = ref(true)
-const shown = computed(() => editor.connectionId === connection.id)
+const shown = computed(() => editor.dataItem?.kind === 'connection' && editor.dataItem.id === connection.id)
 const collections = computed(() => editor.collections.filter(entry => entry.datasource === connection.id))
 const renaming = ref(false)
 const renameValue = ref('')
@@ -113,6 +113,7 @@ const menu = computed<DropdownMenuItem[]>(() => [
           :title="connection.name"
           :aria-current="shown ? 'true' : undefined"
           data-connection-name
+          data-tree-item
           @click="show"
           @dblclick="startRename"
         >

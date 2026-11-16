@@ -108,7 +108,8 @@ describe('the top bar menu is the only navigation', () => {
     ['/model', 'Model']
   ])('opens the deep link %s with the menu showing %s', async (link, label) => {
     const { router } = await open(link)
-    expect(router.currentRoute.value.fullPath).toBe(link)
+    // The Data screen adds the item and tab it shows to the query (S2): the link it was opened with stays its start.
+    expect(router.currentRoute.value.fullPath.startsWith(link)).toBe(true)
     expect(text(q('[data-view-menu]'))).toBe(label)
     expect(text(q('[data-brand]'))).toBe('bildr')
     expect(navLinks()).toEqual([])

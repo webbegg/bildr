@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useDataSidebarTab } from '../../../editor/dataSidebar.ts'
 import { useEditor } from '../../../editor/useEditor.ts'
 import { detailPagesOf } from '../../../shared/dataModel.ts'
 import type { DataCollection } from '../../../shared/dataModel.ts'
 
 /**
- * The collection panel: its name, plural and whether the app serves its list, where it is stored,
- * its detail pages ("Detail page: <name>", which opens it on the Canvas), then a connection
- * collection's endpoints. Fields opens the sidebar's Fields tab. Every edit is `entity_update`.
+ * The collection's settings, beside its Fields tab: its name, plural and whether the app serves its
+ * list, where it is stored, and its detail pages ("Detail page: <name>", which opens it on the Canvas).
+ * A connection collection's endpoints are its Endpoints tab. Every edit is `entity_update`.
  *
  * Not in the module: the slug and the public create flag (the generated names stay the plural's
  * and the create action's), the legacy one-URL API source, and "Create detail page" (a detail
@@ -16,7 +15,6 @@ import type { DataCollection } from '../../../shared/dataModel.ts'
  */
 const props = defineProps<{ collection: DataCollection }>()
 const editor = useEditor()
-const sidebarTab = useDataSidebarTab()
 const rest = computed(() => props.collection.kind === 'rest')
 const detailPages = computed(() => editor.model ? detailPagesOf(editor.model, props.collection.id) : [])
 
@@ -33,11 +31,6 @@ function update(patch: Record<string, unknown>) {
 
 <template>
   <div data-collection-panel>
-    <DataPanelHead
-      :icon="rest ? 'i-lucide-globe' : 'i-lucide-database'"
-      :title="collection.name"
-    />
-
     <EditorStyleSection label="Collection">
       <EditorRow
         label="Name"
@@ -88,24 +81,6 @@ function update(patch: Record<string, unknown>) {
         >{{ collection.createAction ?? 'No create action' }}</span>
       </EditorRow>
       <EditorRow
-        label="Fields"
-        name="fields"
-      >
-        <button
-          type="button"
-          class="flex h-[30px] min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2 text-[12px] text-muted hover:bg-white/4 hover:text-highlighted"
-          title="Edit the fields in the sidebar"
-          data-show-fields
-          @click="sidebarTab = 'fields'"
-        >
-          <span class="truncate">{{ collection.fields.length }} {{ collection.fields.length === 1 ? 'field' : 'fields' }}</span>
-          <UIcon
-            name="i-lucide-arrow-left"
-            class="ms-auto size-3.5 shrink-0"
-          />
-        </button>
-      </EditorRow>
-      <EditorRow
         v-if="rest"
         label="Connection"
         name="connection"
@@ -127,7 +102,7 @@ function update(patch: Record<string, unknown>) {
       <EditorRow
         v-else
         label="Stored in"
-        title="The data source its repository uses"
+        title="Where its rows are stored"
         name="datasource"
       >
         <span
@@ -181,10 +156,5 @@ function update(patch: Record<string, unknown>) {
         A page rendered once per row has a route parameter and reads {{ collection.name }} with a query. Make one on the Canvas, in Pages.
       </p>
     </EditorStyleSection>
-
-    <DataPanelEndpoints
-      v-if="rest"
-      :collection="collection"
-    />
   </div>
 </template>

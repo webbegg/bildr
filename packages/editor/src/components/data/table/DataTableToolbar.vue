@@ -8,12 +8,14 @@ import type { DataField } from '../../../shared/dataModel.ts'
 
 /**
  * The rows table's toolbar, Framer CMS's: sort, filter and search icons with the active filters
- * as chips, the item count, and a `…` menu. `badge` says where the rows come from (the app's
- * list route, the entity's fixtures, or a remote API) and Refresh reads them again. The hosted
- * Add item and bulk Delete are not here: rows are app data (E2).
+ * as chips, the item count, and a `…` menu. The Live / Sample data switch says where the rows
+ * come from (the app's list route, or the collection's sample data) and chooses; a collection
+ * read through a connection has no sample data, so it only says Live. Refresh reads the rows
+ * again. The hosted Add item and bulk Delete are not here: rows are app data (E2).
  */
-const props = defineProps<{ fields: DataField[], count: string, badge: { label: string, icon: string, color: 'info' | 'neutral' | 'warning' }, refreshing: boolean }>()
-const emit = defineEmits<{ refresh: [] }>()
+const props = defineProps<{ fields: DataField[], count: string, source: 'live' | 'fixtures', sampleData: boolean, refreshing: boolean }>()
+const emit = defineEmits<{ refresh: [], source: [source: 'live' | 'sample'] }>()
+const SOURCES = [{ value: 'live', label: 'Live' }, { value: 'sample', label: 'Sample data' }]
 const query = defineModel<string>('query', { required: true })
 const sort = defineModel<TableSort | null>('sort', { required: true })
 const filters = defineModel<TableFilter[]>('filters', { required: true })
@@ -147,12 +149,26 @@ function removeFilter(index: number) {
       data-records-count
     >{{ count }}</span>
     <div class="ms-auto flex shrink-0 items-center gap-2">
+      <div
+        v-if="sampleData"
+        class="w-48"
+        :data-source="source"
+        data-live-badge
+      >
+        <EditorSegmented
+          :items="SOURCES"
+          :model-value="source === 'live' ? 'live' : 'sample'"
+          @update:model-value="emit('source', $event as 'live' | 'sample')"
+        />
+      </div>
       <UBadge
-        :label="badge.label"
-        :icon="badge.icon"
-        :color="badge.color"
+        v-else
+        label="Live"
+        icon="i-lucide-radio"
+        color="info"
         variant="subtle"
         size="sm"
+        data-source="live"
         data-live-badge
       />
       <UTooltip text="Refresh">

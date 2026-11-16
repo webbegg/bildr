@@ -5,7 +5,7 @@ import { NEW_CONNECTION_URL } from '../../../shared/dataModel.ts'
 import type { DataConnection } from '../../../shared/dataModel.ts'
 
 /**
- * The connection panel: its name, base URL and how it authenticates (`datasource_update`,
+ * The connection's settings, the top of its Endpoints tab: its name, base URL and how it authenticates (`datasource_update`,
  * undoable). A connection is a REST data source. The hosted headers list becomes its `auth`: a
  * bearer token or one header, whose secret is an env var only, never a value in the model. The
  * panel says whether that variable is set (`env_status`, read-only: the user edits `.env`).
@@ -54,12 +54,6 @@ onMounted(async () => {
     data-connection-panel
     :data-connection-id="connection.id"
   >
-    <DataPanelHead
-      icon="i-lucide-server"
-      :title="connection.name"
-      detail="Connection"
-    />
-
     <EditorStyleSection label="Connection">
       <EditorRow
         label="Name"

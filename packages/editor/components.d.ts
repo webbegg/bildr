@@ -16,6 +16,7 @@ declare module 'vue' {
     DataApiSource: typeof import('./src/components/data/DataApiSource.vue')['default']
     DataCollectionRow: typeof import('./src/components/data/sidebar/DataCollectionRow.vue')['default']
     DataCollections: typeof import('./src/components/data/DataCollections.vue')['default']
+    DataConnectionEndpoints: typeof import('./src/components/data/DataConnectionEndpoints.vue')['default']
     DataConnectionFolder: typeof import('./src/components/data/sidebar/DataConnectionFolder.vue')['default']
     DataConnectionSource: typeof import('./src/components/data/DataConnectionSource.vue')['default']
     DataEmpty: typeof import('./src/components/data/DataEmpty.vue')['default']

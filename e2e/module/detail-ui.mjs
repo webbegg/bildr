@@ -19,6 +19,8 @@ await run('detail-ui', async ({ page, errors }) => {
   await seedPosts([{ title: 'Hello bildr', slug: 'hello-bildr', published: true }, { title: 'A draft', slug: 'a-draft' }])
   await openData(page)
   await page.locator('[data-collection="posts"]').click()
+  // The collection's settings, with its detail page, sit beside its Fields tab.
+  await page.locator('[data-data-tab="fields"]').click()
   const link = page.locator('[data-open-detail-page="pg_post_detail"]')
   check(!!await until(() => link.isVisible()), 'the Post collection panel links its detail page')
   check(await page.locator('[data-no-detail-page]').count() === 0, 'and does not say it has none')

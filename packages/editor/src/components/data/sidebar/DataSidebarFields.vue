@@ -5,7 +5,7 @@ import { FIELD_TYPE_ICONS, FIELD_TYPE_LABELS, fieldTypeItems } from '../../../sh
 import type { FieldType } from '../../../shared/dataModel.ts'
 
 /**
- * The Data sidebar's Fields tab, Framer CMS's: the shown collection's fields, one row each.
+ * The Data workspace's Fields tab, Framer CMS's: the shown collection's fields, one row each.
  * The name and type edit in place (`entity_field_update`), the grip drags a field to another
  * position (`entity_field_move`), the row "−" removes it (`entity_field_remove`) and `+ Add…`
  * opens the add form (`entity_field_add`). A collection read through a connection lists its
@@ -115,18 +115,19 @@ const editingMapping = ref(false)
     </p>
 
     <template v-else>
-      <div class="flex h-11 items-center gap-2 ps-3.5 pe-2">
-        <UIcon
-          :name="mapped ? 'i-lucide-globe' : 'i-lucide-database'"
-          class="size-4 shrink-0 text-dimmed"
-        />
-        <p
-          class="min-w-0 flex-1 truncate text-[12px] font-[550] text-highlighted"
-          data-fields-title
-        >
-          {{ collection.name }}
-        </p>
-      </div>
+      <p
+        class="flex h-11 items-center ps-3.5 pe-2 text-[12px] font-[550] text-highlighted"
+        data-fields-title
+      >
+        {{ collection.fields.length }} {{ collection.fields.length === 1 ? 'field' : 'fields' }}
+      </p>
+      <p
+        v-if="!collection.fields.length"
+        class="px-3.5 pb-2 text-xs text-dimmed"
+        data-fields-empty
+      >
+        {{ mapped ? 'No fields yet. Edit the mapping to add them.' : 'No fields yet. Add the first one below.' }}
+      </p>
 
       <div
         v-if="mapped"

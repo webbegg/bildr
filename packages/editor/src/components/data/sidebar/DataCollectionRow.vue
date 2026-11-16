@@ -5,14 +5,14 @@ import { useEditor } from '../../../editor/useEditor.ts'
 import type { DataCollection } from '../../../shared/dataModel.ts'
 
 /**
- * A Data sidebar row, Framer CMS's: the collection's icon (globe for one read through a
+ * A Data tree row, Framer CMS's: the collection's icon (globe for one read through a
  * connection), name and row count, `indent`ed inside a connection's folder. Click shows it,
  * double-click renames inline, and the hover `…` menu renames or deletes it. A collection is
  * an entity: renaming is `entity_update`, deleting `entity_delete` (refused while pages use it).
  */
 const { collection, count, indent = false } = defineProps<{ collection: DataCollection, count?: number, indent?: boolean }>()
 const editor = useEditor()
-const shown = computed(() => editor.collection?.id === collection.id && !editor.connectionId)
+const shown = computed(() => editor.dataItem?.kind === 'collection' && editor.dataItem.id === collection.id)
 const renaming = ref(false)
 const renameValue = ref('')
 
@@ -40,7 +40,7 @@ function show() {
 }
 
 async function remove() {
-  const ok = await editor.confirm({ title: `Delete collection "${collection.name}"?`, description: 'The entity goes with its repository, queries, create action and fixtures. Undo brings it back.', confirmLabel: 'Delete collection', danger: true })
+  const ok = await editor.confirm({ title: `Delete collection "${collection.name}"?`, description: 'The entity goes with its repository, queries, create action and sample data. Undo brings it back.', confirmLabel: 'Delete collection', danger: true })
   if (ok) await editor.run('entity_delete', { entity: collection.id })
 }
 
@@ -70,6 +70,7 @@ const menu = computed<DropdownMenuItem[]>(() => [
       :title="collection.name"
       :aria-current="shown ? 'true' : undefined"
       :data-collection="collection.plural"
+      data-tree-item
       @click="show"
       @dblclick="startRename"
     >

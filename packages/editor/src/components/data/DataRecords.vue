@@ -11,16 +11,19 @@ import type { TableFilter, TableSort } from '../../shared/dataTable.ts'
  * the loaded rows, and a row opens in the right panel. Read-only: the rows are app data reached
  * through the generated API (E2), so the hosted inline cell editing, quick-add row and bulk
  * delete are not ported, and none of it writes. What shows is what the app's list route answers
- * (`App data`; a REST entity is `Remote`), else the entity's fixtures, and the badge says which.
+ * (Live), else the entity's sample data (the fixtures); the Live / Sample data switch says which, and
+ * chooses. A collection read through a connection is always Live.
  */
 const editor = useEditor()
 const collection = computed(() => editor.collection!)
 const fields = computed(() => collection.value.fields)
 const rest = computed(() => collection.value.kind === 'rest')
-const live = computed(() => editor.rowsSource === 'live')
-const badge = computed(() => rest.value
-  ? { label: 'Remote', icon: 'i-lucide-radio', color: 'info' as const }
-  : live.value ? { label: 'App data', icon: 'i-lucide-radio', color: 'info' as const } : { label: 'Fixtures', icon: 'i-lucide-file-json', color: 'neutral' as const })
+
+/** The switch: Live reads the app's rows again, Sample data shows the collection's own. */
+function chooseSource(source: 'live' | 'sample') {
+  editor.rowsPreference = source
+  if (source === 'live') void editor.reloadRecords()
+}
 
 const query = ref('')
 const sort = ref<TableSort | null>(null)
@@ -64,9 +67,11 @@ function sortIcon(key: string) {
       v-model:filters="filters"
       :fields="fields"
       :count="count"
-      :badge="badge"
+      :source="editor.rowsSource"
+      :sample-data="!rest"
       :refreshing="refreshing"
       @refresh="editor.reloadRecords()"
+      @source="chooseSource"
     />
 
     <p
@@ -79,7 +84,7 @@ function sortIcon(key: string) {
         :name="rest ? 'i-lucide-circle-alert' : 'i-lucide-info'"
         class="size-4 shrink-0"
       />
-      <span>{{ rest ? failure : `Showing the model's fixtures. ${failure} Start the app (nuxt dev) and refresh.` }}</span>
+      <span>{{ rest ? failure : `Showing the sample data. ${failure} Start the app (nuxt dev) and refresh.` }}</span>
     </p>
 
     <div
@@ -160,7 +165,7 @@ function sortIcon(key: string) {
         v-if="!fields.length"
         class="px-4 py-6 text-xs text-dimmed"
       >
-        Add a field in the sidebar's Fields tab to start.
+        Add a field in the Fields tab to start.
       </p>
       <p
         v-else-if="!rows.length && query.trim()"
@@ -179,7 +184,7 @@ function sortIcon(key: string) {
         class="px-4 py-6 text-xs text-dimmed"
         data-records-empty
       >
-        {{ rest ? 'The API returned no items.' : 'No items yet. Rows are your app\'s data: they are added through the app, or seeded from the model\'s fixtures.' }}
+        {{ rest ? 'The API returned no items.' : 'No items yet. Rows are your app\'s data: they are added through the app, or seeded as sample data.' }}
       </p>
     </div>
   </section>
