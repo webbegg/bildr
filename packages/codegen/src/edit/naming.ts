@@ -1,6 +1,7 @@
 import { pascal } from '../generate/text.ts'
 import { camel, fail } from './core.ts'
 import type { Draft } from './core.ts'
+import { actionNameProblem } from './generated-names.ts'
 
 /**
  * Names of queries and actions (D10a). Both become code: a query the composable `use<Name>`, an
@@ -11,11 +12,12 @@ import type { Draft } from './core.ts'
 
 const NAME = /^[a-z][A-Za-z0-9]*$/
 
-/** Words an identifier can't be, plus the names the generated use-case files already import. */
+/** Words an identifier can't be (strict-mode names included: modules are strict), plus the names the generated use-case files already import. */
 const UNUSABLE = new Set([
   'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum', 'export', 'extends', 'false', 'finally',
   'for', 'function', 'if', 'implements', 'import', 'in', 'instanceof', 'interface', 'let', 'new', 'null', 'package', 'private', 'protected', 'public',
   'return', 'static', 'super', 'switch', 'this', 'throw', 'true', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield', 'await', 'async',
+  'eval', 'arguments', 'undefined', 'NaN', 'Infinity',
   'ok', 'err', 'now'
 ])
 
@@ -47,6 +49,12 @@ export const checkCallableFree = (draft: Draft, module: string, name: string, se
   // The composition root names each exposed list's use-case list<Plural>.
   const list = mod.entities.find(entity => `list${pascal(entity.plural)}`.toLowerCase() === name.toLowerCase())
   if (list) fail('invalid', `"${name}" is the name of the generated list use-case of ${list.name}: pick another`)
+}
+
+/** Refuses an action name the module's generated code already declares (its composition root, adapters, error factories…). */
+export const checkActionName = (draft: Draft, module: string, name: string): void => {
+  const problem = actionNameProblem(draft.model, module, name)
+  if (problem) fail('invalid', problem)
 }
 
 /** The client composable a query or action named `name` generates. */

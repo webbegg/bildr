@@ -173,14 +173,28 @@ describe('loadModel problems', () => {
   it('refuses an action without a repository step: nothing would do its work', () => {
     for (const steps of [[{ kind: 'validate' }], [{ kind: 'validate' }, { kind: 'assert', unless: { repository: 'repo_post', op: 'findBySlug', args: { slug: { $input: 'slug' } } }, error: 'slug_taken', errorData: { slug: { $input: 'slug' } } }]]) {
       expect(problems(edit('.bildr/modules/blog/actions/create-post.json', { steps })), JSON.stringify(steps))
-        .toEqual(['.bildr/modules/blog/actions/create-post.json: steps: An action needs a "repository" step (create, update or delete) to do its work'])
+        .toEqual(['.bildr/modules/blog/actions/create-post.json: steps: An action needs a "repository" step (create, update or delete), or a last "return" step that always runs ("if": true), to do its work'])
     }
   })
 
-  it('accepts an action whose work is a return step (a blank action), and still refuses one that only validates', () => {
+  it('accepts an action whose work is a last return step that always runs (a blank action), and still refuses one that only validates', () => {
     const path = '.bildr/modules/blog/actions/create-post.json'
     expect(problems(edit(path, { steps: [{ kind: 'validate' }, { kind: 'return', if: true, value: null }] }))).toEqual([])
     expect(problems(edit(path, { steps: [{ kind: 'validate' }] }))).toHaveLength(1)
+  })
+
+  it('refuses a return-only action whose return may not run: the use-case would have no answer on some runs', () => {
+    const path = '.bildr/modules/blog/actions/create-post.json'
+    const message = `${path}: steps: An action needs a "repository" step (create, update or delete), or a last "return" step that always runs ("if": true), to do its work`
+    expect(problems(edit(path, { steps: [{ kind: 'return', if: { $input: 'id' }, value: null }] }))).toEqual([message])
+    expect(problems(edit(path, { steps: [{ kind: 'return', if: false, value: null }] }))).toEqual([message, `${path}: steps.0: A "return" with "if": false never runs: remove the step`])
+  })
+
+  it('refuses a return that always runs before another step: the steps after it would never run', () => {
+    const path = '.bildr/modules/blog/actions/create-post.json'
+    const steps = JSON.parse(fixtureModelFiles()[path]!).steps
+    expect(problems(edit(path, { steps: [{ kind: 'return', if: true, value: null }, ...steps] })))
+      .toEqual([`${path}: steps.0: A "return" that always runs ("if": true) must be the last step: the steps after it would never run`])
   })
 
   it('keeps the repository step last: the use-case returns its result, so later steps would never run', () => {

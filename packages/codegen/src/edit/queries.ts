@@ -207,10 +207,28 @@ export const queryUpdate = defineEdit({
         query.limit = limit
       } else fail('invalid', 'limit is a whole number or { "$param": name }')
     }
+    // A parameter a limit reads is a number of rows, whichever edit made it so.
+    const limitParam = isObject(query.limit) && typeof query.limit.$param === 'string' ? query.params.find(param => param.name === (query.limit as { $param: string }).$param) : undefined
+    if ((params !== undefined || limit !== undefined) && limitParam && !NUMERIC.includes(limitParam.type)) fail('invalid', `limit: the parameter "${limitParam.name}" is ${limitParam.type}, but a limit is a number of rows (integer or number)`)
     if (params !== undefined) {
-      // What the query reads, and the arguments pages give, must still be parameters.
-      if (query.where) checkParam(query, query.where.value, 'where')
+      // What the query reads, and the arguments pages give, must still be parameters, of a type that fits where they are used.
+      if (query.where) {
+        checkParam(query, query.where.value, 'where')
+        if (pageId === undefined) checkCondition(query, entity, query.where, false)
+      }
       checkParam(query, query.limit, 'limit')
+      for (const page of draft.pages()) {
+        for (const use of (page.uses?.queries ?? []).filter(entry => entry.query === query.id)) {
+          for (const [name, value] of Object.entries(use.args ?? {})) {
+            const param = query.params.find(entry => entry.name === name)
+            if (!param || value === null) continue
+            const text = !NUMERIC.includes(param.type) && param.type !== 'boolean'
+            const route = isObject(value) && '$route' in value
+            const literal = !isExpression(value)
+            if ((literal && !fits(param.type, value, true)) || (route && !text)) fail('invalid', `The query ${query.name} (${query.id}) takes "${name}" as ${param.type}, but page "${page.name}" (${page.id}) passes ${JSON.stringify(value)} as "${use.as}": change it first`)
+          }
+        }
+      }
       const names = new Set(query.params.map(param => param.name))
       const passing = draft.pages().flatMap(page => (page.uses?.queries ?? [])
         .filter(use => use.query === query.id && Object.keys(use.args ?? {}).some(name => !names.has(name)))

@@ -155,7 +155,10 @@ describe('action_create: blank', () => {
     expect(action.steps).toEqual([{ kind: 'return', if: true, value: { $var: 'undefined' } }])
     expect(action.output).toBeUndefined()
     const files = generated(p)
-    expect(files['layers/blog/server/application/actions/recount.ts']).toContain('if (true) return ok(undefined)')
+    // A return that always runs is a plain return (`if (true)` fails the project's lint); nothing it reads is named `input`.
+    expect(files['layers/blog/server/application/actions/recount.ts']).toContain('return ok(undefined)')
+    expect(files['layers/blog/server/application/actions/recount.ts']).not.toContain('if (true)')
+    expect(files['layers/blog/server/application/actions/recount.ts']).toContain('async (_input: NewPost)')
     expect(files['layers/blog/server/api/blog/posts/recount.post.ts']).toBeDefined()
     expect(files['layers/blog/app/composables/blog/useRecount.ts']).toBeDefined()
   })
@@ -170,9 +173,10 @@ describe('action_create: blank', () => {
       .toBe('Author is read-only: its repository has no create, update or delete operation, so an action over it has nothing to take or do')
   })
 
-  it('an action with a return step and no repository step is valid; one with neither is still refused', () => {
+  it('an action whose last step is a return that always runs is valid; one with neither a repository step nor that is still refused', () => {
     const p = project()
-    const steps = (list: unknown) => ({ action: 'act_create_post', steps: list })
+    p.edit('action_create', { entity: 'ent_post', template: 'blank', name: 'recount' })
+    const steps = (list: unknown) => ({ action: 'act_recount', steps: list })
     p.refuse('action_update', steps([{ kind: 'validate' }]), 'invalid')
     p.edit('action_update', steps([{ kind: 'validate' }, { kind: 'return', if: true, value: { $var: 'undefined' } }]))
   })
@@ -237,7 +241,7 @@ describe('action_update', () => {
     p.refuse('action_update', { action: 'act_publish_post', label: '' }, 'invalid_input')
     // The model: an unknown entity, a step with no repository work, a repository step not last.
     expect(p.refuse('action_update', { action: 'act_publish_post', input: { entity: 'ent_nope' } }, 'invalid').message).toMatch(/Unknown entity "ent_nope"/)
-    expect(p.refuse('action_update', { action: 'act_publish_post', steps: [{ kind: 'return', if: true, value: null }, { kind: 'repository', repository: 'repo_post', op: 'delete', id: { $input: 'id' } }, { kind: 'return', if: true, value: null }] }, 'invalid').message).toMatch(/must be the last step/)
+    expect(p.refuse('action_update', { action: 'act_publish_post', steps: [{ kind: 'return', if: true, value: { $var: 'post' } }, { kind: 'repository', repository: 'repo_post', op: 'delete', id: { $input: 'id' } }, { kind: 'return', if: true, value: { $var: 'post' } }] }, 'invalid').message).toMatch(/must be the last step/)
     // The generator: a step kind it doesn't generate, an error a step names but the action doesn't declare.
     expect(p.refuse('action_update', { action: 'act_publish_post', steps: [{ kind: 'custom' }, { kind: 'repository', repository: 'repo_post', op: 'delete', id: { $input: 'id' } }] }, 'invalid').message).toMatch(/not generated yet/)
     expect(p.refuse('action_update', { action: 'act_publish_post', errors: [] }, 'invalid').message).toMatch(/post_not_found/)
@@ -248,7 +252,7 @@ describe('action_update', () => {
 
   it('refuses taking the entity input away from an action a Form runs', () => {
     const p = project()
-    expect(p.refuse('action_update', { action: 'act_create_post', input: { params: [{ name: 'id', type: 'uuid', from: 'route' }] }, steps: [{ kind: 'repository', repository: 'repo_post', op: 'delete', id: { $input: 'id' } }] }, 'invalid').message)
+    expect(p.refuse('action_update', { action: 'act_create_post', http: { path: '/posts/:id' }, input: { params: [{ name: 'id', type: 'uuid', from: 'route' }] }, steps: [{ kind: 'repository', repository: 'repo_post', op: 'delete', id: { $input: 'id' } }] }, 'invalid').message)
       .toBe('The edit would leave a model the generator can\'t build: .bildr/modules/blog/pages/new-post.json (node n_form): a Form needs an action with an entity input')
   })
 })

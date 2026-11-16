@@ -154,7 +154,21 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
   const errorImports: ImportName[] = [{ name: errorTypeName(context), type: true }]
   let usesErr = false
   let validated = false
-  const scope = { input: (name: string) => validated ? `data.${name}` : (params.some(param => param.name === name) ? name : `input.${name}`), at: false }
+  // What the body reads of its input: an input it never reads is named `_input`, which the project's lint allows.
+  let readsInput = false
+  const readParams = new Set<string>()
+  const scope = {
+    input: (name: string) => {
+      if (validated) return `data.${name}`
+      if (params.some(param => param.name === name)) {
+        readParams.add(name)
+        return name
+      }
+      readsInput = true
+      return `input.${name}`
+    },
+    at: false
+  }
 
   const body: string[] = []
   const errorCall = (type: string, data: Record<string, Value> | undefined) => {
@@ -177,6 +191,7 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
       body.push(`const data = New${inputEntity.name}Schema.parse(input)`)
       addDomain(inputEntity, { name: `New${inputEntity.name}Schema` })
       validated = true
+      readsInput = true
     } else if (step.kind === 'assert') {
       body.push(`if (await ${call(step.unless as RepositoryCall)}) return ${errorCall(String(step.error), step.errorData as Record<string, Value>)}`)
     } else if (step.kind === 'load') {
@@ -184,7 +199,9 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
       body.push(`const ${as} = await ${call(step as unknown as RepositoryCall)}`)
       if (step.orError) body.push(`if (!${as}) return ${errorCall(String(step.orError), step.errorData as Record<string, Value>)}`)
     } else if (step.kind === 'return') {
-      body.push(`if (${compile(step.if as Value, scope)}) return ok(${compile(step.value as Value, scope)})`)
+      const when = compile(step.if as Value, scope)
+      // A return that always runs is a plain return: `if (true)` fails the project's lint.
+      body.push(when === 'true' ? `return ok(${compile(step.value as Value, scope)})` : `if (${when}) return ok(${compile(step.value as Value, scope)})`)
     } else if (step.kind === 'repository') {
       const repository = analyzed.repositories.find(entry => entry.repository.id === step.repository)!
       const timestamps = repository.entity.timestamps ? (step.op === 'create' ? ['createdAt', 'updatedAt'] : ['updatedAt']) : []
@@ -208,8 +225,10 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
   if (inputEntity) addDomain(inputEntity, { name: `New${inputEntity.name}`, type: true })
   if (output) addDomain(output, { name: output.name, type: true })
   const signature = inputEntity
-    ? `input: New${inputEntity.name}`
-    : params.map(param => `${param.name}: ${tsType(param.type)}`).join(', ')
+    ? `${readsInput ? 'input' : '_input'}: New${inputEntity.name}`
+    : params.map(param => `${readParams.has(param.name) ? param.name : `_${param.name}`}: ${tsType(param.type)}`).join(', ')
+  // A use-case that reads no repository has no dependencies to take.
+  const wired = analyzed.repositories.length > 0
   const result = `Promise<Result<${output?.name ?? 'void'}, ${errorTypeName(context)}>>`
 
   return {
@@ -223,12 +242,16 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
       ...[...domain.entries()].map(([path, names]) => importLine(`#${context.name}/domain/${path}`, names)),
       ...analyzed.repositories.map(({ entity }) => `import type { ${entityNames(entity).port} } from '../ports/${entityNames(entity).portFile}'`),
       '',
-      `export interface ${deps} {`,
-      ...analyzed.repositories.map(({ entity }) => `  ${repositoryVariable(entity)}: ${entityNames(entity).port}`),
-      '}',
-      '',
+      ...(wired
+        ? [
+            `export interface ${deps} {`,
+            ...analyzed.repositories.map(({ entity }) => `  ${repositoryVariable(entity)}: ${entityNames(entity).port}`),
+            '}',
+            ''
+          ]
+        : []),
       `/** ${docText(action.description ?? `Action "${action.label}".`)} */`,
-      `export const ${action.name} = ({ ${analyzed.repositories.map(({ entity }) => repositoryVariable(entity)).join(', ')} }: ${deps}) =>`,
+      `export const ${action.name} = (${wired ? `{ ${analyzed.repositories.map(({ entity }) => repositoryVariable(entity)).join(', ')} }: ${deps}` : ''}) =>`,
       `  async (${signature}): ${result} => {`,
       ...body.map(line => `    ${line}`),
       '  }'
@@ -317,7 +340,7 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
   }
   for (const analyzed of actions) {
     if (placed.has(analyzed.action.id)) continue
-    entries.push(`    ${analyzed.action.name}: ${analyzed.action.name}({})`)
+    entries.push(`    ${analyzed.action.name}: ${analyzed.action.name}()`)
   }
   for (const analyzed of actions) imports.push({ path: `../application/actions/${kebab(analyzed.action.name)}`, name: analyzed.action.name })
   if (seeds.length) imports.push({ path: `../infrastructure/memory/seed`, name: seeds.join(', ') })
@@ -428,6 +451,9 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
     } else {
       mutate.push(`onMutate: (${argument}) => {`, `  ${collection}.delete(${compile(optimistic.key ?? null, { input: name => name, at: false })})`, '},')
     }
+  } else {
+    // createOptimisticAction needs an onMutate: an action with nothing to show ahead of the server's answer gives it an empty one.
+    mutate.push('onMutate: () => {', '  // Nothing to show before the server answers.', '},')
   }
 
   const route = `/api/${context.name}${action.http.path}`
@@ -435,7 +461,8 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
   const fetchType = output ? `<${output.name}>` : ''
   const kind = optimistic ? `optimistic ${optimistic.kind}, confirmed by the server use-case` : 'runs the server use-case'
   const doc = `Action "${action.label}": ${kind}${invalidated.length ? `; invalidates ${invalidated.map(entity => entity.name).join(', ')}` : ''}.`
-  const domainPath = entityNames(inputEntity ?? output ?? invalidated[0]!).file
+  // The types it imports are the input's and the output's: an action with neither (a delete) imports none.
+  const typed = inputEntity ?? output
 
   return {
     path: `layers/${context.name}/app/composables/${context.name}/${composable}.ts`,
@@ -445,7 +472,7 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
       'import { createOptimisticAction } from \'@tanstack/vue-db\'',
       'import { ref } from \'vue\'',
       ids.size > 0 && importLine('#core/kernel/ids', [...ids]),
-      types.size > 0 && importLine(`#${context.name}/domain/${domainPath}`, [...types].map(name => ({ name, type: true }))),
+      typed && importLine(`#${context.name}/domain/${entityNames(typed).file}`, [...types].map(name => ({ name, type: true }))),
       ...[...collections].sort().map((collection) => {
         const entity = context.module.entities.find(entry => entityNames(entry).collection === collection)!
         return `import { ${collection} } from '../../data/${kebab(entity.plural)}.collection'`
@@ -503,6 +530,7 @@ const useCaseTestFile = (context: ModuleContext, analyzed: Analyzed) => {
   const { action, inputEntity, params } = analyzed
   const source = context.source(action.id)
   const deps = analyzed.repositories.map(({ entity }) => entity.plural).join(', ')
+  const built = deps ? `{ ${deps} }` : ''
   const memory = analyzed.repositories.map(({ entity }) => ({ entity, factory: `memory${entityNames(entity).port}` }))
   const imports: Array<{ path: string, line: string }> = [
     { path: `../../server/application/actions/${kebab(action.name)}`, line: `import { ${action.name} } from '../../server/application/actions/${kebab(action.name)}'` },
@@ -516,14 +544,14 @@ const useCaseTestFile = (context: ModuleContext, analyzed: Analyzed) => {
     const picked = action.input.pick ?? allFields(inputEntity).map(field => field.name)
     const fields = picked.map(name => allFields(inputEntity).find(field => field.name === name)!)
     preamble.push(`const input = { ${fields.map(field => `${field.name}: ${tsLiteral(sampleValue(field))}`).join(', ')} }`, '')
-    tests.push(['  it(\'succeeds\', async () => {', ...setup(false), `    const result = await ${action.name}({ ${deps} })(input)`, '    expect(result.ok).toBe(true)', '  })'])
+    tests.push(['  it(\'succeeds\', async () => {', ...setup(false), `    const result = await ${action.name}(${built})(input)`, '    expect(result.ok).toBe(true)', '  })'])
     for (const step of analyzed.steps.filter(entry => entry.kind === 'assert')) {
       const again = inputEntity.idStrategy === 'uuid' ? `{ ...input, id: ${tsString(sampleId(2))} }` : 'input'
       tests.push([
         `  it('fails with ${String(step.error)}', async () => {`,
         ...setup(false),
-        `    await ${action.name}({ ${deps} })(input)`,
-        `    const result = await ${action.name}({ ${deps} })(${again})`,
+        `    await ${action.name}(${built})(input)`,
+        `    const result = await ${action.name}(${built})(${again})`,
         `    expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: ${tsString(String(step.error))} }) })`,
         '  })'
       ])
@@ -538,12 +566,12 @@ const useCaseTestFile = (context: ModuleContext, analyzed: Analyzed) => {
       imports.push({ path: seedFile, line: `import { ${entityNames(loaded.entity).variable}Seed } from '${seedFile}'` })
     }
     const existing = loaded ? `${entityNames(loaded.entity).variable}Seed[0]!.id` : tsString(sampleId(1))
-    tests.push(['  it(\'succeeds\', async () => {', ...setup(Boolean(loaded)), `    const result = await ${action.name}({ ${deps} })(${params.map(() => existing).join(', ')})`, '    expect(result.ok).toBe(true)', '  })'])
+    tests.push(['  it(\'succeeds\', async () => {', ...setup(Boolean(loaded)), `    const result = await ${action.name}(${built})(${params.map(() => existing).join(', ')})`, '    expect(result.ok).toBe(true)', '  })'])
     if (load?.orError) {
       tests.push([
         `  it('fails with ${String(load.orError)}', async () => {`,
         ...setup(false),
-        `    const result = await ${action.name}({ ${deps} })(${params.map(() => tsString(sampleId(1))).join(', ')})`,
+        `    const result = await ${action.name}(${built})(${params.map(() => tsString(sampleId(1))).join(', ')})`,
         `    expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: ${tsString(String(load.orError))} }) })`,
         '  })'
       ])

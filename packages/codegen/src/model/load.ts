@@ -305,11 +305,17 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       if (action.output) ref(path, 'output.entity', 'entity', action.output.entity, 'entity')
       action.client.invalidates.forEach((id, index) => ref(path, `client.invalidates.${index}`, 'entity', id, 'entity'))
       // The repository step is what the use-case does and returns; without one it would only check its input.
-      // A "return" step also makes it do something (a blank action starts with one); validate and assert alone only check.
-      if (!action.steps.some(step => step.kind === 'repository' || step.kind === 'return')) report(path, 'steps', 'An action needs a "repository" step (create, update or delete) to do its work')
+      // Without one, a final "return" that always runs (a blank action has just that) is the work: it makes the use-case answer
+      // on every run. validate and assert alone only check, and a "return" that may not run leaves the use-case with no answer.
+      const last = action.steps.at(-1)
+      if (!action.steps.some(step => step.kind === 'repository') && !(last?.kind === 'return' && last.if === true)) {
+        report(path, 'steps', 'An action needs a "repository" step (create, update or delete), or a last "return" step that always runs ("if": true), to do its work')
+      }
       // It returns the use-case's result, so it must be last: one repository step per action.
       action.steps.forEach((step, index) => {
         if (step.kind === 'repository' && index !== action.steps.length - 1) report(path, `steps.${index}`, 'A "repository" step must be the last step: the use-case returns its result')
+        if (step.kind === 'return' && step.if === true && index !== action.steps.length - 1) report(path, `steps.${index}`, 'A "return" that always runs ("if": true) must be the last step: the steps after it would never run')
+        if (step.kind === 'return' && step.if === false) report(path, `steps.${index}`, 'A "return" with "if": false never runs: remove the step')
       })
     }
     // The generators derive the key from idStrategy: "uuid" adds the id field, "external" uses the source's own.

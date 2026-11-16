@@ -6,6 +6,7 @@ import { loadModel, MANIFEST_FILE } from '../model/load.ts'
 import type { Model, ModelProblem, ModuleModel } from '../model/load.ts'
 import type { ComponentFile, LayoutFile, ModelNode, PageFile } from '../model/schemas.ts'
 import { serializeModel } from '../model/serialize.ts'
+import { actionNameProblem } from './generated-names.ts'
 import { walk } from './tree.ts'
 
 /**
@@ -235,10 +236,28 @@ const problemsText = (problems: ModelProblem[]): string => {
   return problems.length > 3 ? `${shown}; and ${problems.length - 3} more` : shown
 }
 
-/** The generator's error for `model` (as a problem of the file it names), or undefined when it generates. */
+/**
+ * The generator's error for `model` (as a problem of the file it names), or undefined when it generates. A model that
+ * generates two files at one path (a sync would refuse it: "Generated twice"), or an action named like something the
+ * generated code declares, is one the generator can't build either.
+ */
 const generationProblem = (model: Model): ModelProblem | undefined => {
   try {
-    generate(model)
+    const seen = new Map<string, string | undefined>()
+    for (const file of generate(model)) {
+      if (seen.has(file.path)) {
+        const other = seen.get(file.path)
+        const sources = [file.source, other].filter((source): source is string => source !== undefined)
+        return { path: sources[0] ?? MANIFEST_FILE, message: `${sources.join(' and ') || 'Two files'} would both generate ${file.path}: one of the names or routes has to change` }
+      }
+      seen.set(file.path, file.source)
+    }
+    for (const module of Object.keys(model.modules)) {
+      for (const action of model.modules[module]!.actions) {
+        const problem = actionNameProblem(model, module, action.name)
+        if (problem) return { path: model.paths[action.id] ?? MANIFEST_FILE, message: `${model.paths[action.id] ?? action.id}: ${problem}` }
+      }
+    }
     return undefined
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

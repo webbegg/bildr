@@ -68,10 +68,22 @@ const treeUsers = (draft: Draft, ids: Set<string>): string[] => useLabels(idUses
 
 const listOf = (users: string[]) => users.join(', ')
 
-/** Refuses a route another action of the module already answers (two use-cases can't share a method and path). */
+/** A route's segments, the way the generator makes its file: `/posts/` and `/posts` are one route. */
+const segmentsOf = (path: string): string[] => path.split('/').filter(Boolean)
+
+/**
+ * Refuses a route another action of the module already answers: the same method and path (a trailing slash aside), or a
+ * dynamic segment named differently at the same place (`/posts/:id` and `/posts/:slug` are two folders for one route).
+ */
 export const checkRouteFree = (moduleActions: ActionFile[], method: string, path: string, self?: string): void => {
-  const clash = moduleActions.find(action => action.id !== self && action.http.method === method && action.http.path === path)
-  if (clash) fail('invalid', `The action ${clash.id} already answers ${method} ${path}`)
+  const mine = segmentsOf(path)
+  for (const action of moduleActions) {
+    if (action.id === self) continue
+    const theirs = segmentsOf(action.http.path)
+    if (action.http.method === method && theirs.length === mine.length && theirs.every((segment, index) => segment === mine[index])) fail('invalid', `The action ${action.id} already answers ${method} ${action.http.path}`)
+    const at = mine.findIndex((segment, index) => segment !== theirs[index])
+    if (at !== -1 && theirs[at] !== undefined && mine[at]!.startsWith(':') && theirs[at]!.startsWith(':')) fail('invalid', `The action ${action.id} (${action.http.path}) names the same part of the route "${theirs[at]}", not "${mine[at]}": use one name for both`)
+  }
 }
 
 /**
@@ -79,15 +91,26 @@ export const checkRouteFree = (moduleActions: ActionFile[], method: string, path
  * the body against the entity (its key included, which a client generates for a uuid), and the repository creates it;
  * a listed entity's client inserts it optimistically.
  */
-export const createAction = (entity: EntityFile, repositoryId: string, listed: boolean, own: { id: string, name: string, label: string }): ActionFile => ({
-  ...own,
-  http: { method: 'POST', path: `/${kebab(entity.plural)}` },
-  input: { entity: entity.id, pick: [...(entity.idStrategy === 'external' ? [] : ['id']), ...entity.fields.map(field => field.name)] },
-  output: { entity: entity.id },
-  errors: [],
-  steps: [{ kind: 'validate' }, { kind: 'repository', repository: repositoryId, op: 'create' }],
-  client: { ...(listed ? { optimistic: { kind: 'insert', entity: entity.id } } : {}), invalidates: [entity.id] }
-})
+export const createAction = (entity: EntityFile, repositoryId: string, listed: boolean, own: { id: string, name: string, label: string }): ActionFile => {
+  // A read-only field isn't part of what a client sends, but the repository stores the whole row: the use-case fills it.
+  const readonly = entity.fields.filter(field => field.readonly)
+  const set: Record<string, Value> = {}
+  for (const field of readonly) {
+    const fill = field.default ?? (field.nullable ? null : undefined)
+    if (fill === undefined) fail('invalid', `${entity.name} has a read-only field (${field.name}) with no default and no empty value, so a create can't fill it. Give it a default, or use blank and write the steps`)
+    set[field.name] = fill!
+  }
+  return {
+    ...own,
+    http: { method: 'POST', path: `/${kebab(entity.plural)}` },
+    input: { entity: entity.id, pick: [...(entity.idStrategy === 'external' ? [] : ['id']), ...entity.fields.filter(field => !field.readonly).map(field => field.name)] },
+    output: { entity: entity.id },
+    errors: [],
+    steps: [{ kind: 'validate' }, { kind: 'repository', repository: repositoryId, op: 'create', ...(Object.keys(set).length ? { set } : {}) }],
+    // Only a listed entity has the client collection an action invalidates.
+    client: { ...(listed ? { optimistic: { kind: 'insert', entity: entity.id } } : {}), invalidates: listed ? [entity.id] : [] }
+  }
+}
 
 // ── Names ────────────────────────────────────────────────────────────────
 

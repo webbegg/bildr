@@ -4,7 +4,7 @@ import type { ActionFile, EntityFile } from '../model/schemas.ts'
 import { defineEdit, fail, kebab, snake } from './core.ts'
 import type { Draft } from './core.ts'
 import { checkRouteFree, createAction, entityById, keyType, repositoryOf } from './entities.ts'
-import { callableName, checkCallableFree, composableOf, sentence, spaced } from './naming.ts'
+import { callableName, checkActionName, checkCallableFree, composableOf, sentence, spaced } from './naming.ts'
 import { describeUses, usesOf } from './usage.ts'
 
 /**
@@ -51,6 +51,7 @@ export const actionCreate = defineEdit({
     const repository = repositoryOf(draft, entityId) ?? fail('invalid', `${entity.name} has no repository`)
     const name = callableName(givenName, 'action')
     checkCallableFree(draft, module, name)
+    checkActionName(draft, module, name)
     const has = (op: (typeof repository.operations)[number]) => repository.operations.includes(op)
     const listed = Boolean(repository.expose?.list) && has('list')
     const route = `/${kebab(entity.plural)}`
@@ -81,7 +82,8 @@ export const actionCreate = defineEdit({
           { kind: 'load', as: 'existing', repository: repository.id, op: 'get', args: { id: { $input: 'id' } }, orError: notFound, errorData: { id: { $input: 'id' } } },
           { kind: 'repository', repository: repository.id, op: 'update', id: { $input: 'id' }, from: { $var: 'existing' } }
         ],
-        client: { invalidates: [entityId] }
+        // Nothing to show ahead of the server (the generated composable has an empty onMutate); only a listed entity has a collection to refresh.
+        client: { invalidates: listed ? [entityId] : [] }
       }
     } else if (template === 'delete') {
       if (!has('delete')) fail('invalid', `${entity.name} can't be deleted: its repository has no delete operation`)
@@ -93,7 +95,7 @@ export const actionCreate = defineEdit({
         input: { params: [{ ...KEY_PARAM }] },
         errors: [],
         steps: [{ kind: 'repository', repository: repository.id, op: 'delete', id: { $input: 'id' } }],
-        client: { ...(listed ? { optimistic: { kind: 'delete', entity: entityId, key: { $input: 'id' } } } : {}), invalidates: [entityId] }
+        client: { ...(listed ? { optimistic: { kind: 'delete', entity: entityId, key: { $input: 'id' } } } : {}), invalidates: listed ? [entityId] : [] }
       }
     } else {
       // Its input is the entity's body (the one shape the client composable and the route both generate for any key), and
@@ -148,13 +150,27 @@ export const actionUpdate = defineEdit({
       }
       action.input = input
     }
-    if (steps !== undefined) action.steps = steps
+    if (steps !== undefined) {
+      // A return answers with the use-case's result type: the entity row when the action has an output, else nothing (void).
+      const nothing = (value: unknown) => value === null || (typeof value === 'object' && value !== null && (value as { $var?: unknown }).$var === 'undefined')
+      steps.forEach((step, index) => {
+        if (step.kind !== 'return') return
+        if (action.output && nothing(step.value)) fail('invalid', `steps.${index + 1}: this action returns a row (its output), so the return needs one, like { "$var": "post" }`)
+        if (!action.output && !(typeof step.value === 'object' && step.value !== null && (step.value as { $var?: unknown }).$var === 'undefined')) fail('invalid', `steps.${index + 1}: this action returns nothing (it has no output), so the return's value is { "$var": "undefined" }`)
+      })
+      action.steps = steps
+    }
     if (errors !== undefined) action.errors = errors
     if (client !== undefined) action.client = client
     if (http !== undefined) {
       const next = { method: http.method ?? action.http.method, path: http.path ?? action.http.path }
       checkRouteFree(draft.module(module).actions, next.method, next.path, id)
       action.http = next
+    }
+    // A route parameter is read from the path, so the path must have it.
+    const segments = new Set(action.http.path.split('/').filter(segment => segment.startsWith(':')).map(segment => segment.slice(1)))
+    for (const param of action.input.params ?? []) {
+      if (param.from === 'route' && !segments.has(param.name)) fail('invalid', `The parameter "${param.name}" comes from the route, but ${action.http.path} has no :${param.name}. Set http.path too, e.g. "${action.http.path.replace(/\/$/, '')}/:${param.name}"`)
     }
     return { actionId: id }
   }
@@ -171,6 +187,7 @@ export const actionRename = defineEdit({
     const { action, module } = findAction(draft, id)
     const name = callableName(given, 'action')
     checkCallableFree(draft, module, name, id)
+    checkActionName(draft, module, name)
     const previousName = action.name
     // Pages and forms hold the id and their own alias: only the generated use-case, route and composable change.
     action.name = name
