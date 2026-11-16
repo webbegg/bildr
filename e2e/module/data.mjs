@@ -1,10 +1,11 @@
 /**
  * Data on the module editor (port of e2e/data.mjs): a collection made in the Data screen (Add
  * collection, Fields tab add and rename), rows in the table from the running app's list route, a
- * search and a filter in the table; the workspace around them (S2: the tabs of a collection and of a connection,
- * the Live / Sample data switch, the item and tab in the URL, a deep link that survives a reload, the keyboard); a List bound to a Query on a page, shown in the canvas and in the
+ * search and a filter in the table; a List bound to a Query on a page, shown in the canvas and in the
  * running app; a Form bound to the entity's create action, submitted in the running app. Every edit is
- * checked in `.bildr/` (the entity, its repository, the page).
+ * checked in `.bildr/` (the entity, its repository, the page). The last section is the Data workspace
+ * (S2): the tree, the tabs of a collection and of a connection, the Live / Sample data switch, the item
+ * and tab in the URL, and the keyboard.
  *
  * Dropped (feature doc: records are app data, not editor data; no hosted collections or publish):
  * - `record_create`, quick-add and inline cell edit: the table is read-only (E2); rows come from the
@@ -88,43 +89,6 @@ await run('data', async ({ page, browser, errors }) => {
   check(await until(async () => (await page.locator('[data-record]').count()) === 3), 'removing the filter shows all 3 rows')
   await shot(page, 'data-table')
 
-  // The workspace: the rows' source switch, the tabs of a collection and of a connection, the URL, the keyboard.
-  const sourceNames = (await page.locator('[data-live-badge] button').allInnerTexts()).map(name => name.trim())
-  check(sourceNames.join('|') === 'Live|Sample data' && await page.locator('[data-live-badge]').getAttribute('data-source') === 'live', `the rows switch reads Live / Sample data and sits on Live (${sourceNames})`)
-  await page.waitForTimeout(400) // the tab pill's colour transition
-  await shot(page, 'data-workspace-rows')
-  await page.locator('[role=tab][data-data-tab="fields"]').click()
-  check(await page.locator('[data-fields-tab] [data-field]').count() === 2 && await page.locator('[data-data-panel] [data-collection-panel]').count() === 1, 'the Fields tab lists the two fields of Dish, with the collection settings beside them')
-  await page.waitForTimeout(400)
-  await shot(page, 'data-workspace-fields')
-  check(decodeURIComponent(page.url()).endsWith(`#/data?item=collection:${dish.entityId}&tab=fields`), `the item and the tab are in the URL (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
-  await page.reload()
-  await page.locator('[role=tab][aria-selected=true]').waitFor()
-  check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'fields' && (await page.locator('[data-data-title] h2').innerText()) === 'Dish', 'a reload restores Dish on its Fields tab')
-  await page.locator('[role=tab][data-data-tab="fields"]').focus()
-  await page.keyboard.press('ArrowRight')
-  check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'endpoints' && await page.locator('[data-endpoints-empty]').count() === 1, 'the arrow keys move along the tab strip: Endpoints says a stored collection has none')
-  await page.keyboard.press('End')
-  check(await page.locator('[data-testid="data-json-tab"]').innerText().then(text => text.includes('Coming in a later step')), 'the JSON tab is a placeholder for now')
-  await page.locator('[data-collection="dishes"]').focus()
-  await page.keyboard.press('Home')
-  const first = await page.evaluate(() => document.activeElement?.hasAttribute('data-tree-item') && document.activeElement.textContent.trim())
-  check(!!first, `Home moves focus to the first item of the tree (${first})`)
-  await page.keyboard.press('ArrowDown')
-  const second = await page.evaluate(() => document.activeElement?.hasAttribute('data-tree-item') && document.activeElement.textContent.trim())
-  check(!!second && second !== first, `ArrowDown moves it to the next one (${second})`)
-  await page.keyboard.press('Enter')
-  check(await page.locator('[data-data-title] h2').innerText() === second.replace(/\d+$/, '').trim(), 'Enter picks it')
-  await page.goto(editorUrl('/data?item=connection:ds_quotes&tab=json'))
-  await page.reload()
-  await page.locator('[data-testid="data-json-tab"]').waitFor()
-  const connectionTabs = (await page.locator('[role=tab]').allInnerTexts()).map(name => name.trim())
-  check(connectionTabs.join('|') === 'Endpoints|JSON' && await page.locator('[data-data-title] h2').innerText() === 'quotes', `a deep link opens the quotes connection on JSON, with the tabs ${connectionTabs}`)
-  await page.locator('[role=tab][data-data-tab="endpoints"]').click()
-  check(await page.locator('[data-connection-endpoints] [data-connection-panel]').count() === 1, 'the connection\'s Endpoints tab holds its settings')
-  await page.locator('[data-collection="dishes"]').click()
-  await page.locator('[role=tab][data-data-tab="rows"]').click()
-
   // A List bound to the entity's Query, on a page.
   const list = (await action('node_insert', { file: p.pageId, type: 'List', props: {} })).nodeId
   const query = await action('query_create_for_list', { page: p.pageId, entity: dish.entityId, as: 'dishes', nodeId: list })
@@ -143,6 +107,65 @@ await run('data', async ({ page, browser, errors }) => {
 
   const live = await appShows(browser, p.path, 'Mocha costs 5')
   check(live.html.includes('Mocha costs 5') && live.html.includes('Latte costs 4'), 'the running app lists the rows too')
+
+  // ── The Data workspace (S2) ─────────────────────────────────────────────────────────────
+  // The tree, the tabs of a collection and of a connection, the Live / Sample data switch, the item and tab in the URL, the keyboard.
+  await openData(page)
+  await page.locator('[data-collection="dishes"]').click()
+  await page.locator('[role=tab][data-data-tab="rows"]').click()
+  check(await until(async () => {
+    await page.locator('[aria-label="Refresh"]').first().click().catch(() => {})
+    return await page.locator('[data-live-badge]').getAttribute('data-source') === 'live' && await page.locator('[data-record]').count() === 3
+  }, 30_000), 'Dish shows the app\'s 3 rows on Live')
+  const sourceNames = (await page.locator('[data-live-badge] button').allInnerTexts()).map(name => name.trim())
+  const pressed = (await page.locator('[data-live-badge] button[aria-pressed=true]').allInnerTexts()).map(name => name.trim())
+  check(sourceNames.join('|') === 'Live|Sample data' && pressed.join() === 'Live', `the rows switch reads Live / Sample data and is pressed on the choice, Live (${sourceNames}, pressed ${pressed})`)
+  check(await page.locator('[data-source-note]').count() === 0, 'with the app answering there is no "not answering" note')
+  check(await page.locator('[data-insert-button], [data-insert-tool]').count() === 0, 'the Data screen has no canvas insert tools in its top bar')
+  await page.waitForTimeout(400) // the tab pill's colour transition
+  await page.evaluate(() => document.activeElement?.blur()) // the Refresh click above left its focus ring in the picture
+  await shot(page, 'data-workspace-rows')
+  await page.locator('[role=tab][data-data-tab="fields"]').click()
+  check(await page.locator('[data-fields-tab] [data-field]').count() === 2 && await page.locator('[data-data-panel] [data-collection-panel]').count() === 1, 'the Fields tab lists the two fields of Dish, with the collection settings beside them')
+  await page.waitForTimeout(400)
+  await shot(page, 'data-workspace-fields')
+  check(decodeURIComponent(page.url()).endsWith(`#/data?item=collection:${dish.entityId}&tab=fields`), `the item and the tab are in the URL (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
+  await page.reload()
+  await page.locator('[role=tab][aria-selected=true]').waitFor()
+  check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'fields' && (await page.locator('[data-data-title] h2').innerText()) === 'Dish', 'a reload restores Dish on its Fields tab')
+  await page.locator('[role=tab][data-data-tab="fields"]').focus()
+  await page.keyboard.press('ArrowRight')
+  check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'endpoints' && await page.locator('[data-endpoints-empty]').count() === 1, 'the arrow keys move along the tab strip: Endpoints says a stored collection has none')
+  await page.keyboard.press('End')
+  const json = await page.locator('[data-data-json]').innerText()
+  check(json.includes('Raw model files') && await page.locator('[data-data-json] a').getAttribute('href').then(href => href?.endsWith('#/model')), `the JSON tab points to the raw model files (${json.replace(/\s+/g, ' ')})`)
+  const treeItem = () => page.evaluate(() => document.activeElement?.hasAttribute('data-tree-item') ? document.activeElement.getAttribute('title') : false)
+  const stops = await page.locator('[data-data-tree] [role=treeitem][tabindex="0"]').count()
+  check(await page.locator('[data-data-tree]').getAttribute('role') === 'tree' && stops === 1, `the tree is one tab stop (${stops})`)
+  await page.locator('[data-collection="dishes"]').focus()
+  await page.keyboard.press('Home')
+  const first = await treeItem()
+  check(!!first, `Home moves focus to the first item of the tree (${first})`)
+  await page.keyboard.press('ArrowDown')
+  const second = await treeItem()
+  check(typeof second === 'string' && second !== first, `ArrowDown moves it to the next one (${second})`)
+  await page.keyboard.press('Enter')
+  check(typeof second === 'string' && await page.locator('[data-data-title] h2').innerText() === second, 'Enter picks it')
+  const quotes = page.locator('[data-tree-item="connection:ds_quotes"]')
+  await quotes.focus()
+  await page.keyboard.press('ArrowLeft')
+  check(await quotes.getAttribute('aria-expanded') === 'false', 'ArrowLeft collapses a connection')
+  await page.keyboard.press('ArrowRight')
+  check(await quotes.getAttribute('aria-expanded') === 'true', 'ArrowRight expands it again')
+  await page.goto(editorUrl('/data?item=connection:ds_quotes&tab=json'))
+  await page.reload()
+  await page.locator('[data-data-json]').waitFor()
+  const connectionTabs = (await page.locator('[role=tab]').allInnerTexts()).map(name => name.trim())
+  check(connectionTabs.join('|') === 'Endpoints|JSON' && await page.locator('[data-data-title] h2').innerText() === 'quotes', `a deep link opens the quotes connection on JSON, with the tabs ${connectionTabs}`)
+  await page.locator('[role=tab][data-data-tab="endpoints"]').click()
+  check(await page.locator('[data-connection-endpoints] [data-connection-panel]').count() === 1, 'the connection\'s Endpoints tab holds its settings')
+  await page.waitForTimeout(400)
+  await shot(page, 'data-tree-connection')
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 // A new entity regenerates the app and restarts the dev server: its event stream ends mid-request.

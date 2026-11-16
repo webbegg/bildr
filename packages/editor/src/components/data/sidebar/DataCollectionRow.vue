@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
+import { dataItemKey } from '../../../editor/dataTabs.ts'
+import { TREE_STOP } from '../../../editor/dataTree.ts'
 import { useEditor } from '../../../editor/useEditor.ts'
 import type { DataCollection } from '../../../shared/dataModel.ts'
 
@@ -9,9 +11,12 @@ import type { DataCollection } from '../../../shared/dataModel.ts'
  * connection), name and row count, `indent`ed inside a connection's folder. Click shows it,
  * double-click renames inline, and the hover `…` menu renames or deletes it. A collection is
  * an entity: renaming is `entity_update`, deleting `entity_delete` (refused while pages use it).
+ * It is a tree item (`DataTree.vue`): the tab stop when it is the one the tree names.
  */
 const { collection, count, indent = false } = defineProps<{ collection: DataCollection, count?: number, indent?: boolean }>()
 const editor = useEditor()
+const key = computed(() => dataItemKey({ kind: 'collection', id: collection.id }))
+const stop = inject(TREE_STOP, ref(''))
 const shown = computed(() => editor.dataItem?.kind === 'collection' && editor.dataItem.id === collection.id)
 const renaming = ref(false)
 const renameValue = ref('')
@@ -40,7 +45,7 @@ function show() {
 }
 
 async function remove() {
-  const ok = await editor.confirm({ title: `Delete collection "${collection.name}"?`, description: 'The entity goes with its repository, queries, create action and sample data. Undo brings it back.', confirmLabel: 'Delete collection', danger: true })
+  const ok = await editor.confirm({ title: `Delete collection "${collection.name}"?`, description: 'The collection goes with its repository, queries, create action and sample data. Undo brings it back.', confirmLabel: 'Delete collection', danger: true })
   if (ok) await editor.run('entity_delete', { entity: collection.id })
 }
 
@@ -68,9 +73,12 @@ const menu = computed<DropdownMenuItem[]>(() => [
       class="flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-lg pe-3 text-left text-[12px]"
       :class="[shown ? 'bg-white/8 font-medium text-highlighted' : 'text-toned hover:bg-white/4', indent ? 'ps-13' : 'ps-3']"
       :title="collection.name"
-      :aria-current="shown ? 'true' : undefined"
+      role="treeitem"
+      :aria-selected="shown"
+      :aria-level="indent ? 2 : 1"
+      :tabindex="stop === key ? 0 : -1"
       :data-collection="collection.plural"
-      data-tree-item
+      :data-tree-item="key"
       @click="show"
       @dblclick="startRename"
     >

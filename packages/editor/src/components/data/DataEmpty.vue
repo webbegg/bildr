@@ -15,39 +15,28 @@ async function newCollection() {
 </script>
 
 <template>
-  <div
-    class="flex size-full items-center justify-center p-6"
+  <DataEmptyState
+    icon="i-lucide-database"
+    title="Add your first collection"
+    heading="h2"
     data-data-empty
   >
-    <div class="flex max-w-sm flex-col items-center text-center">
-      <div class="mb-4 flex size-12 items-center justify-center rounded-xl bg-white/6">
-        <UIcon
-          name="i-lucide-database"
-          class="size-6 text-toned"
-        />
-      </div>
-      <h2 class="text-base font-[550] text-highlighted">
-        Add your first collection
-      </h2>
-      <p class="mt-1.5 text-[12px] text-muted">
-        Collections hold your app's data, like a menu or contact messages. Agents can use them too.
-      </p>
-      <div class="mt-5 flex items-center gap-2">
-        <EditorButton
-          variant="primary"
-          label="New collection"
-          icon="i-lucide-plus"
-          :loading="creating"
-          data-empty-new
-          @click="newCollection"
-        />
-        <EditorButton
-          label="Import from API"
-          icon="i-lucide-globe"
-          data-empty-import
-          @click="editor.importRequest++"
-        />
-      </div>
-    </div>
-  </div>
+    Collections hold your app's data, like a menu or contact messages. Agents can use them too.
+    <template #actions>
+      <EditorButton
+        variant="primary"
+        label="New collection"
+        icon="i-lucide-plus"
+        :loading="creating"
+        data-empty-new
+        @click="newCollection"
+      />
+      <EditorButton
+        label="Import from API"
+        icon="i-lucide-globe"
+        data-empty-import
+        @click="editor.importRequest++"
+      />
+    </template>
+  </DataEmptyState>
 </template>

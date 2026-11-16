@@ -2,7 +2,7 @@
 import { onBeforeUnmount, onMounted, provide } from 'vue'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import ProblemsList from '../components/ProblemsList.vue'
-import DataWorkspace from '../components/data/DataView.vue'
+import DataWorkspace from '../components/data/DataWorkspace.vue'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
 import { useDataLocation } from '../editor/dataLocation.ts'
 import { createEditor, provideEditor } from '../editor/useEditor.ts'
@@ -115,7 +115,7 @@ onBeforeUnmount(() => {
       class="flex min-h-0 flex-1"
     >
       <aside class="flex w-64 shrink-0 flex-col border-r border-default">
-        <DataCollections class="min-h-0 flex-1" />
+        <DataTree class="min-h-0 flex-1" />
       </aside>
       <main class="flex min-w-0 flex-1 bg-(--editor-canvas)">
         <DataWorkspace class="min-w-0 flex-1" />

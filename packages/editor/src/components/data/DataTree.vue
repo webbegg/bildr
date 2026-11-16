@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, useTemplateRef, watch } from 'vue'
+import { computed, provide, reactive, ref, useTemplateRef, watch } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
-import { answeredImports } from '../../editor/dataSidebar.ts'
+import { dataItemKey } from '../../editor/dataTabs.ts'
+import { TREE_STOP, answeredImports, treeItems } from '../../editor/dataTree.ts'
+import { rovingTarget } from '../../editor/rovingKeys.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { FOCUS_RING } from '../../editorUi.ts'
 import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
@@ -14,25 +16,70 @@ import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
  * connection (an inline name, then the base URL in its Endpoints tab) or opens the Import from URL
  * dialog (also opened by each `editor.importRequest`). The raw model files stay on the Model screen.
  *
- * Up and Down move between the items, Home and End go to the first and last, and Enter picks.
+ * It is a tree with one tab stop (a roving tabindex: the item that has the focus, else the one shown):
+ * Up and Down move between the items and stop at the ends, Home and End go to the first and last,
+ * Enter picks, Left collapses a connection (or goes from a collection to its connection) and Right
+ * expands it (or goes to its first collection).
  */
 const editor = useEditor()
 const tree = useTemplateRef<HTMLElement>('tree')
 
+/** The connections folded in the tree, by id. */
+const collapsed = reactive(new Set<string>())
+const items = computed(() => treeItems(editor.collections, editor.connections, collapsed))
+
+function toggle(id: string) {
+  if (!collapsed.delete(id)) collapsed.add(id)
+}
+
+const shownKey = computed(() => editor.dataItem ? dataItemKey(editor.dataItem) : null)
+const focusedKey = ref<string | null>(null)
+/** The tab stop: the item with the focus, else the one shown, else the first: always one that is listed. */
+const stop = computed(() => {
+  const keys = items.value.map(item => item.key)
+  return [focusedKey.value, shownKey.value].find(key => key !== null && keys.includes(key)) ?? keys[0] ?? ''
+})
+provide(TREE_STOP, stop)
+// Choosing an item makes it the stop, whichever item had the focus last.
+watch(shownKey, () => {
+  focusedKey.value = null
+})
+
+const keyOf = (target: EventTarget | null) => (target as HTMLElement | null)?.closest<HTMLElement>('[data-tree-item]')?.dataset.treeItem
+
+const focus = (key: string) => [...tree.value?.querySelectorAll<HTMLElement>('[data-tree-item]') ?? []].find(item => item.dataset.treeItem === key)?.focus()
+
+function onFocusIn(event: FocusEvent) {
+  focusedKey.value = keyOf(event.target) ?? focusedKey.value
+}
+
 function onKeyDown(event: KeyboardEvent) {
-  const item = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-tree-item]')
-  if (!item || !tree.value) return
+  const key = keyOf(event.target)
+  const at = items.value.findIndex(item => item.key === key)
+  const item = items.value[at]
+  if (!item) return
   if (event.key === 'Enter') {
     event.preventDefault()
-    item.click()
+    ;(event.target as HTMLElement).closest<HTMLElement>('[data-tree-item]')?.click()
     return
   }
-  const items = [...tree.value.querySelectorAll<HTMLElement>('[data-tree-item]')]
-  const at = items.indexOf(item)
-  const to = ({ ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 } as Record<string, number | undefined>)[event.key]
-  if (to === undefined) return
-  event.preventDefault()
-  items[Math.min(items.length - 1, Math.max(0, to))]?.focus()
+  const to = rovingTarget(event.key, at, items.value.length, { axis: 'vertical' })
+  if (to !== null) {
+    event.preventDefault()
+    focus(items.value[to]!.key)
+    return
+  }
+  const id = item.key.slice(item.key.indexOf(':') + 1)
+  if (event.key === 'ArrowLeft') {
+    if (item.expandable && item.open) collapsed.add(id)
+    else if (item.parent) focus(item.parent)
+    else return
+    event.preventDefault()
+  } else if (event.key === 'ArrowRight' && item.expandable) {
+    event.preventDefault()
+    if (!item.open) collapsed.delete(id)
+    else if (items.value[at + 1]?.parent === item.key) focus(items.value[at + 1]!.key)
+  }
 }
 
 const internal = computed(() => editor.collections.filter(entry => entry.kind !== 'rest'))
@@ -107,9 +154,11 @@ function cancelAdd() {
     <div
       ref="tree"
       class="min-h-0 flex-1 overflow-y-auto pb-2"
+      role="tree"
       aria-label="Data items"
       data-data-tree
       @keydown="onKeyDown"
+      @focusin="onFocusIn"
     >
       <section data-collections-internal>
         <p class="ps-3.5 pe-2 pt-3 pb-1 text-xs font-medium text-dimmed">
@@ -160,6 +209,10 @@ function cancelAdd() {
         </div>
       </section>
 
+      <!--
+        S9 keeps the hook names `data-collections-synced` and `data-synced-add` (the e2e and the hosted
+        scripts find the Connections section and its `+` by them) although the user sees "Connections".
+      -->
       <section
         class="mt-2"
         data-collections-synced
@@ -190,7 +243,9 @@ function cancelAdd() {
           :key="connection.id"
           :connection="connection"
           :counts="editor.collectionCounts"
+          :open="!collapsed.has(connection.id)"
           @add="addingTo = connection.id"
+          @toggle="toggle(connection.id)"
         />
         <form
           v-if="addingConnection"

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import type { RowsSource } from '../../editor/dataView.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { fieldLabel } from '../../shared/dataModel.ts'
-import type { FieldType } from '../../shared/dataModel.ts'
+import type { DataCollection, FieldType } from '../../shared/dataModel.ts'
 import { nextSort, recordsCount, rowId, rowsFailure, tableRows } from '../../shared/dataTable.ts'
 import type { TableFilter, TableSort } from '../../shared/dataTable.ts'
 
@@ -11,16 +12,17 @@ import type { TableFilter, TableSort } from '../../shared/dataTable.ts'
  * the loaded rows, and a row opens in the right panel. Read-only: the rows are app data reached
  * through the generated API (E2), so the hosted inline cell editing, quick-add row and bulk
  * delete are not ported, and none of it writes. What shows is what the app's list route answers
- * (Live), else the entity's sample data (the fixtures); the Live / Sample data switch says which, and
- * chooses. A collection read through a connection is always Live.
+ * (Live), else the entity's sample data (the fixtures); the Live / Sample data switch shows the
+ * choice and chooses, and says when Live is chosen but the app does not answer. A collection read
+ * through a connection is always Live. `collection` is the one the workspace shows.
  */
+const { collection } = defineProps<{ collection: DataCollection }>()
 const editor = useEditor()
-const collection = computed(() => editor.collection!)
-const fields = computed(() => collection.value.fields)
-const rest = computed(() => collection.value.kind === 'rest')
+const fields = computed(() => collection.fields)
+const rest = computed(() => collection.kind === 'rest')
 
-/** The switch: Live reads the app's rows again, Sample data shows the collection's own. */
-function chooseSource(source: 'live' | 'sample') {
+/** The switch: Live reads the app's rows again (also when Live is chosen already: a retry), Sample data shows the collection's own. */
+function chooseSource(source: RowsSource) {
   editor.rowsPreference = source
   if (source === 'live') void editor.reloadRecords()
 }
@@ -33,7 +35,7 @@ const rows = computed(() => tableRows(editor.collectionRows, fields.value, { que
 const count = computed(() => recordsCount({ shown: rows.value.length, total: editor.recordsTotal, narrowed: narrowed.value }))
 const refreshing = computed(() => editor.recordsLoading)
 
-watch(() => collection.value.id, () => {
+watch(() => collection.id, () => {
   query.value = ''
   sort.value = null
   filters.value = []
@@ -48,7 +50,14 @@ const toggle = (id: string) => {
   editor.recordId = editor.recordId === id ? null : id
 }
 
-const failure = computed(() => editor.recordsError ? rowsFailure(collection.value.plural, editor.recordsError) : '')
+const failure = computed(() => editor.recordsError ? rowsFailure(collection.plural, editor.recordsError) : '')
+
+/** What an empty table says, for the rows it shows: the API's, the collection's own sample data (which Live falls back to when the app does not answer), or the app's. */
+const emptyText = computed(() => {
+  if (rest.value) return 'The API returned no items.'
+  if (editor.rowsSource === 'live') return 'No items yet. Rows are your app\'s data: they are added through the app, or seeded as sample data.'
+  return editor.rowsFallback ? 'No items to show: the app is not answering and this collection has no sample data.' : 'No sample data yet for this collection.'
+})
 
 function sortIcon(key: string) {
   if (sort.value?.key !== key) return ''
@@ -67,8 +76,10 @@ function sortIcon(key: string) {
       v-model:filters="filters"
       :fields="fields"
       :count="count"
-      :source="editor.rowsSource"
-      :sample-data="!rest"
+      :source="editor.rowsPreference"
+      :shown="editor.rowsSource"
+      :fallback="editor.rowsFallback"
+      :switchable="!rest"
       :refreshing="refreshing"
       @refresh="editor.reloadRecords()"
       @source="chooseSource"
@@ -184,7 +195,7 @@ function sortIcon(key: string) {
         class="px-4 py-6 text-xs text-dimmed"
         data-records-empty
       >
-        {{ rest ? 'The API returned no items.' : 'No items yet. Rows are your app\'s data: they are added through the app, or seeded as sample data.' }}
+        {{ emptyText }}
       </p>
     </div>
   </section>

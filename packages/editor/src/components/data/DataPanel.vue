@@ -1,39 +1,40 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { storedPanelWidth } from '../../editor/panelWidth.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { rowId } from '../../shared/dataTable.ts'
 
 /**
  * The Data workspace's side panel, beside the tab's main surface: the row opened in Rows, or the
  * collection's settings in Fields. No other tab has one. It is as wide as the Canvas view's right
- * panel (280–480px, remembered across reloads).
+ * panel (`editor/panelWidth.ts`, remembered across reloads).
  */
 const editor = useEditor()
-const PANEL_KEY = 'bildr:panel-width'
-const width = ref(Math.min(480, Math.max(280, Math.round(Number(localStorage.getItem(PANEL_KEY)) || 320))))
+const width = ref(storedPanelWidth())
 
-const row = computed(() => {
-  if (editor.recordId === null) return null
-  const index = editor.collectionRows.findIndex((entry, at) => rowId(entry, at) === editor.recordId)
-  return index < 0 ? null : editor.collectionRows[index]!
+const collection = computed(() => editor.dataCollection)
+/** The row opened in Rows, with its id; null when none is open or it is not among the rows shown. */
+const record = computed(() => {
+  if (editor.dataTab !== 'rows' || editor.recordId === null) return null
+  const id = editor.recordId
+  const row = editor.collectionRows.find((entry, at) => rowId(entry, at) === id)
+  return row ? { id, row } : null
 })
-const collection = computed(() => editor.dataItem?.kind === 'collection' ? editor.collection : null)
-const showRecord = computed(() => editor.dataTab === 'rows' && !!collection.value && !!row.value && editor.recordId !== null)
-const showCollection = computed(() => editor.dataTab === 'fields' && !!collection.value)
+const showCollection = computed(() => editor.dataTab === 'fields')
 </script>
 
 <template>
   <aside
-    v-if="collection && (showRecord || showCollection)"
+    v-if="collection && (record || showCollection)"
     class="shrink-0 overflow-y-auto border-l border-default"
     :style="{ width: `${width}px` }"
     data-data-panel
   >
     <DataPanelRecord
-      v-if="showRecord"
+      v-if="record"
       :collection="collection"
-      :row="row!"
-      :row-id="editor.recordId!"
+      :row="record.row"
+      :row-id="record.id"
     />
     <DataPanelCollection
       v-else

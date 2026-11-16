@@ -89,7 +89,7 @@ async function ensureSource(): Promise<string | undefined> {
   }
   const made = await editor.run('datasource_create', { name: sourceNameOf(parsed.value!.hostname, editor.model?.datasources.map(entry => entry.name) ?? []), kind: 'rest', defaults: { baseUrl: origin.value } }) as { datasourceId: string } | undefined
   if (!made) {
-    error.value = editor.error ?? 'Could not make a data source for this URL'
+    error.value = editor.error ?? 'Could not make a connection for this URL'
     return undefined
   }
   source.value = { id: made.datasourceId, created: true }
@@ -204,7 +204,7 @@ onBeforeUnmount(() => {
         <form @submit.prevent="fetchPreview()">
           <EditorFormRow
             label="API URL"
-            :help="`A JSON endpoint (GET). Its origin becomes a data source${parsed ? `, ${origin}` : ''}`"
+            :help="`A JSON endpoint (GET). Its origin becomes a connection${parsed ? `, ${origin}` : ''}`"
             :error="urlProblem || pathProblem || undefined"
           >
             <span class="flex h-[30px] shrink-0 items-center rounded-lg bg-elevated px-2.5 font-mono text-[11px] font-[550] text-toned">GET</span>

@@ -7,8 +7,8 @@ import ViewMenu from '../../shell/ViewMenu.vue'
 
 /**
  * The top bar, Framer's. Left: the brand and the "Canvas ▾" view menu (ViewMenu: the editor's one navigation),
- * named after the current view, then the insert icons: + opens the Insert panel
- * (`I`), Frame and Text arm their tools (`F`, `T`). Centre: the project name; while
+ * named after the current view, then, on the Canvas only (`build`), the insert icons: + opens the Insert panel
+ * (`I`), Frame and Text arm their tools (`F`, `T`); the other views have none, not even disabled. Centre: the project name; while
  * editing a component or a layout, the breadcrumb (EditorBreadcrumb) instead.
  * Right: undo/redo, Preview (Cmd/Ctrl+P, opens the app on the page) in the context
  * accent. The canvas frames set the breakpoint. The `actions` slot is the hosted
@@ -40,45 +40,45 @@ function toggleTool(id: string) {
   >
     <div class="flex min-w-0 items-center gap-1">
       <ViewMenu />
-      <span class="mx-1 h-4 w-px bg-(--ui-border)" />
-      <UPopover
-        v-model:open="editor.insertOpen"
-        :content="{ side: 'bottom', align: 'start', sideOffset: 8 }"
-      >
+      <template v-if="editor.mode === 'build'">
+        <span class="mx-1 h-4 w-px bg-(--ui-border)" />
+        <UPopover
+          v-model:open="editor.insertOpen"
+          :content="{ side: 'bottom', align: 'start', sideOffset: 8 }"
+        >
+          <UTooltip
+            text="Insert"
+            :kbds="['i']"
+          >
+            <EditorButton
+              variant="ghost"
+              icon="i-lucide-plus"
+              aria-label="Insert"
+              :class="{ 'bg-white/10 text-highlighted': editor.insertOpen }"
+              data-insert-button
+            />
+          </UTooltip>
+          <template #content>
+            <EditorPalette @done="editor.insertOpen = false" />
+          </template>
+        </UPopover>
         <UTooltip
-          text="Insert"
-          :kbds="['i']"
+          v-for="tool in TOOLS"
+          :key="tool.id"
+          :text="tool.label"
+          :kbds="[tool.kbd]"
         >
           <EditorButton
             variant="ghost"
-            icon="i-lucide-plus"
-            aria-label="Insert"
-            :disabled="editor.mode !== 'build'"
-            :class="{ 'bg-white/10 text-highlighted': editor.insertOpen }"
-            data-insert-button
+            :icon="tool.icon"
+            :aria-label="`${tool.label} tool`"
+            :aria-pressed="editor.tool === tool.id"
+            :class="{ 'bg-(--editor-selection)/20 text-(--editor-selection)': editor.tool === tool.id }"
+            :data-insert-tool="tool.id"
+            @click="toggleTool(tool.id)"
           />
         </UTooltip>
-        <template #content>
-          <EditorPalette @done="editor.insertOpen = false" />
-        </template>
-      </UPopover>
-      <UTooltip
-        v-for="tool in TOOLS"
-        :key="tool.id"
-        :text="tool.label"
-        :kbds="[tool.kbd]"
-      >
-        <EditorButton
-          variant="ghost"
-          :icon="tool.icon"
-          :aria-label="`${tool.label} tool`"
-          :aria-pressed="editor.tool === tool.id"
-          :disabled="editor.mode !== 'build'"
-          :class="{ 'bg-(--editor-selection)/20 text-(--editor-selection)': editor.tool === tool.id }"
-          :data-insert-tool="tool.id"
-          @click="toggleTool(tool.id)"
-        />
-      </UTooltip>
+      </template>
     </div>
 
     <div class="flex min-w-0 justify-center">

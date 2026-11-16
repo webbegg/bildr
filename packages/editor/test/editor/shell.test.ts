@@ -115,7 +115,9 @@ describe('the toolbar', () => {
     expect(q('[data-view-menu]')?.textContent?.trim()).toBe('Design system')
     expect(q('[data-sidebar]')).toBeNull()
     expect(q('[data-right-panel]')).toBeNull()
-    expect(q('[data-insert-button]')?.hasAttribute('disabled')).toBe(true)
+    // The insert tools are the Canvas's: another view has none, disabled or not.
+    expect(q('[data-insert-button]')).toBeNull()
+    expect(q('[data-insert-tool]')).toBeNull()
     // The style guide is a canvas of its own, which loads and is sent the theme as a token view.
     expect(sent('bildr:render').at(-1)?.view).toBe('tokens')
     expect(q('iframe[title="Token preview"]')).not.toBeNull()

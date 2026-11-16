@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, useTemplateRef } from 'vue'
-import { DATA_TAB_LABELS } from '../../editor/dataLocation.ts'
-import type { DataTab } from '../../editor/dataLocation.ts'
+import { DATA_TAB_LABELS } from '../../editor/dataTabs.ts'
+import { rovingTarget } from '../../editor/rovingKeys.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { FOCUS_RING } from '../../editorUi.ts'
 
@@ -10,27 +10,29 @@ import { FOCUS_RING } from '../../editorUi.ts'
  * collection has Rows (the read-only table), Fields (the field editor, its settings beside it),
  * Endpoints (the repository's, when it is read through a connection) and JSON; a connection has
  * Endpoints (its settings and its collections' endpoints) and JSON. With nothing to show it is
- * the empty start. The tab strip is one tab stop: Left, Right, Home and End move along it.
+ * the empty start. The tab strip is one tab stop: Left and Right move along it (and wrap), Home and End go to its ends.
  */
 const editor = useEditor()
 const strip = useTemplateRef<HTMLElement>('strip')
 
-const connection = computed(() => editor.dataItem?.kind === 'connection' ? editor.connection : null)
-const collection = computed(() => editor.dataItem?.kind === 'collection' ? editor.collection : null)
+const connection = computed(() => editor.dataConnection)
+const collection = computed(() => editor.dataCollection)
 const title = computed(() => connection.value?.name ?? collection.value?.name ?? '')
 const kind = computed(() => connection.value ? 'Connection' : 'Collection')
 const icon = computed(() => connection.value ? 'i-lucide-server' : collection.value?.kind === 'rest' ? 'i-lucide-globe' : 'i-lucide-database')
 
 async function onTabKeyDown(event: KeyboardEvent) {
   const tabs = editor.dataTabs
-  const at = tabs.indexOf((event.target as HTMLElement | null)?.closest<HTMLElement>('[data-data-tab]')?.dataset.dataTab as DataTab)
+  const shown = (event.target as HTMLElement | null)?.closest<HTMLElement>('[data-data-tab]')?.dataset.dataTab
+  const at = tabs.findIndex(tab => tab === shown)
   if (at < 0) return
-  const to = ({ ArrowRight: (at + 1) % tabs.length, ArrowLeft: (at - 1 + tabs.length) % tabs.length, Home: 0, End: tabs.length - 1 } as Record<string, number | undefined>)[event.key]
-  if (to === undefined) return
+  const to = rovingTarget(event.key, at, tabs.length, { axis: 'horizontal', wrap: true })
+  if (to === null) return
   event.preventDefault()
-  editor.dataTab = tabs[to]!
+  const next = tabs[to]!
+  editor.dataTab = next
   await nextTick()
-  strip.value?.querySelector<HTMLElement>(`[data-data-tab="${tabs[to]}"]`)?.focus()
+  strip.value?.querySelector<HTMLElement>(`[data-data-tab="${next}"]`)?.focus()
 }
 </script>
 
@@ -91,13 +93,18 @@ async function onTabKeyDown(event: KeyboardEvent) {
         <div class="min-w-0 flex-1 overflow-hidden">
           <DataRecords
             v-if="editor.dataTab === 'rows' && collection"
+            :collection="collection"
             class="size-full"
           />
+          <!-- Fields and Endpoints are left-aligned with the header's title and the tab strip, not centred in the area. -->
           <div
             v-else-if="editor.dataTab === 'fields' && collection"
             class="size-full overflow-y-auto"
           >
-            <DataSidebarFields class="mx-auto w-full max-w-2xl p-2" />
+            <DataFieldsTab
+              :collection="collection"
+              class="w-full max-w-2xl px-0.5 py-2"
+            />
           </div>
           <div
             v-else-if="editor.dataTab === 'endpoints'"
@@ -106,43 +113,38 @@ async function onTabKeyDown(event: KeyboardEvent) {
             <DataConnectionEndpoints
               v-if="connection"
               :connection="connection"
-              class="mx-auto w-full max-w-xl"
+              class="w-full max-w-xl"
             />
             <DataPanelEndpoints
               v-else-if="collection?.kind === 'rest'"
               :collection="collection"
-              class="mx-auto w-full max-w-xl"
+              class="w-full max-w-xl"
             />
-            <div
+            <DataEmptyState
               v-else-if="collection"
-              class="flex size-full items-center justify-center p-6"
+              icon="i-lucide-unplug"
+              title="No endpoints"
               data-endpoints-empty
             >
-              <p class="max-w-sm text-center text-xs text-dimmed">
-                {{ collection.name }} has no endpoints: its rows are stored by the app. Only a collection read through a connection has them.
-              </p>
-            </div>
+              {{ collection.name }} has no endpoints: its rows are stored by the app. Only a collection read through a connection has them.
+            </DataEmptyState>
           </div>
-          <div
+          <DataEmptyState
             v-else-if="editor.dataTab === 'json'"
-            class="flex size-full items-center justify-center p-6"
-            data-testid="data-json-tab"
+            icon="i-lucide-file-json"
+            title="JSON"
+            data-data-json
           >
-            <div class="flex max-w-sm flex-col items-center text-center">
-              <div class="mb-4 flex size-12 items-center justify-center rounded-xl bg-white/6">
-                <UIcon
-                  name="i-lucide-file-json"
-                  class="size-6 text-toned"
-                />
-              </div>
-              <h3 class="text-base font-[550] text-highlighted">
-                JSON
-              </h3>
-              <p class="mt-1.5 text-[12px] text-muted">
-                Coming in a later step. The {{ kind.toLowerCase() }}'s model file will be edited here.
-              </p>
-            </div>
-          </div>
+            Edit this {{ kind.toLowerCase() }}'s file in
+            <RouterLink
+              to="/model"
+              class="text-toned underline underline-offset-2 hover:text-highlighted"
+              :class="FOCUS_RING"
+              data-raw-model-link
+            >
+              Raw model files
+            </RouterLink>
+          </DataEmptyState>
         </div>
         <DataPanel />
       </div>

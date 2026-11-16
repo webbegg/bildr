@@ -6,6 +6,7 @@ import ProblemsList from '../components/ProblemsList.vue'
 import FormActionDialog from '../design/FormActionDialog.vue'
 import RequiredValuesDialog from '../design/RequiredValuesDialog.vue'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
+import { PANEL_KEY, clampPanel, storedPanelWidth } from '../editor/panelWidth.ts'
 import { createEditor, provideEditor } from '../editor/useEditor.ts'
 
 /**
@@ -71,9 +72,7 @@ onBeforeUnmount(() => {
 })
 
 // The right panel resizes from its left edge, within 280–480px, remembered across reloads.
-const PANEL_KEY = 'bildr:panel-width'
-const clampPanel = (width: number) => Math.min(480, Math.max(280, Math.round(width)))
-const panelWidth = ref(clampPanel(Number(localStorage.getItem(PANEL_KEY)) || 320))
+const panelWidth = ref(storedPanelWidth())
 
 function resizePanel(event: PointerEvent) {
   const handle = event.currentTarget as HTMLElement

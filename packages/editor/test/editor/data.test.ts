@@ -39,6 +39,19 @@ const freeQuotes = () => {
 const inputs = (actions: Awaited<ReturnType<typeof open>>['actions'], name: string) => actions.named(name).map(call => call.input)
 const collection = (plural: string) => q(`[data-collection="${plural}"]`)
 
+/** The tree's items by name: `data-tree-item` is the item's key (`collection:<id>`, `connection:<id>`). */
+const ITEMS = { post: 'collection:ent_post', quote: 'collection:ent_quote', quotes: 'connection:ds_quotes' }
+const treeItem = (name: keyof typeof ITEMS) => q(`[data-tree-item="${ITEMS[name]}"]`)
+const tabNames = () => qa('[role="tab"][data-data-tab]').map(tab => tab.getAttribute('data-data-tab'))
+const activeTab = () => q('[role="tab"][aria-selected="true"]')?.getAttribute('data-data-tab')
+const tab = (name: string) => q(`[role="tab"][data-data-tab="${name}"]`)
+const key = async (element: Element | null, name: string) => {
+  element!.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }))
+  await settle()
+}
+const pressedSources = () => qa('[data-live-badge] button').filter(button => button.getAttribute('aria-pressed') === 'true').map(button => button.getAttribute('aria-label'))
+const textButton = (label: string) => qa('button').find(candidate => candidate.textContent?.trim() === label) ?? null
+
 afterEach(() => {
   takeStart()
   localStorage.removeItem('bildr:panel-width')
@@ -56,9 +69,15 @@ describe('the Data screen', () => {
     expect(q('[data-records]')).not.toBeNull()
     // The side panel is for an open row and for the collection's settings in Fields: Rows with none open has none.
     expect(q('[data-data-panel]')).toBeNull()
-    await click(q('[data-data-tab="fields"]'))
+    await click(tab('fields'))
     expect(q('[data-data-panel] [data-collection-panel]')).not.toBeNull()
     expect(q('[data-data-panel]')?.style.width).toBe('320px')
+  })
+
+  it('shows the canvas insert tools only on the Canvas, not on the Data screen', async () => {
+    await open()
+    expect(q('[data-insert-button]')).toBeNull()
+    expect(q('[data-insert-tool]')).toBeNull()
   })
 
   it('counts a collection\'s rows from its fixtures, and a REST collection\'s once they are read', async () => {
@@ -109,13 +128,6 @@ describe('the Data screen', () => {
 })
 
 describe('the Data workspace (S2)', () => {
-  const tabNames = () => qa('[role="tab"][data-data-tab]').map(tab => tab.getAttribute('data-data-tab'))
-  const activeTab = () => q('[role="tab"][aria-selected="true"]')?.getAttribute('data-data-tab')
-  const tab = (name: string) => q(`[role="tab"][data-data-tab="${name}"]`)
-  const key = async (element: Element | null, name: string) => {
-    element!.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }))
-    await settle()
-  }
   /** Everything the screen says: its text, and the titles, labels and placeholders a user reads or hears (not the rows, which are the project's data). */
   const said = () => {
     const page = document.body.cloneNode(true) as HTMLElement
@@ -151,16 +163,27 @@ describe('the Data workspace (S2)', () => {
     expect(q('[data-records]')).toBeNull()
   })
 
-  it('switches the tab: Fields edits the fields, Endpoints lists them, JSON is a placeholder', async () => {
-    await open()
+  it('switches the tab: Fields edits the fields, Endpoints lists them, JSON points to the raw model files', async () => {
+    const { router } = await open()
     await click(tab('fields'))
     expect(activeTab()).toBe('fields')
     expect(q('[role="tabpanel"] [data-fields-tab]')).not.toBeNull()
     expect(q('[data-records]')).toBeNull()
     await click(tab('json'))
-    expect(text(q('[data-testid="data-json-tab"]'))).toContain('Coming in a later step')
+    expect(text(q('[data-data-json]'))).toContain('Edit this collection\'s file in Raw model files')
+    expect(q('[data-data-json]')?.textContent).not.toContain('Coming in a later step')
     await click(tab('rows'))
     expect(q('[data-records]')).not.toBeNull()
+    await click(tab('json'))
+    await click(q('[data-data-json] a'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/model'))
+  })
+
+  it('says what the JSON tab of a connection edits', async () => {
+    await open()
+    await click(treeItem('quotes'))
+    await click(tab('json'))
+    expect(text(q('[data-data-json]'))).toContain('Edit this connection\'s file in Raw model files')
   })
 
   it('says what a collection with no endpoints is: its rows are not read through a connection', async () => {
@@ -183,7 +206,7 @@ describe('the Data workspace (S2)', () => {
     expect(router.currentRoute.value.query).toEqual({ item: 'connection:ds_quotes', tab: 'endpoints' })
   })
 
-  it('restores the item and the tab from a deep link, as a reload does', async () => {
+  it('opens the item and the tab a deep link names', async () => {
     const { router } = await open({}, {}, '/data?item=collection:ent_quote&tab=fields')
     expect(activeTab()).toBe('fields')
     expect(text(q('[data-data-title] h2'))).toBe('Quote')
@@ -193,7 +216,7 @@ describe('the Data workspace (S2)', () => {
   it('restores a connection from a deep link', async () => {
     await open({}, {}, '/data?item=connection:ds_quotes&tab=json')
     expect(activeTab()).toBe('json')
-    expect(q('[data-testid="data-json-tab"]')).not.toBeNull()
+    expect(q('[data-data-json]')).not.toBeNull()
     expect(tabNames()).toEqual(['endpoints', 'json'])
   })
 
@@ -212,25 +235,74 @@ describe('the Data workspace (S2)', () => {
     expect(q('[data-endpoint="list"]')).not.toBeNull()
   })
 
-  it('moves through the tree with the arrow keys and picks with Enter', async () => {
+  it('moves through the tree with the arrow keys, stopping at the ends, and picks with Enter', async () => {
     await open()
-    const items = () => qa('[data-tree-item]')
-    expect(items().map(item => text(item).replace(/\d+$/, '').trim())).toEqual(['Post', 'quotes', 'Quote'])
-    items()[0]!.focus()
-    await key(items()[0]!, 'ArrowDown')
-    expect(document.activeElement).toBe(items()[1])
-    await key(items()[1]!, 'ArrowDown')
-    expect(document.activeElement).toBe(items()[2])
-    await key(items()[2]!, 'ArrowDown')
-    expect(document.activeElement).toBe(items()[2])
-    await key(items()[2]!, 'ArrowUp')
-    expect(document.activeElement).toBe(items()[1])
-    await key(items()[1]!, 'Enter')
+    expect(qa('[data-tree-item]').map(item => item.getAttribute('data-tree-item'))).toEqual([ITEMS.post, ITEMS.quotes, ITEMS.quote])
+    treeItem('post')!.focus()
+    await key(treeItem('post'), 'ArrowDown')
+    expect(document.activeElement).toBe(treeItem('quotes'))
+    await key(treeItem('quotes'), 'ArrowDown')
+    expect(document.activeElement).toBe(treeItem('quote'))
+    await key(treeItem('quote'), 'ArrowDown')
+    expect(document.activeElement).toBe(treeItem('quote'))
+    await key(treeItem('quote'), 'ArrowUp')
+    expect(document.activeElement).toBe(treeItem('quotes'))
+    await key(treeItem('quotes'), 'Enter')
     expect(q('[data-connection-panel]')).not.toBeNull()
-    await key(items()[2]!, 'Home')
-    expect(document.activeElement).toBe(items()[0])
-    await key(items()[0]!, 'Enter')
+    await key(treeItem('quote'), 'Home')
+    expect(document.activeElement).toBe(treeItem('post'))
+    await key(treeItem('post'), 'ArrowUp')
+    expect(document.activeElement).toBe(treeItem('post'))
+    await key(treeItem('post'), 'End')
+    expect(document.activeElement).toBe(treeItem('quote'))
+    await key(treeItem('post'), 'Enter')
     expect(q('[data-records]')).not.toBeNull()
+  })
+
+  it('is a tree with one tab stop that follows the focus', async () => {
+    await open()
+    expect(q('[data-data-tree]')?.getAttribute('role')).toBe('tree')
+    expect(qa('[data-tree-item]').every(item => item.getAttribute('role') === 'treeitem')).toBe(true)
+    const stops = () => qa('[data-tree-item][tabindex="0"]').map(item => item.getAttribute('data-tree-item'))
+    // With nothing focused yet, the stop is the item shown.
+    expect(stops()).toEqual([ITEMS.post])
+    expect(treeItem('post')?.getAttribute('aria-selected')).toBe('true')
+    expect(treeItem('quotes')?.getAttribute('aria-selected')).toBe('false')
+    treeItem('post')!.focus()
+    await key(treeItem('post'), 'ArrowDown')
+    expect(stops()).toEqual([ITEMS.quotes])
+    await click(treeItem('quote'))
+    expect(stops()).toEqual([ITEMS.quote])
+  })
+
+  it('collapses and expands a connection with ArrowLeft and ArrowRight, and ArrowLeft on its collection goes to it', async () => {
+    await open()
+    const connection = () => treeItem('quotes')
+    expect(connection()?.getAttribute('aria-expanded')).toBe('true')
+    treeItem('quote')!.focus()
+    await key(treeItem('quote'), 'ArrowLeft')
+    expect(document.activeElement).toBe(connection())
+    await key(connection(), 'ArrowLeft')
+    expect(connection()?.getAttribute('aria-expanded')).toBe('false')
+    expect(treeItem('quote')).toBeNull()
+    // The tree stays reachable: the stop is an item that is there.
+    expect(qa('[data-tree-item][tabindex="0"]')).toHaveLength(1)
+    await key(connection(), 'ArrowRight')
+    expect(connection()?.getAttribute('aria-expanded')).toBe('true')
+    expect(treeItem('quote')).not.toBeNull()
+    // Right on an expanded connection goes to its first collection; a collection has nothing to expand.
+    await key(connection(), 'ArrowRight')
+    expect(document.activeElement).toBe(treeItem('quote'))
+    await key(treeItem('quote'), 'ArrowRight')
+    expect(document.activeElement).toBe(treeItem('quote'))
+  })
+
+  it('keeps a tab stop in the tree when the connection folding the selected collection is collapsed', async () => {
+    await open()
+    await click(treeItem('quote'))
+    await click(q('[data-connection-toggle]'))
+    expect(treeItem('quote')).toBeNull()
+    expect(qa('[data-tree-item][tabindex="0"]')).toHaveLength(1)
   })
 
   it('reaches the tab strip by keyboard: one tab stop, the arrows move and pick', async () => {
@@ -248,21 +320,31 @@ describe('the Data workspace (S2)', () => {
     expect(activeTab()).toBe('json')
   })
 
-  it('has one name per concept: Collection, Connection and Sample data, never Synced, fixtures or data source', async () => {
+  it('has one name per concept: Collection, Connection and Sample data, never Synced, fixtures, data source or entity', async () => {
+    freeQuotes()
     await open()
-    const unwanted = /synced|fixtures?\b|data source/i
-    expect(said()).not.toMatch(unwanted)
-    for (const name of ['fields', 'endpoints', 'json', 'rows']) {
-      await click(tab(name))
-      expect(said()).not.toMatch(unwanted)
+    const unwanted = /synced|fixtures?\b|data source|entit(y|ies)/i
+    const cancel = () => click(textButton('Cancel'))
+    // Each step brings a screen, a dialog or a confirmation up; what the user reads on it is checked.
+    const steps: Array<() => Promise<unknown>> = [
+      async () => {},
+      ...['fields', 'endpoints', 'json', 'rows'].map(name => () => click(tab(name))),
+      () => menuItem(byLabel('Collection actions'), 'Delete'),
+      () => click(q('[data-confirm-cancel]')),
+      () => click(collection('quotes')),
+      ...['rows', 'fields', 'endpoints'].map(name => () => click(tab(name))),
+      () => click(treeItem('quotes')),
+      () => click(q('[data-connection-add-collection]')),
+      cancel,
+      () => menuItem(byLabel('Add connection'), 'Import from URL'),
+      cancel,
+      () => menuItem(byLabel('Connection actions'), 'Delete'),
+      () => click(q('[data-confirm-cancel]'))
+    ]
+    for (const [index, step] of steps.entries()) {
+      await step()
+      expect(said(), `after step ${index}`).not.toMatch(unwanted)
     }
-    await click(collection('quotes'))
-    for (const name of ['rows', 'fields', 'endpoints']) {
-      await click(tab(name))
-      expect(said()).not.toMatch(unwanted)
-    }
-    await click(q('[data-connection-name]'))
-    expect(said()).not.toMatch(unwanted)
     expect(byLabel('Add connection')).not.toBeNull()
   })
 
@@ -291,19 +373,198 @@ describe('the Data workspace (S2)', () => {
 
   it('labels the rows source switch Live / Sample data, and shows the sample data on Sample data', async () => {
     await open({}, { '/api/blog/posts': { items: [post('one'), post('two'), post('draft')], total: 3 } })
-    const pressed = () => qa('[data-live-badge] button').filter(button => button.getAttribute('aria-pressed') === 'true').map(button => button.getAttribute('aria-label'))
     expect(qa('[data-live-badge] button').map(button => button.getAttribute('aria-label'))).toEqual(['Live', 'Sample data'])
-    expect(pressed()).toEqual(['Live'])
+    expect(pressedSources()).toEqual(['Live'])
     expect(q('[data-live-badge]')?.getAttribute('data-source')).toBe('live')
+    expect(q('[data-source-note]')).toBeNull()
     expect(qa('[data-record]')).toHaveLength(3)
     await click(byLabel('Sample data', q('[data-live-badge]')!))
-    expect(pressed()).toEqual(['Sample data'])
-    expect(q('[data-live-badge]')?.getAttribute('data-source')).toBe('fixtures')
+    expect(pressedSources()).toEqual(['Sample data'])
+    expect(q('[data-live-badge]')?.getAttribute('data-source')).toBe('sample')
     expect(qa('[data-record]')).toHaveLength(2)
     expect(q('[data-records-error]')).toBeNull()
     await click(byLabel('Live', q('[data-live-badge]')!))
-    expect(pressed()).toEqual(['Live'])
+    expect(pressedSources()).toEqual(['Live'])
     expect(qa('[data-record]')).toHaveLength(3)
+  })
+
+  it('keeps Live as the choice when the app does not answer, and says in a note that the rows are sample data', async () => {
+    await open()
+    expect(pressedSources()).toEqual(['Live'])
+    expect(q('[data-live-badge]')?.getAttribute('data-source')).toBe('sample')
+    expect(text(q('[data-source-note]'))).toBe('App not answering — showing sample data')
+    expect(qa('[data-record]')).toHaveLength(2)
+    await click(byLabel('Sample data', q('[data-live-badge]')!))
+    expect(pressedSources()).toEqual(['Sample data'])
+    expect(q('[data-source-note]')).toBeNull()
+  })
+
+  it('picks the app up again when Live is chosen after it came back', async () => {
+    let down = true
+    await open({}, { '/api/blog/posts': () => down ? new Failure(503, 'down', 'down') : { items: [post('one'), post('two'), post('draft')], total: 3 } })
+    expect(pressedSources()).toEqual(['Live'])
+    expect(q('[data-source-note]')).not.toBeNull()
+    down = false
+    // Choosing Live while Live is chosen is a retry.
+    await click(byLabel('Live', q('[data-live-badge]')!))
+    expect(q('[data-live-badge]')?.getAttribute('data-source')).toBe('live')
+    expect(q('[data-source-note]')).toBeNull()
+    expect(pressedSources()).toEqual(['Live'])
+    expect(qa('[data-record]')).toHaveLength(3)
+  })
+
+  it('counts what the shown source has in the tree', async () => {
+    await open({}, { '/api/blog/posts': { items: [post('one'), post('two'), post('draft')], total: 3 } })
+    const count = () => text(collection('posts')?.querySelector('[data-collection-count]') ?? null)
+    expect(count()).toBe('3')
+    await click(byLabel('Sample data', q('[data-live-badge]')!))
+    expect(count()).toBe('2')
+    await click(byLabel('Live', q('[data-live-badge]')!))
+    expect(count()).toBe('3')
+  })
+
+  it('closes an open row when the source is switched', async () => {
+    await open({}, { '/api/blog/posts': { items: [post('one'), post('two'), post('draft')], total: 3 } })
+    await click(q('[data-record]'))
+    expect(q('[data-record-panel]')).not.toBeNull()
+    await click(byLabel('Sample data', q('[data-live-badge]')!))
+    expect(q('[data-record-panel]')).toBeNull()
+    await click(q('[data-record]'))
+    expect(q('[data-record-panel]')).not.toBeNull()
+    await click(byLabel('Live', q('[data-live-badge]')!))
+    expect(q('[data-record-panel]')).toBeNull()
+  })
+
+  it('speaks about sample data, not the app\'s data, when there is none to show', async () => {
+    world.model.modules.blog!.fixtures = []
+    await open({}, { '/api/blog/posts': { items: [], total: 0 } })
+    expect(text(q('[data-records-empty]'))).toContain('app\'s data')
+    await click(byLabel('Sample data', q('[data-live-badge]')!))
+    expect(text(q('[data-records-empty]'))).toBe('No sample data yet for this collection.')
+  })
+
+  it('says the app is not answering, and there is no sample data, when Live is chosen and neither shows rows', async () => {
+    world.model.modules.blog!.fixtures = []
+    await open()
+    expect(text(q('[data-records-empty]'))).toContain('sample data')
+    expect(text(q('[data-records-empty]'))).not.toContain('app\'s data')
+    expect(pressedSources()).toEqual(['Live'])
+  })
+})
+
+describe('the Data location (S2)', () => {
+  const removeEntity = (id: string) => {
+    const mod = world.model.modules.blog!
+    mod.entities = mod.entities.filter(entity => entity.id !== id)
+    mod.repositories = mod.repositories.filter(repository => repository.entity !== id)
+  }
+
+  it('replaces the history entry when an item or a tab is chosen, so Back leaves the Data screen', async () => {
+    const { router } = await open()
+    const push = vi.spyOn(router.options.history, 'push')
+    const replace = vi.spyOn(router.options.history, 'replace')
+    await click(tab('fields'))
+    await click(collection('quotes'))
+    await click(treeItem('quotes'))
+    await click(treeItem('post'))
+    expect(router.currentRoute.value.query).toEqual({ item: ITEMS.post, tab: 'fields' })
+    expect(replace).toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the first collection, and rewrites the URL, when the selected one is deleted', async () => {
+    const { router } = await open({ entity_delete: () => {
+      removeEntity('ent_quote')
+      return { changed: [] }
+    } })
+    await click(tab('fields'))
+    await click(treeItem('quote'))
+    expect(router.currentRoute.value.query).toEqual({ item: ITEMS.quote, tab: 'fields' })
+    await menuItem(collection('quotes')!.parentElement!.querySelector('[aria-label="Collection actions"]'), 'Delete')
+    await click(textButton('Delete collection'))
+    expect(router.currentRoute.value.query).toEqual({ item: ITEMS.post, tab: 'fields' })
+    expect(text(q('[data-data-title] h2'))).toBe('Post')
+    expect(treeItem('quote')).toBeNull()
+  })
+
+  it('falls back to the first collection, and rewrites the URL, when the selected connection is deleted', async () => {
+    freeQuotes()
+    const { router } = await open({
+      entity_delete: () => {
+        removeEntity('ent_quote')
+        return { changed: [] }
+      },
+      datasource_delete: () => {
+        world.model.datasources = world.model.datasources.filter(source => source.id !== 'ds_quotes')
+        return { changed: [], database: true }
+      }
+    })
+    await click(treeItem('quotes'))
+    expect(router.currentRoute.value.query).toEqual({ item: ITEMS.quotes, tab: 'endpoints' })
+    await menuItem(byLabel('Connection actions'), 'Delete')
+    await click(textButton('Delete all'))
+    expect(router.currentRoute.value.query).toEqual({ item: ITEMS.post, tab: 'rows' })
+    expect(text(q('[data-data-title] h2'))).toBe('Post')
+    expect(q('[data-connection-panel]')).toBeNull()
+    expect(treeItem('quotes')).toBeNull()
+  })
+
+  it('keeps the id of the selected item in the URL when it is renamed', async () => {
+    const { router } = await open({
+      entity_update: (input) => {
+        world.model.modules.blog!.entities.find(entity => entity.id === input.entity)!.name = input.name as string
+        return { changed: [] }
+      },
+      datasource_update: (input) => {
+        world.model.datasources.find(source => source.id === input.datasource)!.name = input.name as string
+        return { changed: [] }
+      }
+    })
+    const rename = async (item: Element | null, label: string, name: string) => {
+      item!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+      await settle()
+      await typeInto(byLabel(label), name)
+      byLabel(label)!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+      await settle()
+    }
+    await rename(treeItem('post'), 'Rename collection', 'Article')
+    expect(text(q('[data-data-title] h2'))).toBe('Article')
+    expect(router.currentRoute.value.query).toEqual({ item: ITEMS.post, tab: 'rows' })
+    await click(treeItem('quotes'))
+    await rename(treeItem('quotes'), 'Rename connection', 'dummy')
+    expect(text(q('[data-data-title] h2'))).toBe('dummy')
+    expect(router.currentRoute.value.query).toEqual({ item: ITEMS.quotes, tab: 'endpoints' })
+  })
+
+  it('falls back to the first collection for a deep link to a connection that is gone', async () => {
+    const { router } = await open({}, {}, '/data?item=connection:ds_gone')
+    expect(router.currentRoute.value.query).toEqual({ item: ITEMS.post, tab: 'rows' })
+    expect(text(q('[data-data-title] h2'))).toBe('Post')
+    expect(q('[data-connection-panel]')).toBeNull()
+  })
+
+  it('settles on Endpoints for a connection asked for on a tab it does not have', async () => {
+    const { router } = await open({}, {}, '/data?item=connection:ds_quotes&tab=fields')
+    expect(activeTab()).toBe('endpoints')
+    expect(router.currentRoute.value.query).toEqual({ item: ITEMS.quotes, tab: 'endpoints' })
+  })
+
+  it('shows a collection made while a connection is selected, and rewrites the URL', async () => {
+    const { router } = await open({
+      entity_create: () => {
+        const mod = world.model.modules.blog!
+        mod.entities.push({ ...structuredClone(mod.entities.find(entity => entity.id === 'ent_post')!), id: 'ent_menu', name: 'Menu', plural: 'menus' })
+        return { entityId: 'ent_menu', changed: [] }
+      }
+    })
+    await click(treeItem('quotes'))
+    expect(router.currentRoute.value.query.item).toBe(ITEMS.quotes)
+    await click(q('[aria-label="Add collection"]'))
+    await typeInto(q('[aria-label="New collection name"]'), 'Menu')
+    q('[aria-label="New collection name"]')!.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(router.currentRoute.value.query).toEqual({ item: 'collection:ent_menu', tab: 'rows' })
+    expect(text(q('[data-data-title] h2'))).toBe('Menu')
   })
 })
 
@@ -313,7 +574,7 @@ describe('the rows table', () => {
     expect(qa('[data-records-header]').map(header => text(header))).toEqual(['Title', 'Slug', 'Body', 'Published', 'Published at'])
     expect(qa('[data-record]')).toHaveLength(2)
     expect(text(q('[data-record] [data-cell="0-0"]'))).toBe('Hello bildr')
-    expect(q('[data-live-badge]')?.getAttribute('data-source')).toBe('fixtures')
+    expect(q('[data-live-badge]')?.getAttribute('data-source')).toBe('sample')
     expect(text(q('[data-records-error]'))).toContain('Showing the sample data.')
     expect(text(q('[data-records-error]'))).toContain('The app\'s list route for posts could not be reached.')
     expect(text(q('[data-records-count]'))).toBe('2 items')
@@ -408,14 +669,15 @@ describe('collections', () => {
     expect(inputs(actions, 'entity_update')).toEqual([{ entity: 'ent_post', name: 'Article' }])
     await menuItem(byLabel('Collection actions'), 'Delete')
     expect(q('[data-confirm]')?.textContent).toContain('Undo brings it back')
-    await click(qa('button').find(button => button.textContent?.trim() === 'Delete collection') ?? null)
+    expect(text(q('[data-confirm-description]'))).toContain('The collection goes with its repository')
+    await click(textButton('Delete collection'))
     expect(inputs(actions, 'entity_delete')).toEqual([{ entity: 'ent_post' }])
   })
 
   it('keeps a collection a page still uses, and says so', async () => {
     await open({ entity_delete: () => new Failure(422, 'invalid', 'Entity Post is still used by pg_index (uses). Change them first') })
     await menuItem(byLabel('Collection actions'), 'Delete')
-    await click(qa('button').find(button => button.textContent?.trim() === 'Delete collection') ?? null)
+    await click(textButton('Delete collection'))
     expect(q('[data-testid="design-error"]')?.textContent).toContain('still used by pg_index')
   })
 
@@ -430,7 +692,7 @@ describe('collections', () => {
 })
 
 describe('fields', () => {
-  const fieldsTab = async () => click(q('[data-data-tab="fields"]'))
+  const fieldsTab = async () => click(tab('fields'))
   const row = (name: string) => q(`[data-fields-tab] [data-field="${name}"]`)!
 
   it('lists the fields of the shown collection with their types', async () => {
@@ -470,7 +732,7 @@ describe('fields', () => {
     await settle()
     expect(inputs(actions, 'entity_field_add')).toEqual([{ entity: 'ent_post', name: 'Reading time', type: 'number' }])
     await click(row('body').querySelector('[data-row-remove]'))
-    await click(qa('button').find(button => button.textContent?.trim() === 'Remove field') ?? null)
+    await click(textButton('Remove field'))
     expect(inputs(actions, 'entity_field_remove')).toEqual([{ entity: 'ent_post', field: 'fld_body' }])
   })
 
@@ -501,7 +763,7 @@ describe('the collection panel (beside the Fields tab)', () => {
   /** The panel is the Fields tab's side: the Rows tab has none. */
   const openFields = async (extra: Handlers = {}) => {
     const mounted = await open(extra)
-    await click(q('[data-data-tab="fields"]'))
+    await click(tab('fields'))
     return mounted
   }
 
@@ -594,7 +856,7 @@ describe('connections', () => {
     expect(inputs(actions, 'datasource_update')).toEqual([{ datasource: 'ds_quotes', name: 'dummy' }])
     await menuItem(byLabel('Connection actions'), 'Delete')
     expect(q('[data-confirm]')?.textContent).toContain('used by Quote')
-    await click(qa('button').find(button => button.textContent?.trim() === 'Delete all') ?? null)
+    await click(textButton('Delete all'))
     expect(actions.calls.filter(call => call.name === 'entity_delete' || call.name === 'datasource_delete').map(call => [call.name, call.input])).toEqual([
       ['entity_delete', { entity: 'ent_quote' }],
       ['datasource_delete', { datasource: 'ds_quotes' }]
@@ -604,7 +866,7 @@ describe('connections', () => {
 
 describe('deleting a connection', () => {
   const deleteConnection = async () => menuItem(byLabel('Connection actions'), 'Delete')
-  const deleteAll = () => click(qa('button').find(button => button.textContent?.trim() === 'Delete all') ?? null)
+  const deleteAll = () => click(textButton('Delete all'))
   /** A second collection over the same connection. */
   const addSecondCollection = () => {
     const mod = world.model.modules.blog!
@@ -649,7 +911,7 @@ describe('endpoints', () => {
   const toQuote = async (extra: Handlers = {}, routes: AppRoutes = {}) => {
     const mounted = await open(extra, routes)
     await click(collection('quotes'))
-    await click(q('[data-data-tab="endpoints"]'))
+    await click(tab('endpoints'))
     return mounted
   }
 

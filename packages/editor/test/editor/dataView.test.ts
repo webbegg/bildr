@@ -72,9 +72,42 @@ describe('the rows of the shown collection', () => {
     editor.mode = 'data'
     await settle()
     expect(editor.collectionRows.map(row => row.slug)).toEqual(['hello-bildr', 'a-draft'])
-    expect(editor.rowsSource).toBe('fixtures')
+    expect(editor.rowsSource).toBe('sample')
     expect(editor.recordsError).toBe('could not be reached')
     expect(editor.recordsTotal).toBe(2)
+  })
+
+  it('keeps the choice Live while the app does not answer, and says the rows shown are the fallback', async () => {
+    const { editor } = await bootData()
+    editor.mode = 'data'
+    await settle()
+    expect(editor.rowsPreference).toBe('live')
+    expect(editor.rowsSource).toBe('sample')
+    expect(editor.rowsFallback).toBe(true)
+    // Sample data chosen is a choice, not a fallback.
+    editor.rowsPreference = 'sample'
+    expect(editor.rowsFallback).toBe(false)
+  })
+
+  it('has no fallback while the app answers', async () => {
+    const { editor } = await bootData({ '/api/blog/posts': { items: [post('one')], total: 1 } })
+    editor.mode = 'data'
+    await settle()
+    expect(editor.rowsFallback).toBe(false)
+  })
+
+  it('picks the app up when Live is read again after it came back', async () => {
+    let up = false
+    const { editor } = await bootData({ '/api/blog/posts': () => up ? { items: [post('one')], total: 1 } : new Failure(503, 'down', 'down') })
+    editor.mode = 'data'
+    await settle()
+    expect(editor.rowsSource).toBe('sample')
+    up = true
+    editor.rowsPreference = 'live'
+    await editor.reloadRecords()
+    expect(editor.rowsSource).toBe('live')
+    expect(editor.rowsFallback).toBe(false)
+    expect(editor.collectionRows.map(row => row.slug)).toEqual(['one'])
   })
 
   it('shows the app\'s rows from the generated list route when it answers', async () => {
@@ -123,7 +156,7 @@ describe('the rows of the shown collection', () => {
       editor.mode = 'data'
       await new Promise(resolve => setTimeout(resolve, 80))
       await settle()
-      expect(editor.rowsSource).toBe('fixtures')
+      expect(editor.rowsSource).toBe('sample')
       expect(editor.recordsError).toContain('did not answer in time')
     } finally {
       liveRows.timeoutMs = before
@@ -138,10 +171,34 @@ describe('the rows of the shown collection', () => {
     expect(editor.collectionCounts).toEqual({ ent_post: 3 })
   })
 
+  it('counts the sample data of each collection while Sample data is chosen, whatever the app answers', async () => {
+    const { editor } = await bootData({ '/api/blog/posts': { items: [post('one'), post('two'), post('three')], total: 3 } })
+    editor.mode = 'data'
+    await settle()
+    editor.rowsPreference = 'sample'
+    expect(editor.collectionCounts).toEqual({ ent_post: 2 })
+    editor.rowsPreference = 'live'
+    expect(editor.collectionCounts).toEqual({ ent_post: 3 })
+  })
+
   it('closes the open record when another collection is shown', async () => {
     const { editor } = await bootData()
     editor.recordId = 'x'
     editor.collectionId = 'ent_quote'
+    await settle()
+    expect(editor.recordId).toBeNull()
+  })
+
+  it('closes the open record when the source is switched', async () => {
+    const { editor } = await bootData({ '/api/blog/posts': { items: [post('one')], total: 1 } })
+    editor.mode = 'data'
+    await settle()
+    editor.recordId = 'id-one'
+    editor.rowsPreference = 'sample'
+    await settle()
+    expect(editor.recordId).toBeNull()
+    editor.recordId = 'x'
+    editor.rowsPreference = 'live'
     await settle()
     expect(editor.recordId).toBeNull()
   })
@@ -341,6 +398,15 @@ describe('the Data workspace selection (S2)', () => {
     expect(editor.dataTab).toBe('json')
   })
 
+  it('narrows the shown item: dataCollection for a collection, dataConnection for a connection, one of them at a time', async () => {
+    const { editor } = await bootData()
+    expect(editor.dataCollection?.id).toBe('ent_post')
+    expect(editor.dataConnection).toBeNull()
+    editor.connectionId = 'ds_quotes'
+    expect(editor.dataCollection).toBeNull()
+    expect(editor.dataConnection?.id).toBe('ds_quotes')
+  })
+
   it('has no item and no tab when the project has no collection and no connection is chosen', async () => {
     world.model.modules.blog!.entities = []
     world.model.modules.blog!.repositories = []
@@ -355,7 +421,7 @@ describe('the Data workspace selection (S2)', () => {
     await settle()
     expect(editor.rowsSource).toBe('live')
     editor.rowsPreference = 'sample'
-    expect(editor.rowsSource).toBe('fixtures')
+    expect(editor.rowsSource).toBe('sample')
     expect(editor.collectionRows.map(row => row.slug)).toEqual(['hello-bildr', 'a-draft'])
     editor.rowsPreference = 'live'
     expect(editor.rowsSource).toBe('live')
@@ -375,6 +441,10 @@ describe('the Data location in the URL query (S2)', () => {
   it('reads the item and the tab', () => {
     expect(parseDataLocation({ item: 'collection:ent_post', tab: 'fields' })).toEqual({ item: { kind: 'collection', id: 'ent_post' }, tab: 'fields' })
     expect(parseDataLocation({ item: 'connection:ds_quotes', tab: 'json' })).toEqual({ item: { kind: 'connection', id: 'ds_quotes' }, tab: 'json' })
+  })
+
+  it('does not take a name Object.prototype has for a tab', () => {
+    for (const tab of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) expect(parseDataLocation({ item: 'collection:ent_post', tab })).toEqual({ item: { kind: 'collection', id: 'ent_post' } })
   })
 
   it('ignores what is malformed or unknown instead of failing', () => {

@@ -101,16 +101,24 @@ describe('the top bar menu is the only navigation', () => {
 
   it.each([
     ['/design', 'Canvas'],
-    ['/data', 'Data'],
     ['/code?path=.bildr%2Fmodules%2Fblog%2Fentities%2Fpost.json', 'Code'],
     ['/health', 'Checks'],
     ['/migrations', 'Migrations'],
     ['/model', 'Model']
-  ])('opens the deep link %s with the menu showing %s', async (link, label) => {
+  ])('opens the deep link %s as it is, with the menu showing %s', async (link, label) => {
     const { router } = await open(link)
-    // The Data screen adds the item and tab it shows to the query (S2): the link it was opened with stays its start.
-    expect(router.currentRoute.value.fullPath.startsWith(link)).toBe(true)
+    expect(router.currentRoute.value.fullPath).toBe(link)
     expect(text(q('[data-view-menu]'))).toBe(label)
+    expect(text(q('[data-brand]'))).toBe('bildr')
+    expect(navLinks()).toEqual([])
+  })
+
+  it('opens the Data deep link on /data, with only the item and the tab the screen shows in its query (S2)', async () => {
+    const { router } = await open('/data')
+    const route = router.currentRoute.value
+    expect(route.path).toBe('/data')
+    expect(Object.keys(route.query).sort()).toEqual(['item', 'tab'])
+    expect(text(q('[data-view-menu]'))).toBe('Data')
     expect(text(q('[data-brand]'))).toBe('bildr')
     expect(navLinks()).toEqual([])
   })

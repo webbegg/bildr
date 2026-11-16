@@ -1,20 +1,25 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, inject, ref } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
+import { dataItemKey } from '../../../editor/dataTabs.ts'
+import { TREE_STOP } from '../../../editor/dataTree.ts'
 import { useEditor } from '../../../editor/useEditor.ts'
 import { pagesUsingEntity } from '../../../shared/dataModel.ts'
 import type { DataConnection } from '../../../shared/dataModel.ts'
 
 /**
  * A connection in the Connections section, Framer's folder: a chevron that shows or hides its
- * collections, the name (click shows the connection in the right panel, double-click renames)
+ * collections (`open` is the tree's, which also folds it with the arrow keys; the chevron emits
+ * `toggle`), the name (click shows the connection in the workspace, double-click renames)
  * and a hover `…` menu. Its collections sit indented under it with their counts, then `+ Add…`
  * (emits `add`). A connection is a REST data source: renaming is `datasource_update`.
+ * The name is a tree item (`DataTree.vue`); the chevron is for the pointer.
  */
-const { connection, counts } = defineProps<{ connection: DataConnection, counts: Record<string, number> }>()
-const emit = defineEmits<{ add: [] }>()
+const { connection, counts, open } = defineProps<{ connection: DataConnection, counts: Record<string, number>, open: boolean }>()
+const emit = defineEmits<{ add: [], toggle: [] }>()
 const editor = useEditor()
-const open = ref(true)
+const key = computed(() => dataItemKey({ kind: 'connection', id: connection.id }))
+const stop = inject(TREE_STOP, ref(''))
 const shown = computed(() => editor.dataItem?.kind === 'connection' && editor.dataItem.id === connection.id)
 const collections = computed(() => editor.collections.filter(entry => entry.datasource === connection.id))
 const renaming = ref(false)
@@ -98,9 +103,9 @@ const menu = computed<DropdownMenuItem[]>(() => [
           type="button"
           class="grid size-5 shrink-0 place-items-center rounded text-dimmed hover:text-highlighted"
           :aria-label="open ? `Collapse ${connection.name}` : `Expand ${connection.name}`"
-          :aria-expanded="open"
+          tabindex="-1"
           data-connection-toggle
-          @click="open = !open"
+          @click="emit('toggle')"
         >
           <UIcon
             :name="open ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
@@ -111,9 +116,13 @@ const menu = computed<DropdownMenuItem[]>(() => [
           type="button"
           class="flex h-full min-w-0 flex-1 items-center gap-2.5 ps-0.5 text-left"
           :title="connection.name"
-          :aria-current="shown ? 'true' : undefined"
+          role="treeitem"
+          :aria-selected="shown"
+          :aria-expanded="open"
+          :aria-level="1"
+          :tabindex="stop === key ? 0 : -1"
           data-connection-name
-          data-tree-item
+          :data-tree-item="key"
           @click="show"
           @dblclick="startRename"
         >

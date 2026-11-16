@@ -1,31 +1,14 @@
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { dataItemKey, isDataTab } from './dataTabs.ts'
+import type { DataItem, DataTab } from './dataTabs.ts'
 import type { Editor } from './useEditor.ts'
 
 /**
- * Where the Data workspace is (S2): the item selected in its tree and the tab shown for it. A
- * collection has Rows, Fields, Endpoints and JSON; a connection has Endpoints and JSON. The
- * location lives in the URL query (`/data?item=collection:ent_post&tab=fields`), so a deep link
- * or a reload opens the same item on the same tab.
+ * Where the Data workspace is (S2) in the URL query (`/data?item=collection:ent_post&tab=fields`): the
+ * item selected in its tree and the tab shown for it, so a deep link or a reload opens the same item on
+ * the same tab. The tab model (which tabs an item has) is `editor/dataTabs.ts`.
  */
-export type DataTab = 'rows' | 'fields' | 'endpoints' | 'json'
-export type DataItemKind = 'collection' | 'connection'
-export interface DataItem {
-  kind: DataItemKind
-  id: string
-}
-
-export const DATA_TAB_LABELS: Record<DataTab, string> = { rows: 'Rows', fields: 'Fields', endpoints: 'Endpoints', json: 'JSON' }
-
-const TABS: Record<DataItemKind, DataTab[]> = {
-  collection: ['rows', 'fields', 'endpoints', 'json'],
-  connection: ['endpoints', 'json']
-}
-
-/** The tabs an item of this kind has, in order. */
-export const tabsOf = (kind: DataItemKind): DataTab[] => TABS[kind]
-
-const isTab = (value: unknown): value is DataTab => typeof value === 'string' && value in DATA_TAB_LABELS
 
 /** What the URL query asks for: the parts that are well formed (anything else is left out, never an error). */
 export function parseDataLocation(query: Record<string, unknown>): { item?: DataItem, tab?: DataTab } {
@@ -37,12 +20,12 @@ export function parseDataLocation(query: Record<string, unknown>): { item?: Data
     const id = raw.slice(split + 1)
     if (split > 0 && id && (kind === 'collection' || kind === 'connection')) found.item = { kind, id }
   }
-  if (isTab(query.tab)) found.tab = query.tab
+  if (isDataTab(query.tab)) found.tab = query.tab
   return found
 }
 
 /** The URL query that shows `item` on `tab`. */
-export const dataLocationQuery = (item: DataItem, tab: DataTab): { item: string, tab: string } => ({ item: `${item.kind}:${item.id}`, tab })
+export const dataLocationQuery = (item: DataItem, tab: DataTab): { item: string, tab: string } => ({ item: dataItemKey(item), tab })
 
 /**
  * Keeps `editor`'s selection and the route's query the same, both ways. The query is read once

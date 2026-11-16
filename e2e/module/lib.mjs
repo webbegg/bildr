@@ -388,7 +388,7 @@ export async function openData(page) {
   await page.goto(editorUrl('/data'))
   await page.locator('[data-testid="data"]').waitFor()
   await page.locator('[data-testid="data-loading"]').waitFor({ state: 'detached' })
-  // The workspace: its tree of Collections and Connections, and the tab strip of the item shown (the URL query keeps it).
+  // The workspace's tree of Collections and Connections is there once the model has loaded.
   await page.locator('[data-data-tree]').waitFor()
 }
 

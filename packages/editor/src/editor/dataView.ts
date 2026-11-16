@@ -4,8 +4,8 @@ import type { Row } from '@bildr/codegen/query'
 import { createLiveRows } from '../design/liveRows.ts'
 import type { Design } from '../design/store.ts'
 import type { EditorView } from './useEditor.ts'
-import { tabsOf } from './dataLocation.ts'
-import type { DataItem, DataTab } from './dataLocation.ts'
+import { tabsOf } from './dataTabs.ts'
+import type { DataItem, DataTab } from './dataTabs.ts'
 import { collectionsOf, connectionsOf, defaultSourceOf, fixtureRowsOf } from '../shared/dataModel.ts'
 import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
 
@@ -18,17 +18,28 @@ import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
  * The rows are not the document's and nothing writes them (E2): they are what the app's
  * generated list route answers (P5's `createLiveRows`), or the entity's fixtures (the Sample
  * data) when it can't or when the Sample data side of the switch is chosen, and are read only
- * while the Data view is open.
+ * while the Data view is open. The switch is the user's choice (`rowsPreference`); the rows
+ * shown come from `rowsSource`, which is Sample data too when Live is chosen and the app does
+ * not answer (`rowsFallback`: the choice stays Live, so choosing it again retries).
  *
  * The Data workspace (S2) shows one item at a time, a connection or a collection, on one of the
- * tabs its kind has (`dataItem`, `dataTabs`, `dataTab`); `editor/dataLocation.ts` mirrors that in the URL.
+ * tabs its kind has (`dataItem`, `dataTabs`, `dataTab`); `editor/dataLocation.ts` mirrors that in
+ * the URL. Read the item through `dataCollection` / `dataConnection`, which are narrowed to it.
  */
+
+/** Where rows come from: the app's list route (Live) or the collection's own (Sample data). */
+export type RowsSource = 'live' | 'sample'
+
 export const createDataView = (design: Design, view: Ref<EditorView>) => {
   const model = design.model
   const collections = computed<DataCollection[]>(() => model.value ? collectionsOf(model.value) : [])
   const connections = computed<DataConnection[]>(() => model.value ? connectionsOf(model.value) : [])
 
-  /** The collection the Data view shows (the first when none is chosen or the chosen one is gone). */
+  /**
+   * The collection chosen, by id. `collection` (below) is the one place that says which collection is
+   * meant when none is chosen or the chosen one is gone: the first. Everything else reads `collection`,
+   * or `dataCollection` when it needs the collection the workspace shows.
+   */
   const collectionId = ref<string | null>(null)
   /** The connection the right panel shows (its folder was clicked); null shows the collection. */
   const connectionId = ref<string | null>(null)
@@ -42,6 +53,10 @@ export const createDataView = (design: Design, view: Ref<EditorView>) => {
   const dataItem = computed<DataItem | null>(() => connection.value
     ? { kind: 'connection', id: connection.value.id }
     : collection.value ? { kind: 'collection', id: collection.value.id } : null)
+  /** The shown item, narrowed: the collection when a collection is shown, else null. */
+  const dataCollection = computed<DataCollection | null>(() => dataItem.value?.kind === 'collection' ? collection.value : null)
+  /** The shown item, narrowed: the connection when a connection is shown, else null. */
+  const dataConnection = computed<DataConnection | null>(() => dataItem.value?.kind === 'connection' ? connection.value : null)
   const dataTabs = computed<DataTab[]>(() => dataItem.value ? tabsOf(dataItem.value.kind) : [])
   const chosenTab = ref<DataTab>('rows')
   /** The tab shown: the one chosen when the item has it, else the item's first. Choosing keeps the choice for the next item that has it. */
@@ -51,24 +66,30 @@ export const createDataView = (design: Design, view: Ref<EditorView>) => {
       chosenTab.value = tab
     }
   })
-  /** Live shows the app's rows when it answers; Sample data shows the entity's fixtures (a REST collection has none). */
-  const rowsPreference = ref<'live' | 'sample'>('live')
+  /** The user's choice: Live shows the app's rows when it answers; Sample data shows the entity's fixtures (a REST collection has none). */
+  const rowsPreference = ref<RowsSource>('live')
 
   const needed = computed<string[]>(() => view.value === 'data' && collection.value ? [collection.value.id] : [])
   const live = createLiveRows(model, needed)
 
   const fixtures = computed<Row[]>(() => model.value && collection.value ? fixtureRowsOf(model.value, collection.value.id) : [])
   const sampleChosen = computed(() => rowsPreference.value === 'sample' && collection.value?.kind !== 'rest')
+  const answered = computed<Row[] | undefined>(() => collection.value ? live.rows.value[collection.value.id] : undefined)
   /** Where the rows shown come from: the app's when it answered (and Live is chosen), else the fixtures. */
-  const rowsSource = computed<'live' | 'fixtures'>(() => (!sampleChosen.value && collection.value && collection.value.id in live.rows.value) ? 'live' : 'fixtures')
-  const collectionRows = computed<Row[]>(() => rowsSource.value === 'live' ? live.rows.value[collection.value!.id] ?? [] : fixtures.value)
+  const rowsSource = computed<RowsSource>(() => !sampleChosen.value && answered.value ? 'live' : 'sample')
+  /** Live is chosen but the app has not answered (or failed), so the rows shown are the sample data: said beside the switch, which stays on Live. */
+  const rowsFallback = computed(() => rowsPreference.value === 'live' && collection.value?.kind !== 'rest' && rowsSource.value === 'sample' && !live.loading.value)
+  const collectionRows = computed<Row[]>(() => rowsSource.value === 'live' ? answered.value ?? [] : fixtures.value)
   /** Why the app's rows could not be read, `''` when they were (or were not asked for yet, or Sample data was chosen). */
   const recordsError = computed(() => (!sampleChosen.value && collection.value && live.reasons.value[collection.value.id]) || '')
   const recordsTotal = computed(() => collectionRows.value.length)
 
-  /** The rows each collection has: the app's once read, else its fixtures; a REST entity has none until read. */
+  /**
+   * The rows each collection has in the source chosen: with Live, the app's once read, else its fixtures; with
+   * Sample data, its fixtures. A REST entity has no fixtures: it has the app's once read, whatever is chosen.
+   */
   const collectionCounts = computed<Record<string, number>>(() => Object.fromEntries(collections.value.flatMap((entry) => {
-    const read = live.rows.value[entry.id]
+    const read = entry.kind === 'rest' || rowsPreference.value === 'live' ? live.rows.value[entry.id] : undefined
     if (read) return [[entry.id, read.length]]
     return entry.kind === 'rest' || !model.value ? [] : [[entry.id, fixtureRowsOf(model.value, entry.id).length]]
   })))
@@ -104,7 +125,8 @@ export const createDataView = (design: Design, view: Ref<EditorView>) => {
     return id
   }
 
-  watch(() => collection.value?.id, () => {
+  // An open row is one of the rows shown: another collection or another source has other rows.
+  watch([() => collection.value?.id, rowsPreference, rowsSource], () => {
     recordId.value = null
   })
   // The app regenerated (its data layer may have changed, and the dev server may still be restarting).
@@ -112,5 +134,5 @@ export const createDataView = (design: Design, view: Ref<EditorView>) => {
     if (view.value === 'data') void live.refresh()
   })
 
-  return { collections, connections, collectionId, connectionId, recordId, collection, connection, dataItem, dataTabs, dataTab, rowsPreference, collectionRows, rowsSource, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
+  return { collections, connections, collectionId, connectionId, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
 }
