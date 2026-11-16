@@ -125,8 +125,9 @@ export const createDataView = (design: Design, view: Ref<EditorView>) => {
     return id
   }
 
-  // An open row is one of the rows shown: another collection or another source has other rows.
-  watch([() => collection.value?.id, rowsPreference, rowsSource], () => {
+  // An open row is one of the rows shown: another collection, or the user switching source, shows other rows. The app
+  // answering late is not a switch: a row it does not have simply has no panel (DataPanel finds no row).
+  watch([() => collection.value?.id, rowsPreference], () => {
     recordId.value = null
   })
   // The app regenerated (its data layer may have changed, and the dev server may still be restarting).

@@ -202,6 +202,20 @@ describe('the rows of the shown collection', () => {
     await settle()
     expect(editor.recordId).toBeNull()
   })
+
+  it('keeps the open record when the app answers late, with no switch by the user', async () => {
+    let answer: (value: unknown) => void = () => {}
+    const { editor } = await bootData({ '/api/blog/posts': () => new Promise((resolve) => {
+      answer = resolve
+    }) })
+    editor.mode = 'data'
+    await settle()
+    editor.recordId = 'x'
+    answer({ items: [post('one')], total: 1 })
+    await settle()
+    expect(editor.rowsSource).toBe('live')
+    expect(editor.recordId).toBe('x')
+  })
 })
 
 describe('creating a collection', () => {

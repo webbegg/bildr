@@ -55,6 +55,7 @@ const failure = computed(() => editor.recordsError ? rowsFailure(collection.plur
 /** What an empty table says, for the rows it shows: the API's, the collection's own sample data (which Live falls back to when the app does not answer), or the app's. */
 const emptyText = computed(() => {
   if (rest.value) return 'The API returned no items.'
+  if (editor.rowsPreference === 'live' && editor.rowsSource === 'sample' && editor.recordsLoading) return 'Reading the app\'s rows…'
   if (editor.rowsSource === 'live') return 'No items yet. Rows are your app\'s data: they are added through the app, or seeded as sample data.'
   return editor.rowsFallback ? 'No items to show: the app is not answering and this collection has no sample data.' : 'No sample data yet for this collection.'
 })
