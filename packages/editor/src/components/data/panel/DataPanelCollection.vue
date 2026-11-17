@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { confirmRenameCollection } from '../../../editor/dataUsage.ts'
 import { useEditor } from '../../../editor/useEditor.ts'
 import { detailPagesOf } from '../../../shared/dataModel.ts'
 import type { DataCollection } from '../../../shared/dataModel.ts'
@@ -7,7 +8,8 @@ import type { DataCollection } from '../../../shared/dataModel.ts'
 /**
  * The collection's settings, beside its Fields tab: its name, plural and whether the app serves its
  * list, where it is stored, and its detail pages ("Detail page: <name>", which opens it on the Canvas).
- * A connection collection's endpoints are its Endpoints tab. Every edit is `entity_update`.
+ * A connection collection's endpoints are its Endpoints tab. Every edit is `entity_update`; a rename of a used
+ * collection asks first (S5).
  *
  * Not in the module: the slug and the public create flag (the generated names stay the plural's
  * and the create action's), the legacy one-URL API source, and "Create detail page" (a detail
@@ -27,6 +29,18 @@ function openPage(pageId: string) {
 function update(patch: Record<string, unknown>) {
   return editor.run('entity_update', { entity: props.collection.id, ...patch })
 }
+
+// Bumped to remount a name or plural field whose rename was not confirmed, so it shows the saved text again.
+const resets = ref(0)
+
+/** A rename of a collection that is used says what it does first (S5); declining puts the text back. */
+async function rename(change: 'name' | 'plural', value: string) {
+  if (!await confirmRenameCollection(editor, props.collection, change, value)) {
+    resets.value++
+    return
+  }
+  await update({ [change]: value })
+}
 </script>
 
 <template>
@@ -37,11 +51,12 @@ function update(patch: Record<string, unknown>) {
         name="name"
       >
         <EditorCommitInput
+          :key="`name:${resets}`"
           :model-value="collection.name"
           aria-label="Collection name"
           size="xs"
           variant="soft"
-          @commit="update({ name: $event })"
+          @commit="rename('name', $event)"
         />
       </EditorRow>
       <EditorRow
@@ -50,11 +65,12 @@ function update(patch: Record<string, unknown>) {
         name="plural"
       >
         <EditorCommitInput
+          :key="`plural:${resets}`"
           :model-value="collection.plural"
           aria-label="Collection plural"
           size="xs"
           variant="soft"
-          @commit="update({ plural: $event })"
+          @commit="rename('plural', $event)"
         />
       </EditorRow>
       <EditorRow

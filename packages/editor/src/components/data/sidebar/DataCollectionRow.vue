@@ -2,6 +2,7 @@
 import { computed, inject, ref } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { dataItemKey } from '../../../editor/dataTabs.ts'
+import { confirmDeleteCollection, confirmRenameCollection } from '../../../editor/dataUsage.ts'
 import { TREE_STOP } from '../../../editor/dataTree.ts'
 import { useEditor } from '../../../editor/useEditor.ts'
 import { SELECTED_ITEM } from '../../../editorUi.ts'
@@ -12,7 +13,8 @@ import type { DataCollection } from '../../../shared/dataModel.ts'
  * connection), name and row count, `indent`ed inside a connection's folder. Click shows it,
  * double-click renames inline, and the `…` menu (on hover, and always on the row shown or focused) renames or deletes it, as do
  * F2 (rename) and Delete or Backspace (delete) on the focused row. A collection is
- * an entity: renaming is `entity_update`, deleting `entity_delete` (refused while pages use it).
+ * an entity: renaming is `entity_update`, deleting `entity_delete` (refused while pages use it). Both warn first, with the places that use it
+ * (S5, `editor/dataUsage.ts`); a collection that is used cannot be deleted from here.
  * It is a tree item (`DataTree.vue`): the tab stop when it is the one the tree names.
  */
 const { collection, count, indent = false } = defineProps<{ collection: DataCollection, count?: number, indent?: boolean }>()
@@ -32,7 +34,7 @@ async function commitRename() {
   if (!renaming.value) return
   renaming.value = false
   const name = renameValue.value.trim()
-  if (name && name !== collection.name) await editor.run('entity_update', { entity: collection.id, name })
+  if (name && name !== collection.name && await confirmRenameCollection(editor, collection, 'name', name)) await editor.run('entity_update', { entity: collection.id, name })
 }
 
 // Rename mounts the field focused; the closing menu must not take the focus back (its blur would commit).
@@ -47,7 +49,7 @@ function show() {
 }
 
 async function remove() {
-  const ok = await editor.confirm({ title: `Delete collection "${collection.name}"?`, description: 'The collection goes with its repository, queries, create action and sample data. Undo brings it back.', confirmLabel: 'Delete collection', danger: true })
+  const ok = await confirmDeleteCollection(editor, collection)
   if (ok) await editor.run('entity_delete', { entity: collection.id })
 }
 
@@ -65,7 +67,7 @@ const menu = computed<DropdownMenuItem[]>(() => [
       autofocus
       class="flex-1"
       aria-label="Rename collection"
-      @keydown.enter="commitRename"
+      @keydown.enter.prevent="commitRename"
       @keydown.esc="renaming = false"
       @blur="commitRename"
     />

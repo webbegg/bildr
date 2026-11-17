@@ -391,10 +391,10 @@ describe('the Data and the Design views are two screens', () => {
 })
 
 describe('the Data workspace selection (S2)', () => {
-  it('gives a collection Rows, Fields, Endpoints and JSON, and a connection Endpoints and JSON', async () => {
+  it('gives a collection Rows, Fields, Endpoints, Used in and JSON, and a connection Endpoints and JSON', async () => {
     const { editor } = await bootData()
     expect(editor.dataItem).toEqual({ kind: 'collection', id: 'ent_post' })
-    expect(editor.dataTabs).toEqual(['rows', 'fields', 'endpoints', 'json'])
+    expect(editor.dataTabs).toEqual(['rows', 'fields', 'endpoints', 'used', 'json'])
     expect(editor.dataTab).toBe('rows')
     editor.connectionId = 'ds_quotes'
     expect(editor.dataItem).toEqual({ kind: 'connection', id: 'ds_quotes' })

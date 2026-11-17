@@ -7,7 +7,9 @@ import { useEditor } from '../../editor/useEditor.ts'
  * browser's `confirm()`: `editor.confirm({ title, description, items,
  * confirmLabel, danger })` opens it and resolves true on the confirm button,
  * false on Cancel, Esc or a click outside. `items` lists what the action
- * reaches, e.g. where a component is used.
+ * reaches, e.g. where a component is used. `uses` lists the places that use what
+ * is deleted or renamed (S5), each a link that opens it and answers no; with
+ * `blocked` the confirm button is disabled, and that is its reason.
  */
 const editor = useEditor()
 const request = computed(() => editor.confirmRequest)
@@ -50,6 +52,17 @@ const open = computed({
           <span class="truncate">{{ item }}</span>
         </li>
       </ul>
+      <div
+        v-if="request?.uses?.length"
+        class="max-h-64 overflow-y-auto"
+        data-confirm-uses
+      >
+        <DataUsageList
+          :uses="request.uses"
+          :follows-label="request.followsLabel"
+          @open="request.answer(false)"
+        />
+      </div>
     </div>
     <template #footer>
       <EditorButton
@@ -61,6 +74,8 @@ const open = computed({
       <EditorButton
         :label="request?.confirmLabel ?? 'OK'"
         :variant="request?.danger ? 'danger' : 'primary'"
+        :disabled="!!request?.blocked"
+        :title="request?.blocked"
         data-confirm-ok
         @click="request?.answer(true)"
       />

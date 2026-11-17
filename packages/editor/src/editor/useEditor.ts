@@ -27,6 +27,7 @@ import { canvasMovable, drillTarget, escapeSelection, navigateSelection, nearest
 import type { SelectionStep } from './selection.ts'
 import { isInsertTool, MOVE_TOOL, selectionAccent, toolForKey } from './tools.ts'
 import type { ToolId } from './tools.ts'
+import type { UseEntry } from '../shared/dataArtifacts.ts'
 import { interactionKey, parseInteractionKey } from '../shared/interactionPanel.ts'
 import { layerName } from '../shared/layers.ts'
 import { createDataView } from './dataView.ts'
@@ -71,6 +72,11 @@ export interface ConfirmOptions {
   description?: string
   /** Lines listed under the description, e.g. where a component is used. */
   items?: string[]
+  /** The places that use what is deleted or renamed, each a link that opens it (and answers no); `followsLabel` tags the ones the module changes along with it. */
+  uses?: UseEntry[]
+  followsLabel?: string
+  /** Why the confirm button is disabled (what is used cannot be deleted or renamed): the button's title. */
+  blocked?: string
   confirmLabel: string
   danger?: boolean
 }

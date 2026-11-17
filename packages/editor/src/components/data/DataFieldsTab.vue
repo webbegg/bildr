@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { confirmRemoveField, confirmRenameField } from '../../editor/dataUsage.ts'
 import { useEditor } from '../../editor/useEditor.ts'
+import { fieldUseIndex, outsideOf, usedInWords } from '../../shared/dataUsage.ts'
+import { FOCUS_RING } from '../../editorUi.ts'
 import { FIELD_TYPE_ICONS, FIELD_TYPE_LABELS, fieldTypeItems } from '../../shared/dataModel.ts'
 import type { DataCollection, FieldType } from '../../shared/dataModel.ts'
 
@@ -11,6 +14,9 @@ import type { DataCollection, FieldType } from '../../shared/dataModel.ts'
  * opens the add form (`entity_field_add`). A collection read through a connection lists its
  * mapping read-only (Edit mapping changes it). A field has a name, no separate label: the
  * model's actions camelCase what is typed, and refuse a name or type the model still uses.
+ *
+ * Each field that is used shows how many places use it (S5): a count that opens the list under its row, each place a link to
+ * it. Removing or renaming a used field says so first (`editor/dataUsage.ts`), and cannot go on: the module refuses it too.
  */
 const { collection } = defineProps<{ collection: DataCollection }>()
 const editor = useEditor()
@@ -24,21 +30,27 @@ function updateField(id: string, patch: { name?: string, type?: FieldType }) {
 
 // Bumped to remount a name field whose edit was refused, so it shows the saved name again.
 const nameResets = ref(0)
-// The inline name: transparent in the row until hovered or focused, then the kit's field.
+// The inline name: transparent in the row until hovered or focused, then the kit's field. Enter commits by blurring and is not
+// passed on (`.prevent`): the warning a rename can bring up takes the focus, and the Enter still being typed must not press its button.
 const NAME_UI = { base: 'bg-transparent px-1.5 text-toned hover:bg-white/4 focus-visible:bg-elevated focus-visible:text-highlighted' }
 
 async function commitName(id: string, value: string) {
   const field = collection.fields.find(entry => entry.id === id)
   const name = value.trim()
-  if (!field || !name || name === field.name || !await updateField(id, { name })) nameResets.value++
+  if (!field || !name || name === field.name || !await confirmRenameField(editor, collection, field.name, name) || !await updateField(id, { name })) nameResets.value++
 }
 
 async function removeField(id: string) {
   const field = collection.fields.find(entry => entry.id === id)
-  if (!field) return
-  if (editor.collectionRows.length && !await editor.confirm({ title: `Remove the field "${field.name}"?`, description: 'Its values stay in the rows already stored. Undo brings the field back.', confirmLabel: 'Remove field', danger: true })) return
+  if (!field || !await confirmRemoveField(editor, collection, field.name, editor.collectionRows.length > 0)) return
   await editor.run('entity_field_remove', { entity: collection.id, field: id })
 }
+
+/** Who uses each field, from one scan of the model. */
+const uses = computed(() => fieldUseIndex(editor.model, collection.id))
+const countOf = (name: string) => outsideOf(uses.value.get(name) ?? []).length
+/** The field whose list of places is open, under its row. */
+const usesOpen = ref<string | null>(null)
 
 const adding = ref(false)
 const newName = ref('')
@@ -55,6 +67,7 @@ async function openAdd() {
 
 watch(() => collection.id, () => {
   adding.value = false
+  usesOpen.value = null
 })
 
 async function addField() {
@@ -124,21 +137,47 @@ const editingMapping = ref(false)
       v-if="mapped"
       class="px-2"
     >
-      <div
+      <template
         v-for="field in collection.fields"
         :key="field.id"
-        :class="ROW"
-        class="ps-2.5 text-[12px] text-toned"
-        :title="`${field.name} ← ${field.remote ?? field.name}`"
-        :data-field="field.name"
       >
-        <UIcon
-          :name="FIELD_TYPE_ICONS[field.type]"
-          class="size-4 shrink-0 text-dimmed"
-        />
-        <span class="truncate">{{ field.name }}</span>
-        <code class="ms-auto truncate ps-2 text-[11px] text-dimmed">{{ field.remote ?? field.name }}</code>
-      </div>
+        <div
+          :class="ROW"
+          class="ps-2.5 text-[12px] text-toned"
+          :title="`${field.name} ← ${field.remote ?? field.name}`"
+          :data-field="field.name"
+        >
+          <UIcon
+            :name="FIELD_TYPE_ICONS[field.type]"
+            class="size-4 shrink-0 text-dimmed"
+          />
+          <span class="truncate">{{ field.name }}</span>
+          <code class="ms-auto truncate ps-2 text-[11px] text-dimmed">{{ field.remote ?? field.name }}</code>
+          <button
+            v-if="countOf(field.name)"
+            type="button"
+            class="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-white/8 px-1.5 text-[11px] text-muted tabular-nums hover:text-highlighted"
+            :class="FOCUS_RING"
+            :aria-label="`${usedInWords(countOf(field.name))}: show them`"
+            :aria-expanded="usesOpen === field.name"
+            :title="usedInWords(countOf(field.name))"
+            data-field-uses
+            @click="usesOpen = usesOpen === field.name ? null : field.name"
+          >
+            {{ countOf(field.name) }}
+          </button>
+        </div>
+        <div
+          v-if="usesOpen === field.name"
+          class="mb-1 ms-6 rounded-lg bg-white/4 py-1"
+          :data-field-uses-list="field.name"
+        >
+          <DataUsageList
+            :uses="uses.get(field.name) ?? []"
+            follows-label="Follows it"
+          />
+        </div>
+      </template>
       <EditorButton
         icon="i-lucide-pencil"
         label="Edit mapping"
@@ -162,74 +201,100 @@ const editingMapping = ref(false)
       v-else
       class="px-2"
     >
-      <div
+      <template
         v-for="(field, index) in collection.fields"
         :key="field.id"
-        class="group/field relative"
-        :class="[ROW, { 'opacity-40': dragId === field.id }]"
-        :data-field="field.name"
-        @dragover="onDragOver($event, index)"
-        @drop.prevent="onDrop"
       >
         <div
-          v-if="dropSlot === index"
-          class="pointer-events-none absolute inset-x-1 -top-px h-0.5 rounded-full bg-(--editor-selection)"
-        />
+          class="group/field relative"
+          :class="[ROW, { 'opacity-40': dragId === field.id }]"
+          :data-field="field.name"
+          @dragover="onDragOver($event, index)"
+          @drop.prevent="onDrop"
+        >
+          <div
+            v-if="dropSlot === index"
+            class="pointer-events-none absolute inset-x-1 -top-px h-0.5 rounded-full bg-(--editor-selection)"
+          />
+          <div
+            v-if="dropSlot === index + 1 && index === collection.fields.length - 1"
+            class="pointer-events-none absolute inset-x-1 -bottom-px h-0.5 rounded-full bg-(--editor-selection)"
+          />
+          <span
+            draggable="true"
+            class="grid h-6 w-3.5 shrink-0 cursor-grab place-items-center text-dimmed opacity-0 group-hover/field:opacity-100 hover:text-highlighted active:cursor-grabbing"
+            :aria-label="`Drag to reorder ${field.name}`"
+            title="Drag to reorder"
+            data-field-handle
+            @dragstart="onDragStart($event, field.id)"
+            @dragend="onDragEnd"
+          >
+            <UIcon
+              name="i-lucide-grip-vertical"
+              class="size-3.5"
+            />
+          </span>
+          <EditorSelect
+            :model-value="field.type"
+            :items="fieldTypeItems"
+            compact
+            :aria-label="`Type of ${field.name}`"
+            :ui="{ content: 'min-w-32' }"
+            :title="FIELD_TYPE_LABELS[field.type]"
+            data-field-type
+            @update:model-value="updateField(field.id, { type: $event as FieldType })"
+          />
+          <EditorInput
+            :key="`${field.name}:${nameResets}`"
+            :model-value="field.name"
+            commit="change"
+            :aria-label="`Name of ${field.name}`"
+            :title="`${field.label} (${field.name})`"
+            :ui="NAME_UI"
+            class="min-w-0 flex-1"
+            data-field-label-input
+            @commit="commitName(field.id, $event)"
+            @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
+            @keydown.esc="($event.target as HTMLInputElement).blur()"
+          />
+          <button
+            v-if="countOf(field.name)"
+            type="button"
+            class="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-white/8 px-1.5 text-[11px] text-muted tabular-nums hover:text-highlighted"
+            :class="FOCUS_RING"
+            :aria-label="`${usedInWords(countOf(field.name))}: show them`"
+            :aria-expanded="usesOpen === field.name"
+            :title="usedInWords(countOf(field.name))"
+            data-field-uses
+            @click="usesOpen = usesOpen === field.name ? null : field.name"
+          >
+            {{ countOf(field.name) }}
+          </button>
+          <button
+            type="button"
+            class="grid size-6 shrink-0 place-items-center rounded-lg text-dimmed opacity-0 group-hover/field:opacity-100 group-focus-within/field:opacity-100 hover:bg-white/8 hover:text-highlighted focus-visible:opacity-100"
+            :aria-label="`Remove ${field.name}`"
+            :title="`Remove ${field.name}`"
+            data-row-remove
+            @click="removeField(field.id)"
+          >
+            <UIcon
+              name="i-lucide-minus"
+              class="size-3.5"
+            />
+          </button>
+        </div>
         <div
-          v-if="dropSlot === index + 1 && index === collection.fields.length - 1"
-          class="pointer-events-none absolute inset-x-1 -bottom-px h-0.5 rounded-full bg-(--editor-selection)"
-        />
-        <span
-          draggable="true"
-          class="grid h-6 w-3.5 shrink-0 cursor-grab place-items-center text-dimmed opacity-0 group-hover/field:opacity-100 hover:text-highlighted active:cursor-grabbing"
-          :aria-label="`Drag to reorder ${field.name}`"
-          title="Drag to reorder"
-          data-field-handle
-          @dragstart="onDragStart($event, field.id)"
-          @dragend="onDragEnd"
+          v-if="usesOpen === field.name"
+          class="mb-1 ms-6 rounded-lg bg-white/4 py-1"
+          :data-field-uses-list="field.name"
         >
-          <UIcon
-            name="i-lucide-grip-vertical"
-            class="size-3.5"
+          <DataUsageList
+            :uses="uses.get(field.name) ?? []"
+            follows-label="Follows it"
           />
-        </span>
-        <EditorSelect
-          :model-value="field.type"
-          :items="fieldTypeItems"
-          compact
-          :aria-label="`Type of ${field.name}`"
-          :ui="{ content: 'min-w-32' }"
-          :title="FIELD_TYPE_LABELS[field.type]"
-          data-field-type
-          @update:model-value="updateField(field.id, { type: $event as FieldType })"
-        />
-        <EditorInput
-          :key="`${field.name}:${nameResets}`"
-          :model-value="field.name"
-          commit="change"
-          :aria-label="`Name of ${field.name}`"
-          :title="`${field.label} (${field.name})`"
-          :ui="NAME_UI"
-          class="min-w-0 flex-1"
-          data-field-label-input
-          @commit="commitName(field.id, $event)"
-          @keydown.enter="($event.target as HTMLInputElement).blur()"
-          @keydown.esc="($event.target as HTMLInputElement).blur()"
-        />
-        <button
-          type="button"
-          class="grid size-6 shrink-0 place-items-center rounded-lg text-dimmed opacity-0 group-hover/field:opacity-100 group-focus-within/field:opacity-100 hover:bg-white/8 hover:text-highlighted focus-visible:opacity-100"
-          :aria-label="`Remove ${field.name}`"
-          :title="`Remove ${field.name}`"
-          data-row-remove
-          @click="removeField(field.id)"
-        >
-          <UIcon
-            name="i-lucide-minus"
-            class="size-3.5"
-          />
-        </button>
-      </div>
+        </div>
+      </template>
 
       <form
         v-if="adding"

@@ -63,6 +63,7 @@ declare module 'vue' {
     DataTableFilterMenu: typeof import('./src/components/data/table/DataTableFilterMenu.vue')['default']
     DataTableToolbar: typeof import('./src/components/data/table/DataTableToolbar.vue')['default']
     DataTree: typeof import('./src/components/data/DataTree.vue')['default']
+    DataUsageList: typeof import('./src/components/data/DataUsageList.vue')['default']
     DataUsedIn: typeof import('./src/components/data/DataUsedIn.vue')['default']
     DataWorkspace: typeof import('./src/components/data/DataWorkspace.vue')['default']
     DesignLibrary: typeof import('./src/components/design/DesignLibrary.vue')['default']

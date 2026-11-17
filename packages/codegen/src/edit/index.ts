@@ -139,7 +139,7 @@ export const applyEdit = (files: Record<string, string>, name: EditName, input: 
 export { mintId } from './core.ts'
 export { bindingPaths, bindingScope, entityFieldNames, queryBehind } from './scope.ts'
 export type { ScopeName } from './scope.ts'
-export { describeUse, describeUses, idUses, usesOf } from './usage.ts'
+export { describeUse, describeUses, entityUsesOf, fieldUsesIndex, fieldUsesOf, idUses, usesOf } from './usage.ts'
 export type { ArtifactUse, UseKind, UseVia } from './usage.ts'
 export { fixtureRowKey } from './fixtures.ts'
 export { datasourceEnvVars } from './datasources.ts'

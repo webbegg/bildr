@@ -136,11 +136,11 @@ describe('the Data workspace (S2)', () => {
     expect(qa('[data-collections-synced] [data-collection]').map(item => item.getAttribute('data-collection'))).toEqual(['quotes'])
   })
 
-  it('shows Rows, Fields, Endpoints and JSON for a collection, starting on Rows', async () => {
+  it('shows Rows, Fields, Endpoints, Used in and JSON for a collection, starting on Rows', async () => {
     await open()
     expect(q('[role="tablist"]')).not.toBeNull()
-    expect(tabNames()).toEqual(['rows', 'fields', 'endpoints', 'json'])
-    expect(qa('[role="tab"]').map(item => text(item))).toEqual(['Rows', 'Fields', 'Endpoints', 'JSON'])
+    expect(tabNames()).toEqual(['rows', 'fields', 'endpoints', 'used', 'json'])
+    expect(qa('[role="tab"]').map(item => text(item))).toEqual(['Rows', 'Fields', 'Endpoints', 'Used in', 'JSON'])
     expect(activeTab()).toBe('rows')
     expect(q('[role="tabpanel"] [data-records]')).not.toBeNull()
   })
@@ -206,7 +206,7 @@ describe('the Data workspace (S2)', () => {
   it('falls back to the first item, on Rows, for a deep link to one that is gone', async () => {
     const { router } = await open({}, {}, '/data?item=collection:ent_gone&tab=nope')
     expect(router.currentRoute.value.query).toEqual({ item: 'collection:ent_post', tab: 'rows' })
-    expect(tabNames()).toEqual(['rows', 'fields', 'endpoints', 'json'])
+    expect(tabNames()).toEqual(['rows', 'fields', 'endpoints', 'used', 'json'])
     expect(text(q('[data-records]'))).toContain('Hello bildr')
   })
 
@@ -297,7 +297,7 @@ describe('the Data workspace (S2)', () => {
 
   it('reaches the tab strip by keyboard: one tab stop, the arrows move and pick', async () => {
     await open()
-    expect(qa('[role="tab"]').map(item => item.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1'])
+    expect(qa('[role="tab"]').map(item => item.getAttribute('tabindex'))).toEqual(['0', '-1', '-1', '-1', '-1'])
     tab('rows')!.focus()
     await key(tab('rows'), 'ArrowRight')
     expect(document.activeElement).toBe(tab('fields'))
@@ -321,9 +321,19 @@ describe('the Data workspace (S2)', () => {
     // Each step brings a screen, a dialog or a confirmation up; what the user reads on it is checked.
     const steps: Array<() => Promise<unknown>> = [
       async () => {},
-      ...['fields', 'endpoints', 'json', 'rows'].map(name => () => click(tab(name))),
+      ...['fields', 'used', 'endpoints', 'json', 'rows'].map(name => () => click(tab(name))),
       () => menuItem(byLabel('Collection actions'), 'Delete'),
       () => click(q('[data-confirm-cancel]')),
+      // Used in (S5): a field's count and its list, and the warnings before a used field or collection is removed or renamed.
+      () => click(tab('fields')),
+      () => click(q('[data-field-uses]')),
+      () => click(q('[data-row-remove]')),
+      () => click(q('[data-confirm-cancel]')),
+      () => typeInto(q('[data-field="slug"] [data-field-label-input]'), 'permalink'),
+      () => click(q('[data-confirm-cancel]')),
+      () => typeInto(q('[data-collection-panel] [aria-label="Collection plural"]'), 'articles'),
+      () => click(q('[data-confirm-cancel]')),
+      () => click(tab('rows')),
       () => click(collection('quotes')),
       ...['rows', 'fields', 'endpoints'].map(name => () => click(tab(name))),
       () => click(treeItem('quotes')),
@@ -494,6 +504,7 @@ describe('the Data location (S2)', () => {
   })
 
   it('falls back to the first collection, and rewrites the URL, when the selected one is deleted', async () => {
+    freeQuotes()
     const { router } = await open({ entity_delete: () => {
       removeEntity('ent_quote')
       return { changed: [] }
@@ -549,6 +560,8 @@ describe('the Data location (S2)', () => {
       await settle()
     }
     await rename(treeItem('post'), 'Rename collection', 'Article')
+    // The collection is used: the rename says so first (S5).
+    await click(q('[data-confirm-ok]'))
     expect(text(q('[data-data-title] h2'))).toBe('Article')
     expect(router.currentRoute.value.query).toEqual({ item: ITEMS.post, tab: 'rows' })
     await click(treeItem('quotes'))
@@ -680,26 +693,29 @@ describe('collections', () => {
   })
 
   it('renames one by double-click, and deletes it after a confirmation', async () => {
-    const { actions } = await open({ entity_update: ok(), entity_delete: ok({ deleted: ['ent_post'] }) })
-    collection('posts')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
+    freeQuotes()
+    const { actions } = await open({ entity_update: ok(), entity_delete: ok({ deleted: ['ent_quote'] }) })
+    collection('quotes')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     await settle()
     const input = byLabel('Rename collection')!
-    await typeInto(input, 'Article')
+    await typeInto(input, 'Saying')
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
     await settle()
-    expect(inputs(actions, 'entity_update')).toEqual([{ entity: 'ent_post', name: 'Article' }])
-    await menuItem(byLabel('Collection actions'), 'Delete')
+    expect(inputs(actions, 'entity_update')).toEqual([{ entity: 'ent_quote', name: 'Saying' }])
+    await menuItem(collection('quotes')!.parentElement!.querySelector('[aria-label="Collection actions"]'), 'Delete')
     expect(q('[data-confirm]')?.textContent).toContain('Undo brings it back')
     expect(text(q('[data-confirm-description]'))).toContain('The collection goes with its repository')
     await click(textButton('Delete collection'))
-    expect(inputs(actions, 'entity_delete')).toEqual([{ entity: 'ent_post' }])
+    expect(inputs(actions, 'entity_delete')).toEqual([{ entity: 'ent_quote' }])
   })
 
-  it('keeps a collection a page still uses, and says so', async () => {
-    await open({ entity_delete: () => new Failure(422, 'invalid', 'Entity Post is still used by pg_index (uses). Change them first') })
+  it('keeps a collection a page still uses: the confirmation says where, and cannot be confirmed', async () => {
+    const { actions } = await open({ entity_delete: () => new Failure(422, 'invalid', 'Entity Post is still used by pg_index (uses). Change them first') })
     await menuItem(byLabel('Collection actions'), 'Delete')
-    await click(textButton('Delete collection'))
-    expect(q('[data-testid="design-error"]')?.textContent).toContain('still used by pg_index')
+    expect(text(q('[data-confirm-description]'))).toContain('Used in 4 places')
+    expect(q('[data-confirm-ok]')?.hasAttribute('disabled')).toBe(true)
+    await click(q('[data-confirm-ok]'))
+    expect(inputs(actions, 'entity_delete')).toEqual([])
   })
 
   it('starts from "Add your first collection" when there are none', async () => {
@@ -725,25 +741,28 @@ describe('fields', () => {
   })
 
   it('renames a field and changes its type in place', async () => {
+    world.model.modules.blog!.entities[0]!.fields.push({ id: 'fld_extra', name: 'extra', type: 'text' })
     const { actions } = await open({ entity_field_update: ok() })
     await fieldsTab()
-    const name = row('body').querySelector<HTMLInputElement>('[data-field-label-input]')!
+    const name = row('extra').querySelector<HTMLInputElement>('[data-field-label-input]')!
     await typeInto(name, 'content')
-    expect(inputs(actions, 'entity_field_update')).toEqual([{ entity: 'ent_post', field: 'fld_body', name: 'content' }])
+    expect(inputs(actions, 'entity_field_update')).toEqual([{ entity: 'ent_post', field: 'fld_extra', name: 'content' }])
     await selectOption(row('slug').querySelector('[data-field-type]'), 'Integer')
     expect(inputs(actions, 'entity_field_update').at(-1)).toEqual({ entity: 'ent_post', field: 'fld_slug', type: 'integer' })
   })
 
-  it('puts a refused rename back and says why', async () => {
-    await open({ entity_field_update: () => new Failure(422, 'invalid', 'slug is used by q_post_by_slug: change them first') })
+  it('puts a rename the module refuses back and says why', async () => {
+    world.model.modules.blog!.entities[0]!.fields.push({ id: 'fld_extra', name: 'extra', type: 'text' })
+    await open({ entity_field_update: () => new Failure(422, 'invalid', 'extra is used by q_post_by_slug: change them first') })
     await fieldsTab()
-    const name = row('slug').querySelector<HTMLInputElement>('[data-field-label-input]')!
+    const name = row('extra').querySelector<HTMLInputElement>('[data-field-label-input]')!
     await typeInto(name, 'permalink')
     expect(q('[data-testid="design-error"]')?.textContent).toContain('used by q_post_by_slug')
-    expect(row('slug').querySelector<HTMLInputElement>('[data-field-label-input]')!.value).toBe('slug')
+    expect(row('extra').querySelector<HTMLInputElement>('[data-field-label-input]')!.value).toBe('extra')
   })
 
   it('adds a field by name and type, and removes one after a confirmation', async () => {
+    world.model.modules.blog!.entities[0]!.fields.push({ id: 'fld_extra', name: 'extra', type: 'text' })
     const { actions } = await open({ entity_field_add: ok({ fieldId: 'fld_served_from' }), entity_field_remove: ok() })
     await fieldsTab()
     await click(q('[aria-label="Add field"]'))
@@ -752,9 +771,9 @@ describe('fields', () => {
     q('[data-add-field]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
     await settle()
     expect(inputs(actions, 'entity_field_add')).toEqual([{ entity: 'ent_post', name: 'Reading time', type: 'number' }])
-    await click(row('body').querySelector('[data-row-remove]'))
+    await click(row('extra').querySelector('[data-row-remove]'))
     await click(textButton('Remove field'))
-    expect(inputs(actions, 'entity_field_remove')).toEqual([{ entity: 'ent_post', field: 'fld_body' }])
+    expect(inputs(actions, 'entity_field_remove')).toEqual([{ entity: 'ent_post', field: 'fld_extra' }])
   })
 
   it('moves a field by dragging its grip', async () => {
@@ -792,6 +811,8 @@ describe('the collection panel (beside the Fields tab)', () => {
     const { actions } = await openFields({ entity_update: ok() })
     const panel = q('[data-collection-panel]')!
     await typeInto(panel.querySelector('[aria-label="Collection name"]'), 'Article')
+    // The collection is used, so the rename asks first (S5).
+    await click(q('[data-confirm-ok]'))
     await click(panel.querySelector('[data-flag="expose"]'))
     expect(inputs(actions, 'entity_update')).toEqual([{ entity: 'ent_post', name: 'Article' }, { entity: 'ent_post', expose: false }])
   })
@@ -2049,7 +2070,7 @@ describe('Queries and Actions in the Data tree (S10)', () => {
     expect(text(q('[data-data-title]'))).toContain('Action')
     expect(text(q('[data-data-title] h2'))).toBe('Create post')
     await click(treeItem('post'))
-    expect(tabNames()).toEqual(['rows', 'fields', 'endpoints', 'json'])
+    expect(tabNames()).toEqual(['rows', 'fields', 'endpoints', 'used', 'json'])
   })
 
   it('puts the query or action and the tab in the URL, and a deep link opens them', async () => {

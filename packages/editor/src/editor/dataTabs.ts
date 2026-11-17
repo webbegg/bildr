@@ -1,6 +1,6 @@
 /**
  * The Data workspace's tab model (S2, S10): what can be shown (`DataItem`: a collection, a connection, a query or
- * an action) and the tabs each kind has. A collection has Rows, Fields, Endpoints and JSON; a connection has
+ * an action) and the tabs each kind has. A collection has Rows, Fields, Endpoints, Used in and JSON; a connection has
  * Endpoints and JSON; a query has Results, Definition, Used in and JSON; an action has Overview, Steps, Used in and JSON.
  * The state is `editor/dataView.ts`'s and the URL's is `editor/dataLocation.ts`'s.
  */
@@ -31,7 +31,7 @@ export const DATA_TAB_LABELS: Record<DataTab, string> = {
 }
 
 const TABS: Record<DataItemKind, DataTab[]> = {
-  collection: ['rows', 'fields', 'endpoints', 'json'],
+  collection: ['rows', 'fields', 'endpoints', 'used', 'json'],
   connection: ['endpoints', 'json'],
   query: ['results', 'definition', 'used', 'json'],
   action: ['overview', 'steps', 'used', 'json']

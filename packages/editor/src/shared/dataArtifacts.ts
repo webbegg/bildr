@@ -37,9 +37,11 @@ export interface UseEntry {
   name: string
   /** What it does there, one sentence for each place in it ("Reads it as “featured”"). */
   what: string[]
+  /** The module changes it along with what is deleted or renamed (a collection's own action, an action's pick of a field), so it does not stop that. */
+  follows?: boolean
 }
 
-const KIND_LABELS: Record<UseKind, string> = { page: 'Page', component: 'Component', layout: 'Layout', action: 'Action' }
+const KIND_LABELS: Record<UseKind, string> = { page: 'Page', component: 'Component', layout: 'Layout', action: 'Action', query: 'Query' }
 export const usageKindLabel = (kind: UseKind): string => KIND_LABELS[kind]
 /** The id a use is named by in the DOM and in a test: `page:pg_index`. */
 export const usageKey = (use: Pick<UseEntry, 'kind' | 'id'>): string => `${use.kind}:${use.id}`

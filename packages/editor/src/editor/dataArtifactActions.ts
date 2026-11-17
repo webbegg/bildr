@@ -22,11 +22,14 @@ export async function attempt<T extends Record<string, unknown>>(editor: Editor,
 
 /**
  * Opens the place a use is in: a page, component or layout on the Canvas (the Design screen, which opens it as it does for a
- * collection's detail page), or an action in the Data workspace.
+ * collection's detail page), or an action or a query in the Data workspace.
  */
 export function openUse(editor: Editor, use: Pick<UseEntry, 'kind' | 'id'>): void {
   if (use.kind === 'action') {
     editor.actionId = use.id
+    editor.mode = 'data'
+  } else if (use.kind === 'query') {
+    editor.queryId = use.id
     editor.mode = 'data'
   } else if (use.kind === 'page') {
     editor.mode = 'build'

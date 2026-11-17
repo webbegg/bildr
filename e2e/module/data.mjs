@@ -364,6 +364,52 @@ await run('data', async ({ page, browser, errors }) => {
   check(await until(() => decodeURIComponent(page.url()).includes('#/design')), `a Used in link opens the page on the Canvas (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
   await openData(page)
 
+  // ── Used in, for a collection and its fields (D5, S5) ────────────────────────────────────
+  // Dish is read by the page `p` (its list and the cheap query): the collection's Used in tab lists the page, and its link opens it on the Canvas.
+  await page.locator('[data-collection="dishes"]').click()
+  await page.locator('[role=tab][data-data-tab="used"]').click()
+  check(await until(async () => (await page.locator(`[data-used-in-outside] [data-use="page:${p.pageId}"]`).count()) === 1), 'a collection\'s Used in tab lists the page that reads it')
+  check((await page.locator('[data-used-in] p').first().innerText()).startsWith('Used in '), 'with the number of places')
+  await page.locator(`[data-used-in-outside] [data-use-open="page:${p.pageId}"]`).click()
+  check(await until(() => decodeURIComponent(page.url()).includes('#/design')), `its link opens the Canvas (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
+  check(await until(async () => (await canvas(page).locator('[data-node-type="Text"]').allTextContents()).some(text => text.includes(' costs '))), 'with that page open: its list is on the canvas')
+  await openData(page)
+
+  // A field the page binds shows its count, its list under the row, and warns before it is removed or renamed.
+  await page.locator('[data-collection="dishes"]').click()
+  await page.locator('[role=tab][data-data-tab="fields"]').click()
+  const titleUses = page.locator('[data-field="title"] [data-field-uses]')
+  check(await until(async () => (await titleUses.count()) === 1), 'a field the page binds shows how many places use it')
+  await titleUses.click()
+  check(await page.locator(`[data-field-uses-list="title"] [data-use="page:${p.pageId}"]`).count() === 1, 'its list names the page')
+  await page.locator('[data-field="title"]').hover()
+  await page.locator('[data-field="title"] [data-row-remove]').click()
+  const warning = page.locator('[data-confirm]')
+  await warning.waitFor()
+  check(/Used in \d+ places?/.test(await page.locator('[data-confirm-description]').innerText()), 'removing it says "Used in N places" first')
+  check(await page.locator(`[data-confirm-uses] [data-use-open="page:${p.pageId}"]`).count() === 1 && await page.locator('[data-confirm-ok]').isDisabled(), 'lists the page, and the button is disabled')
+  await page.waitForTimeout(400)
+  await shot(page, 'd5-used-in')
+  await page.locator('[data-confirm-cancel]').click()
+  await warning.waitFor({ state: 'detached' })
+  check(bildr('modules/blog/entities/dish.json').fields.some(field => field.name === 'title'), 'nothing was removed')
+  // A rename asks the same, and the name goes back.
+  await page.getByLabel('Name of title').fill('heading')
+  await page.getByLabel('Name of title').press('Enter')
+  await warning.waitFor()
+  check(/not rewritten/.test(await page.locator('[data-confirm-description]').innerText()), 'renaming it says the places that name it are not rewritten')
+  await page.locator('[data-confirm-cancel]').click()
+  await warning.waitFor({ state: 'detached' })
+  check(await until(async () => (await page.getByLabel('Name of title').count()) === 1) && bildr('modules/blog/entities/dish.json').fields.some(field => field.name === 'title'), 'and the name is back')
+  // The collection too: deleting it is refused while the page reads it.
+  await page.locator('[data-collection="dishes"]').hover()
+  await page.locator('[data-collection="dishes"]').locator('xpath=..').getByLabel('Collection actions').click({ force: true })
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  await warning.waitFor()
+  check(/Used in \d+ places?/.test(await page.locator('[data-confirm-description]').innerText()) && await page.locator('[data-confirm-ok]').isDisabled(), 'deleting the collection says "Used in N places" and cannot be confirmed')
+  await page.locator('[data-confirm-cancel]').click()
+  await warning.waitFor({ state: 'detached' })
+
   // ── The JSON tab and All model files (S3) ────────────────────────────────────────────────
   // An edit of Menu's file in the JSON tab shows in its Fields tab (Menu has no rows, so a new column is a plain addition).
   const rawContent = page.locator('textarea[data-testid="raw-content"], [data-testid="raw-content"] textarea').first()
