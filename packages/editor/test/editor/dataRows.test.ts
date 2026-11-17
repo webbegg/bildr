@@ -6,7 +6,7 @@ import { designData } from '../../src/design/data.ts'
 import { FOLDED_KEY } from '../../src/editor/dataTree.ts'
 import { takeStart } from '../../src/editor/views.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
-import { byLabel, indexPage, setupHarness, world } from '../design/harness.ts'
+import { byLabel, FakeEventSource, indexPage, setupHarness, world } from '../design/harness.ts'
 import { fixtureModule, inputs, open, q, qa, text } from './dataKit.ts'
 
 /**
@@ -20,6 +20,7 @@ setupHarness()
 const FIRST = '0b6f6a52-1c7a-4c1e-9a52-7a0e2f3d9a01'
 const SECOND = '0b6f6a52-1c7a-4c1e-9a52-7a0e2f3d9a02'
 const HINT = 'Live rows come from your app. Switch to Sample data to edit.'
+const ROW_CHANGED = 'This row changed: your value is kept; press Enter to save it over the new row.'
 // The rows as the editor first shows them: what an edit sends as `base`, the row the user saw.
 const [FIRST_ROW, SECOND_ROW] = (JSON.parse(blogModelFiles()['.bildr/modules/blog/fixtures/post.json']!) as { rows: Array<Record<string, unknown>> }).rows
 
@@ -48,6 +49,14 @@ const edit = async (row: number, col: number) => {
   cell(row, col)!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
   await settle()
   return q$('[data-cell-input]')!
+}
+
+/** Another writer (an agent, the file) changes a field of the first row, and the editor reads the model again, as it does on a model event. */
+let version = 100
+const changeUnderneath = async (values: Record<string, unknown>) => {
+  await fixtureModule().fixture_row_update!({ entity: 'ent_post', row: FIRST, values })
+  FakeEventSource.instances.at(-1)!.send({ type: 'model', version: ++version, files: ['.bildr/modules/blog/fixtures/post.json'], source: 'disk' })
+  await settle()
 }
 
 describe('Live rows', () => {
@@ -323,8 +332,38 @@ describe('Sample data rows', () => {
     const input = await edit(0, 0)
     await typeInto(input, 'Late')
     await key(input, 'Enter')
-    expect(text(q('[data-cell-error]'))).toContain('changed since you loaded it')
+    expect(text(q('[data-cell-error]'))).toBe(ROW_CHANGED)
     expect(q$('[data-cell-input]')!.value).toBe('Late')
+  })
+
+  it('keeps the typed value after a conflict, takes the row as it is now as its base, and the next Enter saves over it', async () => {
+    const { actions } = await sample()
+    const input = await edit(0, 0)
+    await typeInto(input, 'Mine')
+    await changeUnderneath({ body: 'Changed elsewhere' })
+    await key(q('[data-cell-input]'), 'Enter')
+    expect(text(q('[data-cell-error]'))).toBe(ROW_CHANGED)
+    expect(q$('[data-cell-input]')!.value).toBe('Mine')
+    expect(world.model.modules.blog!.fixtures.find(entry => entry.entity === 'ent_post')!.rows[0]).toMatchObject({ title: 'Hello bildr', body: 'Changed elsewhere' })
+    await key(q('[data-cell-input]'), 'Enter')
+    expect(inputs(actions, 'fixture_row_update')).toEqual([
+      { entity: 'ent_post', row: FIRST, base: FIRST_ROW, values: { title: 'Mine' } },
+      { entity: 'ent_post', row: FIRST, base: { ...FIRST_ROW, body: 'Changed elsewhere' }, values: { title: 'Mine' } }
+    ])
+    expect(q('[data-cell-error]')).toBeNull()
+    expect(q('[data-cell-input]')).toBeNull()
+    expect(text(cell(0, 0))).toBe('Mine')
+    expect(world.model.modules.blog!.fixtures.find(entry => entry.entity === 'ent_post')!.rows[0]).toMatchObject({ title: 'Mine', body: 'Changed elsewhere' })
+  })
+
+  it('sends the row as it was when the edit began, not as it is when Enter is pressed: a change in between is a conflict, not an overwrite', async () => {
+    const { actions } = await sample()
+    const input = await edit(0, 0)
+    await typeInto(input, 'Mine')
+    await changeUnderneath({ body: 'Changed elsewhere' })
+    await key(q('[data-cell-input]'), 'Enter')
+    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: FIRST, base: FIRST_ROW, values: { title: 'Mine' } }])
+    expect(world.model.modules.blog!.fixtures.find(entry => entry.entity === 'ent_post')!.rows[0]).toMatchObject({ title: 'Hello bildr' })
   })
 
   it('deletes the selected rows after a confirmation, in one fixture_rows_delete', async () => {
@@ -342,6 +381,17 @@ describe('Sample data rows', () => {
     expect(inputs(actions, 'fixture_rows_delete')).toEqual([{ entity: 'ent_post', rows: [FIRST, SECOND], base: { [FIRST]: FIRST_ROW, [SECOND]: SECOND_ROW } }])
     expect(qa('[data-record]')).toHaveLength(1)
     expect(q('[data-delete-selected]')).toBeNull()
+  })
+
+  it('sends the rows as they were when the delete was chosen, not as they are once it is confirmed: a change while asking refuses it', async () => {
+    const { actions } = await sample()
+    await click(qa('[data-row-select]')[0]!)
+    await click(q('[data-delete-selected]'))
+    await changeUnderneath({ body: 'Changed while asking' })
+    await click(qa('button').find(button => button.textContent?.trim() === 'Delete rows' || button.textContent?.trim() === 'Delete row') ?? null)
+    expect(inputs(actions, 'fixture_rows_delete')).toEqual([{ entity: 'ent_post', rows: [FIRST], base: { [FIRST]: FIRST_ROW } }])
+    expect(text(q('[data-rows-error]'))).toContain('changed')
+    expect(qa('[data-record]')).toHaveLength(2)
   })
 
   it('says why the last row stays, and deletes nothing', async () => {

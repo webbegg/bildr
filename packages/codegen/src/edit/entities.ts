@@ -152,19 +152,49 @@ export const fits = (type: Field['type'], value: Value, optional: boolean): bool
 
 export const isExpression = (value: unknown) => typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).some(key => key.startsWith('$'))
 
+/** What a stored value of each type has to be, said after "which is not". */
+const FORMATS: Record<Field['type'], string> = {
+  text: 'text',
+  integer: 'a whole number',
+  number: 'a number',
+  boolean: 'true or false',
+  date: 'an ISO date (YYYY-MM-DD)',
+  datetime: 'an ISO datetime (YYYY-MM-DDTHH:MM:SSZ)',
+  image: 'text (an image address)',
+  uuid: 'a uuid'
+}
+
+/** The sample rows (by place, from 1) whose value for `field` (as it would be) it can't take; `value` is undefined for a row that has none. */
+const sampleProblems = (draft: Draft, entity: EntityFile, field: Field): Array<{ row: number, value: Value | undefined }> => {
+  const optional = !field.required || !!field.nullable
+  const found: Array<{ row: number, value: Value | undefined }> = []
+  for (const mod of Object.values(draft.model.modules)) {
+    for (const fixtures of mod.fixtures.filter(entry => entry.entity === entity.id)) {
+      fixtures.rows.forEach((row, index) => {
+        const value = row[field.name]
+        if (value === undefined ? !optional && field.default === undefined : !fits(field.type, value, optional)) found.push({ row: index + 1, value })
+      })
+    }
+  }
+  return found
+}
+
+/** Why a field edit that leaves the type alone is refused for its sample rows: the first row and value that don't fit, and how many more there are. */
+const sampleMessage = (field: Field, found: ReturnType<typeof sampleProblems>): string => {
+  const [first, ...more] = found
+  const also = more.length ? ` (${more.length} more sample row${more.length === 1 ? '' : 's'} ${more.length === 1 ? 'has' : 'have'} the same problem)` : ''
+  const why = first!.value === undefined || first!.value === null
+    ? `has no ${field.name}, which the field now requires`
+    : `has ${field.name} ${JSON.stringify(first!.value)}, which is not ${FORMATS[field.type]}`
+  return `Sample row ${first!.row} ${why}: ${first!.value === undefined || first!.value === null ? 'fill it' : 'fix it'} in Sample data first${also}.`
+}
+
 /** Why `field` (as it would be) doesn't fit the values the model already has for it: its default, the fixtures rows, query conditions. */
 const valueProblems = (draft: Draft, entity: EntityFile, field: Field): string[] => {
   const optional = !field.required || !!field.nullable
   const problems: string[] = []
   if (field.default !== undefined && !fits(field.type, field.default, optional)) problems.push(`its default ${JSON.stringify(field.default)}`)
-  for (const mod of Object.values(draft.model.modules)) {
-    for (const fixtures of mod.fixtures.filter(entry => entry.entity === entity.id)) {
-      fixtures.rows.forEach((row, index) => {
-        const value = row[field.name]
-        if (value === undefined ? !optional && field.default === undefined : !fits(field.type, value, optional)) problems.push(`fixtures row ${index + 1}`)
-      })
-    }
-  }
+  for (const { row } of sampleProblems(draft, entity, field)) problems.push(`fixtures row ${row}`)
   for (const query of queries(draft).filter(entry => entry.from === entity.id && entry.where?.field === field.name)) {
     const value = query.where!.value
     const values = query.where!.op === 'in' && Array.isArray(value) ? value : [value]
@@ -473,6 +503,9 @@ export const entityFieldUpdate = defineEdit({
       if (next.pattern !== undefined && type !== 'text') fail('invalid', `${field.name} has a pattern: only a text field takes one (remove it first)`)
     }
     const problems = valueProblems(draft, entity, next)
+    // The type is the same: it is a sample value that doesn't fit, so say which, not a type change that did not happen.
+    const samples = next.type === field.type ? sampleProblems(draft, entity, next) : []
+    if (samples.length) fail('invalid', sampleMessage(next, samples))
     if (problems.length) fail('invalid', `${field.name} can't be ${next.required ? 'a required ' : 'a '}${next.type}: ${listOf(problems)} ${problems.length === 1 ? 'holds a value' : 'hold values'} it can't take`)
     const map = fieldMapOf(draft, id)
     if (given !== undefined) {

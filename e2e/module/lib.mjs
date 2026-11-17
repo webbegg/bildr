@@ -272,6 +272,68 @@ export async function settled(timeout = 2 * MINUTE) {
   }, timeout)
 }
 
+/**
+ * Runs `fn` (a step that deletes a route the app generated) while Nitro rebuilds the app. For about a second every route of the app
+ * answers 500 (the dev log says "Could not load ... .post.ts: ENOENT": the rebuild met the file the sync had just removed), then it
+ * answers again; the editor's own routes (`/__bildr`) answer throughout. The editor reads the app's rows in the background (the Live
+ * read of the Rows tab), so the browser logs such a 500 as a console error, and that message does not name the route.
+ *
+ * So this collects the 500s the browser sees (`response`, with the URL) while `fn` runs and the app settles, and checks that every one
+ * is on a route the app generated (`/api/blog/`, or a document), that none is on the editor, and that the editor's own requests all
+ * succeeded. It drops from `errors` only the console 500s whose own location is one of those responses, once for each response: any
+ * other console error stays an error. Then it waits for the migrations to be confirmed, the dev log to be quiet and the model to
+ * settle. Returns `{ fiveHundreds, dropped }`.
+ */
+export async function whileAppRebuilds(page, errors, fn, what = 'the rebuild') {
+  const from = errors.length
+  const onEditor = url => new URL(url).pathname.startsWith('/__bildr')
+  const onAppRoute = (url, type) => {
+    const { pathname } = new URL(url)
+    return !onEditor(url) && (pathname.startsWith('/api/blog/') || type === 'document')
+  }
+  const answered = []
+  const consoleFailures = []
+  const onResponse = response => answered.push({ url: response.url(), status: response.status(), type: response.request().resourceType() })
+  const onConsole = (message) => {
+    // The harness's own listener (launch) ran first: the error it kept for this message is the last one, when it kept one.
+    // Chromium words it "status of 500 (Server Error)".
+    const kept = errors.at(-1)
+    if (message.type() === 'error' && /status of 500 \(/.test(message.text()) && kept?.endsWith(`: ${message.text()}`)) consoleFailures.push({ kept, url: message.location().url ?? '' })
+  }
+  page.on('response', onResponse)
+  page.on('console', onConsole)
+  let settledAfter
+  try {
+    await fn()
+    await quiesce(60_000)
+    await quiet()
+    settledAfter = await settled()
+  } finally {
+    page.off('response', onResponse)
+    page.off('console', onConsole)
+  }
+  const fiveHundreds = answered.filter(entry => entry.status === 500)
+  check(settledAfter, `${what}: the model loads with no drift once the app has settled`)
+  check(fiveHundreds.every(entry => onAppRoute(entry.url, entry.type)), `every 500 of ${what} is on a route the app generated, none on /__bildr (${fiveHundreds.length}: ${[...new Set(fiveHundreds.map(entry => new URL(entry.url).pathname))].join(', ') || 'none'})`)
+  const editorFailed = answered.filter(entry => onEditor(entry.url) && entry.status >= 400)
+  check(editorFailed.length === 0 && answered.some(entry => onEditor(entry.url)), `the editor's own requests all succeeded during ${what} (${answered.filter(entry => onEditor(entry.url)).length} answered${editorFailed.length ? `; failed: ${editorFailed.map(entry => `${entry.status} ${new URL(entry.url).pathname}`).join(', ')}` : ''})`)
+  // A console 500 is expected once per 500 the browser got for an app route; the others stay in `errors`.
+  const unmatched = fiveHundreds.filter(entry => onAppRoute(entry.url, entry.type)).map(entry => entry.url)
+  const dropped = consoleFailures.filter(({ url }) => {
+    const at = unmatched.indexOf(url)
+    if (at >= 0) unmatched.splice(at, 1)
+    return at >= 0
+  }).map(({ kept }) => kept)
+  const during = errors.splice(from)
+  for (const kept of dropped) {
+    const at = during.indexOf(kept)
+    if (at >= 0) during.splice(at, 1)
+  }
+  errors.push(...during)
+  console.log(`INFO ${dropped.length} console 500(s) matched a 500 of the app's routes during ${what}; ${consoleFailures.length - dropped.length} did not and stay errors`)
+  return { fiveHundreds, dropped }
+}
+
 // ── Pages, components, layouts of a script ─────────────────────────────
 
 let unique = 0

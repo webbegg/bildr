@@ -13,7 +13,7 @@ import type { DataCollection, DataField } from '../../../shared/dataModel.ts'
  */
 const props = defineProps<{ collection: DataCollection, row: Row, rowId: string }>()
 const editor = useEditor()
-const saver = (field: DataField) => editor.rowsEditable ? (value: CellValue) => saveSampleValue(editor, props.collection.id, props.rowId, field.name, value, { ...props.row }) : undefined
+const saver = (field: DataField) => editor.rowsEditable ? async (value: CellValue) => (await saveSampleValue(editor, props.collection.id, props.rowId, field.name, value, { ...props.row }))?.message : undefined
 </script>
 
 <template>

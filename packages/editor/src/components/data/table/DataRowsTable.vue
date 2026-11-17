@@ -7,7 +7,10 @@ import { cellEditText, cellValue, moveCell } from '../../../shared/dataGrid.ts'
 import type { CellMove, CellPos } from '../../../shared/dataGrid.ts'
 import { rowId } from '../../../shared/dataTable.ts'
 import type { TableSort } from '../../../shared/dataTable.ts'
-import type { CellValue } from '../../../editor/sampleRows.ts'
+import type { CellValue, SaveRefusal } from '../../../editor/sampleRows.ts'
+
+/** What a cell says when the row changed under it (a conflict): the typed value is kept, and the next Enter saves it over the row as it is now. */
+const ROW_CHANGED = 'This row changed: your value is kept; press Enter to save it over the new row.'
 
 /**
  * The rows table of the Data workspace: one column per field and one row per record, over rows it is given. The Rows tab
@@ -35,7 +38,7 @@ const { fields, rows, loaded, sort = null, sortable = true, openable = true, ope
   /** The ids of the rows whose checkbox is on. */
   selected?: string[]
   /** `base` is the row as it was shown when the edit began (a row with no id is named by its place, which a delete moves). */
-  save?: (row: string, field: DataField, value: CellValue, base: Row) => Promise<string | undefined>
+  save?: (row: string, field: DataField, value: CellValue, base: Row) => Promise<SaveRefusal | undefined>
 }>()
 const emit = defineEmits<{ sort: [key: string], toggle: [id: string], open: [id: string], select: [id: string, on: boolean], selectAll: [on: boolean], remove: [id: string] }>()
 
@@ -91,16 +94,16 @@ function onCellClick(event: MouseEvent, row: number, col: number) {
   if (!(event.target as HTMLElement).closest('input')) activate({ row, col })
 }
 
-/** Sends a value for a cell, keeping its refusal for the cell. Resolves whether it was saved. */
-async function put(id: string, field: DataField, value: CellValue, base: Row): Promise<boolean> {
+/** Sends a value for a cell, keeping its refusal for the cell. Resolves the refusal (`undefined`: it was saved), or `null` when nothing was sent. */
+async function put(id: string, field: DataField, value: CellValue, base: Row): Promise<SaveRefusal | undefined | null> {
   const key = cellKey(id, field.name)
-  if (!save || pending.has(key)) return false
+  if (!save || pending.has(key)) return null
   Reflect.deleteProperty(refusals, key)
   pending.add(key)
   const refused = await save(id, field, value, base)
   pending.delete(key)
-  if (refused) refusals[key] = refused
-  return !refused
+  if (refused) refusals[key] = refused.message
+  return refused
 }
 
 function beginEdit(row: number, col: number) {
@@ -140,13 +143,20 @@ async function commit(): Promise<boolean> {
     Reflect.deleteProperty(refusals, key)
     return true
   }
-  const saved = await put(current.id, field, cellValue(field, current.text), current.base)
-  if (saved) {
+  const refused = await put(current.id, field, cellValue(field, current.text), current.base)
+  if (refused === undefined) {
     editing.value = null
     return true
   }
-  // Refused: the cell keeps what was typed, with the message, and asks again only when the text changes.
-  if (editing.value) editing.value.refused = current.text
+  // Refused: the cell keeps what was typed, with the message, and asks again only when the text changes (Enter asks again at once).
+  if (editing.value) {
+    editing.value.refused = current.text
+    // The row changed under the cell: the typed value is kept, and the base is the row as it is now, so the next Enter saves over it.
+    if (refused?.conflict && refused.fresh) {
+      editing.value.base = refused.fresh
+      refusals[cellKey(current.id, current.name)] = ROW_CHANGED
+    }
+  }
   focusInput()
   return false
 }

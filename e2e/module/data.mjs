@@ -21,7 +21,7 @@
  *   has its own list/create routes and needs no publishing;
  * - the published app's WebMCP tools (`document.modelContext`): the generated app has no bildr runtime (D4).
  */
-import { action, appApi, appShows, bildr, call, canvas, check, editorUrl, newPage, openData, openEditor, quiesce, quiet, run, settled, shot, until } from './lib.mjs'
+import { action, appApi, appShows, bildr, call, canvas, check, editorUrl, newPage, openData, openEditor, quiesce, quiet, run, settled, shot, until, whileAppRebuilds } from './lib.mjs'
 
 await run('data', async ({ page, browser, errors }) => {
   // The app's create route takes the id the client form mints (a uuid).
@@ -292,13 +292,13 @@ await run('data', async ({ page, browser, errors }) => {
   await page.locator(`[data-tree-item="action:${archive.id}"] [data-artifact-label]`).filter({ hasText: 'Archive a dish' }).waitFor()
   await page.waitForTimeout(400)
   await page.evaluate(() => document.activeElement?.blur())
-  // Nothing uses it: Delete removes it.
-  await page.locator(`[data-artifact-menu="${archive.id}"]`).click({ force: true })
-  await page.getByRole('menuitem', { name: 'Delete' }).click()
-  await page.locator('[data-artifact-submit]').click()
-  check(await until(() => bildr('modules/blog/actions/archive-dish.json') === undefined), 'an action nothing uses is deleted')
-  await quiesce(60_000)
-  await quiet()
+  // Nothing uses it: Delete removes it. Its generated route goes with it, and Nitro rebuilds the app (see whileAppRebuilds).
+  await whileAppRebuilds(page, errors, async () => {
+    await page.locator(`[data-artifact-menu="${archive.id}"]`).click({ force: true })
+    await page.getByRole('menuitem', { name: 'Delete' }).click()
+    await page.locator('[data-artifact-submit]').click()
+    check(await until(() => bildr('modules/blog/actions/archive-dish.json') === undefined), 'an action nothing uses is deleted')
+  }, 'the rebuild after the first delete')
 
   // The Steps tab (D10c): a blank action gets a load and an update, saved with one action_update. The picture is taken of it, and
   // then the action, with its steps, is deleted (below).
@@ -346,49 +346,15 @@ await run('data', async ({ page, browser, errors }) => {
   await page.evaluate(() => document.activeElement?.blur())
   await shot(page, 'd10c-action-steps')
 
-  // An action with steps is deleted (it had load and update steps, saved above). The generated route of an action goes with it, and
-  // Nitro rebuilds the app: for about a second every route of the app answers 500 (the dev log says "Could not load ...
-  // restock-dish.post.ts: ENOENT", the rebuild met the file the sync had just removed), then it answers again. The editor's own routes
-  // answer throughout. So this step collects the 500s the browser sees while it happens (`response`, with the URL), and checks that
-  // every one is on a route the app generated and none on the editor (`/__bildr`), and that all the editor's own requests succeeded.
-  // The console error Chromium logs for a 500 does not name the route, so it is ignored only as often as a 500 the browser logged for
-  // an app route (the console message's own location): any other console error stays an error here, as it does in the rest of the script.
-  const consoleBefore = errors.length
-  const onEditor = url => new URL(url).pathname.startsWith('/__bildr')
-  const onAppRoute = (url, type) => {
-    const { pathname } = new URL(url)
-    return !onEditor(url) && (pathname.startsWith('/api/blog/') || type === 'document')
-  }
-  const answered = []
-  const consoleFailures = []
-  const onResponse = response => answered.push({ url: response.url(), status: response.status(), type: response.request().resourceType() })
-  const onConsole = (message) => {
-    // Chromium words it "status of 500 (Server Error)": this used to look for "(Internal Server Error)", which no message has, so no console 500 was ever expected.
-    if (message.type() === 'error' && /status of 500 \(/.test(message.text())) consoleFailures.push(message.location().url ?? '')
-  }
-  page.on('response', onResponse)
-  page.on('console', onConsole)
+  // An action with steps is deleted (it had load and update steps, saved above): the same rebuild (whileAppRebuilds).
   await page.waitForTimeout(400)
-  await page.locator(`[data-artifact-menu="${restock.id}"]`).click({ force: true })
-  await page.getByRole('menuitem', { name: 'Delete' }).click()
-  await page.locator('[data-artifact-submit]').click()
-  check(await until(() => bildr('modules/blog/actions/restock-dish.json') === undefined), 'an action with load and update steps is deleted')
-  await quiesce(60_000)
-  await quiet()
+  await whileAppRebuilds(page, errors, async () => {
+    await page.locator(`[data-artifact-menu="${restock.id}"]`).click({ force: true })
+    await page.getByRole('menuitem', { name: 'Delete' }).click()
+    await page.locator('[data-artifact-submit]').click()
+    check(await until(() => bildr('modules/blog/actions/restock-dish.json') === undefined), 'an action with load and update steps is deleted')
+  }, 'the rebuild after the second delete')
   check(await until(async () => (await appApi('/api/blog/dishes?limit=1&offset=0'))?.status === 200, 60_000), 'the app answers again after Nitro rebuilt (a 500 for about a second, not a route left behind)')
-  check(await settled(), 'and the model loads with no drift, the generated files of the action gone')
-  page.off('response', onResponse)
-  page.off('console', onConsole)
-  const fiveHundreds = answered.filter(entry => entry.status === 500)
-  check(fiveHundreds.every(entry => onAppRoute(entry.url, entry.type)), `every 500 of the rebuild is on a route the app generated, none on /__bildr (${fiveHundreds.length}: ${[...new Set(fiveHundreds.map(entry => new URL(entry.url).pathname))].join(', ') || 'none'})`)
-  const editorFailed = answered.filter(entry => onEditor(entry.url) && entry.status >= 400)
-  check(editorFailed.length === 0 && answered.some(entry => onEditor(entry.url)), `the editor's own requests all succeeded during the rebuild (${answered.filter(entry => onEditor(entry.url)).length} answered${editorFailed.length ? `; failed: ${editorFailed.map(entry => `${entry.status} ${new URL(entry.url).pathname}`).join(', ')}` : ''})`)
-  // A console 500 is expected once per 500 the browser logged for an app route; the others stay in `errors`.
-  let expected = consoleFailures.filter(url => fiveHundreds.some(entry => entry.url === url && onAppRoute(entry.url, entry.type))).length
-  const rebuildErrors = errors.splice(consoleBefore)
-  errors.push(...rebuildErrors.filter(message => !(expected > 0 && /status of 500 \(/.test(message) && expected--)))
-  console.log(`INFO ${rebuildErrors.length - (errors.length - consoleBefore)} console 500(s) on app routes from the rebuild were expected here`)
-  await quiet()
 
   // The Used in link opens the page on the Canvas.
   await page.locator('[data-tree-item^="query:"]').first().waitFor()
@@ -476,12 +442,12 @@ await run('data', async ({ page, browser, errors }) => {
   // ── The pictures of Queries and Actions ──────────────────────────────────────────────────
   // The checks above left their own data in the project (Menu, a page and its list query, the page that reads the cheap query): the
   // pictures are of a project re-seeded with only what they show, the blog and Dish with the query and the action over it.
-  await action('page_delete', { page: p.pageId })
-  await action('query_delete', { query: query.queryId })
-  await action('entity_delete', { entity: menu.id })
-  await action('query_update', { query: cheap.id, inPlace: true, orderBy: [{ field: 'title', direction: 'asc' }], limit: 6 })
-  await quiesce(60_000)
-  await quiet()
+  await whileAppRebuilds(page, errors, async () => {
+    await action('page_delete', { page: p.pageId })
+    await action('query_delete', { query: query.queryId })
+    await action('entity_delete', { entity: menu.id })
+    await action('query_update', { query: cheap.id, inPlace: true, orderBy: [{ field: 'title', direction: 'asc' }], limit: 6 })
+  }, 'the rebuild after the re-seed')
   await openData(page)
   await page.locator(`[data-tree-item="query:${cheap.id}"]`).click()
   await page.locator('[role=tab][data-data-tab="definition"]').click()

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ValueSchema } from '../model/schemas.ts'
+import { FixturesFileSchema, ValueSchema } from '../model/schemas.ts'
 import type { EntityFile, FieldSchema, FixturesFile, Value } from '../model/schemas.ts'
 import { defineEdit, fail, kebab } from './core.ts'
 import type { Draft } from './core.ts'
@@ -35,7 +35,8 @@ export const fixtureSource = {
 
 const RowRef = z.string().min(1).max(200).describe('The row\'s id (a row without one: its place among the rows, counting from 0)')
 const Values = z.record(z.string().min(1).max(60), ValueSchema)
-const RowBase = z.record(z.string().min(1).max(60), ValueSchema)
+/** A row as the caller saw it: any row a fixtures file holds, so the file's own row schema (a key of any length, even an empty one). */
+const RowBase = FixturesFileSchema.shape.rows.element
 const BASE_NOTE = 'the row as the caller saw it: when the row at that key is not this one (the rows changed since, so a place among them now names another row), nothing is written and it is refused as a conflict (409)'
 
 /** A row's key: its `id` when it has one, else its place among the rows. */

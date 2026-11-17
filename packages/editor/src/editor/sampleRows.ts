@@ -1,4 +1,5 @@
 import type { Row } from '@bildr/codegen/query'
+import { rowId } from '../shared/dataTable.ts'
 import { attempt } from './dataArtifactActions.ts'
 import type { Editor } from './useEditor.ts'
 
@@ -15,11 +16,23 @@ import type { Editor } from './useEditor.ts'
 /** A cell's value to save: what `cellValue` reads of typed text, or a boolean toggled. */
 export type CellValue = string | number | boolean | null
 
+/**
+ * A refused save of a value. A conflict (409: the row at that key is not the one that was shown) reads the model again first, so
+ * `fresh` is the row as it is now (undefined when the row is gone): the base for a save that goes over it.
+ */
+export interface SaveRefusal { message: string, conflict: boolean, fresh?: Row }
+
 const refusal = (done: { result: unknown } | { error: string }): string | undefined => 'error' in done ? done.error : undefined
 
-/** Saves one value of one sample row; `base` is the row as it was shown when the edit began. */
-export async function saveSampleValue(editor: Editor, entity: string, row: string, field: string, value: CellValue, base?: Row): Promise<string | undefined> {
-  return refusal(await attempt(editor, 'fixture_row_update', { entity, row, ...(base ? { base } : {}), values: { [field]: value } }, 'Could not save the value'))
+/** Saves one value of one sample row; `base` is the row as it was shown when the edit began. The module's refusal, if any. */
+export async function saveSampleValue(editor: Editor, entity: string, row: string, field: string, value: CellValue, base?: Row): Promise<SaveRefusal | undefined> {
+  const done = await attempt(editor, 'fixture_row_update', { entity, row, ...(base ? { base } : {}), values: { [field]: value } }, 'Could not save the value')
+  if (!('error' in done)) return undefined
+  if (done.code !== 'conflict') return { message: done.error, conflict: false }
+  await editor.reload()
+  const at = editor.collectionRows.findIndex((entry, index) => rowId(entry, index) === row)
+  const fresh = editor.collectionRows[at]
+  return { message: done.error, conflict: true, ...(fresh ? { fresh: { ...fresh } } : {}) }
 }
 
 /** Adds a blank sample row; its refusal, if any. */

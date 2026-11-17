@@ -9,14 +9,15 @@ import type { Editor } from './useEditor.ts'
 
 /**
  * Runs a module action and, when the module refuses it, takes the refusal for the caller to show where the user is typing
- * (a dialog, a form) instead of the screen's banner. `error` is its message.
+ * (a dialog, a form) instead of the screen's banner. `error` is its message, and `code` the module's code for it (`conflict`, …).
  */
-export async function attempt<T extends Record<string, unknown>>(editor: Editor, name: string, input: Record<string, unknown>, fallback: string): Promise<{ result: T } | { error: string }> {
+export async function attempt<T extends Record<string, unknown>>(editor: Editor, name: string, input: Record<string, unknown>, fallback: string): Promise<{ result: T } | { error: string, code?: string }> {
   const result = await editor.run(name, input) as T | undefined
   if (result) return { result }
   const error = editor.error ?? fallback
+  const code = editor.errorCode ?? undefined
   editor.dismissError()
-  return { error }
+  return { error, ...(code ? { code } : {}) }
 }
 
 /**
