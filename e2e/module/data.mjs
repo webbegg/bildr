@@ -10,9 +10,13 @@
  * refused while it is used; an action made from a template, on its Overview, and its Steps (D10c): a load and an update added, saved, in the JSON tab and
  * regenerated, and then deleted with its steps (the dev server answers 500 for a moment while Nitro rebuilds, and recovers).
  *
+ * The last section is the Sample rows (D4, S4): Live is read-only with its hint; on Sample data a cell is edited in
+ * place, by keyboard too, a refusal stays on the cell, a reload keeps the value, rows are added and deleted (one, and the
+ * checked ones), the record panel edits the open row, and the app's own rows are the same at the end (E2).
+ *
  * Dropped (feature doc: records are app data, not editor data; no hosted collections or publish):
- * - `record_create`, quick-add and inline cell edit: the table is read-only (E2); rows come from the
- *   app's own API, so this script posts them to the running app instead;
+ * - `record_create` and quick-add of the app's rows: Live is read-only (E2); rows come from the
+ *   app's own API, so this script posts them to the running app instead (sample rows are the editor's: D4);
  * - `collection_update publicRead/publicCreate`, `/api/public/<slug>/...` and Publish: the generated app
  *   has its own list/create routes and needs no publishing;
  * - the published app's WebMCP tools (`document.modelContext`): the generated app has no bildr runtime (D4).
@@ -504,6 +508,124 @@ await run('data', async ({ page, browser, errors }) => {
   await page.waitForTimeout(400)
   await page.evaluate(() => document.activeElement?.blur())
   await shot(page, 'd10b-action-overview')
+
+  // ── Sample rows (D4, S4) ─────────────────────────────────────────────────────────────────
+  // Live rows are the app's: read-only, with a hint. Sample data is the entity's fixtures: cells, add and delete are module actions that
+  // write .bildr/modules/blog/fixtures/dish.json, and the app's own rows never change (E2).
+  const appRows = async () => {
+    const answer = await appApi('/api/blog/dishes?limit=100&offset=0')
+    return answer?.status === 200 ? JSON.stringify((answer.body.items ?? []).map(row => [row.id, row.title, row.cost]).sort()) : undefined
+  }
+  const appBefore = await appRows()
+  // Sample rows are generated into the app's seed files, so each write rebuilds the dev server for a moment and the app's routes answer 500
+  // (as after an action is deleted above). The editor reads the app's rows in the background, so the browser logs those 500s: they are
+  // expected, once each, only on the app's own routes; any other console error stays an error.
+  const sampleErrorsFrom = errors.length
+  const rebuilds = []
+  const onRebuild = (message) => {
+    if (message.type() === 'error' && /status of 500 \(/.test(message.text()) && new URL(message.location().url || 'http://none/').pathname.startsWith('/api/blog/')) rebuilds.push(message.location().url)
+  }
+  page.on('console', onRebuild)
+  const fixturesFile = () => bildr('modules/blog/fixtures/dish.json')
+  const sampleData = () => page.locator('[data-live-badge]').getByRole('button', { name: 'Sample data', exact: true })
+  await openData(page)
+  await page.locator('[data-collection="dishes"]').click()
+  await page.locator('[role=tab][data-data-tab="rows"]').click()
+  check(await until(async () => (await page.locator('[data-live-hint]').count()) === 1), 'on Live the Rows tab shows a hint')
+  check((await page.locator('[data-live-hint]').innerText()) === 'Live rows come from your app. Switch to Sample data to edit.', 'which says to switch to Sample data to edit')
+  check(await page.locator('[data-add-row], [data-row-select], [data-record-delete]').count() === 0, 'and Live has no Add row, checkbox or delete')
+  await page.locator('[data-cell="0-0"]').dblclick()
+  check(await page.locator('[data-cell-input]').count() === 0 && fixturesFile() === undefined, 'a double-click on a live cell edits nothing (there are no sample rows yet either)')
+
+  await sampleData().click()
+  check(await until(async () => (await page.locator('[data-add-row]').count()) === 1 && (await page.locator('[data-live-hint]').count()) === 0), 'Sample data takes the hint away and offers Add row')
+  check(await page.locator('[data-record]').count() === 0, 'Dish has no sample rows yet')
+  await page.locator('[data-add-row]').click()
+  const firstRow = await until(() => fixturesFile()?.rows?.length === 1 && fixturesFile().rows[0])
+  check(!!firstRow && /^[0-9a-f-]{36}$/.test(firstRow.id), `Add row writes a row with a new id to the fixtures file, which was made for it (${JSON.stringify(firstRow)})`)
+  check(await until(async () => (await page.locator('[data-record]').count()) === 1), 'and the table shows it')
+
+  // A cell is edited in place, and saved when Enter is pressed.
+  await page.locator('[data-cell="0-0"]').dblclick()
+  await page.locator('[data-cell-input]').fill('Flat white')
+  await page.locator('[data-cell-input]').press('Enter')
+  check(await until(() => fixturesFile()?.rows?.[0]?.title === 'Flat white'), 'a text cell saved with Enter is written to the fixtures file')
+  // The keyboard: the arrow moves to the next cell, Enter edits it, and a number is a number.
+  await page.locator('[data-cell="0-0"]').press('ArrowRight')
+  check(await page.locator('[data-cell="0-1"]').getAttribute('data-cell-active') === 'true' && await page.locator('[data-cell-active]').count() === 1, 'ArrowRight moves the active cell')
+  await page.locator('[data-cell="0-1"]').press('Enter')
+  await page.locator('[data-cell-input]').fill('4.5')
+  await page.locator('[data-cell-input]').press('Enter')
+  check(await until(() => fixturesFile()?.rows?.[0]?.cost === 4.5), 'a number cell is saved as a number (4.5)')
+  // A value the field can't take is refused on the cell, and what was typed stays; nothing is written.
+  await page.locator('[data-cell="0-1"]').press('F2')
+  await page.locator('[data-cell-input]').fill('abc')
+  await page.locator('[data-cell-input]').press('Enter')
+  check(await until(async () => (await page.locator('[data-cell="0-1"] [data-cell-error]').count()) === 1), 'a bad number is refused on its cell')
+  check((await page.locator('[data-cell="0-1"] [data-cell-error]').innerText()).includes('cost must be a number') && await page.locator('[data-cell-input]').inputValue() === 'abc', 'with the module\'s words, and the typed text kept')
+  check(fixturesFile().rows[0].cost === 4.5, 'and the file keeps the value it had')
+  await page.locator('[data-cell-input]').press('Escape')
+  check(await page.locator('[data-cell-input]').count() === 0 && (await page.locator('[data-cell="0-1"]').innerText()).trim() === '4.5', 'Escape gives the cell back as it was saved')
+  errors.splice(0, errors.length, ...errors.filter(message => !refused422.test(message)))
+
+  // The new row's file is a change the app regenerates for; once it is calm, a reload keeps the value.
+  await quiesce(60_000)
+  await quiet()
+  await page.reload()
+  await page.locator('[data-records]').waitFor()
+  await sampleData().click()
+  check(await until(async () => (await page.locator('[data-cell="0-0"]').innerText()).trim() === 'Flat white'), 'after a reload the edited cell still reads Flat white (the value persists)')
+  check((await page.locator('[data-cell="0-1"]').innerText()).trim() === '4.5', 'and the number too')
+
+  // More rows by the module's own action, then a delete from the row, and the rows checked deleted together.
+  await action('fixture_row_create', { entity: dish.entityId, values: { title: 'Espresso', cost: 3 } })
+  await action('fixture_row_create', { entity: dish.entityId, values: { title: 'Mocha', cost: 5 } })
+  check(await until(async () => (await page.locator('[data-record]').count()) === 3), 'rows the module adds show in the table')
+  const [flat, espresso, mocha] = fixturesFile().rows.map(row => row.id)
+  await page.locator(`[data-record="${flat}"]`).hover()
+  await page.locator(`[data-record="${flat}"] [data-record-delete]`).click()
+  check(await until(() => fixturesFile()?.rows?.length === 2 && !fixturesFile().rows.some(row => row.id === flat)), 'the trash button on a row deletes that row from the fixtures file')
+  await action('fixture_row_create', { entity: dish.entityId, values: { title: 'Flat white', cost: 4.5 } })
+  check(await until(async () => (await page.locator('[data-record]').count()) === 3), 'a third row is added again')
+  await page.locator('[data-record]').nth(0).locator('[data-row-select]').check()
+  await page.locator('[data-record]').nth(1).locator('[data-row-select]').check()
+  check((await page.locator('[data-delete-selected]').innerText()).trim() === 'Delete 2 rows', 'two checked rows offer Delete 2 rows')
+  await page.locator('[data-delete-selected]').click()
+  check((await page.locator('[role=dialog]').innerText()).includes('Delete 2 rows?'), 'which asks first')
+  await page.getByRole('button', { name: 'Delete rows', exact: true }).click()
+  check(await until(() => fixturesFile()?.rows?.length === 1 && fixturesFile().rows[0].id !== espresso && fixturesFile().rows[0].id !== mocha), 'and confirming deletes both rows in one action, in the fixtures file')
+
+  // The record panel edits the open row too.
+  await page.locator('[role=dialog]').waitFor({ state: 'detached' })
+  await page.locator('[data-record]').first().hover()
+  await page.locator('[data-record-open]').first().click()
+  await page.locator('[data-record-panel]').waitFor()
+  await page.locator('[data-record-panel] [data-record-field="title"] input').fill('Cortado')
+  await page.locator('[data-record-panel] [data-record-field="title"] input').press('Enter')
+  check(await until(() => fixturesFile()?.rows?.[0]?.title === 'Cortado'), 'a field of the record panel saves the sample row')
+
+  // Rows for the picture: a few, with one cell refused.
+  await action('fixture_row_create', { entity: dish.entityId, values: { title: 'Espresso', cost: 3 } })
+  await action('fixture_row_create', { entity: dish.entityId, values: { title: 'Mocha', cost: 5 } })
+  await page.locator('[data-record-close]').click()
+  check(await until(async () => (await page.locator('[data-record]').count()) === 3), 'three sample rows are shown')
+  await page.locator('[data-cell="2-1"]').dblclick()
+  await page.locator('[data-cell-input]').fill('five')
+  await page.locator('[data-cell-input]').press('Enter')
+  await page.locator('[data-cell="2-1"] [data-cell-error]').waitFor()
+  await page.waitForTimeout(400)
+  await shot(page, 'd4-sample-rows')
+  await page.locator('[data-cell-input]').press('Escape')
+  errors.splice(0, errors.length, ...errors.filter(message => !refused422.test(message)))
+
+  // E2: through all of this the app's own rows did not change.
+  check(await until(async () => (await appRows()) !== undefined, 60_000), 'the app answers its list route')
+  check((await appRows()) === appBefore, 'the app\'s own rows are what they were: the editor wrote only sample data')
+  check(!(await action('health_get')).drift?.files?.length, 'and the project has no drift')
+  page.off('console', onRebuild)
+  let expected500s = rebuilds.length
+  errors.push(...errors.splice(sampleErrorsFrom).filter(message => !(expected500s > 0 && /status of 500 \(/.test(message) && expected500s--)))
+  console.log(`INFO ${rebuilds.length - expected500s} console 500(s) on the app's routes while it rebuilt for the sample rows were expected here`)
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 // A new entity regenerates the app and restarts the dev server: its event stream ends mid-request.

@@ -1042,6 +1042,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     dataTabs: data.dataTabs,
     dataTab: data.dataTab,
     rowsPreference: data.rowsPreference,
+    rowsEditable: data.rowsEditable,
     recordId: data.recordId,
     collectionRows: data.collectionRows,
     rowsSource: data.rowsSource,

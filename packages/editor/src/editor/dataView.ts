@@ -16,10 +16,11 @@ import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
  * entity and a connection a REST data source (`shared/dataModel.ts`); both are read from the
  * model, so they follow every edit, undo and file change.
  *
- * The rows are not the document's and nothing writes them (E2): they are what the app's
+ * The rows are not the document's and nothing here writes the app's (E2): they are what the app's
  * generated list route answers (P5's `createLiveRows`), or the entity's fixtures (the Sample
  * data) when it can't or when the Sample data side of the switch is chosen, and are read only
- * while the Data view is open. The switch is the user's choice (`rowsPreference`); the rows
+ * while the Data view is open. Only the Sample data is edited (D4, `rowsEditable`, saved by `sampleRows.ts`): the fixtures
+ * are `.bildr/` files, written by the module's `fixture_row_*` actions. The switch is the user's choice (`rowsPreference`); the rows
  * shown come from `rowsSource`, which is Sample data too when Live is chosen and the app does
  * not answer (`rowsFallback`: the choice stays Live, so choosing it again retries).
  *
@@ -141,6 +142,8 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
 
   const fixtures = computed<Row[]>(() => model.value && rowsCollection.value ? fixtureRowsOf(model.value, rowsCollection.value.id) : [])
   const sampleChosen = computed(() => rowsPreference.value === 'sample' && rowsCollection.value?.kind !== 'rest')
+  /** Whether the rows shown can be edited: Sample data is chosen (a REST collection has none, and Live is the app's, E2). */
+  const rowsEditable = computed(() => sampleChosen.value)
   const answered = computed<Row[] | undefined>(() => rowsCollection.value ? live.rows.value[rowsCollection.value.id] : undefined)
   /** Where the rows shown come from: the app's when it answered (and Live is chosen), else the fixtures. */
   const rowsSource = computed<RowsSource>(() => !sampleChosen.value && answered.value ? 'live' : 'sample')
@@ -202,5 +205,5 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
     if (view.value === 'data') void live.refresh()
   })
 
-  return { collections, connections, queries, actions, queryId, actionId, dataQuery, dataAction, collectionId, connectionId, dataFiles, dataFile, dataDirty, leaveData, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
+  return { collections, connections, queries, actions, queryId, actionId, dataQuery, dataAction, collectionId, connectionId, dataFiles, dataFile, dataDirty, leaveData, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, rowsEditable, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
 }

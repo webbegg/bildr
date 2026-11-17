@@ -18,6 +18,7 @@ import { datasourceCreate, datasourceDelete, datasourceUpdate } from './datasour
 import { actionCreate, actionDelete, actionRename, actionUpdate } from './actions.ts'
 import { pageUseAdd, pageUseRemove, pageUseUpdate, queryCreate, queryCreateForList, queryDelete, queryRename, queryUpdate } from './queries.ts'
 import { entityCreate, entityDelete, entityFieldAdd, entityFieldMove, entityFieldRemove, entityFieldUpdate, entityUpdate } from './entities.ts'
+import { fixtureRowCreate, fixtureRowsDelete, fixtureRowUpdate } from './fixtures.ts'
 
 /**
  * `@bildr/codegen/edit`: the visual editor's operations on the `.bildr/`
@@ -108,6 +109,10 @@ export const EDITS = {
   action_update: actionUpdate,
   action_rename: actionRename,
   action_delete: actionDelete,
+  // Sample data (D4): the rows of an entity's fixtures file.
+  fixture_row_create: fixtureRowCreate,
+  fixture_row_update: fixtureRowUpdate,
+  fixture_rows_delete: fixtureRowsDelete,
   page_use_add: pageUseAdd,
   page_use_update: pageUseUpdate,
   page_use_remove: pageUseRemove
@@ -136,6 +141,7 @@ export { bindingPaths, bindingScope, entityFieldNames, queryBehind } from './sco
 export type { ScopeName } from './scope.ts'
 export { describeUse, describeUses, idUses, usesOf } from './usage.ts'
 export type { ArtifactUse, UseKind, UseVia } from './usage.ts'
+export { fixtureRowKey } from './fixtures.ts'
 export { datasourceEnvVars } from './datasources.ts'
 export type { DataSourceEnvVar } from './datasources.ts'
 export { detectItems, inferFields, isUnder, remoteUrl } from './remote.ts'

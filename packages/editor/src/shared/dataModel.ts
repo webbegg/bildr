@@ -30,6 +30,8 @@ export interface DataField {
   label: string
   type: FieldType
   required: boolean
+  /** Set by the app, not a client: its sample values can't be edited. */
+  readonly?: boolean
   /** REST entities: the key of the field in the API's items. */
   remote?: string
 }
@@ -155,6 +157,7 @@ const collectionOf = (model: Model, folder: string, mod: ModuleModel, entity: En
       label: fieldLabel(field.name),
       type: field.type,
       required: field.required === true,
+      readonly: field.readonly === true,
       ...(remote ? { remote: rest?.fieldMap?.[field.name] ?? field.name } : {})
     })),
     kind: source?.kind ?? 'memory',

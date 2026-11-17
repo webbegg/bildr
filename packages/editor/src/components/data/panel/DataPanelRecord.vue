@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import type { Row } from '@bildr/codegen/query'
 import { useEditor } from '../../../editor/useEditor.ts'
-import type { DataCollection } from '../../../shared/dataModel.ts'
+import { saveSampleValue } from '../../../editor/sampleRows.ts'
+import type { CellValue } from '../../../editor/sampleRows.ts'
+import type { DataCollection, DataField } from '../../../shared/dataModel.ts'
 
 /**
- * The row panel: one row per field, read-only (rows are app data reached through the generated
- * API, E2, so there is no record write here). Close in the head. The hosted panel also fetched the
- * open record through the connection's Get endpoint; the list row is what shows here.
+ * The row panel: one row per field. The app's rows are read-only (they are app data reached through the generated
+ * API, E2, so there is no write here); the Sample data's fields are inputs (D4, S4), each saved as one `fixture_row_update`
+ * (`DataPanelValue`). Close in the head. The hosted panel also fetched the open record through the connection's Get endpoint;
+ * the list row is what shows here.
  */
-defineProps<{ collection: DataCollection, row: Row, rowId: string }>()
+const props = defineProps<{ collection: DataCollection, row: Row, rowId: string }>()
 const editor = useEditor()
+const saver = (field: DataField) => editor.rowsEditable ? (value: CellValue) => saveSampleValue(editor, props.collection.id, props.rowId, field.name, value) : undefined
 </script>
 
 <template>
@@ -46,6 +50,7 @@ const editor = useEditor()
         <DataPanelValue
           :field="field"
           :model-value="row[field.name] ?? null"
+          :save="saver(field)"
         />
       </EditorRow>
       <p

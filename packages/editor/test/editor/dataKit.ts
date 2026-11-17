@@ -35,7 +35,7 @@ const REFUSAL_STATUS = { invalid_input: 400, not_found: 404, invalid: 422 } as c
  * it writes becomes the model the mocked `model_get` serves. So the editor's tests meet the module's own rules (names, uses,
  * refusals and their words), not a copy of them.
  */
-export const artifactModule = (): Handlers => Object.fromEntries((['query_create', 'query_update', 'query_rename', 'query_delete', 'action_create', 'action_update', 'action_rename', 'action_delete'] as EditName[]).map(name => [name, (input: Record<string, unknown>) => {
+const moduleEdits = (names: EditName[]): Handlers => Object.fromEntries(names.map(name => [name, (input: Record<string, unknown>) => {
   const files = serializeModel(world.model)
   const outcome = applyEdit(files, name, input)
   if (!outcome.ok) return new Failure(REFUSAL_STATUS[outcome.code], outcome.code, outcome.message)
@@ -49,6 +49,11 @@ export const artifactModule = (): Handlers => Object.fromEntries((['query_create
   world.model = loaded.model
   return { ...outcome.result, changed: outcome.changes.map(change => change.path) }
 }]))
+
+export const artifactModule = (): Handlers => moduleEdits(['query_create', 'query_update', 'query_rename', 'query_delete', 'action_create', 'action_update', 'action_rename', 'action_delete'])
+
+/** The sample-data actions (D4), the real ones over the mocked model: a cell saved here is the row the Rows tab shows next. */
+export const fixtureModule = (): Handlers => moduleEdits(['fixture_row_create', 'fixture_row_update', 'fixture_rows_delete'])
 
 /** The tree's items by name: `data-tree-item` is the item's key (`collection:<id>`, `connection:<id>`). */
 export const ITEMS = {

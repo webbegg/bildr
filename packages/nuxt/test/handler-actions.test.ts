@@ -89,7 +89,9 @@ const NAMES = [
   // P5: a list's query and what a page uses.
   'query_create_for_list', 'query_update', 'page_use_add', 'page_use_update', 'page_use_remove',
   // D10a: queries and actions of their own.
-  'query_create', 'query_rename', 'query_delete', 'action_create', 'action_update', 'action_rename', 'action_delete'
+  'query_create', 'query_rename', 'query_delete', 'action_create', 'action_update', 'action_rename', 'action_delete',
+  // D4: sample-data rows.
+  'fixture_row_create', 'fixture_row_update', 'fixture_rows_delete'
 ].sort()
 
 // T10a (S11, D12): every editor operation is an action, callable over HTTP.
