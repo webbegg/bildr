@@ -6,7 +6,7 @@ import { createDesign } from '../../src/design/store.ts'
 import { createEditor } from '../../src/editor/useEditor.ts'
 import { FOLDED_KEY } from '../../src/editor/dataTree.ts'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
-import { FakeEventSource, baseHandlers, byLabel, combo, indexPage, inputOf, menuItem, menuLabels, modelGet, selectOption, setupHarness, world } from '../design/harness.ts'
+import { FakeEventSource, baseHandlers, byLabel, chooseConnection, combo, indexPage, inputOf, menuItem, menuLabels, modelGet, selectOption, setupHarness, world } from '../design/harness.ts'
 import type { Handlers } from '../design/harness.ts'
 import { ITEMS, activeTab, addUnusedField, artifactModule, confirmText, freeQuotes, inputs, open, q, qa, tab, tabNames, text, treeItem } from './dataKit.ts'
 
@@ -334,8 +334,11 @@ describe('the Data workspace (S2)', () => {
     const developerWords = /repository|use-case|generated code/i
     // Nor do the Used in lists and the warnings before a delete or a rename: no ids, no "by id", "list route" or "generated names".
     const usageWords = /repository|use-case|generated (code|names)|by id|list route|\bids?\b|\b(n|pg|cmp|act|q|ent|fld)_\w+/i
+    // New collection is for people who do not write code: no data sources, memory, repositories, fixtures, endpoints or ids.
+    const newCollectionWords = /memory|sqlite|\bsources?\b|datasources?|repositor|fixtures?|endpoints?|\bids?\b/i
     let onSteps = false
     let onUsage = false
+    let onNewCollection = false
     const cancel = () => click(textButton('Cancel'))
     // Each step brings a screen, a dialog or a confirmation up; what the user reads on it is checked.
     const steps: Array<() => Promise<unknown>> = [
@@ -368,20 +371,51 @@ describe('the Data workspace (S2)', () => {
       () => click(collection('quotes')),
       ...['rows', 'fields', 'endpoints'].map(name => () => click(tab(name))),
       () => click(treeItem('quotes')),
-      // New collection (S7): each storage choice, the connection's Add…, and the dialogs it leads to.
-      () => click(byLabel('Add collection')),
-      () => click(q('[data-storage="database"]')),
-      () => click(q('[data-storage="rest"]')),
+      // New collection (S7): each storage choice, the connection's Add…, and the dialogs REST API leads to. The first says nothing of
+      // sources, memory or endpoints; the second is step 2 and says which connection it is for (or that it is a new one).
+      async () => {
+        await click(byLabel('Add collection'))
+        expect(text(q('[role="dialog"]'))).toContain('New collection')
+        expect(qa('[data-storage]').map(item => item.getAttribute('data-storage'))).toEqual(['sample', 'database', 'rest'])
+        onNewCollection = true
+      },
+      async () => {
+        await click(q('[data-storage="database"]'))
+        expect(q('[data-storage="database"]')?.getAttribute('aria-checked')).toBe('true')
+      },
+      async () => {
+        await click(q('[data-storage="rest"]'))
+        expect(q('[data-new-collection-connection]')).not.toBeNull()
+        expect(q('[data-form-row="Name (optional)"]')).not.toBeNull()
+      },
+      async () => {
+        onNewCollection = false
+        await cancel()
+        expect(q('[role="dialog"]')).toBeNull()
+      },
+      async () => {
+        await click(q('[data-connection-add-collection]'))
+        expect(q('[data-storage="rest"]')?.getAttribute('aria-checked')).toBe('true')
+        expect(text(q('[data-new-collection-connection]'))).toContain('quotes')
+      },
+      async () => {
+        await click(q('[data-artifact-submit]'))
+        expect(text(q('[role="dialog"]'))).toContain('New collection from quotes')
+        expect(text(q('[role="dialog"]'))).toContain('Step 2 of 2')
+      },
       cancel,
-      () => click(q('[data-connection-add-collection]')),
-      () => click(q('[data-artifact-submit]')),
+      async () => {
+        await click(byLabel('Add collection'))
+        await click(q('[data-storage="rest"]'))
+        await chooseConnection('New connection…')
+        await click(q('[data-artifact-submit]'))
+        expect(text(q('[role="dialog"]'))).toContain('New collection from a new connection')
+      },
       cancel,
-      () => click(byLabel('Add collection')),
-      () => click(q('[data-storage="rest"]')),
-      () => selectOption(q('[data-new-collection-connection] [role="combobox"]') ?? q('[data-new-collection-connection]'), 'New connection…'),
-      () => click(q('[data-artifact-submit]')),
-      cancel,
-      () => menuItem(byLabel('Add connection'), 'Import from URL'),
+      async () => {
+        await menuItem(byLabel('Add connection'), 'Import from URL')
+        expect(text(q('[role="dialog"]'))).toContain('Import from URL')
+      },
       cancel,
       () => menuItem(byLabel('Connection actions'), 'Delete'),
       () => click(q('[data-confirm-cancel]')),
@@ -453,6 +487,7 @@ describe('the Data workspace (S2)', () => {
       expect(said(), `after step ${index}`).not.toMatch(unwanted)
       if (onSteps) expect(said(), `on the Steps tab, after step ${index}`).not.toMatch(developerWords)
       if (onUsage) expect(said('[role="dialog"], [data-used-in], [data-fields-tab]'), `on Used in, after step ${index}`).not.toMatch(usageWords)
+      if (onNewCollection) expect(said('[role="dialog"]'), `in New collection, after step ${index}`).not.toMatch(newCollectionWords)
     }
     expect(byLabel('Add connection')).not.toBeNull()
   }, 20_000)
@@ -823,10 +858,28 @@ describe('collections', () => {
     const design = createDesign()
     try {
       const earlier = createEditor(design)
-      earlier.newCollectionRequest++
+      earlier.requestData('new-collection')
       earlier.mode = 'data'
       await open()
       expect(text(q('[role="dialog"]'))).toContain('New collection')
+    } finally {
+      off()
+      design.dispose()
+    }
+  })
+
+  it('opens Import from URL, named as its menu entry is, when another screen asked for it; the last request is the one answered', async () => {
+    const off = registerScreens(vi.fn())
+    const design = createDesign()
+    try {
+      const earlier = createEditor(design)
+      earlier.requestData('new-collection')
+      earlier.requestData('import')
+      expect(earlier.dataRequest).toEqual({ kind: 'import', seq: 2 })
+      earlier.mode = 'data'
+      await open()
+      expect(text(q('[role="dialog"]'))).toContain('Import from URL')
+      expect(qa('[role="dialog"]')).toHaveLength(1)
     } finally {
       off()
       design.dispose()

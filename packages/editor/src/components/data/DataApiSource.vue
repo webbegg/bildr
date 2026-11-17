@@ -2,24 +2,25 @@
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import { callAction, errorMessage } from '../../api.ts'
+import { useCollectionName } from '../../editor/collectionName.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { mapPreview, mappingFields, mappingProblems, mappingRow } from '../../shared/dataMapping.ts'
 import type { InferredField, MappingRow } from '../../shared/dataMapping.ts'
 import { endpointPathProblem, entityProposal, sourceNameOf } from '../../shared/dataModel.ts'
 
 /**
- * The "Import from API" dialog: fetch a JSON endpoint by its URL, review the proposed mapping with
+ * The "Import from URL" dialog (also New collection's last step on a new connection): fetch a JSON endpoint by its URL, review the proposed mapping with
  * a live preview, then save it (in the footer) as a new collection. In the module a collection
  * lives in a data source, so Fetch finds the REST data source of the URL's origin or makes one
  * (`datasource_create`, named after the host; one made here and not used is deleted again when the
  * dialog closes), previews through it (`datasource_preview`), and Save is one `entity_create`.
- * Each opening starts clean, with the name New collection took, if any.
+ * Each opening starts clean, with the name New collection took (`initialName`), if any.
  *
  * Not in the module: editing a saved one-URL source (a collection reads through its data source:
  * Edit mapping is in its panel), paging, a root-array response and a query string in a saved path.
  */
 const open = defineModel<boolean>('open', { default: false })
-const props = defineProps<{ title: string, description?: string, typed?: string }>()
+const props = defineProps<{ title: string, description?: string, initialName?: string }>()
 const editor = useEditor()
 const toast = useToast()
 
@@ -35,8 +36,7 @@ const itemsPath = ref('')
 const rows = ref<MappingRow[]>([])
 const items = shallowRef<unknown[]>([])
 const total = ref<number | null>(null)
-const name = ref('')
-const nameEdited = ref(false)
+const { name, reset: resetName, propose: proposeName, touch: touchName } = useCollectionName(() => props.initialName)
 const fetching = ref(false)
 const saving = ref(false)
 const error = ref('')
@@ -67,9 +67,7 @@ function reset() {
   rows.value = []
   items.value = []
   total.value = null
-  // The name typed in New collection stays: fetching does not propose another over it.
-  name.value = props.typed ?? ''
-  nameEdited.value = !!name.value
+  resetName()
   error.value = ''
   source.value = null
   mappedFor = ''
@@ -123,7 +121,7 @@ async function fetchPreview() {
     const fetched = JSON.stringify([url.value.trim(), itemsPath.value])
     if (fetched !== mappedFor || !rows.value.length) rows.value = result.fields.map(mappingRow)
     mappedFor = fetched
-    if (!nameEdited.value) name.value = proposal.value.name
+    proposeName(proposal.value.name)
   } catch (failure) {
     error.value = errorMessage(failure)
   } finally {
@@ -199,7 +197,7 @@ onBeforeUnmount(() => {
             v-model="name"
             :placeholder="proposal.name"
             data-api-name
-            @update:model-value="nameEdited = true"
+            @update:model-value="touchName"
           />
         </EditorFormRow>
         <form @submit.prevent="fetchPreview()">

@@ -15,6 +15,7 @@ import { DEFAULT_FRAMES, defaultFrames, frameShortcut, visibleFrames } from '@bi
 import type { DeviceId } from '@bildr/editor-core/styleFields'
 import type { SelectionStep } from '../editor/selection.ts'
 import { siblingParent, topLevelSelection } from '../editor/selection.ts'
+import type { DataRequest } from '../editor/views.ts'
 
 export type CommandGroup = 'insert' | 'actions' | 'goto' | 'help'
 
@@ -234,10 +235,8 @@ export interface CommandEditor {
   component?: unknown
   /** Bumped to ask the Settings view to scroll to its Variables section. */
   variablesRequest: number
-  /** Bumped to ask the Data view for its Import from API dialog. */
-  importRequest: number
-  /** Bumped to ask the Data view for its New collection dialog. */
-  newCollectionRequest: number
+  /** Asks the Data view for a dialog (Import from URL, New collection), which the Data screen opens with once it is there. */
+  requestData: (kind: DataRequest['kind']) => void
   /** The model's collections (entities). */
   collections: readonly { name: string }[]
   sidebarPanel: SidebarPanel
@@ -361,12 +360,12 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
     })),
     // The request first: the Data view is another screen, which starts with it, and asks where the rows live (nothing is made silently).
     action('data:new-collection', 'New collection', 'i-lucide-database', ['collection', 'data', 'entity', 'add', 'cms'], always, ({ editor }) => {
-      editor.newCollectionRequest++
+      editor.requestData('new-collection')
       editor.mode = 'data'
     }),
     // The request first, as above.
-    action('data:import-api', 'Import from API', 'i-lucide-globe', ['collection', 'data', 'synced', 'json', 'endpoint'], always, ({ editor }) => {
-      editor.importRequest++
+    action('data:import-api', 'Import from URL', 'i-lucide-globe', ['collection', 'data', 'synced', 'json', 'endpoint'], always, ({ editor }) => {
+      editor.requestData('import')
       editor.mode = 'data'
     }),
     {

@@ -18,6 +18,8 @@
  * - `EditorSwitch`: every boolean, including "include" checkboxes.
  * - `EditorButton`: `primary` for the one main action, `soft` for secondary
  *   actions, `ghost` for toolbar and row actions, `danger` for destructive ones.
+ * - `EditorChoiceCards`: a pick of one among a few options that each need a
+ *   line to explain them: a radiogroup of cards, one tab stop, the arrows pick.
  * - `EditorFormRow`: a labelled control in modals and settings (inline with a
  *   120 px label column, or `stacked`). The inspector panels keep `EditorRow`
  *   (88 px) and `EditorStyleSection`.

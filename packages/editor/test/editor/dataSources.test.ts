@@ -2,12 +2,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
 import DataView from '../../src/views/DataView.vue'
 import { takeStart } from '../../src/editor/views.ts'
-import { baseHandlers, selectOption, setupHarness, world } from '../design/harness.ts'
+import { baseHandlers, chooseConnection, setupHarness, world } from '../design/harness.ts'
 import type { Handlers } from '../design/harness.ts'
 
 /**
  * The dialogs of the Data view (U7): a new collection in a connection, its mapping, and Import from
- * API. A collection is an entity over a REST data source: Test is `datasource_preview` (or
+ * URL. A collection is an entity over a REST data source: Test is `datasource_preview` (or
  * `repository_endpoint_test` for a saved one), Save one `entity_create` (or the `entity_field_*`
  * steps of an edited mapping). The mocked actions check every call against the real schemas.
  */
@@ -58,7 +58,8 @@ describe('a new collection in a connection', () => {
 
   it('tests the list endpoint with datasource_preview and proposes the entity, its fields and a preview', async () => {
     const actions = await dialog({ datasource_preview: () => preview() })
-    expect(text(q('[role="dialog"]'))).toContain('New collection')
+    expect(text(q('[role="dialog"]'))).toContain('New collection from quotes')
+    expect(text(q('[role="dialog"]'))).toContain('Step 2 of 2')
     expect(text(q('[role="dialog"]'))).toContain('Relative to https://dummyjson.com')
     await test('/todos')
     expect(inputs(actions, 'datasource_preview')).toEqual([{ datasource: 'ds_quotes', path: '/todos' }])
@@ -79,6 +80,14 @@ describe('a new collection in a connection', () => {
     expect((q('[data-api-name]') as HTMLInputElement).value).toBe('Chores')
     await test('/todos')
     expect((q('[data-api-name]') as HTMLInputElement).value).toBe('Chores')
+  })
+
+  it('makes nothing when it is cancelled after New collection handed on to it', async () => {
+    const actions = await dialog({ datasource_delete: ok({ database: true }) })
+    expect(q('[data-connection-source]')).not.toBeNull()
+    await click(button('Cancel'))
+    expect(q('[role="dialog"]')).toBeNull()
+    for (const name of ['entity_create', 'datasource_create', 'datasource_delete']) expect(actions.named(name), name).toEqual([])
   })
 
   it('saves it as one entity_create over the connection, with the plural the path gave', async () => {
@@ -277,7 +286,7 @@ describe('a mapping save refused partway', () => {
   })
 })
 
-describe('Import from API', () => {
+describe('Import from URL', () => {
   const openImport = async () => {
     const trigger = q('[data-synced-add]')!
     trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
@@ -292,7 +301,7 @@ describe('Import from API', () => {
   it('fetches through the data source of the URL\'s origin, and saves the path under it without the query', async () => {
     const actions = await open({ datasource_preview: () => preview(), entity_create: ok({ entityId: 'ent_todo' }) })
     await openImport()
-    expect(text(q('[role="dialog"]'))).toContain('Import from API')
+    expect(text(q('[role="dialog"]'))).toContain('Import from URL')
     await fetchUrl('https://dummyjson.com/todos?limit=5')
     expect(actions.named('datasource_create')).toEqual([])
     expect(inputs(actions, 'datasource_preview')).toEqual([{ datasource: 'ds_quotes', path: '/todos?limit=5' }])
@@ -306,15 +315,54 @@ describe('Import from API', () => {
     const actions = await open({ datasource_preview: () => preview(), entity_create: ok({ entityId: 'ent_todo' }) })
     await click(q('[aria-label="Add collection"]'))
     await click(q('[data-storage="rest"]'))
-    await selectOption(q('[data-new-collection-connection] [role="combobox"]') ?? q('[data-new-collection-connection]'), 'New connection…')
+    await chooseConnection('New connection…')
     await typeInto(q('[data-new-collection-name]'), 'Chores')
     await click(q('[data-artifact-submit]'))
-    expect(text(q('[role="dialog"]'))).toContain('Import from API')
+    expect(text(q('[role="dialog"]'))).toContain('New collection from a new connection')
+    expect(text(q('[role="dialog"]'))).toContain('Step 2 of 2')
     expect((q('[data-api-name]') as HTMLInputElement).value).toBe('Chores')
     await fetchUrl('https://dummyjson.com/todos')
     expect((q('[data-api-name]') as HTMLInputElement).value).toBe('Chores')
     await click(q('[data-api-save]'))
     expect(inputs(actions, 'entity_create')).toMatchObject([{ name: 'Chores', source: 'ds_quotes' }])
+  })
+
+  describe('cancelled after New collection handed on to it', () => {
+    const handedOn = async (extra: Handlers) => {
+      const actions = await open(extra)
+      await click(q('[aria-label="Add collection"]'))
+      await click(q('[data-storage="rest"]'))
+      await chooseConnection('New connection…')
+      await typeInto(q('[data-new-collection-name]'), 'Chores')
+      await click(q('[data-artifact-submit]'))
+      expect(q('[data-api-source]')).not.toBeNull()
+      return actions
+    }
+
+    it('makes no collection and no data source, and the first dialog does not come back', async () => {
+      const actions = await handedOn({ datasource_delete: ok({ database: true }) })
+      await click(button('Cancel'))
+      expect(q('[role="dialog"]')).toBeNull()
+      for (const name of ['entity_create', 'datasource_create', 'datasource_delete']) expect(actions.named(name), name).toEqual([])
+    })
+
+    it('removes the data source its Fetch made, and makes no collection', async () => {
+      const actions = await handedOn({ datasource_create: ok({ datasourceId: 'ds_example_org' }), datasource_preview: () => preview(), datasource_delete: ok({ database: true }) })
+      await fetchUrl('https://example.org/todos')
+      expect(inputs(actions, 'datasource_create')).toHaveLength(1)
+      await click(button('Cancel'))
+      expect(q('[role="dialog"]')).toBeNull()
+      expect(inputs(actions, 'datasource_delete')).toEqual([{ datasource: 'ds_example_org' }])
+      expect(actions.named('entity_create')).toEqual([])
+    })
+
+    it('keeps a data source the project already had, which its Fetch found', async () => {
+      const actions = await handedOn({ datasource_preview: () => preview(), datasource_delete: ok({ database: true }) })
+      await fetchUrl('https://dummyjson.com/todos')
+      await click(button('Cancel'))
+      expect(q('[role="dialog"]')).toBeNull()
+      for (const name of ['entity_create', 'datasource_create', 'datasource_delete']) expect(actions.named(name), name).toEqual([])
+    })
   })
 
   it('makes a data source for an origin the project has none for, named after the host', async () => {
@@ -370,6 +418,6 @@ describe('Import from API', () => {
     world.model.modules.blog!.repositories = []
     await open()
     await click(q('[data-empty-import]'))
-    expect(text(q('[role="dialog"]'))).toContain('Import from API')
+    expect(text(q('[role="dialog"]'))).toContain('Import from URL')
   })
 })

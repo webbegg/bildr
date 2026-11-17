@@ -5,13 +5,19 @@
  * `editor.mode` and the view menu, ⌘K and the sidebar all keep doing so: when the new view
  * belongs to the other screen, the adapter asks the shell (`App.vue` registers the router here)
  * to open it, and the editor created there starts on that view, with what the first one carries
- * (the collection to show, a request to open the Import from API dialog).
+ * (the collection to show, a request to open the New collection or the Import from URL dialog).
  */
 import type { EditorView } from './useEditor.ts'
 
 export type Screen = 'design' | 'data'
 
 export const screenOf = (view: EditorView): Screen => view === 'data' ? 'data' : 'design'
+
+/** A dialog the Data screen is asked to open: ⌘K from another screen asks before that screen exists. `seq` counts the requests made, so each is answered once. */
+export interface DataRequest {
+  kind: 'import' | 'new-collection'
+  seq: number
+}
 
 /** What the Data screen starts with when another screen opened it. */
 export interface DataStart {
@@ -20,10 +26,8 @@ export interface DataStart {
   /** The component or layout the Design screen opens in its own view (a "Used in" link of the Data workspace). */
   fileId?: string | null
   collectionId?: string | null
-  /** The Import from API request count: above 0, the dialog opens. */
-  importRequest?: number
-  /** The New collection request count (⌘K): above 0, the dialog opens. */
-  newCollectionRequest?: number
+  /** The last dialog asked for (the earlier one, if two were asked for before the screen opened, is dropped). */
+  dataRequest?: DataRequest | null
 }
 
 /** Opens a screen; what the shell's router answers when the navigation did not happen (a failure it returns, or a rejection) means the editor there will not be made. */

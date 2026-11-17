@@ -117,8 +117,7 @@ describe('editorCommands', () => {
       previewDark: false,
       sidebarPanel: 'pages',
       deviceId: 'mobile',
-      importRequest: 0,
-      newCollectionRequest: 0,
+      requestData: vi.fn(),
       collections: [{ name: 'Post' }],
       insert: vi.fn(),
       group: vi.fn(),
@@ -172,20 +171,29 @@ describe('editorCommands', () => {
     expect(editor.mode).toBe('data')
   })
 
-  it('Import from API asks the Data view for its dialog first, so the screen that opens has the request', () => {
-    const { ctx, editor, commands } = context()
-    const seen: number[] = []
-    Object.defineProperty(editor, 'mode', { configurable: true, get: () => 'build', set: () => seen.push(editor.importRequest) })
+  it('Import from URL asks the Data view for its dialog first, so the screen that opens has the request', () => {
+    const seen: string[] = []
+    const { ctx, editor, commands } = context({
+      requestData: (kind) => {
+        seen.push(`request ${kind}`)
+      }
+    })
+    Object.defineProperty(editor, 'mode', { configurable: true, get: () => 'build', set: (view: string) => seen.push(`mode ${view}`) })
+    expect(find(commands, 'data:import-api').label).toBe('Import from URL')
     find(commands, 'data:import-api').run(ctx)
-    expect(seen).toEqual([1])
+    expect(seen).toEqual(['request import', 'mode data'])
   })
 
   it('New collection asks the Data view for its dialog first (the user picks the storage; nothing is made silently)', () => {
-    const { ctx, editor, commands } = context()
-    const seen: number[] = []
-    Object.defineProperty(editor, 'mode', { configurable: true, get: () => 'build', set: () => seen.push(editor.newCollectionRequest) })
+    const seen: string[] = []
+    const { ctx, editor, commands } = context({
+      requestData: (kind) => {
+        seen.push(`request ${kind}`)
+      }
+    })
+    Object.defineProperty(editor, 'mode', { configurable: true, get: () => 'build', set: (view: string) => seen.push(`mode ${view}`) })
     find(commands, 'data:new-collection').run(ctx)
-    expect(seen).toEqual([1])
+    expect(seen).toEqual(['request new-collection', 'mode data'])
   })
 
   it('opens the Settings view, and Environment variables asks it to scroll to them', () => {

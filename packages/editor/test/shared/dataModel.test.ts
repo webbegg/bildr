@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { loadModel } from '../../../codegen/src/model/load.ts'
 import type { Model } from '@bildr/codegen/model'
 import { blogModelFiles } from '../canvas/fixture.ts'
-import { collectionsOf, connectionsOf, detailPagesOf, entityProposal, fieldLabel, fieldTypeItems, fixtureRowsOf, restDefaults, sourceNameOf, uniqueEntityName } from '../../src/shared/dataModel.ts'
+import { collectionsOf, connectionsOf, detailPagesOf, entityProposal, fieldLabel, fieldTypeItems, fixtureRowsOf, restDefaults, sourceNameOf } from '../../src/shared/dataModel.ts'
 
 /**
  * What the Data view reads of the model (U7): the hosted `Collection`/`Connection` as a read-only
@@ -86,14 +86,6 @@ describe('detailPagesOf', () => {
   it('finds the pages that show one row of an entity through a route parameter', () => {
     expect(detailPagesOf(load(), 'ent_post').map(page => page.id)).toEqual(['pg_post_detail'])
     expect(detailPagesOf(load(), 'ent_quote')).toEqual([])
-  })
-})
-
-describe('uniqueEntityName', () => {
-  it('keeps the name, or numbers it until it is free ignoring case (an entity name is PascalCased)', () => {
-    expect(uniqueEntityName('Untitled', [{ name: 'Post' }])).toBe('Untitled')
-    expect(uniqueEntityName('Untitled', [{ name: 'Untitled' }])).toBe('Untitled2')
-    expect(uniqueEntityName('Untitled', [{ name: 'untitled' }, { name: 'Untitled2' }, { name: 'Untitled4' }])).toBe('Untitled3')
   })
 })
 

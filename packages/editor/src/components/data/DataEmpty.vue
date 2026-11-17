@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useEditor } from '../../editor/useEditor.ts'
 
-/** The Data view with no collections yet: start one (the New collection dialog asks where its rows live), or import one from an API. */
+/** The Data view with no collections yet: start one (the New collection dialog asks where its rows live), or import one from a URL. */
 const editor = useEditor()
 </script>
 
@@ -19,13 +19,13 @@ const editor = useEditor()
         label="New collection"
         icon="i-lucide-plus"
         data-empty-new
-        @click="editor.newCollectionRequest++"
+        @click="editor.requestData('new-collection')"
       />
       <EditorButton
-        label="Import from API"
+        label="Import from URL"
         icon="i-lucide-globe"
         data-empty-import
-        @click="editor.importRequest++"
+        @click="editor.requestData('import')"
       />
     </template>
   </DataEmptyState>

@@ -2,6 +2,7 @@
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import { callAction, errorMessage } from '../../api.ts'
+import { useCollectionName } from '../../editor/collectionName.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { fieldSteps, mapPreview, mappingFields, mappingProblems, mappingRow, mappingRowOf } from '../../shared/dataMapping.ts'
 import type { InferredField, MappingRow } from '../../shared/dataMapping.ts'
@@ -16,12 +17,12 @@ import type { DataCollection, DataConnection } from '../../shared/dataModel.ts'
  * list endpoint is shown as saved (no action changes an endpoint of an existing repository) and
  * Test is `repository_endpoint_test`; Save applies the field changes as `entity_field_*` steps
  * (each one undoable, and a refused one stops the rest). Each opening starts from the saved state (a new one, with the name
- * New collection took, if any).
+ * New collection took, `initialName`, if any: editing a mapping has no name field and ignores it).
  *
  * Not in the module: paging (the generated adapter pages by offset), a root-array response (the
  * adapter reads the items from a top-level key), and an id path (an `id` field is the key).
  */
-const props = defineProps<{ connection: DataConnection, collection?: DataCollection, title: string, description?: string, typed?: string }>()
+const props = defineProps<{ connection: DataConnection, collection?: DataCollection, title: string, description?: string, initialName?: string }>()
 const open = defineModel<boolean>('open', { default: false })
 const editor = useEditor()
 const toast = useToast()
@@ -42,8 +43,7 @@ const DEFAULT_METHOD: Record<Other, string> = { get: 'GET', create: 'POST', upda
 const freshOthers = (): Record<Other, { on: boolean, method: string, path: string }> => Object.fromEntries(OTHERS.map(op => [op, { on: false, method: DEFAULT_METHOD[op], path: '' }])) as Record<Other, { on: boolean, method: string, path: string }>
 
 const listEndpoint = computed(() => props.collection?.endpoints.find(endpoint => endpoint.op === 'list'))
-const name = ref('')
-const nameEdited = ref(false)
+const { name, reset: resetName, propose: proposeName, touch: touchName } = useCollectionName(() => props.collection ? undefined : props.initialName)
 const path = ref('/')
 const itemsPath = ref('')
 const totalPath = ref('')
@@ -61,9 +61,7 @@ let mappedFor = ''
 
 function reset() {
   const list = listEndpoint.value
-  // The name typed in New collection stays: testing does not propose another over it.
-  name.value = props.typed ?? ''
-  nameEdited.value = !!name.value
+  resetName()
   path.value = list?.path ?? '/'
   itemsPath.value = list?.itemsPath ?? ''
   totalPath.value = list?.totalPath ?? ''
@@ -100,7 +98,7 @@ async function test() {
       const tested = JSON.stringify([path.value.trim(), itemsPath.value])
       if (tested !== mappedFor || !rows.value.length) rows.value = result.fields.map(mappingRow)
       mappedFor = tested
-      if (!nameEdited.value) name.value = proposal.value.name
+      proposeName(proposal.value.name)
     }
   } catch (failure) {
     error.value = errorMessage(failure)
@@ -208,7 +206,7 @@ watch(open, (isOpen) => {
             :placeholder="proposal.name"
             autofocus
             data-api-name
-            @update:model-value="nameEdited = true"
+            @update:model-value="touchName"
           />
         </EditorFormRow>
         <form @submit.prevent="test()">

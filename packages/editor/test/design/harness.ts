@@ -368,6 +368,9 @@ export const combo = (selector: string): HTMLElement => {
   return element.matches('[role="combobox"]') ? element : element.querySelector<HTMLElement>('[role="combobox"]') ?? element
 }
 
+/** Picks `label` in New collection's connection list (REST API): the project's connections, or "New connection…". */
+export const chooseConnection = (label: string) => selectOption(combo('[data-new-collection-connection]'), label)
+
 /** Flips a kit switch (USwitch) found by a selector: the switch itself, or the button inside it. */
 export const toggle = async (selector: string) => {
   const element = must(selector)

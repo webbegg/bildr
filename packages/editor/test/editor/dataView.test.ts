@@ -278,6 +278,34 @@ describe('creating a collection (S7)', () => {
     expect(editor.error).toContain('already has the entity')
   })
 
+  it('picks a free name for the source it makes when a REST source is already named "sample"', async () => {
+    world.model.datasources.push({ ...structuredClone(world.model.datasources.find(source => source.kind === 'rest')!), id: 'ds_sample_api', name: 'sample' })
+    const { editor, actions } = await bootData({}, { ...made(), datasource_create: () => ({ datasourceId: 'ds_sample_2', filePath: '.bildr/datasources/sample-2.json', database: false }) })
+    expect(await editor.createCollection({ name: 'Untitled', storage: { kind: 'sample' } })).toBe('ent_untitled')
+    expect(actions.named('datasource_create').map(call => call.input)).toEqual([{ name: 'sample-2', kind: 'memory' }])
+    expect(actions.named('entity_create').map(call => call.input)).toEqual([{ name: 'Untitled', source: 'ds_sample_2', fields: [{ name: 'title', type: 'text' }] }])
+  })
+
+  it('picks a free name for the source it makes when the database is named "sample" (and "sample-2" is taken too)', async () => {
+    for (const source of world.model.datasources) if (source.kind === 'sqlite') source.name = 'sample'
+    world.model.datasources.push({ ...structuredClone(world.model.datasources.find(source => source.kind === 'rest')!), id: 'ds_taken', name: 'sample-2' })
+    const { editor, actions } = await bootData({}, { ...made(), datasource_create: () => ({ datasourceId: 'ds_sample_3', filePath: '.bildr/datasources/sample-3.json', database: false }) })
+    await editor.createCollection({ name: 'Untitled', storage: { kind: 'sample' } })
+    expect(actions.named('datasource_create').map(call => call.input)).toEqual([{ name: 'sample-3', kind: 'memory' }])
+  })
+
+  it('says so when the source it made cannot be removed after the refusal (no silent orphan), with the refusal that explains it', async () => {
+    const { editor, actions } = await bootData({}, {
+      datasource_create: () => ({ datasourceId: 'ds_sample', filePath: '.bildr/datasources/sample.json', database: false }),
+      entity_create: () => new Failure(422, 'invalid', 'Module "blog" already has the entity Untitled (ent_untitled)'),
+      datasource_delete: () => new Failure(403, 'forbidden', 'The history could not be written')
+    })
+    expect(await editor.createCollection({ name: 'Untitled', storage: { kind: 'sample' } })).toBeUndefined()
+    expect(actions.named('datasource_delete')).toHaveLength(1)
+    expect(editor.error).toContain('Could not remove the source made for it: The history could not be written')
+    expect(editor.error).toContain('already has the entity')
+  })
+
   it('keeps a source the project already had when entity_create is refused', async () => {
     world.model.datasources.push(memorySource)
     const { editor, actions } = await bootData({}, { entity_create: () => new Failure(422, 'invalid', 'nope'), datasource_delete: () => ({ changed: [] }) })
@@ -335,21 +363,21 @@ describe('the Data and the Design views are two screens', () => {
     }
   })
 
-  it('the collection shown and an Import from API request go with the view to the Data screen', async () => {
+  it('the collection shown and an Import from URL request go with the view to the Data screen', async () => {
     const open = vi.fn()
     const off = registerScreens(open)
     try {
       const { editor } = await bootData()
       editor.collectionId = 'ent_quote'
-      editor.importRequest++
+      editor.requestData('import')
       editor.mode = 'data'
       const next = await bootData({}, {}, 'data')
       expect(next.editor.collectionId).toBe('ent_quote')
-      expect(next.editor.importRequest).toBe(1)
+      expect(next.editor.dataRequest).toEqual({ kind: 'import', seq: 1 })
       // It was handed over once: an editor created later starts clean.
       const later = await bootData({}, {}, 'data')
       expect(later.editor.collectionId).toBeNull()
-      expect(later.editor.importRequest).toBe(0)
+      expect(later.editor.dataRequest).toBeNull()
     } finally {
       off()
     }
@@ -360,12 +388,12 @@ describe('the Data and the Design views are two screens', () => {
     const off = registerScreens(open)
     try {
       const { editor } = await bootData()
-      editor.newCollectionRequest++
+      editor.requestData('new-collection')
       editor.mode = 'data'
       const next = await bootData({}, {}, 'data')
-      expect(next.editor.newCollectionRequest).toBe(1)
+      expect(next.editor.dataRequest).toEqual({ kind: 'new-collection', seq: 1 })
       const later = await bootData({}, {}, 'data')
-      expect(later.editor.newCollectionRequest).toBe(0)
+      expect(later.editor.dataRequest).toBeNull()
     } finally {
       off()
     }

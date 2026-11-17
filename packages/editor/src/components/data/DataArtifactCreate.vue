@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue'
 import { useArtifactDialog } from '../../editor/useArtifactDialog.ts'
 import { useEditor } from '../../editor/useEditor.ts'
-import { FOCUS_RING } from '../../editorUi.ts'
 import { RESULTS } from '../../shared/dataArtifacts.ts'
 import type { ArtifactKind, QueryResultKind } from '../../shared/dataArtifacts.ts'
 
@@ -101,29 +100,14 @@ async function submit() {
       label="Template"
       stacked
     >
-      <div
-        class="grid w-full grid-cols-2 gap-2"
-        role="radiogroup"
-        aria-label="Template"
-      >
-        <button
-          v-for="option in TEMPLATES"
-          :key="option.value"
-          type="button"
-          role="radio"
-          :aria-checked="template === option.value"
-          class="flex flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors"
-          :class="[FOCUS_RING, template === option.value ? 'border-primary bg-primary/10' : 'border-white/8 hover:bg-white/4']"
-          :data-action-template="option.value"
-          @click="template = option.value"
-        >
-          <span class="text-[12px] font-[550] text-highlighted">{{ option.label }}</span>
-          <span
-            class="text-[11px] leading-4 text-muted"
-            data-action-template-description
-          >{{ option.description }}</span>
-        </button>
-      </div>
+      <EditorChoiceCards
+        :model-value="template"
+        :items="TEMPLATES"
+        label="Template"
+        hook="data-action-template"
+        :columns="2"
+        @update:model-value="template = $event as typeof template"
+      />
     </EditorFormRow>
     <EditorFormRow
       label="Name"

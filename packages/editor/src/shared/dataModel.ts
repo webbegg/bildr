@@ -263,14 +263,6 @@ export const pagesUsingEntity = (model: Model, entityId: string): PageFile[] => 
   return modules.flatMap(mod => mod.pages).filter(page => mentions(page, ids))
 }
 
-/** `name`, or `name2`, `name3`…: the first no entity has, ignoring case (entity names are PascalCased, so a space is not kept). */
-export const uniqueEntityName = (name: string, taken: readonly { name: string }[]): string => {
-  const used = new Set(taken.map(entry => entry.name.toLowerCase()))
-  let candidate = name
-  for (let n = 2; used.has(candidate.toLowerCase()); n++) candidate = `${name}${n}`
-  return candidate
-}
-
 const words = (text: string): string[] => text.split(/[^A-Za-z0-9]+/).filter(Boolean)
 const pascal = (list: string[]) => list.map(word => word.charAt(0).toUpperCase() + word.slice(1)).join('')
 const camel = (list: string[]) => list.map((word, index) => index ? word.charAt(0).toUpperCase() + word.slice(1) : word.charAt(0).toLowerCase() + word.slice(1)).join('')

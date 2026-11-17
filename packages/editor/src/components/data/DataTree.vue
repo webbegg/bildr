@@ -2,7 +2,7 @@
 import { computed, provide, reactive, ref, useTemplateRef, watch } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { dataItemKey } from '../../editor/dataTabs.ts'
-import { TREE_STOP, answeredImports, answeredNewCollections, storeFolded, storedFolded, treeItems } from '../../editor/dataTree.ts'
+import { TREE_STOP, answeredDataRequests, storeFolded, storedFolded, treeItems } from '../../editor/dataTree.ts'
 import type { ArtifactFilters } from '../../editor/dataTree.ts'
 import type { ArtifactKind } from '../../shared/dataArtifacts.ts'
 import { rovingTarget } from '../../editor/rovingKeys.ts'
@@ -11,12 +11,13 @@ import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
 
 /**
  * The Data workspace's tree, Framer CMS's: **Collections** (stored by the app: its database or
- * Sample data, then `Add…`, which opens the New collection dialog: S7, also opened by each
- * `editor.newCollectionRequest`) and **Connections**: each connection (a
+ * Sample data, then `Add…`, which opens the New collection dialog: S7, also opened by a `new-collection` `editor.dataRequest`)
+ * and **Connections**: each connection (a
  * REST API) as a folder of the collections read through it. Choosing an item shows it in the
  * workspace beside the tree, on the tabs its kind has. The Connections `+` makes a new
  * connection (an inline name, then the base URL in its Endpoints tab) or opens the Import from URL
- * dialog (also opened by each `editor.importRequest`). **Queries** and **Actions** (S10) follow, each with a header that folds it
+ * dialog (also opened by an `import` `editor.dataRequest`). New collection's REST API hands on to a second dialog that finishes the
+ * collection (step 2: "New collection from <connection>", or "from a new connection"), with the name typed. **Queries** and **Actions** (S10) follow, each with a header that folds it
  * (remembered), a `+` that opens its create dialog, a filter box when it has many items and a `…` menu per row that renames or
  * deletes it (F2 and Delete do too, as on the collection and connection rows). **Migrations** (S6) is listed only while a migration plan
  * is pending and the project has a database, with its number of changes. **All model files** (S3)
@@ -107,16 +108,26 @@ const internal = computed(() => editor.collections.filter(entry => entry.kind !=
 const connections = computed(() => editor.connections)
 
 /** The New collection dialog, and the connection whose `Add…` opened it. */
-const newCollection = ref(false)
+const newCollectionOpen = ref(false)
 const newCollectionIn = ref<string | null>(null)
-/** The name typed in it, which the dialog it hands over to starts with. */
-const typedName = ref('')
-const fromApi = ref(false)
+
+/** What opens the Import from URL dialog: the name New collection took (a new connection was chosen there), if any. */
+interface ImportRequest {
+  name: string
+  fromNewCollection: boolean
+}
+const importing = ref<ImportRequest | null>(null)
+/** The last one, so the dialog keeps its title while it closes. */
+const lastImport = ref<ImportRequest>({ name: '', fromNewCollection: false })
+watch(importing, (request) => {
+  if (request) lastImport.value = request
+})
+
 const connectionName = ref('')
 const addingConnection = ref(false)
-/** The connection whose `+ Add…` opened the new collection dialog. */
-const addingTo = ref<string | null>(null)
-const addingToConnection = computed(() => connections.value.find(entry => entry.id === addingTo.value))
+/** What opens the collection dialog of a connection: the connection New collection chose, and the name typed there. */
+const addingTo = ref<{ connection: string, name: string } | null>(null)
+const addingToConnection = computed(() => connections.value.find(entry => entry.id === addingTo.value?.connection))
 
 /** The last connection asked for, so the dialog keeps its text while it closes. */
 const dialogConnection = ref(addingToConnection.value)
@@ -126,7 +137,7 @@ watch(addingToConnection, (connection) => {
 
 const connectionMenu: DropdownMenuItem[] = [
   { label: 'New connection', icon: 'i-lucide-server', onSelect: () => (addingConnection.value = true) },
-  { label: 'Import from URL', icon: 'i-lucide-globe', slot: 'from-api', onSelect: () => importFromUrl('') }
+  { label: 'Import from URL', icon: 'i-lucide-globe', slot: 'from-api', onSelect: () => openImport() }
 ]
 
 async function addConnection() {
@@ -153,32 +164,28 @@ function connectionMenuClosed(event: Event) {
   connectionInput.value?.focus()
 }
 
-watch(() => editor.importRequest, (request) => {
-  if (request > (answeredImports.get(editor) ?? 0)) importFromUrl('')
-  answeredImports.set(editor, request)
-}, { immediate: true })
-
-watch(() => editor.newCollectionRequest, (request) => {
-  if (request > (answeredNewCollections.get(editor) ?? 0)) addCollection(null)
-  answeredNewCollections.set(editor, request)
+// A dialog asked for (⌘K, the empty state) opens once, even when it was asked for before this tree was made.
+watch(() => editor.dataRequest, (request) => {
+  if (!request || request.seq <= (answeredDataRequests.get(editor) ?? 0)) return
+  answeredDataRequests.set(editor, request.seq)
+  if (request.kind === 'import') openImport()
+  else openNewCollection(null)
 }, { immediate: true })
 
 /** Opens New collection, on REST API with `connection` chosen when it is the one whose `Add…` was used. */
-function addCollection(connection: string | null) {
+function openNewCollection(connection: string | null) {
   newCollectionIn.value = connection
-  newCollection.value = true
+  newCollectionOpen.value = true
 }
 
-/** New collection chose a new connection: the Import from URL dialog finishes it, with the name typed. */
-function importFromUrl(name: string) {
-  typedName.value = name
-  fromApi.value = true
+/** Opens Import from URL; `name` is what New collection took when a new connection was chosen there (it is step 2 then). */
+function openImport(name = '', fromNewCollection = false) {
+  importing.value = { name, fromNewCollection }
 }
 
-/** New collection chose a connection: its collection dialog finishes it, with the name typed. */
-function addToConnection({ connection, name }: { connection: string, name: string }) {
-  typedName.value = name
-  addingTo.value = connection
+/** Opens the collection dialog of a connection: New collection chose it, and its name stays. */
+function openConnectionCollection(request: { connection: string, name: string }) {
+  addingTo.value = request
 }
 </script>
 
@@ -214,7 +221,7 @@ function addToConnection({ connection, name }: { connection: string, name: strin
             type="button"
             class="flex h-9 w-full items-center gap-2.5 rounded-lg ps-3 text-left text-[12px] text-muted hover:bg-white/4 hover:text-toned"
             aria-label="Add collection"
-            @click="addCollection(null)"
+            @click="openNewCollection(null)"
           >
             <UIcon
               name="i-lucide-plus"
@@ -260,7 +267,7 @@ function addToConnection({ connection, name }: { connection: string, name: strin
           :connection="connection"
           :counts="editor.collectionCounts"
           :open="!collapsed.has(connection.id)"
-          @add="addCollection(connection.id)"
+          @add="openNewCollection(connection.id)"
           @toggle="toggle(connection.id)"
         />
         <form
@@ -326,26 +333,27 @@ function addToConnection({ connection, name }: { connection: string, name: strin
     />
 
     <DataNewCollection
-      v-model:open="newCollection"
+      v-model:open="newCollectionOpen"
       :connection="newCollectionIn"
-      @connection="addToConnection"
-      @import="importFromUrl($event.name)"
+      @connection="openConnectionCollection"
+      @import="openImport($event.name, true)"
     />
 
     <DataApiSource
-      v-model:open="fromApi"
-      :typed="typedName"
-      title="Import from API"
-      description="Paste a JSON endpoint, review the proposed mapping, then save. The rows stay live and read-only."
+      :open="importing !== null"
+      :initial-name="lastImport.name"
+      :title="lastImport.fromNewCollection ? 'New collection from a new connection' : 'Import from URL'"
+      :description="`${lastImport.fromNewCollection ? 'Step 2 of 2. ' : ''}Paste a JSON endpoint, review the proposed mapping, then save. The rows stay live and read-only.`"
+      @update:open="!$event && (importing = null)"
     />
 
     <DataConnectionSource
       v-if="dialogConnection"
       :open="!!addingToConnection"
       :connection="dialogConnection"
-      :typed="typedName"
-      title="New collection"
-      :description="`In ${dialogConnection.name}: test the list endpoint, review the proposed fields, then save.`"
+      :initial-name="addingTo?.name"
+      :title="`New collection from ${dialogConnection.name}`"
+      description="Step 2 of 2. Test the list endpoint, review the proposed fields, then save."
       @update:open="!$event && (addingTo = null)"
     />
   </div>

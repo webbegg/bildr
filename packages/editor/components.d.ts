@@ -82,6 +82,7 @@ declare module 'vue' {
     EditorBreadcrumb: typeof import('./src/components/editor/EditorBreadcrumb.vue')['default']
     EditorButton: typeof import('./src/components/kit/EditorButton.vue')['default']
     EditorCanvas: typeof import('./src/components/editor/EditorCanvas.vue')['default']
+    EditorChoiceCards: typeof import('./src/components/kit/EditorChoiceCards.vue')['default']
     EditorColorCustom: typeof import('./src/components/editor/color/EditorColorCustom.vue')['default']
     EditorCommitInput: typeof import('./src/components/editor/EditorCommitInput.vue')['default']
     EditorComponentPanel: typeof import('./src/components/editor/EditorComponentPanel.vue')['default']

@@ -21,7 +21,7 @@
  *   has its own list/create routes and needs no publishing;
  * - the published app's WebMCP tools (`document.modelContext`): the generated app has no bildr runtime (D4).
  */
-import { action, appApi, appShows, bildr, call, canvas, check, editorUrl, newPage, openData, openEditor, quiesce, quiet, run, settled, shot, until, whileAppRebuilds } from './lib.mjs'
+import { action, appApi, appShows, bildr, call, canvas, check, editorUrl, newPage, openData, openEditor, quiesce, quiet, run, settled, shot, storageChoices, until, whileAppRebuilds } from './lib.mjs'
 
 /** How long the migrations step waits (D6): for the app to regenerate and plan the migration, for the editor to show it, and for the module to write it. */
 const MIGRATION_PLANNED_MS = 60_000
@@ -39,11 +39,19 @@ await run('data', async ({ page, browser, errors }) => {
   await openData(page)
   await page.getByLabel('Add collection').click()
   await page.locator('[data-new-collection-name]').waitFor()
-  const storages = await page.locator('[data-storage]').evaluateAll(options => options.map(option => `${option.getAttribute('data-storage')}${option.getAttribute('aria-checked') === 'true' ? '*' : ''}`))
+  const storages = await storageChoices(page)
   check(storages.join() === 'sample*,database,rest', `New collection offers Sample data (chosen), Database and REST API (${storages})`)
+  check(await page.locator('[data-storage="sample"] [data-choice-dot]').count() === 1 && await page.locator('[data-storage="database"] [data-choice-dot]').count() === 0, 'the chosen choice shows a dot, not a colour only')
   await page.locator('[data-new-collection-name]').fill('Menu')
   await page.waitForTimeout(400)
   await shot(page, 'd7-new-collection')
+  // REST API: the name becomes optional and a connection is chosen; Continue would hand on to step 2.
+  await page.locator('[data-storage="rest"]').click()
+  await page.locator('[data-new-collection-connection]').waitFor()
+  check((await storageChoices(page)).join() === 'sample,database,rest*' && await page.locator('[data-form-row="Name (optional)"]').count() === 1, 'REST API is chosen, with the name optional')
+  await page.waitForTimeout(400)
+  await shot(page, 'd7-new-collection-rest')
+  await page.locator('[data-storage="sample"]').click()
   // Cancel makes nothing: no entity, and no source made for it.
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   await page.locator('[data-new-collection-name]').waitFor({ state: 'detached' })

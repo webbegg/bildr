@@ -462,6 +462,11 @@ export async function openData(page) {
   await page.locator('[data-data-tree]').waitFor()
 }
 
+/** The storage choices of the New collection dialog in the order shown, the chosen one marked with `*`: `['sample*', 'database', 'rest']`. */
+export async function storageChoices(page) {
+  return await page.locator('[data-storage]').evaluateAll(options => options.map(option => `${option.getAttribute('data-storage')}${option.getAttribute('aria-checked') === 'true' ? '*' : ''}`))
+}
+
 /** Switches the editor view through the toolbar's view menu. */
 export async function toView(page, label) {
   await page.locator('[data-view-menu]').click()
