@@ -31,13 +31,34 @@ describe('stepSummary', () => {
   it('says what each kind of step does', () => {
     expect(stepSummary({ kind: 'validate' }, model)).toBe('Checks the input')
     expect(stepSummary({ kind: 'assert', error: 'slug_taken' }, model)).toContain('slug_taken')
-    expect(stepSummary(steps.find(step => step.kind === 'repository')!, model)).toBe('Repository: create on Post')
-    expect(stepSummary({ kind: 'load', as: 'post', op: 'get', repository: 'repo_post', orError: 'not_found' }, model)).toBe('Loads “post” (get on Post), refusing with “not_found” when there is none')
+    expect(stepSummary(steps.find(step => step.kind === 'repository')!, model)).toBe('Creates a Post')
+    expect(stepSummary({ kind: 'load', as: 'post', op: 'get', repository: 'repo_post', orError: 'not_found' }, model)).toBe('“post”: a Post by id, refusing with “not_found” if there is none')
   })
 
-  it('says an assert refuses when its lookup finds a row (the generated check is `if (await lookup) return err`)', () => {
-    expect(stepSummary(steps.find(step => step.kind === 'assert')!, model)).toBe('Refuses with “slug_taken” when Post (findBySlug) finds a row')
-    expect(stepSummary({ kind: 'assert', error: 'slug_taken' }, model)).toBe('Refuses with “slug_taken” when a lookup finds a row')
+  it('says a write by what it does to the collection, as one name: Write', () => {
+    const write = (op: string, repository = 'repo_post') => stepSummary({ kind: 'repository', repository, op }, model)
+    expect([write('create'), write('update'), write('delete')]).toEqual(['Creates a Post', 'Updates a Post', 'Deletes a Post'])
+    expect(write('update', 'repo_gone')).toBe('Updates a row')
+    expect(stepSummary({ kind: 'repository' }, model)).toBe('Writes to a collection')
+    expect(stepSummary({ kind: 'repository', repository: 'repo_post', op: 'create' }, null)).toBe('Creates a row')
+  })
+
+  it('says a load by the row it gives a name and how it is found, not by the lookup\'s code name', () => {
+    const load = (op: string, extra: Record<string, unknown> = {}) => stepSummary({ kind: 'load', as: 'post', repository: 'repo_post', op, ...extra }, model)
+    expect(load('get')).toBe('“post”: a Post by id')
+    expect(load('findBySlug')).toBe('“post”: a Post by slug')
+    expect(load('findByPublishedAt')).toBe('“post”: a Post by published at')
+    expect(load('get', { orError: 'post_not_found' })).toBe('“post”: a Post by id, refusing with “post_not_found” if there is none')
+    for (const op of ['get', 'findBySlug']) expect(load(op)).not.toMatch(/\b(get|findBySlug)\b/)
+  })
+
+  it('says an assert refuses if a row the lookup finds already exists, built from what it looks up by', () => {
+    expect(stepSummary(steps.find(step => step.kind === 'assert')!, model)).toBe('Refuses with “slug_taken” if a Post with this slug already exists')
+    const assert = (unless: Record<string, unknown>) => stepSummary({ kind: 'assert', error: 'slug_taken', unless }, model)
+    expect(assert({ repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } })).toBe('Refuses with “slug_taken” if a Post with this id already exists')
+    expect(assert({ repository: 'repo_post', op: 'get', args: {} })).toBe('Refuses with “slug_taken” if a Post with this id already exists')
+    expect(assert({ repository: 'repo_post', op: 'findByPublishedAt', args: {} })).toBe('Refuses with “slug_taken” if a Post with this published at already exists')
+    expect(stepSummary({ kind: 'assert', error: 'slug_taken' }, model)).toBe('Refuses with “slug_taken” if a row is found')
   })
 
   it('says a step that is not generated yet is not', () => {

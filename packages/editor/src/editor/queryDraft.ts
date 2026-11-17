@@ -1,5 +1,7 @@
 import type { QueryFile, Value } from '@bildr/codegen/model'
+import { isObject } from '../model.ts'
 import type { FieldType } from '../shared/dataModel.ts'
+import { sameJson } from './draftJson.ts'
 import type { QueryField, QueryResultKind } from '../shared/dataArtifacts.ts'
 
 /**
@@ -58,7 +60,6 @@ export interface QueryDraft {
   limit: DraftLimit
 }
 
-const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isParam = (value: unknown): value is { $param: string } => isObject(value) && typeof value.$param === 'string'
 
 /** A literal as the form shows it: text, a list as comma-separated text. */
@@ -108,8 +109,6 @@ export interface QueryChanges {
   problems: string[]
 }
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
-
 /** The parts of a query that the form edits (its name, id and collection are not in the draft). */
 const editable = (query: QueryFile) => ({
   label: query.label,
@@ -125,7 +124,7 @@ const editable = (query: QueryFile) => ({
  * Whether the query as it is stored now differs, in a part the form edits, from the query the draft started from (`base`: the query
  * as it was when the draft was opened or last saved). A rename is not one: the name is not in the draft.
  */
-export const changedOutside = (base: QueryFile, query: QueryFile): boolean => !same(editable(base), editable(query))
+export const changedOutside = (base: QueryFile, query: QueryFile): boolean => !sameJson(editable(base), editable(query))
 
 /**
  * The draft after the user chose to keep their edits over a query that changed under them: each part of the form the user did
@@ -135,7 +134,7 @@ export const changedOutside = (base: QueryFile, query: QueryFile): boolean => !s
 export function rebaseDraft(draft: QueryDraft, base: QueryFile, query: QueryFile): QueryDraft {
   const before = draftOf(base)
   const now = draftOf(query)
-  const part = <K extends keyof QueryDraft>(key: K): QueryDraft[K] => same(draft[key], before[key]) ? now[key] : draft[key]
+  const part = <K extends keyof QueryDraft>(key: K): QueryDraft[K] => sameJson(draft[key], before[key]) ? now[key] : draft[key]
   return { label: part('label'), description: part('description'), result: part('result'), params: part('params'), where: part('where'), orderBy: part('orderBy'), limit: part('limit') }
 }
 
@@ -162,15 +161,15 @@ export function changesOf(draft: QueryDraft, base: QueryFile, fields: readonly Q
   if (draft.result !== base.result) input.result = draft.result
 
   const params = draft.params.map((param) => {
-    const at = opened.params.findIndex(original => same(original, param))
+    const at = opened.params.findIndex(original => sameJson(original, param))
     if (at >= 0) return base.params[at]!
     const converted = param.default === '' ? undefined : valueOfText(param.type, param.default)
     if (converted && 'problem' in converted) problems.push(`Parameter ${param.name || '(unnamed)'}: its default is ${converted.problem}`)
     return { name: param.name, type: param.type, ...converted && 'value' in converted ? { default: converted.value } : {}, ...param.reactive ? { reactive: true } : {} }
   })
-  if (!same(draft.params, opened.params)) input.params = params
+  if (!sameJson(draft.params, opened.params)) input.params = params
 
-  if (!same(draft.where, opened.where)) {
+  if (!sameJson(draft.where, opened.where)) {
     let where: QueryFile['where'] | null = null
     if (draft.where) {
       const { field, op } = draft.where
@@ -191,12 +190,12 @@ export function changesOf(draft: QueryDraft, base: QueryFile, fields: readonly Q
       }
       if (value !== undefined) where = { op, field, value }
     }
-    if (!same(where, base.where ?? null)) input.where = where
+    if (!sameJson(where, base.where ?? null)) input.where = where
   }
 
-  if (!same(draft.orderBy, base.orderBy ?? [])) input.orderBy = draft.orderBy
+  if (!sameJson(draft.orderBy, base.orderBy ?? [])) input.orderBy = draft.orderBy
 
-  if (!same(draft.limit, opened.limit)) {
+  if (!sameJson(draft.limit, opened.limit)) {
     let limit: Value | null = null
     if (draft.limit.kind === 'param') limit = { $param: draft.limit.param }
     else if (draft.limit.kind === 'expression') limit = draft.limit.expression as Value ?? null
@@ -205,7 +204,7 @@ export function changesOf(draft: QueryDraft, base: QueryFile, fields: readonly Q
       if ('problem' in converted) problems.push('Limit: enter a whole number')
       else limit = converted.value
     }
-    if (!same(limit, base.limit ?? null)) input.limit = limit
+    if (!sameJson(limit, base.limit ?? null)) input.limit = limit
   }
 
   return { input, problems }

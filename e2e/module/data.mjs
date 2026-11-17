@@ -8,7 +8,7 @@
  * and tab in the URL, and the keyboard. Then Queries and Actions (S10): a query made from the tree's "+", its
  * Definition and Results, a page that uses it, its rename (the page still renders) and a delete that is
  * refused while it is used; an action made from a template, on its Overview, and its Steps (D10c): a load and an update added, saved, in the JSON tab and
- * regenerated.
+ * regenerated, and then deleted with its steps (the dev server answers 500 for a moment while Nitro rebuilds, and recovers).
  *
  * Dropped (feature doc: records are app data, not editor data; no hosted collections or publish):
  * - `record_create`, quick-add and inline cell edit: the table is read-only (E2); rows come from the
@@ -296,8 +296,8 @@ await run('data', async ({ page, browser, errors }) => {
   await quiesce(60_000)
   await quiet()
 
-  // The Steps tab (D10c), on a second blank action that is left in the project (the dev server answers 500 for a moment after a
-  // route it has built is deleted, and the pictures below need it quiet): the return is replaced by a load and an update, saved with one action_update.
+  // The Steps tab (D10c): a blank action gets a load and an update, saved with one action_update. The picture is taken of it, and
+  // then the action, with its steps, is deleted (below).
   await page.getByLabel('New action').click()
   await pickCollection('Dish')
   await page.locator('[data-action-template="blank"]').click()
@@ -308,11 +308,13 @@ await run('data', async ({ page, browser, errors }) => {
   await page.locator('[data-action-steps]').waitFor()
   check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'steps' && decodeURIComponent(page.url()).endsWith(`#/data?item=action:${restock?.id}&tab=steps`), `the Overview links to the Steps tab, which is in the URL (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
   check(await page.locator('[data-step-card]').count() === 1 && await page.locator('[data-step-card="0"]').getAttribute('data-step-kind') === 'return', 'a blank action has one return step')
-  await page.locator('[data-step-card="0"] [data-step-remove]').click()
+  check(await page.locator('[data-step-card="0"] [data-step-toggle]').getAttribute('aria-expanded') === 'true', 'the first card is open to start with')
+  // A load goes before the return; the write takes the place of the bare return, which only ended the action.
   await page.locator('[data-step-add]').click()
   await page.getByRole('menuitem', { name: 'Load a row' }).click()
   await page.locator('[data-step-add]').click()
-  await page.getByRole('menuitem', { name: 'Create, update or delete' }).click()
+  await page.getByRole('menuitem', { name: /^Write\b/ }).click()
+  check((await page.locator('[data-step-card]').evaluateAll(cards => cards.map(card => card.getAttribute('data-step-kind')))).join() === 'load,repository', 'a write replaces the blank action\'s bare return, and a load goes before it')
   await page.locator('[data-step-card="1"] [data-step-field="op"]').click()
   await page.getByRole('option', { name: 'Update', exact: true }).click()
   check(await page.locator('[data-step-card="0"] [data-step-field="as"]').inputValue() === 'dish' && await page.locator('[data-step-card="1"] [data-step-field="from"] [data-value-source]').innerText() === 'Variable: dish', 'a new load is named after its collection, and the update writes it back')
@@ -333,12 +335,32 @@ await run('data', async ({ page, browser, errors }) => {
   await quiesce(60_000)
   await quiet()
   await page.locator('[role=tab][data-data-tab="steps"]').click()
-  await page.locator('[data-step-card="0"] [data-step-toggle]').click()
   await page.locator('[data-step-card="1"] [data-step-toggle]').click()
   await page.locator('[data-step-card="1"] [data-step-form]').waitFor()
+  check(await page.locator('[data-errors-jump]').innerText() === 'Errors (0)', 'the Errors link near the top counts the action\'s errors')
   await page.waitForTimeout(400)
   await page.evaluate(() => document.activeElement?.blur())
   await shot(page, 'd10c-action-steps')
+
+  // An action with steps is deleted (it had load and update steps, saved above). The generated route of an action goes with it, and
+  // Nitro rebuilds the app: for about a second every route of the app answers 500 (the dev log says "Could not load ...
+  // restock-dish.post.ts: ENOENT", the rebuild met the file the sync had just removed), then it answers again. The editor's own routes
+  // answer throughout. So this step expects that console error, and checks the app does recover: the same route answers 200 and the
+  // model loads with no drift. No other 500 is accepted here or anywhere else in the script.
+  const consoleBefore = errors.length
+  await page.waitForTimeout(400)
+  await page.locator(`[data-artifact-menu="${restock.id}"]`).click({ force: true })
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  await page.locator('[data-artifact-submit]').click()
+  check(await until(() => bildr('modules/blog/actions/restock-dish.json') === undefined), 'an action with load and update steps is deleted')
+  await quiesce(60_000)
+  await quiet()
+  check(await until(async () => (await appApi('/api/blog/dishes?limit=1&offset=0'))?.status === 200, 60_000), 'the app answers again after Nitro rebuilt (a 500 for about a second, not a route left behind)')
+  check(await settled(), 'and the model loads with no drift, the generated files of the action gone')
+  const accepted500 = errors.splice(consoleBefore)
+  errors.push(...accepted500.filter(message => !/status of 500 \(Internal Server Error\)/.test(message)))
+  console.log(`INFO ${accepted500.length - errors.length + consoleBefore} console 500(s) from the rebuild were expected here`)
+  await quiet()
 
   // The Used in link opens the page on the Canvas.
   await page.locator('[data-tree-item^="query:"]').first().waitFor()

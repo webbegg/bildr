@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { SELECT_COMPACT_UI, SELECT_MONO_UI, SELECT_UI, findOption, mergeUi, toOptions } from '../../editorUi.ts'
 import type { EditorOption, UiSlots } from '../../editorUi.ts'
 import type { SelectProps } from '@nuxt/ui'
+import { useDisabled } from './formDisabled.ts'
 
 /**
  * The kit's select: the soft field with the kit's menu popover. `items` are
@@ -24,6 +25,7 @@ const props = withDefaults(defineProps<{
 }>(), { modelValue: undefined, placeholder: undefined, icon: undefined, content: undefined, ui: undefined })
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
+const off = useDisabled(() => props.disabled)
 const options = computed(() => toOptions(props.items))
 const current = computed(() => findOption(options.value, props.modelValue))
 const ui = computed(() => mergeUi(props.compact ? SELECT_COMPACT_UI : props.mono ? SELECT_MONO_UI : SELECT_UI, props.ui))
@@ -35,7 +37,7 @@ const content = computed(() => props.content ?? (props.compact ? { align: 'start
     :model-value="modelValue"
     :items="options"
     :placeholder="placeholder"
-    :disabled="disabled"
+    :disabled="off"
     :icon="compact ? current?.icon ?? icon : icon"
     :trailing-icon="compact ? '' : undefined"
     :content="content"

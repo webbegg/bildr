@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { EditorOption } from '../../../editorUi.ts'
-import { defaultLiteral, exprOf, literalOf } from '../../../editor/stepScope.ts'
+import { defaultLiteral, exprOf, literalOf } from '../../../editor/stepExpr.ts'
 import type { StepScope } from '../../../editor/stepScope.ts'
 import type { FieldType } from '../../../shared/dataModel.ts'
 

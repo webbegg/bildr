@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed } from 'vue'
 import type { QueryFile } from '@bildr/codegen/model'
 import { attempt } from '../../editor/dataArtifactActions.ts'
 import { RESULTS, queryFields } from '../../shared/dataArtifacts.ts'
 import type { QueryResultKind } from '../../shared/dataArtifacts.ts'
+import { sameJson } from '../../editor/draftJson.ts'
 import { OPS, changedOutside, changesOf, conditionText, draftOf, rebaseDraft, renameParam } from '../../editor/queryDraft.ts'
 import type { Op, QueryDraft } from '../../editor/queryDraft.ts'
+import { useDraftForm } from '../../editor/useDraftForm.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { fieldTypeItems } from '../../shared/dataModel.ts'
 import type { FieldType } from '../../shared/dataModel.ts'
@@ -17,11 +19,9 @@ import type { FieldType } from '../../shared/dataModel.ts'
  * what changed (`editor/queryDraft.ts`), and what the module refuses is shown under the form with the draft kept. A save
  * refreshes the model, so Results (and the tree) show the change. The module allows one condition, so there is one.
  *
- * The draft keeps its base: the query as it was when the draft was opened or last saved. What the user touched is judged against
- * it, not against the query as stored now, so a part that changed outside the form (another editor, a rename, an undo, a
- * JSON-tab save) and was not touched is never sent back from the form's stale copy. While the draft has edits and the stored
- * query differs from its base in a part the form edits, a notice asks to load the new version or keep the edits (as the JSON
- * editor's does), and Save waits for the choice; keeping rebases the draft, so only the touched parts are sent.
+ * The draft, its base and the notice for a query that changed under it are the shared draft form (`useDraftForm`,
+ * `DataStaleNotice`, `DataDraftFooter`): what the user touched is judged against the query as it was when the draft was opened or
+ * last saved, and Save waits for the choice between loading the new version and keeping the edits.
  */
 const { query } = defineProps<{ query: QueryFile }>()
 const editor = useEditor()
@@ -30,55 +30,21 @@ const fields = computed(() => queryFields(editor.model, query.from))
 const fieldItems = computed(() => fields.value.map(field => ({ label: field.name, value: field.name })))
 const typeOf = (name: string) => fields.value.find(field => field.name === name)?.type
 
-/** A copy of a plain value, so the base and the draft never share what the model's refresh replaces. */
-function copy<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T
-}
-
-const draft = ref<QueryDraft>(draftOf(query))
-/** The query the draft started from: as it was when the draft was opened or last saved. Replaced as a whole, never edited. */
-const base = shallowRef<QueryFile>(copy(query))
-const error = ref('')
-const saving = ref(false)
-
-const changes = computed(() => changesOf(draft.value, base.value, fields.value))
-const dirty = computed(() => Object.keys(changes.value.input).length > 0 || changes.value.problems.length > 0)
-/** The query changed outside the form while it has edits: Save waits for the choice (not while a save of this form is refreshing the model). */
-const stale = computed(() => dirty.value && !saving.value && changedOutside(base.value, query))
-
-// The draft is not saved until Save: the editor asks before the workspace moves away from it (`dataDirty`, as for the JSON editor).
-const name = computed(() => query.label || query.name)
-watch([dirty, name], ([unsaved, label]) => {
-  editor.dataDirty = unsaved ? label : null
-}, { flush: 'sync', immediate: true })
-onBeforeUnmount(() => {
-  editor.dataDirty = null
+const changesAgainst = (draft: QueryDraft, base: QueryFile) => changesOf(draft, base, fields.value)
+const { draft, base, error, saving, dirty, stale, discard, keepMine } = useDraftForm<QueryFile, QueryDraft>({
+  stored: () => query,
+  id: () => query.id,
+  label: () => query.label || query.name,
+  open: draftOf,
+  dirty: (current, base) => {
+    const changed = changesAgainst(current, base)
+    return Object.keys(changed.input).length > 0 || changed.problems.length > 0
+  },
+  changedOutside,
+  rebase: rebaseDraft,
+  untouched: (current, base) => sameJson(current, draftOf(base))
 })
-
-// Another query, or the model changed under a form with nothing typed in it: the form shows it. Edits that are not saved stay.
-watch(() => query.id, () => {
-  discard()
-})
-watch(() => JSON.stringify(query), () => {
-  if (JSON.stringify(draft.value) === JSON.stringify(draftOf(base.value))) discard()
-})
-watch(draft, () => {
-  error.value = ''
-}, { deep: true })
-
-/** Gives up the edits: the form shows the query as it is saved, which is its base now. Also "Load the new version". */
-function discard() {
-  base.value = copy(query)
-  draft.value = draftOf(query)
-  error.value = ''
-}
-
-/** "Keep my edits": the stored query is the base now, and the form keeps only what the user touched over it. */
-function keepMine() {
-  draft.value = copy(rebaseDraft(draft.value, base.value, query))
-  base.value = copy(query)
-  error.value = ''
-}
+const changes = computed(() => changesAgainst(draft.value, base.value))
 
 async function save() {
   if (stale.value) return
@@ -158,34 +124,14 @@ function setLimitKind(kind: string) {
     data-query-definition
   >
     <div class="w-full max-w-2xl flex-1 space-y-6 px-0.5 py-4">
-      <UAlert
+      <DataStaleNotice
         v-if="stale"
-        color="warning"
-        variant="subtle"
-        icon="i-lucide-refresh-cw"
+        prefix="def"
         title="This query changed since you started editing"
         description="Your edits are still here. Load the new version to drop them, or keep them: only the parts you changed replace the new version when you save."
-        data-def-changed
-      >
-        <template #actions>
-          <UButton
-            label="Load the new version"
-            color="warning"
-            variant="soft"
-            size="xs"
-            data-def-load-new
-            @click="discard"
-          />
-          <UButton
-            label="Keep my edits"
-            color="neutral"
-            variant="outline"
-            size="xs"
-            data-def-keep-mine
-            @click="keepMine"
-          />
-        </template>
-      </UAlert>
+        @load-new="discard"
+        @keep-mine="keepMine"
+      />
       <section class="space-y-3">
         <EditorFormRow label="Label">
           <EditorInput
@@ -471,43 +417,14 @@ function setLimitKind(kind: string) {
       </section>
     </div>
 
-    <footer
-      class="sticky bottom-0 border-t border-white/6 bg-(--editor-canvas) px-0.5 py-3"
-      data-def-footer
-    >
-      <div class="flex w-full max-w-2xl items-start gap-3">
-        <p
-          v-if="error"
-          class="min-w-0 flex-1 rounded-lg bg-error/10 px-3 py-2 text-[12px] leading-4 text-error"
-          role="alert"
-          data-def-error
-        >
-          {{ error }}
-        </p>
-        <span
-          v-else
-          class="flex-1"
-        />
-        <span
-          v-if="dirty"
-          class="flex h-[30px] shrink-0 items-center text-[12px] text-muted"
-          data-def-unsaved
-        >Unsaved changes</span>
-        <EditorButton
-          label="Discard"
-          :disabled="!dirty"
-          data-def-discard
-          @click="discard"
-        />
-        <EditorButton
-          variant="primary"
-          label="Save"
-          :loading="saving"
-          :disabled="!dirty || stale"
-          data-def-save
-          @click="save"
-        />
-      </div>
-    </footer>
+    <DataDraftFooter
+      prefix="def"
+      :error="error"
+      :dirty="dirty"
+      :saving="saving"
+      :disabled="!dirty || stale"
+      @discard="discard"
+      @save="save"
+    />
   </div>
 </template>

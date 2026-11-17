@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { loadModel } from '@bildr/codegen/model'
+import { applyEdit } from '@bildr/codegen/edit'
+import { loadModel, serializeModel } from '@bildr/codegen/model'
 import type { ActionFile, Model } from '@bildr/codegen/model'
-import { addError, addStep, changedOutside, changesOf, contextOf, draftOf, duplicateStep, moveStep, plainSteps, problemsOf, rebaseDraft, removeStep, renameError, stepsNamed } from '../../src/editor/stepDraft.ts'
+import { ADDABLE_KINDS, addError, addStep, changedOutside, changesOf, contextOf, draftOf, duplicateStep, errorProblems, moveStep, problemsOf, rebaseDraft, removeStep, renameError, renameLoad, stepsNamed } from '../../src/editor/stepDraft.ts'
 import type { StepsDraft } from '../../src/editor/stepDraft.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 
@@ -22,8 +23,10 @@ const blank = (): ActionFile => {
 const problems = (action: ActionFile, draft: StepsDraft = draftOf(action)) => problemsOf(draft, contextOf(model, action))
 const messages = (action: ActionFile, draft?: StepsDraft) => problems(action, draft).map(problem => problem.message)
 const withSteps = (action: ActionFile, steps: ActionFile['steps']): StepsDraft => ({ ...draftOf(action), steps: steps.map((step, key) => ({ key, step })) })
+const plainSteps = (draft: StepsDraft) => draft.steps.map(entry => entry.step)
+type StepFile = ActionFile['steps'][number]
 
-describe('draftOf and plainSteps', () => {
+describe('draftOf', () => {
   it('holds the steps as they are stored, and writes them back as they were', () => {
     const action = create()
     const draft = draftOf(action)
@@ -99,6 +102,41 @@ describe('adding a step', () => {
     expect(added.index).toBe(2)
     const writing = addStep(draftOf(publish()), 'repository', contextOf(model, publish()))
     expect(plainSteps(writing.draft).map(step => step.kind)).toEqual(['load', 'return', 'repository', 'repository'])
+  })
+
+  describe('a write added to an action whose last step is a return that always runs', () => {
+    const blankWith = (...steps: ActionFile['steps']) => withSteps(blank(), [...steps, { kind: 'return', if: true, value: { $var: 'undefined' } }])
+    const load: StepFile = { kind: 'load', as: 'post', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } }
+
+    it('replaces the bare return when it is the only step: it only ended the action, and the write does', () => {
+      const { draft, index } = addStep(draftOf(blank()), 'repository', contextOf(model, blank()))
+      expect(plainSteps(draft).map(step => step.kind)).toEqual(['repository'])
+      expect(index).toBe(0)
+      expect(draft.steps).toHaveLength(1)
+    })
+
+    it('drops a bare return after other steps, too, so the write is the last step', () => {
+      const { draft, index } = addStep(blankWith(load), 'repository', contextOf(model, blank()))
+      expect(plainSteps(draft).map(step => step.kind)).toEqual(['load', 'repository'])
+      expect(index).toBe(1)
+      expect(problemsOf(draft, contextOf(model, blank())).map(problem => problem.message)).not.toContain('A return that always runs must be the last step: the steps after it would never run')
+    })
+
+    it('keeps a return that gives a row, as an early return that asks when it should run', () => {
+      const action = publish()
+      const draft = withSteps(action, [action.steps[0]!, { kind: 'return', if: true, value: { $var: 'post' } }])
+      const added = addStep(draft, 'repository', contextOf(model, action))
+      expect(plainSteps(added.draft).map(step => step.kind)).toEqual(['load', 'return', 'repository'])
+      expect(added.index).toBe(2)
+      expect(plainSteps(added.draft)[1]).toEqual({ kind: 'return', value: { $var: 'post' } })
+      expect(problemsOf(added.draft, contextOf(model, action)).filter(problem => problem.step === 1).map(problem => problem.message)).toEqual(['Pick when it returns: always, or when a condition holds'])
+    })
+
+    it('leaves an early return, and a list that does not end in a return that always runs, as they are', () => {
+      const action = blank()
+      const early = withSteps(action, [{ kind: 'return', if: { $input: 'published' }, value: { $var: 'undefined' } }])
+      expect(plainSteps(addStep(early, 'repository', contextOf(model, action)).draft).map(step => step.kind)).toEqual(['return', 'repository'])
+    })
   })
 
   it('starts a load on the first collection, named after it, with the lookup argument the action takes already given', () => {
@@ -180,6 +218,84 @@ describe('errors', () => {
   })
 })
 
+describe('renaming a load', () => {
+  it('renames the row and what the later steps read of it: the row, and its fields', () => {
+    const draft = renameLoad(draftOf(publish()), 0, 'article')
+    const [load, back, write] = plainSteps(draft)
+    expect(load!.as).toBe('article')
+    expect(back).toMatchObject({ if: { $var: 'article.published' }, value: { $var: 'article' } })
+    expect(write).toMatchObject({ from: { $var: 'article' } })
+    expect(problemsOf(draft, contextOf(model, publish()))).toEqual([])
+  })
+
+  it('leaves the steps before the load, other rows, plain text and the rest of the step as they are', () => {
+    const action = publish()
+    const steps: ActionFile['steps'] = [
+      { kind: 'assert', unless: { repository: 'repo_post', op: 'get', args: { id: { $var: 'post' } } }, error: 'post_not_found', note: 'post' },
+      { kind: 'load', as: 'other', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } },
+      { kind: 'load', as: 'post', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } }, orError: 'post_not_found' },
+      { kind: 'repository', repository: 'repo_post', op: 'update', id: { $input: 'id' }, from: { $var: 'post' }, set: { title: 'post', slug: { $var: 'other.slug' }, body: { if: { $var: 'post.published' }, then: 'x', else: { $var: 'post.body' } } } }
+    ]
+    const [first, second, load, write] = plainSteps(renameLoad(withSteps(action, steps), 2, 'article'))
+    expect(first).toEqual(steps[0])
+    expect(second).toEqual(steps[1])
+    expect(load).toEqual({ ...steps[2], as: 'article' })
+    expect(write).toEqual({ kind: 'repository', repository: 'repo_post', op: 'update', id: { $input: 'id' }, from: { $var: 'article' }, set: { title: 'post', slug: { $var: 'other.slug' }, body: { if: { $var: 'article.published' }, then: 'x', else: { $var: 'article.body' } } } })
+  })
+
+  it('follows the name as it is typed, through an empty name and back', () => {
+    let draft = draftOf(publish())
+    for (const name of ['pos', 'po', '', 'a', 'ar', 'article']) draft = renameLoad(draft, 0, name)
+    expect(plainSteps(draft)[0]!.as).toBe('article')
+    expect(plainSteps(draft)[2]).toMatchObject({ from: { $var: 'article' } })
+    expect(problemsOf(draft, contextOf(model, publish()))).toEqual([])
+  })
+
+  it('does not change the draft it is given, nor a step that is not a load', () => {
+    const draft = draftOf(publish())
+    renameLoad(draft, 0, 'article')
+    expect(plainSteps(draft)[0]!.as).toBe('post')
+    expect(renameLoad(draft, 2, 'article')).toBe(draft)
+    expect(renameLoad(draft, 9, 'article')).toBe(draft)
+  })
+})
+
+describe('errorProblems', () => {
+  const error = (patch: Partial<ReturnType<typeof draftOf>['errors'][number]> = {}) => ({ type: 'slug_taken', status: '409', message: 'Taken.', data: [], ...patch })
+
+  it('finds nothing wrong with an error that has a name, a status and a message', () => {
+    expect(errorProblems(error(), new Set())).toEqual([])
+  })
+
+  it('says what is wrong with each part, and a name that is taken', () => {
+    expect(errorProblems(error({ type: 'Slug Taken' }), new Set())).toEqual(['Use a name like “slug_taken”: lowercase letters, digits and _'])
+    expect(errorProblems(error(), new Set(['slug_taken']))).toEqual(['“slug_taken” is already declared'])
+    expect(errorProblems(error({ status: '200' }), new Set())).toEqual(['The status is an HTTP error code, from 400 to 599'])
+    expect(errorProblems(error({ status: 'abc', message: ' ' }), new Set())).toEqual(['The status is an HTTP error code, from 400 to 599', 'Add the message the client gets'])
+    expect(errorProblems(error({ data: [{ name: 'Bad', type: 'text' }, { name: 'id', type: 'text' }, { name: 'id', type: 'text' }] }), new Set())).toEqual(['Name the data like “id”: camelCase', '“id” is given twice'])
+  })
+
+  it('is what problemsOf says at each declared error, with the names declared before it as the taken ones', () => {
+    const action = create()
+    const draft = draftOf(action)
+    draft.errors = [error({ message: '' }), error({ type: 'other', status: '1' }), error()]
+    const at = (index: number) => problemsOf(draft, contextOf(model, action)).filter(problem => problem.error === index).map(problem => problem.message)
+    expect(at(0)).toEqual(errorProblems(draft.errors[0]!, new Set()))
+    expect(at(1)).toEqual(errorProblems(draft.errors[1]!, new Set(['slug_taken'])))
+    expect(at(2)).toEqual(errorProblems(draft.errors[2]!, new Set(['slug_taken', 'other'])))
+  })
+})
+
+describe('what the Add step menu says of each kind', () => {
+  it('has a hint for each, in words a person reads: no repository, no use-case, no generated code', () => {
+    expect(ADDABLE_KINDS.map(entry => entry.label)).toEqual(['Check the input', 'Refuse if found', 'Load a row', 'Write', 'Return'])
+    for (const entry of ADDABLE_KINDS) {
+      expect(entry.hint.length).toBeGreaterThan(10)
+      expect(`${entry.label} ${entry.hint}`).not.toMatch(/repositor|use-case|generated/i)
+    }
+  })
+})
+
 describe('what is wrong with a draft', () => {
   it('finds nothing wrong with the actions the project has', () => {
     expect(problems(create())).toEqual([])
@@ -251,7 +367,7 @@ describe('what is wrong with a draft', () => {
     const found = problems(action, withSteps(action, steps)).filter(problem => problem.step !== undefined && problem.step < 4)
     expect(found).toEqual([
       { step: 1, message: '“post” is the name of an earlier row: pick another' },
-      { step: 2, message: '“input” is used by the generated code: pick another name' },
+      { step: 2, message: '“input” is a name bildr uses: pick another' },
       { step: 3, message: 'Use a name like “post”: letters and digits, starting with a lowercase letter' }
     ])
   })
@@ -265,7 +381,7 @@ describe('what is wrong with a draft', () => {
 
   it('wants a create to be after a step that checks the input, and a check to have a body to check', () => {
     const action = blank()
-    expect(messages(action, withSteps(action, [{ kind: 'repository', repository: 'repo_post', op: 'create' }]))).toEqual(['Create writes the checked input: add a “Checks the input” step before it'])
+    expect(messages(action, withSteps(action, [{ kind: 'repository', repository: 'repo_post', op: 'create' }]))).toEqual(['Create writes the checked input: add a “Check the input” step before it'])
     const noBody = publish()
     expect(messages(noBody, withSteps(noBody, [{ kind: 'validate' }, ...noBody.steps]))).toEqual(['This action takes no body to check: pick its input fields on the Overview tab'])
   })
@@ -288,14 +404,14 @@ describe('what is wrong with a draft', () => {
   it('wants the one return of a return-only action to be last and always run', () => {
     const action = blank()
     const early = withSteps(action, [{ kind: 'return', if: { $input: 'published' }, value: { $var: 'undefined' } }])
-    expect(problems(action, early)).toEqual([{ message: 'An action needs a “repository” step (create, update or delete), or a last “return” step that always runs, to do its work' }])
+    expect(problems(action, early)).toEqual([{ message: 'An action needs a Write step (create, update or delete), or a last Return step that always runs, to do its work' }])
     expect(problems(action, withSteps(action, []))).toEqual([{ message: 'An action needs at least one step' }])
   })
 
-  it('wants a repository step to be last', () => {
+  it('wants a write step to be last', () => {
     const action = create()
     const steps = [action.steps[2]!, action.steps[0]!]
-    expect(problems(action, withSteps(action, steps))).toContainEqual({ step: 0, message: 'A repository step must be the last step: the use-case returns its result' })
+    expect(problems(action, withSteps(action, steps))).toContainEqual({ step: 0, message: 'A write step must be the last step: the action returns its result' })
   })
 
   it('wants a return to give a row when the action returns one, and nothing when it does not', () => {
@@ -323,7 +439,7 @@ describe('what is wrong with a draft', () => {
     expect(problems(action, draft).filter(problem => problem.error !== undefined).map(problem => [problem.error, problem.message])).toEqual([
       [0, 'Use a name like “slug_taken”: lowercase letters, digits and _'],
       [1, 'The status is an HTTP error code, from 400 to 599'],
-      [2, '“slug_taken” is declared twice'],
+      [2, '“slug_taken” is already declared'],
       [2, 'The status is an HTTP error code, from 400 to 599'],
       [2, 'Add the message the client gets'],
       [3, 'Name the data like “id”: camelCase'],
@@ -344,6 +460,22 @@ describe('stepsNamed', () => {
   it('finds the steps that use a name the message quotes, when it names no step', () => {
     expect(stepsNamed('act_x: the error "slug_taken" is not declared in the action\'s errors', steps)).toEqual([1])
     expect(stepsNamed('Unknown repository "repo_post"', steps)).toEqual([1, 2])
+  })
+
+  it('names no step for the loader\'s message about the list, which quotes only the words of the model (repository, return, if), never a step\'s keys', () => {
+    const message = 'The edit would leave the model with problems: steps: An action needs a "repository" step (create, update or delete), or a last "return" step that always runs ("if": true), to do its work (.bildr/modules/blog/actions/create-post.json)'
+    const action = create()
+    const every = [...draftOf(action).steps, { key: 9, step: { kind: 'return', if: true, value: { $var: 'post' } } }, { key: 10, step: { kind: 'load', as: 'post', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } }, orError: 'gone' } }]
+    expect(stepsNamed(message, every)).toEqual([])
+  })
+
+  it('finds the steps by what they hold, a name or an id, and not by a key or a kind', () => {
+    const action = publish()
+    const held = draftOf(action).steps
+    expect(stepsNamed('Row "post" is not loaded', held)).toEqual([0, 1, 2])
+    expect(stepsNamed('Unknown "repo_post"', held)).toEqual([0, 2])
+    expect(stepsNamed('Field "published" is not a field of Post', held)).toEqual([1, 2])
+    expect(stepsNamed('a "return" and an "if" and a "load" and a "kind" and a "set"', held)).toEqual([])
   })
 
   it('finds none for a message about something else', () => {
@@ -372,5 +504,96 @@ describe('the action changing under a draft', () => {
     expect(rebased.errors[0]!.message).toBe('Taken elsewhere.')
     const untouched = rebaseDraft(draftOf(base), base, now)
     expect(plainSteps(untouched).map(step => step.kind)).toEqual(['validate', 'assert', 'repository', 'call'])
+  })
+})
+
+// ── The editor's rules and the module's ──────────────────────────────────
+
+/**
+ * The editor says what is wrong before it asks (`problemsOf`), and the module is the authority (`action_update` through
+ * `applyEdit`). These tables keep the two from drifting apart without a word: a draft the editor accepts is one the module
+ * accepts (or the user is refused at Save for something the card never said), and a draft the module accepts is one the editor
+ * lets through (or the editor is stricter than the module, and a user cannot save what is fine). The other way, a draft the
+ * editor refuses and the module takes, is not a drift: the editor says more than the module does (a row read before it is loaded,
+ * a field of the wrong type), and its table says which.
+ */
+describe('the editor\'s rules and the module\'s', () => {
+  const files = serializeModel(model)
+  const blankFiles = (() => {
+    const outcome = applyEdit(files, 'action_create', { entity: 'ent_post', template: 'blank', name: 'archive post' })
+    if (!outcome.ok) throw new Error(outcome.message)
+    const next = { ...files }
+    for (const change of outcome.changes) if (change.content !== null) next[change.path] = change.content
+    return next
+  })()
+  const loadedBlank = loadModel(blankFiles)
+  if (!loadedBlank.ok) throw new Error(JSON.stringify(loadedBlank.problems))
+  /** The project's model, and the same with a blank action the module made (no output, one return that always runs). */
+  const worlds = {
+    project: { files, model, action: (id: string) => stored(id) },
+    blank: { files: blankFiles, model: loadedBlank.model, action: (id: string) => structuredClone(loadedBlank.model.modules.blog!.actions.find(entry => entry.id === id)!) }
+  }
+  type World = keyof typeof worlds
+
+  /** What the module does with a draft's steps and errors as `action_update` takes them. */
+  const moduleSays = (world: World, action: ActionFile, draft: StepsDraft) => {
+    const { input } = changesOf(draft, action)
+    const outcome = applyEdit(worlds[world].files, 'action_update', { action: action.id, steps: draft.steps.map(entry => entry.step), errors: input.errors ?? action.errors })
+    return outcome.ok ? 'accepted' : outcome.message
+  }
+  const editorSays = (world: World, action: ActionFile, draft: StepsDraft) => problemsOf(draft, contextOf(worlds[world].model, action)).map(problem => problem.message)
+  const ret: StepFile = { kind: 'return', if: true, value: { $var: 'undefined' } }
+  const load: StepFile = { kind: 'load', as: 'post', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } }
+  const ARCHIVE = 'act_archive_post'
+  const write = (op: string, rest: Record<string, unknown> = {}): StepFile => ({ kind: 'repository', repository: 'repo_post', op, ...rest })
+
+  type Row = [name: string, world: World, id: string, draft: (action: ActionFile) => StepsDraft]
+  /** Representative drafts of what a person builds in the tab, each valid. */
+  const valid: Row[] = [
+    ['an action as the project has it: create', 'project', 'act_create_post', action => draftOf(action)],
+    ['an action as the project has it: publish, with a value the editor does not edit', 'project', 'act_publish_post', action => draftOf(action)],
+    ['a blank action as it starts', 'blank', ARCHIVE, action => draftOf(action)],
+    ['a load and an update on a blank action', 'blank', ARCHIVE, action => withSteps(action, [load, write('update', { id: { $input: 'id' }, from: { $var: 'post' } })])],
+    ['a check, then a create that sets a field', 'blank', ARCHIVE, action => withSteps(action, [{ kind: 'validate' }, write('create', { set: { title: 'Untitled', published: false } })])],
+    ['a delete by the key', 'blank', ARCHIVE, action => withSteps(action, [write('delete', { id: { $input: 'id' } })])],
+    ['a refuse by the key, with an error declared with the steps', 'blank', ARCHIVE, action => ({
+      ...addError({ ...draftOf(action), steps: [] }, { type: 'not_allowed', status: '403', message: 'Not allowed.' }),
+      steps: [{ key: 0, step: { kind: 'assert', unless: { repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } }, error: 'not_allowed' } }, { key: 1, step: ret }]
+    })],
+    ['a load that carries on without the row, then an early return and a write', 'project', 'act_publish_post', action => withSteps(action, [{ ...load, orError: undefined }, { kind: 'return', if: { $var: 'post.published' }, value: { $var: 'post' } }, action.steps[2]!])],
+    ['an early return before the one that always runs', 'blank', ARCHIVE, action => withSteps(action, [{ kind: 'return', if: { $input: 'published' }, value: { $var: 'undefined' } }, ret])],
+    ['an error with a status and a message edited', 'project', 'act_create_post', (action) => {
+      const draft = draftOf(action)
+      draft.errors[0]!.status = '422'
+      draft.errors[0]!.message = 'Taken.'
+      return draft
+    }]
+  ]
+  it.each(valid)('is accepted by both: %s', (_name, world, id, make) => {
+    const action = worlds[world].action(id)
+    const draft = make(action)
+    expect(editorSays(world, action, draft)).toEqual([])
+    expect(moduleSays(world, action, draft)).toBe('accepted')
+  })
+
+  /** Drafts that are wrong, each refused by the editor and by the module (the words are each side\'s own). */
+  const wrong: Row[] = [
+    ['no step at all', 'blank', ARCHIVE, action => withSteps(action, [])],
+    ['a write that is not last', 'project', 'act_create_post', action => withSteps(action, [action.steps[2]!, action.steps[0]!])],
+    ['a return that always runs and is not last', 'blank', ARCHIVE, action => withSteps(action, [ret, write('delete', { id: { $input: 'id' } })])],
+    ['a collection no repository of the module has', 'blank', ARCHIVE, action => withSteps(action, [write('delete', { repository: 'repo_gone', id: { $input: 'id' } })])],
+    ['an error no declared error names', 'project', 'act_create_post', action => ({ ...draftOf(action), errors: [] })],
+    ['a return that gives nothing in an action that returns a row', 'project', 'act_publish_post', action => withSteps(action, [action.steps[0]!, ret])],
+    ['a status that is not an HTTP error', 'project', 'act_create_post', (action) => {
+      const draft = draftOf(action)
+      draft.errors[0]!.status = '200'
+      return draft
+    }]
+  ]
+  it.each(wrong)('is refused by both: %s', (_name, world, id, make) => {
+    const action = worlds[world].action(id)
+    const draft = make(action)
+    expect(editorSays(world, action, draft).length).toBeGreaterThan(0)
+    expect(moduleSays(world, action, draft)).not.toBe('accepted')
   })
 })

@@ -81,25 +81,54 @@ const text = (value: unknown): string => typeof value === 'string' ? value : ''
 const bareReturn = (step: Record<string, unknown>): boolean =>
   step.value === undefined || (typeof step.value === 'object' && step.value !== null && (step.value as Record<string, unknown>).$var === 'undefined')
 
+const spaced = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
+const article = (word: string) => /^[aeiou]/i.test(word) ? 'an' : 'a'
+
 /**
- * A step in a sentence: what it does, not how it is written. The Steps tab (D10c) heads each card with it.
+ * What a lookup finds a row by, as words: the argument it is given (`slug`), else the one its operation takes (`get` is by the
+ * key: `id`, `findBySlug` is by `slug`).
+ */
+function lookupArg(lookup: Record<string, unknown>): string | undefined {
+  const [given] = typeof lookup.args === 'object' && lookup.args !== null ? Object.keys(lookup.args) : []
+  if (given) return spaced(given)
+  const op = text(lookup.op)
+  if (op === 'get') return 'id'
+  const finder = /^findBy(.+)$/.exec(op)
+  return finder ? spaced(finder[1]!) : undefined
+}
+
+/**
+ * A step in a sentence: what it does, not how it is written (no operation or collection code names). The Steps tab (D10c) heads
+ * each card with it.
  */
 export function stepSummary(step: Record<string, unknown>, model: Model | null): string {
-  const collection = (repository: unknown) => (model ? entityById(model, repositoryEntity(model, text(repository)) ?? '')?.name : undefined) ?? text(repository)
+  const collection = (repository: unknown) => (model ? entityById(model, repositoryEntity(model, text(repository)) ?? '')?.name : undefined) ?? undefined
+  const object = (repository: unknown) => {
+    const name = collection(repository)
+    return name ? `${article(name)} ${name}` : 'a row'
+  }
   switch (step.kind) {
     case 'validate': return 'Checks the input'
     case 'assert': {
-      // The generated check is `if (await lookup) return err(...)`: the action refuses when the lookup finds a row.
+      // The generated check is `if (await lookup) return err(...)`: the action refuses if the lookup finds a row.
       const lookup = typeof step.unless === 'object' && step.unless !== null ? step.unless as Record<string, unknown> : {}
-      return `Refuses with “${text(step.error)}” when ${text(lookup.repository) ? `${collection(lookup.repository)} (${text(lookup.op)})` : 'a lookup'} finds a row`
+      const by = lookupArg(lookup)
+      const name = collection(lookup.repository)
+      return `Refuses with “${text(step.error)}” if ${name && by ? `${article(name)} ${name} with this ${by} already exists` : 'a row is found'}`
     }
-    case 'load': return `Loads “${text(step.as)}” (${text(step.op)} on ${collection(step.repository)})${step.orError ? `, refusing with “${text(step.orError)}” when there is none` : ''}`
+    case 'load': {
+      const by = lookupArg(step)
+      return `“${text(step.as)}”: ${object(step.repository)}${by ? ` by ${by}` : ''}${step.orError ? `, refusing with “${text(step.orError)}” if there is none` : ''}`
+    }
     case 'return': {
       const early = !(step.if === true || step.if === undefined)
       if (bareReturn(step)) return early ? 'Ends the action early when a condition holds' : 'Ends the action'
       return early ? 'Returns early when a condition holds' : 'Returns a value'
     }
-    case 'repository': return `Repository: ${text(step.op)} on ${collection(step.repository)}`
+    case 'repository': {
+      const verb = ({ create: 'Creates', update: 'Updates', delete: 'Deletes' } as Record<string, string>)[text(step.op)]
+      return verb ? `${verb} ${object(step.repository)}` : `Writes to ${collection(step.repository) ?? 'a collection'}`
+    }
     case 'call': return 'Calls a service. Not generated yet'
     case 'custom': return 'Runs custom code. Not generated yet'
     default: return text(step.kind) || 'A step'

@@ -3,6 +3,7 @@ import { computed, useSlots } from 'vue'
 import { BUTTON_ICON, BUTTON_SIZES, BUTTON_SQUARE, BUTTON_VARIANTS, mergeUi } from '../../editorUi.ts'
 import type { UiSlots } from '../../editorUi.ts'
 import type { RouteLocationRaw } from 'vue-router'
+import { useDisabled } from './formDisabled.ts'
 
 /**
  * The kit's button. `primary` (selection blue) for the one main action,
@@ -26,6 +27,7 @@ const props = withDefaults(defineProps<{
 }>(), { variant: 'soft', size: 'sm', icon: undefined, trailingIcon: undefined, label: undefined, type: 'button', to: undefined, ui: undefined })
 
 const slots = useSlots()
+const off = useDisabled(() => props.disabled)
 const look = computed(() => BUTTON_VARIANTS[props.variant])
 const ui = computed(() => {
   const square = !props.label && !slots.default
@@ -48,7 +50,7 @@ const ui = computed(() => {
     :loading="loading"
     :block="block"
     :type="type"
-    :disabled="disabled"
+    :disabled="off"
     :to="to"
     :ui="ui"
   >

@@ -1,15 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
 import type { AppRoutes } from '../helpers.ts'
-import DataView from '../../src/views/DataView.vue'
 import App from '../../src/App.vue'
-import { applyEdit } from '@bildr/codegen/edit'
-import type { EditName } from '@bildr/codegen/edit'
-import { loadModel, serializeModel } from '@bildr/codegen/model'
 import { FOLDED_KEY } from '../../src/editor/dataTree.ts'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
-import { FakeEventSource, baseHandlers, byLabel, combo, indexPage, inputOf, menuItem, menuLabels, modelGet, optionLabels, selectOption, setupHarness, world } from '../design/harness.ts'
+import { FakeEventSource, baseHandlers, byLabel, combo, indexPage, inputOf, menuItem, menuLabels, modelGet, selectOption, setupHarness, world } from '../design/harness.ts'
 import type { Handlers } from '../design/harness.ts'
+import { ITEMS, activeTab, artifactModule, confirmText, inputs, open, q, qa, tab, tabNames, text, treeItem } from './dataKit.ts'
 
 /**
  * The hosted Data view over the module (U7), mounted as the Data screen over the mocked actions
@@ -20,80 +17,26 @@ import type { Handlers } from '../design/harness.ts'
 
 setupHarness()
 
-const q = (selector: string) => document.body.querySelector<HTMLElement>(selector)
-const qa = (selector: string) => [...document.body.querySelectorAll<HTMLElement>(selector)]
-const text = (element: Element | null | undefined) => element?.textContent?.replace(/\s+/g, ' ').trim() ?? ''
 const ok = (extra: Record<string, unknown> = {}) => () => ({ changed: [], ...extra })
 
 const post = (slug: string) => ({ id: `id-${slug}`, title: `Post ${slug}`, slug, body: `Body of ${slug}`, published: slug !== 'draft', publishedAt: null, createdAt: '2026-11-10T09:00:00.000Z', updatedAt: '2026-11-10T09:00:00.000Z' })
 const quotes = [{ id: 1, text: 'Q one', author: 'Ann' }, { id: 2, text: 'Q two', author: 'Bob' }]
-
-/** Mounts the Data screen with the base handlers plus `extra`. */
-const open = async (extra: Handlers = {}, routes: AppRoutes = {}, path = '/data') => {
-  const actions = mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), ...extra }, routes)
-  const mounted = await mountWithApp(DataView, path)
-  return { actions, ...mounted }
-}
 
 /** The fixture's index page shows the latest quotes, and a page that uses a collection keeps its connection. */
 const freeQuotes = () => {
   indexPage().uses!.queries = indexPage().uses!.queries!.filter(use => use.query !== 'q_latest_quotes')
 }
 
-const inputs = (actions: Awaited<ReturnType<typeof open>>['actions'], name: string) => actions.named(name).map(call => call.input)
-
-/** How the module answers a refusal, by the code `applyEdit` gives it (`packages/nuxt/src/server`: invalid input is a 400, a missing item a 404). */
-const REFUSAL_STATUS = { invalid_input: 400, not_found: 404, invalid: 422 } as const
-
-/**
- * The module's query and action edits over the mocked model, which are the real ones: each goes through `applyEdit` of
- * `@bildr/codegen/edit`, on the model's files as they are now (the fixture, and what the test changed in `world.model`), and what
- * it writes becomes the model the mocked `model_get` serves. So the editor's tests meet the module's own rules (names, uses,
- * refusals and their words), not a copy of them.
- */
-const artifactModule = (): Handlers => Object.fromEntries((['query_create', 'query_update', 'query_rename', 'query_delete', 'action_create', 'action_update', 'action_rename', 'action_delete'] as EditName[]).map(name => [name, (input: Record<string, unknown>) => {
-  const files = serializeModel(world.model)
-  const outcome = applyEdit(files, name, input)
-  if (!outcome.ok) return new Failure(REFUSAL_STATUS[outcome.code], outcome.code, outcome.message)
-  const next = { ...files }
-  for (const change of outcome.changes) {
-    if (change.content === null) Reflect.deleteProperty(next, change.path)
-    else next[change.path] = change.content
-  }
-  const loaded = loadModel(next)
-  if (!loaded.ok) throw new Error(`applyEdit left a model that does not load: ${JSON.stringify(loaded.problems)}`)
-  world.model = loaded.model
-  return { ...outcome.result, changed: outcome.changes.map(change => change.path) }
-}]))
 const collection = (plural: string) => q(`[data-collection="${plural}"]`)
 
-/** The tree's items by name: `data-tree-item` is the item's key (`collection:<id>`, `connection:<id>`). */
-const ITEMS = {
-  post: 'collection:ent_post',
-  quote: 'collection:ent_quote',
-  quotes: 'connection:ds_quotes',
-  allPosts: 'query:q_all_posts',
-  featured: 'query:q_featured_posts',
-  latestQuotes: 'query:q_latest_quotes',
-  bySlug: 'query:q_post_by_slug',
-  createPost: 'action:act_create_post',
-  publishPost: 'action:act_publish_post',
-  files: 'files'
-}
 /** The names of the tree's items, top to bottom: a connection is followed by the collections read through it. */
 const TREE_ORDER = ['post', 'quotes', 'quote', 'allPosts', 'featured', 'latestQuotes', 'bySlug', 'createPost', 'publishPost', 'files'] as const satisfies ReadonlyArray<keyof typeof ITEMS>
-const treeItem = (name: keyof typeof ITEMS) => q(`[data-tree-item="${ITEMS[name]}"]`)
-const tabNames = () => qa('[role="tab"][data-data-tab]').map(tab => tab.getAttribute('data-data-tab'))
-const activeTab = () => q('[role="tab"][aria-selected="true"]')?.getAttribute('data-data-tab')
-const tab = (name: string) => q(`[role="tab"][data-data-tab="${name}"]`)
 const key = async (element: Element | null, name: string) => {
   element!.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }))
   await settle()
 }
 const pressedSources = () => qa('[data-live-badge] button').filter(button => button.getAttribute('aria-pressed') === 'true').map(button => button.getAttribute('aria-label'))
 const textButton = (label: string) => qa('button').find(candidate => candidate.textContent?.trim() === label) ?? null
-/** What the open confirmation says. */
-const confirmText = () => text(q('[data-confirm]')?.closest('[role="dialog"]') ?? null)
 
 afterEach(() => {
   takeStart()
@@ -367,10 +310,13 @@ describe('the Data workspace (S2)', () => {
     expect(activeTab()).toBe('json')
   })
 
-  it('has one name per concept: Collection, Connection and Sample data, never Synced, fixtures, data source or entity', async () => {
+  it('has one name per concept: Collection, Connection and Sample data, never Synced, fixtures, data source or entity (and the Steps tab no repository, use-case or generated code)', async () => {
     freeQuotes()
     await open()
     const unwanted = /synced|fixtures?\b|data source|entit(y|ies)/i
+    // The Steps tab is for people who do not write code: it says nothing of the generator's own words.
+    const developerWords = /repository|use-case|generated code/i
+    let onSteps = false
     const cancel = () => click(textButton('Cancel'))
     // Each step brings a screen, a dialog or a confirmation up; what the user reads on it is checked.
     const steps: Array<() => Promise<unknown>> = [
@@ -392,6 +338,20 @@ describe('the Data workspace (S2)', () => {
       ...['definition', 'used', 'json', 'results'].map(name => () => click(tab(name))),
       () => click(treeItem('createPost')),
       ...['used', 'json', 'overview'].map(name => () => click(tab(name))),
+      // The Steps tab: its cards open (the check, the refuse with its inline new error, the write), the Add step menu and the Add a field menu.
+      () => {
+        onSteps = true
+        return click(tab('steps'))
+      },
+      () => click(q('[data-step-card="1"] [data-step-toggle]')),
+      () => selectOption(combo('[data-step-card="1"] [data-step-field="error"]'), 'New error…'),
+      () => click(q('[data-step-card="2"] [data-step-toggle]')),
+      () => menuLabels(q('[data-step-card="2"] [data-step-set-add]')),
+      () => menuLabels(q('[data-step-add]')),
+      () => {
+        onSteps = false
+        return click(tab('overview'))
+      },
       () => click(byLabel('New query')),
       cancel,
       () => click(byLabel('New action')),
@@ -404,9 +364,10 @@ describe('the Data workspace (S2)', () => {
     for (const [index, step] of steps.entries()) {
       await step()
       expect(said(), `after step ${index}`).not.toMatch(unwanted)
+      if (onSteps) expect(said(), `on the Steps tab, after step ${index}`).not.toMatch(developerWords)
     }
     expect(byLabel('Add connection')).not.toBeNull()
-  })
+  }, 20_000)
 
   it('says what is empty in each section', async () => {
     world.model.modules.blog!.entities = []
@@ -3088,675 +3049,6 @@ describe('Action Overview (S10)', () => {
       await typeInto(inputOf('[data-action-field="label"]'), 'Add a post')
       await click(tab('used'))
       expect(q('[data-confirm]')).toBeNull()
-    })
-  })
-})
-
-describe('Action Steps (S10, D10c)', () => {
-  const stepsTab = (id = 'act_create_post', extra: Handlers = {}) => open({ ...artifactModule(), ...extra }, {}, `/data?item=action:${id}&tab=steps`)
-  type Mounted = Awaited<ReturnType<typeof open>>
-  const updates = (actions: Mounted['actions']) => inputs(actions, 'action_update')
-  const card = (index: number) => q(`[data-step-card="${index}"]`)
-  const kinds = () => qa('[data-step-card]').map(entry => entry.getAttribute('data-step-kind'))
-  const summaries = () => qa('[data-step-summary]').map(text)
-  const expand = (index: number) => click(card(index)!.querySelector('[data-step-toggle]'))
-  const addStep = (label: string) => menuItem(q('[data-step-add]'), label)
-  const save = () => click(q('[data-steps-save]'))
-  const problemsOf = (index: number) => qa(`[data-step-card="${index}"] [data-step-problem]`).map(text)
-  const within = (index: number, selector: string) => card(index)!.querySelector<HTMLElement>(selector)
-  const stored = (id = 'act_create_post') => world.model.modules.blog!.actions.find(entry => entry.id === id)!
-  /** A blank action made by the module, as the "+" of the Actions section makes it: one return that always runs. */
-  const blank = () => {
-    artifactModule().action_create!({ entity: 'ent_post', template: 'blank', name: 'archive post' })
-    return 'act_archive_post'
-  }
-  /** Closes the select a test left open. */
-  const closeMenus = async () => {
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    await settle()
-  }
-
-  describe('the list', () => {
-    it('lists the steps in order, each with its kind and a sentence of what it does, and the errors below', async () => {
-      await stepsTab()
-      expect(activeTab()).toBe('steps')
-      expect(kinds()).toEqual(['validate', 'assert', 'repository'])
-      expect(qa('[data-step-label]').map(text)).toEqual(['Check', 'Refuse', 'Write'])
-      expect(summaries()).toEqual(['Checks the input', 'Refuses with “slug_taken” when Post (findBySlug) finds a row', 'Repository: create on Post'])
-      expect(inputOf('[data-error-row="0"] [data-error-field="type"]').value).toBe('slug_taken')
-      expect(inputOf('[data-error-row="0"] [data-error-field="status"]').value).toBe('409')
-      expect(inputOf('[data-error-row="0"] [data-error-field="message"]').value).toBe('The slug "{slug}" is already used by another post.')
-      // Nothing is open, nothing is changed, and nothing is wrong.
-      expect(qa('[data-step-form]')).toEqual([])
-      expect(q('[data-steps-unsaved]')).toBeNull()
-      expect(q('[data-steps-save]')?.hasAttribute('disabled')).toBe(true)
-      expect(qa('[data-step-problem]')).toEqual([])
-    })
-
-    it('is the Steps tab, between Overview and Used in, and the URL has it', async () => {
-      const { router } = await open({ ...artifactModule() }, {}, '/data?item=action:act_create_post&tab=overview')
-      expect(tabNames()).toEqual(['overview', 'steps', 'used', 'json'])
-      await click(tab('steps'))
-      expect(router.currentRoute.value.query).toEqual({ item: 'action:act_create_post', tab: 'steps' })
-      expect(q('[data-action-steps]')).not.toBeNull()
-      await click(tab('used'))
-      expect(router.currentRoute.value.query.tab).toBe('used')
-    })
-
-    it('shows a step that is not generated yet read-only, with a link to the JSON tab, and does not offer to add one', async () => {
-      stored().steps.splice(1, 0, { kind: 'call', service: 'mail' })
-      await stepsTab()
-      expect(kinds()).toEqual(['validate', 'call', 'assert', 'repository'])
-      expect(text(within(1, '[data-step-not-generated]'))).toBe('Not generated yet')
-      expect(text(within(1, '[data-step-summary]'))).toBe('Calls a service. Not generated yet')
-      expect(within(1, '[data-step-toggle]')?.getAttribute('aria-expanded')).toBe('false')
-      expect(within(1, '[data-step-duplicate]')).toBeNull()
-      await click(within(1, '[data-step-toggle]'))
-      expect(qa('[data-step-form]')).toEqual([])
-      await click(within(1, '[data-step-json]'))
-      expect(activeTab()).toBe('json')
-      await click(tab('steps'))
-      const labels = await menuLabels(q('[data-step-add]'))
-      expect(labels).toEqual(['Check the input', 'Refuse if found', 'Load a row', 'Create, update or delete', 'Return', 'Call a service (not generated yet)', 'Run custom code (not generated yet)'])
-      expect(qa('[role^="menuitem"]').slice(-2).map(item => item.getAttribute('aria-disabled'))).toEqual(['true', 'true'])
-    })
-
-    it('says there are no steps in an action that has none', async () => {
-      const { actions } = await stepsTab()
-      await click(within(2, '[data-step-remove]'))
-      await click(within(1, '[data-step-remove]'))
-      await click(within(0, '[data-step-remove]'))
-      expect(kinds()).toEqual([])
-      expect(text(q('[data-steps-empty]'))).toContain('No steps yet')
-      expect(text(q('[data-steps-problems]'))).toBe('An action needs at least one step')
-      expect(q('[data-steps-save]')?.hasAttribute('disabled')).toBe(true)
-      expect(updates(actions)).toEqual([])
-    })
-  })
-
-  describe('adding, moving, copying and removing a step', () => {
-    it('adds a step from the menu of kinds, before the step that must stay last, opened and filled as far as the action says', async () => {
-      const id = blank()
-      await stepsTab(id)
-      expect(kinds()).toEqual(['return'])
-      await addStep('Load a row')
-      expect(kinds()).toEqual(['load', 'return'])
-      expect(within(0, '[data-step-toggle]')?.getAttribute('aria-expanded')).toBe('true')
-      expect(inputOf('[data-step-field="as"]').value).toBe('post')
-      expect(text(combo('[data-step-field="repository"]'))).toBe('Post')
-      expect(text(combo('[data-step-field="op"]'))).toBe('Get by id')
-      expect(text(q('[data-step-arg="id"] [data-value-source]'))).toBe('Input: id')
-      expect(text(q('[data-steps-unsaved]'))).toBe('Unsaved changes')
-      expect(problemsOf(0)).toEqual([])
-    })
-
-    it('puts a repository step last', async () => {
-      const id = blank()
-      await stepsTab(id)
-      await addStep('Create, update or delete')
-      expect(kinds()).toEqual(['return', 'repository'])
-      expect(problemsOf(0)).toEqual(['A return that always runs must be the last step: the steps after it would never run'])
-    })
-
-    it('moves a step one place with its buttons, which stop at the ends, and keeps the focus on the button', async () => {
-      await stepsTab()
-      expect(within(0, '[data-step-up]')?.hasAttribute('disabled')).toBe(true)
-      expect(within(2, '[data-step-down]')?.hasAttribute('disabled')).toBe(true)
-      await click(within(0, '[data-step-down]'))
-      expect(kinds()).toEqual(['assert', 'validate', 'repository'])
-      expect(document.activeElement).toBe(within(1, '[data-step-down]'))
-      expect(q('[data-steps-unsaved]')).not.toBeNull()
-      expect(qa('[data-step-problem]')).toEqual([])
-    })
-
-    it('says a repository step that is not last is wrong, on its card, and Save waits', async () => {
-      await stepsTab()
-      await click(within(1, '[data-step-down]'))
-      expect(kinds()).toEqual(['validate', 'repository', 'assert'])
-      expect(problemsOf(1)).toEqual(['A repository step must be the last step: the use-case returns its result'])
-      expect(q('[data-step-card="1"]')?.hasAttribute('data-step-invalid')).toBe(true)
-      expect(q('[data-steps-save]')?.hasAttribute('disabled')).toBe(true)
-      expect(text(q('[data-steps-blocked]'))).toBe('Fix 1 problem to save.')
-      await click(within(2, '[data-step-up]'))
-      expect(kinds()).toEqual(['validate', 'assert', 'repository'])
-      expect(q('[data-steps-unsaved]')).toBeNull()
-      expect(q('[data-steps-blocked]')).toBeNull()
-    })
-
-    it('moves a step by dragging its grip', async () => {
-      await stepsTab()
-      const grip = within(0, '[data-step-handle]')!
-      grip.dispatchEvent(Object.assign(new Event('dragstart', { bubbles: true }), { dataTransfer: { setData() {}, setDragImage() {}, effectAllowed: '' } }))
-      const target = q('[data-step-key="2"]')!
-      target.getBoundingClientRect = () => ({ top: 0, height: 36, bottom: 36, left: 0, right: 100, width: 100, x: 0, y: 0, toJSON() {} })
-      target.dispatchEvent(Object.assign(new Event('dragover', { bubbles: true, cancelable: true }), { clientY: 30 }))
-      target.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }))
-      await settle()
-      expect(kinds()).toEqual(['assert', 'repository', 'validate'])
-    })
-
-    it('copies a step right after it, and a copy of a load is named apart', async () => {
-      await stepsTab()
-      await click(within(1, '[data-step-duplicate]'))
-      expect(kinds()).toEqual(['validate', 'assert', 'assert', 'repository'])
-      expect(summaries()[2]).toBe(summaries()[1])
-      expect(within(2, '[data-step-toggle]')?.getAttribute('aria-expanded')).toBe('true')
-    })
-
-    it('names the copy of a load apart from the row it loads', async () => {
-      await stepsTab('act_publish_post')
-      await click(within(0, '[data-step-duplicate]'))
-      expect(kinds()).toEqual(['load', 'load', 'return', 'repository'])
-      expect(inputOf('[data-step-card="1"] [data-step-field="as"]').value).toBe('post2')
-    })
-
-    it('removes a step, and saves the steps that are left with one action_update', async () => {
-      const { actions } = await stepsTab('act_publish_post')
-      await click(within(1, '[data-step-remove]'))
-      expect(kinds()).toEqual(['load', 'repository'])
-      await save()
-      expect(updates(actions)).toEqual([{ action: 'act_publish_post', steps: stored('act_publish_post').steps }])
-      expect(stored('act_publish_post').steps.map(step => step.kind)).toEqual(['load', 'repository'])
-      expect(q('[data-steps-unsaved]')).toBeNull()
-      expect(q('[data-steps-error]')).toBeNull()
-    })
-  })
-
-  describe('the form of each kind', () => {
-    it('check: says what it checks', async () => {
-      await stepsTab()
-      await expand(0)
-      expect(text(q('[data-step-form]'))).toBe('Checks the body against the fields of Post: a value that is missing or does not fit is refused.')
-    })
-
-    it('refuse: shows the lookup, the error it refuses with and what the error carries, and changes the lookup', async () => {
-      const { actions } = await stepsTab()
-      await expand(1)
-      expect(text(combo('[data-step-field="repository"]'))).toBe('Post')
-      expect(text(combo('[data-step-field="op"]'))).toBe('Find by slug')
-      expect(text(q('[data-step-arg="slug"] [data-value-source]'))).toBe('Input: slug')
-      expect(text(combo('[data-step-field="error"]'))).toBe('slug_taken (409)')
-      expect(text(q('[data-step-error-data="slug"] [data-value-source]'))).toBe('Input: slug')
-      await selectOption(combo('[data-step-field="op"]'), 'Get by id')
-      expect(q('[data-step-arg="slug"]')).toBeNull()
-      expect(text(q('[data-step-arg="id"] [data-value-source]'))).toBe('Input: id')
-      expect(summaries()[1]).toBe('Refuses with “slug_taken” when Post (get) finds a row')
-      await save()
-      expect(updates(actions)).toEqual([{ action: 'act_create_post', steps: [{ kind: 'validate' }, { ...stored().steps[1] }, stored().steps[2]] }])
-      expect(stored().steps[1]!.unless).toEqual({ repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } })
-    })
-
-    it('refuse: adds the error it refuses with inline, which is declared with the steps in one save', async () => {
-      const { actions } = await stepsTab()
-      await expand(1)
-      await selectOption(combo('[data-step-field="error"]'), 'New error…')
-      expect(q('[data-step-new-error]')).not.toBeNull()
-      await typeInto(q('[data-new-error="type"]'), 'Not Allowed')
-      await typeInto(q('[data-new-error="message"]'), 'Not allowed.')
-      expect(text(q('[data-new-error-problem]'))).toBe('Use a name like “slug_taken”: lowercase letters, digits and _')
-      expect(q('[data-new-error-add]')?.hasAttribute('disabled')).toBe(true)
-      await typeInto(q('[data-new-error="type"]'), 'not_allowed')
-      await typeInto(q('[data-new-error="status"]'), '403')
-      await click(q('[data-new-error-add]'))
-      expect(q('[data-step-new-error]')).toBeNull()
-      expect(qa('[data-error-row]').map(row => inputOf(`[data-error-row="${row.getAttribute('data-error-row')}"] [data-error-field="type"]`).value)).toEqual(['slug_taken', 'not_allowed'])
-      expect(text(combo('[data-step-field="error"]'))).toBe('not_allowed (403)')
-      expect(q('[data-step-error-data]')).toBeNull()
-      await save()
-      expect(updates(actions)).toHaveLength(1)
-      const [update] = updates(actions) as Array<{ steps: Array<Record<string, unknown>>, errors: unknown[] }>
-      expect(update!.steps[1]).toEqual({ kind: 'assert', unless: { repository: 'repo_post', op: 'findBySlug', args: { slug: { $input: 'slug' } } }, error: 'not_allowed' })
-      expect(update!.errors).toEqual([stored().errors[0], { type: 'not_allowed', status: 403, message: 'Not allowed.' }])
-      expect(stored().errors.map(error => error.type)).toEqual(['slug_taken', 'not_allowed'])
-    })
-
-    it('load: shows the name, the lookup, the error when there is none and what it carries', async () => {
-      await stepsTab('act_publish_post')
-      await expand(0)
-      expect(inputOf('[data-step-field="as"]').value).toBe('post')
-      expect(text(combo('[data-step-field="repository"]'))).toBe('Post')
-      expect(text(combo('[data-step-field="op"]'))).toBe('Get by id')
-      expect(text(q('[data-step-arg="id"] [data-value-source]'))).toBe('Input: id')
-      expect(text(combo('[data-step-field="orError"]'))).toBe('post_not_found (404)')
-      expect(text(q('[data-step-error-data="id"] [data-value-source]'))).toBe('Input: id')
-    })
-
-    it('load: carries on without the row when no error is chosen, and the error\'s values go with it', async () => {
-      const { actions } = await stepsTab('act_publish_post')
-      await expand(0)
-      await selectOption(combo('[data-step-field="orError"]'), 'None')
-      expect(q('[data-step-error-data]')).toBeNull()
-      await save()
-      expect(updates(actions)).toEqual([{ action: 'act_publish_post', steps: [{ kind: 'load', as: 'post', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } }, ...stored('act_publish_post').steps.slice(1)] }])
-    })
-
-    it('write: shows the collection, what it does, the key, the row and what it sets', async () => {
-      await stepsTab('act_publish_post')
-      await expand(2)
-      expect(text(combo('[data-step-field="repository"]'))).toBe('Post')
-      expect(text(combo('[data-step-field="op"]'))).toBe('Update')
-      expect(text(q('[data-step-field="id"] [data-value-source]'))).toBe('Input: id')
-      expect(text(q('[data-step-field="from"] [data-value-source]'))).toBe('Variable: post')
-      expect(qa('[data-step-set]').map(row => row.getAttribute('data-step-set'))).toEqual(['published', 'publishedAt'])
-      expect(text(q('[data-step-set="published"] [data-value-literal]'))).toBe('Yes')
-      expect(text(q('[data-step-set="publishedAt"] [data-value-source]'))).toBe('Now')
-    })
-
-    it('write: sets a field, typed by the field\'s type, and does not set another', async () => {
-      const { actions } = await stepsTab('act_publish_post')
-      await expand(2)
-      await selectOption(combo('[data-step-set="published"] [data-value-literal]'), 'No')
-      await click(q('[data-step-set="publishedAt"] [data-step-set-remove]'))
-      await selectOption(combo('[data-step-set-add]'), 'body')
-      await typeInto(q('[data-step-set="body"] [data-value-literal]'), 'Published.')
-      await save()
-      expect(updates(actions)).toHaveLength(1)
-      expect(stored('act_publish_post').steps[2]).toEqual({ kind: 'repository', repository: 'repo_post', op: 'update', id: { $input: 'id' }, from: { $var: 'post' }, set: { published: false, body: 'Published.' } })
-    })
-
-    it('write: a field set to a number is a number, and what is not one is said on the card', async () => {
-      world.model.modules.blog!.entities.find(entity => entity.id === 'ent_post')!.fields.push({ id: 'fld_views', name: 'views', type: 'integer', default: 0 } as never)
-      await stepsTab('act_publish_post')
-      await expand(2)
-      await selectOption(combo('[data-step-set-add]'), 'views')
-      expect(inputOf('[data-step-set="views"] [data-value-literal]').value).toBe('0')
-      await typeInto(q('[data-step-set="views"] [data-value-literal]'), '12')
-      expect(problemsOf(2)).toEqual([])
-      await typeInto(q('[data-step-set="views"] [data-value-literal]'), '1.5')
-      expect(problemsOf(2)).toEqual(['views must be a whole number'])
-      expect(q('[data-steps-save]')?.hasAttribute('disabled')).toBe(true)
-    })
-
-    it('write: changing the collection\'s operation keeps what still applies', async () => {
-      await stepsTab('act_publish_post')
-      await expand(2)
-      await selectOption(combo('[data-step-field="op"]'), 'Delete')
-      expect(q('[data-step-field="from"]')).toBeNull()
-      expect(q('[data-step-sets]')).toBeNull()
-      expect(text(q('[data-step-field="id"] [data-value-source]'))).toBe('Input: id')
-      await selectOption(combo('[data-step-field="op"]'), 'Create')
-      expect(q('[data-step-field="id"]')).toBeNull()
-      expect(text(q('[data-step-sets]'))).toContain('Nothing is set but the checked input.')
-    })
-
-    it('return: runs always or when a condition holds, and returns a row', async () => {
-      await stepsTab('act_publish_post')
-      await expand(1)
-      expect(text(combo('[data-step-field="if"]'))).toBe('When…')
-      expect(text(q('[data-step-field="condition"] [data-value-source]'))).toBe('Variable: post.published')
-      expect(text(q('[data-step-field="value"] [data-value-source]'))).toBe('Variable: post')
-      await selectOption(combo('[data-step-field="if"]'), 'Always')
-      expect(q('[data-step-field="condition"]')).toBeNull()
-      expect(problemsOf(1)).toEqual(['A return that always runs must be the last step: the steps after it would never run'])
-      await selectOption(combo('[data-step-field="if"]'), 'When')
-      expect(problemsOf(1)).toEqual(['Pick when it returns: always, or when a condition holds'])
-      expect(text(q('[data-step-field="condition"] [data-value-source]'))).toBe('Pick a value')
-    })
-
-    it('return: of an action with no output returns nothing', async () => {
-      const id = blank()
-      await stepsTab(id)
-      await expand(0)
-      expect(text(combo('[data-step-field="if"]'))).toBe('Always')
-      expect(text(q('[data-step-nothing]'))).toBe('Nothing')
-      expect(q('[data-step-field="value"]')).toBeNull()
-    })
-  })
-
-  describe('the values a step can read', () => {
-    it('offers the input fields, the rows earlier steps loaded and now, and a value typed by the type of its field', async () => {
-      await stepsTab('act_publish_post')
-      await expand(1)
-      const labels = await optionLabels(combo('[data-step-field="condition"] [data-value-source]'))
-      expect(labels).toEqual(['Input: id', 'Variable: post', 'Variable: post.id', 'Variable: post.title', 'Variable: post.slug', 'Variable: post.body', 'Variable: post.published', 'Variable: post.publishedAt', 'Variable: post.createdAt', 'Variable: post.updatedAt'])
-      await closeMenus()
-    })
-
-    it('offers a value and now to a field, and only rows to the row a write puts back', async () => {
-      await stepsTab('act_publish_post')
-      await expand(2)
-      expect(await optionLabels(combo('[data-step-field="from"] [data-value-source]'))).toEqual(['Variable: post'])
-      await closeMenus()
-      const labels = await optionLabels(combo('[data-step-set="published"] [data-value-source]'))
-      expect(labels.slice(0, 2)).toEqual(['Input: id', 'Variable: post'])
-      expect(labels.slice(-3)).toEqual(['Now', 'Empty', 'A value…'])
-      await closeMenus()
-    })
-
-    it('does not offer a row to the step before the one that loads it, nor a row loaded by a later step', async () => {
-      await stepsTab('act_publish_post')
-      // Added after the load (and before the repository step, which stays last): it sees the row. The load itself sees none.
-      await addStep('Load a row')
-      expect(kinds()).toEqual(['load', 'return', 'load', 'repository'])
-      expect(inputOf('[data-step-card="2"] [data-step-field="as"]').value).toBe('post2')
-      await expand(0)
-      const first = await optionLabels(combo('[data-step-card="0"] [data-step-arg="id"] [data-value-source]'))
-      expect(first).toEqual(['Input: id', 'Now', 'Empty', 'A value…'])
-      await closeMenus()
-      const second = await optionLabels(combo('[data-step-card="2"] [data-step-arg="id"] [data-value-source]'))
-      expect(second.filter(label => label.startsWith('Variable')).slice(0, 2)).toEqual(['Variable: post', 'Variable: post.id'])
-      expect(second).not.toContain('Variable: post2')
-      await closeMenus()
-    })
-
-    it('keeps a value the form does not edit as it is, and shows it', async () => {
-      await stepsTab()
-      await expand(2)
-      expect(text(q('[data-step-set="publishedAt"] [data-value-source]'))).toBe('Computed value')
-      expect(q('[data-step-set="publishedAt"] [data-value-computed]')?.textContent).toContain('"then":{"$now":true}')
-      expect(q('[data-steps-unsaved]')).toBeNull()
-    })
-  })
-
-  describe('what the editor says before the module does', () => {
-    it('says a row is read before the step that loads it, and a row no step loads, and blocks Save', async () => {
-      await stepsTab('act_publish_post')
-      await expand(0)
-      await typeInto(q('[data-step-field="as"]'), 'existing')
-      expect(problemsOf(1)).toEqual(['“post” is not loaded by any step'])
-      expect(problemsOf(2)).toEqual(['“post” is not loaded by any step'])
-      expect(problemsOf(0)).toEqual([])
-      expect(q('[data-steps-save]')?.hasAttribute('disabled')).toBe(true)
-      expect(text(q('[data-steps-blocked]'))).toBe('Fix 2 problems to save.')
-      await typeInto(q('[data-step-field="as"]'), 'post')
-      expect(qa('[data-step-problem]')).toEqual([])
-      expect(q('[data-steps-unsaved]')).toBeNull()
-    })
-
-    it('says the step that loads a row comes after the one that reads it', async () => {
-      await stepsTab('act_publish_post')
-      await click(within(0, '[data-step-down]'))
-      expect(kinds()).toEqual(['return', 'load', 'repository'])
-      expect(problemsOf(0)).toEqual(['Reads “post” before it is loaded: the step that loads it comes after (step 2)'])
-    })
-
-    it('says an error a step raises is not declared, and a row with no name', async () => {
-      await stepsTab()
-      await click(q('[data-error-row="0"] [data-error-remove]'))
-      expect(problemsOf(1)).toEqual(['The error “slug_taken” is not declared: add it below, or pick another'])
-      await click(q('[data-error-add]'))
-      await typeInto(q('[data-error-row="0"] [data-error-field="type"]'), 'slug_taken')
-      expect(problemsOf(1)).toEqual([])
-      expect(qa('[data-error-row="0"] [data-error-problem]').map(text)).toEqual(['Add the message the client gets'])
-      expect(q('[data-steps-save]')?.hasAttribute('disabled')).toBe(true)
-    })
-
-    it('renames an error in the steps that raise it', async () => {
-      const { actions } = await stepsTab()
-      await typeInto(q('[data-error-row="0"] [data-error-field="type"]'), 'slug_in_use')
-      expect(problemsOf(1)).toEqual([])
-      await save()
-      expect(updates(actions)).toHaveLength(1)
-      expect(stored().errors[0]!.type).toBe('slug_in_use')
-      expect(stored().steps[1]!.error).toBe('slug_in_use')
-    })
-
-    it('says a required field that is empty on the card that has it', async () => {
-      const id = blank()
-      await stepsTab(id)
-      await addStep('Load a row')
-      await typeInto(q('[data-step-field="as"]'), '')
-      expect(problemsOf(0)).toEqual(['Name the loaded row'])
-      expect(card(0)?.hasAttribute('data-step-invalid')).toBe(true)
-      expect(card(1)?.hasAttribute('data-step-invalid')).toBe(false)
-    })
-
-    it('says the one return of an action that has no repository step may not run', async () => {
-      const id = blank()
-      await stepsTab(id)
-      await expand(0)
-      expect(q('[data-steps-problems]')).toBeNull()
-      await selectOption(combo('[data-step-field="if"]'), 'When')
-      expect(problemsOf(0)).toEqual(['Pick when it returns: always, or when a condition holds'])
-      expect(text(q('[data-steps-problems]'))).toBe('An action needs a “repository” step (create, update or delete), or a last “return” step that always runs, to do its work')
-      expect(q('[data-steps-save]')?.hasAttribute('disabled')).toBe(true)
-      await selectOption(combo('[data-step-field="condition"] [data-value-source]'), 'Input: published')
-      expect(problemsOf(0)).toEqual([])
-      // A condition that holds is not an answer on every run: the module wants the always-return or a repository step.
-      expect(text(q('[data-steps-problems]'))).toContain('An action needs a “repository” step')
-    })
-
-    it('says a create with nothing that checks the input before it', async () => {
-      const id = blank()
-      await stepsTab(id)
-      await addStep('Create, update or delete')
-      await click(within(0, '[data-step-remove]'))
-      expect(kinds()).toEqual(['repository'])
-      expect(problemsOf(0)).toEqual(['Create writes the checked input: add a “Checks the input” step before it'])
-      await addStep('Check the input')
-      expect(kinds()).toEqual(['validate', 'repository'])
-      expect(problemsOf(1)).toEqual([])
-    })
-  })
-
-  describe('the errors', () => {
-    it('edits an error\'s status and message, and saves them without the steps', async () => {
-      const { actions } = await stepsTab()
-      await typeInto(q('[data-error-row="0"] [data-error-field="status"]'), '422')
-      await typeInto(q('[data-error-row="0"] [data-error-field="message"]'), 'The slug "{slug}" is taken.')
-      await save()
-      expect(updates(actions)).toEqual([{ action: 'act_create_post', errors: [{ type: 'slug_taken', status: 422, message: 'The slug "{slug}" is taken.', data: { slug: 'text' } }] }])
-      expect(stored().errors[0]).toEqual({ type: 'slug_taken', status: 422, message: 'The slug "{slug}" is taken.', data: { slug: 'text' } })
-    })
-
-    it('edits what an error carries, and the step that raises it asks for a value of it before Save', async () => {
-      await stepsTab()
-      await click(q('[data-error-row="0"] [data-error-data-add]'))
-      await typeInto(q('[data-error-row="0"] [data-error-data="1"] [data-error-data-name]'), 'count')
-      await selectOption(combo('[data-error-row="0"] [data-error-data="1"] [data-error-data-type]'), 'Integer')
-      expect(problemsOf(1)).toEqual(['Give the count the error carries'])
-      expect(q('[data-steps-save]')?.hasAttribute('disabled')).toBe(true)
-      await click(q('[data-error-row="0"] [data-error-data="1"] [data-error-data-remove]'))
-      expect(problemsOf(1)).toEqual([])
-    })
-
-    it('says a status that is not an HTTP error, a name taken, and a name that is not a name', async () => {
-      await stepsTab()
-      await click(q('[data-error-add]'))
-      await typeInto(q('[data-error-row="1"] [data-error-field="type"]'), 'slug_taken')
-      await typeInto(q('[data-error-row="1"] [data-error-field="status"]'), '200')
-      expect(qa('[data-error-row="1"] [data-error-problem]').map(text)).toEqual(['“slug_taken” is declared twice', 'The status is an HTTP error code, from 400 to 599', 'Add the message the client gets'])
-      await typeInto(q('[data-error-row="1"] [data-error-field="type"]'), 'Slug Taken')
-      expect(text(q('[data-error-row="1"] [data-error-problem]'))).toBe('Use a name like “slug_taken”: lowercase letters, digits and _')
-    })
-  })
-
-  describe('saving', () => {
-    it('adds a load and an update to a blank action, saves them with one action_update, and the JSON tab has them', async () => {
-      const id = blank()
-      const { actions } = await stepsTab(id)
-      await click(within(0, '[data-step-remove]'))
-      expect(kinds()).toEqual([])
-      await addStep('Load a row')
-      await addStep('Create, update or delete')
-      await selectOption(combo('[data-step-card="1"] [data-step-field="op"]'), 'Update')
-      expect(kinds()).toEqual(['load', 'repository'])
-      expect(text(q('[data-step-card="1"] [data-step-field="from"] [data-value-source]'))).toBe('Variable: post')
-      expect(qa('[data-step-problem]')).toEqual([])
-      await save()
-      expect(updates(actions)).toEqual([{ action: id, steps: [
-        { kind: 'load', as: 'post', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } },
-        { kind: 'repository', repository: 'repo_post', op: 'update', id: { $input: 'id' }, from: { $var: 'post' } }
-      ] }])
-      expect(q('[data-steps-error]')).toBeNull()
-      expect(q('[data-steps-unsaved]')).toBeNull()
-      // The module wrote them (the JSON tab shows the file: the e2e reads it there).
-      expect(stored(id).steps.map(step => step.kind)).toEqual(['load', 'repository'])
-    })
-
-    it('keeps the open cards open after a save', async () => {
-      await stepsTab('act_publish_post')
-      await expand(2)
-      await click(within(1, '[data-step-remove]'))
-      await save()
-      expect(kinds()).toEqual(['load', 'repository'])
-      expect(within(1, '[data-step-toggle]')?.getAttribute('aria-expanded')).toBe('true')
-    })
-
-    it('shows what the module refused under the footer, keeps the draft, and marks the step it names', async () => {
-      const { actions } = await stepsTab('act_create_post', { action_update: () => new Failure(422, 'invalid', 'steps.2: this action returns nothing (it has no output), so the return\'s value is { "$var": "undefined" }') })
-      await click(within(1, '[data-step-duplicate]'))
-      await save()
-      expect(updates(actions)).toHaveLength(1)
-      expect(text(q('[data-steps-error]'))).toContain('steps.2: this action returns nothing')
-      expect(q('[data-steps-footer]')?.contains(q('[data-steps-error]'))).toBe(true)
-      expect(q('[data-testid="error-banner"]')).toBeNull()
-      expect(kinds()).toEqual(['validate', 'assert', 'assert', 'repository'])
-      expect(qa('[data-step-refused]').map(entry => entry.getAttribute('data-step-card'))).toEqual(['1'])
-      // Editing again clears the mark with the message.
-      await click(within(3, '[data-step-up]'))
-      expect(q('[data-steps-error]')).toBeNull()
-      expect(qa('[data-step-refused]')).toEqual([])
-    })
-
-    it('marks the step and the error a model problem names, counting from 0 as the model does', async () => {
-      await stepsTab('act_create_post', { action_update: () => new Failure(422, 'invalid', 'The edit would leave the model with problems: steps.1: bad (.bildr/modules/blog/actions/create-post.json)') })
-      await click(within(1, '[data-step-duplicate]'))
-      await save()
-      expect(qa('[data-step-refused]').map(entry => entry.getAttribute('data-step-card'))).toEqual(['1'])
-    })
-
-    it('marks the steps and the errors a refusal quotes by name', async () => {
-      await stepsTab('act_create_post', { action_update: () => new Failure(422, 'invalid', 'The edit would leave a model the generator can\'t build: act_create_post: the error "slug_taken" is not declared in the action\'s errors') })
-      await click(within(1, '[data-step-duplicate]'))
-      await save()
-      expect(qa('[data-step-refused]').map(entry => entry.getAttribute('data-step-card'))).toEqual(['1', '2'])
-      expect(q('[data-error-row="0"]')?.hasAttribute('data-error-refused')).toBe(true)
-    })
-
-    it('saves an early return before the one that always runs, which the module takes', async () => {
-      const id = blank()
-      const { actions } = await stepsTab(id)
-      await addStep('Return')
-      expect(kinds()).toEqual(['return', 'return'])
-      expect(problemsOf(0)).toEqual(['Pick when it returns: always, or when a condition holds'])
-      await selectOption(combo('[data-step-card="0"] [data-step-field="condition"] [data-value-source]'), 'Input: published')
-      expect(qa('[data-step-problem]')).toEqual([])
-      await save()
-      expect(updates(actions)).toEqual([{ action: id, steps: [{ kind: 'return', if: { $input: 'published' }, value: { $var: 'undefined' } }, { kind: 'return', if: true, value: { $var: 'undefined' } }] }])
-      expect(q('[data-steps-error]')).toBeNull()
-      expect(stored(id).steps).toHaveLength(2)
-    })
-  })
-
-  describe('unsaved edits', () => {
-    const DISCARD = 'Discard unsaved changes to Create post?'
-
-    it('asks before another tab or item is shown, keeps the draft when it is declined, and discards it when it is confirmed', async () => {
-      await stepsTab()
-      await click(within(1, '[data-step-remove]'))
-      await click(tab('used'))
-      expect(confirmText()).toContain(DISCARD)
-      await click(q('[data-confirm-cancel]'))
-      expect(activeTab()).toBe('steps')
-      expect(kinds()).toEqual(['validate', 'repository'])
-      await click(treeItem('publishPost'))
-      expect(confirmText()).toContain(DISCARD)
-      await click(q('[data-confirm-ok]'))
-      expect(text(q('[data-data-title] h2'))).toBe('Publish post')
-      await click(treeItem('createPost'))
-      await click(tab('steps'))
-      expect(kinds()).toEqual(['validate', 'assert', 'repository'])
-    })
-
-    it('does not ask when nothing changed, after a discard, or after a save', async () => {
-      await stepsTab()
-      await click(tab('used'))
-      expect(q('[data-confirm]')).toBeNull()
-      await click(tab('steps'))
-      await click(within(1, '[data-step-remove]'))
-      await click(q('[data-steps-discard]'))
-      expect(kinds()).toEqual(['validate', 'assert', 'repository'])
-      expect(q('[data-steps-unsaved]')).toBeNull()
-      await click(tab('used'))
-      expect(q('[data-confirm]')).toBeNull()
-      await click(tab('steps'))
-      await click(within(1, '[data-step-remove]'))
-      await click(q('[data-steps-save]'))
-      await click(treeItem('publishPost'))
-      expect(q('[data-confirm]')).toBeNull()
-    })
-
-    it('asks for a draft the editor says is wrong, too', async () => {
-      await stepsTab()
-      await click(within(1, '[data-step-down]'))
-      expect(q('[data-steps-save]')?.hasAttribute('disabled')).toBe(true)
-      await click(tab('used'))
-      expect(confirmText()).toContain(DISCARD)
-    })
-  })
-
-  describe('the action changing elsewhere while its steps are edited', () => {
-    let version = 200
-    const FILE = '.bildr/modules/blog/actions/create-post.json'
-    /** Another editor, an undo or a JSON-tab save: the model has a different action, and the editor reads it. */
-    const outside = async (change: (action: ReturnType<typeof stored>) => void) => {
-      change(stored())
-      FakeEventSource.instances.at(-1)!.send({ type: 'model', version: version++, files: [FILE], source: 'disk' })
-      await settle()
-    }
-    const notice = () => q('[data-steps-changed]')
-
-    it('says so, leaves the edits, and blocks Save until the user chooses', async () => {
-      const { actions } = await stepsTab()
-      await click(within(1, '[data-step-remove]'))
-      await outside((action) => {
-        action.errors[0]!.message = 'Taken elsewhere.'
-      })
-      expect(text(notice())).toContain('This action changed since you started editing')
-      expect(kinds()).toEqual(['validate', 'repository'])
-      expect(q('[data-steps-save]')?.hasAttribute('disabled')).toBe(true)
-      await save()
-      expect(updates(actions)).toEqual([])
-    })
-
-    it('shows no notice while nothing was edited: the form just follows the model', async () => {
-      await stepsTab()
-      await outside((action) => {
-        action.steps.splice(0, 1)
-      })
-      expect(notice()).toBeNull()
-      expect(kinds()).toEqual(['assert', 'repository'])
-    })
-
-    it('does not take what Overview edits for a change of the steps', async () => {
-      await stepsTab()
-      await click(within(1, '[data-step-remove]'))
-      await outside((action) => {
-        action.label = 'Add post'
-      })
-      expect(notice()).toBeNull()
-      expect(kinds()).toEqual(['validate', 'repository'])
-    })
-
-    it('loads the new version over the edits on request', async () => {
-      const { actions } = await stepsTab()
-      await click(within(1, '[data-step-remove]'))
-      await outside((action) => {
-        action.errors[0]!.message = 'Taken elsewhere.'
-      })
-      await click(q('[data-steps-load-new]'))
-      expect(notice()).toBeNull()
-      expect(kinds()).toEqual(['validate', 'assert', 'repository'])
-      expect(inputOf('[data-error-row="0"] [data-error-field="message"]').value).toBe('Taken elsewhere.')
-      expect(q('[data-steps-unsaved]')).toBeNull()
-      expect(updates(actions)).toEqual([])
-    })
-
-    it('keeps the edits on request, and Save sends only the part the user touched', async () => {
-      const { actions } = await stepsTab()
-      await click(within(1, '[data-step-remove]'))
-      await outside((action) => {
-        action.errors[0]!.message = 'Taken elsewhere.'
-      })
-      await click(q('[data-steps-keep-mine]'))
-      expect(notice()).toBeNull()
-      expect(kinds()).toEqual(['validate', 'repository'])
-      expect(inputOf('[data-error-row="0"] [data-error-field="message"]').value).toBe('Taken elsewhere.')
-      await save()
-      expect(updates(actions)).toEqual([{ action: 'act_create_post', steps: stored().steps }])
-      expect(stored().errors[0]!.message).toBe('Taken elsewhere.')
-      expect(stored().steps.map(step => step.kind)).toEqual(['validate', 'repository'])
     })
   })
 })

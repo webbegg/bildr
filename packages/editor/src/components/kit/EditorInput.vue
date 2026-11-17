@@ -2,6 +2,7 @@
 import { computed, ref, useTemplateRef, watch } from 'vue'
 import { FIELD_INVALID, INPUT_MONO_UI, INPUT_UI, mergeUi } from '../../editorUi.ts'
 import type { UiSlots } from '../../editorUi.ts'
+import { useDisabled } from './formDisabled.ts'
 /**
  * The kit's one-line field (editorUi.ts). With `commit="change"` it edits a
  * draft and emits `commit` (and the v-model update) on blur or Enter, and Esc
@@ -24,6 +25,7 @@ const props = withDefaults(defineProps<{
 }>(), { modelValue: '', placeholder: undefined, type: 'text', icon: undefined, commit: 'input', ui: undefined })
 const emit = defineEmits<{ 'update:modelValue': [value: string], 'commit': [value: string] }>()
 
+const off = useDisabled(() => props.disabled)
 const text = (value: string | number | null | undefined) => String(value ?? '')
 const draft = ref(text(props.modelValue))
 watch(() => props.modelValue, (value) => {
@@ -64,7 +66,7 @@ defineExpose({
     :type="type"
     :placeholder="placeholder"
     :readonly="readonly"
-    :disabled="disabled"
+    :disabled="off"
     :icon="icon"
     :autofocus="autofocus"
     :aria-invalid="invalid || undefined"

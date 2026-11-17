@@ -1,8 +1,14 @@
 import type { ActionFile, Model } from '@bildr/codegen/model'
+import { isObject } from '../model.ts'
 import { entityById } from '../shared/dataModel.ts'
 import type { FieldType } from '../shared/dataModel.ts'
-import { exprOf, inputRoots, literalProblem, repositoriesOf, scopeAt, varRoots } from './stepScope.ts'
-import type { RepoInfo, Step, StepScope } from './stepScope.ts'
+import { plainCopy, sameJson } from './draftJson.ts'
+import { exprOf, inputRoots, literalProblem, record, renameVar, varRoots } from './stepExpr.ts'
+import type { Step } from './stepExpr.ts'
+import { repositoriesOf } from './stepRepos.ts'
+import type { RepoInfo } from './stepRepos.ts'
+import { scopeAt } from './stepScope.ts'
+import type { StepScope } from './stepScope.ts'
 
 /**
  * The step editor's draft (S10, D10c): the Steps tab holds an action's steps and errors as a draft until Save, as the query
@@ -39,7 +45,7 @@ export interface StepsContext {
   model: Model
   action: ActionFile
   repos: RepoInfo[]
-  /** The names a loaded row cannot take: the generated use-case declares them (its input, its repositories). */
+  /** The names a loaded row cannot take: bildr's own code uses them (the action's input and its collections). */
   reserved: Set<string>
 }
 
@@ -51,10 +57,6 @@ export function contextOf(model: Model, action: ActionFile): StepsContext {
   return { model, action, repos, reserved: new Set([...RESERVED, ...plurals]) }
 }
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
-/** A copy of a plain value, so a draft never shares what the model's refresh replaces. */
-const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
-
 const errorOf = (error: ActionFile['errors'][number]): DraftError => ({
   type: error.type,
   status: String(error.status),
@@ -64,11 +66,9 @@ const errorOf = (error: ActionFile['errors'][number]): DraftError => ({
 
 /** The draft of an action as it is stored now. */
 export const draftOf = (action: ActionFile): StepsDraft => ({
-  steps: action.steps.map((step, key) => ({ key, step: copy(step) as Step })),
+  steps: action.steps.map((step, key) => ({ key, step: plainCopy(step) as Step })),
   errors: action.errors.map(errorOf)
 })
-
-export const plainSteps = (draft: StepsDraft): Step[] => draft.steps.map(entry => entry.step)
 
 // ── What saving sends ────────────────────────────────────────────────────
 
@@ -79,12 +79,12 @@ export const plainSteps = (draft: StepsDraft): Step[] => draft.steps.map(entry =
  */
 export function changesOf(draft: StepsDraft, base: ActionFile): { input: { steps?: ActionFile['steps'], errors?: ActionFile['errors'] } } {
   const input: { steps?: ActionFile['steps'], errors?: ActionFile['errors'] } = {}
-  const steps = copy(plainSteps(draft)) as ActionFile['steps']
-  if (!same(steps, base.steps)) input.steps = steps
+  const steps = plainCopy(draft.steps.map(entry => entry.step)) as ActionFile['steps']
+  if (!sameJson(steps, base.steps)) input.steps = steps
   const opened = draftOf(base).errors
-  if (!same(draft.errors, opened)) {
+  if (!sameJson(draft.errors, opened)) {
     input.errors = draft.errors.map((error) => {
-      const at = opened.findIndex(original => same(original, error))
+      const at = opened.findIndex(original => sameJson(original, error))
       if (at >= 0) return base.errors[at]!
       return {
         type: error.type,
@@ -101,12 +101,15 @@ export function changesOf(draft: StepsDraft, base: ActionFile): { input: { steps
 
 export type AddableKind = 'validate' | 'assert' | 'load' | 'repository' | 'return'
 
-/** The kinds a step can be added as, in the order the menu lists them, and the ones that are not generated yet (shown, and not offered). */
+/**
+ * The kinds a step can be added as, in the order the menu lists them (each with the hint the menu shows under it), and the ones
+ * that are not generated yet (shown, and not offered). The write kind is "Write" everywhere: its card, its summary and the menu.
+ */
 export const ADDABLE_KINDS: Array<{ kind: AddableKind, label: string, hint: string }> = [
   { kind: 'validate', label: 'Check the input', hint: 'Checks the body against the collection\'s fields' },
-  { kind: 'assert', label: 'Refuse if found', hint: 'Stops with an error when a lookup finds a row' },
-  { kind: 'load', label: 'Load a row', hint: 'Reads a row, and may refuse when there is none' },
-  { kind: 'repository', label: 'Create, update or delete', hint: 'Writes to a collection: the last step' },
+  { kind: 'assert', label: 'Refuse if found', hint: 'Stops with an error if a row is found' },
+  { kind: 'load', label: 'Load a row', hint: 'Reads a row, and may refuse if there is none' },
+  { kind: 'repository', label: 'Write', hint: 'Creates, updates or deletes a row: the last step' },
   { kind: 'return', label: 'Return', hint: 'Ends the action, always or when a condition holds' }
 ]
 export const NOT_GENERATED_KINDS = [{ kind: 'call', label: 'Call a service' }, { kind: 'custom', label: 'Run custom code' }] as const
@@ -172,15 +175,30 @@ function newStep(kind: AddableKind, ctx: StepsContext, scope: StepScope, steps: 
   }
 }
 
+/** A return that gives nothing: no value, or the one value a void result takes (`{ $var: 'undefined' }`). */
+const returnsNothing = (step: Step) => step.value === undefined || step.value === null || (isObject(step.value) && step.value.$var === 'undefined')
+
 /**
- * The draft with a new step of `kind`, and where it is. The repository step and a return that always runs must be the last
- * step, so any other kind goes before them, and a repository step goes last.
+ * The draft with a new step of `kind`, and where it is. A write and a return that always runs must be the last step, so any other
+ * kind goes before them, and a write goes last.
+ *
+ * A write added after a return that always runs (the blank action's one step) cannot leave that return where it is, for a return
+ * that always runs would make the write unreachable. The return is taken out when it gives nothing: it only ended the action, and
+ * the write does now. A return that gives a row stays and stops being "always": its condition is cleared, and its card asks when it
+ * should return, as the write is the step that returns now.
  */
 export function addStep(draft: StepsDraft, kind: AddableKind, ctx: StepsContext): { draft: StepsDraft, index: number } {
-  const steps = plainSteps(draft)
+  let entries = draft.steps
+  const closing = entries.at(-1)?.step
+  if (kind === 'repository' && closing?.kind === 'return' && closing.if === true) {
+    entries = returnsNothing(closing)
+      ? entries.slice(0, -1)
+      : entries.map((entry, at) => at === entries.length - 1 ? { ...entry, step: Object.fromEntries(Object.entries(entry.step).filter(([name]) => name !== 'if')) as Step } : entry)
+  }
+  const steps = entries.map(entry => entry.step)
   const index = kind !== 'repository' && mustBeLast(steps.at(-1)) ? steps.length - 1 : steps.length
   const step = newStep(kind, ctx, scopeAt(ctx.model, ctx.action, steps, index), steps, index === steps.length)
-  const next = [...draft.steps]
+  const next = [...entries]
   next.splice(index, 0, { key: nextKey(draft), step })
   return { draft: { ...draft, steps: next }, index }
 }
@@ -202,8 +220,8 @@ export function moveStep(draft: StepsDraft, from: number, to: number): StepsDraf
 export function duplicateStep(draft: StepsDraft, index: number): StepsDraft {
   const original = draft.steps[index]
   if (!original) return draft
-  const step = copy(original.step)
-  if (step.kind === 'load' && typeof step.as === 'string' && step.as !== '') step.as = unusedName(step.as, plainSteps(draft))
+  const step = plainCopy(original.step)
+  if (step.kind === 'load' && typeof step.as === 'string' && step.as !== '') step.as = unusedName(step.as, draft.steps.map(entry => entry.step))
   const next = [...draft.steps]
   next.splice(index + 1, 0, { key: nextKey(draft), step })
   return { ...draft, steps: next }
@@ -235,6 +253,24 @@ export function renameError(draft: StepsDraft, index: number, name: string): Ste
   }
 }
 
+/**
+ * The draft with the row load `index` gives renamed, and the later steps that read it (`{ $var: 'post' }`, `{ $var: 'post.title' }`)
+ * reading it by the new name, as `renameError` does for an error. A step before the load cannot read it, so it is left as it is.
+ * It follows the name as it is typed, an empty name too.
+ */
+export function renameLoad(draft: StepsDraft, index: number, name: string): StepsDraft {
+  const renamed = draft.steps[index]
+  if (!renamed || renamed.step.kind !== 'load') return draft
+  const previous = typeof renamed.step.as === 'string' ? renamed.step.as : ''
+  return {
+    ...draft,
+    steps: draft.steps.map((entry, at) => {
+      if (at === index) return { ...entry, step: { ...entry.step, as: name } }
+      return at > index && previous !== name ? { ...entry, step: renameVar(entry.step, previous, name) as Step } : entry
+    })
+  }
+}
+
 // ── What is wrong with a draft ───────────────────────────────────────────
 
 /** A problem the editor sees: at a step (`step`, from 0), at an error (`error`), or with the list (neither). */
@@ -244,12 +280,27 @@ export interface StepProblem {
   message: string
 }
 
-const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
-const record = (value: unknown): Record<string, unknown> => isObject(value) ? value : {}
 const NAME = /^[a-z][A-Za-z0-9]*$/
 
 /** Whether a stored value is the one a form leaves for "nothing yet": absent, or an empty text. */
 const unset = (value: unknown) => value === undefined || value === '' || (isObject(value) && Object.keys(value).length === 0)
+
+/**
+ * What is wrong with an error on its own, said once for the error list and for the form that adds one on a step: its name
+ * (lowercase, and not one of `taken`, the names declared before it), its HTTP status, its message and what it carries.
+ */
+export function errorProblems(error: DraftError, taken: ReadonlySet<string>): string[] {
+  const found: string[] = []
+  if (!/^[a-z][a-z0-9_]*$/.test(error.type)) found.push('Use a name like “slug_taken”: lowercase letters, digits and _')
+  else if (taken.has(error.type)) found.push(`“${error.type}” is already declared`)
+  if (!/^\d+$/.test(error.status.trim()) || Number(error.status) < 400 || Number(error.status) > 599) found.push('The status is an HTTP error code, from 400 to 599')
+  if (error.message.trim() === '') found.push('Add the message the client gets')
+  error.data.forEach((entry, at) => {
+    if (!NAME.test(entry.name)) found.push('Name the data like “id”: camelCase')
+    else if (error.data.slice(0, at).some(other => other.name === entry.name)) found.push(`“${entry.name}” is given twice`)
+  })
+  return found
+}
 
 /**
  * What the editor can tell is wrong with the draft: the rules of the model's loader (`load.ts`), the generator (`generate/actions.ts`)
@@ -257,7 +308,7 @@ const unset = (value: unknown) => value === undefined || value === '' || (isObje
  * necessarily accepted: the module checks all of it again.
  */
 export function problemsOf(draft: StepsDraft, ctx: StepsContext): StepProblem[] {
-  const steps = plainSteps(draft)
+  const steps = draft.steps.map(entry => entry.step)
   const found: StepProblem[] = []
   const output = ctx.action.output?.entity
 
@@ -330,7 +381,7 @@ export function problemsOf(draft: StepsDraft, ctx: StepsContext): StepProblem[] 
       const name = typeof step.as === 'string' ? step.as : ''
       if (name === '') say('Name the loaded row')
       else if (!NAME.test(name)) say('Use a name like “post”: letters and digits, starting with a lowercase letter')
-      else if (ctx.reserved.has(name)) say(`“${name}” is used by the generated code: pick another name`)
+      else if (ctx.reserved.has(name)) say(`“${name}” is a name bildr uses: pick another`)
       else if (steps.slice(0, index).some(other => other.kind === 'load' && other.as === name)) say(`“${name}” is the name of an earlier row: pick another`)
       lookup(step, 'Pick the collection to look in')
       if (!unset(step.orError)) raises(step.orError, step.errorData)
@@ -340,7 +391,7 @@ export function problemsOf(draft: StepsDraft, ctx: StepsContext): StepProblem[] 
       if (repo && (typeof op !== 'string' || op === '')) say('Pick what to do: create, update or delete')
       else if (repo && !(repo.writes as string[]).includes(op as string)) say(`${repo.name} has no “${String(op)}” write: use create, update or delete`)
       else if (repo) {
-        if (op === 'create' && !steps.slice(0, index).some(other => other.kind === 'validate')) say('Create writes the checked input: add a “Checks the input” step before it')
+        if (op === 'create' && !steps.slice(0, index).some(other => other.kind === 'validate')) say('Create writes the checked input: add a “Check the input” step before it')
         if (op === 'update' || op === 'delete') need(step.id, `Give the key of the row to ${String(op)}`, 'The key', repo.key)
         if (op === 'update') need(step.from, 'Pick the row to write back', 'The row')
         if (op !== 'delete') {
@@ -351,15 +402,14 @@ export function problemsOf(draft: StepsDraft, ctx: StepsContext): StepProblem[] 
           }
         }
       }
-      if (index !== steps.length - 1) say('A repository step must be the last step: the use-case returns its result')
+      if (index !== steps.length - 1) say('A write step must be the last step: the action returns its result')
     } else if (step.kind === 'return') {
       if (step.if === undefined) say('Pick when it returns: always, or when a condition holds')
       else if (step.if === false) say('A return with the condition false never runs: remove it')
       else if (step.if === true && index !== steps.length - 1) say('A return that always runs must be the last step: the steps after it would never run')
       else check(step.if, 'The condition', 'boolean')
-      const nothing = step.value === undefined || exprOf(step.value).kind === 'empty' || (isObject(step.value) && step.value.$var === 'undefined')
       if (output) {
-        if (nothing) say('This action returns a row: pick the row to return')
+        if (returnsNothing(step)) say('This action returns a row: pick the row to return')
         else check(step.value, 'The row')
       } else if (!(isObject(step.value) && step.value.$var === 'undefined')) {
         say('This action has no output, so its return gives nothing')
@@ -370,37 +420,43 @@ export function problemsOf(draft: StepsDraft, ctx: StepsContext): StepProblem[] 
 
   if (steps.length === 0) found.push({ message: 'An action needs at least one step' })
   else if (!steps.some(step => step.kind === 'repository') && !(steps.at(-1)!.kind === 'return' && steps.at(-1)!.if === true)) {
-    found.push({ message: 'An action needs a “repository” step (create, update or delete), or a last “return” step that always runs, to do its work' })
+    found.push({ message: 'An action needs a Write step (create, update or delete), or a last Return step that always runs, to do its work' })
   }
 
   draft.errors.forEach((error, index) => {
-    const say = (message: string) => found.push({ error: index, message })
-    if (!/^[a-z][a-z0-9_]*$/.test(error.type)) say('Use a name like “slug_taken”: lowercase letters, digits and _')
-    else if (draft.errors.slice(0, index).some(other => other.type === error.type)) say(`“${error.type}” is declared twice`)
-    if (!/^\d+$/.test(error.status.trim()) || Number(error.status) < 400 || Number(error.status) > 599) say('The status is an HTTP error code, from 400 to 599')
-    if (error.message.trim() === '') say('Add the message the client gets')
-    error.data.forEach((entry, at) => {
-      if (!NAME.test(entry.name)) say('Name the data like “id”: camelCase')
-      else if (error.data.slice(0, at).some(other => other.name === entry.name)) say(`“${entry.name}” is given twice`)
-    })
+    for (const message of errorProblems(error, new Set(draft.errors.slice(0, index).map(other => other.type)))) found.push({ error: index, message })
   })
   return found
 }
 
 // ── Which step a refusal is about ────────────────────────────────────────
 
-/** Every name a step holds: its keys and its text values, at any depth, but not its kind. */
+/**
+ * What a step names, by value: the row it gives (`as`), the errors it raises, its collection (the repository id), the fields it sets
+ * and every input and row it reads, with each part of a path (`post.title` is `post` and `title`). Not its keys and not its kind:
+ * a refusal that quotes "repository", "return" or "if" is quoting the model's words, and names no step.
+ */
 function namesIn(step: Step): string[] {
   const names: string[] = []
-  const walk = (value: unknown) => {
-    if (typeof value === 'string') names.push(value)
-    else if (Array.isArray(value)) value.forEach(walk)
-    else if (isObject(value)) for (const [key, item] of Object.entries(value)) {
-      names.push(key)
-      walk(item)
+  const take = (value: unknown) => {
+    if (typeof value === 'string' && value !== '') names.push(value)
+  }
+  take(step.as)
+  take(step.error)
+  take(step.orError)
+  take(step.repository)
+  take(record(step.unless).repository)
+  names.push(...Object.keys(record(step.set)))
+  const reads = (value: unknown) => {
+    if (Array.isArray(value)) value.forEach(reads)
+    else if (isObject(value)) {
+      for (const [key, item] of Object.entries(value)) {
+        if ((key === '$var' || key === '$input') && typeof item === 'string') names.push(...item.split('.'))
+        else reads(item)
+      }
     }
   }
-  for (const [key, value] of Object.entries(step)) if (key !== 'kind') walk(value)
+  reads(step)
   return names
 }
 
@@ -433,7 +489,7 @@ export const errorsNamed = (message: string, errors: readonly DraftError[]): num
 const held = (action: ActionFile) => ({ steps: action.steps, errors: action.errors })
 
 /** Whether the stored action differs from `base` in a part the draft holds (its steps or its errors): what Overview edits is not one. */
-export const changedOutside = (base: ActionFile, action: ActionFile): boolean => !same(held(base), held(action))
+export const changedOutside = (base: ActionFile, action: ActionFile): boolean => !sameJson(held(base), held(action))
 
 /**
  * The draft after the user chose to keep their edits over an action that changed under them: the part they did not touch (it
@@ -444,7 +500,7 @@ export function rebaseDraft(draft: StepsDraft, base: ActionFile, action: ActionF
   const before = draftOf(base)
   const now = draftOf(action)
   return {
-    steps: same(plainSteps(draft), base.steps) ? now.steps : draft.steps,
-    errors: same(draft.errors, before.errors) ? now.errors : draft.errors
+    steps: sameJson(draft.steps.map(entry => entry.step), base.steps) ? now.steps : draft.steps,
+    errors: sameJson(draft.errors, before.errors) ? now.errors : draft.errors
   }
 }
