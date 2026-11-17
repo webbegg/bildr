@@ -1,10 +1,10 @@
 /**
  * The Data workspace's tab model (S2, S10): what can be shown (`DataItem`: a collection, a connection, a query or
  * an action) and the tabs each kind has. A collection has Rows, Fields, Endpoints and JSON; a connection has
- * Endpoints and JSON; a query has Results, Definition, Used in and JSON; an action has Overview, Used in and JSON.
+ * Endpoints and JSON; a query has Results, Definition, Used in and JSON; an action has Overview, Steps, Used in and JSON.
  * The state is `editor/dataView.ts`'s and the URL's is `editor/dataLocation.ts`'s.
  */
-export const DATA_TABS = ['rows', 'fields', 'endpoints', 'results', 'definition', 'overview', 'used', 'json'] as const
+export const DATA_TABS = ['rows', 'fields', 'endpoints', 'results', 'definition', 'overview', 'steps', 'used', 'json'] as const
 export type DataTab = typeof DATA_TABS[number]
 export type DataItemKind = 'collection' | 'connection' | 'query' | 'action'
 export interface DataItem {
@@ -25,6 +25,7 @@ export const DATA_TAB_LABELS: Record<DataTab, string> = {
   results: 'Results',
   definition: 'Definition',
   overview: 'Overview',
+  steps: 'Steps',
   used: 'Used in',
   json: 'JSON'
 }
@@ -33,8 +34,7 @@ const TABS: Record<DataItemKind, DataTab[]> = {
   collection: ['rows', 'fields', 'endpoints', 'json'],
   connection: ['endpoints', 'json'],
   query: ['results', 'definition', 'used', 'json'],
-  // D10c's Steps tab goes between Overview and Used in.
-  action: ['overview', 'used', 'json']
+  action: ['overview', 'steps', 'used', 'json']
 }
 
 /** The tabs an item of this kind has, in order. */

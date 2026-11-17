@@ -518,7 +518,7 @@ describe('Queries and Actions in the Data workspace (S10)', () => {
     expect(editor.queries.find(query => query.id === 'q_extra')?.label).toBe('extraPosts')
   })
 
-  it('gives a query Results, Definition, Used in and JSON, and an action Overview, Used in and JSON (D10c puts Steps between)', async () => {
+  it('gives a query Results, Definition, Used in and JSON, and an action Overview, Steps, Used in and JSON', async () => {
     const { editor } = await bootData()
     editor.queryId = 'q_featured_posts'
     expect(editor.dataItem).toEqual({ kind: 'query', id: 'q_featured_posts' })
@@ -529,12 +529,12 @@ describe('Queries and Actions in the Data workspace (S10)', () => {
     expect(editor.dataAction).toBeNull()
     editor.actionId = 'act_create_post'
     expect(editor.dataItem).toEqual({ kind: 'action', id: 'act_create_post' })
-    expect(editor.dataTabs).toEqual(['overview', 'used', 'json'])
+    expect(editor.dataTabs).toEqual(['overview', 'steps', 'used', 'json'])
     expect(editor.dataTab).toBe('overview')
     expect(editor.dataAction?.id).toBe('act_create_post')
     expect(editor.dataQuery).toBeNull()
     expect(tabsOf('query')).toEqual(['results', 'definition', 'used', 'json'])
-    expect(tabsOf('action')).toEqual(['overview', 'used', 'json'])
+    expect(tabsOf('action')).toEqual(['overview', 'steps', 'used', 'json'])
   })
 
   it('keeps the tab chosen for the next item that has it, and gives way to a collection or a connection chosen', async () => {
@@ -717,6 +717,8 @@ describe('the Data location of a query or an action (S10)', () => {
   it('reads and writes the item and the tab, as for a collection', () => {
     expect(parseDataLocation({ item: 'query:q_featured_posts', tab: 'definition' })).toEqual({ item: { kind: 'query', id: 'q_featured_posts' }, tab: 'definition' })
     expect(parseDataLocation({ item: 'action:act_create_post', tab: 'overview' })).toEqual({ item: { kind: 'action', id: 'act_create_post' }, tab: 'overview' })
+    expect(parseDataLocation({ item: 'action:act_create_post', tab: 'steps' })).toEqual({ item: { kind: 'action', id: 'act_create_post' }, tab: 'steps' })
+    expect(dataLocationQuery({ kind: 'action', id: 'act_create_post' }, 'steps')).toEqual({ item: 'action:act_create_post', tab: 'steps' })
     expect(dataLocationQuery({ kind: 'query', id: 'q_all_posts' }, 'used')).toEqual({ item: 'query:q_all_posts', tab: 'used' })
     expect(parseDataLocation(dataLocationQuery({ kind: 'action', id: 'act_x' }, 'json'))).toEqual({ item: { kind: 'action', id: 'act_x' }, tab: 'json' })
   })

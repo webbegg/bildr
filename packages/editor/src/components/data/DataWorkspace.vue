@@ -14,7 +14,7 @@ import DataJson from './DataJson.vue'
  * Endpoints (the repository's, when it is read through a connection) and JSON (its file, S3); a connection has
  * Endpoints (its settings and its collections' endpoints) and JSON; a query (S10) has Results (it run over the
  * collection's rows), Definition (its form), Used in and JSON; an action has Overview (its form, its code name, its route and
- * how many steps it has), Used in and JSON. With All model files chosen in the tree it
+ * how many steps it has), Steps (the step editor, D10c), Used in and JSON. With All model files chosen in the tree it
  * is the list of the model's files and their editor instead. With nothing to show it is
  * the empty start. The tab strip is one tab stop: Left and Right move along it (and wrap), Home and End go to its ends.
  */
@@ -159,6 +159,10 @@ async function onTabKeyDown(event: KeyboardEvent) {
           />
           <DataActionOverview
             v-else-if="editor.dataTab === 'overview' && action"
+            :action="action"
+          />
+          <DataActionSteps
+            v-else-if="editor.dataTab === 'steps' && action"
             :action="action"
           />
           <DataUsedIn

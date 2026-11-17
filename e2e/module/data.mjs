@@ -7,7 +7,8 @@
  * (S2): the tree, the tabs of a collection and of a connection, the Live / Sample data switch, the item
  * and tab in the URL, and the keyboard. Then Queries and Actions (S10): a query made from the tree's "+", its
  * Definition and Results, a page that uses it, its rename (the page still renders) and a delete that is
- * refused while it is used; an action made from a template, on its Overview.
+ * refused while it is used; an action made from a template, on its Overview, and its Steps (D10c): a load and an update added, saved, in the JSON tab and
+ * regenerated.
  *
  * Dropped (feature doc: records are app data, not editor data; no hosted collections or publish):
  * - `record_create`, quick-add and inline cell edit: the table is read-only (E2); rows come from the
@@ -16,7 +17,7 @@
  *   has its own list/create routes and needs no publishing;
  * - the published app's WebMCP tools (`document.modelContext`): the generated app has no bildr runtime (D4).
  */
-import { action, appApi, appShows, bildr, call, canvas, check, editorUrl, newPage, openData, openEditor, quiesce, quiet, run, shot, until } from './lib.mjs'
+import { action, appApi, appShows, bildr, call, canvas, check, editorUrl, newPage, openData, openEditor, quiesce, quiet, run, settled, shot, until } from './lib.mjs'
 
 await run('data', async ({ page, browser, errors }) => {
   // The app's create route takes the id the client form mints (a uuid).
@@ -279,7 +280,7 @@ await run('data', async ({ page, browser, errors }) => {
   check(archive?.name === 'archiveDish' && archive.steps?.length === 1 && archive.steps[0].kind === 'return', `"+" on Actions writes an action from the Blank template (${archive?.name}, steps ${archive?.steps?.map(step => step.kind)})`)
   check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'overview', 'a new action opens on its Overview')
   check(await page.locator('[data-action-route]').innerText() === 'POST /dishes/archive-dish' && await page.locator('[data-action-name]').innerText() === 'archiveDish', 'which shows its route and its code name')
-  check(await page.locator('[data-action-output]').innerText() === 'No data' && await page.locator('[data-steps-note]').innerText() === '1 step — edit in JSON until the Steps tab', 'says it returns no data, and counts its step')
+  check(await page.locator('[data-action-output]').innerText() === 'No data' && await page.locator('[data-steps-note]').innerText() === '1 step — Edit the steps', 'says it returns no data, and counts its step, with a link to the Steps tab')
   await page.locator('[data-action-field="label"]').fill('Archive a dish')
   await page.locator('[data-action-field="label"]').press('Enter')
   check(await until(() => bildr('modules/blog/actions/archive-dish.json')?.label === 'Archive a dish'), 'the Overview saves the label with action_update')
@@ -294,6 +295,50 @@ await run('data', async ({ page, browser, errors }) => {
   check(await until(() => bildr('modules/blog/actions/archive-dish.json') === undefined), 'an action nothing uses is deleted')
   await quiesce(60_000)
   await quiet()
+
+  // The Steps tab (D10c), on a second blank action that is left in the project (the dev server answers 500 for a moment after a
+  // route it has built is deleted, and the pictures below need it quiet): the return is replaced by a load and an update, saved with one action_update.
+  await page.getByLabel('New action').click()
+  await pickCollection('Dish')
+  await page.locator('[data-action-template="blank"]').click()
+  await page.locator('[data-artifact-name]').fill('restock dish')
+  await page.locator('[data-artifact-submit]').click()
+  const restock = await until(() => bildr('modules/blog/actions/restock-dish.json'))
+  await page.locator('[data-steps-link]').click()
+  await page.locator('[data-action-steps]').waitFor()
+  check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'steps' && decodeURIComponent(page.url()).endsWith(`#/data?item=action:${restock?.id}&tab=steps`), `the Overview links to the Steps tab, which is in the URL (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
+  check(await page.locator('[data-step-card]').count() === 1 && await page.locator('[data-step-card="0"]').getAttribute('data-step-kind') === 'return', 'a blank action has one return step')
+  await page.locator('[data-step-card="0"] [data-step-remove]').click()
+  await page.locator('[data-step-add]').click()
+  await page.getByRole('menuitem', { name: 'Load a row' }).click()
+  await page.locator('[data-step-add]').click()
+  await page.getByRole('menuitem', { name: 'Create, update or delete' }).click()
+  await page.locator('[data-step-card="1"] [data-step-field="op"]').click()
+  await page.getByRole('option', { name: 'Update', exact: true }).click()
+  check(await page.locator('[data-step-card="0"] [data-step-field="as"]').inputValue() === 'dish' && await page.locator('[data-step-card="1"] [data-step-field="from"] [data-value-source]').innerText() === 'Variable: dish', 'a new load is named after its collection, and the update writes it back')
+  check(await page.locator('[data-step-problem]').count() === 0 && await page.locator('[data-steps-unsaved]').count() === 1, 'the editor finds nothing wrong, and says "Unsaved changes"')
+  await page.locator('[data-steps-save]').click()
+  const restocked = await until(() => {
+    const steps = bildr('modules/blog/actions/restock-dish.json')?.steps
+    return steps?.length === 2 && steps
+  })
+  check(restocked && restocked[0].kind === 'load' && restocked[0].as === 'dish' && restocked[0].op === 'get' && restocked[1].kind === 'repository' && restocked[1].op === 'update' && restocked[1].from?.$var === 'dish', `Save writes the load and the update with one action_update (${restocked?.map(step => step.kind)})`)
+  await page.locator('[data-steps-unsaved]').waitFor({ state: 'detached' })
+  check(await page.locator('[data-steps-error]').count() === 0, 'and the module has no refusal')
+  await page.locator('[role=tab][data-data-tab="json"]').click()
+  const restockJson = page.locator('textarea[data-testid="raw-content"], [data-testid="raw-content"] textarea').first()
+  await restockJson.waitFor()
+  check(await until(async () => /"kind": "load"[\s\S]*"kind": "repository"/.test(await restockJson.inputValue())), 'the JSON tab shows them')
+  check(await settled(), 'and the app still regenerates (the model loads, nothing drifts)')
+  await quiesce(60_000)
+  await quiet()
+  await page.locator('[role=tab][data-data-tab="steps"]').click()
+  await page.locator('[data-step-card="0"] [data-step-toggle]').click()
+  await page.locator('[data-step-card="1"] [data-step-toggle]').click()
+  await page.locator('[data-step-card="1"] [data-step-form]').waitFor()
+  await page.waitForTimeout(400)
+  await page.evaluate(() => document.activeElement?.blur())
+  await shot(page, 'd10c-action-steps')
 
   // The Used in link opens the page on the Canvas.
   await page.locator('[data-tree-item^="query:"]').first().waitFor()

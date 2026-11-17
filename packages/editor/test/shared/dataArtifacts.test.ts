@@ -35,6 +35,11 @@ describe('stepSummary', () => {
     expect(stepSummary({ kind: 'load', as: 'post', op: 'get', repository: 'repo_post', orError: 'not_found' }, model)).toBe('Loads “post” (get on Post), refusing with “not_found” when there is none')
   })
 
+  it('says an assert refuses when its lookup finds a row (the generated check is `if (await lookup) return err`)', () => {
+    expect(stepSummary(steps.find(step => step.kind === 'assert')!, model)).toBe('Refuses with “slug_taken” when Post (findBySlug) finds a row')
+    expect(stepSummary({ kind: 'assert', error: 'slug_taken' }, model)).toBe('Refuses with “slug_taken” when a lookup finds a row')
+  })
+
   it('says a step that is not generated yet is not', () => {
     expect(stepSummary({ kind: 'call', service: 'mail' }, model)).toBe('Calls a service. Not generated yet')
     expect(stepSummary({ kind: 'custom' }, model)).toBe('Runs custom code. Not generated yet')

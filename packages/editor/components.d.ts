@@ -12,7 +12,9 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     ConfirmModal: typeof import('./src/components/ConfirmModal.vue')['default']
+    DataActionErrors: typeof import('./src/components/data/steps/DataActionErrors.vue')['default']
     DataActionOverview: typeof import('./src/components/data/DataActionOverview.vue')['default']
+    DataActionSteps: typeof import('./src/components/data/DataActionSteps.vue')['default']
     DataApiSource: typeof import('./src/components/data/DataApiSource.vue')['default']
     DataArtifactCreate: typeof import('./src/components/data/DataArtifactCreate.vue')['default']
     DataArtifactDelete: typeof import('./src/components/data/DataArtifactDelete.vue')['default']
@@ -46,6 +48,9 @@ declare module 'vue' {
     DataRowsFailure: typeof import('./src/components/data/table/DataRowsFailure.vue')['default']
     DataRowsTable: typeof import('./src/components/data/table/DataRowsTable.vue')['default']
     DataSourceSwitch: typeof import('./src/components/data/table/DataSourceSwitch.vue')['default']
+    DataStepCard: typeof import('./src/components/data/steps/DataStepCard.vue')['default']
+    DataStepForm: typeof import('./src/components/data/steps/DataStepForm.vue')['default']
+    DataStepValue: typeof import('./src/components/data/steps/DataStepValue.vue')['default']
     DataTableCell: typeof import('./src/components/data/table/DataTableCell.vue')['default']
     DataTableFilterMenu: typeof import('./src/components/data/table/DataTableFilterMenu.vue')['default']
     DataTableToolbar: typeof import('./src/components/data/table/DataTableToolbar.vue')['default']

@@ -82,14 +82,17 @@ const bareReturn = (step: Record<string, unknown>): boolean =>
   step.value === undefined || (typeof step.value === 'object' && step.value !== null && (step.value as Record<string, unknown>).$var === 'undefined')
 
 /**
- * A step in a sentence: what it does, not how it is written. The Steps tab (D10c) lists them; until then the Overview only
- * counts them.
+ * A step in a sentence: what it does, not how it is written. The Steps tab (D10c) heads each card with it.
  */
 export function stepSummary(step: Record<string, unknown>, model: Model | null): string {
   const collection = (repository: unknown) => (model ? entityById(model, repositoryEntity(model, text(repository)) ?? '')?.name : undefined) ?? text(repository)
   switch (step.kind) {
     case 'validate': return 'Checks the input'
-    case 'assert': return `Refuses with “${text(step.error)}” unless a check holds`
+    case 'assert': {
+      // The generated check is `if (await lookup) return err(...)`: the action refuses when the lookup finds a row.
+      const lookup = typeof step.unless === 'object' && step.unless !== null ? step.unless as Record<string, unknown> : {}
+      return `Refuses with “${text(step.error)}” when ${text(lookup.repository) ? `${collection(lookup.repository)} (${text(lookup.op)})` : 'a lookup'} finds a row`
+    }
     case 'load': return `Loads “${text(step.as)}” (${text(step.op)} on ${collection(step.repository)})${step.orError ? `, refusing with “${text(step.orError)}” when there is none` : ''}`
     case 'return': {
       const early = !(step.if === true || step.if === undefined)

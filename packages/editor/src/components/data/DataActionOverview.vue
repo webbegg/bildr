@@ -7,7 +7,7 @@ import { useEditor } from '../../editor/useEditor.ts'
 /**
  * An action's Overview tab (S10): a form over `action_update` (the label, the description, and the fields of the body the
  * action takes, when it has one) and, read-only, its code name (renamed from the dialog the button opens), its HTTP method and
- * path, what it returns and how many steps it has. The steps are edited as JSON until the Steps tab (D10c) lists and edits them.
+ * path, what it returns and how many steps it has, with a link to the Steps tab, where they are listed and edited.
  * What the module refuses is shown under the form, with what was typed kept. Every edit is one `action_update`, saved when the
  * field is left; a field whose save was refused still holds its text, so the editor asks before the workspace moves away from it
  * (`dataDirty`, as for the JSON editor). A field toggle is not taken while another save is in flight: it would be built from
@@ -146,11 +146,11 @@ const toggle = (field: string, on: boolean) => update({
             <button
               type="button"
               class="text-muted underline underline-offset-2 hover:text-highlighted"
-              @click="editor.dataTab = 'json'"
+              data-steps-link
+              @click="editor.dataTab = 'steps'"
             >
-              edit in JSON
+              Edit the steps
             </button>
-            until the Steps tab
           </p>
         </EditorFormRow>
       </section>
