@@ -30,7 +30,7 @@ import type { ToolId } from './tools.ts'
 import { interactionKey, parseInteractionKey } from '../shared/interactionPanel.ts'
 import { layerName } from '../shared/layers.ts'
 import { createDataView } from './dataView.ts'
-import { carryPage, requestView, screenOf, takeStart } from './views.ts'
+import { carryFile, carryPage, requestView, screenOf, takeStart } from './views.ts'
 import { boardShown, newVariantName, overrideInput, variantStylePatch } from './variants.ts'
 import type { NodeOverridePatch, OverridePatch } from './variants.ts'
 
@@ -223,6 +223,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   const editComponent = (id: string, nodeId: string | null = null, { nested = false }: { nested?: boolean } = {}) => {
     if (!design.components.value.some(entry => entry.id === id)) return
     mode.value = 'build'
+    carryFile(id)
     applyStack({ stack: openLevel(editStack.value, { kind: 'component', id }, selectedIds.value, { nested }), restore: null })
     selectedId.value = nodeId
   }
@@ -231,6 +232,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   const editLayout = (id: string, nodeId: string | null = null) => {
     if (!design.layouts.value.some(entry => entry.id === id)) return
     mode.value = 'build'
+    carryFile(id)
     applyStack({ stack: openLevel(editStack.value, { kind: 'layout', id }, selectedIds.value), restore: null })
     selectedId.value = nodeId
   }
@@ -940,6 +942,10 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     await design.start()
     // The page chosen on the other screen (⌘K → a page) is the one this screen opens.
     if (handed.data.pageId && pages.value.some(entry => entry.id === handed.data.pageId)) selectPage(handed.data.pageId)
+    // A component or layout opened from the Data workspace ("Used in") is shown in its own view.
+    const file = handed.data.fileId
+    if (file && design.components.value.some(entry => entry.id === file)) editComponent(file)
+    else if (file && design.layouts.value.some(entry => entry.id === file)) editLayout(file)
     await reloadEnv()
   }
 
@@ -1013,7 +1019,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard: design.clipboard, history: design.history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, previewHint, breakpointBase, deviceId, device: design.device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, selected, selectedNodes, nodeName, theme,
     importRequest, variablesRequest, env,
     // The Data view: collections are entities, connections REST data sources; the rows are the app's or the fixtures, never written (U7).
-    collections: data.collections, connections: data.connections, collectionId: data.collectionId, collection: data.collection, connectionId: data.connectionId, connection: data.connection, dataFiles: data.dataFiles, dataFile: data.dataFile, dataDirty: data.dataDirty, leaveData: data.leaveData, leaveDeclined: data.leaveDeclined, dataItem: data.dataItem, dataCollection: data.dataCollection, dataConnection: data.dataConnection, dataTabs: data.dataTabs, dataTab: data.dataTab, rowsPreference: data.rowsPreference, recordId: data.recordId, collectionRows: data.collectionRows, rowsSource: data.rowsSource, rowsFallback: data.rowsFallback, recordsError: data.recordsError, recordsTotal: data.recordsTotal, recordsLoading: data.recordsLoading, collectionCounts: data.collectionCounts, reloadRecords: data.reloadRecords, createCollection: data.createCollection,
+    collections: data.collections, connections: data.connections, queries: data.queries, actions: data.actions, queryId: data.queryId, actionId: data.actionId, dataQuery: data.dataQuery, dataAction: data.dataAction, collectionId: data.collectionId, collection: data.collection, connectionId: data.connectionId, connection: data.connection, dataFiles: data.dataFiles, dataFile: data.dataFile, dataDirty: data.dataDirty, leaveData: data.leaveData, leaveDeclined: data.leaveDeclined, dataItem: data.dataItem, dataCollection: data.dataCollection, dataConnection: data.dataConnection, dataTabs: data.dataTabs, dataTab: data.dataTab, rowsPreference: data.rowsPreference, recordId: data.recordId, collectionRows: data.collectionRows, rowsSource: data.rowsSource, rowsFallback: data.rowsFallback, recordsError: data.recordsError, recordsTotal: data.recordsTotal, recordsLoading: data.recordsLoading, collectionCounts: data.collectionCounts, reloadRecords: data.reloadRecords, createCollection: data.createCollection,
     // The app's data (P5): the detail page's records stand where the hosted Data mode's collection records did.
     records: design.records, record: design.record, pickRecord: design.pickRecord, rowsOf: design.rowsOf, detail: design.detail, data: design.data, detailCollection: design.detail, detailRecords: design.records, previewRecord: design.record, reloadDetailRecords, setPreviewRecord, setPageCollection, createDetailPage,
     // The store's own state the ported panels read (P4/P5 logic stays behind the adapter).

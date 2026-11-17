@@ -17,6 +17,8 @@ export const screenOf = (view: EditorView): Screen => view === 'data' ? 'data' :
 export interface DataStart {
   /** The page being edited, which the Design screen opens (not the first). */
   pageId?: string | null
+  /** The component or layout the Design screen opens in its own view (a "Used in" link of the Data workspace). */
+  fileId?: string | null
   collectionId?: string | null
   /** The Import from API request count: above 0, the dialog opens. */
   importRequest?: number
@@ -51,6 +53,11 @@ export const takeStart = (screen?: Screen): { view: EditorView | null, data: Dat
 /** The page chosen while a screen change is on its way: the Design screen opens it. */
 export const carryPage = (pageId: string): void => {
   if (pending) pending.data.pageId = pageId
+}
+
+/** The component or layout chosen while a screen change is on its way: the Design screen opens it. */
+export const carryFile = (fileId: string): void => {
+  if (pending) pending.data.fileId = fileId
 }
 
 /** Opens the screen that shows `view`, carrying the view and `data` for the editor created there. */

@@ -4,6 +4,8 @@ import { createEditor } from '../../src/editor/useEditor.ts'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
 import { dataLocationQuery, filesLocationQuery, parseDataLocation } from '../../src/editor/dataLocation.ts'
 import { liveRows } from '../../src/design/liveRows.ts'
+import { treeItems } from '../../src/editor/dataTree.ts'
+import { tabsOf } from '../../src/editor/dataTabs.ts'
 import { Failure, mockActions, settle } from '../helpers.ts'
 import { baseHandlers, setupHarness, world } from '../design/harness.ts'
 
@@ -491,6 +493,197 @@ describe('the Data location in the URL query (S2)', () => {
     expect(filesLocationQuery(null)).toEqual({ item: 'files' })
     expect(filesLocationQuery('.bildr/theme.json')).toEqual({ item: 'files', file: '.bildr/theme.json' })
     expect(parseDataLocation(filesLocationQuery('.bildr/theme.json'))).toEqual({ files: true, file: '.bildr/theme.json' })
+  })
+})
+
+describe('Queries and Actions in the Data workspace (S10)', () => {
+  it('lists the model\'s queries and actions with their label and collection', async () => {
+    const { editor } = await bootData()
+    expect(editor.queries.map(query => [query.id, query.label, query.collectionName])).toEqual([
+      ['q_all_posts', 'All posts', 'Post'],
+      ['q_featured_posts', 'Featured posts', 'Post'],
+      ['q_latest_quotes', 'Latest quotes', 'Quote'],
+      ['q_post_by_slug', 'Post by slug', 'Post']
+    ])
+    expect(editor.actions.map(action => [action.id, action.label, action.collectionName])).toEqual([
+      ['act_create_post', 'Create post', 'Post'],
+      ['act_publish_post', 'Publish post', 'Post']
+    ])
+  })
+
+  it('follows the model: a query added elsewhere appears, and the label falls back to the name', async () => {
+    const { editor, design } = await bootData()
+    world.model.modules.blog!.queries.push({ ...structuredClone(world.model.modules.blog!.queries[0]!), id: 'q_extra', name: 'extraPosts', label: '' })
+    await design.refresh()
+    expect(editor.queries.find(query => query.id === 'q_extra')?.label).toBe('extraPosts')
+  })
+
+  it('gives a query Results, Definition, Used in and JSON, and an action Overview, Used in and JSON (D10c puts Steps between)', async () => {
+    const { editor } = await bootData()
+    editor.queryId = 'q_featured_posts'
+    expect(editor.dataItem).toEqual({ kind: 'query', id: 'q_featured_posts' })
+    expect(editor.dataTabs).toEqual(['results', 'definition', 'used', 'json'])
+    expect(editor.dataTab).toBe('results')
+    expect(editor.dataQuery?.id).toBe('q_featured_posts')
+    expect(editor.dataCollection).toBeNull()
+    expect(editor.dataAction).toBeNull()
+    editor.actionId = 'act_create_post'
+    expect(editor.dataItem).toEqual({ kind: 'action', id: 'act_create_post' })
+    expect(editor.dataTabs).toEqual(['overview', 'used', 'json'])
+    expect(editor.dataTab).toBe('overview')
+    expect(editor.dataAction?.id).toBe('act_create_post')
+    expect(editor.dataQuery).toBeNull()
+    expect(tabsOf('query')).toEqual(['results', 'definition', 'used', 'json'])
+    expect(tabsOf('action')).toEqual(['overview', 'used', 'json'])
+  })
+
+  it('keeps the tab chosen for the next item that has it, and gives way to a collection or a connection chosen', async () => {
+    const { editor } = await bootData()
+    editor.queryId = 'q_featured_posts'
+    editor.dataTab = 'json'
+    editor.queryId = 'q_all_posts'
+    expect(editor.dataTab).toBe('json')
+    editor.collectionId = 'ent_post'
+    expect(editor.dataItem).toEqual({ kind: 'collection', id: 'ent_post' })
+    editor.actionId = 'act_publish_post'
+    editor.connectionId = 'ds_quotes'
+    expect(editor.dataItem).toEqual({ kind: 'connection', id: 'ds_quotes' })
+    editor.queryId = 'q_all_posts'
+    expect(editor.dataItem).toEqual({ kind: 'query', id: 'q_all_posts' })
+    editor.dataFiles = true
+    editor.actionId = 'act_publish_post'
+    expect(editor.dataFiles).toBe(false)
+    expect(editor.dataItem).toEqual({ kind: 'action', id: 'act_publish_post' })
+  })
+
+  it('falls back to the first collection when the query or action shown is gone', async () => {
+    const { editor, design } = await bootData()
+    editor.queryId = 'q_all_posts'
+    world.model.modules.blog!.queries = world.model.modules.blog!.queries.filter(query => query.id !== 'q_all_posts')
+    await design.refresh()
+    expect(editor.dataItem).toEqual({ kind: 'collection', id: 'ent_post' })
+    editor.actionId = 'act_nope'
+    expect(editor.dataItem).toEqual({ kind: 'collection', id: 'ent_post' })
+  })
+
+  it('does not show a query made later with the id of one that was shown and deleted', async () => {
+    const { editor, design } = await bootData()
+    const [first] = world.model.modules.blog!.queries
+    editor.queryId = first!.id
+    world.model.modules.blog!.queries = world.model.modules.blog!.queries.filter(query => query.id !== first!.id)
+    await design.refresh()
+    await settle()
+    expect(editor.queryId).toBeNull()
+    world.model.modules.blog!.queries.unshift(first!)
+    await design.refresh()
+    expect(editor.dataItem).toEqual({ kind: 'collection', id: 'ent_post' })
+  })
+
+  it('reads the rows of the query\'s collection, not of the one shown before: Sample data and Live', async () => {
+    const { editor } = await bootData({ '/api/blog/quotes': { items: [{ id: 1, text: 'Q one', author: 'Ann' }], total: 1 } })
+    editor.mode = 'data'
+    editor.queryId = 'q_featured_posts'
+    await settle()
+    expect(editor.collectionRows.map(row => row.slug)).toEqual(['hello-bildr', 'a-draft'])
+    expect(editor.rowsSource).toBe('sample')
+    editor.queryId = 'q_latest_quotes'
+    await settle()
+    expect(editor.rowsSource).toBe('live')
+    expect(editor.collectionRows.map(row => row.text)).toEqual(['Q one'])
+  })
+})
+
+describe('the Data tree of queries and actions (S10)', () => {
+  const artifact = (id: string, label: string) => ({ id, name: id, label, module: 'blog', collectionId: 'ent_post', collectionName: 'Post' })
+
+  it('lists Collections, Connections, Queries, Actions and All model files, in that order', async () => {
+    const { editor } = await bootData()
+    const keys = treeItems(editor.collections, editor.connections, new Set(), { queries: editor.queries, actions: editor.actions }).map(item => item.key)
+    expect(keys).toEqual([
+      'collection:ent_post', 'connection:ds_quotes', 'collection:ent_quote',
+      'query:q_all_posts', 'query:q_featured_posts', 'query:q_latest_quotes', 'query:q_post_by_slug',
+      'action:act_create_post', 'action:act_publish_post',
+      'files'
+    ])
+  })
+
+  it('keeps the queries and actions of a folded connection\'s collections listed: they are top level', async () => {
+    const { editor } = await bootData()
+    const keys = treeItems(editor.collections, editor.connections, new Set(['ds_quotes']), { queries: editor.queries, actions: [] }).map(item => item.key)
+    expect(keys).toEqual(['collection:ent_post', 'connection:ds_quotes', 'query:q_all_posts', 'query:q_featured_posts', 'query:q_latest_quotes', 'query:q_post_by_slug', 'files'])
+  })
+
+  it('lists only the items that match a section\'s filter (label, name or collection, any case)', () => {
+    const queries = [artifact('q_a', 'Recent posts'), { ...artifact('q_b', 'Top'), collectionName: 'Quote' }]
+    const keys = (filter: string) => treeItems([], [], new Set(), { queries, actions: [] }, { queries: filter, actions: '' }).map(item => item.key)
+    expect(keys('')).toEqual(['query:q_a', 'query:q_b', 'files'])
+    expect(keys('RECENT')).toEqual(['query:q_a', 'files'])
+    expect(keys('quote')).toEqual(['query:q_b', 'files'])
+    expect(keys('q_b')).toEqual(['query:q_b', 'files'])
+    expect(keys('zzz')).toEqual(['files'])
+  })
+})
+
+describe('opening a use on the Canvas (S10)', () => {
+  it('carries the page, and the component or layout, to the screen that opens', async () => {
+    const opened = vi.fn()
+    const off = registerScreens(opened)
+    try {
+      const { editor } = await bootData({}, {}, 'data')
+      editor.selectPage('pg_index')
+      editor.editComponent('cmp_post_card')
+      expect(opened).toHaveBeenCalledWith('design')
+      expect(takeStart().data).toMatchObject({ pageId: 'pg_index', fileId: 'cmp_post_card' })
+      editor.editLayout('lay_main')
+      expect(takeStart().data.fileId).toBeUndefined()
+    } finally {
+      off()
+    }
+  })
+
+  it('opens the component or layout a Data screen handed over, in its own view, on the page that was carried', async () => {
+    const off = registerScreens(() => undefined)
+    try {
+      const { editor } = await bootData({}, {}, 'data')
+      editor.selectPage('pg_index')
+      editor.editComponent('cmp_post_card')
+      // The Design screen's editor is made next: it takes what was handed over.
+      const design = createDesign()
+      const next = createEditor(design)
+      disposers.push(() => design.dispose())
+      await next.start()
+      await settle()
+      expect(next.mode).toBe('build')
+      expect(next.componentId).toBe('cmp_post_card')
+      expect(next.pageId).toBe('pg_index')
+    } finally {
+      off()
+    }
+  })
+
+  it('opens a layout the same way', async () => {
+    const off = registerScreens(() => undefined)
+    try {
+      const { editor } = await bootData({}, {}, 'data')
+      editor.editLayout('lay_main')
+      const design = createDesign()
+      const next = createEditor(design)
+      disposers.push(() => design.dispose())
+      await next.start()
+      await settle()
+      expect(next.layoutId).toBe('lay_main')
+    } finally {
+      off()
+    }
+  })
+})
+
+describe('the Data location of a query or an action (S10)', () => {
+  it('reads and writes the item and the tab, as for a collection', () => {
+    expect(parseDataLocation({ item: 'query:q_featured_posts', tab: 'definition' })).toEqual({ item: { kind: 'query', id: 'q_featured_posts' }, tab: 'definition' })
+    expect(parseDataLocation({ item: 'action:act_create_post', tab: 'overview' })).toEqual({ item: { kind: 'action', id: 'act_create_post' }, tab: 'overview' })
+    expect(dataLocationQuery({ kind: 'query', id: 'q_all_posts' }, 'used')).toEqual({ item: 'query:q_all_posts', tab: 'used' })
+    expect(parseDataLocation(dataLocationQuery({ kind: 'action', id: 'act_x' }, 'json'))).toEqual({ item: { kind: 'action', id: 'act_x' }, tab: 'json' })
   })
 })
 

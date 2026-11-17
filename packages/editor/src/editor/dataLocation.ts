@@ -1,12 +1,12 @@
 import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { dataItemKey, isDataTab } from './dataTabs.ts'
+import { dataItemKey, isDataItemKind, isDataTab } from './dataTabs.ts'
 import type { DataItem, DataTab } from './dataTabs.ts'
 import type { Editor } from './useEditor.ts'
 
 /**
- * Where the Data workspace is (S2) in the URL query (`/data?item=collection:ent_post&tab=fields`): the
- * item selected in its tree and the tab shown for it, so a deep link or a reload opens the same item on
+ * Where the Data workspace is (S2) in the URL query (`/data?item=collection:ent_post&tab=fields`, or `item=query:q_x`,
+ * `item=action:act_x`): the item selected in its tree and the tab shown for it, so a deep link or a reload opens the same item on
  * the same tab. All model files (S3) is `?item=files`, with the file chosen in it as `&file=<path>` (a path that
  * is typed is in it once the file is saved, so a reload shows what the URL says). The
  * tab model (which tabs an item has) is `editor/dataTabs.ts`.
@@ -25,7 +25,7 @@ export function parseDataLocation(query: Record<string, unknown>): { item?: Data
     const split = raw.indexOf(':')
     const kind = raw.slice(0, split)
     const id = raw.slice(split + 1)
-    if (split > 0 && id && (kind === 'collection' || kind === 'connection')) found.item = { kind, id }
+    if (split > 0 && id && isDataItemKind(kind)) found.item = { kind, id }
   }
   if (isDataTab(query.tab)) found.tab = query.tab
   return found
@@ -57,8 +57,12 @@ export function useDataLocation(editor: Editor): void {
     if (item?.kind === 'collection') {
       editor.collectionId = item.id
       editor.connectionId = null
-    } else if (item) {
+    } else if (item?.kind === 'connection') {
       editor.connectionId = item.id
+    } else if (item?.kind === 'query') {
+      editor.queryId = item.id
+    } else if (item) {
+      editor.actionId = item.id
     }
     // The tab shown already (the URL echoes what this editor wrote) is not a choice: a connection's Endpoints must not become a collection's.
     if (tab && tab !== editor.dataTab) editor.dataTab = tab

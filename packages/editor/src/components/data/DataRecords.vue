@@ -2,9 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import type { RowsSource } from '../../editor/dataView.ts'
 import { useEditor } from '../../editor/useEditor.ts'
-import { fieldLabel } from '../../shared/dataModel.ts'
-import type { DataCollection, FieldType } from '../../shared/dataModel.ts'
-import { nextSort, recordsCount, rowId, rowsFailure, tableRows } from '../../shared/dataTable.ts'
+import type { DataCollection } from '../../shared/dataModel.ts'
+import { nextSort, recordsCount, rowsFailure, tableRows } from '../../shared/dataTable.ts'
 import type { TableFilter, TableSort } from '../../shared/dataTable.ts'
 
 /**
@@ -41,11 +40,6 @@ watch(() => collection.id, () => {
   filters.value = []
 })
 
-const WIDTHS: Record<FieldType, string> = { text: 'min-w-56', uuid: 'min-w-56', integer: 'min-w-32', number: 'min-w-32', boolean: 'min-w-28', date: 'min-w-36', datetime: 'min-w-36', image: 'min-w-28' }
-
-/** The row's id in the table: `rows` are sorted, so the position in the loaded rows is looked up for a row without an id. */
-const idOf = (row: Record<string, unknown>) => rowId(row, editor.collectionRows.indexOf(row))
-
 const toggle = (id: string) => {
   editor.recordId = editor.recordId === id ? null : id
 }
@@ -59,11 +53,6 @@ const emptyText = computed(() => {
   if (editor.rowsSource === 'live') return 'No items yet. Rows are your app\'s data: they are added through the app, or seeded as sample data.'
   return editor.rowsFallback ? 'No items to show: the app is not answering and this collection has no sample data.' : 'No sample data yet for this collection.'
 })
-
-function sortIcon(key: string) {
-  if (sort.value?.key !== key) return ''
-  return sort.value.direction === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'
-}
 </script>
 
 <template>
@@ -99,80 +88,16 @@ function sortIcon(key: string) {
       <span>{{ rest ? failure : `Showing the sample data. ${failure} Start the app (nuxt dev) and refresh.` }}</span>
     </p>
 
-    <div
-      class="min-h-0 flex-1 overflow-auto outline-none"
-      data-records-table
+    <DataRowsTable
+      :fields="fields"
+      :rows="rows"
+      :loaded="editor.collectionRows"
+      :sort="sort"
+      :open-id="editor.recordId"
+      @sort="sort = nextSort(sort, $event)"
+      @toggle="toggle"
+      @open="editor.recordId = $event"
     >
-      <table class="w-full border-separate border-spacing-0">
-        <thead class="sticky top-0 z-10 bg-(--editor-canvas)">
-          <tr class="h-10 text-left text-[12px] text-dimmed">
-            <th class="w-4 border-b border-white/6" />
-            <th
-              v-for="field in fields"
-              :key="field.id"
-              class="border-b border-white/6 px-4 font-normal"
-              :class="WIDTHS[field.type]"
-              :aria-sort="sort?.key === field.name ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'"
-            >
-              <button
-                type="button"
-                class="-mx-1 flex items-center gap-1 rounded px-1 py-0.5 hover:text-toned"
-                :class="{ 'text-highlighted': sort?.key === field.name }"
-                :title="field.name === fieldLabel(field.name) ? undefined : field.name"
-                data-records-header
-                @click="sort = nextSort(sort, field.name)"
-              >
-                <UIcon
-                  v-if="sortIcon(field.name)"
-                  :name="sortIcon(field.name)"
-                  class="size-3.5"
-                />
-                {{ field.label }}
-              </button>
-            </th>
-            <th class="w-11 border-b border-white/6" />
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="(row, index) in rows"
-            :key="idOf(row)"
-            class="group h-11 cursor-default"
-            :class="editor.recordId === idOf(row) ? 'bg-primary/10' : 'hover:bg-white/3'"
-            :data-record="idOf(row)"
-            :data-open="editor.recordId === idOf(row) || undefined"
-            @click="toggle(idOf(row))"
-          >
-            <td class="w-4 border-b border-white/5" />
-            <td
-              v-for="(field, col) in fields"
-              :key="field.id"
-              class="border-b border-l border-white/5 px-4"
-              :class="field.type === 'text' ? 'max-w-0' : 'whitespace-nowrap'"
-              :data-cell="`${index}-${col}`"
-            >
-              <DataTableCell
-                :field="field"
-                :value="row[field.name] ?? null"
-              />
-            </td>
-            <td class="w-11 border-b border-white/5 pr-3 text-right">
-              <UTooltip text="Open record">
-                <EditorButton
-                  icon="i-lucide-panel-right-open"
-                  variant="ghost"
-                  size="xs"
-                  aria-label="Open record"
-                  class="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-                  :class="{ 'text-primary opacity-100': editor.recordId === idOf(row) }"
-                  data-record-open
-                  @click.stop="editor.recordId = idOf(row)"
-                />
-              </UTooltip>
-            </td>
-          </tr>
-        </tbody>
-      </table>
       <p
         v-if="!fields.length"
         class="px-4 py-6 text-xs text-dimmed"
@@ -198,6 +123,6 @@ function sortIcon(key: string) {
       >
         {{ emptyText }}
       </p>
-    </div>
+    </DataRowsTable>
   </section>
 </template>

@@ -9,16 +9,12 @@ import type { DataField } from '../../../shared/dataModel.ts'
 
 /**
  * The rows table's toolbar, Framer CMS's: sort, filter and search icons with the active filters
- * as chips, the item count, and a `…` menu. The Live / Sample data switch (`switchable`) shows
- * the user's choice, `source`, and chooses (choosing Live again is a retry). When Live is chosen but
- * the app does not answer (`fallback`) the switch stays on Live and a note says the rows shown are
- * sample data; `shown` is where the rows really come from. A collection read through a connection
- * has no sample data, so it only says Live. Refresh reads the rows again. The hosted Add item and
+ * as chips, the item count, and a `…` menu. The Live / Sample data switch (`DataSourceSwitch`) shows
+ * the user's choice, `source`, and chooses; `shown`, `fallback` and `switchable` are its. Refresh reads the rows again. The hosted Add item and
  * bulk Delete are not here: rows are app data (E2).
  */
 const props = defineProps<{ fields: DataField[], count: string, source: RowsSource, shown: RowsSource, fallback: boolean, switchable: boolean, refreshing: boolean }>()
 const emit = defineEmits<{ refresh: [], source: [source: RowsSource] }>()
-const SOURCES: Array<{ value: RowsSource, label: string }> = [{ value: 'live', label: 'Live' }, { value: 'sample', label: 'Sample data' }]
 const query = defineModel<string>('query', { required: true })
 const sort = defineModel<TableSort | null>('sort', { required: true })
 const filters = defineModel<TableFilter[]>('filters', { required: true })
@@ -152,35 +148,13 @@ function removeFilter(index: number) {
       data-records-count
     >{{ count }}</span>
     <div class="ms-auto flex shrink-0 items-center gap-2">
-      <div
-        class="flex items-center gap-2"
-        :data-source="switchable ? shown : 'live'"
-        data-live-badge
-      >
-        <span
-          v-if="switchable && fallback"
-          class="text-xs text-muted"
-          data-source-note
-        >App not answering — showing sample data</span>
-        <div
-          v-if="switchable"
-          class="w-48"
-        >
-          <EditorSegmented
-            :items="SOURCES"
-            :model-value="source"
-            @update:model-value="emit('source', $event as RowsSource)"
-          />
-        </div>
-        <UBadge
-          v-else
-          label="Live"
-          icon="i-lucide-radio"
-          color="info"
-          variant="subtle"
-          size="sm"
-        />
-      </div>
+      <DataSourceSwitch
+        :source="source"
+        :shown="shown"
+        :fallback="fallback"
+        :switchable="switchable"
+        @source="emit('source', $event)"
+      />
       <UTooltip text="Refresh">
         <EditorButton
           icon="i-lucide-refresh-cw"

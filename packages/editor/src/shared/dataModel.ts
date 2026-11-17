@@ -183,6 +183,44 @@ export const connectionsOf = (model: Model): DataConnection[] =>
     auth: source.auth ? { type: source.auth.type, secret: source.auth.secret, ...(source.auth.header ? { header: source.auth.header } : {}), env: source.env[source.auth.secret] } : undefined
   }))
 
+/** A query or an action as the Data tree lists it: its label (the name when it has none) and the collection it works on. */
+export interface DataArtifact {
+  id: string
+  name: string
+  label: string
+  module: string
+  /** The entity it reads (a query) or works on (an action: its input's, else its output's, else the one its steps write), `''` when none. */
+  collectionId: string
+  collectionName: string
+}
+
+const entitiesOf = (model: Model): Map<string, string> =>
+  new Map(Object.values(model.modules).flatMap(mod => mod.entities.map((entity): [string, string] => [entity.id, entity.name])))
+
+/** The queries of the model, module by module, as the Data tree lists them. */
+export const queriesOf = (model: Model): DataArtifact[] => {
+  const names = entitiesOf(model)
+  return Object.entries(model.modules).flatMap(([module, mod]) => mod.queries.map(query => ({
+    id: query.id,
+    name: query.name,
+    label: query.label || query.name,
+    module,
+    collectionId: query.from,
+    collectionName: names.get(query.from) ?? ''
+  })))
+}
+
+/** The actions of the model, module by module, as the Data tree lists them. */
+export const actionsOf = (model: Model): DataArtifact[] => {
+  const names = entitiesOf(model)
+  const repositories = new Map(Object.values(model.modules).flatMap(mod => mod.repositories.map((repository): [string, string] => [repository.id, repository.entity])))
+  return Object.entries(model.modules).flatMap(([module, mod]) => mod.actions.map((action) => {
+    const written = action.steps.map(step => typeof step.repository === 'string' ? repositories.get(step.repository) : undefined).find(entity => entity !== undefined)
+    const collectionId = action.input.entity ?? action.output?.entity ?? written ?? ''
+    return { id: action.id, name: action.name, label: action.label || action.name, module, collectionId, collectionName: names.get(collectionId) ?? '' }
+  }))
+}
+
 /** The rows an entity's fixtures file holds: what the Data view shows when the app can't answer. */
 export const fixtureRowsOf = (model: Model, entityId: string): Row[] =>
   Object.values(model.modules).flatMap(mod => mod.fixtures).find(fixtures => fixtures.entity === entityId)?.rows ?? []

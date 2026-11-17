@@ -3,6 +3,8 @@ import { computed, provide, reactive, ref, useTemplateRef, watch } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { dataItemKey } from '../../editor/dataTabs.ts'
 import { FILES_KEY, TREE_STOP, answeredImports, treeItems } from '../../editor/dataTree.ts'
+import type { ArtifactFilters } from '../../editor/dataTree.ts'
+import type { ArtifactKind } from '../../editor/dataArtifacts.ts'
 import { rovingTarget } from '../../editor/rovingKeys.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
@@ -13,8 +15,9 @@ import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
  * REST API) as a folder of the collections read through it. Choosing an item shows it in the
  * workspace beside the tree, on the tabs its kind has. The Connections `+` makes a new
  * connection (an inline name, then the base URL in its Endpoints tab) or opens the Import from URL
- * dialog (also opened by each `editor.importRequest`). **All model files** (S3) ends the tree: the artifacts with no
- * collection or connection (pages, queries, actions…) and every file as JSON.
+ * dialog (also opened by each `editor.importRequest`). **Queries** and **Actions** (S10) follow, each with a `+` that opens its
+ * create dialog, a filter box when it has many items and a `…` menu per row that renames or deletes it. **All model files** (S3)
+ * ends the tree: the artifacts with no collection or connection (pages, components…) and every file as JSON.
  *
  * It is a tree with one tab stop (a roving tabindex: the item that has the focus, else the one shown):
  * Up and Down move between the items and stop at the ends, Home and End go to the first and last,
@@ -26,7 +29,14 @@ const tree = useTemplateRef<HTMLElement>('tree')
 
 /** The connections folded in the tree, by id. */
 const collapsed = reactive(new Set<string>())
-const items = computed(() => treeItems(editor.collections, editor.connections, collapsed))
+/** What each of the Queries and Actions sections is filtered by: the tree lists only what it lets through, so the keys move along that. */
+const filters = reactive<ArtifactFilters>({ queries: '', actions: '' })
+const items = computed(() => treeItems(editor.collections, editor.connections, collapsed, { queries: editor.queries, actions: editor.actions }, filters))
+
+/** The create, rename or delete dialog of a query or an action that is open. */
+const creating = ref<ArtifactKind | null>(null)
+const renamingArtifact = ref<{ kind: ArtifactKind, id: string } | null>(null)
+const deletingArtifact = ref<{ kind: ArtifactKind, id: string } | null>(null)
 
 function toggle(id: string) {
   if (!collapsed.delete(id)) collapsed.add(id)
@@ -271,8 +281,38 @@ function cancelAdd() {
         </p>
       </section>
 
+      <DataArtifactSection
+        v-model:filter="filters.queries"
+        kind="query"
+        :items="editor.queries"
+        @create="creating = 'query'"
+        @rename="renamingArtifact = { kind: 'query', id: $event }"
+        @delete="deletingArtifact = { kind: 'query', id: $event }"
+      />
+      <DataArtifactSection
+        v-model:filter="filters.actions"
+        kind="action"
+        :items="editor.actions"
+        @create="creating = 'action'"
+        @rename="renamingArtifact = { kind: 'action', id: $event }"
+        @delete="deletingArtifact = { kind: 'action', id: $event }"
+      />
+
       <DataFilesRow />
     </div>
+
+    <DataArtifactCreate
+      :kind="creating"
+      @close="creating = null"
+    />
+    <DataArtifactRename
+      :target="renamingArtifact"
+      @close="renamingArtifact = null"
+    />
+    <DataArtifactDelete
+      :target="deletingArtifact"
+      @close="deletingArtifact = null"
+    />
 
     <DataApiSource
       v-model:open="fromApi"

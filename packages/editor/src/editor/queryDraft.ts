@@ -1,0 +1,176 @@
+import type { QueryFile, Value } from '@bildr/codegen/model'
+import type { FieldType } from '../shared/dataModel.ts'
+import type { QueryField } from './dataArtifacts.ts'
+
+/**
+ * The Query Definition form's draft (S10): a query as the form holds it (text in every box, a choice for what a value is) and
+ * what saving it asks of the module. `changesOf` is the `query_update` input of only what the draft changed (an unchanged part is
+ * not sent, so a refusal of one never blocks another), or the problems a box has that make it unsendable (a number that is not
+ * one). The module checks the rest: a field the collection has, a value that fits its type, a parameter that exists.
+ */
+
+export type Op = NonNullable<QueryFile['where']>['op']
+export const OPS: Array<{ value: Op, label: string }> = [
+  { value: 'eq', label: 'is' },
+  { value: 'ne', label: 'is not' },
+  { value: 'lt', label: 'is less than' },
+  { value: 'lte', label: 'is at most' },
+  { value: 'gt', label: 'is greater than' },
+  { value: 'gte', label: 'is at least' },
+  { value: 'in', label: 'is one of' },
+  { value: 'like', label: 'matches' }
+]
+
+export interface DraftParam {
+  name: string
+  type: FieldType
+  /** The default as typed (`''`: none); a toggle's is `true` or `false`. */
+  default: string
+  /** Carried through: a reactive parameter stays one. */
+  reactive?: boolean
+}
+
+export interface DraftWhere {
+  field: string
+  op: Op
+  /** What the value is: a literal typed in `value`, a parameter of the query (`param`), or an expression the form does not edit (`expression`, kept as it is). */
+  kind: 'value' | 'param' | 'expression'
+  value: string
+  param: string
+  /** The value as it is in the file (typed `unknown`: it is any model value, which a form's reactive state need not walk). */
+  expression?: unknown
+}
+
+export interface DraftLimit {
+  kind: 'none' | 'number' | 'param' | 'expression'
+  number: string
+  param: string
+  expression?: unknown
+}
+
+export interface QueryDraft {
+  label: string
+  description: string
+  result: 'one' | 'many'
+  params: DraftParam[]
+  where: DraftWhere | null
+  orderBy: Array<{ field: string, direction: 'asc' | 'desc' }>
+  limit: DraftLimit
+}
+
+const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+const isParam = (value: unknown): value is { $param: string } => isObject(value) && typeof value.$param === 'string'
+
+/** A literal as the form shows it: text, a list as comma-separated text. */
+const textOf = (value: unknown): string => Array.isArray(value) ? value.map(item => String(item ?? '')).join(', ') : value === null || value === undefined ? '' : String(value)
+
+/** The draft of a query as it is now. */
+export function draftOf(query: QueryFile): QueryDraft {
+  const where = query.where
+  const limit = query.limit
+  return {
+    label: query.label,
+    description: query.description ?? '',
+    result: query.result,
+    params: query.params.map(param => ({ name: param.name, type: param.type as FieldType, default: textOf(param.default), ...param.reactive ? { reactive: true } : {} })),
+    where: where
+      ? {
+          field: where.field,
+          op: where.op,
+          kind: isParam(where.value) ? 'param' : isObject(where.value) ? 'expression' : 'value',
+          value: isObject(where.value) ? '' : textOf(where.value),
+          param: isParam(where.value) ? where.value.$param : '',
+          ...isObject(where.value) && !isParam(where.value) ? { expression: where.value } : {}
+        }
+      : null,
+    orderBy: (query.orderBy ?? []).map(order => ({ field: order.field, direction: order.direction })),
+    limit: limit === undefined || limit === null
+      ? { kind: 'none', number: '', param: '' }
+      : isParam(limit)
+        ? { kind: 'param', number: '', param: limit.$param }
+        : isObject(limit) ? { kind: 'expression', number: '', param: '', expression: limit } : { kind: 'number', number: String(limit), param: '' }
+  }
+}
+
+/** A typed value of `type`, or what is wrong with the text. */
+export function valueOfText(type: FieldType | undefined, text: string): { value: Value } | { problem: string } {
+  const typed = text.trim()
+  if (type === 'integer') return /^[+-]?\d+$/.test(typed) ? { value: Number(typed) } : { problem: 'a whole number' }
+  if (type === 'number') return typed !== '' && Number.isFinite(Number(typed)) ? { value: Number(typed) } : { problem: 'a number' }
+  if (type === 'boolean') return typed === 'true' || typed === 'false' ? { value: typed === 'true' } : { problem: 'true or false' }
+  return { value: text }
+}
+
+export interface QueryChanges {
+  /** The `query_update` input, without the `query` and `inPlace` the caller adds; empty when nothing changed. */
+  input: Record<string, unknown>
+  /** What stops the draft from being sent, for each box that has such a problem. */
+  problems: string[]
+}
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+
+/** What saving `draft` asks of the module for `query`: only the parts that changed, or the problems that stop it. */
+export function changesOf(draft: QueryDraft, query: QueryFile, fields: readonly QueryField[]): QueryChanges {
+  const input: Record<string, unknown> = {}
+  const problems: string[] = []
+  const typeOf = (name: string) => fields.find(field => field.name === name)?.type
+
+  if (draft.label !== query.label) {
+    if (draft.label.trim() === '') problems.push('Add a label')
+    else input.label = draft.label
+  }
+  if (draft.description !== (query.description ?? '')) input.description = draft.description === '' ? null : draft.description
+  if (draft.result !== query.result) input.result = draft.result
+
+  const params = draft.params.map((param) => {
+    const converted = param.default === '' ? undefined : valueOfText(param.type, param.default)
+    if (converted && 'problem' in converted) problems.push(`Parameter ${param.name || '(unnamed)'}: its default is ${converted.problem}`)
+    return { name: param.name, type: param.type, ...converted && 'value' in converted ? { default: converted.value } : {}, ...param.reactive ? { reactive: true } : {} }
+  })
+  const before = query.params.map(param => ({ name: param.name, type: param.type, ...param.default !== undefined ? { default: param.default } : {}, ...param.reactive ? { reactive: true } : {} }))
+  if (!same(params, before)) input.params = params
+
+  let where: QueryFile['where'] | null = null
+  if (draft.where) {
+    const { field, op } = draft.where
+    let value: Value | undefined
+    if (draft.where.kind === 'param') value = { $param: draft.where.param }
+    else if (draft.where.kind === 'expression') value = draft.where.expression as Value
+    else {
+      const type = typeOf(field)
+      const items = op === 'in' ? draft.where.value.split(',').map(item => item.trim()).filter(item => item !== '') : [draft.where.value]
+      const converted = items.map(item => valueOfText(op === 'like' ? 'text' : type, item))
+      const bad = converted.find(item => 'problem' in item)
+      if (bad && 'problem' in bad) problems.push(`Condition: the value of ${field} is ${bad.problem}`)
+      else value = op === 'in' ? converted.map(item => (item as { value: Value }).value) : (converted[0] as { value: Value }).value
+    }
+    if (value !== undefined) where = { op, field, value }
+  }
+  if (!same(where, query.where ?? null)) input.where = where
+
+  if (!same(draft.orderBy, query.orderBy ?? [])) input.orderBy = draft.orderBy
+
+  let limit: Value | null = null
+  if (draft.limit.kind === 'param') limit = { $param: draft.limit.param }
+  else if (draft.limit.kind === 'expression') limit = draft.limit.expression as Value ?? null
+  else if (draft.limit.kind === 'number') {
+    const converted = valueOfText('integer', draft.limit.number)
+    if ('problem' in converted) problems.push('Limit: enter a whole number')
+    else limit = converted.value
+  }
+  if (!same(limit, query.limit ?? null)) input.limit = limit
+
+  return { input, problems }
+}
+
+/** The draft with parameter `index` renamed, and the condition and limit that read it by the old name following it. */
+export function renameParam(draft: QueryDraft, index: number, name: string): QueryDraft {
+  const previous = draft.params[index]?.name
+  return {
+    ...draft,
+    params: draft.params.map((param, at) => at === index ? { ...param, name } : param),
+    where: draft.where && previous !== undefined && draft.where.kind === 'param' && draft.where.param === previous ? { ...draft.where, param: name } : draft.where,
+    limit: previous !== undefined && draft.limit.kind === 'param' && draft.limit.param === previous ? { ...draft.limit, param: name } : draft.limit
+  }
+}

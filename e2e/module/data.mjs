@@ -5,7 +5,9 @@
  * running app; a Form bound to the entity's create action, submitted in the running app. Every edit is
  * checked in `.bildr/` (the entity, its repository, the page). The last section is the Data workspace
  * (S2): the tree, the tabs of a collection and of a connection, the Live / Sample data switch, the item
- * and tab in the URL, and the keyboard.
+ * and tab in the URL, and the keyboard. Then Queries and Actions (S10): a query made from the tree's "+", its
+ * Definition and Results, a page that uses it, its rename (the page still renders) and a delete that is
+ * refused while it is used; an action made from a template, on its Overview.
  *
  * Dropped (feature doc: records are app data, not editor data; no hosted collections or publish):
  * - `record_create`, quick-add and inline cell edit: the table is read-only (E2); rows come from the
@@ -20,6 +22,8 @@ await run('data', async ({ page, browser, errors }) => {
   // The app's create route takes the id the client form mints (a uuid).
   const post = (path, body) => appApi(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID(), ...body }) })
   const p = await newPage('data')
+  // A module refusal is answered 422, which Chromium logs as a console error: the steps that expect one filter it out.
+  const refused422 = /status of 422 \(Unprocessable Entity\)/
 
   // The collection and its fields, through the Data screen.
   await openData(page)
@@ -172,6 +176,110 @@ await run('data', async ({ page, browser, errors }) => {
   await page.waitForTimeout(400)
   await shot(page, 'data-tree-connection')
 
+  // ── Queries and Actions (S10) ────────────────────────────────────────────────────────────
+  // A query is made from the tree's "+" over Dish, with a condition in its Definition; Results run it over the app's rows.
+  const pickCollection = async (name) => {
+    await page.locator('[data-artifact-collection-select]').click()
+    await page.getByRole('option', { name, exact: true }).click()
+  }
+  await page.getByLabel('New query').click()
+  await pickCollection('Dish')
+  await page.locator('[data-artifact-name]').fill('cheap dishes')
+  await page.locator('[data-artifact-submit]').click()
+  const cheap = await until(() => bildr('modules/blog/queries/cheap-dishes.json'))
+  check(cheap?.name === 'cheapDishes' && cheap.from === dish.entityId && cheap.result === 'many', `"+" on Queries writes a query over Dish (${cheap?.name} ${cheap?.from})`)
+  check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'definition' && await page.locator('[data-data-title] h2').innerText() === 'Cheap dishes', 'a new query opens on its Definition')
+  check(decodeURIComponent(page.url()).endsWith(`#/data?item=query:${cheap.id}&tab=definition`), `its item and tab are in the URL (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
+  await page.locator('[data-def-where-add]').click()
+  await page.locator('[data-def-where-field]').click()
+  await page.getByRole('option', { name: 'cost', exact: true }).click()
+  await page.locator('[data-def-where-op]').click()
+  await page.getByRole('option', { name: 'is less than', exact: true }).click()
+  await page.locator('[data-def-where-value]').fill('5')
+  await page.locator('[data-def-save]').click()
+  const bounded = await until(() => bildr('modules/blog/queries/cheap-dishes.json')?.where)
+  check(bounded?.op === 'lt' && bounded.field === 'cost' && bounded.value === 5, `the Definition writes the condition (${JSON.stringify(bounded)})`)
+  await page.waitForTimeout(400)
+  await page.evaluate(() => document.activeElement?.blur())
+  await shot(page, 'd10b-query-definition')
+  await page.locator('[role=tab][data-data-tab="results"]').click()
+  check(await until(async () => {
+    await page.locator('[data-records-refresh]').click().catch(() => {})
+    return await page.locator('[data-query-results] [data-record]').count() === 2
+  }, 30_000), 'Results run the query over the app\'s rows: the two dishes that cost less than 5')
+  const resultTexts = await page.locator('[data-query-results] [data-record]').allInnerTexts()
+  check(resultTexts.some(text => text.includes('Espresso')) && resultTexts.some(text => text.includes('Latte')) && !resultTexts.some(text => text.includes('Mocha')), `and they are Espresso and Latte (${resultTexts.map(text => text.replace(/\s+/g, ' ')).join(' | ')})`)
+  check(await page.locator('[data-results-count]').innerText() === '2 results', 'with their count')
+  await page.waitForTimeout(400)
+  await page.evaluate(() => document.activeElement?.blur())
+  await shot(page, 'd10b-query-results')
+
+  // A page uses the query, so Used in lists it, and the page renders what the query returns.
+  await action('page_use_add', { page: p.pageId, as: 'cheap', query: cheap.id })
+  const cheapList = (await action('node_insert', { file: p.pageId, type: 'List', props: { items: { $bind: 'cheap' }, as: 'cheapDish' } })).nodeId
+  await action('node_insert', { file: p.pageId, parentId: cheapList, type: 'Text', props: { text: { $template: '{cheapDish.title} is cheap' } } })
+  await page.locator('[role=tab][data-data-tab="used"]').click()
+  check(await until(async () => await page.locator(`[data-used-in] [data-use="page:${p.pageId}"]`).count() === 1), 'Used in lists the page that reads the query')
+  const cheapApp = await appShows(browser, p.path, 'Espresso is cheap')
+  check(cheapApp.html.includes('Espresso is cheap') && cheapApp.html.includes('Latte is cheap') && !cheapApp.html.includes('Mocha is cheap'), 'the running app shows the query\'s rows on that page')
+
+  // Rename: the page holds the query's id, so it still renders; hand-written code that imports the old name is warned.
+  await page.locator(`[data-artifact-menu="${cheap.id}"]`).click({ force: true })
+  await page.getByRole('menuitem', { name: 'Rename' }).click()
+  check((await page.locator('[data-artifact-warning]').innerText()).includes('Hand-written code that imports `useCheapDishes` needs the same rename.'), 'Rename warns that hand-written code importing the old name needs the same rename')
+  await page.locator('[data-artifact-name]').fill('budgetDishes')
+  await page.locator('[data-artifact-submit]').click()
+  check(await until(() => bildr('modules/blog/queries/cheap-dishes.json')?.name === 'budgetDishes'), 'the rename writes the query\'s name, in its own file')
+  check(bildr(p.filePath).uses.queries.some(use => use.query === cheap.id && use.as === 'cheap'), 'and the page still uses it by its id')
+  await quiesce(60_000)
+  await quiet()
+  const renamedApp = await appShows(browser, p.path, 'Espresso is cheap')
+  check(renamedApp.html.includes('Espresso is cheap') && renamedApp.html.includes('Latte is cheap') && !renamedApp.html.includes('Mocha is cheap'), 'the page still renders the query\'s rows after the rename')
+  check(await page.locator(`[data-used-in] [data-use="page:${p.pageId}"]`).count() === 1, 'and Used in still lists the page')
+
+  // Delete is refused while the page uses the query: the dialog lists it, and says why.
+  await page.locator(`[data-artifact-menu="${cheap.id}"]`).click({ force: true })
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  check(await page.locator(`[data-artifact-uses] [data-use-open="page:${p.pageId}"]`).count() === 1, 'Delete lists the page that uses the query')
+  const errorsAfterQuery = errors.length
+  await page.locator('[data-artifact-submit]').click()
+  await page.locator('[data-artifact-error]').waitFor()
+  errors.push(...errors.splice(errorsAfterQuery).filter(message => !refused422.test(message)))
+  check((await page.locator('[data-artifact-error]').innerText()).includes('is still used') && !!bildr('modules/blog/queries/cheap-dishes.json'), 'the module refuses it, the message is in the dialog, and the file stays')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+
+  // An action is made from a template, and opens on its Overview.
+  await page.getByLabel('New action').click()
+  await pickCollection('Dish')
+  await page.locator('[data-action-template="blank"]').click()
+  await page.locator('[data-artifact-name]').fill('archive dish')
+  await page.locator('[data-artifact-submit]').click()
+  const archive = await until(() => bildr('modules/blog/actions/archive-dish.json'))
+  check(archive?.name === 'archiveDish' && archive.steps?.length === 1 && archive.steps[0].kind === 'return', `"+" on Actions writes an action from the Blank template (${archive?.name}, steps ${archive?.steps?.map(step => step.kind)})`)
+  check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'overview', 'a new action opens on its Overview')
+  check(await page.locator('[data-action-route]').innerText() === 'POST /dishes/archive-dish' && await page.locator('[data-action-step="return"]').count() === 1, 'which shows its route and its steps')
+  await page.locator('[data-action-field="label"]').fill('Archive a dish')
+  await page.locator('[data-action-field="label"]').press('Enter')
+  check(await until(() => bildr('modules/blog/actions/archive-dish.json')?.label === 'Archive a dish'), 'the Overview saves the label with action_update')
+  await page.waitForTimeout(400)
+  await page.evaluate(() => document.activeElement?.blur())
+  await shot(page, 'd10b-action-overview')
+  // Nothing uses it: Delete removes it.
+  await page.locator(`[data-artifact-menu="${archive.id}"]`).click({ force: true })
+  await page.getByRole('menuitem', { name: 'Delete' }).click()
+  await page.locator('[data-artifact-submit]').click()
+  check(await until(() => bildr('modules/blog/actions/archive-dish.json') === undefined), 'an action nothing uses is deleted')
+  await quiesce(60_000)
+  await quiet()
+
+  // The Used in link opens the page on the Canvas.
+  await page.locator('[data-tree-item^="query:"]').first().waitFor()
+  await page.locator(`[data-tree-item="query:${cheap.id}"]`).click()
+  await page.locator('[role=tab][data-data-tab="used"]').click()
+  await page.locator(`[data-use-open="page:${p.pageId}"]`).click()
+  check(await until(() => decodeURIComponent(page.url()).includes('#/design')), `a Used in link opens the page on the Canvas (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
+  await openData(page)
+
   // ── The JSON tab and All model files (S3) ────────────────────────────────────────────────
   // An edit of Menu's file in the JSON tab shows in its Fields tab (Menu has no rows, so a new column is a plain addition).
   const rawContent = page.locator('textarea[data-testid="raw-content"], [data-testid="raw-content"] textarea').first()
@@ -193,7 +301,7 @@ await run('data', async ({ page, browser, errors }) => {
   check(reread.fields.some(field => field.name === 'price'), 'and the JSON tab shows the file as the module saved it')
 
   // A problem the module refuses is shown inline, and the text stays. The refusal is answered 422, which Chromium logs as a console error: this step expects it, and no other does.
-  const refused = /status of 422 \(Unprocessable Entity\)/
+  const refused = refused422
   const errorsBefore = errors.length
   await rawContent.fill(JSON.stringify({ ...reread, idStrategy: 'ent_missing' }))
   await page.locator('[data-testid="raw-save"]').click()

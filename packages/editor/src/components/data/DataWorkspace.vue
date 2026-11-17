@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, useTemplateRef } from 'vue'
+import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import { DATA_TAB_LABELS } from '../../editor/dataTabs.ts'
 import { rovingTarget } from '../../editor/rovingKeys.ts'
+import type { ParamInputs } from '../../editor/runQuery.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { FOCUS_RING } from '../../editorUi.ts'
 import DataFiles from './DataFiles.vue'
@@ -11,7 +12,9 @@ import DataJson from './DataJson.vue'
  * The Data workspace's centre (S2): the item chosen in the tree, with the tabs its kind has. A
  * collection has Rows (the read-only table), Fields (the field editor, its settings beside it),
  * Endpoints (the repository's, when it is read through a connection) and JSON (its file, S3); a connection has
- * Endpoints (its settings and its collections' endpoints) and JSON. With All model files chosen in the tree it
+ * Endpoints (its settings and its collections' endpoints) and JSON; a query (S10) has Results (it run over the
+ * collection's rows), Definition (its form), Used in and JSON; an action has Overview (its form, its route and its
+ * steps), Used in and JSON. With All model files chosen in the tree it
  * is the list of the model's files and their editor instead. With nothing to show it is
  * the empty start. The tab strip is one tab stop: Left and Right move along it (and wrap), Home and End go to its ends.
  */
@@ -20,14 +23,18 @@ const strip = useTemplateRef<HTMLElement>('strip')
 
 const connection = computed(() => editor.dataConnection)
 const collection = computed(() => editor.dataCollection)
-const title = computed(() => connection.value?.name ?? collection.value?.name ?? '')
-const kind = computed(() => connection.value ? 'Connection' : 'Collection')
-const icon = computed(() => connection.value ? 'i-lucide-server' : collection.value?.kind === 'rest' ? 'i-lucide-globe' : 'i-lucide-database')
+const query = computed(() => editor.dataQuery)
+const action = computed(() => editor.dataAction)
+const title = computed(() => query.value ? query.value.label || query.value.name : action.value ? action.value.label || action.value.name : connection.value?.name ?? collection.value?.name ?? '')
+const kind = computed(() => query.value ? 'Query' : action.value ? 'Action' : connection.value ? 'Connection' : 'Collection')
+const icon = computed(() => query.value ? 'i-lucide-list-filter' : action.value ? 'i-lucide-zap' : connection.value ? 'i-lucide-server' : collection.value?.kind === 'rest' ? 'i-lucide-globe' : 'i-lucide-database')
 /** The shown item's own `.bildr/` file: what the JSON tab edits. */
 const itemFile = computed(() => {
-  const id = connection.value?.id ?? collection.value?.id
+  const id = query.value?.id ?? action.value?.id ?? connection.value?.id ?? collection.value?.id
   return id ? editor.model?.paths[id] : undefined
 })
+/** What was typed in each query's parameter inputs, by query: kept while another tab or query shows. */
+const queryInputs = ref<Record<string, ParamInputs>>({})
 
 async function onTabKeyDown(event: KeyboardEvent) {
   const tabs = editor.dataTabs
@@ -141,6 +148,24 @@ async function onTabKeyDown(event: KeyboardEvent) {
               {{ collection.name }} has no endpoints: its rows are stored by the app. Only a collection read through a connection has them.
             </DataEmptyState>
           </div>
+          <DataQueryResults
+            v-else-if="editor.dataTab === 'results' && query"
+            v-model:inputs="queryInputs"
+            :query="query"
+          />
+          <DataQueryDefinition
+            v-else-if="editor.dataTab === 'definition' && query"
+            :query="query"
+          />
+          <DataActionOverview
+            v-else-if="editor.dataTab === 'overview' && action"
+            :action="action"
+          />
+          <DataUsedIn
+            v-else-if="editor.dataTab === 'used' && (query || action)"
+            :id="(query ?? action)!.id"
+            :kind="query ? 'query' : 'action'"
+          />
           <DataJson
             v-else-if="editor.dataTab === 'json'"
             :key="itemFile"
