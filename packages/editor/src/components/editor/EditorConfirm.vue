@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useEditor } from '../../editor/useEditor.ts'
+import DataUsageList from '../data/DataUsageList.vue'
 
 /**
  * The editor's confirm dialog, in the kit's EditorModal instead of the
@@ -8,8 +9,8 @@ import { useEditor } from '../../editor/useEditor.ts'
  * confirmLabel, danger })` opens it and resolves true on the confirm button,
  * false on Cancel, Esc or a click outside. `items` lists what the action
  * reaches, e.g. where a component is used. `uses` lists the places that use what
- * is deleted or renamed (S5), each a link that opens it and answers no; with
- * `blocked` the confirm button is disabled, and that is its reason.
+ * is deleted or renamed, each a link that opens it and answers no. With `blocked` the change cannot
+ * go on: the dialog has one Close button instead of Cancel and the confirm button, and the title and the description say why.
  */
 const editor = useEditor()
 const request = computed(() => editor.confirmRequest)
@@ -59,23 +60,22 @@ const open = computed({
       >
         <DataUsageList
           :uses="request.uses"
-          :follows-label="request.followsLabel"
           @open="request.answer(false)"
         />
       </div>
     </div>
     <template #footer>
+      <!-- The Close button of a blocked change is the Cancel one: the same hook (`data-confirm-cancel`) closes either dialog. -->
       <EditorButton
-        label="Cancel"
-        variant="ghost"
+        :label="request?.blocked ? 'Close' : 'Cancel'"
+        :variant="request?.blocked ? 'primary' : 'ghost'"
         data-confirm-cancel
         @click="request?.answer(false)"
       />
       <EditorButton
+        v-if="!request?.blocked"
         :label="request?.confirmLabel ?? 'OK'"
         :variant="request?.danger ? 'danger' : 'primary'"
-        :disabled="!!request?.blocked"
-        :title="request?.blocked"
         data-confirm-ok
         @click="request?.answer(true)"
       />

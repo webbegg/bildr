@@ -4,7 +4,7 @@ import DataView from '../../src/views/DataView.vue'
 import { applyEdit } from '@bildr/codegen/edit'
 import type { EditName } from '@bildr/codegen/edit'
 import { loadModel, serializeModel } from '@bildr/codegen/model'
-import { baseHandlers, world } from '../design/harness.ts'
+import { baseHandlers, indexPage, world } from '../design/harness.ts'
 import type { Handlers } from '../design/harness.ts'
 
 /**
@@ -54,6 +54,23 @@ export const artifactModule = (): Handlers => moduleEdits(['query_create', 'quer
 
 /** The sample-data actions (D4), the real ones over the mocked model: a cell saved here is the row the Rows tab shows next. */
 export const fixtureModule = (): Handlers => moduleEdits(['fixture_row_create', 'fixture_row_update', 'fixture_rows_delete'])
+
+/**
+ * Adds to Post a field nothing uses: no query, action, page or component names it. The fixture's own fields are all used (the
+ * title by the detail page, the slug by its query…), so a test that renames or removes a field and expects the change to go ahead
+ * uses this one: a used field is blocked, with a warning (`usageWarnings.ts`). Returns its id.
+ */
+export const addUnusedField = (name = 'extra'): string => {
+  const id = `fld_${name}`
+  world.model.modules.blog!.entities[0]!.fields.push({ id, name, type: 'text' })
+  return id
+}
+
+/** The fixture's index page shows the latest quotes, and a page that uses a collection keeps its connection: with that page's use of them gone, nothing outside uses the Quote collection. */
+export const freeQuotes = (): void => {
+  indexPage().uses!.queries = indexPage().uses!.queries!.filter(use => use.query !== 'q_latest_quotes')
+  indexPage().root.children = indexPage().root.children!.filter(node => node.id !== 'n_quotes')
+}
 
 /** The tree's items by name: `data-tree-item` is the item's key (`collection:<id>`, `connection:<id>`). */
 export const ITEMS = {

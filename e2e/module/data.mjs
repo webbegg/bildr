@@ -364,7 +364,7 @@ await run('data', async ({ page, browser, errors }) => {
   check(await until(() => decodeURIComponent(page.url()).includes('#/design')), `a Used in link opens the page on the Canvas (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
   await openData(page)
 
-  // ── Used in, for a collection and its fields (D5, S5) ────────────────────────────────────
+  // ── Used in, for a collection and its fields ────────────────────────────────────────────
   // Dish is read by the page `p` (its list and the cheap query): the collection's Used in tab lists the page, and its link opens it on the Canvas.
   await page.locator('[data-collection="dishes"]').click()
   await page.locator('[role=tab][data-data-tab="used"]').click()
@@ -385,28 +385,34 @@ await run('data', async ({ page, browser, errors }) => {
   await page.locator('[data-field="title"]').hover()
   await page.locator('[data-field="title"] [data-row-remove]').click()
   const warning = page.locator('[data-confirm]')
+  const dialog = page.getByRole('dialog')
   await warning.waitFor()
-  check(/Used in \d+ places?/.test(await page.locator('[data-confirm-description]').innerText()), 'removing it says "Used in N places" first')
-  check(await page.locator(`[data-confirm-uses] [data-use-open="page:${p.pageId}"]`).count() === 1 && await page.locator('[data-confirm-ok]').isDisabled(), 'lists the page, and the button is disabled')
+  check(/“title” is used in \d+ places?/.test(await dialog.innerText()), 'removing it says "“title” is used in N places" first')
+  check(await page.locator(`[data-confirm-uses] [data-use-open="page:${p.pageId}"]`).count() === 1 && await page.locator('[data-confirm-ok]').count() === 0, 'lists the page, and there is nothing to confirm: one Close button')
   await page.waitForTimeout(400)
   await shot(page, 'd5-used-in')
   await page.locator('[data-confirm-cancel]').click()
   await warning.waitFor({ state: 'detached' })
   check(bildr('modules/blog/entities/dish.json').fields.some(field => field.name === 'title'), 'nothing was removed')
-  // A rename asks the same, and the name goes back.
+  // Esc on the name cancels the edit: nothing is asked and the name stays.
+  await page.getByLabel('Name of title').fill('heading')
+  await page.getByLabel('Name of title').press('Escape')
+  await page.waitForTimeout(400)
+  check(await warning.count() === 0 && await page.getByLabel('Name of title').inputValue() === 'title', 'Esc on a field name cancels the rename and puts the name back')
+  // A rename of a used field is blocked the same, and the name goes back.
   await page.getByLabel('Name of title').fill('heading')
   await page.getByLabel('Name of title').press('Enter')
   await warning.waitFor()
-  check(/not rewritten/.test(await page.locator('[data-confirm-description]').innerText()), 'renaming it says the places that name it are not rewritten')
+  check(/pages and queries name it directly/.test(await page.locator('[data-confirm-description]').innerText()), 'renaming it says pages and queries name it directly')
   await page.locator('[data-confirm-cancel]').click()
   await warning.waitFor({ state: 'detached' })
   check(await until(async () => (await page.getByLabel('Name of title').count()) === 1) && bildr('modules/blog/entities/dish.json').fields.some(field => field.name === 'title'), 'and the name is back')
-  // The collection too: deleting it is refused while the page reads it.
+  // The collection too: deleting it is blocked while the page reads it.
   await page.locator('[data-collection="dishes"]').hover()
   await page.locator('[data-collection="dishes"]').locator('xpath=..').getByLabel('Collection actions').click({ force: true })
   await page.getByRole('menuitem', { name: 'Delete' }).click()
   await warning.waitFor()
-  check(/Used in \d+ places?/.test(await page.locator('[data-confirm-description]').innerText()) && await page.locator('[data-confirm-ok]').isDisabled(), 'deleting the collection says "Used in N places" and cannot be confirmed')
+  check(/“Dish” is used in \d+ places?/.test(await dialog.innerText()) && await page.locator('[data-confirm-ok]').count() === 0, 'deleting the collection says "“Dish” is used in N places" and cannot be confirmed')
   await page.locator('[data-confirm-cancel]').click()
   await warning.waitFor({ state: 'detached' })
 

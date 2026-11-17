@@ -72,11 +72,10 @@ export interface ConfirmOptions {
   description?: string
   /** Lines listed under the description, e.g. where a component is used. */
   items?: string[]
-  /** The places that use what is deleted or renamed, each a link that opens it (and answers no); `followsLabel` tags the ones the module changes along with it. */
+  /** The places that use what is deleted or renamed, each a link that opens it (and answers no); the ones the module changes along with it say so. */
   uses?: UseEntry[]
-  followsLabel?: string
-  /** Why the confirm button is disabled (what is used cannot be deleted or renamed): the button's title. */
-  blocked?: string
+  /** The change cannot go on: there is nothing to confirm, so the dialog has one Close button (which answers no) and no confirm button. */
+  blocked?: boolean
   confirmLabel: string
   danger?: boolean
 }

@@ -4,8 +4,7 @@ import type { ActionFile, EntityFile, FieldSchema, FixturesFile, QueryFile, Repo
 import { camel, defineEdit, fail, kebab, pascal, uniqueName } from './core.ts'
 import type { Draft } from './core.ts'
 import { datasourceById, DataSourceRef } from './datasources.ts'
-import { walk } from './tree.ts'
-import { idUses, mentions, useLabels } from './usage.ts'
+import { entityUsesOf, fieldUsesOf, refusalLabels } from './usage.ts'
 
 /**
  * Entities (P3c; the hosted collections and fields). One `entity_create` writes the entity
@@ -62,9 +61,6 @@ const fieldOf = (entity: EntityFile, id: string): Field => entity.fields.find(fi
 
 const queries = (draft: Draft) => Object.values(draft.model.modules).flatMap(mod => mod.queries)
 const actions = (draft: Draft) => Object.values(draft.model.modules).flatMap(mod => mod.actions)
-
-/** Where pages, components and layouts use one of `ids` (queries, actions, fields, the entity), as `file (where)`: the shared usage index, in words. */
-const treeUsers = (draft: Draft, ids: Set<string>): string[] => useLabels(idUses(draft.model, ids))
 
 const listOf = (users: string[]) => users.join(', ')
 
@@ -361,18 +357,9 @@ export const entityDelete = defineEdit({
     const ownQueries = queries(draft).filter(query => query.from === id)
     const ownActions = actions(draft).filter(action => action.input.entity === id || action.output?.entity === id
       || action.steps.some(step => repository && step.repository === repository.id))
-    const ids = new Set([id, ...entity.fields.map(field => field.id), ...ownQueries.map(query => query.id), ...ownActions.map(action => action.id)])
-    const users = treeUsers(draft, ids)
     const cascaded = new Set([...ownQueries, ...ownActions].map(item => item.id))
-    for (const action of actions(draft)) {
-      if (!cascaded.has(action.id) && mentions(action, new Set([id, ...(repository ? [repository.id] : [])]))) users.push(action.id)
-    }
-    for (const other of Object.values(draft.model.modules).flatMap(entry => entry.entities)) {
-      if (other.id !== id && other.relations.some(relation => relation.to === id)) users.push(`${other.id} (relations)`)
-    }
-    for (const component of draft.components()) {
-      if (component.properties.some(property => property.entity === id) && !users.includes(`${component.id} (properties)`)) users.push(`${component.id} (properties)`)
-    }
+    // The usage index is the list the editor shows: what it counts is what stops the delete.
+    const users = refusalLabels(entityUsesOf(draft.model, id))
     if (users.length) fail('invalid', `Entity ${entity.name} is still used by ${listOf(users)}. Change them first`)
 
     const remove = <T>(list: T[], items: T[]) => {
@@ -394,51 +381,11 @@ export const entityDelete = defineEdit({
 /** The create actions of an entity whose input picks its fields: they take a new field too. */
 const pickingActions = (draft: Draft, entityId: string) => actions(draft).filter(action => action.input.entity === entityId && action.input.pick)
 
-/** Pages and components that show rows of `entity`: their bindings may read a field by name. */
-const bindsFieldName = (draft: Draft, entity: EntityFile, name: string): string[] => {
-  const ids = new Set([...queries(draft).filter(query => query.from === entity.id).map(query => query.id), ...actions(draft).filter(action => action.input.entity === entity.id || action.output?.entity === entity.id).map(action => action.id)])
-  const reads = (value: unknown): boolean => {
-    if (!value || typeof value !== 'object') return false
-    const record = value as Record<string, unknown>
-    for (const key of ['$bind', '$template'] as const) {
-      const text = record[key]
-      if (typeof text === 'string' && text.split(/[^\w$]+/).slice(1).includes(name) && /[.]/.test(text)) return true
-    }
-    return Object.values(record).some(reads)
-  }
-  return draft.trees().flatMap((tree) => {
-    const owner = tree.owner as { uses?: unknown, properties?: Array<{ entity?: string }> }
-    const about = mentions(owner.uses, ids) || owner.properties?.some(property => property.entity === entity.id)
-    if (!about) return []
-    const found: string[] = []
-    walk(tree.root, (node) => {
-      if (reads(node.props) || reads(node.interactions)) found.push(`${tree.file} (${node.id})`)
-    })
-    if (reads((tree.owner as { seo?: unknown }).seo)) found.push(`${tree.file} (seo)`)
-    return found
-  })
-}
-
-/** What uses a field (beyond what follows it automatically: create-action picks, the REST field map, fixtures rows). */
-const fieldUsers = (draft: Draft, entity: EntityFile, field: Field): string[] => {
-  const users: string[] = []
-  for (const query of queries(draft).filter(entry => entry.from === entity.id)) {
-    if (query.where?.field === field.name || query.orderBy?.some(order => order.field === field.name)) users.push(query.id)
-  }
-  for (const action of actions(draft).filter(entry => entry.input.entity === entity.id || entry.output?.entity === entity.id)) {
-    const named = (value: unknown): boolean => {
-      if (!value || typeof value !== 'object') return false
-      const record = value as Record<string, unknown>
-      if (Object.hasOwn(record, field.name) || record.$input === field.name) return true
-      return Object.values(record).some(named)
-    }
-    if (action.steps.some(named) || action.errors.some(error => error.message.includes(`{${field.name}}`))) users.push(action.id)
-  }
-  const repository = repositoryOf(draft, entity.id)
-  if (repository?.finders?.some(finder => finder.by === field.id) || repository?.list?.orderBy.some(order => order.field === field.name)) users.push(repository.id)
-  users.push(...treeUsers(draft, new Set([field.id])), ...bindsFieldName(draft, entity, field.name))
-  return [...new Set(users)]
-}
+/**
+ * What uses a field, beyond what follows it automatically (create-action picks, the REST field map, fixtures rows): the usage
+ * index's list, which is also what the editor shows, so a field it calls unused is one this lets go.
+ */
+const fieldUsers = (draft: Draft, entity: EntityFile, field: Field): string[] => refusalLabels(fieldUsesOf(draft.model, entity.id, field.name))
 
 const fieldMapOf = (draft: Draft, entityId: string) => repositoryOf(draft, entityId)?.rest?.fieldMap
 

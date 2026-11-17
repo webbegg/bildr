@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
-import { confirmRemoveField, confirmRenameField } from '../../editor/dataUsage.ts'
 import { useEditor } from '../../editor/useEditor.ts'
-import { fieldUseIndex, outsideOf, usedInWords } from '../../shared/dataUsage.ts'
-import { FOCUS_RING } from '../../editorUi.ts'
+import { confirmRemoveField, confirmRenameField } from '../../editor/usageWarnings.ts'
+import { fieldUsesByName } from '../../shared/dataUsage.ts'
 import { FIELD_TYPE_ICONS, FIELD_TYPE_LABELS, fieldTypeItems } from '../../shared/dataModel.ts'
 import type { DataCollection, FieldType } from '../../shared/dataModel.ts'
+import DataFieldUses from './DataFieldUses.vue'
 
 /**
  * The Data workspace's Fields tab, Framer CMS's: the shown collection's fields, one row each.
@@ -15,8 +15,9 @@ import type { DataCollection, FieldType } from '../../shared/dataModel.ts'
  * mapping read-only (Edit mapping changes it). A field has a name, no separate label: the
  * model's actions camelCase what is typed, and refuse a name or type the model still uses.
  *
- * Each field that is used shows how many places use it (S5): a count that opens the list under its row, each place a link to
- * it. Removing or renaming a used field says so first (`editor/dataUsage.ts`), and cannot go on: the module refuses it too.
+ * Each field that is used shows how many places use it: a count that opens the list under its row, each place a link to
+ * it (`DataFieldUses`). Removing or renaming a used field says so first (`editor/usageWarnings.ts`), and cannot go on: the module
+ * refuses it too.
  */
 const { collection } = defineProps<{ collection: DataCollection }>()
 const editor = useEditor()
@@ -28,27 +29,37 @@ function updateField(id: string, patch: { name?: string, type?: FieldType }) {
   return editor.run('entity_field_update', { entity: collection.id, field: id, ...patch })
 }
 
-// Bumped to remount a name field whose edit was refused, so it shows the saved name again.
+// Bumped to remount a name field whose edit did not go through, so it shows the saved name again.
 const nameResets = ref(0)
 // The inline name: transparent in the row until hovered or focused, then the kit's field. Enter commits by blurring and is not
 // passed on (`.prevent`): the warning a rename can bring up takes the focus, and the Enter still being typed must not press its button.
 const NAME_UI = { base: 'bg-transparent px-1.5 text-toned hover:bg-white/4 focus-visible:bg-elevated focus-visible:text-highlighted' }
 
+/** Renames the field to the typed name, when it is a new one and the rename is allowed; otherwise the input shows the saved name again. */
 async function commitName(id: string, value: string) {
   const field = collection.fields.find(entry => entry.id === id)
   const name = value.trim()
-  if (!field || !name || name === field.name || !await confirmRenameField(editor, collection, field.name, name) || !await updateField(id, { name })) nameResets.value++
+  const renamed = !!field && !!name && name !== field.name
+    && await confirmRenameField(editor, collection, field.name, name)
+    && await updateField(id, { name })
+  if (!renamed) nameResets.value++
+}
+
+/** Esc cancels the edit: the input takes the saved name back first, so leaving it (blur) has nothing to commit. */
+function cancelName(event: KeyboardEvent, saved: string) {
+  const input = event.target as HTMLInputElement
+  input.value = saved
+  input.blur()
 }
 
 async function removeField(id: string) {
   const field = collection.fields.find(entry => entry.id === id)
-  if (!field || !await confirmRemoveField(editor, collection, field.name, editor.collectionRows.length > 0)) return
+  if (!field || !await confirmRemoveField(editor, collection, field.name, { rows: editor.collectionRows.length > 0 })) return
   await editor.run('entity_field_remove', { entity: collection.id, field: id })
 }
 
-/** Who uses each field, from one scan of the model. */
-const uses = computed(() => fieldUseIndex(editor.model, collection.id))
-const countOf = (name: string) => outsideOf(uses.value.get(name) ?? []).length
+/** Who uses each field, from one pass over the model. */
+const uses = computed(() => fieldUsesByName(editor.model, collection.id))
 /** The field whose list of places is open, under its row. */
 const usesOpen = ref<string | null>(null)
 
@@ -153,30 +164,20 @@ const editingMapping = ref(false)
           />
           <span class="truncate">{{ field.name }}</span>
           <code class="ms-auto truncate ps-2 text-[11px] text-dimmed">{{ field.remote ?? field.name }}</code>
-          <button
-            v-if="countOf(field.name)"
-            type="button"
-            class="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-white/8 px-1.5 text-[11px] text-muted tabular-nums hover:text-highlighted"
-            :class="FOCUS_RING"
-            :aria-label="`${usedInWords(countOf(field.name))}: show them`"
-            :aria-expanded="usesOpen === field.name"
-            :title="usedInWords(countOf(field.name))"
-            data-field-uses
-            @click="usesOpen = usesOpen === field.name ? null : field.name"
-          >
-            {{ countOf(field.name) }}
-          </button>
-        </div>
-        <div
-          v-if="usesOpen === field.name"
-          class="mb-1 ms-6 rounded-lg bg-white/4 py-1"
-          :data-field-uses-list="field.name"
-        >
-          <DataUsageList
+          <DataFieldUses
+            part="badge"
+            :name="field.name"
             :uses="uses.get(field.name) ?? []"
-            follows-label="Follows it"
+            :open="usesOpen === field.name"
+            @toggle="usesOpen = usesOpen === field.name ? null : field.name"
           />
         </div>
+        <DataFieldUses
+          part="list"
+          :name="field.name"
+          :uses="uses.get(field.name) ?? []"
+          :open="usesOpen === field.name"
+        />
       </template>
       <EditorButton
         icon="i-lucide-pencil"
@@ -255,21 +256,15 @@ const editingMapping = ref(false)
             data-field-label-input
             @commit="commitName(field.id, $event)"
             @keydown.enter.prevent="($event.target as HTMLInputElement).blur()"
-            @keydown.esc="($event.target as HTMLInputElement).blur()"
+            @keydown.esc="cancelName($event, field.name)"
           />
-          <button
-            v-if="countOf(field.name)"
-            type="button"
-            class="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-white/8 px-1.5 text-[11px] text-muted tabular-nums hover:text-highlighted"
-            :class="FOCUS_RING"
-            :aria-label="`${usedInWords(countOf(field.name))}: show them`"
-            :aria-expanded="usesOpen === field.name"
-            :title="usedInWords(countOf(field.name))"
-            data-field-uses
-            @click="usesOpen = usesOpen === field.name ? null : field.name"
-          >
-            {{ countOf(field.name) }}
-          </button>
+          <DataFieldUses
+            part="badge"
+            :name="field.name"
+            :uses="uses.get(field.name) ?? []"
+            :open="usesOpen === field.name"
+            @toggle="usesOpen = usesOpen === field.name ? null : field.name"
+          />
           <button
             type="button"
             class="grid size-6 shrink-0 place-items-center rounded-lg text-dimmed opacity-0 group-hover/field:opacity-100 group-focus-within/field:opacity-100 hover:bg-white/8 hover:text-highlighted focus-visible:opacity-100"
@@ -284,16 +279,12 @@ const editingMapping = ref(false)
             />
           </button>
         </div>
-        <div
-          v-if="usesOpen === field.name"
-          class="mb-1 ms-6 rounded-lg bg-white/4 py-1"
-          :data-field-uses-list="field.name"
-        >
-          <DataUsageList
-            :uses="uses.get(field.name) ?? []"
-            follows-label="Follows it"
-          />
-        </div>
+        <DataFieldUses
+          part="list"
+          :name="field.name"
+          :uses="uses.get(field.name) ?? []"
+          :open="usesOpen === field.name"
+        />
       </template>
 
       <form

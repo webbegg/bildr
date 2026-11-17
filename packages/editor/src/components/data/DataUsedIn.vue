@@ -1,20 +1,24 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { usesOfArtifact } from '../../shared/dataArtifacts.ts'
+import { UPDATED_AUTOMATICALLY, usesOfArtifact } from '../../shared/dataArtifacts.ts'
 import type { ArtifactKind } from '../../shared/dataArtifacts.ts'
-import { collectionUses, outsideOf, usedInWords } from '../../shared/dataUsage.ts'
+import { blockingUses, collectionUses, usedInWords } from '../../shared/dataUsage.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 
 /**
- * A collection's, a query's or an action's Used in tab (S5, S10): the pages, components, layouts and actions that use it, from the
+ * A collection's, a query's or an action's Used in tab: the pages, components, layouts and actions that use it, from the
  * module's usage index (`usesOf`, `entityUsesOf`: the list a delete is refused with). Each place is one entry with how it uses it;
  * opening it shows it on the Canvas (a page, a component or a layout) or in the workspace (an action), as the collection's "Open
- * detail page" does. What a collection takes along when it is deleted (its own actions) is listed apart, and not counted.
+ * detail page" does. What the module changes along with a collection (its own actions) is listed apart as "Updated automatically",
+ * and not counted.
+ *
+ * The `data-used-in-outside` and `data-used-in-follows` hooks name the two lists as the e2e and the tests know them: the places
+ * that count (the ones outside the collection's own) and the automatic ones.
  */
 const { kind, id } = defineProps<{ kind: ArtifactKind | 'collection', id: string }>()
 const editor = useEditor()
 const all = computed(() => kind === 'collection' ? collectionUses(editor.model, id) : usesOfArtifact(editor.model, id, kind))
-const uses = computed(() => outsideOf(all.value))
+const uses = computed(() => blockingUses(all.value))
 const follows = computed(() => all.value.filter(use => use.follows))
 const EMPTY = {
   query: 'Not used yet. No page reads this query.',
@@ -52,10 +56,16 @@ const EMPTY = {
         data-used-in-follows
       >
         <p class="flex h-11 items-center ps-3.5 pe-2 text-[12px] font-[550] text-highlighted">
-          Goes with it
+          {{ UPDATED_AUTOMATICALLY }}
+        </p>
+        <p class="px-3.5 pb-1 text-[11px] text-dimmed">
+          Not counted above: changing {{ kind === 'collection' ? 'the collection' : 'it' }} changes these for you.
         </p>
         <div class="px-2">
-          <DataUsageList :uses="follows" />
+          <DataUsageList
+            :uses="follows"
+            :tag-follows="false"
+          />
         </div>
       </div>
     </div>

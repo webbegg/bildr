@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { openUse } from '../../editor/dataArtifactActions.ts'
 import { useArtifactDialog } from '../../editor/useArtifactDialog.ts'
 import type { ArtifactTarget } from '../../editor/useArtifactDialog.ts'
-import { usageKey, usageKindLabel, usesOfArtifact } from '../../shared/dataArtifacts.ts'
+import { usesOfArtifact } from '../../shared/dataArtifacts.ts'
 import type { UseEntry } from '../../shared/dataArtifacts.ts'
+import { them, usedInWords } from '../../shared/dataUsage.ts'
 import { useEditor } from '../../editor/useEditor.ts'
+import DataUsageList from './DataUsageList.vue'
 
 /**
  * The Delete dialog of a query or an action (S10, DW-7e): a confirm that calls `query_delete` / `action_delete`. While the
@@ -19,12 +20,7 @@ const editor = useEditor()
 const { shown, open, words, item, error, saving, submit: run } = useArtifactDialog(() => target, () => emit('close'))
 
 const uses = computed<UseEntry[]>(() => shown.value ? usesOfArtifact(editor.model, shown.value.id, shown.value.kind) : [])
-const reason = computed(() => `Used in ${uses.value.length} ${uses.value.length === 1 ? 'place' : 'places'}: change ${uses.value.length === 1 ? 'it' : 'them'} first`)
-
-function go(use: UseEntry) {
-  emit('close')
-  openUse(editor, use)
-}
+const reason = computed(() => `${usedInWords(uses.value.length)}: change ${them(uses.value.length)} first`)
 
 async function submit() {
   if (!shown.value || uses.value.length) return
@@ -53,26 +49,12 @@ async function submit() {
       data-artifact-uses
     >
       <p class="text-[12px] leading-4 text-muted">
-        Used in {{ uses.length }} {{ uses.length === 1 ? 'place' : 'places' }}. It cannot be deleted while it is used: change {{ uses.length === 1 ? 'it' : 'them' }} first.
+        {{ usedInWords(uses.length) }}. It cannot be deleted while it is used: change {{ them(uses.length) }} first.
       </p>
-      <div class="space-y-0.5">
-        <button
-          v-for="use in uses"
-          :key="usageKey(use)"
-          type="button"
-          class="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-toned hover:bg-white/4"
-          :title="use.what.join('; ')"
-          :data-use-open="usageKey(use)"
-          @click="go(use)"
-        >
-          <span class="truncate">{{ use.name }}</span>
-          <span class="text-[11px] text-dimmed">{{ usageKindLabel(use.kind) }}</span>
-          <UIcon
-            name="i-lucide-arrow-up-right"
-            class="ms-auto size-3.5 shrink-0 text-dimmed"
-          />
-        </button>
-      </div>
+      <DataUsageList
+        :uses="uses"
+        @open="emit('close')"
+      />
     </div>
     <p
       v-else

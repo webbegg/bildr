@@ -3,6 +3,8 @@ import type { ArtifactUse, UseKind } from '@bildr/codegen/edit'
 import type { Model, QueryFile } from '@bildr/codegen/model'
 import { entityById, repositoryEntity } from './dataModel.ts'
 import type { FieldType } from './dataModel.ts'
+import { useSentence } from './usageSentences.ts'
+import type { UsedThing } from './usageSentences.ts'
 
 /**
  * What the Data workspace reads of the model about its queries and actions. "Artifact" here means a query or an action, the two
@@ -29,10 +31,10 @@ export const composableOf = (name: string): string => `use${name.charAt(0).toUpp
 
 // ── Who uses one ─────────────────────────────────────────────────────────
 
-/** One place that uses a query or an action: a page, a component, a layout or another action, with each way it does. */
+/** One place that uses a collection, a field, a query or an action: a page, a component, a layout, an action, a query or another collection, with each way it does. */
 export interface UseEntry {
   kind: UseKind
-  /** The page, component, layout or action that holds the use. */
+  /** The page, component, layout, action, query or collection that holds the use. */
   id: string
   name: string
   /** What it does there, one sentence for each place in it ("Reads it as “featured”"). */
@@ -41,38 +43,38 @@ export interface UseEntry {
   follows?: boolean
 }
 
-const KIND_LABELS: Record<UseKind, string> = { page: 'Page', component: 'Component', layout: 'Layout', action: 'Action', query: 'Query' }
+const KIND_LABELS: Record<UseKind, string> = { page: 'Page', component: 'Component', layout: 'Layout', action: 'Action', query: 'Query', entity: 'Collection' }
 export const usageKindLabel = (kind: UseKind): string => KIND_LABELS[kind]
 /** The id a use is named by in the DOM and in a test: `page:pg_index`. */
 export const usageKey = (use: Pick<UseEntry, 'kind' | 'id'>): string => `${use.kind}:${use.id}`
+/** What a place the module changes along with a delete or a rename is tagged with: it does not count, and does not stop it. */
+export const UPDATED_AUTOMATICALLY = 'Updated automatically'
 
-const sentence = (use: ArtifactUse, artifact: ArtifactKind): string => {
-  const as = use.as ? ` “${use.as}”` : ''
-  switch (use.via) {
-    case 'uses': return artifact === 'query' ? `Reads it as${as || ' a value'}` : `Runs it as${as || ' an action'}`
-    case 'bind': return `${use.node ?? use.where} shows${as || ' it'}`
-    case 'form': return `The form ${use.node} runs it`
-    case 'interaction': return `${use.node} runs it on an interaction`
-    case 'props': return `${use.node} has it in its properties`
-    case 'properties': return 'Has a property for it'
-    case 'param': return 'Checks a route parameter with it'
-    case 'step': return 'Mentions it in its steps'
-    default: return `Mentions it in its ${use.where}`
+/**
+ * One entry for each place, each way it uses `thing` once (`say`), in the order the module gives them. A place is a follower
+ * (`follows`) when every way it uses it is one the module changes itself.
+ */
+export function entriesOf(uses: ArtifactUse[], say: (use: ArtifactUse) => string): UseEntry[] {
+  const places = new Map<string, UseEntry>()
+  const followers = new Map<string, boolean>()
+  for (const use of uses) {
+    const key = usageKey(use)
+    const entry = places.get(key) ?? { kind: use.kind, id: use.id, name: use.name, what: [] }
+    const what = say(use)
+    if (!entry.what.includes(what)) entry.what.push(what)
+    places.set(key, entry)
+    followers.set(key, (followers.get(key) ?? true) && !!use.follows)
   }
+  for (const [key, entry] of places) if (followers.get(key)) entry.follows = true
+  return [...places.values()]
 }
+
+/** `entriesOf` with the sentences of `useSentence`, for the model's `thing`. */
+export const useEntries = (model: Model, uses: ArtifactUse[], thing: UsedThing): UseEntry[] => entriesOf(uses, use => useSentence(model, use, thing))
 
 /** Who uses query or action `id`, one entry per place (the module's usage index, `usesOf`), in the order it gives them. */
 export function usesOfArtifact(model: Model | null, id: string, artifact: ArtifactKind): UseEntry[] {
-  if (!model) return []
-  const places = new Map<string, UseEntry>()
-  for (const use of usesOf(model, id)) {
-    const key = usageKey(use)
-    const entry = places.get(key) ?? { kind: use.kind, id: use.id, name: use.name, what: [] }
-    const what = sentence(use, artifact)
-    if (!entry.what.includes(what)) entry.what.push(what)
-    places.set(key, entry)
-  }
-  return [...places.values()]
+  return model ? useEntries(model, usesOf(model, id), { kind: artifact }) : []
 }
 
 // ── An action's steps ────────────────────────────────────────────────────

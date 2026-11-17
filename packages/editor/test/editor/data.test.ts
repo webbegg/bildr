@@ -6,7 +6,7 @@ import { FOLDED_KEY } from '../../src/editor/dataTree.ts'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
 import { FakeEventSource, baseHandlers, byLabel, combo, indexPage, inputOf, menuItem, menuLabels, modelGet, selectOption, setupHarness, world } from '../design/harness.ts'
 import type { Handlers } from '../design/harness.ts'
-import { ITEMS, activeTab, artifactModule, confirmText, inputs, open, q, qa, tab, tabNames, text, treeItem } from './dataKit.ts'
+import { ITEMS, activeTab, addUnusedField, artifactModule, confirmText, freeQuotes, inputs, open, q, qa, tab, tabNames, text, treeItem } from './dataKit.ts'
 
 /**
  * The hosted Data view over the module (U7), mounted as the Data screen over the mocked actions
@@ -21,11 +21,6 @@ const ok = (extra: Record<string, unknown> = {}) => () => ({ changed: [], ...ext
 
 const post = (slug: string) => ({ id: `id-${slug}`, title: `Post ${slug}`, slug, body: `Body of ${slug}`, published: slug !== 'draft', publishedAt: null, createdAt: '2026-11-10T09:00:00.000Z', updatedAt: '2026-11-10T09:00:00.000Z' })
 const quotes = [{ id: 1, text: 'Q one', author: 'Ann' }, { id: 2, text: 'Q two', author: 'Bob' }]
-
-/** The fixture's index page shows the latest quotes, and a page that uses a collection keeps its connection. */
-const freeQuotes = () => {
-  indexPage().uses!.queries = indexPage().uses!.queries!.filter(use => use.query !== 'q_latest_quotes')
-}
 
 const collection = (plural: string) => q(`[data-collection="${plural}"]`)
 
@@ -118,10 +113,15 @@ describe('the Data screen', () => {
 
 describe('the Data workspace (S2)', () => {
   /** Everything the screen says: its text, and the titles, labels and placeholders a user reads or hears (not the rows, which are the project's data). */
-  const said = () => {
+  const said = (within = 'body') => {
     const page = document.body.cloneNode(true) as HTMLElement
     // The rows, and the paths of the files, are the project's own: they are not the screen's words.
     for (const own of page.querySelectorAll('[data-records-table], [data-file-path]')) own.remove()
+    // Only what is said inside `within` (a dialog, a tab), when it is asked for.
+    if (within !== 'body') {
+      const parts = [...page.querySelectorAll(within)]
+      page.replaceChildren(...parts)
+    }
     // The files' buttons carry their path as the title.
     for (const own of page.querySelectorAll('[data-file], [data-file-switch]')) own.removeAttribute('title')
     return [page.textContent ?? '', ...[...page.querySelectorAll('[title], [aria-label], [placeholder]')].flatMap(element => ['title', 'aria-label', 'placeholder'].map(name => element.getAttribute(name) ?? ''))].join(' | ')
@@ -310,21 +310,29 @@ describe('the Data workspace (S2)', () => {
     expect(activeTab()).toBe('json')
   })
 
-  it('has one name per concept: Collection, Connection and Sample data, never Synced, fixtures, data source or entity (and the Steps tab no repository, use-case or generated code)', async () => {
+  it('has one name per concept: Collection, Connection and Sample data, never Synced, fixtures, data source or entity (and the Steps tab and the Used in warnings no repository, use-case or generated code)', async () => {
     freeQuotes()
     await open()
     const unwanted = /synced|fixtures?\b|data source|entit(y|ies)/i
     // The Steps tab is for people who do not write code: it says nothing of the generator's own words.
     const developerWords = /repository|use-case|generated code/i
+    // Nor do the Used in lists and the warnings before a delete or a rename: no ids, no "by id", "list route" or "generated names".
+    const usageWords = /repository|use-case|generated (code|names)|by id|list route|\bids?\b|\b(n|pg|cmp|act|q|ent|fld)_\w+/i
     let onSteps = false
+    let onUsage = false
     const cancel = () => click(textButton('Cancel'))
     // Each step brings a screen, a dialog or a confirmation up; what the user reads on it is checked.
     const steps: Array<() => Promise<unknown>> = [
       async () => {},
       ...['fields', 'used', 'endpoints', 'json', 'rows'].map(name => () => click(tab(name))),
-      () => menuItem(byLabel('Collection actions'), 'Delete'),
+      // Used in: the collection's list and a field's count and list, and the warnings before a used field or collection is removed or
+      // renamed (each blocked, but for the collection's rename, which says what to change by hand), and the delete of one that is not used.
+      () => {
+        onUsage = true
+        return menuItem(byLabel('Collection actions'), 'Delete')
+      },
       () => click(q('[data-confirm-cancel]')),
-      // Used in (S5): a field's count and its list, and the warnings before a used field or collection is removed or renamed.
+      () => click(tab('used')),
       () => click(tab('fields')),
       () => click(q('[data-field-uses]')),
       () => click(q('[data-row-remove]')),
@@ -333,7 +341,14 @@ describe('the Data workspace (S2)', () => {
       () => click(q('[data-confirm-cancel]')),
       () => typeInto(q('[data-collection-panel] [aria-label="Collection plural"]'), 'articles'),
       () => click(q('[data-confirm-cancel]')),
+      () => typeInto(q('[data-collection-panel] [aria-label="Collection name"]'), 'Article'),
+      () => click(q('[data-confirm-cancel]')),
       () => click(tab('rows')),
+      () => menuItem(collection('quotes')!.parentElement!.querySelector('[aria-label="Collection actions"]'), 'Delete'),
+      () => {
+        onUsage = false
+        return click(q('[data-confirm-cancel]'))
+      },
       () => click(collection('quotes')),
       ...['rows', 'fields', 'endpoints'].map(name => () => click(tab(name))),
       () => click(treeItem('quotes')),
@@ -375,6 +390,7 @@ describe('the Data workspace (S2)', () => {
       await step()
       expect(said(), `after step ${index}`).not.toMatch(unwanted)
       if (onSteps) expect(said(), `on the Steps tab, after step ${index}`).not.toMatch(developerWords)
+      if (onUsage) expect(said('[role="dialog"], [data-used-in], [data-fields-tab]'), `on Used in, after step ${index}`).not.toMatch(usageWords)
     }
     expect(byLabel('Add connection')).not.toBeNull()
   }, 20_000)
@@ -560,7 +576,7 @@ describe('the Data location (S2)', () => {
       await settle()
     }
     await rename(treeItem('post'), 'Rename collection', 'Article')
-    // The collection is used: the rename says so first (S5).
+    // The collection is used: the rename says so first.
     await click(q('[data-confirm-ok]'))
     expect(text(q('[data-data-title] h2'))).toBe('Article')
     expect(router.currentRoute.value.query).toEqual({ item: ITEMS.post, tab: 'rows' })
@@ -704,17 +720,17 @@ describe('collections', () => {
     expect(inputs(actions, 'entity_update')).toEqual([{ entity: 'ent_quote', name: 'Saying' }])
     await menuItem(collection('quotes')!.parentElement!.querySelector('[aria-label="Collection actions"]'), 'Delete')
     expect(q('[data-confirm]')?.textContent).toContain('Undo brings it back')
-    expect(text(q('[data-confirm-description]'))).toContain('The collection goes with its repository')
+    expect(text(q('[data-confirm-description]'))).toContain('The collection goes with its queries, its create action and its sample data')
     await click(textButton('Delete collection'))
     expect(inputs(actions, 'entity_delete')).toEqual([{ entity: 'ent_quote' }])
   })
 
-  it('keeps a collection a page still uses: the confirmation says where, and cannot be confirmed', async () => {
+  it('keeps a collection a page still uses: the dialog says where, and has nothing to confirm', async () => {
     const { actions } = await open({ entity_delete: () => new Failure(422, 'invalid', 'Entity Post is still used by pg_index (uses). Change them first') })
     await menuItem(byLabel('Collection actions'), 'Delete')
-    expect(text(q('[data-confirm-description]'))).toContain('Used in 4 places')
-    expect(q('[data-confirm-ok]')?.hasAttribute('disabled')).toBe(true)
-    await click(q('[data-confirm-ok]'))
+    expect(confirmText()).toContain('“Post” is used in 4 places')
+    expect(q('[data-confirm-ok]')).toBeNull()
+    await click(q('[data-confirm-cancel]'))
     expect(inputs(actions, 'entity_delete')).toEqual([])
   })
 
@@ -740,8 +756,10 @@ describe('fields', () => {
     expect(qa('[data-fields-tab] [data-field]').map(entry => entry.getAttribute('data-field'))).toEqual(['title', 'slug', 'body', 'published', 'publishedAt'])
   })
 
+  // These tests change a field with an unused one (`addUnusedField`): the fixture's own fields are all used, and a used field is
+  // blocked with a warning before the module is asked (the warnings are `dataUsage.test.ts`'s).
   it('renames a field and changes its type in place', async () => {
-    world.model.modules.blog!.entities[0]!.fields.push({ id: 'fld_extra', name: 'extra', type: 'text' })
+    addUnusedField()
     const { actions } = await open({ entity_field_update: ok() })
     await fieldsTab()
     const name = row('extra').querySelector<HTMLInputElement>('[data-field-label-input]')!
@@ -751,8 +769,8 @@ describe('fields', () => {
     expect(inputs(actions, 'entity_field_update').at(-1)).toEqual({ entity: 'ent_post', field: 'fld_slug', type: 'integer' })
   })
 
-  it('puts a rename the module refuses back and says why', async () => {
-    world.model.modules.blog!.entities[0]!.fields.push({ id: 'fld_extra', name: 'extra', type: 'text' })
+  it('puts a rename the module refuses back and says why, when the editor did not know the field was used', async () => {
+    addUnusedField()
     await open({ entity_field_update: () => new Failure(422, 'invalid', 'extra is used by q_post_by_slug: change them first') })
     await fieldsTab()
     const name = row('extra').querySelector<HTMLInputElement>('[data-field-label-input]')!
@@ -762,7 +780,7 @@ describe('fields', () => {
   })
 
   it('adds a field by name and type, and removes one after a confirmation', async () => {
-    world.model.modules.blog!.entities[0]!.fields.push({ id: 'fld_extra', name: 'extra', type: 'text' })
+    addUnusedField()
     const { actions } = await open({ entity_field_add: ok({ fieldId: 'fld_served_from' }), entity_field_remove: ok() })
     await fieldsTab()
     await click(q('[aria-label="Add field"]'))
@@ -811,7 +829,7 @@ describe('the collection panel (beside the Fields tab)', () => {
     const { actions } = await openFields({ entity_update: ok() })
     const panel = q('[data-collection-panel]')!
     await typeInto(panel.querySelector('[aria-label="Collection name"]'), 'Article')
-    // The collection is used, so the rename asks first (S5).
+    // The collection is used, so the rename asks first.
     await click(q('[data-confirm-ok]'))
     await click(panel.querySelector('[data-flag="expose"]'))
     expect(inputs(actions, 'entity_update')).toEqual([{ entity: 'ent_post', name: 'Article' }, { entity: 'ent_post', expose: false }])
@@ -1990,16 +2008,18 @@ describe('Queries and Actions in the Data tree (S10)', () => {
     })
 
     it('starts the inline rename of a collection on F2, and asks before deleting it on Delete', async () => {
+      // Nothing uses the Quote collection once the index page stops reading its queries, so its delete is asked for, not blocked.
+      freeQuotes()
       await open()
-      await key(treeItem('post'), 'F2')
+      await key(treeItem('quote'), 'F2')
       expect(byLabel('Rename collection')).not.toBeNull()
-      expect((byLabel('Rename collection') as HTMLInputElement).value).toBe('Post')
+      expect((byLabel('Rename collection') as HTMLInputElement).value).toBe('Quote')
       await key(byLabel('Rename collection'), 'Escape')
-      await key(treeItem('post'), 'Delete')
-      expect(confirmText()).toContain('Delete collection "Post"?')
+      await key(treeItem('quote'), 'Delete')
+      expect(confirmText()).toContain('Delete collection "Quote"?')
       await click(q('[data-confirm-cancel]'))
-      await key(treeItem('post'), 'Backspace')
-      expect(confirmText()).toContain('Delete collection "Post"?')
+      await key(treeItem('quote'), 'Backspace')
+      expect(confirmText()).toContain('Delete collection "Quote"?')
     })
 
     it('does the same on a connection', async () => {

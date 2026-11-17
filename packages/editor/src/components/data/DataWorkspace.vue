@@ -11,7 +11,7 @@ import DataJson from './DataJson.vue'
 /**
  * The Data workspace's centre (S2): the item chosen in the tree, with the tabs its kind has. A
  * collection has Rows (the read-only table), Fields (the field editor, its settings beside it),
- * Endpoints (the repository's, when it is read through a connection), Used in (S5) and JSON (its file, S3); a connection has
+ * Endpoints (the repository's, when it is read through a connection), Used in and JSON (its file, S3); a connection has
  * Endpoints (its settings and its collections' endpoints) and JSON; a query (S10) has Results (it run over the
  * collection's rows), Definition (its form), Used in and JSON; an action has Overview (its form, its code name, its route and
  * how many steps it has), Steps (the step editor, D10c), Used in and JSON. With All model files chosen in the tree it

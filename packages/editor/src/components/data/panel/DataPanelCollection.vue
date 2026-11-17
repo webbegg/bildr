@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { confirmRenameCollection } from '../../../editor/dataUsage.ts'
+import { confirmRenameCollection } from '../../../editor/usageWarnings.ts'
 import { useEditor } from '../../../editor/useEditor.ts'
 import { detailPagesOf } from '../../../shared/dataModel.ts'
 import type { DataCollection } from '../../../shared/dataModel.ts'
@@ -9,7 +9,7 @@ import type { DataCollection } from '../../../shared/dataModel.ts'
  * The collection's settings, beside its Fields tab: its name, plural and whether the app serves its
  * list, where it is stored, and its detail pages ("Detail page: <name>", which opens it on the Canvas).
  * A connection collection's endpoints are its Endpoints tab. Every edit is `entity_update`; a rename of a used
- * collection asks first (S5).
+ * collection asks first.
  *
  * Not in the module: the slug and the public create flag (the generated names stay the plural's
  * and the create action's), the legacy one-URL API source, and "Create detail page" (a detail
@@ -33,7 +33,7 @@ function update(patch: Record<string, unknown>) {
 // Bumped to remount a name or plural field whose rename was not confirmed, so it shows the saved text again.
 const resets = ref(0)
 
-/** A rename of a collection that is used says what it does first (S5); declining puts the text back. */
+/** A rename of a collection that is used says what it does first; declining puts the text back. */
 async function rename(change: 'name' | 'plural', value: string) {
   if (!await confirmRenameCollection(editor, props.collection, change, value)) {
     resets.value++

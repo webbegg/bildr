@@ -141,7 +141,8 @@ describe('entity fields', () => {
     expect(message).toMatch(/^slug is used by /)
     expect(message).toContain('q_post_by_slug')
     expect(message).toContain('act_create_post')
-    expect(message).toContain('repo_post')
+    // The finder of its repository, as the usage index names it.
+    expect(message).toContain('ent_post (repository)')
     p.edit('entity_field_add', { entity: 'ent_post', name: 'subtitle', type: 'text' })
     p.edit('entity_field_remove', { entity: 'ent_post', field: 'fld_subtitle' })
     expect(p.json('.bildr/modules/blog/actions/create-post.json').input.pick).toEqual(['id', 'title', 'slug', 'body', 'published'])
