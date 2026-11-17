@@ -454,6 +454,65 @@ describe('Action Steps (S10, D10c)', () => {
       expect(stored('act_publish_post').steps[1]).toMatchObject({ if: { $var: 'article.published' }, value: { $var: 'article' } })
     })
 
+    describe('a load named like another, `post` and `posts`', () => {
+      const twoLoads = () => {
+        stored('act_publish_post').steps = [
+          { kind: 'load', as: 'post', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } },
+          { kind: 'load', as: 'posts', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } },
+          { kind: 'return', if: { $var: 'post.published' }, value: { $var: 'post' } },
+          { kind: 'repository', repository: 'repo_post', op: 'update', id: { $input: 'id' }, from: { $var: 'posts' } }
+        ] as never
+      }
+      /** A keystroke: the field's text changes and the input event fires; the change event (the commit) does not. */
+      const keystroke = async (selector: string, value: string) => {
+        const input = inputOf(selector)
+        input.value = value
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await settle()
+      }
+      const readsOf = async (index: number, field: string) => {
+        await expand(index)
+        return text(q(`[data-step-card="${index}"] [data-step-field="${field}"] [data-value-source]`))
+      }
+
+      it('renames the later row\'s readers when the name is committed, not as it is typed through the first row\'s name', async () => {
+        twoLoads()
+        await stepsTab('act_publish_post')
+        await expand(1)
+        for (const name of ['p', 'po', 'pos', 'post', 'posts2', 'item']) await keystroke(fieldOf(1, 'as'), name)
+        // Nothing was committed: the rows read what they read.
+        expect(await readsOf(3, 'from')).toBe('Variable: posts')
+        expect(await readsOf(2, 'value')).toBe('Variable: post')
+        await expand(1)
+        await typeInto(q(fieldOf(1, 'as')), 'items')
+        expect(await readsOf(3, 'from')).toBe('Variable: items')
+        expect(await readsOf(2, 'value')).toBe('Variable: post')
+        expect(await readsOf(2, 'condition')).toBe('Variable: post.published')
+        expect(qa('[data-step-problem]')).toEqual([])
+      })
+
+      it('leaves the readers alone when the committed name is another row\'s, and says it is a duplicate', async () => {
+        twoLoads()
+        await stepsTab('act_publish_post')
+        await expand(1)
+        await typeInto(q(fieldOf(1, 'as')), 'post')
+        expect(problemsOf(1)).toEqual(['“post” is the name of an earlier row: pick another'])
+        expect(await readsOf(3, 'from')).toBe('Variable: posts')
+        expect(await readsOf(2, 'value')).toBe('Variable: post')
+        expect(problemsOf(3)).toEqual(['“posts” is not loaded by any step'])
+        expect(q('[data-steps-save]')?.hasAttribute('disabled')).toBe(true)
+      })
+
+      it('leaves the readers alone when the committed name is empty', async () => {
+        twoLoads()
+        await stepsTab('act_publish_post')
+        await expand(1)
+        await typeInto(q(fieldOf(1, 'as')), '')
+        expect(await readsOf(3, 'from')).toBe('Variable: posts')
+        expect(problemsOf(1)).toContain('Name the loaded row')
+      })
+    })
+
     it('says the step that loads a row comes after the one that reads it', async () => {
       await stepsTab('act_publish_post')
       await click(within(0, '[data-step-down]'))
@@ -871,6 +930,14 @@ describe('Action Steps (S10, D10c)', () => {
       expect(q('[data-steps-refusal]')).toBeNull()
     })
 
+    it('does not mark the steps a common field name matches, and shows the refusal at the top', async () => {
+      await stepsTab('act_publish_post', { action_update: () => new Failure(422, 'invalid', 'input: "id" must be text') })
+      await click(within(0, '[data-step-duplicate]'))
+      await save()
+      expect(qa('[data-step-refused]')).toEqual([])
+      expect(text(q('[data-steps-refusal]'))).toBe('input: "id" must be text')
+    })
+
     it('does not show at the top a refusal that marks a step', async () => {
       await stepsTab('act_create_post', { action_update: () => new Failure(422, 'invalid', 'steps.2: this action returns nothing') })
       await click(within(1, '[data-step-duplicate]'))
@@ -955,6 +1022,39 @@ describe('Action Steps (S10, D10c)', () => {
       pending.release()
       await settle()
       for (const control of controls()) expect(control.matches(':disabled'), `${control.outerHTML.slice(0, 60)} after`).toBe(false)
+    })
+
+    it('ignores a drop while it is saving, and does not take a step dragged over it', async () => {
+      const { handler, pending } = held()
+      await stepsTab('act_create_post', { action_update: handler })
+      await click(within(1, '[data-step-remove]'))
+      expect(kindsOf()).toEqual(['validate', 'repository'])
+      within(0, '[data-step-handle]')!.dispatchEvent(Object.assign(new Event('dragstart', { bubbles: true }), { dataTransfer: { setData() {}, setDragImage() {}, effectAllowed: '' } }))
+      const target = stepCard(1)!.parentElement!
+      target.getBoundingClientRect = () => ({ top: 0, height: 36, bottom: 36, left: 0, right: 100, width: 100, x: 0, y: 0, toJSON() {} })
+      await save()
+      const over = Object.assign(new Event('dragover', { bubbles: true, cancelable: true }), { clientY: 30 })
+      target.dispatchEvent(over)
+      expect(over.defaultPrevented).toBe(false)
+      const drop = new Event('drop', { bubbles: true, cancelable: true })
+      target.dispatchEvent(drop)
+      await settle()
+      expect(kindsOf()).toEqual(['validate', 'repository'])
+      pending.release()
+      await settle()
+    })
+
+    it('leaves a control outside the form enabled: the tree\'s "+" and the tab strip', async () => {
+      const { handler, pending } = held()
+      await stepsTab('act_create_post', { action_update: handler })
+      await click(within(1, '[data-step-remove]'))
+      const outside = () => [must('[data-synced-add]'), tab('json')!, tab('overview')!]
+      for (const control of outside()) expect(control.matches(':disabled'), `${control.outerHTML.slice(0, 60)} before`).toBe(false)
+      await save()
+      expect(must('[data-step-add]').matches(':disabled')).toBe(true)
+      for (const control of outside()) expect(control.matches(':disabled'), `${control.outerHTML.slice(0, 60)} while saving`).toBe(false)
+      pending.release()
+      await settle()
     })
 
     it('cannot be edited by a key or a click while it is saving: what the steps hold is what was sent', async () => {

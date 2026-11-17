@@ -7,7 +7,8 @@ import type { StepScope } from '../../../editor/stepScope.ts'
 /**
  * A Load step (S10, D10c): reads a row and gives it a name later steps read it by (`as`). Its lookup (`DataStepLookup`) and
  * what happens when there is none: it refuses with an error, or carries on without the row (`DataStepErrorPicker`). The name is
- * renamed through `rename`, not `update:step`, because the steps after it read the row by it.
+ * renamed through `rename`, not `update:step`, because the steps after it read the row by it. The field commits on blur or Enter
+ * (`commit="change"`), so the readers follow the name that was committed and not each keystroke on the way to it.
  */
 const { step, scope, ctx, errors } = defineProps<{
   step: Step
@@ -28,6 +29,7 @@ const emit = defineEmits<{ 'update:step': [step: Step], 'add-error': [error: Par
       placeholder="post"
       aria-label="Name of the loaded row"
       mono
+      commit="change"
       data-step-field="as"
       @update:model-value="emit('rename', $event)"
     />

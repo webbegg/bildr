@@ -345,9 +345,24 @@ await run('data', async ({ page, browser, errors }) => {
   // An action with steps is deleted (it had load and update steps, saved above). The generated route of an action goes with it, and
   // Nitro rebuilds the app: for about a second every route of the app answers 500 (the dev log says "Could not load ...
   // restock-dish.post.ts: ENOENT", the rebuild met the file the sync had just removed), then it answers again. The editor's own routes
-  // answer throughout. So this step expects that console error, and checks the app does recover: the same route answers 200 and the
-  // model loads with no drift. No other 500 is accepted here or anywhere else in the script.
+  // answer throughout. So this step collects the 500s the browser sees while it happens (`response`, with the URL), and checks that
+  // every one is on a route the app generated and none on the editor (`/__bildr`), and that all the editor's own requests succeeded.
+  // The console error Chromium logs for a 500 does not name the route, so it is ignored only as often as a 500 the browser logged for
+  // an app route (the console message's own location): any other console error stays an error here, as it does in the rest of the script.
   const consoleBefore = errors.length
+  const onEditor = url => new URL(url).pathname.startsWith('/__bildr')
+  const onAppRoute = (url, type) => {
+    const { pathname } = new URL(url)
+    return !onEditor(url) && (pathname.startsWith('/api/blog/') || type === 'document')
+  }
+  const answered = []
+  const consoleFailures = []
+  const onResponse = response => answered.push({ url: response.url(), status: response.status(), type: response.request().resourceType() })
+  const onConsole = (message) => {
+    if (message.type() === 'error' && /status of 500 \(Internal Server Error\)/.test(message.text())) consoleFailures.push(message.location().url ?? '')
+  }
+  page.on('response', onResponse)
+  page.on('console', onConsole)
   await page.waitForTimeout(400)
   await page.locator(`[data-artifact-menu="${restock.id}"]`).click({ force: true })
   await page.getByRole('menuitem', { name: 'Delete' }).click()
@@ -357,9 +372,17 @@ await run('data', async ({ page, browser, errors }) => {
   await quiet()
   check(await until(async () => (await appApi('/api/blog/dishes?limit=1&offset=0'))?.status === 200, 60_000), 'the app answers again after Nitro rebuilt (a 500 for about a second, not a route left behind)')
   check(await settled(), 'and the model loads with no drift, the generated files of the action gone')
-  const accepted500 = errors.splice(consoleBefore)
-  errors.push(...accepted500.filter(message => !/status of 500 \(Internal Server Error\)/.test(message)))
-  console.log(`INFO ${accepted500.length - errors.length + consoleBefore} console 500(s) from the rebuild were expected here`)
+  page.off('response', onResponse)
+  page.off('console', onConsole)
+  const fiveHundreds = answered.filter(entry => entry.status === 500)
+  check(fiveHundreds.every(entry => onAppRoute(entry.url, entry.type)), `every 500 of the rebuild is on a route the app generated, none on /__bildr (${fiveHundreds.length}: ${[...new Set(fiveHundreds.map(entry => new URL(entry.url).pathname))].join(', ') || 'none'})`)
+  const editorFailed = answered.filter(entry => onEditor(entry.url) && entry.status >= 400)
+  check(editorFailed.length === 0 && answered.some(entry => onEditor(entry.url)), `the editor's own requests all succeeded during the rebuild (${answered.filter(entry => onEditor(entry.url)).length} answered${editorFailed.length ? `; failed: ${editorFailed.map(entry => `${entry.status} ${new URL(entry.url).pathname}`).join(', ')}` : ''})`)
+  // A console 500 is expected once per 500 the browser logged for an app route; the others stay in `errors`.
+  let expected = consoleFailures.filter(url => fiveHundreds.some(entry => entry.url === url && onAppRoute(entry.url, entry.type))).length
+  const rebuildErrors = errors.splice(consoleBefore)
+  errors.push(...rebuildErrors.filter(message => !(expected > 0 && /status of 500 \(Internal Server Error\)/.test(message) && expected--)))
+  console.log(`INFO ${rebuildErrors.length - (errors.length - consoleBefore)} console 500(s) on app routes from the rebuild were expected here`)
   await quiet()
 
   // The Used in link opens the page on the Canvas.

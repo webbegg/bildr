@@ -243,12 +243,40 @@ describe('renaming a load', () => {
     expect(write).toEqual({ kind: 'repository', repository: 'repo_post', op: 'update', id: { $input: 'id' }, from: { $var: 'article' }, set: { title: 'post', slug: { $var: 'other.slug' }, body: { if: { $var: 'article.published' }, then: 'x', else: { $var: 'article.body' } } } })
   })
 
-  it('follows the name as it is typed, through an empty name and back', () => {
-    let draft = draftOf(publish())
-    for (const name of ['pos', 'po', '', 'a', 'ar', 'article']) draft = renameLoad(draft, 0, name)
-    expect(plainSteps(draft)[0]!.as).toBe('article')
-    expect(plainSteps(draft)[2]).toMatchObject({ from: { $var: 'article' } })
-    expect(problemsOf(draft, contextOf(model, publish()))).toEqual([])
+  describe('with two loads, `post` and `posts`', () => {
+    const twoLoads = (): StepsDraft => withSteps(publish(), [
+      { kind: 'load', as: 'post', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } },
+      { kind: 'load', as: 'posts', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } },
+      { kind: 'return', if: { $var: 'post.published' }, value: { $var: 'post' } },
+      { kind: 'repository', repository: 'repo_post', op: 'update', id: { $input: 'id' }, from: { $var: 'posts' }, set: { title: { $var: 'posts.title' } } }
+    ])
+
+    it('renames the later load to a free name: its readers follow, the first load\'s are unchanged', () => {
+      const [first, second, firstRead, secondRead] = plainSteps(renameLoad(twoLoads(), 1, 'items'))
+      expect(first).toMatchObject({ as: 'post' })
+      expect(second).toMatchObject({ as: 'items' })
+      expect(firstRead).toMatchObject({ if: { $var: 'post.published' }, value: { $var: 'post' } })
+      expect(secondRead).toMatchObject({ from: { $var: 'items' }, set: { title: { $var: 'items.title' } } })
+    })
+
+    it('does not rename the readers when the new name is the name of another load: the duplicate shows, and nothing binds to the wrong row', () => {
+      const draft = renameLoad(twoLoads(), 1, 'post')
+      const [, second, firstRead, secondRead] = plainSteps(draft)
+      expect(second).toMatchObject({ as: 'post' })
+      expect(firstRead).toMatchObject({ if: { $var: 'post.published' }, value: { $var: 'post' } })
+      expect(secondRead).toMatchObject({ from: { $var: 'posts' }, set: { title: { $var: 'posts.title' } } })
+      expect(messages(publish(), draft)).toContain('“post” is the name of an earlier row: pick another')
+    })
+
+    it('does not rename the readers to or from an empty name, and leaves them to say they are not loaded', () => {
+      const cleared = renameLoad(twoLoads(), 0, '')
+      expect(plainSteps(cleared)[0]).toMatchObject({ as: '' })
+      expect(plainSteps(cleared)[2]).toMatchObject({ if: { $var: 'post.published' }, value: { $var: 'post' } })
+      const named = renameLoad(cleared, 0, 'article')
+      expect(plainSteps(named)[0]).toMatchObject({ as: 'article' })
+      expect(plainSteps(named)[2]).toMatchObject({ if: { $var: 'post.published' }, value: { $var: 'post' } })
+      expect(messages(publish(), named)).toContain('“post” is not loaded by any step')
+    })
   })
 
   it('does not change the draft it is given, nor a step that is not a load', () => {
@@ -472,10 +500,39 @@ describe('stepsNamed', () => {
   it('finds the steps by what they hold, a name or an id, and not by a key or a kind', () => {
     const action = publish()
     const held = draftOf(action).steps
-    expect(stepsNamed('Row "post" is not loaded', held)).toEqual([0, 1, 2])
+    expect(stepsNamed('Row "post" is not loaded', held)).toEqual([0])
     expect(stepsNamed('Unknown "repo_post"', held)).toEqual([0, 2])
-    expect(stepsNamed('Field "published" is not a field of Post', held)).toEqual([1, 2])
+    expect(stepsNamed('Field "published" is not a field of Post', held)).toEqual([])
     expect(stepsNamed('a "return" and an "if" and a "load" and a "kind" and a "set"', held)).toEqual([])
+  })
+
+  describe('a name that many steps hold', () => {
+    const many = (): StepsDraft['steps'] => withSteps(publish(), [
+      { kind: 'validate' },
+      { kind: 'load', as: 'post', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } }, orError: 'post_not_found' },
+      { kind: 'assert', unless: { repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } } }, error: 'slug_taken' },
+      { kind: 'repository', repository: 'repo_post', op: 'update', id: { $input: 'id' }, from: { $var: 'post' }, set: { id: { $input: 'id' }, title: 'x' } }
+    ]).steps
+
+    it('prefers the step that is called by it: its row, an error it raises, or its collection', () => {
+      expect(stepsNamed('Row "post" is not loaded', many())).toEqual([1])
+      expect(stepsNamed('The error "slug_taken" is not declared', many())).toEqual([2])
+      expect(stepsNamed('The error "post_not_found" is not declared', many())).toEqual([1])
+      expect(stepsNamed('Unknown repository "repo_post"', many())).toEqual([1, 2, 3])
+    })
+
+    it('names no step for a common field name that many steps read or set, so the message is shown at the top', () => {
+      expect(stepsNamed('input: "id" must be text', many())).toEqual([])
+    })
+
+    it('names the step that is called by the name, among the ones that read it', () => {
+      const steps = [...many(), { key: 9, step: { kind: 'load', as: 'id', repository: 'repo_post', op: 'get', args: {} } }]
+      expect(stepsNamed('input: "id" must be text', steps)).toEqual([4])
+    })
+
+    it('still finds the one step that holds a name', () => {
+      expect(stepsNamed('Field "title" is not a field of Post', many())).toEqual([3])
+    })
   })
 
   it('finds none for a message about something else', () => {

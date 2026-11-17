@@ -256,17 +256,23 @@ export function renameError(draft: StepsDraft, index: number, name: string): Ste
 /**
  * The draft with the row load `index` gives renamed, and the later steps that read it (`{ $var: 'post' }`, `{ $var: 'post.title' }`)
  * reading it by the new name, as `renameError` does for an error. A step before the load cannot read it, so it is left as it is.
- * It follows the name as it is typed, an empty name too.
+ *
+ * It is for a name that is committed (the field's blur or Enter), from the name the load had to the new one, never for a name as it
+ * is typed: a name passing through another row's would bind that row's readers to this one. The readers are left alone, and the
+ * load takes the name, when either name is empty (a blank `$var` would bind to nothing) or the new name is another load's: the
+ * duplicate is then said at the step, and the readers still read the row they meant.
  */
 export function renameLoad(draft: StepsDraft, index: number, name: string): StepsDraft {
   const renamed = draft.steps[index]
   if (!renamed || renamed.step.kind !== 'load') return draft
   const previous = typeof renamed.step.as === 'string' ? renamed.step.as : ''
+  const follow = previous !== '' && name !== '' && previous !== name
+    && !draft.steps.some((entry, at) => at !== index && entry.step.kind === 'load' && entry.step.as === name)
   return {
     ...draft,
     steps: draft.steps.map((entry, at) => {
       if (at === index) return { ...entry, step: { ...entry.step, as: name } }
-      return at > index && previous !== name ? { ...entry, step: renameVar(entry.step, previous, name) as Step } : entry
+      return at > index && follow ? { ...entry, step: renameVar(entry.step, previous, name) as Step } : entry
     })
   }
 }
@@ -460,12 +466,18 @@ function namesIn(step: Step): string[] {
   return names
 }
 
+/** What a step is called by, among what it holds: its row, the errors it raises, its collection's id. */
+function calledBy(step: Step): string[] {
+  return [step.as, step.error, step.orError, step.repository, record(step.unless).repository].filter((name): name is string => typeof name === 'string' && name !== '')
+}
+
 const quoted = (message: string) => [...message.matchAll(/["“]([^"”]+)["”]/g)].map(match => match[1]!)
 
 /**
  * The steps a refusal of the module names, from 0. It names one by its place (`steps.N`: from 1 in the edit's own refusals, from
  * 0 in the model's problems it quotes; `step N` in the generator's), else the steps that use a name the message quotes
- * (an error, a repository, a field).
+ * (an error, a repository, a field). A common name (`id`, `title`) can be held by many steps: for a quoted name that more than one
+ * step holds, the steps it calls (their row, error or collection id) are the ones named, and when none is called by it, none is.
  */
 export function stepsNamed(message: string, steps: readonly DraftStep[]): number[] {
   const loader = message.startsWith('The edit would leave the model with problems')
@@ -474,8 +486,13 @@ export function stepsNamed(message: string, steps: readonly DraftStep[]): number
   for (const match of message.matchAll(/\bstep (\d+) \(/g)) found.add(Number(match[1]) - 1)
   const named = [...found].filter(index => index >= 0 && index < steps.length)
   if (named.length) return named.sort((a, b) => a - b)
-  const names = quoted(message)
-  return steps.flatMap((entry, index) => namesIn(entry.step).some(name => names.includes(name)) ? [index] : [])
+  const picked = new Set<number>()
+  for (const name of new Set(quoted(message))) {
+    const holders = steps.flatMap((entry, index) => namesIn(entry.step).includes(name) ? [index] : [])
+    const chosen = holders.length > 1 ? holders.filter(index => calledBy(steps[index]!.step).includes(name)) : holders
+    for (const index of chosen) picked.add(index)
+  }
+  return [...picked].sort((a, b) => a - b)
 }
 
 /** The errors whose name a refusal quotes, from 0. */

@@ -6,9 +6,10 @@ import type { DraftStep } from './stepDraft.ts'
  * Dragging a step by its grip (the Steps tab): which step is dragged (`dragKey`, by its key, which stays with the step as the
  * list is reordered) and where it would land (`dropSlot`: the insertion slot, 0 to the step count, in the current order). The up
  * and down buttons are the keyboard's way; this is the pointer's. `move` is told the place the step is at and the place it has
- * in the list that results.
+ * in the list that results. While `locked` (a save is in flight) a drag over and a drop do nothing: what the steps hold is what was
+ * sent.
  */
-export function useStepDrag(steps: () => readonly DraftStep[], move: (from: number, to: number) => void) {
+export function useStepDrag(steps: () => readonly DraftStep[], move: (from: number, to: number) => void, locked: () => boolean = () => false) {
   const dragKey = ref<number | null>(null)
   const dropSlot: Ref<number | null> = ref(null)
 
@@ -22,7 +23,7 @@ export function useStepDrag(steps: () => readonly DraftStep[], move: (from: numb
   }
 
   function over(event: DragEvent, index: number) {
-    if (dragKey.value === null) return
+    if (dragKey.value === null || locked()) return
     event.preventDefault()
     const box = (event.currentTarget as HTMLElement).getBoundingClientRect()
     dropSlot.value = event.clientY < box.top + box.height / 2 ? index : index + 1
@@ -37,7 +38,7 @@ export function useStepDrag(steps: () => readonly DraftStep[], move: (from: numb
     const key = dragKey.value
     const slot = dropSlot.value
     end()
-    if (key === null || slot === null) return
+    if (key === null || slot === null || locked()) return
     const from = steps().findIndex(entry => entry.key === key)
     if (from >= 0) move(from, slot > from ? slot - 1 : slot)
   }

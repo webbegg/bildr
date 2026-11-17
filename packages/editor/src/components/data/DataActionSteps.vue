@@ -127,7 +127,7 @@ function addErrorTo(init: Partial<DraftError>) {
 
 const drag = useStepDrag(() => draft.value.steps, (from, to) => {
   draft.value = moveStep(draft.value, from, to)
-})
+}, () => saving.value)
 
 function jumpToErrors() {
   root.value?.querySelector('[data-action-errors]')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' })
