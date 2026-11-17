@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
-import type { RowsSource } from '../../../editor/dataView.ts'
 import { FIELD_SHELL } from '../../../editorUi.ts'
 import { filterLabel } from '../../../shared/dataTable.ts'
 import type { TableFilter, TableSort } from '../../../shared/dataTable.ts'
@@ -9,12 +8,11 @@ import type { DataField } from '../../../shared/dataModel.ts'
 
 /**
  * The rows table's toolbar, Framer CMS's: sort, filter and search icons with the active filters
- * as chips, the item count, and a `…` menu. The Live / Sample data switch (`DataSourceSwitch`) shows
- * the user's choice, `source`, and chooses; `shown`, `fallback` and `switchable` are its. Refresh reads the rows again. The hosted Add item and
- * bulk Delete are not here: rows are app data (E2).
+ * as chips, the item count, and a `…` menu. The Live / Sample data switch and Refresh are `DataSourceSwitch`'s (`switchable`
+ * is its); the menu's Refresh asks the parent for it too. The hosted Add item and bulk Delete are not here: rows are app data (E2).
  */
-const props = defineProps<{ fields: DataField[], count: string, source: RowsSource, shown: RowsSource, fallback: boolean, switchable: boolean, refreshing: boolean }>()
-const emit = defineEmits<{ refresh: [], source: [source: RowsSource] }>()
+const props = defineProps<{ fields: DataField[], count: string, switchable: boolean }>()
+const emit = defineEmits<{ refresh: [] }>()
 const query = defineModel<string>('query', { required: true })
 const sort = defineModel<TableSort | null>('sort', { required: true })
 const filters = defineModel<TableFilter[]>('filters', { required: true })
@@ -148,24 +146,7 @@ function removeFilter(index: number) {
       data-records-count
     >{{ count }}</span>
     <div class="ms-auto flex shrink-0 items-center gap-2">
-      <DataSourceSwitch
-        :source="source"
-        :shown="shown"
-        :fallback="fallback"
-        :switchable="switchable"
-        @source="emit('source', $event)"
-      />
-      <UTooltip text="Refresh">
-        <EditorButton
-          icon="i-lucide-refresh-cw"
-          variant="ghost"
-          size="xs"
-          aria-label="Refresh"
-          :loading="refreshing"
-          data-records-refresh
-          @click="emit('refresh')"
-        />
-      </UTooltip>
+      <DataSourceSwitch :switchable="switchable" />
       <EditorMenu
         :items="moreMenu"
         :content="{ align: 'end' }"

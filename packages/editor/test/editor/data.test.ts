@@ -3,8 +3,10 @@ import { click, Failure, mockActions, mountWithApp, settle, typeInto } from '../
 import type { AppRoutes } from '../helpers.ts'
 import DataView from '../../src/views/DataView.vue'
 import App from '../../src/App.vue'
-import { usesOf } from '@bildr/codegen/edit'
-import { describeUses } from '../../../codegen/src/edit/usage.ts'
+import { applyEdit } from '@bildr/codegen/edit'
+import type { EditName } from '@bildr/codegen/edit'
+import { loadModel, serializeModel } from '@bildr/codegen/model'
+import { FOLDED_KEY } from '../../src/editor/dataTree.ts'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
 import { FakeEventSource, baseHandlers, byLabel, combo, indexPage, inputOf, menuItem, modelGet, selectOption, setupHarness, world } from '../design/harness.ts'
 import type { Handlers } from '../design/harness.ts'
@@ -39,6 +41,30 @@ const freeQuotes = () => {
 }
 
 const inputs = (actions: Awaited<ReturnType<typeof open>>['actions'], name: string) => actions.named(name).map(call => call.input)
+
+/** How the module answers a refusal, by the code `applyEdit` gives it (`packages/nuxt/src/server`: invalid input is a 400, a missing item a 404). */
+const REFUSAL_STATUS = { invalid_input: 400, not_found: 404, invalid: 422 } as const
+
+/**
+ * The module's query and action edits over the mocked model, which are the real ones: each goes through `applyEdit` of
+ * `@bildr/codegen/edit`, on the model's files as they are now (the fixture, and what the test changed in `world.model`), and what
+ * it writes becomes the model the mocked `model_get` serves. So the editor's tests meet the module's own rules (names, uses,
+ * refusals and their words), not a copy of them.
+ */
+const artifactModule = (): Handlers => Object.fromEntries((['query_create', 'query_update', 'query_rename', 'query_delete', 'action_create', 'action_update', 'action_rename', 'action_delete'] as EditName[]).map(name => [name, (input: Record<string, unknown>) => {
+  const files = serializeModel(world.model)
+  const outcome = applyEdit(files, name, input)
+  if (!outcome.ok) return new Failure(REFUSAL_STATUS[outcome.code], outcome.code, outcome.message)
+  const next = { ...files }
+  for (const change of outcome.changes) {
+    if (change.content === null) Reflect.deleteProperty(next, change.path)
+    else next[change.path] = change.content
+  }
+  const loaded = loadModel(next)
+  if (!loaded.ok) throw new Error(`applyEdit left a model that does not load: ${JSON.stringify(loaded.problems)}`)
+  world.model = loaded.model
+  return { ...outcome.result, changed: outcome.changes.map(change => change.path) }
+}]))
 const collection = (plural: string) => q(`[data-collection="${plural}"]`)
 
 /** The tree's items by name: `data-tree-item` is the item's key (`collection:<id>`, `connection:<id>`). */
@@ -54,6 +80,8 @@ const ITEMS = {
   publishPost: 'action:act_publish_post',
   files: 'files'
 }
+/** The names of the tree's items, top to bottom: a connection is followed by the collections read through it. */
+const TREE_ORDER = ['post', 'quotes', 'quote', 'allPosts', 'featured', 'latestQuotes', 'bySlug', 'createPost', 'publishPost', 'files'] as const satisfies ReadonlyArray<keyof typeof ITEMS>
 const treeItem = (name: keyof typeof ITEMS) => q(`[data-tree-item="${ITEMS[name]}"]`)
 const tabNames = () => qa('[role="tab"][data-data-tab]').map(tab => tab.getAttribute('data-data-tab'))
 const activeTab = () => q('[role="tab"][aria-selected="true"]')?.getAttribute('data-data-tab')
@@ -64,10 +92,13 @@ const key = async (element: Element | null, name: string) => {
 }
 const pressedSources = () => qa('[data-live-badge] button').filter(button => button.getAttribute('aria-pressed') === 'true').map(button => button.getAttribute('aria-label'))
 const textButton = (label: string) => qa('button').find(candidate => candidate.textContent?.trim() === label) ?? null
+/** What the open confirmation says. */
+const confirmText = () => text(q('[data-confirm]')?.closest('[role="dialog"]') ?? null)
 
 afterEach(() => {
   takeStart()
   localStorage.removeItem('bildr:panel-width')
+  localStorage.removeItem(FOLDED_KEY)
 })
 
 describe('the Data screen', () => {
@@ -246,25 +277,19 @@ describe('the Data workspace (S2)', () => {
 
   it('moves through the tree with the arrow keys, stopping at the ends, and picks with Enter', async () => {
     await open()
-    expect(qa('[data-tree-item]').map(item => item.getAttribute('data-tree-item'))).toEqual([ITEMS.post, ITEMS.quotes, ITEMS.quote, ITEMS.allPosts, ITEMS.featured, ITEMS.latestQuotes, ITEMS.bySlug, ITEMS.createPost, ITEMS.publishPost, ITEMS.files])
+    expect(qa('[data-tree-item]').map(item => item.getAttribute('data-tree-item'))).toEqual(TREE_ORDER.map(name => ITEMS[name]))
+    // The queries and the actions are in the same group as the collections: the arrows go on into them, and out of them to All model files.
     treeItem('post')!.focus()
-    await key(treeItem('post'), 'ArrowDown')
-    expect(document.activeElement).toBe(treeItem('quotes'))
-    await key(treeItem('quotes'), 'ArrowDown')
-    expect(document.activeElement).toBe(treeItem('quote'))
-    // The queries and the actions are in the same group: the arrows go on into them, and out of them to All model files.
-    await key(treeItem('quote'), 'ArrowDown')
-    expect(document.activeElement).toBe(treeItem('allPosts'))
-    await key(treeItem('allPosts'), 'End')
-    expect(document.activeElement).toBe(treeItem('files'))
+    for (const [from, to] of TREE_ORDER.slice(1).map((name, at) => [TREE_ORDER[at]!, name] as const)) {
+      await key(treeItem(from), 'ArrowDown')
+      expect(document.activeElement).toBe(treeItem(to))
+    }
     await key(treeItem('files'), 'ArrowDown')
     expect(document.activeElement).toBe(treeItem('files'))
-    await key(treeItem('files'), 'ArrowUp')
-    expect(document.activeElement).toBe(treeItem('publishPost'))
-    await key(treeItem('publishPost'), 'ArrowUp')
-    expect(document.activeElement).toBe(treeItem('createPost'))
-    await key(treeItem('createPost'), 'ArrowUp')
-    expect(document.activeElement).toBe(treeItem('bySlug'))
+    for (const [from, to] of TREE_ORDER.slice(1).map((name, at) => [name, TREE_ORDER[at]!] as const).reverse()) {
+      await key(treeItem(from), 'ArrowUp')
+      expect(document.activeElement).toBe(treeItem(to))
+    }
     await key(treeItem('bySlug'), 'Home')
     expect(document.activeElement).toBe(treeItem('post'))
     await key(treeItem('post'), 'ArrowDown')
@@ -1407,8 +1432,6 @@ describe('the JSON tab and All model files (S3)', () => {
       return { sha256: 'c'.repeat(64) }
     }
   })
-  const confirmText = () => text(q('[data-confirm]')?.closest('[role="dialog"]') ?? null)
-
   describe('unsaved edits (S3)', () => {
     const edit = async () => typeInto(q('[data-testid="raw-content"]'), '{ "draft": true }')
     const DISCARD = `Discard unsaved changes to ${POST}?`
@@ -1809,13 +1832,21 @@ describe('Queries and Actions in the Data tree (S10)', () => {
     for (let n = 1; n <= count; n++) mod.queries.push({ ...structuredClone(mod.queries[0]!), id: `q_more_${n}`, name: `more${n}`, label: `More ${n}` })
   }
 
+  /** What each block of the tree is called, by the attribute that marks it. */
+  const blockName = (element: HTMLElement) => {
+    if (element.hasAttribute('data-collections-internal')) return 'collections'
+    if (element.hasAttribute('data-collections-synced')) return 'connections'
+    if (element.hasAttribute('data-raw-model')) return 'files'
+    return element.getAttribute('data-artifacts') === 'query' ? 'queries' : 'actions'
+  }
+
   it('has Queries and Actions sections after Collections and Connections, before All model files', async () => {
     await open()
-    const order = qa('[data-collections-internal], [data-collections-synced], [data-artifacts], [data-raw-model]').map(element => element.getAttribute('data-artifacts') ?? element.tagName)
-    expect(order).toHaveLength(5)
-    expect(order.slice(2)).toEqual(['query', 'action', 'BUTTON'])
-    expect(text(section('query')?.querySelector('p'))).toBe('Queries')
-    expect(text(section('action')?.querySelector('p'))).toBe('Actions')
+    // The query selector lists them in the document's order, whatever order the selectors are written in.
+    const blocks = qa('[data-raw-model], [data-artifacts], [data-collections-synced], [data-collections-internal]')
+    expect(blocks.map(blockName)).toEqual(['collections', 'connections', 'queries', 'actions', 'files'])
+    expect(text(section('query')?.querySelector('[data-artifact-toggle]'))).toBe('Queries')
+    expect(text(section('action')?.querySelector('[data-artifact-toggle]'))).toBe('Actions')
     expect(items('query')).toEqual([ITEMS.allPosts, ITEMS.featured, ITEMS.latestQuotes, ITEMS.bySlug])
     expect(items('action')).toEqual([ITEMS.createPost, ITEMS.publishPost])
   })
@@ -1894,6 +1925,144 @@ describe('Queries and Actions in the Data tree (S10)', () => {
     expect(text(q('[data-artifacts-empty="action"]'))).toBe('No actions yet. Actions change a collection when a form or a button runs them.')
   })
 
+  describe('folding a section', () => {
+    const toggle = (kind: 'query' | 'action') => q(`[data-artifact-toggle="${kind}"]`)
+
+    it('folds and unfolds a section from its header, which says which with aria-expanded', async () => {
+      await open()
+      expect(toggle('query')?.getAttribute('aria-expanded')).toBe('true')
+      await click(toggle('query'))
+      expect(toggle('query')?.getAttribute('aria-expanded')).toBe('false')
+      expect(items('query')).toEqual([])
+      // Only that section: the actions stay, and the + still makes a query.
+      expect(items('action')).toEqual([ITEMS.createPost, ITEMS.publishPost])
+      expect(byLabel('New query')).not.toBeNull()
+      await click(toggle('query'))
+      expect(items('query')).toEqual([ITEMS.allPosts, ITEMS.featured, ITEMS.latestQuotes, ITEMS.bySlug])
+    })
+
+    it('lists no rows of a folded section to the arrow keys, which skip it', async () => {
+      await open()
+      await click(toggle('query'))
+      treeItem('quote')!.focus()
+      await key(treeItem('quote'), 'ArrowDown')
+      expect(document.activeElement).toBe(treeItem('createPost'))
+    })
+
+    it('hides the filter box and the empty line of a folded section', async () => {
+      withQueries(5)
+      await open()
+      expect(q('[data-artifact-filter="query"]')).not.toBeNull()
+      await click(toggle('query'))
+      expect(q('[data-artifact-filter="query"]')).toBeNull()
+    })
+
+    it('remembers which sections are folded, across a reload', async () => {
+      const { wrapper } = await open()
+      await click(toggle('action'))
+      expect(JSON.parse(localStorage.getItem(FOLDED_KEY) ?? 'null')).toEqual(['action'])
+      wrapper.unmount()
+      await open()
+      expect(toggle('action')?.getAttribute('aria-expanded')).toBe('false')
+      expect(items('action')).toEqual([])
+      expect(toggle('query')?.getAttribute('aria-expanded')).toBe('true')
+      await click(toggle('action'))
+      expect(JSON.parse(localStorage.getItem(FOLDED_KEY) ?? 'null')).toEqual([])
+    })
+
+    it('starts unfolded when what was remembered is not a list of sections', async () => {
+      localStorage.setItem(FOLDED_KEY, '{"query":true}')
+      const { wrapper } = await open()
+      expect(items('query')).toHaveLength(4)
+      wrapper.unmount()
+      localStorage.setItem(FOLDED_KEY, '["query","constructor",3]')
+      await open()
+      expect(items('query')).toEqual([])
+      expect(items('action')).toHaveLength(2)
+    })
+  })
+
+  describe('the keyboard on a row', () => {
+    it('opens Rename on F2 and Delete on Delete or Backspace, for a query', async () => {
+      await open()
+      treeItem('featured')!.focus()
+      await key(treeItem('featured'), 'F2')
+      expect(q('[data-artifact-dialog="rename"]')).not.toBeNull()
+      expect(inputOf('[data-artifact-name]').value).toBe('featuredPosts')
+      await click(textButton('Cancel'))
+      await key(treeItem('featured'), 'Delete')
+      expect(q('[data-artifact-dialog="delete"]')).not.toBeNull()
+      await click(textButton('Cancel'))
+      await key(treeItem('featured'), 'Backspace')
+      expect(q('[data-artifact-dialog="delete"]')).not.toBeNull()
+    })
+
+    it('does the same on an action row, for that action', async () => {
+      await open()
+      await key(treeItem('publishPost'), 'F2')
+      expect(inputOf('[data-artifact-name]').value).toBe('publishPost')
+      await click(textButton('Cancel'))
+      await key(treeItem('publishPost'), 'Delete')
+      expect(text(q('[role="dialog"]'))).toContain('Delete action')
+      expect(text(q('[role="dialog"]'))).toContain('Publish post')
+    })
+
+    it('starts the inline rename of a collection on F2, and asks before deleting it on Delete', async () => {
+      await open()
+      await key(treeItem('post'), 'F2')
+      expect(byLabel('Rename collection')).not.toBeNull()
+      expect((byLabel('Rename collection') as HTMLInputElement).value).toBe('Post')
+      await key(byLabel('Rename collection'), 'Escape')
+      await key(treeItem('post'), 'Delete')
+      expect(confirmText()).toContain('Delete collection "Post"?')
+      await click(q('[data-confirm-cancel]'))
+      await key(treeItem('post'), 'Backspace')
+      expect(confirmText()).toContain('Delete collection "Post"?')
+    })
+
+    it('does the same on a connection', async () => {
+      freeQuotes()
+      await open()
+      await key(treeItem('quotes'), 'F2')
+      expect(byLabel('Rename connection')).not.toBeNull()
+      await key(byLabel('Rename connection'), 'Escape')
+      await key(treeItem('quotes'), 'Delete')
+      expect(confirmText()).toContain('Delete "quotes" with its collection?')
+    })
+
+    it('leaves F2 and Delete typed in a field to the field', async () => {
+      withQueries(5)
+      await open()
+      const filter = inputOf('[data-artifact-filter="query"]')
+      filter.focus()
+      await key(filter, 'F2')
+      await key(filter, 'Delete')
+      expect(q('[data-artifact-dialog]')).toBeNull()
+    })
+  })
+
+  describe('the … on a row', () => {
+    const dots = (row: Element | null) => row?.closest('.group')?.querySelector('button[aria-label$="options"], button[aria-label$="actions"]')?.className ?? ''
+
+    it('is shown on the selected row and on a row that has the focus, and only on hover for the others', async () => {
+      await open({}, {}, '/data?item=query:q_featured_posts&tab=results')
+      expect(dots(treeItem('featured'))).toContain('opacity-100')
+      expect(dots(treeItem('featured'))).not.toContain('opacity-0')
+      expect(dots(treeItem('allPosts'))).toContain('opacity-0')
+      expect(dots(treeItem('allPosts'))).toContain('group-hover:opacity-100')
+      expect(dots(treeItem('allPosts'))).toContain('group-focus-within:opacity-100')
+    })
+
+    it('is the same on a collection and a connection', async () => {
+      await open()
+      expect(dots(treeItem('post'))).toContain('opacity-100')
+      expect(dots(treeItem('post'))).not.toContain('opacity-0')
+      expect(dots(treeItem('quote'))).toContain('group-focus-within:opacity-100')
+      expect(dots(treeItem('quotes'))).toContain('group-focus-within:opacity-100')
+      expect(dots(treeItem('quotes'))).toContain('opacity-0')
+    })
+  })
+
   it('has a … menu on each row with Rename and Delete', async () => {
     await open()
     const menu = q('[data-artifact-menu="q_featured_posts"]')
@@ -1943,6 +2112,44 @@ describe('Queries and Actions in the Data tree (S10)', () => {
     expect(text(q('[data-data-title] h2'))).toBe('Create post')
   })
 
+  it('follows the browser\'s Back and Forward across a collection, a query and an action', async () => {
+    const { router } = await open()
+    const shows = (title: string, activeItem: string, activeTabName: string) => {
+      expect(text(q('[data-data-title] h2'))).toBe(title)
+      expect(qa('[data-tree-item][aria-selected="true"]').map(item => item.getAttribute('data-tree-item'))).toEqual([activeItem])
+      expect(activeTab()).toBe(activeTabName)
+    }
+    const go = async (item: string, tabName: string) => {
+      await router.push({ path: '/data', query: { item, tab: tabName } })
+      await settle()
+    }
+    shows('Post', ITEMS.post, 'rows')
+    await go(ITEMS.featured, 'definition')
+    shows('Featured posts', ITEMS.featured, 'definition')
+    await go(ITEMS.publishPost, 'used')
+    shows('Publish post', ITEMS.publishPost, 'used')
+    await go(ITEMS.quote, 'fields')
+    shows('Quote', ITEMS.quote, 'fields')
+    router.back()
+    await settle()
+    shows('Publish post', ITEMS.publishPost, 'used')
+    router.back()
+    await settle()
+    shows('Featured posts', ITEMS.featured, 'definition')
+    router.back()
+    await settle()
+    shows('Post', ITEMS.post, 'rows')
+    router.forward()
+    await settle()
+    shows('Featured posts', ITEMS.featured, 'definition')
+    router.forward()
+    router.forward()
+    await settle()
+    shows('Quote', ITEMS.quote, 'fields')
+    // The URL is the screen's, whichever way it got there.
+    expect(router.currentRoute.value.query).toEqual({ item: ITEMS.quote, tab: 'fields' })
+  })
+
   it('settles on the first tab of a query for a tab it does not have, and on the first collection for one that is gone', async () => {
     const { router } = await open({}, {}, '/data?item=query:q_all_posts&tab=fields')
     expect(router.currentRoute.value.query).toEqual({ item: 'query:q_all_posts', tab: 'results' })
@@ -1957,6 +2164,8 @@ describe('Query Results (S10, DW-7b)', () => {
   const shownRows = () => qa('[data-query-results] [data-record]').map(row => row.getAttribute('data-record'))
   const param = (name: string) => inputOf(`[data-query-param="${name}"]`)
   const livePosts = { '/api/blog/posts': { items: [post('one'), post('two'), post('three')], total: 3 } }
+  /** Where the shown rows come from, as the switch says. */
+  const editorSource = () => q('[data-live-badge]')?.getAttribute('data-source')
 
   it('runs the query over the sample data the Rows tab shows, with its condition, ordering and limit', async () => {
     await results('q_featured_posts')
@@ -1973,7 +2182,8 @@ describe('Query Results (S10, DW-7b)', () => {
   it('shows the same rows as the collection\'s Rows tab, with the same Live / Sample data switch', async () => {
     await results('q_all_posts', {}, livePosts)
     expect(pressedSources()).toEqual(['Live'])
-    expect(shownRows()).toEqual(['id-one', 'id-three', 'id-two'].sort())
+    // The three posts were created at the same moment, so the ordering falls to their keys.
+    expect(shownRows()).toEqual(['id-one', 'id-three', 'id-two'])
     await click(q('[data-live-badge] [aria-label="Sample data"]'))
     expect(pressedSources()).toEqual(['Sample data'])
     expect(shownRows()).toHaveLength(2)
@@ -1984,9 +2194,6 @@ describe('Query Results (S10, DW-7b)', () => {
     await click(treeItem('post'))
     expect(qa('[data-records-table] [data-record]')).toHaveLength(3)
   })
-
-  /** Where the shown rows come from, as the switch says. */
-  const editorSource = () => q('[data-live-badge]')?.getAttribute('data-source')
 
   it('says when the app is not answering and the rows are the sample data', async () => {
     await results('q_all_posts')
@@ -2007,6 +2214,58 @@ describe('Query Results (S10, DW-7b)', () => {
     // A blank input is no argument: the default applies again.
     await typeInto(param('limit'), '')
     expect(shownRows()).toHaveLength(3)
+  })
+
+  it('sums the query up in one line above the results, with a link to its Definition', async () => {
+    await results('q_featured_posts')
+    expect(text(q('[data-query-summary-text]'))).toBe('published is true · newest first · limit 6')
+    await click(q('[data-edit-definition]'))
+    expect(activeTab()).toBe('definition')
+    await click(treeItem('bySlug'))
+    await click(tab('results'))
+    expect(text(q('[data-query-summary-text]'))).toBe('slug is the “slug” parameter')
+  })
+
+  it('has an input with no default for an integer parameter that has none, and does not limit until it is typed', async () => {
+    const query = world.model.modules.blog!.queries.find(entry => entry.id === 'q_all_posts')!
+    Object.assign(query, { params: [{ name: 'count', type: 'integer' }], limit: { $param: 'count' } })
+    await results('q_all_posts')
+    expect(param('count').value).toBe('')
+    expect(param('count').getAttribute('placeholder')).toBe('No default')
+    expect(param('count').getAttribute('inputmode')).toBe('numeric')
+    expect(q('[data-query-param-row="count"] [role="alert"]')).toBeNull()
+    expect(shownRows()).toHaveLength(2)
+    await typeInto(param('count'), '1')
+    expect(shownRows()).toHaveLength(1)
+    await typeInto(param('count'), 'x')
+    expect(text(q('[data-query-param-row="count"]'))).toContain('Enter a whole number')
+    expect(shownRows()).toEqual([])
+  })
+
+  it('drops the input of a parameter the Definition removed or retyped meanwhile, and keeps the others', async () => {
+    const query = world.model.modules.blog!.queries.find(entry => entry.id === 'q_all_posts')!
+    Object.assign(query, { params: [{ name: 'min', type: 'integer', default: 5 }, { name: 'tag', type: 'text' }, { name: 'note', type: 'text' }] })
+    await results('q_all_posts', artifactModule())
+    await typeInto(param('min'), '12')
+    await typeInto(param('tag'), 'news')
+    await typeInto(param('note'), 'keep')
+    await click(tab('definition'))
+    await selectOption(combo('[data-def-param-row="0"] [data-def-param-type]'), 'Number')
+    await click(q('[data-def-param-row="1"] [data-def-param-remove]'))
+    await click(q('[data-def-save]'))
+    await click(tab('results'))
+    // Retyped: the old text is not read as the new type's. Removed: its input is gone. The rest is as it was.
+    expect(param('min').value).toBe('5')
+    expect(param('min').getAttribute('inputmode')).toBe('decimal')
+    expect(q('[data-query-param="tag"]')).toBeNull()
+    expect(param('note').value).toBe('keep')
+    // A parameter added back under a removed name starts from its own default, not the old text.
+    await click(tab('definition'))
+    await click(q('[data-def-param-add]'))
+    await typeInto(q('[data-def-param-row="2"] [data-def-param-name]'), 'tag')
+    await click(q('[data-def-save]'))
+    await click(tab('results'))
+    expect(param('tag').value).toBe('')
   })
 
   it('names an input that is not a whole number, and shows no rows', async () => {
@@ -2076,87 +2335,6 @@ describe('Query Results (S10, DW-7b)', () => {
   })
 })
 
-type Json = Record<string, unknown>
-
-/**
- * The module's query and action edits over the mocked model: what `query_update`, `query_create`, `query_rename`, `query_delete` and the
- * action ones change in the model, and the refusal the module gives for a delete while the item is used (its own `usesOf`).
- */
-const artifactModule = (): Handlers => {
-  const mod = () => world.model.modules.blog!
-  const queryOf = (id: unknown) => mod().queries.find(entry => entry.id === id)!
-  const actionOf = (id: unknown) => mod().actions.find(entry => entry.id === id)!
-  const used = (kind: string, name: string, id: string) => {
-    const uses = usesOf(world.model, id)
-    if (uses.length) throw new Failure(422, 'invalid', `${kind} ${name} (${id}) is still used: ${describeUses(uses)}. Change them first`)
-  }
-  const guard = <T>(run: () => T) => {
-    try {
-      return run()
-    } catch (failure) {
-      if (failure instanceof Failure) return failure
-      throw failure
-    }
-  }
-  return {
-    query_update: input => guard(() => {
-      const query = queryOf(input.query) as unknown as Json
-      for (const key of ['label', 'description', 'result', 'params', 'where', 'orderBy', 'limit']) {
-        if (!(key in input)) continue
-        if (input[key] === null || (key === 'orderBy' && (input[key] as unknown[]).length === 0)) Reflect.deleteProperty(query, key)
-        else query[key] = input[key]
-      }
-      return { queryId: input.query, forked: false, changed: [] }
-    }),
-    query_create: input => guard(() => {
-      const name = String(input.name).replace(/\s+(\w)/g, (_, letter: string) => letter.toUpperCase())
-      if ([...mod().queries, ...mod().actions].some(entry => entry.name === name)) throw new Failure(422, 'invalid', `The name "${name}" is already used by a query or an action of the module`)
-      const one = input.result === 'one'
-      mod().queries.push({ id: `q_${name}`, name, label: name, from: input.entity, params: one ? [{ name: 'id', type: 'uuid', reactive: true }] : [], ...(one ? { where: { op: 'eq', field: 'id', value: { $param: 'id' } } } : {}), result: input.result } as never)
-      return { queryId: `q_${name}`, filePath: `.bildr/modules/blog/queries/${name}.json`, changed: [] }
-    }),
-    query_rename: input => guard(() => {
-      const query = queryOf(input.query)
-      const name = String(input.name)
-      if ([...mod().queries, ...mod().actions].some(entry => entry.name === name && entry.id !== query.id)) throw new Failure(422, 'invalid', `The name "${name}" is already used by a query or an action of the module`)
-      query.name = name
-      return { queryId: query.id, name, changed: [] }
-    }),
-    query_delete: input => guard(() => {
-      const query = queryOf(input.query)
-      used('Query', query.name, query.id)
-      mod().queries = mod().queries.filter(entry => entry.id !== query.id)
-      return { deleted: [query.id], changed: [] }
-    }),
-    action_create: input => guard(() => {
-      const name = String(input.name).replace(/\s+(\w)/g, (_, letter: string) => letter.toUpperCase())
-      if (input.template === 'update') throw new Failure(422, 'invalid', 'Update needs a sample row of Quote: its generated test loads one. Add sample data to Quote first')
-      mod().actions.push({ id: `act_${name}`, name, label: name, http: { method: 'POST', path: `/posts/${name}` }, input: { entity: input.entity, pick: ['id', 'title'] }, errors: [], steps: [{ kind: 'return', if: true, value: { $var: 'undefined' } }], client: { invalidates: [] } } as never)
-      return { actionId: `act_${name}`, filePath: `.bildr/modules/blog/actions/${name}.json`, changed: [] }
-    }),
-    action_update: input => guard(() => {
-      const action = actionOf(input.action) as unknown as Json
-      for (const key of ['label', 'description', 'input']) {
-        if (!(key in input)) continue
-        if (input[key] === null) Reflect.deleteProperty(action, key)
-        else action[key] = input[key]
-      }
-      return { actionId: input.action, changed: [] }
-    }),
-    action_rename: input => guard(() => {
-      const action = actionOf(input.action)
-      action.name = String(input.name)
-      return { actionId: action.id, name: action.name, changed: [] }
-    }),
-    action_delete: input => guard(() => {
-      const action = actionOf(input.action)
-      used('Action', action.name, action.id)
-      mod().actions = mod().actions.filter(entry => entry.id !== action.id)
-      return { deleted: [action.id], changed: [] }
-    })
-  }
-}
-
 describe('Query Definition (S10)', () => {
   const definition = (id = 'q_featured_posts', extra: Handlers = {}, routes: AppRoutes = {}) => open({ ...artifactModule(), ...extra }, routes, `/data?item=query:${id}&tab=definition`)
   const update = (actions: Awaited<ReturnType<typeof open>>['actions']) => inputs(actions, 'query_update')
@@ -2181,6 +2359,72 @@ describe('Query Definition (S10)', () => {
     expect(text(q('[data-def-limit-kind]'))).toContain('Parameter')
     expect(text(q('[data-def-limit-param]'))).toContain('limit')
     expect(q('[data-def-save]')?.hasAttribute('disabled')).toBe(true)
+  })
+
+  it('says the condition as a sentence under it, and follows what is edited', async () => {
+    world.model.modules.blog!.queries.push({ id: 'q_bare', name: 'bare', label: 'Bare', from: 'ent_post', params: [], result: 'many' })
+    await definition('q_bare')
+    expect(q('[data-def-where-preview]')).toBeNull()
+    await click(q('[data-def-where-add]'))
+    await selectOption(combo('[data-def-where-field]'), 'slug')
+    await typeInto(q('[data-def-where-value]'), 'hello')
+    expect(text(q('[data-def-where-preview]'))).toBe('Rows where slug is hello')
+    await selectOption(combo('[data-def-where-op]'), 'matches')
+    expect(text(q('[data-def-where-preview]'))).toBe('Rows where slug matches hello')
+    await click(q('[data-def-where-remove]'))
+    expect(q('[data-def-where-preview]')).toBeNull()
+  })
+
+  it('says it as a sentence for a query that returns one row, and for a condition on a parameter', async () => {
+    await definition('q_post_by_slug')
+    expect(text(q('[data-def-where-preview]'))).toBe('The row where slug is the “slug” parameter')
+  })
+
+  it('has a placeholder in the empty description', async () => {
+    world.model.modules.blog!.queries.push({ id: 'q_bare', name: 'bare', label: 'Bare', from: 'ent_post', params: [], result: 'many' })
+    await definition('q_bare')
+    expect(field('description').getAttribute('placeholder')).toBe('What the query returns, in words')
+  })
+
+  describe('the footer', () => {
+    const footer = () => q('[data-def-footer]')
+
+    it('is always there, sticks to the bottom of the form, and says nothing while there is nothing to save', async () => {
+      await definition()
+      expect(footer()?.className).toContain('sticky')
+      expect(footer()?.className).toContain('bottom-0')
+      expect(q('[data-def-unsaved]')).toBeNull()
+      expect(q('[data-def-discard]')?.hasAttribute('disabled')).toBe(true)
+      expect(q('[data-def-save]')?.hasAttribute('disabled')).toBe(true)
+    })
+
+    it('says "Unsaved changes" with Discard and Save once the form is edited', async () => {
+      await definition()
+      await typeInto(field('label'), 'Top posts')
+      expect(text(q('[data-def-unsaved]'))).toBe('Unsaved changes')
+      expect(footer()?.contains(q('[data-def-unsaved]'))).toBe(true)
+      expect(q('[data-def-discard]')?.hasAttribute('disabled')).toBe(false)
+      expect(q('[data-def-save]')?.hasAttribute('disabled')).toBe(false)
+    })
+
+    it('discards the edits: the form shows the query as saved, nothing is sent, and the screen is free to move', async () => {
+      const { actions } = await definition()
+      await typeInto(field('label'), 'Top posts')
+      await click(q('[data-def-discard]'))
+      expect(field('label').value).toBe('Featured posts')
+      expect(q('[data-def-unsaved]')).toBeNull()
+      expect(update(actions)).toEqual([])
+      await click(tab('results'))
+      expect(q('[data-confirm]')).toBeNull()
+    })
+
+    it('keeps the refusal next to Save, and says "Unsaved changes" with it', async () => {
+      await definition('q_featured_posts', { query_update: () => new Failure(422, 'invalid', 'The query is read by page "index"') })
+      await typeInto(field('label'), 'Top posts')
+      await save()
+      expect(footer()?.contains(q('[data-def-error]'))).toBe(true)
+      expect(text(q('[data-def-unsaved]'))).toBe('Unsaved changes')
+    })
   })
 
   it('shows a query without a condition, an ordering or a limit as empty sections', async () => {
@@ -2316,6 +2560,37 @@ describe('Query Definition (S10)', () => {
     expect(update(actions).at(-1)).toEqual({ query: 'q_featured_posts', inPlace: true, params: [{ name: 'limit', type: 'integer', default: 6 }] })
   })
 
+  it('sends the parameters, the condition and the limit together when a parameter is renamed in the form', async () => {
+    world.model.modules.blog!.entities[0]!.fields.push({ id: 'fld_views', name: 'views', type: 'integer' } as never)
+    world.model.modules.blog!.queries.push({ id: 'q_top', name: 'top', label: 'Top', from: 'ent_post', params: [{ name: 'n', type: 'integer', default: 3 }], where: { op: 'gte', field: 'views', value: { $param: 'n' } }, limit: { $param: 'n' }, result: 'many' })
+    const { actions } = await definition('q_top')
+    await typeInto(q('[data-def-param-row="0"] [data-def-param-name]'), 'count')
+    expect(text(q('[data-def-where-param]'))).toContain('count')
+    expect(text(q('[data-def-limit-param]'))).toContain('count')
+    await save()
+    expect(update(actions)).toEqual([{
+      query: 'q_top',
+      inPlace: true,
+      params: [{ name: 'count', type: 'integer', default: 3 }],
+      where: { op: 'gte', field: 'views', value: { $param: 'count' } },
+      limit: { $param: 'count' }
+    }])
+    // Saved: the form shows the query as the model has it now, and there is nothing left to save.
+    expect(inputOf('[data-def-param-row="0"] [data-def-param-name]').value).toBe('count')
+    expect(q('[data-def-save]')?.hasAttribute('disabled')).toBe(true)
+  })
+
+  it('does not send a condition, a limit or a default it did not touch, when only the label is saved', async () => {
+    world.model.modules.blog!.entities[0]!.fields.push({ id: 'fld_views', name: 'views', type: 'integer' } as never)
+    // A hand-edited file: a literal that is null on a number field, which the form shows as an empty box.
+    world.model.modules.blog!.queries.push({ id: 'q_odd', name: 'odd', label: 'Odd', from: 'ent_post', params: [], where: { op: 'gt', field: 'views', value: null }, result: 'many' } as never)
+    const { actions } = await definition('q_odd')
+    await typeInto(field('label'), 'Odder')
+    await save()
+    expect(update(actions)).toEqual([{ query: 'q_odd', inPlace: true, label: 'Odder' }])
+    expect(q('[data-def-error]')).toBeNull()
+  })
+
   it('shows what the module refused inline, and keeps what was typed', async () => {
     const { actions } = await definition('q_featured_posts', { query_update: () => new Failure(422, 'invalid', 'where: Post has no field "nope" (id, title, slug, body, published, publishedAt, createdAt, updatedAt)') })
     await typeInto(field('label'), 'Top posts')
@@ -2347,6 +2622,117 @@ describe('Query Definition (S10)', () => {
     await save()
     expect(update(actions)).toEqual([{ query: 'q_all_posts', inPlace: true, result: 'one' }])
     expect(text(q('[data-def-error]'))).toContain('is read by page "index"')
+  })
+})
+
+describe('unsaved edits of a query\'s Definition (S10)', () => {
+  const DISCARD = 'Discard unsaved changes to Featured posts?'
+  /** The Definition of Featured posts with its label typed over and not saved. */
+  const edited = async (extra: Handlers = {}) => {
+    const mount = await open({ ...artifactModule(), ...extra }, {}, '/data?item=query:q_featured_posts&tab=definition')
+    await typeInto(inputOf('[data-def="label"]'), 'Top posts')
+    return mount
+  }
+
+  it('asks before another tab is shown, keeps the draft when it is declined, and shows the tab when it is confirmed', async () => {
+    const { router } = await edited()
+    await click(tab('results'))
+    expect(confirmText()).toContain(DISCARD)
+    await click(q('[data-confirm-cancel]'))
+    expect(activeTab()).toBe('definition')
+    expect(inputOf('[data-def="label"]').value).toBe('Top posts')
+    expect(router.currentRoute.value.query).toEqual({ item: 'query:q_featured_posts', tab: 'definition' })
+    await click(tab('results'))
+    await click(q('[data-confirm-ok]'))
+    expect(activeTab()).toBe('results')
+    await click(tab('definition'))
+    expect(inputOf('[data-def="label"]').value).toBe('Featured posts')
+  })
+
+  it('asks before another item is chosen in the tree, and keeps the query shown when it is declined', async () => {
+    await edited()
+    await click(treeItem('allPosts'))
+    expect(confirmText()).toContain(DISCARD)
+    await click(q('[data-confirm-cancel]'))
+    expect(text(q('[data-data-title] h2'))).toBe('Featured posts')
+    expect(inputOf('[data-def="label"]').value).toBe('Top posts')
+    await click(treeItem('post'))
+    await click(q('[data-confirm-cancel]'))
+    await click(treeItem('createPost'))
+    await click(q('[data-confirm-ok]'))
+    expect(text(q('[data-data-title] h2'))).toBe('Create post')
+  })
+
+  it('asks before the URL moves the screen away, and puts the URL back when it is declined', async () => {
+    const { router } = await edited()
+    await router.replace({ path: '/data', query: { item: 'query:q_all_posts', tab: 'definition' } })
+    await settle()
+    expect(confirmText()).toContain(DISCARD)
+    await click(q('[data-confirm-cancel]'))
+    expect(router.currentRoute.value.query).toEqual({ item: 'query:q_featured_posts', tab: 'definition' })
+    expect(inputOf('[data-def="label"]').value).toBe('Top posts')
+  })
+
+  it('asks before the screen is left for another one', async () => {
+    mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), ...artifactModule() })
+    const { router } = await mountWithApp(App, '/data?item=query:q_featured_posts&tab=definition')
+    await typeInto(inputOf('[data-def="label"]'), 'Top posts')
+    const leaving = router.push('/code')
+    await settle()
+    expect(confirmText()).toContain(DISCARD)
+    await click(q('[data-confirm-cancel]'))
+    await leaving
+    expect(router.currentRoute.value.path).toBe('/data')
+    expect(inputOf('[data-def="label"]').value).toBe('Top posts')
+  })
+
+  it('does not ask when nothing was edited, when the edit was put back, or once it was saved', async () => {
+    await open({ ...artifactModule() }, {}, '/data?item=query:q_featured_posts&tab=definition')
+    await click(tab('results'))
+    expect(q('[data-confirm]')).toBeNull()
+    await click(tab('definition'))
+    await typeInto(inputOf('[data-def="label"]'), 'Top posts')
+    await typeInto(inputOf('[data-def="label"]'), 'Featured posts')
+    await click(tab('results'))
+    expect(q('[data-confirm]')).toBeNull()
+    await click(tab('definition'))
+    await typeInto(inputOf('[data-def="label"]'), 'Top posts')
+    await click(q('[data-def-save]'))
+    await click(treeItem('allPosts'))
+    expect(q('[data-confirm]')).toBeNull()
+    expect(text(q('[data-data-title] h2'))).toBe('All posts')
+  })
+
+  it('asks for a draft that has a problem too, such as a limit that is not a number', async () => {
+    await open({ ...artifactModule() }, {}, '/data?item=query:q_featured_posts&tab=definition')
+    await selectOption(combo('[data-def-limit-kind]'), 'Number')
+    await typeInto(q('[data-def-limit-number]'), 'lots')
+    await click(tab('results'))
+    expect(confirmText()).toContain(DISCARD)
+  })
+
+  it('asks before a dirty JSON edit is left for a query, and for a new query', async () => {
+    await open({ ...artifactModule() }, {}, '/data?item=collection:ent_post&tab=json')
+    await typeInto(q('[data-testid="raw-content"]'), '{ "draft": true }')
+    const discard = 'Discard unsaved changes to .bildr/modules/blog/entities/post.json?'
+    await click(treeItem('featured'))
+    expect(confirmText()).toContain(discard)
+    await click(q('[data-confirm-cancel]'))
+    expect(treeItem('post')?.getAttribute('aria-selected')).toBe('true')
+    // Creating one makes the query, and asks before the workspace moves to it.
+    await click(byLabel('New query'))
+    await typeInto(inputOf('[data-artifact-name]'), 'recent posts')
+    await click(q('[data-artifact-submit]'))
+    expect(confirmText()).toContain(discard)
+    expect(q('[data-tree-item="query:q_recent_posts"]')).not.toBeNull()
+    await click(q('[data-confirm-cancel]'))
+    expect(treeItem('post')?.getAttribute('aria-selected')).toBe('true')
+    expect((q('[data-testid="raw-content"]') as HTMLTextAreaElement | null)?.value ?? '').toContain('draft')
+    await click(q('[data-tree-item="query:q_recent_posts"]'))
+    await click(q('[data-confirm-ok]'))
+    // The tab chosen stays (the query has a JSON tab too).
+    expect(activeTab()).toBe('json')
+    expect(text(q('[data-data-title] h2'))).toBe('Recent posts')
   })
 })
 
@@ -2407,30 +2793,85 @@ describe('Action Overview (S10)', () => {
   const overview = (id = 'act_create_post', extra: Handlers = {}) => open({ ...artifactModule(), ...extra }, {}, `/data?item=action:${id}&tab=overview`)
   const updates = (actions: Awaited<ReturnType<typeof open>>['actions']) => inputs(actions, 'action_update')
 
-  it('shows the label and the description as fields, and the route, the output and the steps read-only', async () => {
+  it('shows the label and the description as fields, and the route and the output read-only', async () => {
     await overview()
     expect(inputOf('[data-action-field="label"]').value).toBe('Create post')
     expect(inputOf('[data-action-field="description"]').value).toBe('Create a post. Rule: the slug must be unique.')
     expect(text(q('[data-action-route]'))).toBe('POST /posts')
     expect(q('[data-action-route] input')).toBeNull()
-    expect(text(q('[data-action-output]'))).toContain('Post')
-    expect(qa('[data-action-step]').map(step => step.getAttribute('data-action-step'))).toEqual(['validate', 'assert', 'repository'])
-    expect(text(q('[data-action-step="validate"]'))).toContain('Checks the input')
-    expect(text(q('[data-action-step="assert"]'))).toContain('slug_taken')
-    expect(text(q('[data-action-step="repository"]'))).toMatch(/create.*Post/)
+    expect(text(q('[data-action-output]'))).toBe('A Post')
   })
 
-  it('says the steps are edited elsewhere for now, with a link to the JSON tab', async () => {
+  it('says an action with no output returns no data', async () => {
+    const blank = structuredClone(world.model.modules.blog!.actions[0]!)
+    Reflect.deleteProperty(blank, 'output')
+    world.model.modules.blog!.actions.push({ ...blank, id: 'act_blank', name: 'blank', label: 'Blank', http: { method: 'POST', path: '/posts/blank' } })
+    await overview('act_blank')
+    expect(text(q('[data-form-row="Returns"]'))).toContain('No data')
+    expect(text(q('[data-action-output]'))).toBe('No data')
+  })
+
+  it('shows the action\'s code name, which is not a field, with a Rename… button that opens the rename dialog', async () => {
     await overview()
-    expect(text(q('[data-steps-note]'))).toContain('Edit the steps in the JSON tab')
+    expect(text(q('[data-action-name]'))).toBe('createPost')
+    expect(q('[data-action-name] input')).toBeNull()
+    expect(q('[data-artifact-dialog]')).toBeNull()
+    await click(byLabel('Rename action'))
+    expect(text(q('[role="dialog"]'))).toContain('Rename action')
+    expect(inputOf('[data-artifact-name]').value).toBe('createPost')
+    expect(text(q('[data-artifact-warning]'))).toContain('`useCreatePost`')
+  })
+
+  it('counts the steps in one line, until the Steps tab lists them, with a link to the JSON tab', async () => {
+    await overview()
+    expect(qa('[data-action-step]')).toEqual([])
+    expect(text(q('[data-steps-note]'))).toBe('3 steps — edit in JSON until the Steps tab')
     await click(q('[data-steps-note] button'))
     expect(activeTab()).toBe('json')
   })
 
-  it('says what a step is that is not generated yet', async () => {
-    world.model.modules.blog!.actions.find(action => action.id === 'act_create_post')!.steps.push({ kind: 'call', service: 'mail' } as never)
+  it('counts one step as one step', async () => {
+    world.model.modules.blog!.actions.find(action => action.id === 'act_create_post')!.steps = [{ kind: 'return', if: true, value: { $var: 'undefined' } }] as never
     await overview()
-    expect(text(q('[data-action-step="call"]'))).toContain('Not generated yet')
+    expect(text(q('[data-steps-note]'))).toBe('1 step — edit in JSON until the Steps tab')
+  })
+
+  it('has a placeholder in the empty description', async () => {
+    await overview()
+    expect(inputOf('[data-action-field="description"]').getAttribute('placeholder')).toBe('What the action does, and the rule it keeps')
+  })
+
+  it('does not take another toggle while one is being saved, and sends both when they are made one after the other', async () => {
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    let waited = false
+    const module = artifactModule()
+    const { actions } = await overview('act_create_post', {
+      action_update: async (input) => {
+        if (!waited) {
+          waited = true
+          await gate
+        }
+        return module.action_update!(input)
+      }
+    })
+    await click(q('[data-pick="body"]'))
+    expect(updates(actions)).toHaveLength(1)
+    // The second toggle is not taken while the first is in flight: it would be built from the old list.
+    expect(q('[data-pick="slug"]')?.hasAttribute('disabled')).toBe(true)
+    await click(q('[data-pick="slug"]'))
+    expect(updates(actions)).toHaveLength(1)
+    release()
+    await settle()
+    expect(q('[data-pick="slug"]')?.hasAttribute('disabled')).toBe(false)
+    await click(q('[data-pick="slug"]'))
+    expect(updates(actions).map(call => (call.input as { pick: string[] }).pick)).toEqual([
+      ['id', 'title', 'slug', 'published'],
+      ['id', 'title', 'published']
+    ])
+    expect(qa('[data-pick][aria-checked="true"]').map(pick => pick.getAttribute('data-pick'))).toEqual(['id', 'title', 'published'])
   })
 
   it('lists the fields of the body: those the action takes are on, and a change goes with action_update', async () => {
@@ -2467,6 +2908,51 @@ describe('Action Overview (S10)', () => {
     expect(text(q('[data-action-error]'))).toBe('input: Post has no field "nope"')
     expect(inputOf('[data-action-field="label"]').value).toBe('Add post')
     expect(q('[data-testid="error-banner"]')).toBeNull()
+  })
+
+  describe('a refused draft is not lost silently', () => {
+    const refusing = (): Handlers => ({ action_update: () => new Failure(422, 'invalid', 'input: Post has no field "nope"') })
+
+    it('asks before another tab or item is shown while a refused text is still in its field', async () => {
+      await overview('act_create_post', refusing())
+      await typeInto(inputOf('[data-action-field="label"]'), 'Add post')
+      await click(tab('used'))
+      expect(confirmText()).toContain('Discard unsaved changes to Create post?')
+      await click(q('[data-confirm-cancel]'))
+      expect(activeTab()).toBe('overview')
+      expect(inputOf('[data-action-field="label"]').value).toBe('Add post')
+      await click(treeItem('publishPost'))
+      expect(confirmText()).toContain('Discard unsaved changes to Create post?')
+      await click(q('[data-confirm-ok]'))
+      expect(text(q('[data-data-title] h2'))).toBe('Publish post')
+    })
+
+    it('does not ask when the edit was saved', async () => {
+      await overview()
+      await typeInto(inputOf('[data-action-field="label"]'), 'Add post')
+      await click(tab('used'))
+      expect(q('[data-confirm]')).toBeNull()
+    })
+
+    it('does not ask after a toggle was refused: no text was lost', async () => {
+      const { actions } = await overview('act_create_post', refusing())
+      await click(q('[data-pick="body"]'))
+      expect(updates(actions)).toHaveLength(1)
+      expect(text(q('[data-action-error]'))).toContain('Post has no field')
+      await click(tab('used'))
+      expect(q('[data-confirm]')).toBeNull()
+    })
+
+    it('stops asking once the refused field is saved', async () => {
+      let refuse = true
+      const module = artifactModule()
+      await overview('act_create_post', { action_update: input => refuse ? new Failure(422, 'invalid', 'input: no') : module.action_update!(input) })
+      await typeInto(inputOf('[data-action-field="label"]'), 'Add post')
+      refuse = false
+      await typeInto(inputOf('[data-action-field="label"]'), 'Add a post')
+      await click(tab('used'))
+      expect(q('[data-confirm]')).toBeNull()
+    })
   })
 })
 
@@ -2530,9 +3016,9 @@ describe('the dialogs of queries and actions (S10, DW-7d, DW-7e)', () => {
       expect(calls(actions, 'query_create')).toEqual([{ entity: 'ent_post', result: 'many', name: 'recent posts' }])
       expect(dialog('create')).toBeNull()
       expect(activeTab()).toBe('definition')
-      expect(router.currentRoute.value.query).toEqual({ item: 'query:q_recentPosts', tab: 'definition' })
+      expect(router.currentRoute.value.query).toEqual({ item: 'query:q_recent_posts', tab: 'definition' })
       expect(treeItem('featured')).not.toBeNull()
-      expect(q('[data-tree-item="query:q_recentPosts"]')?.getAttribute('aria-selected')).toBe('true')
+      expect(q('[data-tree-item="query:q_recent_posts"]')?.getAttribute('aria-selected')).toBe('true')
     })
 
     it('creates a query that returns one row, over the collection picked', async () => {
@@ -2601,7 +3087,7 @@ describe('the dialogs of queries and actions (S10, DW-7d, DW-7e)', () => {
       expect(calls(actions, 'action_create')).toEqual([{ entity: 'ent_post', template: 'blank', name: 'archive post' }])
       expect(dialog('create')).toBeNull()
       expect(activeTab()).toBe('overview')
-      expect(router.currentRoute.value.query).toEqual({ item: 'action:act_archivePost', tab: 'overview' })
+      expect(router.currentRoute.value.query).toEqual({ item: 'action:act_archive_post', tab: 'overview' })
     })
 
     it('shows what the module refused inside the dialog, and keeps the input', async () => {
@@ -2611,7 +3097,7 @@ describe('the dialogs of queries and actions (S10, DW-7d, DW-7e)', () => {
       await typeInto(nameInput(), 'edit quote')
       await submit()
       expect(calls(actions, 'action_create')).toEqual([{ entity: 'ent_quote', template: 'update', name: 'edit quote' }])
-      expect(error()).toContain('Update needs a sample row of Quote')
+      expect(error()).toBe('Quote can\'t be updated: its repository has no get operation')
       expect(nameInput().value).toBe('edit quote')
       expect(q('[data-action-template="update"]')?.getAttribute('aria-checked')).toBe('true')
       expect(dialog('create')).not.toBeNull()
@@ -2666,7 +3152,7 @@ describe('the dialogs of queries and actions (S10, DW-7d, DW-7e)', () => {
       await openRename('query:q_featured_posts')
       await typeInto(nameInput(), 'allPosts')
       await submit()
-      expect(error()).toBe('The name "allPosts" is already used by a query or an action of the module')
+      expect(error()).toBe('Module "blog" already has the query allPosts (q_all_posts)')
       expect(dialog('rename')).not.toBeNull()
       expect(nameInput().value).toBe('allPosts')
     })
@@ -2692,7 +3178,10 @@ describe('the dialogs of queries and actions (S10, DW-7d, DW-7e)', () => {
       const { actions } = await openDelete('q_bare')
       expect(text(q('[role="dialog"]'))).toContain('Delete query')
       expect(text(q('[role="dialog"]'))).toContain('Bare')
+      // Nothing is promised that was not verified: no undo is mentioned.
+      expect(text(q('[role="dialog"]'))).not.toContain('Undo')
       expect(q('[data-artifact-uses]')).toBeNull()
+      expect(q('[data-artifact-submit]')?.hasAttribute('disabled')).toBe(false)
       await submit()
       expect(calls(actions, 'query_delete')).toEqual([{ query: 'q_bare' }])
       expect(dialog('delete')).toBeNull()
@@ -2707,15 +3196,34 @@ describe('the dialogs of queries and actions (S10, DW-7d, DW-7e)', () => {
       expect(router.currentRoute.value.query).toEqual({ item: 'collection:ent_post', tab: 'rows' })
     })
 
-    it('says a query that is used is used, with the places as links, and the module refuses', async () => {
+    it('disables Delete while a query is used, with the places as links and the reason on the button', async () => {
       const { actions } = await openDelete('q_all_posts')
       expect(text(q('[data-artifact-uses]'))).toContain('Used in 1 place')
       expect(q('[data-artifact-uses] [data-use-open="page:pg_index"]')).not.toBeNull()
+      expect(q('[data-artifact-submit]')?.hasAttribute('disabled')).toBe(true)
+      expect(q('[data-artifact-submit]')?.getAttribute('title')).toBe('Used in 1 place: change it first')
       await submit()
-      expect(calls(actions, 'query_delete')).toEqual([{ query: 'q_all_posts' }])
+      expect(calls(actions, 'query_delete')).toEqual([])
       expect(dialog('delete')).not.toBeNull()
-      expect(error()).toContain('Query allPosts (q_all_posts) is still used')
-      expect(q('[data-artifact-uses] [data-use-open="page:pg_index"]')).not.toBeNull()
+      expect(treeItem('allPosts')).not.toBeNull()
+    })
+
+    it('shows the module\'s refusal in the dialog when it is asked for a query the editor did not know was used', async () => {
+      bare()
+      const module = artifactModule()
+      // Another editor has the index page read the query after this dialog opened: the module is the one that knows.
+      const { actions } = await openDelete('q_bare', {
+        query_delete: (input) => {
+          indexPage().uses!.queries!.push({ query: 'q_bare', as: 'bare' } as never)
+          return module.query_delete!(input)
+        }
+      })
+      expect(q('[data-artifact-submit]')?.hasAttribute('disabled')).toBe(false)
+      await submit()
+      expect(calls(actions, 'query_delete')).toEqual([{ query: 'q_bare' }])
+      expect(dialog('delete')).not.toBeNull()
+      expect(error()).toContain('Query bare (q_bare) is still used')
+      expect(error()).toContain('page "index" (pg_index) uses it as "bare"')
       expect(treeItem('allPosts')).not.toBeNull()
       expect(q('[data-testid="error-banner"]')).toBeNull()
     })
@@ -2734,16 +3242,15 @@ describe('the dialogs of queries and actions (S10, DW-7d, DW-7e)', () => {
       }
     })
 
-    it('refuses an action a page uses, and deletes one nothing uses', async () => {
+    it('disables Delete for an action a page uses, and deletes one nothing uses', async () => {
       world.model.modules.blog!.actions.push({ ...structuredClone(world.model.modules.blog!.actions[0]!), id: 'act_bare', name: 'bare', label: 'Bare', http: { method: 'POST', path: '/posts/bare' } })
       const { actions } = await openDelete('act_create_post')
       expect(text(q('[data-artifact-uses]'))).toContain('Used in')
-      await submit()
-      expect(error()).toContain('Action createPost (act_create_post) is still used')
+      expect(q('[data-artifact-submit]')?.hasAttribute('disabled')).toBe(true)
       await click(textButton('Cancel'))
       await menuItem(q('[data-artifact-menu="act_bare"]'), 'Delete')
       await submit()
-      expect(calls(actions, 'action_delete')).toEqual([{ action: 'act_create_post' }, { action: 'act_bare' }])
+      expect(calls(actions, 'action_delete')).toEqual([{ action: 'act_bare' }])
       expect(q('[data-tree-item="action:act_bare"]')).toBeNull()
     })
   })

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { openUse, useKey, useKindLabel, usesOfArtifact } from '../../editor/dataArtifacts.ts'
-import type { ArtifactKind } from '../../editor/dataArtifacts.ts'
+import { openUse } from '../../editor/dataArtifactActions.ts'
+import { usageKey, usageKindLabel, usesOfArtifact } from '../../shared/dataArtifacts.ts'
+import type { ArtifactKind } from '../../shared/dataArtifacts.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 
 /**
@@ -35,9 +36,9 @@ const ICONS = { page: 'i-lucide-file-text', component: 'i-lucide-component', lay
         <div class="px-2">
           <div
             v-for="use in uses"
-            :key="useKey(use)"
+            :key="usageKey(use)"
             class="flex items-start gap-2.5 rounded-lg ps-3 pe-2 py-2 text-[12px] hover:bg-white/4"
-            :data-use="useKey(use)"
+            :data-use="usageKey(use)"
           >
             <UIcon
               :name="ICONS[use.kind]"
@@ -45,7 +46,7 @@ const ICONS = { page: 'i-lucide-file-text', component: 'i-lucide-component', lay
             />
             <div class="min-w-0 flex-1">
               <p class="truncate text-toned">
-                {{ use.name }} <span class="ms-1 text-[11px] text-dimmed">{{ useKindLabel(use.kind) }}</span>
+                {{ use.name }} <span class="ms-1 text-[11px] text-dimmed">{{ usageKindLabel(use.kind) }}</span>
               </p>
               <p
                 v-for="what in use.what"
@@ -62,7 +63,7 @@ const ICONS = { page: 'i-lucide-file-text', component: 'i-lucide-component', lay
                 variant="ghost"
                 size="xs"
                 :aria-label="use.kind === 'action' ? `Show ${use.name}` : `Open ${use.name} on the Canvas`"
-                :data-use-open="useKey(use)"
+                :data-use-open="usageKey(use)"
                 @click="openUse(editor, use)"
               />
             </UTooltip>

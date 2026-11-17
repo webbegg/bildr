@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { QueryFile } from '@bildr/codegen/model'
-import type { QueryField } from '../../src/editor/dataArtifacts.ts'
-import { changesOf, draftOf, renameParam, valueOfText } from '../../src/editor/queryDraft.ts'
+import type { QueryField } from '../../src/shared/dataArtifacts.ts'
+import { changesOf, conditionText, draftOf, orderText, renameParam, summaryOf, valueOfText } from '../../src/editor/queryDraft.ts'
 
 /** The Query Definition form's draft (S10): what the form shows of a query, and what saving it sends of it. */
 
@@ -126,6 +126,121 @@ describe('changesOf', () => {
 
   it('does not take a blank label', () => {
     expect(changesOf({ ...draftOf(query()), label: '  ' }, query(), FIELDS).problems).toEqual(['Add a label'])
+  })
+})
+
+describe('changesOf: what the user did not touch is kept as it is stored', () => {
+  /** The query as stored, the form opened on it, and one control edited: what saving sends. */
+  const saved = (stored: QueryFile, edit: (draft: ReturnType<typeof draftOf>) => void, fields: readonly QueryField[] = FIELDS) => {
+    const draft = draftOf(stored)
+    edit(draft)
+    return changesOf(draft, stored, fields)
+  }
+
+  it('sends only the label for a label-only save', () => {
+    expect(saved(query(), (draft) => {
+      draft.label = 'Top'
+    })).toEqual({ input: { label: 'Top' }, problems: [] })
+  })
+
+  it('does not let a null literal on a number field block a label save, and does not resend it', () => {
+    const stored = query({ where: { op: 'gt', field: 'views', value: null as never } })
+    expect(saved(stored, (draft) => {
+      draft.label = 'Top'
+    })).toEqual({ input: { label: 'Top' }, problems: [] })
+  })
+
+  it('keeps a literal that is not of its field\'s type (a hand-edited file) when something else changes', () => {
+    const stored = query({ where: { op: 'gt', field: 'views', value: 'many' } })
+    expect(saved(stored, (draft) => {
+      draft.orderBy = []
+    })).toEqual({ input: { orderBy: [] }, problems: [] })
+  })
+
+  it('keeps a condition on a field the collection does not have, with its literal as stored', () => {
+    const stored = query({ where: { op: 'eq', field: 'gone', value: 5 } })
+    expect(saved(stored, (draft) => {
+      draft.description = 'Still here'
+    })).toEqual({ input: { description: 'Still here' }, problems: [] })
+  })
+
+  it('keeps a default and a limit that do not survive the text', () => {
+    const stored = query({ params: [{ name: 'limit', type: 'integer', default: null as never }], limit: 2.5 as never })
+    expect(saved(stored, (draft) => {
+      draft.label = 'Top'
+    })).toEqual({ input: { label: 'Top' }, problems: [] })
+  })
+
+  it('keeps a parameter it did not touch as stored when another is added', () => {
+    const stored = query({ params: [{ name: 'limit', type: 'integer', default: null as never }] })
+    const found = saved(stored, (draft) => {
+      draft.params.push({ name: 'min', type: 'integer', default: '5' })
+    })
+    expect(found.input.params).toEqual([{ name: 'limit', type: 'integer', default: null }, { name: 'min', type: 'integer', default: 5 }])
+  })
+
+  it('still converts the control that was edited, and names what is wrong with it', () => {
+    const stored = query({ where: { op: 'gt', field: 'views', value: null as never } })
+    const found = saved(stored, (draft) => {
+      draft.where!.value = 'lots'
+    })
+    expect(found.problems).toEqual(['Condition: the value of views is a whole number'])
+    expect(saved(stored, (draft) => {
+      draft.where!.value = '12'
+    }).input).toEqual({ where: { op: 'gt', field: 'views', value: 12 } })
+  })
+
+  it('keeps the literal when only the operator changed and the value text was left alone', () => {
+    const stored = query({ where: { op: 'gt', field: 'views', value: null as never } })
+    expect(saved(stored, (draft) => {
+      draft.where!.op = 'lt'
+    })).toEqual({ input: { where: { op: 'lt', field: 'views', value: null } }, problems: [] })
+  })
+
+  it('sends the condition and the limit that read a parameter along with the renamed parameter', () => {
+    const stored = query({ where: { op: 'gt', field: 'views', value: { $param: 'limit' } } })
+    const draft = renameParam(draftOf(stored), 0, 'count')
+    expect(changesOf(draft, stored, FIELDS).input).toEqual({
+      params: [{ name: 'count', type: 'integer', default: 6 }],
+      where: { op: 'gt', field: 'views', value: { $param: 'count' } },
+      limit: { $param: 'count' }
+    })
+  })
+})
+
+describe('the query in words', () => {
+  const words = (patch: Partial<QueryFile>) => summaryOf(draftOf(query(patch)), FIELDS)
+
+  it('says a condition: the field, the operator as the form words it, and the value', () => {
+    const where = (value: Partial<QueryFile>['where']) => conditionText(draftOf(query({ where: value })).where!)
+    expect(where({ op: 'lt', field: 'views', value: 5 })).toBe('views is less than 5')
+    expect(where({ op: 'eq', field: 'published', value: true })).toBe('published is true')
+    expect(where({ op: 'in', field: 'views', value: [1, 2] })).toBe('views is one of 1, 2')
+    expect(where({ op: 'like', field: 'title', value: 'a%' })).toBe('title matches a%')
+    expect(where({ op: 'eq', field: 'title', value: { $param: 'slug' } })).toBe('title is the “slug” parameter')
+    expect(where({ op: 'gte', field: 'createdAt', value: { $now: true } })).toBe('createdAt is at least a computed value')
+  })
+
+  it('says an ordering: newest or oldest first for a date, else ascending or descending', () => {
+    const order = (orderBy: Array<{ field: string, direction: 'asc' | 'desc' }>) => orderText(orderBy, FIELDS)
+    expect(order([{ field: 'createdAt', direction: 'desc' }])).toBe('newest first')
+    expect(order([{ field: 'createdAt', direction: 'asc' }])).toBe('oldest first')
+    expect(order([{ field: 'title', direction: 'asc' }])).toBe('title ascending')
+    expect(order([{ field: 'views', direction: 'desc' }, { field: 'title', direction: 'asc' }])).toBe('views descending, then title ascending')
+    expect(order([])).toBe('')
+  })
+
+  it('sums the query up in one line: condition · ordering · limit', () => {
+    expect(words({ where: { op: 'lt', field: 'views', value: 5 }, orderBy: [{ field: 'createdAt', direction: 'desc' }], limit: 6 })).toBe('views is less than 5 · newest first · limit 6')
+  })
+
+  it('says a limit from a parameter by its default, or by the parameter when it has none', () => {
+    expect(words({ where: undefined, orderBy: undefined })).toBe('limit 6')
+    expect(words({ where: undefined, orderBy: undefined, params: [{ name: 'limit', type: 'integer' }] })).toBe('limit set by “limit”')
+  })
+
+  it('says every row for a query with no condition, ordering or limit', () => {
+    expect(words({ where: undefined, orderBy: undefined, limit: undefined })).toBe('Every row')
   })
 })
 

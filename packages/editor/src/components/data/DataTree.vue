@@ -2,9 +2,9 @@
 import { computed, provide, reactive, ref, useTemplateRef, watch } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { dataItemKey } from '../../editor/dataTabs.ts'
-import { FILES_KEY, TREE_STOP, answeredImports, treeItems } from '../../editor/dataTree.ts'
+import { FILES_KEY, TREE_STOP, answeredImports, storeFolded, storedFolded, treeItems } from '../../editor/dataTree.ts'
 import type { ArtifactFilters } from '../../editor/dataTree.ts'
-import type { ArtifactKind } from '../../editor/dataArtifacts.ts'
+import type { ArtifactKind } from '../../shared/dataArtifacts.ts'
 import { rovingTarget } from '../../editor/rovingKeys.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
@@ -15,8 +15,9 @@ import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
  * REST API) as a folder of the collections read through it. Choosing an item shows it in the
  * workspace beside the tree, on the tabs its kind has. The Connections `+` makes a new
  * connection (an inline name, then the base URL in its Endpoints tab) or opens the Import from URL
- * dialog (also opened by each `editor.importRequest`). **Queries** and **Actions** (S10) follow, each with a `+` that opens its
- * create dialog, a filter box when it has many items and a `…` menu per row that renames or deletes it. **All model files** (S3)
+ * dialog (also opened by each `editor.importRequest`). **Queries** and **Actions** (S10) follow, each with a header that folds it
+ * (remembered), a `+` that opens its create dialog, a filter box when it has many items and a `…` menu per row that renames or
+ * deletes it (F2 and Delete do too, as on the collection and connection rows). **All model files** (S3)
  * ends the tree: the artifacts with no collection or connection (pages, components…) and every file as JSON.
  *
  * It is a tree with one tab stop (a roving tabindex: the item that has the focus, else the one shown):
@@ -31,7 +32,14 @@ const tree = useTemplateRef<HTMLElement>('tree')
 const collapsed = reactive(new Set<string>())
 /** What each of the Queries and Actions sections is filtered by: the tree lists only what it lets through, so the keys move along that. */
 const filters = reactive<ArtifactFilters>({ queries: '', actions: '' })
-const items = computed(() => treeItems(editor.collections, editor.connections, collapsed, { queries: editor.queries, actions: editor.actions }, filters))
+/** The Queries and Actions sections folded, remembered across reloads. */
+const folded = reactive(storedFolded())
+const items = computed(() => treeItems(editor.collections, editor.connections, collapsed, { queries: editor.queries, actions: editor.actions }, filters, folded))
+
+function toggleSection(kind: ArtifactKind) {
+  if (!folded.delete(kind)) folded.add(kind)
+  storeFolded(folded)
+}
 
 /** The create, rename or delete dialog of a query or an action that is open. */
 const creating = ref<ArtifactKind | null>(null)
@@ -285,6 +293,8 @@ function cancelAdd() {
         v-model:filter="filters.queries"
         kind="query"
         :items="editor.queries"
+        :folded="folded.has('query')"
+        @toggle="toggleSection('query')"
         @create="creating = 'query'"
         @rename="renamingArtifact = { kind: 'query', id: $event }"
         @delete="deletingArtifact = { kind: 'query', id: $event }"
@@ -293,6 +303,8 @@ function cancelAdd() {
         v-model:filter="filters.actions"
         kind="action"
         :items="editor.actions"
+        :folded="folded.has('action')"
+        @toggle="toggleSection('action')"
         @create="creating = 'action'"
         @rename="renamingArtifact = { kind: 'action', id: $event }"
         @delete="deletingArtifact = { kind: 'action', id: $event }"

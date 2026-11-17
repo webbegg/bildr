@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, inject, ref } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
-import { ARTIFACT_KINDS } from '../../../editor/dataArtifacts.ts'
-import type { ArtifactKind } from '../../../editor/dataArtifacts.ts'
+import { ARTIFACT_KINDS } from '../../../shared/dataArtifacts.ts'
+import type { ArtifactKind } from '../../../shared/dataArtifacts.ts'
 import { dataItemKey } from '../../../editor/dataTabs.ts'
 import { TREE_STOP } from '../../../editor/dataTree.ts'
 import { useEditor } from '../../../editor/useEditor.ts'
@@ -11,8 +11,9 @@ import type { DataArtifact } from '../../../shared/dataModel.ts'
 
 /**
  * A query or an action in the Data tree (S10): an icon, its label (the name when it has none) and the collection it works on as
- * a grey subtitle. Click shows it in the workspace; the hover `…` menu renames or deletes it (the dialogs are the tree's,
- * which `rename` and `delete` ask for). It is a tree item (`DataTree.vue`): the tab stop when it is the one the tree names.
+ * a grey subtitle. Click shows it in the workspace; the `…` menu (on hover, and always on the row shown or focused) renames or
+ * deletes it, and so do F2 and Delete (or Backspace) on the focused row (the dialogs are the tree's, which `rename` and `delete`
+ * ask for). It is a tree item (`DataTree.vue`): the tab stop when it is the one the tree names.
  */
 const { kind, item } = defineProps<{ kind: ArtifactKind, item: DataArtifact }>()
 const emit = defineEmits<{ rename: [], delete: [] }>()
@@ -48,6 +49,8 @@ const menu = computed<DropdownMenuItem[]>(() => [
       :data-tree-item="key"
       :data-artifact="item.id"
       @click="show"
+      @keydown.f2.prevent="emit('rename')"
+      @keydown.delete.prevent="emit('delete')"
     >
       <UIcon
         :name="kind === 'query' ? 'i-lucide-list-filter' : 'i-lucide-zap'"
@@ -72,7 +75,8 @@ const menu = computed<DropdownMenuItem[]>(() => [
         variant="ghost"
         size="xs"
         :aria-label="`${words.label} options`"
-        class="absolute end-3 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+        class="absolute end-3 data-[state=open]:opacity-100"
+        :class="shown ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'"
         :data-artifact-menu="item.id"
       />
     </EditorMenu>

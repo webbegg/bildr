@@ -1,5 +1,6 @@
 import type { InjectionKey, Ref } from 'vue'
 import { dataItemKey } from './dataTabs.ts'
+import type { ArtifactKind } from '../shared/dataArtifacts.ts'
 import type { DataArtifact, DataCollection, DataConnection } from '../shared/dataModel.ts'
 
 /**
@@ -16,6 +17,21 @@ export const answeredImports = new WeakMap<object, number>()
 
 /** A section of Queries or Actions with more items than this has a filter box (S10). */
 export const FILTER_FROM = 8
+
+/** The localStorage key of the sections the user folded (Queries, Actions): a preference of the editor, kept across reloads. */
+export const FOLDED_KEY = 'bildr:data-folded-sections'
+
+/** The sections remembered as folded; none when nothing was remembered or what was is not a list of sections. */
+export function storedFolded(): Set<ArtifactKind> {
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? '[]')
+    return new Set(Array.isArray(stored) ? stored.filter((kind): kind is ArtifactKind => kind === 'query' || kind === 'action') : [])
+  } catch {
+    return new Set()
+  }
+}
+
+export const storeFolded = (folded: ReadonlySet<ArtifactKind>): void => localStorage.setItem(FOLDED_KEY, JSON.stringify([...folded]))
 
 export interface TreeItem {
   key: string
@@ -43,14 +59,15 @@ export function filterArtifacts(items: readonly DataArtifact[], filter: string):
 /**
  * The items the tree lists, top to bottom: the collections the app stores, then each connection followed by
  * the collections read through it (none while it is collapsed: `collapsed` holds the connection ids), then the
- * queries and the actions (each section as far as its filter lets it), then All model files.
+ * queries and the actions (each section as far as its filter lets it, and none of a section that is `folded`), then All model files.
  */
 export function treeItems(
   collections: readonly DataCollection[],
   connections: readonly DataConnection[],
   collapsed: ReadonlySet<string>,
   artifacts: { queries: readonly DataArtifact[], actions: readonly DataArtifact[] } = { queries: [], actions: [] },
-  filters: ArtifactFilters = { queries: '', actions: '' }
+  filters: ArtifactFilters = { queries: '', actions: '' },
+  folded: ReadonlySet<ArtifactKind> = new Set()
 ): TreeItem[] {
   const stored = collections.filter(entry => entry.kind !== 'rest').map(entry => ({ key: dataItemKey({ kind: 'collection', id: entry.id }), expandable: false, open: false }))
   const folders = connections.flatMap((connection) => {
@@ -59,8 +76,8 @@ export function treeItems(
     const read = open ? collections.filter(entry => entry.datasource === connection.id).map(entry => ({ key: dataItemKey({ kind: 'collection', id: entry.id }), parent: key, expandable: false, open: false })) : []
     return [{ key, expandable: true, open }, ...read]
   })
-  const section = (kind: 'query' | 'action', items: readonly DataArtifact[], filter: string) =>
-    filterArtifacts(items, filter).map(item => ({ key: dataItemKey({ kind, id: item.id }), expandable: false, open: false }))
+  const section = (kind: ArtifactKind, items: readonly DataArtifact[], filter: string) =>
+    (folded.has(kind) ? [] : filterArtifacts(items, filter)).map(item => ({ key: dataItemKey({ kind, id: item.id }), expandable: false, open: false }))
   return [
     ...stored,
     ...folders,

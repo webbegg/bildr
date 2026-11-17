@@ -1,44 +1,49 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import type { QueryFile } from '@bildr/codegen/model'
-import { paramDefaults, runQuery } from '../../editor/runQuery.ts'
-import type { ParamInputs } from '../../editor/runQuery.ts'
-import type { RowsSource } from '../../editor/dataView.ts'
+import { draftOf, summaryOf } from '../../editor/queryDraft.ts'
+import { paramDefaults, reconcileInputs, runQuery, withInput } from '../../editor/runQuery.ts'
+import type { ParamInputs, StoredInputs } from '../../editor/runQuery.ts'
 import { useEditor } from '../../editor/useEditor.ts'
+import { queryFields } from '../../shared/dataArtifacts.ts'
 import { fieldLabel } from '../../shared/dataModel.ts'
-import { rowsFailure } from '../../shared/dataTable.ts'
 
 /**
  * A query's Results tab (S10, DW-7b): the query run in the editor over the rows the collection's Rows tab shows (the app's
- * list route when it answers, else the Sample data; the same Live / Sample data switch), with its condition, ordering and
- * limit (`editor/runQuery.ts`, which matches the generated `use<Name>`). Each parameter has an input above the results,
- * typed by the parameter's type and prefilled with its default; what was typed is kept in `inputs` (the workspace's, by
- * query) while another tab shows. A query that returns one row shows it as a record, or says there is no match. Read-only: nothing here writes.
+ * list route when it answers, else the Sample data; the same Live / Sample data switch, `DataSourceSwitch`), with its condition,
+ * ordering and limit (`editor/runQuery.ts`, which matches the generated `use<Name>`). One line above says what the query does,
+ * with a link to its Definition. Each parameter has an input, typed by the parameter's type and prefilled with its default;
+ * what was typed is kept in `inputs` (the workspace's, by query) while another tab shows, and reconciled with the query each
+ * time it is shown: an input of a parameter that is gone, or whose type changed, is dropped. A query that returns one row shows
+ * it as a record, or says there is no match. Read-only: nothing here writes.
  */
 const { query } = defineProps<{ query: QueryFile }>()
-const inputs = defineModel<Record<string, ParamInputs>>('inputs', { required: true })
+const inputs = defineModel<Record<string, StoredInputs>>('inputs', { required: true })
 const editor = useEditor()
 
 const collection = computed(() => editor.collections.find(entry => entry.id === query.from) ?? null)
 const fields = computed(() => collection.value?.fields ?? [])
 const rest = computed(() => collection.value?.kind === 'rest')
+const summary = computed(() => summaryOf(draftOf(query), queryFields(editor.model, query.from)))
+
+/** What was typed for this query, as the query is now. */
+const stored = computed(() => reconcileInputs(inputs.value[query.id], query))
+watch(stored, (next) => {
+  if (next === inputs.value[query.id]) return
+  const { [query.id]: _dropped, ...others } = inputs.value
+  inputs.value = next ? { ...others, [query.id]: next } : others
+}, { immediate: true })
+
 /** The inputs the query runs with: its parameters' defaults, over which what was typed goes. */
-const given = computed<ParamInputs>(() => ({ ...paramDefaults(query), ...inputs.value[query.id] }))
+const given = computed<ParamInputs>(() => ({ ...paramDefaults(query), ...stored.value?.values }))
 const found = computed(() => runQuery(query, editor.collectionRows, given.value))
 const rows = computed(() => found.value.rows)
 const record = computed(() => query.result === 'one' ? found.value.value as Record<string, unknown> | null : null)
-const failure = computed(() => collection.value && editor.recordsError ? rowsFailure(collection.value.plural, editor.recordsError) : '')
 
 const NUMERIC_INPUTS: Record<string, string> = { integer: 'numeric', number: 'decimal' }
 
-function type(name: string, value: string | boolean) {
-  inputs.value = { ...inputs.value, [query.id]: { ...inputs.value[query.id], [name]: value } }
-}
-
-/** The switch: Live reads the app's rows again (also when Live is chosen already: a retry), Sample data shows the collection's own. */
-function chooseSource(source: RowsSource) {
-  editor.rowsPreference = source
-  if (source === 'live') void editor.reloadRecords()
+function setInput(param: QueryFile['params'][number], value: string | boolean) {
+  inputs.value = { ...inputs.value, [query.id]: withInput(stored.value, param, value) }
 }
 
 const count = computed(() => {
@@ -71,26 +76,27 @@ const emptyText = computed(() => {
         data-results-count
       >One row</span>
       <div class="ms-auto flex shrink-0 items-center gap-2">
-        <DataSourceSwitch
-          :source="editor.rowsPreference"
-          :shown="editor.rowsSource"
-          :fallback="editor.rowsFallback"
-          :switchable="!rest"
-          @source="chooseSource"
-        />
-        <UTooltip text="Refresh">
-          <EditorButton
-            icon="i-lucide-refresh-cw"
-            variant="ghost"
-            size="xs"
-            aria-label="Refresh"
-            :loading="editor.recordsLoading"
-            data-records-refresh
-            @click="editor.reloadRecords()"
-          />
-        </UTooltip>
+        <DataSourceSwitch :switchable="!rest" />
       </div>
     </header>
+
+    <p
+      class="flex shrink-0 items-center gap-2 border-b border-white/5 px-4 py-2 text-xs text-muted"
+      data-query-summary
+    >
+      <span
+        class="min-w-0 truncate"
+        data-query-summary-text
+      >{{ summary }}</span>
+      <button
+        type="button"
+        class="shrink-0 text-muted underline underline-offset-2 hover:text-highlighted"
+        data-edit-definition
+        @click="editor.dataTab = 'definition'"
+      >
+        Edit definition
+      </button>
+    </p>
 
     <div
       v-if="query.params.length"
@@ -113,7 +119,7 @@ const emptyText = computed(() => {
           :model-value="given[param.name] === true"
           :aria-label="fieldLabel(param.name)"
           :data-query-param="param.name"
-          @update:model-value="type(param.name, $event)"
+          @update:model-value="setInput(param, $event)"
         />
         <EditorInput
           v-else
@@ -124,7 +130,7 @@ const emptyText = computed(() => {
           :invalid="!!found.problems[param.name]"
           :aria-label="fieldLabel(param.name)"
           :data-query-param="param.name"
-          @update:model-value="type(param.name, $event)"
+          @update:model-value="setInput(param, $event)"
         />
         <p
           v-if="found.problems[param.name]"
@@ -136,18 +142,10 @@ const emptyText = computed(() => {
       </div>
     </div>
 
-    <p
-      v-if="failure"
-      class="flex shrink-0 items-center gap-2 border-b border-white/5 px-4 py-2 text-xs"
-      :class="rest ? 'bg-error/10 text-error' : 'bg-white/4 text-muted'"
-      data-records-error
-    >
-      <UIcon
-        :name="rest ? 'i-lucide-circle-alert' : 'i-lucide-info'"
-        class="size-4 shrink-0"
-      />
-      <span>{{ rest ? failure : `Showing the sample data. ${failure} Start the app (nuxt dev) and refresh.` }}</span>
-    </p>
+    <DataRowsFailure
+      v-if="collection"
+      :collection="collection"
+    />
 
     <template v-if="query.result === 'one'">
       <div

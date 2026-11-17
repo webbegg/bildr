@@ -10,7 +10,8 @@ import type { DataCollection } from '../../../shared/dataModel.ts'
 /**
  * A Data tree row, Framer CMS's: the collection's icon (globe for one read through a
  * connection), name and row count, `indent`ed inside a connection's folder. Click shows it,
- * double-click renames inline, and the hover `…` menu renames or deletes it. A collection is
+ * double-click renames inline, and the `…` menu (on hover, and always on the row shown or focused) renames or deletes it, as do
+ * F2 (rename) and Delete or Backspace (delete) on the focused row. A collection is
  * an entity: renaming is `entity_update`, deleting `entity_delete` (refused while pages use it).
  * It is a tree item (`DataTree.vue`): the tab stop when it is the one the tree names.
  */
@@ -82,6 +83,8 @@ const menu = computed<DropdownMenuItem[]>(() => [
       :data-tree-item="key"
       @click="show"
       @dblclick="startRename"
+      @keydown.f2.prevent="startRename"
+      @keydown.delete.prevent="remove"
     >
       <UIcon
         :name="collection.kind === 'rest' ? 'i-lucide-globe' : 'i-lucide-database'"
@@ -104,7 +107,8 @@ const menu = computed<DropdownMenuItem[]>(() => [
         variant="ghost"
         size="xs"
         aria-label="Collection actions"
-        class="absolute end-3 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+        class="absolute end-3 data-[state=open]:opacity-100"
+        :class="shown ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'"
       />
     </EditorMenu>
   </div>

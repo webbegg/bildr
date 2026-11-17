@@ -30,6 +30,15 @@ import type { QueryFile } from '@bildr/codegen/model'
 /** The text (or switch) of each parameter's input, by parameter name. */
 export type ParamInputs = Record<string, string | boolean>
 
+/**
+ * What was typed in a query's parameter inputs, kept while another tab or query shows (`DataWorkspace`), and the type each
+ * parameter had when it was typed: a parameter edited meanwhile (its Definition) must not give an old input to a new type.
+ */
+export interface StoredInputs {
+  values: ParamInputs
+  types: Record<string, string>
+}
+
 export interface QueryResult extends QueryRun {
   /** Why an input can't be read, by parameter name; when there is one, no rows are returned. */
   problems: Record<string, string>
@@ -43,6 +52,25 @@ export function paramDefaults(query: Pick<QueryFile, 'params'>): ParamInputs {
     if (param.type === 'boolean') return [param.name, param.default === true]
     return [param.name, param.default === undefined || param.default === null ? '' : String(param.default)]
   }))
+}
+
+/** `stored` with `value` typed for `param`. */
+export function withInput(stored: StoredInputs | undefined, param: Pick<Param, 'name' | 'type'>, value: string | boolean): StoredInputs {
+  return { values: { ...stored?.values, [param.name]: value }, types: { ...stored?.types, [param.name]: param.type } }
+}
+
+/**
+ * `stored` as the query is now: the input of a parameter that is gone, or whose type changed, is dropped (an old text would
+ * be read as the new type's), and the others are kept. The same object when nothing was dropped.
+ */
+export function reconcileInputs(stored: StoredInputs | undefined, query: Pick<QueryFile, 'params'>): StoredInputs | undefined {
+  if (!stored) return stored
+  const kept = Object.keys(stored.values).filter(name => query.params.some(param => param.name === name && param.type === stored.types[name]))
+  if (kept.length === Object.keys(stored.values).length) return stored
+  return {
+    values: Object.fromEntries(kept.map(name => [name, stored.values[name]!])),
+    types: Object.fromEntries(kept.map(name => [name, stored.types[name]!]))
+  }
 }
 
 /** The argument an input stands for: undefined when it is blank (the default applies), a problem when it can't be read. */

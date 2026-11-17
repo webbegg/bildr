@@ -16,7 +16,7 @@
  *   has its own list/create routes and needs no publishing;
  * - the published app's WebMCP tools (`document.modelContext`): the generated app has no bildr runtime (D4).
  */
-import { action, appApi, appShows, bildr, canvas, check, editorUrl, newPage, openData, openEditor, quiesce, quiet, run, shot, until } from './lib.mjs'
+import { action, appApi, appShows, bildr, call, canvas, check, editorUrl, newPage, openData, openEditor, quiesce, quiet, run, shot, until } from './lib.mjs'
 
 await run('data', async ({ page, browser, errors }) => {
   // The app's create route takes the id the client form mints (a uuid).
@@ -199,10 +199,19 @@ await run('data', async ({ page, browser, errors }) => {
   await page.locator('[data-def-save]').click()
   const bounded = await until(() => bildr('modules/blog/queries/cheap-dishes.json')?.where)
   check(bounded?.op === 'lt' && bounded.field === 'cost' && bounded.value === 5, `the Definition writes the condition (${JSON.stringify(bounded)})`)
-  await page.waitForTimeout(400)
-  await page.evaluate(() => document.activeElement?.blur())
-  await shot(page, 'd10b-query-definition')
+  check(await page.locator('[data-def-where-preview]').innerText() === 'Rows where cost is less than 5', 'the condition is also said as a sentence')
+  // The footer says what is unsaved, and Discard gives the edit up without asking.
+  check(await page.locator('[data-def-unsaved]').count() === 0, 'a saved Definition has nothing unsaved')
+  await page.locator('[data-def="label"]').fill('Cheaper dishes')
+  check(await page.locator('[data-def-footer] [data-def-unsaved]').innerText() === 'Unsaved changes', 'an edit says "Unsaved changes" in the footer')
+  await page.locator('[data-def-discard]').click()
+  check(await page.locator('[data-def="label"]').inputValue() === 'Cheap dishes' && await page.locator('[data-def-unsaved]').count() === 0, 'Discard puts the saved query back')
+  await page.locator('[data-def="label"]').fill('Cheaper dishes')
   await page.locator('[role=tab][data-data-tab="results"]').click()
+  await page.locator('[data-confirm]').waitFor()
+  check((await page.locator('[role=dialog]').innerText()).includes('Discard unsaved changes to Cheap dishes?'), 'leaving the Definition with an unsaved edit asks to discard it')
+  await page.locator('[data-confirm-ok]').click()
+  await page.locator('[data-query-results]').waitFor()
   check(await until(async () => {
     await page.locator('[data-records-refresh]').click().catch(() => {})
     return await page.locator('[data-query-results] [data-record]').count() === 2
@@ -210,9 +219,10 @@ await run('data', async ({ page, browser, errors }) => {
   const resultTexts = await page.locator('[data-query-results] [data-record]').allInnerTexts()
   check(resultTexts.some(text => text.includes('Espresso')) && resultTexts.some(text => text.includes('Latte')) && !resultTexts.some(text => text.includes('Mocha')), `and they are Espresso and Latte (${resultTexts.map(text => text.replace(/\s+/g, ' ')).join(' | ')})`)
   check(await page.locator('[data-results-count]').innerText() === '2 results', 'with their count')
-  await page.waitForTimeout(400)
-  await page.evaluate(() => document.activeElement?.blur())
-  await shot(page, 'd10b-query-results')
+  check((await page.locator('[data-query-summary-text]').innerText()).includes('cost is less than 5'), 'a line above them says what the query does')
+  await page.locator('[data-edit-definition]').click()
+  check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'definition', 'and its Edit definition link opens the Definition')
+  await page.locator('[role=tab][data-data-tab="results"]').click()
 
   // A page uses the query, so Used in lists it, and the page renders what the query returns.
   await action('page_use_add', { page: p.pageId, as: 'cheap', query: cheap.id })
@@ -237,16 +247,27 @@ await run('data', async ({ page, browser, errors }) => {
   check(renamedApp.html.includes('Espresso is cheap') && renamedApp.html.includes('Latte is cheap') && !renamedApp.html.includes('Mocha is cheap'), 'the page still renders the query\'s rows after the rename')
   check(await page.locator(`[data-used-in] [data-use="page:${p.pageId}"]`).count() === 1, 'and Used in still lists the page')
 
-  // Delete is refused while the page uses the query: the dialog lists it, and says why.
+  // Delete is not offered while the page uses the query: the dialog lists the page and disables the button; the module refuses it too.
   await page.locator(`[data-artifact-menu="${cheap.id}"]`).click({ force: true })
   await page.getByRole('menuitem', { name: 'Delete' }).click()
   check(await page.locator(`[data-artifact-uses] [data-use-open="page:${p.pageId}"]`).count() === 1, 'Delete lists the page that uses the query')
-  const errorsAfterQuery = errors.length
-  await page.locator('[data-artifact-submit]').click()
-  await page.locator('[data-artifact-error]').waitFor()
-  errors.push(...errors.splice(errorsAfterQuery).filter(message => !refused422.test(message)))
-  check((await page.locator('[data-artifact-error]').innerText()).includes('is still used') && !!bildr('modules/blog/queries/cheap-dishes.json'), 'the module refuses it, the message is in the dialog, and the file stays')
+  check(await page.locator('[data-artifact-submit]').isDisabled() && await page.locator('[data-artifact-submit]').getAttribute('title') === 'Used in 1 place: change it first', 'and its button is disabled, with the uses as the reason')
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  const deleteAnswer = await call('query_delete', { query: cheap.id })
+  check(deleteAnswer.status === 422 && deleteAnswer.message.includes('is still used') && !!bildr('modules/blog/queries/cheap-dishes.json'), `the module refuses it too, and the file stays (${deleteAnswer.status} ${deleteAnswer.message?.slice(0, 80)})`)
+
+  // The keyboard: F2 on the focused row renames, and the Queries header folds its section (remembered).
+  await page.locator(`[data-tree-item="query:${cheap.id}"]`).focus()
+  await page.keyboard.press('F2')
+  check(await page.locator('[data-artifact-dialog="rename"]').count() === 1, 'F2 on a query row opens Rename')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.locator('[data-artifact-toggle="query"]').click()
+  check(await page.locator('[data-artifacts="query"] [data-tree-item]').count() === 0 && await page.locator('[data-artifact-toggle="query"]').getAttribute('aria-expanded') === 'false', 'the Queries header folds its section')
+  await page.reload()
+  await page.locator('[data-artifact-toggle="query"]').waitFor()
+  check(await page.locator('[data-artifact-toggle="query"]').getAttribute('aria-expanded') === 'false', 'and a reload keeps it folded')
+  await page.locator('[data-artifact-toggle="query"]').click()
+  check(await page.locator(`[data-tree-item="query:${cheap.id}"]`).count() === 1, 'unfolded, the rows are back')
 
   // An action is made from a template, and opens on its Overview.
   await page.getByLabel('New action').click()
@@ -257,13 +278,15 @@ await run('data', async ({ page, browser, errors }) => {
   const archive = await until(() => bildr('modules/blog/actions/archive-dish.json'))
   check(archive?.name === 'archiveDish' && archive.steps?.length === 1 && archive.steps[0].kind === 'return', `"+" on Actions writes an action from the Blank template (${archive?.name}, steps ${archive?.steps?.map(step => step.kind)})`)
   check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'overview', 'a new action opens on its Overview')
-  check(await page.locator('[data-action-route]').innerText() === 'POST /dishes/archive-dish' && await page.locator('[data-action-step="return"]').count() === 1, 'which shows its route and its steps')
+  check(await page.locator('[data-action-route]').innerText() === 'POST /dishes/archive-dish' && await page.locator('[data-action-name]').innerText() === 'archiveDish', 'which shows its route and its code name')
+  check(await page.locator('[data-action-output]').innerText() === 'No data' && await page.locator('[data-steps-note]').innerText() === '1 step — edit in JSON until the Steps tab', 'says it returns no data, and counts its step')
   await page.locator('[data-action-field="label"]').fill('Archive a dish')
   await page.locator('[data-action-field="label"]').press('Enter')
   check(await until(() => bildr('modules/blog/actions/archive-dish.json')?.label === 'Archive a dish'), 'the Overview saves the label with action_update')
+  // The tree shows the new label once the model is read again: the row is not rebuilt under the menu that is opened next.
+  await page.locator(`[data-tree-item="action:${archive.id}"] [data-artifact-label]`).filter({ hasText: 'Archive a dish' }).waitFor()
   await page.waitForTimeout(400)
   await page.evaluate(() => document.activeElement?.blur())
-  await shot(page, 'd10b-action-overview')
   // Nothing uses it: Delete removes it.
   await page.locator(`[data-artifact-menu="${archive.id}"]`).click({ force: true })
   await page.getByRole('menuitem', { name: 'Delete' }).click()
@@ -354,6 +377,43 @@ await run('data', async ({ page, browser, errors }) => {
   check(decodeURIComponent(page.url()).endsWith(`#/data?item=files&file=${pageFile}`) && JSON.parse(await rawContent.inputValue()).id === p.pageId, '/model?path= redirects to that file')
   await quiesce(60_000)
   await quiet()
+
+  // ── The pictures of Queries and Actions ──────────────────────────────────────────────────
+  // The checks above left their own data in the project (Menu, a page and its list query, the page that reads the cheap query): the
+  // pictures are of a project re-seeded with only what they show, the blog and Dish with the query and the action over it.
+  await action('page_delete', { page: p.pageId })
+  await action('query_delete', { query: query.queryId })
+  await action('entity_delete', { entity: menu.id })
+  await action('query_update', { query: cheap.id, inPlace: true, orderBy: [{ field: 'title', direction: 'asc' }], limit: 6 })
+  await quiesce(60_000)
+  await quiet()
+  await openData(page)
+  await page.locator(`[data-tree-item="query:${cheap.id}"]`).click()
+  await page.locator('[role=tab][data-data-tab="definition"]').click()
+  await page.locator('[data-query-definition]').waitFor()
+  const seeded = (await page.locator('[data-artifacts="query"] [data-artifact-label]').allInnerTexts()).map(label => label.trim())
+  check(await page.locator(`[data-tree-item="collection:${menu.id}"]`).count() === 0 && seeded.length <= 8 && !seeded.some(label => /^Data-|menu/i.test(label)), `the re-seeded project has only the blog's queries and Dish's (${seeded.join(' | ')})`)
+  // One edit is left unsaved, so the picture shows the footer and the sentence that follow what is typed.
+  await page.locator('[data-def-where-value]').fill('4')
+  check(await page.locator('[data-def-where-preview]').innerText() === 'Rows where cost is less than 4' && await page.locator('[data-def-unsaved]').count() === 1, 'an unsaved edit changes the sentence and shows "Unsaved changes"')
+  await page.waitForTimeout(400)
+  await page.evaluate(() => document.activeElement?.blur())
+  await shot(page, 'd10b-query-definition')
+  await page.locator('[data-def-discard]').click()
+  await page.locator('[role=tab][data-data-tab="results"]').click()
+  check(await until(async () => {
+    await page.locator('[data-records-refresh]').click().catch(() => {})
+    return await page.locator('[data-query-results] [data-record]').count() === 2
+  }, 30_000), 'the re-seeded query still has its two results')
+  check((await page.locator('[data-query-summary-text]').innerText()) === 'cost is less than 5 · title ascending · limit 6', 'and its summary line')
+  await page.waitForTimeout(400)
+  await page.evaluate(() => document.activeElement?.blur())
+  await shot(page, 'd10b-query-results')
+  await page.locator(`[data-tree-item="action:${dish.actionId}"]`).click()
+  await page.locator('[data-action-overview]').waitFor()
+  await page.waitForTimeout(400)
+  await page.evaluate(() => document.activeElement?.blur())
+  await shot(page, 'd10b-action-overview')
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 // A new entity regenerates the app and restarts the dev server: its event stream ends mid-request.

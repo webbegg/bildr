@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { QueryFile } from '@bildr/codegen/model'
-import { paramDefaults, runQuery } from '../../src/editor/runQuery.ts'
+import { paramDefaults, reconcileInputs, runQuery, withInput } from '../../src/editor/runQuery.ts'
 
 /**
  * The Data workspace's Query Results (S10, DW-7b): a query run over the rows the collection's Rows tab shows. The
@@ -129,5 +129,45 @@ describe('runQuery: parameters', () => {
 
   it('has no problems for valid inputs', () => {
     expect(runQuery(featured, rows, { limit: '3' }).problems).toEqual({})
+  })
+
+  it('matches nothing for a blank integer input with no default, without calling it a problem', () => {
+    const above = query({ params: [{ name: 'min', type: 'integer' }], where: { op: 'gt', field: 'views', value: { $param: 'min' } } })
+    expect(paramDefaults(above)).toEqual({ min: '' })
+    const found = runQuery(above, rows, paramDefaults(above))
+    expect(found.rows).toEqual([])
+    expect(found.problems).toEqual({})
+    expect(ids(runQuery(above, rows, { min: '9' }))).toEqual(['p1', 'p3'])
+  })
+})
+
+describe('the inputs kept for a query while it is edited', () => {
+  const two = query({ params: [{ name: 'min', type: 'integer' }, { name: 'tag', type: 'text' }] })
+  const typed = withInput(withInput(undefined, two.params[0]!, '12'), two.params[1]!, 'news')
+
+  it('keeps what was typed, and the type each parameter had then', () => {
+    expect(typed).toEqual({ values: { min: '12', tag: 'news' }, types: { min: 'integer', tag: 'text' } })
+    expect(withInput(typed, two.params[0]!, '13').values).toEqual({ min: '13', tag: 'news' })
+  })
+
+  it('keeps every input of a query that did not change, and says so by returning the same object', () => {
+    expect(reconcileInputs(typed, two)).toBe(typed)
+    expect(reconcileInputs(undefined, two)).toBeUndefined()
+  })
+
+  it('drops the input of a parameter that is gone, and keeps the others', () => {
+    const next = reconcileInputs(typed, query({ params: [{ name: 'tag', type: 'text' }] }))
+    expect(next?.values).toEqual({ tag: 'news' })
+    expect(next?.types).toEqual({ tag: 'text' })
+  })
+
+  it('drops the input of a parameter whose type changed, and keeps the others', () => {
+    const next = reconcileInputs(typed, query({ params: [{ name: 'min', type: 'number' }, { name: 'tag', type: 'text' }] }))
+    expect(next?.values).toEqual({ tag: 'news' })
+  })
+
+  it('drops a switch whose parameter is no longer a toggle, and a text whose parameter became one', () => {
+    const flag = withInput(undefined, { name: 'on', type: 'boolean' }, true)
+    expect(reconcileInputs(flag, query({ params: [{ name: 'on', type: 'text' }] }))?.values).toEqual({})
   })
 })

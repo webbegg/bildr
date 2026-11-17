@@ -194,32 +194,32 @@ export interface DataArtifact {
   collectionName: string
 }
 
-const entitiesOf = (model: Model): Map<string, string> =>
-  new Map(Object.values(model.modules).flatMap(mod => mod.entities.map((entity): [string, string] => [entity.id, entity.name])))
+/** The entity with this id, in whichever module has it. */
+export const entityById = (model: Model, entityId: string): EntityFile | undefined =>
+  Object.values(model.modules).flatMap(mod => mod.entities).find(entity => entity.id === entityId)
+
+/** The id of the entity a repository stores (`repository.entity`), or undefined when there is no such repository. */
+export const repositoryEntity = (model: Model, repositoryId: string): string | undefined =>
+  Object.values(model.modules).flatMap(mod => mod.repositories).find(repository => repository.id === repositoryId)?.entity
 
 /** The queries of the model, module by module, as the Data tree lists them. */
-export const queriesOf = (model: Model): DataArtifact[] => {
-  const names = entitiesOf(model)
-  return Object.entries(model.modules).flatMap(([module, mod]) => mod.queries.map(query => ({
+export const queriesOf = (model: Model): DataArtifact[] =>
+  Object.entries(model.modules).flatMap(([module, mod]) => mod.queries.map(query => ({
     id: query.id,
     name: query.name,
     label: query.label || query.name,
     module,
     collectionId: query.from,
-    collectionName: names.get(query.from) ?? ''
+    collectionName: entityById(model, query.from)?.name ?? ''
   })))
-}
 
 /** The actions of the model, module by module, as the Data tree lists them. */
-export const actionsOf = (model: Model): DataArtifact[] => {
-  const names = entitiesOf(model)
-  const repositories = new Map(Object.values(model.modules).flatMap(mod => mod.repositories.map((repository): [string, string] => [repository.id, repository.entity])))
-  return Object.entries(model.modules).flatMap(([module, mod]) => mod.actions.map((action) => {
-    const written = action.steps.map(step => typeof step.repository === 'string' ? repositories.get(step.repository) : undefined).find(entity => entity !== undefined)
+export const actionsOf = (model: Model): DataArtifact[] =>
+  Object.entries(model.modules).flatMap(([module, mod]) => mod.actions.map((action) => {
+    const written = action.steps.map(step => typeof step.repository === 'string' ? repositoryEntity(model, step.repository) : undefined).find(entity => entity !== undefined)
     const collectionId = action.input.entity ?? action.output?.entity ?? written ?? ''
-    return { id: action.id, name: action.name, label: action.label || action.name, module, collectionId, collectionName: names.get(collectionId) ?? '' }
+    return { id: action.id, name: action.name, label: action.label || action.name, module, collectionId, collectionName: entityById(model, collectionId)?.name ?? '' }
   }))
-}
 
 /** The rows an entity's fixtures file holds: what the Data view shows when the app can't answer. */
 export const fixtureRowsOf = (model: Model, entityId: string): Row[] =>

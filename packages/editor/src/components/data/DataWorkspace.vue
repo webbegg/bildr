@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import { DATA_TAB_LABELS } from '../../editor/dataTabs.ts'
 import { rovingTarget } from '../../editor/rovingKeys.ts'
-import type { ParamInputs } from '../../editor/runQuery.ts'
+import type { StoredInputs } from '../../editor/runQuery.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { FOCUS_RING } from '../../editorUi.ts'
 import DataFiles from './DataFiles.vue'
@@ -13,8 +13,8 @@ import DataJson from './DataJson.vue'
  * collection has Rows (the read-only table), Fields (the field editor, its settings beside it),
  * Endpoints (the repository's, when it is read through a connection) and JSON (its file, S3); a connection has
  * Endpoints (its settings and its collections' endpoints) and JSON; a query (S10) has Results (it run over the
- * collection's rows), Definition (its form), Used in and JSON; an action has Overview (its form, its route and its
- * steps), Used in and JSON. With All model files chosen in the tree it
+ * collection's rows), Definition (its form), Used in and JSON; an action has Overview (its form, its code name, its route and
+ * how many steps it has), Used in and JSON. With All model files chosen in the tree it
  * is the list of the model's files and their editor instead. With nothing to show it is
  * the empty start. The tab strip is one tab stop: Left and Right move along it (and wrap), Home and End go to its ends.
  */
@@ -34,7 +34,7 @@ const itemFile = computed(() => {
   return id ? editor.model?.paths[id] : undefined
 })
 /** What was typed in each query's parameter inputs, by query: kept while another tab or query shows. */
-const queryInputs = ref<Record<string, ParamInputs>>({})
+const queryInputs = ref<Record<string, StoredInputs>>({})
 
 async function onTabKeyDown(event: KeyboardEvent) {
   const tabs = editor.dataTabs

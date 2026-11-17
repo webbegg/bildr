@@ -1,14 +1,14 @@
 import { computed, ref, watch } from 'vue'
 import type { Ref } from 'vue'
-import type { ActionFile, QueryFile } from '@bildr/codegen/model'
 import type { Row } from '@bildr/codegen/query'
 import { createLiveRows } from '../design/liveRows.ts'
 import type { Design } from '../design/store.ts'
 import type { ConfirmOptions, EditorView } from './useEditor.ts'
+import { createDataArtifactView } from './dataArtifactView.ts'
 import { tabsOf } from './dataTabs.ts'
 import type { DataItem, DataTab } from './dataTabs.ts'
-import { actionsOf, collectionsOf, connectionsOf, defaultSourceOf, fixtureRowsOf, queriesOf } from '../shared/dataModel.ts'
-import type { DataArtifact, DataCollection, DataConnection } from '../shared/dataModel.ts'
+import { collectionsOf, connectionsOf, defaultSourceOf, fixtureRowsOf } from '../shared/dataModel.ts'
+import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
 
 /**
  * The Data view's state in the adapter (U7): the hosted `collectionId`/`collection`,
@@ -25,13 +25,14 @@ import type { DataArtifact, DataCollection, DataConnection } from '../shared/dat
  *
  * The Data workspace (S2) shows one item at a time, a connection, a collection, a query or an action (S10), on one of the
  * tabs its kind has (`dataItem`, `dataTabs`, `dataTab`), or All model files (`dataFiles`, S3) in its place; `editor/dataLocation.ts` mirrors that in
- * the URL. Read the item through `dataCollection` / `dataConnection` / `dataQuery` / `dataAction`, which are narrowed to it.
+ * the URL. Read the item through `dataCollection` / `dataConnection` / `dataQuery` / `dataAction`, which are narrowed to it. Which
+ * query or action is chosen, and how that lives with the other choices, is `editor/dataArtifactView.ts`'s.
  * A query is run over the rows of the collection it reads (`collectionRows` and the rest follow it: the Results tab shows what
  * the collection's Rows tab shows, with the same Live / Sample data switch).
  *
- * Edits to a model file that are not saved (`dataDirty`, which the raw editor reports) are not lost silently: every
- * way of moving the workspace (the item, the tab, All model files, the file in it) goes through `leaveData`, which
- * asks first and moves only when the user discards them.
+ * Edits that are not saved (`dataDirty`: the raw editor reports a file's, the query Definition its draft, the action Overview a
+ * refused text) are not lost silently: every way of moving the workspace (the item, the tab, All model files, the file in it)
+ * goes through `leaveData`, which asks first and moves only when the user discards them.
  */
 
 /** Where rows come from: the app's list route (Live) or the collection's own (Sample data). */
@@ -41,9 +42,6 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
   const model = design.model
   const collections = computed<DataCollection[]>(() => model.value ? collectionsOf(model.value) : [])
   const connections = computed<DataConnection[]>(() => model.value ? connectionsOf(model.value) : [])
-  /** The queries and the actions of the model, as the tree lists them (S10). */
-  const queries = computed<DataArtifact[]>(() => model.value ? queriesOf(model.value) : [])
-  const actions = computed<DataArtifact[]>(() => model.value ? actionsOf(model.value) : [])
 
   /**
    * The collection chosen, by id. `collection` (below) is the one place that says which collection is
@@ -96,58 +94,30 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
       void leaveData(() => (chosenFile.value = path), path !== chosenFile.value)
     }
   })
-  /** The query or the action chosen (S10): it is shown instead of the collection or connection, which keep their choice, until one of them is chosen. */
-  const chosenArtifact = ref<DataItem | null>(null)
+  /** The query or the action chosen (S10), and the rules of how it lives with the collection and connection chosen: `dataArtifactView.ts`. */
+  const { queries, actions, queryId, actionId, artifact, artifactChosen, forgetArtifact, dataQuery, dataAction } = createDataArtifactView(model, leaveData, filesShown)
   const chooser = (chosen: Ref<string | null>) => computed<string | null>({
     get: () => chosen.value,
     set: (id) => {
       void leaveData(() => {
         chosen.value = id
         filesShown.value = false
-        if (id !== null) chosenArtifact.value = null
-      }, id !== chosen.value || filesShown.value || (id !== null && chosenArtifact.value !== null))
+        if (id !== null) forgetArtifact()
+      }, id !== chosen.value || filesShown.value || (id !== null && artifactChosen.value))
     }
   })
   const collectionId = chooser(chosenCollection)
   const connectionId = chooser(chosenConnection)
-  const artifactChooser = (kind: 'query' | 'action') => computed<string | null>({
-    get: () => chosenArtifact.value?.kind === kind ? chosenArtifact.value.id : null,
-    set: (id) => {
-      const current = chosenArtifact.value?.kind === kind ? chosenArtifact.value.id : null
-      void leaveData(() => {
-        if (id !== null) chosenArtifact.value = { kind, id }
-        else if (current !== null) chosenArtifact.value = null
-        filesShown.value = false
-      }, id !== current || filesShown.value)
-    }
-  })
-  const queryId = artifactChooser('query')
-  const actionId = artifactChooser('action')
   /** The row the right panel shows; null shows the collection and its fields. */
   const recordId = ref<string | null>(null)
 
   const collection = computed<DataCollection | null>(() => collections.value.find(entry => entry.id === collectionId.value) ?? collections.value[0] ?? null)
   const connection = computed<DataConnection | null>(() => connections.value.find(entry => entry.id === connectionId.value) ?? null)
 
-  /** The query or action chosen, when the model still has it. */
-  const artifact = computed<DataItem | null>(() => {
-    const chosen = chosenArtifact.value
-    return chosen && (chosen.kind === 'query' ? queries : actions).value.some(entry => entry.id === chosen.id) ? chosen : null
-  })
-  // A query or action the model no longer has (deleted here or elsewhere) is not chosen any more, so one made later with its id is not shown by surprise.
-  watch(() => model.value !== null && chosenArtifact.value !== null && artifact.value === null, (gone) => {
-    if (gone) chosenArtifact.value = null
-  })
   /** The item the workspace shows: the query or action chosen, else the connection chosen, else the collection. */
   const dataItem = computed<DataItem | null>(() => artifact.value ?? (connection.value
     ? { kind: 'connection', id: connection.value.id }
     : collection.value ? { kind: 'collection', id: collection.value.id } : null))
-  const artifactFile = <T extends QueryFile | ActionFile>(kind: 'queries' | 'actions', id: string): T | null =>
-    (Object.values(model.value?.modules ?? {}).flatMap(mod => mod[kind] as T[]).find(entry => entry.id === id)) ?? null
-  /** The shown item, narrowed: the query's file when a query is shown, else null. */
-  const dataQuery = computed<QueryFile | null>(() => dataItem.value?.kind === 'query' ? artifactFile<QueryFile>('queries', dataItem.value.id) : null)
-  /** The shown item, narrowed: the action's file when an action is shown, else null. */
-  const dataAction = computed<ActionFile | null>(() => dataItem.value?.kind === 'action' ? artifactFile<ActionFile>('actions', dataItem.value.id) : null)
   /** The shown item, narrowed: the collection when a collection is shown, else null. */
   const dataCollection = computed<DataCollection | null>(() => dataItem.value?.kind === 'collection' ? collection.value : null)
   /** The shown item, narrowed: the connection when a connection is shown, else null. */

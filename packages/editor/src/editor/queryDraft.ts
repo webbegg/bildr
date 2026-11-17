@@ -1,6 +1,6 @@
 import type { QueryFile, Value } from '@bildr/codegen/model'
 import type { FieldType } from '../shared/dataModel.ts'
-import type { QueryField } from './dataArtifacts.ts'
+import type { QueryField, QueryResultKind } from '../shared/dataArtifacts.ts'
 
 /**
  * The Query Definition form's draft (S10): a query as the form holds it (text in every box, a choice for what a value is) and
@@ -51,7 +51,7 @@ export interface DraftLimit {
 export interface QueryDraft {
   label: string
   description: string
-  result: 'one' | 'many'
+  result: QueryResultKind
   params: DraftParam[]
   where: DraftWhere | null
   orderBy: Array<{ field: string, direction: 'asc' | 'desc' }>
@@ -110,11 +110,18 @@ export interface QueryChanges {
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
-/** What saving `draft` asks of the module for `query`: only the parts that changed, or the problems that stop it. */
+/**
+ * What saving `draft` asks of the module for `query`: only the parts that changed, or the problems that stop it.
+ *
+ * A part the user did not touch is sent as it is stored, never converted back from its text: a literal that does not
+ * survive the text (a null on a number field, a mistyped value, a field the collection no longer has) would otherwise count as a
+ * change, or block the save of a label. "Touched" is compared with `draftOf(query)`, the text the form opened with.
+ */
 export function changesOf(draft: QueryDraft, query: QueryFile, fields: readonly QueryField[]): QueryChanges {
   const input: Record<string, unknown> = {}
   const problems: string[] = []
   const typeOf = (name: string) => fields.find(field => field.name === name)?.type
+  const opened = draftOf(query)
 
   if (draft.label !== query.label) {
     if (draft.label.trim() === '') problems.push('Add a label')
@@ -124,44 +131,86 @@ export function changesOf(draft: QueryDraft, query: QueryFile, fields: readonly 
   if (draft.result !== query.result) input.result = draft.result
 
   const params = draft.params.map((param) => {
+    const at = opened.params.findIndex(original => same(original, param))
+    if (at >= 0) return query.params[at]!
     const converted = param.default === '' ? undefined : valueOfText(param.type, param.default)
     if (converted && 'problem' in converted) problems.push(`Parameter ${param.name || '(unnamed)'}: its default is ${converted.problem}`)
     return { name: param.name, type: param.type, ...converted && 'value' in converted ? { default: converted.value } : {}, ...param.reactive ? { reactive: true } : {} }
   })
-  const before = query.params.map(param => ({ name: param.name, type: param.type, ...param.default !== undefined ? { default: param.default } : {}, ...param.reactive ? { reactive: true } : {} }))
-  if (!same(params, before)) input.params = params
+  if (!same(draft.params, opened.params)) input.params = params
 
-  let where: QueryFile['where'] | null = null
-  if (draft.where) {
-    const { field, op } = draft.where
-    let value: Value | undefined
-    if (draft.where.kind === 'param') value = { $param: draft.where.param }
-    else if (draft.where.kind === 'expression') value = draft.where.expression as Value
-    else {
-      const type = typeOf(field)
-      const items = op === 'in' ? draft.where.value.split(',').map(item => item.trim()).filter(item => item !== '') : [draft.where.value]
-      const converted = items.map(item => valueOfText(op === 'like' ? 'text' : type, item))
-      const bad = converted.find(item => 'problem' in item)
-      if (bad && 'problem' in bad) problems.push(`Condition: the value of ${field} is ${bad.problem}`)
-      else value = op === 'in' ? converted.map(item => (item as { value: Value }).value) : (converted[0] as { value: Value }).value
+  if (!same(draft.where, opened.where)) {
+    let where: QueryFile['where'] | null = null
+    if (draft.where) {
+      const { field, op } = draft.where
+      const before = opened.where
+      let value: Value | undefined
+      if (draft.where.kind === 'param') value = { $param: draft.where.param }
+      else if (draft.where.kind === 'expression') value = draft.where.expression as Value
+      else if (before && query.where && before.kind === 'value' && before.field === field && before.value === draft.where.value && (before.op === 'in') === (op === 'in')) {
+        // Only the operator changed: the literal keeps its stored form.
+        value = query.where.value
+      } else {
+        const type = typeOf(field)
+        const items = op === 'in' ? draft.where.value.split(',').map(item => item.trim()).filter(item => item !== '') : [draft.where.value]
+        const converted = items.map(item => valueOfText(op === 'like' ? 'text' : type, item))
+        const bad = converted.find(item => 'problem' in item)
+        if (bad && 'problem' in bad) problems.push(`Condition: the value of ${field} is ${bad.problem}`)
+        else value = op === 'in' ? converted.map(item => (item as { value: Value }).value) : (converted[0] as { value: Value }).value
+      }
+      if (value !== undefined) where = { op, field, value }
     }
-    if (value !== undefined) where = { op, field, value }
+    if (!same(where, query.where ?? null)) input.where = where
   }
-  if (!same(where, query.where ?? null)) input.where = where
 
   if (!same(draft.orderBy, query.orderBy ?? [])) input.orderBy = draft.orderBy
 
-  let limit: Value | null = null
-  if (draft.limit.kind === 'param') limit = { $param: draft.limit.param }
-  else if (draft.limit.kind === 'expression') limit = draft.limit.expression as Value ?? null
-  else if (draft.limit.kind === 'number') {
-    const converted = valueOfText('integer', draft.limit.number)
-    if ('problem' in converted) problems.push('Limit: enter a whole number')
-    else limit = converted.value
+  if (!same(draft.limit, opened.limit)) {
+    let limit: Value | null = null
+    if (draft.limit.kind === 'param') limit = { $param: draft.limit.param }
+    else if (draft.limit.kind === 'expression') limit = draft.limit.expression as Value ?? null
+    else if (draft.limit.kind === 'number') {
+      const converted = valueOfText('integer', draft.limit.number)
+      if ('problem' in converted) problems.push('Limit: enter a whole number')
+      else limit = converted.value
+    }
+    if (!same(limit, query.limit ?? null)) input.limit = limit
   }
-  if (!same(limit, query.limit ?? null)) input.limit = limit
 
   return { input, problems }
+}
+
+// ── The query in words ───────────────────────────────────────────────────
+
+/** A condition in words, as the form words its operators: `cost is less than 5`, `slug is the “slug” parameter`. */
+export function conditionText(where: DraftWhere): string {
+  const op = OPS.find(entry => entry.value === where.op)?.label ?? where.op
+  const value = where.kind === 'param' ? `the “${where.param}” parameter` : where.kind === 'expression' ? 'a computed value' : where.value.trim() || '…'
+  return `${where.field} ${op} ${value}`
+}
+
+/** An ordering in words: `newest first` for a date field, else the field and its direction, most significant first. */
+export function orderText(orderBy: QueryDraft['orderBy'], fields: readonly QueryField[]): string {
+  return orderBy.map((order) => {
+    const type = fields.find(field => field.name === order.field)?.type
+    if (type === 'datetime' || type === 'date') return order.direction === 'desc' ? 'newest first' : 'oldest first'
+    return `${order.field} ${order.direction === 'desc' ? 'descending' : 'ascending'}`
+  }).join(', then ')
+}
+
+/** A limit in words: the number, or for a parameter its default (`limit 6`), else the parameter that sets it. */
+export function limitText(limit: DraftLimit, params: readonly DraftParam[]): string {
+  if (limit.kind === 'number') return limit.number.trim() ? `limit ${limit.number.trim()}` : ''
+  if (limit.kind === 'expression') return 'limit from a computed value'
+  if (limit.kind !== 'param') return ''
+  const fallback = params.find(param => param.name === limit.param)?.default
+  return fallback ? `limit ${fallback}` : `limit set by “${limit.param}”`
+}
+
+/** The query on one line, `cost is less than 5 · newest first · limit 6`: what the Results tab says above the rows. */
+export function summaryOf(draft: QueryDraft, fields: readonly QueryField[]): string {
+  const parts = [draft.where ? conditionText(draft.where) : '', orderText(draft.orderBy, fields), limitText(draft.limit, draft.params)].filter(Boolean)
+  return parts.length ? parts.join(' · ') : 'Every row'
 }
 
 /** The draft with parameter `index` renamed, and the condition and limit that read it by the old name following it. */

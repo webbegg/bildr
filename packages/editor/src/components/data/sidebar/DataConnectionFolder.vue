@@ -11,8 +11,8 @@ import type { DataConnection } from '../../../shared/dataModel.ts'
 /**
  * A connection in the Connections section, Framer's folder: a chevron that shows or hides its
  * collections (`open` is the tree's, which also folds it with the arrow keys; the chevron emits
- * `toggle`), the name (click shows the connection in the workspace, double-click renames)
- * and a hover `…` menu. Its collections sit indented under it with their counts, then `+ Add…`
+ * `toggle`), the name (click shows the connection in the workspace, double-click or F2 renames, Delete or Backspace deletes)
+ * and a `…` menu (on hover, and always on the row shown or focused). Its collections sit indented under it with their counts, then `+ Add…`
  * (emits `add`). A connection is a REST data source: renaming is `datasource_update`.
  * The name is a tree item (`DataTree.vue`); the chevron is for the pointer.
  */
@@ -126,6 +126,8 @@ const menu = computed<DropdownMenuItem[]>(() => [
           :data-tree-item="key"
           @click="show"
           @dblclick="startRename"
+          @keydown.f2.prevent="startRename"
+          @keydown.delete.prevent="remove"
         >
           <UIcon
             name="i-lucide-server"
@@ -144,7 +146,8 @@ const menu = computed<DropdownMenuItem[]>(() => [
           variant="ghost"
           size="xs"
           aria-label="Connection actions"
-          class="absolute end-3 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
+          class="absolute end-3 data-[state=open]:opacity-100"
+          :class="shown ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'"
           data-connection-menu
         />
       </EditorMenu>

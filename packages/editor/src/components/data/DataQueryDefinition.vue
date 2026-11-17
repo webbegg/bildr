@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { QueryFile } from '@bildr/codegen/model'
-import { attempt, queryFields } from '../../editor/dataArtifacts.ts'
-import { OPS, changesOf, draftOf, renameParam } from '../../editor/queryDraft.ts'
+import { attempt } from '../../editor/dataArtifactActions.ts'
+import { RESULTS, queryFields } from '../../shared/dataArtifacts.ts'
+import type { QueryResultKind } from '../../shared/dataArtifacts.ts'
+import { OPS, changesOf, conditionText, draftOf, renameParam } from '../../editor/queryDraft.ts'
 import type { Op, QueryDraft } from '../../editor/queryDraft.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { fieldTypeItems } from '../../shared/dataModel.ts'
@@ -29,6 +31,15 @@ const saving = ref(false)
 const changes = computed(() => changesOf(draft.value, query, fields.value))
 const dirty = computed(() => Object.keys(changes.value.input).length > 0 || changes.value.problems.length > 0)
 
+// The draft is not saved until Save: the editor asks before the workspace moves away from it (`dataDirty`, as for the JSON editor).
+const name = computed(() => query.label || query.name)
+watch([dirty, name], ([unsaved, label]) => {
+  editor.dataDirty = unsaved ? label : null
+}, { flush: 'sync', immediate: true })
+onBeforeUnmount(() => {
+  editor.dataDirty = null
+})
+
 // Another query, or the model changed under a form with nothing typed in it: the form shows it. Edits that are not saved stay.
 watch(() => query.id, () => {
   draft.value = draftOf(query)
@@ -40,6 +51,12 @@ watch(() => JSON.stringify(draftOf(query)), (next, previous) => {
 watch(draft, () => {
   error.value = ''
 }, { deep: true })
+
+/** Gives up the edits: the form shows the query as it is saved. */
+function discard() {
+  draft.value = draftOf(query)
+  error.value = ''
+}
 
 async function save() {
   if (changes.value.problems.length) {
@@ -57,7 +74,6 @@ async function save() {
   draft.value = draftOf(query)
 }
 
-const RESULTS = [{ value: 'one', label: 'One' }, { value: 'many', label: 'Many' }]
 const opItems = OPS.map(op => ({ label: op.label, value: op.value }))
 const DIRECTIONS = [{ value: 'asc', label: 'Ascending' }, { value: 'desc', label: 'Descending' }]
 const YES_NO = [{ value: 'true', label: 'Yes' }, { value: 'false', label: 'No' }]
@@ -113,11 +129,12 @@ function setLimitKind(kind: string) {
 </script>
 
 <template>
+  <!-- The footer is at the bottom of the area when the form is short, and sticks to it when the form scrolls. -->
   <div
-    class="size-full overflow-y-auto"
+    class="flex size-full flex-col overflow-y-auto"
     data-query-definition
   >
-    <div class="w-full max-w-2xl space-y-6 px-0.5 py-4">
+    <div class="w-full max-w-2xl flex-1 space-y-6 px-0.5 py-4">
       <section class="space-y-3">
         <EditorFormRow label="Label">
           <EditorInput
@@ -128,11 +145,12 @@ function setLimitKind(kind: string) {
         </EditorFormRow>
         <EditorFormRow
           label="Description"
-          help="What the query returns, in words"
+          help="Kept in the query's file"
         >
           <EditorTextarea
             v-model="draft.description"
             :rows="2"
+            placeholder="What the query returns, in words"
             data-def="description"
             aria-label="Query description"
           />
@@ -145,7 +163,7 @@ function setLimitKind(kind: string) {
             :model-value="draft.result"
             :items="RESULTS"
             data-def="result"
-            @update:model-value="draft.result = $event as 'one' | 'many'"
+            @update:model-value="draft.result = $event as QueryResultKind"
           />
         </EditorFormRow>
       </section>
@@ -305,6 +323,13 @@ function setLimitKind(kind: string) {
             @click="draft.where = null"
           />
         </div>
+        <p
+          v-if="draft.where"
+          class="text-xs text-dimmed"
+          data-def-where-preview
+        >
+          {{ draft.result === 'one' ? 'The row' : 'Rows' }} where {{ conditionText(draft.where) }}
+        </p>
       </section>
 
       <section class="space-y-2">
@@ -393,8 +418,13 @@ function setLimitKind(kind: string) {
           >{{ JSON.stringify(draft.limit.expression) }}</code>
         </div>
       </section>
+    </div>
 
-      <div class="flex items-start gap-3 border-t border-white/6 pt-4">
+    <footer
+      class="sticky bottom-0 border-t border-white/6 bg-(--editor-canvas) px-0.5 py-3"
+      data-def-footer
+    >
+      <div class="flex w-full max-w-2xl items-start gap-3">
         <p
           v-if="error"
           class="min-w-0 flex-1 rounded-lg bg-error/10 px-3 py-2 text-[12px] leading-4 text-error"
@@ -407,6 +437,17 @@ function setLimitKind(kind: string) {
           v-else
           class="flex-1"
         />
+        <span
+          v-if="dirty"
+          class="flex h-[30px] shrink-0 items-center text-[12px] text-muted"
+          data-def-unsaved
+        >Unsaved changes</span>
+        <EditorButton
+          label="Discard"
+          :disabled="!dirty"
+          data-def-discard
+          @click="discard"
+        />
         <EditorButton
           variant="primary"
           label="Save"
@@ -416,6 +457,6 @@ function setLimitKind(kind: string) {
           @click="save"
         />
       </div>
-    </div>
+    </footer>
   </div>
 </template>

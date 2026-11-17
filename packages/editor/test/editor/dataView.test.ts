@@ -634,8 +634,43 @@ describe('opening a use on the Canvas (S10)', () => {
       editor.editComponent('cmp_post_card')
       expect(opened).toHaveBeenCalledWith('design')
       expect(takeStart().data).toMatchObject({ pageId: 'pg_index', fileId: 'cmp_post_card' })
+      // It is taken once: nothing is left for the next editor.
+      expect(takeStart().data).toEqual({})
+    } finally {
+      off()
+    }
+  })
+
+  it('carries a layout the same way, and not the component carried before it', async () => {
+    const opened = vi.fn()
+    const off = registerScreens(opened)
+    try {
+      const { editor } = await bootData({}, {}, 'data')
+      editor.editComponent('cmp_post_card')
+      expect(takeStart().data.fileId).toBe('cmp_post_card')
+      // Back on the Data screen, another use is opened: the layout, not the component of the first.
+      editor.mode = 'data'
       editor.editLayout('lay_main')
-      expect(takeStart().data.fileId).toBeUndefined()
+      expect(opened).toHaveBeenCalledTimes(2)
+      expect(takeStart().data.fileId).toBe('lay_main')
+    } finally {
+      off()
+    }
+  })
+
+  it('does not carry a file when a page is opened after one was', async () => {
+    const off = registerScreens(() => undefined)
+    try {
+      const { editor } = await bootData({}, {}, 'data')
+      editor.editComponent('cmp_post_card')
+      expect(takeStart().data.fileId).toBe('cmp_post_card')
+      editor.mode = 'data'
+      editor.selectPage('pg_index')
+      editor.mode = 'build'
+      const start = takeStart().data
+      expect(start.pageId).toBe('pg_index')
+      expect(start.fileId).toBeUndefined()
+      expect('fileId' in start).toBe(false)
     } finally {
       off()
     }
