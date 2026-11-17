@@ -8,12 +8,13 @@ import StateBadge from '../components/StateBadge.vue'
 import { artifactLabel } from '../model.ts'
 import type { CodeFile, ModelGetResult } from '../types.ts'
 
-/** The files bildr generates from one model file (`?path=`), read-only, with their state; detached ones show their diff. */
+/** The files bildr generates from one model file (`?path=`), read-only, with their state; detached ones show their diff. `&file=` is the generated file a link of the Checks screen (S8) opens: its tab is the one shown. */
 
 const route = useRoute()
 const router = useRouter()
 
 const path = computed(() => typeof route.query.path === 'string' && route.query.path ? route.query.path : undefined)
+const file = computed(() => typeof route.query.file === 'string' && route.query.file ? route.query.file : undefined)
 const model = ref<ModelGetResult | null>(null)
 const files = ref<CodeFile[]>([])
 const loading = ref(false)
@@ -24,6 +25,13 @@ const choices = computed(() => {
   return Object.keys(all).filter(file => file.startsWith('.bildr/') && !file.startsWith('.bildr/.')).sort()
     .map(file => ({ label: `${artifactLabel(all[file], file)} — ${file}`, value: file }))
 })
+
+/** The tab shown: the file the link names when this model file generates it, else the first. */
+const active = ref('0')
+const showFile = () => {
+  const index = files.value.findIndex(entry => entry.path === file.value)
+  active.value = String(Math.max(0, index))
+}
 
 const tabs = computed(() => files.value.map((file, index) => ({
   label: file.path.split('/').at(-1)!,
@@ -39,6 +47,7 @@ const load = async () => {
   loading.value = true
   try {
     files.value = (await callAction<{ files: CodeFile[] }>('code_view', { path: path.value })).files
+    showFile()
   } catch (caught) {
     error.value = errorMessage(caught)
   } finally {
@@ -58,6 +67,7 @@ onMounted(async () => {
   await load()
 })
 watch(path, load)
+watch(file, showFile)
 </script>
 
 <template>
@@ -105,6 +115,7 @@ watch(path, load)
 
     <UTabs
       v-if="files.length"
+      v-model="active"
       data-testid="code-tabs"
       :items="tabs"
       :unmount-on-hide="false"

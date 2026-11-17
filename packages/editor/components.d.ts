@@ -148,6 +148,7 @@ declare module 'vue' {
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     StateBadge: typeof import('./src/components/StateBadge.vue')['default']
+    TargetLinks: typeof import('./src/components/TargetLinks.vue')['default']
     UAlert: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Alert.vue')['default']
     UApp: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/App.vue')['default']
     UBadge: typeof import('./../../node_modules/.pnpm/@nuxt+ui@4.12.0_3dbece68463fe796d3dd561d3c3454d6/node_modules/@nuxt/ui/dist/runtime/components/Badge.vue')['default']

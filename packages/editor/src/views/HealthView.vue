@@ -1,17 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import type { Model } from '@bildr/codegen/model'
 import { callAction, errorMessage } from '../api.ts'
 import DiffView from '../components/DiffView.vue'
 import ProblemsList from '../components/ProblemsList.vue'
 import StateBadge from '../components/StateBadge.vue'
+import TargetLinks from '../components/TargetLinks.vue'
+import { findingTarget } from '../editor/findingTargets.ts'
 import { useStatus } from '../status.ts'
 import { CHECK_NAMES } from '../types.ts'
 import type { CheckName, CheckResult, DriftReport } from '../types.ts'
 
-/** The Checks screen (RA §7, the Health report): model status, drift with diffs, and the project's checks with a Run button each. Checks never block editing. */
+/**
+ * The Checks screen (RA §7, the Health report): model status, drift with diffs, and the project's checks with a Run button each. Checks never block editing.
+ * Each finding, drift item and model problem links to where it is (S8, `editor/findingTargets.ts`): the generated file in Code, the collection, page… it comes from.
+ * The links need the model (a generated file's owner is what the generator says), read once when the screen opens: without it, there are none.
+ */
 
 const status = useStatus()
 const health = status.health
+const model = ref<Model | null>(null)
 
 const LABELS: Record<CheckName, string> = { lint: 'Lint and boundaries', types: 'Types', tests: 'Tests', build: 'Build' }
 
@@ -65,6 +73,9 @@ const when = (iso: string) => iso ? new Date(iso).toLocaleString() : ''
 
 onMounted(() => {
   if (!health.value) void status.refreshHealth()
+  void callAction<{ ok: boolean, model?: Model }>('model_get').then((result) => {
+    model.value = result.ok ? result.model ?? null : null
+  }).catch(() => {})
 })
 </script>
 
@@ -124,6 +135,8 @@ onMounted(() => {
           v-else
           title="invalid: the code is not regenerated until it loads"
           :problems="health.model.problems"
+          :model="model"
+          linked
         />
       </div>
     </UCard>
@@ -164,6 +177,7 @@ onMounted(() => {
           <div class="flex items-center gap-2">
             <StateBadge :state="file.state" />
             <code class="text-sm">{{ file.path }}</code>
+            <TargetLinks :targets="findingTarget({ file: file.path }, model)" />
             <UButton
               v-if="file.diff"
               class="ml-auto"
@@ -251,6 +265,7 @@ onMounted(() => {
                 v-if="finding.rule"
                 class="text-xs text-muted"
               >({{ finding.rule }})</span>
+              <TargetLinks :targets="findingTarget(finding, model)" />
             </li>
           </ul>
           <details

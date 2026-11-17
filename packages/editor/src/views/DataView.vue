@@ -103,6 +103,8 @@ onBeforeUnmount(() => {
         <ProblemsList
           title="The model has problems, so there is nothing to show until they are fixed"
           :problems="editor.problems"
+          :model="editor.model"
+          linked
         >
           <UButton
             v-if="!editor.dataFiles"

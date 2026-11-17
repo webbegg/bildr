@@ -145,6 +145,8 @@ const canvasKey = (message: { key: string, code: string, meta: boolean, shift: b
       <ProblemsList
         title="The model has problems, so there is nothing to design until they are fixed"
         :problems="editor.problems"
+        :model="editor.model"
+        linked
       >
         <UButton
           :to="{ path: '/data', query: { item: 'files' } }"

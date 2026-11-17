@@ -21,7 +21,9 @@
  *   has its own list/create routes and needs no publishing;
  * - the published app's WebMCP tools (`document.modelContext`): the generated app has no bildr runtime (D4).
  */
-import { action, appApi, appShows, bildr, call, canvas, check, editorUrl, newPage, openData, openEditor, quiesce, quiet, run, settled, shot, storageChoices, until, whileAppRebuilds } from './lib.mjs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { action, app, appApi, appShows, bildr, call, canvas, check, editorUrl, newPage, openData, openEditor, quiesce, quiet, run, settled, shot, storageChoices, until, whileAppRebuilds } from './lib.mjs'
 
 /** How long the migrations step waits (D6): for the app to regenerate and plan the migration, for the editor to show it, and for the module to write it. */
 const MIGRATION_PLANNED_MS = 60_000
@@ -748,6 +750,83 @@ await run('data', async ({ page, browser, errors }) => {
   check(await page.locator('[data-testid="collection-migration-banner"]').count() === 0 && await page.locator('[data-testid="migration-banner"]').count() === 0, 'the collection\'s banner is gone, and so is the global one')
   await quiesce(MIGRATION_PLANNED_MS)
   await quiet()
+
+  // ── Linked findings (D8, S8) ─────────────────────────────────────────────────────────────
+  // Drift is made cheaply: a generated file is edited by hand in the scratch project (no check is run). Checks then shows a failure dot on the
+  // toolbar and on its menu entry, and the drift item links to the file in Code, and to the page it is generated from.
+  const homeFile = 'layers/blog/app/pages/index.vue'
+  const homePath = join(app.root, homeFile)
+  const generated = readFileSync(homePath, 'utf8')
+  const dot = page.locator('[data-view-menu] [data-checks-dot]')
+  // The Health report's drift is refreshed by a regeneration, and the module's watcher only sees `.bildr/`: writing a model file again with the
+  // bytes it has (no change to the model) is the cheap way to make the module look at the generated files.
+  const touchPath = join(app.root, '.bildr/modules/blog/pages/new-post.json')
+  const regenerate = () => writeFileSync(touchPath, readFileSync(touchPath, 'utf8'))
+  try {
+    writeFileSync(homePath, `${generated}<!-- edited by hand -->\n`)
+    regenerate()
+    check(!!await until(async () => (await call('health_get').catch(() => undefined))?.result?.drift?.files?.some(file => file.path === homeFile)), 'a generated page edited by hand is drift in the Health report')
+    await page.goto(editorUrl('/health'))
+    await page.locator('[data-testid="drift"]').waitFor()
+    await dot.waitFor()
+    check(/1 generated file differs from the model/.test(await dot.getAttribute('title')), `Checks shows a failure dot on the toolbar's menu button, in plain words (${await dot.getAttribute('title')})`)
+    await page.locator('[data-view-menu]').click()
+    const entry = page.locator('[role^=menuitem]').filter({ hasText: /^\s*Checks\s*$/ })
+    check(await entry.locator('[data-checks-dot]').count() === 1 && await page.locator('[role^=menuitem] [data-checks-dot]').count() === 1, 'and on the Checks entry of the menu, and on no other')
+    await page.waitForTimeout(400)
+    await shot(page, 'd8-checks-menu')
+    await page.keyboard.press('Escape')
+    const drifted = page.locator(`[data-testid="drift"] [data-target="code:${homeFile}"]`)
+    check(await drifted.count() === 1 && await page.locator(`[data-testid="drift"] [data-target="page:pg_index"]`).count() === 1, 'the drift item links to its file in Code and to the page it is generated from')
+    await page.mouse.move(900, 600)
+    await page.evaluate(() => document.activeElement?.blur())
+    await page.waitForTimeout(400)
+    await shot(page, 'd8-checks-links')
+    await drifted.click()
+    await page.locator('[data-testid="code-tabs"]').waitFor()
+    const landed = new URLSearchParams(new URL(page.url()).hash.split('?')[1])
+    check(new URL(page.url()).hash.startsWith('#/code?') && landed.get('file') === homeFile && landed.get('path') === '.bildr/modules/blog/pages/index.json', `clicking it lands on Code with that file (${new URL(page.url()).hash})`)
+    check(/index\.vue/.test(await page.locator('[data-testid="code-tabs"] [role=tab][aria-selected=true]').innerText()), 'on the tab of the edited file')
+    check(!!await until(async () => /edited by hand/.test(await page.locator('[data-testid="code-tabs"]').innerText())), 'which shows the edit')
+    // The page it comes from opens on the canvas.
+    await page.goto(editorUrl('/health'))
+    await page.locator('[data-testid="drift"] [data-target="page:pg_index"]').click()
+    await canvas(page).locator('[data-node]').first().waitFor({ state: 'attached' })
+    check(new URL(page.url()).hash.startsWith('#/design') && await canvas(page).locator('[data-node]').count() > 0, `the page link opens the canvas (${new URL(page.url()).hash})`)
+  } finally {
+    writeFileSync(homePath, generated)
+    regenerate()
+  }
+  check(await settled(), 'the file is as generated again: no drift')
+  await page.goto(editorUrl('/health'))
+  await page.locator('[data-testid="drift"]').waitFor()
+  check(await until(async () => (await dot.count()) === 0), 'and the failure dot is gone')
+
+  // A model that does not load: the file with the problem is linked from the Data screen's list, in All model files, where it is fixed.
+  const detailFile = '.bildr/modules/blog/pages/post-detail.json'
+  const detailPath = join(app.root, detailFile)
+  const detail = readFileSync(detailPath, 'utf8')
+  // The module answers a model that does not load 422, which Chromium logs as a console error: expected here.
+  const problemErrorsFrom = errors.length
+  try {
+    writeFileSync(detailPath, '{}\n')
+    check(!!await until(async () => (await call('health_get').catch(() => undefined))?.result?.model?.ok === false), 'a page file the model cannot load is a model problem')
+    await page.goto(editorUrl('/data'))
+    await page.locator('[data-testid="data-problems"]').waitFor()
+    // Each problem of the file has its own link (the file is `{}`, so every field it lacks is one).
+    const problem = page.locator(`[data-testid="data-problems"] [data-target="files:${detailFile}"]`)
+    check(await problem.count() === await page.locator('[data-testid="data-problems"] [data-problem]').count() && await problem.count() > 0 && !/Model screen/.test(await page.locator('[data-testid="data-problems"]').innerText()), 'the Data screen links the problem to its file, with no "(Model screen)"')
+    check(/The model has problems/.test(await dot.getAttribute('title')), `and the toolbar's failure dot says so (${await dot.getAttribute('title')})`)
+    await problem.first().click()
+    await page.locator('[data-testid="raw-content"]').waitFor()
+    const hash = new URL(page.url()).hash
+    check(hash.includes('item=files') && decodeURIComponent(hash).includes(`file=${detailFile}`), `clicking it opens All model files on that file (${hash})`)
+    check((await page.locator('[data-testid="raw-content"]').inputValue().catch(() => '')).trim() === '{}', 'which shows the file as it is')
+  } finally {
+    writeFileSync(detailPath, detail)
+  }
+  check(await settled(), 'the page file is restored: the model loads again, with no drift')
+  errors.push(...errors.splice(problemErrorsFrom).filter(message => !refused422.test(message)))
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 // A new entity regenerates the app and restarts the dev server: its event stream ends mid-request.
