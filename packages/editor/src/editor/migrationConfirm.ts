@@ -24,11 +24,14 @@ export type ConfirmResult = 'confirmed' | 'stale' | 'nothing'
 
 /** The note each status's Review shows (see `PLAN_UPDATED`), shared by the banner that leaves it and the review that shows it. */
 const notes = new WeakMap<Status, Ref<string | null>>()
+/** Whether a confirmation is under way, by status: the plan is one, so one confirmation runs at a time whoever asked (a banner's Apply, the Review's Apply). */
+const confirmations = new WeakMap<Status, Ref<boolean>>()
 
 export function useMigrationConfirm(status: Status) {
   /** The confirmation modal of the review. */
   const open = ref(false)
-  const confirming = ref(false)
+  const confirming = confirmations.get(status) ?? ref(false)
+  confirmations.set(status, confirming)
   const error = ref<string | null>(null)
   const outcome = ref<MigrationResult | null>(null)
   /** What the review says before the plan: why the user is looking at it again. Shared, so the banner can leave it for the review. */
@@ -48,14 +51,14 @@ export function useMigrationConfirm(status: Status) {
   const outcomeColor = computed(() => outcome.value?.kind === 'failed' ? 'error' as const : outcome.value?.kind === 'pending' ? 'warning' as const : 'success' as const)
 
   /**
-   * Confirms the plan, and reads what is pending again. `hash` is the plan the caller showed: when the plan now is another, nothing
-   * is confirmed (`stale`); without it, the plan now is confirmed. A confirmation under way is not asked twice.
+   * Confirms the plan, and reads what is pending again. `hash` is the plan the caller showed, and is required: when the plan now is
+   * another, nothing is confirmed (`stale`). A confirmation under way, by any asker of this status, is not asked twice.
    */
-  const confirm = async (hash?: string): Promise<ConfirmResult> => {
+  const confirm = async (hash: string): Promise<ConfirmResult> => {
     if (confirming.value) return 'nothing'
     const plan = status.plan.value
     if (!plan) return 'nothing'
-    if (hash !== undefined && plan.hash !== hash) return 'stale'
+    if (plan.hash !== hash) return 'stale'
     confirming.value = true
     error.value = null
     outcome.value = null

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import { PLAN_UPDATED, planLosesData, useMigrationConfirm } from '../../editor/migrationConfirm.ts'
 import type { CollectionChange } from '../../editor/migrationTargets.ts'
@@ -12,7 +12,8 @@ import { useStatus } from '../../status.ts'
  * **Apply** is offered only when the plan loses nothing: a plan that loses data is never applied without the review. The plan is
  * one: Apply confirms all of it, not this collection's part, so it is the whole plan that decides, and it says "Apply all changes"
  * when the plan changes more than this collection. Apply confirms the plan this banner was rendered with (its hash, taken when the
- * banner appeared): if the plan is another by the time of the click, nothing is confirmed and Review opens with a note.
+ * banner appeared, and again once the note of a stale Apply is acknowledged): if the plan is another by the time of the click, nothing is
+ * confirmed and Review opens with a note.
  * `change` is what the plan does to the collection shown (`editor.dataMigration`).
  */
 const { change } = defineProps<{ change: CollectionChange }>()
@@ -21,8 +22,11 @@ const status = useStatus()
 const toast = useToast()
 const { confirming, error, outcome, outcomeText, outcomeColor, note, confirm } = useMigrationConfirm(status)
 
-/** The plan this banner was rendered for. */
-const rendered = status.plan.value?.hash
+/** The plan this banner was rendered for (its hash, required by `confirm`). It is taken again once the note a stale Apply left is gone: the user has seen the new plan. */
+const rendered = ref(status.plan.value?.hash ?? '')
+watch(note, (now, before) => {
+  if (before && !now) rendered.value = status.plan.value?.hash ?? ''
+})
 
 /** Whether confirming the plan can lose data, whichever collection it is on. */
 const loses = computed(() => status.plan.value !== null && planLosesData(status.plan.value))
@@ -39,7 +43,7 @@ function review(why: string | null = null) {
 }
 
 async function apply() {
-  const result = await confirm(rendered)
+  const result = await confirm(rendered.value)
   if (result === 'nothing') return
   if (result === 'stale') review(PLAN_UPDATED)
   else if (error.value) toast.add({ title: 'Not applied', description: error.value, color: 'error' })

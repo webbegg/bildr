@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted } from 'vue'
-import { planLosesData, useMigrationConfirm } from '../../editor/migrationConfirm.ts'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { PLAN_UPDATED, planLosesData, useMigrationConfirm } from '../../editor/migrationConfirm.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { useStatus } from '../../status.ts'
 import ConfirmModal from '../ConfirmModal.vue'
@@ -10,7 +10,8 @@ import ProblemsList from '../ProblemsList.vue'
  * The pending migration plan (S9, S6), shown in the Data workspace when the tree's Migrations entry is chosen (`?item=migrations`),
  * or a collection's Review: which collections it changes, what applying it loses, in the collections' words ("Post · body"), and the
  * changes themselves (the statements). A plan that loses data waits here until it is applied after a confirmation; Apply posts the
- * plan's hash, so a plan that changed since it was shown is refused. A plan that loses nothing is applied at once. With no plan it
+ * hash of the plan the user was shown (when the changes were rendered, or when the confirmation opened), so a plan that changed since is
+ * not applied: the confirmation closes, and the new plan is shown with the note that the changes were updated. A plan that loses nothing is applied at once. With no plan it
  * says so, and after an apply it says what was written. Without a database it says there is nothing to migrate.
  */
 
@@ -35,10 +36,29 @@ const summary = computed(() => {
   ].filter(Boolean).join(' ')
 })
 
+/** The plan the changes on screen are (its hash, set once they are rendered). */
+const shown = ref(plan.value?.hash ?? '')
+watch(() => plan.value?.hash, (hash) => {
+  shown.value = hash ?? ''
+}, { flush: 'post' })
+/** The plan the confirmation of losses was opened for. */
+const asked = ref('')
+
+/** Confirms the plan that was shown; when it is not the plan now, nothing is applied and the new plan is shown with a note (the module's own `pending` answer says it in the outcome). */
+async function confirmShown(hash: string) {
+  const result = await confirm(hash)
+  if (result === 'stale' && outcome.value?.kind !== 'pending') {
+    open.value = false
+    note.value = PLAN_UPDATED
+  }
+}
+
 /** A plan that loses data asks first; one that loses nothing is applied. */
 function apply() {
-  if (loses.value) open.value = true
-  else void confirm()
+  if (loses.value) {
+    asked.value = shown.value
+    open.value = true
+  } else void confirmShown(shown.value)
 }
 
 onMounted(() => {
@@ -168,7 +188,7 @@ onBeforeUnmount(() => {
       confirm-label="Apply"
       confirm-test-id="confirm-migration"
       :loading="confirming"
-      @confirm="confirm()"
+      @confirm="confirmShown(asked)"
     >
       <ul
         v-if="plan"

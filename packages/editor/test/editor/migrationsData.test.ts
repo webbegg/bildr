@@ -162,6 +162,53 @@ describe('the plan in the Data workspace', () => {
     expect(actions.named('migration_confirm')[0]?.input).toEqual({ hash: 'safe42' })
   })
 
+  it('confirms nothing when the plan changed while the confirmation of losses was open: the new plan is shown, with a note', async () => {
+    const { actions, change } = await open({ path: '/data?item=migrations' })
+    await click(q('[data-testid="confirm"]'))
+    expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+    await change({ ...losingPlan(), hash: 'abc124', statements: [DROP, 'ALTER TABLE `blog_posts` DROP COLUMN `title`;'] })
+    await click(document.body.querySelector<HTMLElement>('[data-testid="confirm-migration"]'))
+    expect(actions.named('migration_confirm')).toHaveLength(0)
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(text(q('[data-testid="migration-note"]'))).toBe(UPDATED)
+    expect(q('[data-testid="statements"]')?.textContent).toContain('DROP COLUMN `title`')
+    // What is shown now is confirmed by a new confirmation, by the new hash.
+    await click(q('[data-testid="confirm"]'))
+    await click(document.body.querySelector<HTMLElement>('[data-testid="confirm-migration"]'))
+    expect(actions.named('migration_confirm').map(call => call.input)).toEqual([{ hash: 'abc124' }])
+  })
+
+  it('applies the plan it shows by its hash, a plan that loses nothing included', async () => {
+    const { actions, change } = await open({ path: '/data?item=migrations', pending: safePlan() })
+    await change({ ...safePlan(), hash: 'safe43' })
+    await click(q('[data-testid="confirm"]'))
+    expect(actions.named('migration_confirm').map(call => call.input)).toEqual([{ hash: 'safe43' }])
+  })
+
+  it('sends one migration_confirm when the banner\'s Apply is under way and the Review\'s Apply is clicked', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const { actions } = await open({
+      pending: safePlan(),
+      confirm: async () => {
+        await gate
+        return { migration: { kind: 'written', tag: '0003_bildr', statements: ['x'], applied: true } }
+      }
+    })
+    await click(apply())
+    expect(actions.named('migration_confirm')).toHaveLength(1)
+    // Review opens while the banner's confirmation is still under way.
+    await click(q('[data-testid="collection-migration-review"]'))
+    expect(q('[data-testid="statements"]')).not.toBeNull()
+    await click(q('[data-testid="confirm"]'))
+    expect(actions.named('migration_confirm')).toHaveLength(1)
+    release()
+    await settle()
+    expect(actions.named('migration_confirm')).toHaveLength(1)
+  })
+
   it('shows the note the banner left when the changes were updated under it, and drops it once it is gone from the screen', async () => {
     const { change } = await open({ pending: safePlan() })
     await change({ ...safePlan(), hash: 'safe43' })
@@ -298,6 +345,17 @@ describe('Apply on the banner', () => {
     expect(text(q('[data-testid="migration-note"]'))).toBe(UPDATED)
   })
 
+  it('takes the new plan\'s hash when the collection is shown again after the stale bounce to Review', async () => {
+    const { actions, change } = await open({ pending: safePlan() })
+    await change({ ...safePlan(), hash: 'safe43' })
+    await click(apply())
+    expect(actions.named('migration_confirm')).toHaveLength(0)
+    expect(text(q('[data-testid="migration-note"]'))).toBe(UPDATED)
+    await click(q('[data-tree-item="collection:ent_post"]'))
+    await click(apply())
+    expect(actions.named('migration_confirm').map(call => call.input)).toEqual([{ hash: 'safe43' }])
+  })
+
   it('confirms nothing when the plan came to lose data between the banner and the click', async () => {
     const { actions, router, change } = await open({ pending: safePlan() })
     await change(losingPlan())
@@ -360,6 +418,16 @@ describe('the global banner', () => {
 
   it('is shown on the Canvas', async () => {
     await open({ path: '/design' })
+    expect(globalBanner()).not.toBeNull()
+  })
+
+  it('comes back when the Data screen, which showed the plan in a collection\'s banner, is left for the Canvas', async () => {
+    const { router } = await open()
+    expect(banner()).not.toBeNull()
+    expect(globalBanner()).toBeNull()
+    await router.push('/design')
+    await settle()
+    expect(router.currentRoute.value.path).toBe('/design')
     expect(globalBanner()).not.toBeNull()
   })
 
