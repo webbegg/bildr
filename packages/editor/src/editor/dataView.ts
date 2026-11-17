@@ -6,7 +6,10 @@ import type { Design } from '../design/store.ts'
 import type { ConfirmOptions, EditorView } from './useEditor.ts'
 import { createDataArtifactView } from './dataArtifactView.ts'
 import { tabsOf } from './dataTabs.ts'
-import type { DataItem, DataTab } from './dataTabs.ts'
+import type { DataItem, DataSpecial, DataTab } from './dataTabs.ts'
+import { migrationTargets } from './migrationTargets.ts'
+import type { CollectionChange, MigrationTargets } from './migrationTargets.ts'
+import type { PendingMigration } from '../types.ts'
 import { collectionsOf, connectionsOf, defaultSourceOf, fixtureRowsOf } from '../shared/dataModel.ts'
 import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
 
@@ -34,12 +37,16 @@ import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
  * Edits that are not saved (`dataDirty`: the raw editor reports a file's, the query Definition its draft, the action Overview a
  * refused text) are not lost silently: every way of moving the workspace (the item, the tab, All model files, the file in it)
  * goes through `leaveData`, which asks first and moves only when the user discards them.
+ *
+ * The pending migration plan (S6) is the status's (`plan`, which is null without a database): the workspace shows it where the
+ * collection is (`dataMigration`, its banner) or as its own item (`dataSpecial` is `migrations`). `planShown` says whether it does,
+ * the one place that knows, for the shell, which has a banner of its own for the plan when this does not show it.
  */
 
 /** Where rows come from: the app's list route (Live) or the collection's own (Sample data). */
 export type RowsSource = 'live' | 'sample'
 
-export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (options: ConfirmOptions) => Promise<boolean>) => {
+export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (options: ConfirmOptions) => Promise<boolean>, plan: Ref<PendingMigration | null>) => {
   const model = design.model
   const collections = computed<DataCollection[]>(() => model.value ? collectionsOf(model.value) : [])
   const connections = computed<DataConnection[]>(() => model.value ? connectionsOf(model.value) : [])
@@ -82,29 +89,24 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
 
   /**
    * What is shown instead of the item, when something is: All model files (S3) or the pending migration (S6), one at a time. Choosing a
-   * collection, a connection, a query or an action, however it is chosen, shows it instead: the choosers clear this (`filesShown = false`).
+   * collection, a connection, a query or an action, however it is chosen, shows it instead: the choosers clear this (`special.value = null`).
    */
-  const special = ref<'files' | 'migrations' | null>(null)
-  const filesShown = computed<boolean>({
-    get: () => special.value === 'files',
+  const special = ref<DataSpecial | null>(null)
+  const dataSpecial = computed<DataSpecial | null>(() => special.value)
+  /** The setter of a special view's flag: showing it replaces the one shown; hiding it leaves any other as it is. */
+  const specialFlag = (name: DataSpecial) => computed<boolean>({
+    get: () => special.value === name,
     set: (shown) => {
-      special.value = shown ? 'files' : null
+      void leaveData(() => {
+        if (shown) special.value = name
+        else if (special.value === name) special.value = null
+      }, shown !== (special.value === name))
     }
   })
   /** All model files (S3) is shown instead of the item, and the `.bildr/` file chosen in it. */
-  const dataFiles = computed<boolean>({
-    get: () => filesShown.value,
-    set: (shown) => {
-      void leaveData(() => (filesShown.value = shown), shown !== filesShown.value)
-    }
-  })
+  const dataFiles = specialFlag('files')
   /** The pending migration's plan (S6) is shown instead of the item, which keeps its choice. */
-  const dataMigrations = computed<boolean>({
-    get: () => special.value === 'migrations',
-    set: (shown) => {
-      void leaveData(() => (special.value = shown ? 'migrations' : null), shown !== (special.value === 'migrations'))
-    }
-  })
+  const dataMigrations = specialFlag('migrations')
   const chosenFile = ref<string | null>(null)
   const dataFile = computed<string | null>({
     get: () => chosenFile.value,
@@ -113,13 +115,13 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
     }
   })
   /** The query or the action chosen (S10), and the rules of how it lives with the collection and connection chosen: `dataArtifactView.ts`. */
-  const { queries, actions, queryId, actionId, artifact, artifactChosen, forgetArtifact, dataQuery, dataAction } = createDataArtifactView(model, leaveData, filesShown)
+  const { queries, actions, queryId, actionId, artifact, artifactChosen, forgetArtifact, dataQuery, dataAction } = createDataArtifactView(model, leaveData, special)
   const chooser = (chosen: Ref<string | null>) => computed<string | null>({
     get: () => chosen.value,
     set: (id) => {
       void leaveData(() => {
         chosen.value = id
-        filesShown.value = false
+        special.value = null
         if (id !== null) forgetArtifact()
       }, id !== chosen.value || special.value !== null || (id !== null && artifactChosen.value))
     }
@@ -136,10 +138,21 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
   const dataItem = computed<DataItem | null>(() => artifact.value ?? (connection.value
     ? { kind: 'connection', id: connection.value.id }
     : collection.value ? { kind: 'collection', id: collection.value.id } : null))
+  /** The item the workspace shows in its own right: `dataItem`, unless All model files or the pending migration is shown instead. */
+  const dataShown = computed<DataItem | null>(() => special.value === null ? dataItem.value : null)
   /** The shown item, narrowed: the collection when a collection is shown, else null. */
   const dataCollection = computed<DataCollection | null>(() => dataItem.value?.kind === 'collection' ? collection.value : null)
   /** The shown item, narrowed: the connection when a connection is shown, else null. */
   const dataConnection = computed<DataConnection | null>(() => dataItem.value?.kind === 'connection' ? connection.value : null)
+  /** What the pending plan does and loses, in the collections' words (S6); null with no plan (or without a database). */
+  const dataPlan = computed<MigrationTargets | null>(() => plan.value ? migrationTargets(model.value, plan.value) : null)
+  /** What the plan does to the collection shown (its banner), when it changes it and the collection is what the workspace shows. */
+  const dataMigration = computed<CollectionChange | null>(() => {
+    const shown = special.value === null ? dataCollection.value : null
+    return shown && dataPlan.value ? dataPlan.value.collections[shown.id] ?? null : null
+  })
+  /** The workspace shows the plan itself: a collection's banner, or the Migrations item. */
+  const planShown = computed(() => plan.value !== null && model.value !== null && (dataMigration.value !== null || special.value === 'migrations'))
   const dataTabs = computed<DataTab[]>(() => dataItem.value ? tabsOf(dataItem.value.kind) : [])
   const chosenTab = ref<DataTab>('rows')
   /** The tab shown: the one chosen when the item has it, else the item's first. Choosing keeps the choice for the next item that has it. */
@@ -222,5 +235,5 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
     if (view.value === 'data') void live.refresh()
   })
 
-  return { collections, connections, queries, actions, queryId, actionId, dataQuery, dataAction, collectionId, connectionId, dataFiles, dataMigrations, dataFile, dataDirty, leaveData, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, rowsEditable, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
+  return { collections, connections, queries, actions, queryId, actionId, dataQuery, dataAction, collectionId, connectionId, dataSpecial, dataShown, dataFiles, dataMigrations, dataPlan, dataMigration, planShown, dataFile, dataDirty, leaveData, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, rowsEditable, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
 }

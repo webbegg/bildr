@@ -12,6 +12,9 @@ export interface DataItem {
   id: string
 }
 
+/** What the workspace shows in place of the item (S3, S6): All model files, or the pending migration; null when it shows the item. The names are the tree's keys of those entries (`FILES_KEY`, `MIGRATIONS_KEY`). */
+export type DataSpecial = 'files' | 'migrations'
+
 /** The item's key, `collection:<id>`, `connection:<id>`, `query:<id>` or `action:<id>`: the tree's item and the URL's `item` are named by it. */
 export const dataItemKey = (item: DataItem): string => `${item.kind}:${item.id}`
 

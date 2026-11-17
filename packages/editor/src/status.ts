@@ -1,4 +1,4 @@
-import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import type { ComputedRef, InjectionKey, Ref } from 'vue'
 import { callAction, errorMessage, sessionEnded, subscribeEvents } from './api.ts'
 import type { HealthReport, PendingMigration } from './types.ts'
@@ -12,12 +12,14 @@ export interface Status {
   healthError: Ref<string | null>
   pending: Ref<PendingMigration | null>
   pendingError: Ref<string | null>
-  /** Whether the project has an app database (V7); false hides the Migrations screen. True until known. */
+  /** Whether the project has an app database (V7); false means no plan is offered (`plan` is null), whatever is on file. True until known. */
   database: Ref<boolean>
-  /** The plan that waits for confirmation, when the project has a database to run it on (S6, V7): what the banners and the Data tree's Migrations entry are shown for. */
+  /** The plan that waits for confirmation, when the project has a database to run it on (S6, V7): the one accessor of "the plan" (what the banners and the Data tree's Migrations entry are shown for). */
   plan: ComputedRef<PendingMigration | null>
-  /** Whether the Data workspace shows the plan itself (a collection's banner, or the Migrations entry): the global banner says nothing more then. */
-  planInContext: Ref<boolean>
+  /** Whether the Data workspace shows the plan itself, a collection's banner or the Migrations item (`editor.planShown`): the global banner says nothing more then. False while no Data screen is open. */
+  planShown: ComputedRef<boolean>
+  /** The Data screen says where its `planShown` is, while it is open; returns the call that withdraws it. */
+  showPlanFrom: (shown: Ref<boolean>) => () => void
   refreshHealth: () => Promise<void>
   refreshPending: () => Promise<void>
   refresh: () => Promise<void>
@@ -32,7 +34,15 @@ export const createStatus = (): Status => {
   const pendingError = ref<string | null>(null)
   const database = ref(true)
   const plan = computed(() => database.value ? pending.value : null)
-  const planInContext = ref(false)
+  const shownBy = shallowRef<(() => boolean) | null>(null)
+  const planShown = computed(() => shownBy.value?.() ?? false)
+  const showPlanFrom = (shown: Ref<boolean>) => {
+    const read = () => shown.value
+    shownBy.value = read
+    return () => {
+      if (shownBy.value === read) shownBy.value = null
+    }
+  }
 
   const refreshHealth = async () => {
     try {
@@ -55,7 +65,7 @@ export const createStatus = (): Status => {
   const refresh = async () => {
     await Promise.all([refreshHealth(), refreshPending()])
   }
-  return { health, healthError, pending, pendingError, database, plan, planInContext, refreshHealth, refreshPending, refresh }
+  return { health, healthError, pending, pendingError, database, plan, planShown, showPlanFrom, refreshHealth, refreshPending, refresh }
 }
 
 export const useStatus = (): Status => {

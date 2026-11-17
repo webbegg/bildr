@@ -1,5 +1,5 @@
 import { computed, inject, provide, reactive, ref, shallowRef, watch } from 'vue'
-import type { InjectionKey } from 'vue'
+import type { InjectionKey, Ref } from 'vue'
 import type { Theme, ThemePatch } from '@bildr/codegen/design'
 import type { ComponentFile, LayoutFile, ModelNode, PageFile, Value } from '@bildr/codegen/model'
 import { isFlexType } from '@bildr/codegen/render'
@@ -28,6 +28,7 @@ import type { SelectionStep } from './selection.ts'
 import { isInsertTool, MOVE_TOOL, selectionAccent, toolForKey } from './tools.ts'
 import type { ToolId } from './tools.ts'
 import type { UseEntry } from '../shared/dataArtifacts.ts'
+import type { PendingMigration } from '../types.ts'
 import { interactionKey, parseInteractionKey } from '../shared/interactionPanel.ts'
 import { layerName } from '../shared/layers.ts'
 import { createDataView } from './dataView.ts'
@@ -64,6 +65,8 @@ export interface EditorOptions {
   toast?: (toast: EditorToast) => void
   /** The view the editor starts on (the Data screen starts on `data`); default: the one that asked for this screen, else Canvas. */
   view?: EditorView
+  /** The pending migration plan, when the project has a database to run it on (`status.plan`): what the Data workspace shows where the collections it changes are (S6). Default: none. */
+  plan?: Ref<PendingMigration | null>
 }
 
 /** A confirm dialog (EditorConfirm) the editor asks instead of the browser's `confirm()`. */
@@ -220,7 +223,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   const screen = screenOf(mode.value)
   const importRequest = ref(screen === 'data' ? handed.data.importRequest ?? 0 : 0)
   // `confirm` is made below: it is only asked once the editor is in use.
-  const data = createDataView(design, mode, options => confirm(options))
+  const data = createDataView(design, mode, options => confirm(options), options.plan ?? ref(null))
   if (screen === 'data') data.collectionId.value = handed.data.collectionId ?? null
   watch(mode, view => requestView(view, screen, { pageId: lastPage.value, collectionId: data.collectionId.value, importRequest: importRequest.value }), { flush: 'sync' })
 
@@ -1037,7 +1040,12 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     connectionId: data.connectionId,
     connection: data.connection,
     dataFiles: data.dataFiles,
+    dataSpecial: data.dataSpecial,
+    dataShown: data.dataShown,
     dataMigrations: data.dataMigrations,
+    dataPlan: data.dataPlan,
+    dataMigration: data.dataMigration,
+    planShown: data.planShown,
     dataFile: data.dataFile,
     dataDirty: data.dataDirty,
     leaveData: data.leaveData,

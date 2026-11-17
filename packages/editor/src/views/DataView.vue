@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, provide } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 import { useToast } from '@nuxt/ui/composables/useToast'
 import ProblemsList from '../components/ProblemsList.vue'
@@ -8,6 +8,7 @@ import DataWorkspace from '../components/data/DataWorkspace.vue'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
 import { useDataLocation } from '../editor/dataLocation.ts'
 import { createEditor, provideEditor } from '../editor/useEditor.ts'
+import { useStatus } from '../status.ts'
 
 /**
  * The Data screen (U7, `/data`), the Data workspace (S2): the hosted editor's Data view over the `.bildr/`
@@ -22,13 +23,17 @@ import { createEditor, provideEditor } from '../editor/useEditor.ts'
  * not be read at all, or the module said it is not ok without naming a problem: never an endless spinner.
  *
  * It is its own screen, not a mode of `DesignView`: the adapter opens it when the view changes to
- * Data (`editor/views.ts`), and the editor made here starts on it.
+ * Data (`editor/views.ts`), and the editor made here starts on it. The pending migration plan is the shell's status (S6): the
+ * workspace shows it where the collections it changes are, and tells the shell when it does (`editor.planShown`), so the shell's
+ * own banner is shown only while the plan is not.
  */
 
 const design = createDesign()
 provide(DESIGN_KEY, design)
 const toast = useToast()
-const editor = provideEditor(createEditor(design, { toast: notice => toast.add(notice), view: 'data' }))
+const status = useStatus()
+const editor = provideEditor(createEditor(design, { toast: notice => toast.add(notice), view: 'data', plan: status.plan }))
+const withdrawPlanShown = status.showPlanFrom(computed(() => editor.planShown))
 useDataLocation(editor)
 // Leaving the screen is a move away from unsaved edits too.
 onBeforeRouteLeave(() => editor.dataDirty === null || editor.leaveData(() => {}))
@@ -62,6 +67,7 @@ onMounted(() => {
   void editor.start()
 })
 onBeforeUnmount(() => {
+  withdrawPlanShown()
   window.removeEventListener('keydown', onKeyDown)
   document.documentElement.classList.remove('bildr-editor')
   editor.dispose()

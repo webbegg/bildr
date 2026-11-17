@@ -23,6 +23,11 @@
  */
 import { action, appApi, appShows, bildr, call, canvas, check, editorUrl, newPage, openData, openEditor, quiesce, quiet, run, settled, shot, until, whileAppRebuilds } from './lib.mjs'
 
+/** How long the migrations step waits (D6): for the app to regenerate and plan the migration, for the editor to show it, and for the module to write it. */
+const MIGRATION_PLANNED_MS = 60_000
+const MIGRATION_SHOWN_MS = 30_000
+const MIGRATION_WRITTEN_MS = 60_000
+
 await run('data', async ({ page, browser, errors }) => {
   // The app's create route takes the id the client form mints (a uuid).
   const post = (path, body) => appApi(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: crypto.randomUUID(), ...body }) })
@@ -64,7 +69,7 @@ await run('data', async ({ page, browser, errors }) => {
   const renamed = await until(() => bildr('modules/blog/entities/menu.json').fields.some(f => f.name === 'remark'))
   check(renamed, 'the Fields tab renames note to remark (in the entity file)')
   check(bildr('modules/blog/entities/menu.json').fields[2].id === 'fld_note', 'the field keeps its id fld_note')
-  // A renamed column is a destructive migration on a database: it waits for the user's confirmation (the Migrations screen).
+  // A renamed column is a destructive migration on a database: it waits for the user's confirmation (the Data workspace's Migrations).
   check(await quiesce(60_000), 'the pending migration of the renamed column is confirmed')
   await quiet()
 
@@ -676,44 +681,51 @@ await run('data', async ({ page, browser, errors }) => {
   // A field dropped from a collection the database stores is a migration that loses data: it waits for confirmation, and says so on the
   // collection (a banner with Review and Apply), in the tree (a Migrations entry with its count) and, elsewhere, in the global banner.
   const ledger = await action('entity_create', { name: 'Ledger', source: 'ds_main', fields: [{ name: 'title', type: 'text' }, { name: 'memo', type: 'text' }] })
-  await quiesce(60_000)
+  await quiesce(MIGRATION_PLANNED_MS)
   await quiet()
   const memo = bildr('modules/blog/entities/ledger.json')?.fields.find(field => field.name === 'memo')
   await action('entity_field_remove', { entity: ledger.entityId, field: memo.id })
-  const waiting = await until(async () => (await call('migration_pending_get').catch(() => undefined))?.result?.pending, 60_000)
+  const waiting = await until(async () => (await call('migration_pending_get').catch(() => undefined))?.result?.pending, MIGRATION_PLANNED_MS)
   check(!!waiting && waiting.statements.some(statement => /DROP COLUMN `memo`/.test(statement)), `removing a field of a stored collection leaves a migration pending (${waiting?.statements})`)
 
   await openData(page)
   await page.locator('[data-collection="ledgers"]').click()
   const banner = page.locator('[data-testid="collection-migration-banner"]')
-  await banner.waitFor({ timeout: 30_000 })
+  await banner.waitFor({ timeout: MIGRATION_SHOWN_MS })
   const bannerText = (await banner.innerText()).replace(/\s+/g, ' ')
-  check(/This collection has a pending database change and it loses data/.test(bannerText), `the collection says it has a pending database change, and that it loses data (${bannerText})`)
+  check(/This collection has a database change that loses data: Ledger · memo/.test(bannerText), `the collection says it has a database change that loses data, and what (${bannerText})`)
   check(await page.locator('[data-testid="migration-banner"]').count() === 0, 'the global banner is not repeated on the collection\'s own screen')
-  check(await page.locator('[data-tree-item="migrations"] [data-migrations-count]').innerText() === '1', 'the tree lists Migrations, with one change')
+  check(await page.locator('[data-tree-item="migrations"] [data-migrations-count]').innerText() === '1', 'the tree lists Migrations, with one collection changed')
   await page.locator('[data-collection="posts"]').click()
   check(await page.locator('[data-testid="collection-migration-banner"]').count() === 0 && await page.locator('[data-testid="migration-banner"]').count() === 1, 'a collection the plan does not change has no banner, and the global one is back')
+  await page.locator('[data-raw-model]').click()
+  check(await page.locator('[data-testid="migration-banner"]').count() === 1, 'All model files shows no plan, so the global banner is there')
   await page.locator('[data-collection="ledgers"]').click()
   await banner.waitFor()
+  // The picture shows the Migrations entry: the Queries section is folded for it (and opened again), and the pointer is moved off the tree.
+  await page.locator('[data-artifact-toggle="query"]').click()
+  await page.mouse.move(900, 600)
   await page.waitForTimeout(400)
   await page.evaluate(() => document.activeElement?.blur())
   await shot(page, 'd6-migration-banner')
+  await page.locator('[data-artifact-toggle="query"]').click()
 
-  // Apply on a plan that loses data opens Review: nothing is confirmed without the review.
-  await page.locator('[data-testid="collection-migration-apply"]').click()
+  // A plan that loses data has no Apply on the banner: nothing is confirmed without the review.
+  check(await page.locator('[data-testid="collection-migration-apply"]').count() === 0, 'a plan that loses data offers no Apply on the collection')
+  await page.locator('[data-testid="collection-migration-review"]').click()
   await page.locator('[data-testid="statements"]').waitFor()
-  check(new URL(page.url()).hash.includes('item=migrations'), `Apply on a plan that loses data opens the plan in the workspace (${new URL(page.url()).hash})`)
-  check(/DROP COLUMN `memo`/.test(await page.locator('[data-testid="statements"]').innerText()) && (await page.locator('[data-testid="losing"]').innerText()).includes('memo'), 'the review lists the statements and what the plan loses')
+  check(new URL(page.url()).hash.includes('item=migrations'), `Review opens the plan in the workspace (${new URL(page.url()).hash})`)
+  check(/DROP COLUMN `memo`/.test(await page.locator('[data-testid="statements"]').innerText()) && (await page.locator('[data-testid="losing"]').innerText()).includes('Ledger · memo'), 'the review lists the statements and what the plan loses, by collection and field')
   check((await call('migration_pending_get')).result?.pending?.hash === waiting.hash, 'and the plan is still pending')
   await page.locator('[data-testid="confirm"]').click()
   await page.locator('[data-testid="confirm-migration"]').click()
-  await page.locator('[data-testid="migration-outcome"]').waitFor({ timeout: 60_000 })
+  await page.locator('[data-testid="migration-outcome"]').waitFor({ timeout: MIGRATION_WRITTEN_MS })
   check(/written/.test(await page.locator('[data-testid="migration-outcome"]').innerText()), 'confirming by the plan\'s hash writes the migration')
   check(await until(async () => !(await call('migration_pending_get'))?.result?.pending), 'no migration is pending any more')
   check(await until(async () => (await page.locator('[data-tree-item="migrations"]').count()) === 0), 'the Migrations entry is gone from the tree')
   await page.locator('[data-collection="ledgers"]').click()
   check(await page.locator('[data-testid="collection-migration-banner"]').count() === 0 && await page.locator('[data-testid="migration-banner"]').count() === 0, 'the collection\'s banner is gone, and so is the global one')
-  await quiesce(60_000)
+  await quiesce(MIGRATION_PLANNED_MS)
   await quiet()
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)

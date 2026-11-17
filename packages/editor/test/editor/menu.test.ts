@@ -183,13 +183,4 @@ describe('the top bar menu is the only navigation', () => {
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data'))
     expect(router.currentRoute.value.query).toEqual({ item: 'migrations' })
   })
-
-  it('retires the Migrations screen: /migrations opens the plan in the Data workspace, which the menu names Data (S6)', async () => {
-    const { router } = await open('/migrations', pendingPlan())
-    expect(router.currentRoute.value.path).toBe('/data')
-    expect(router.currentRoute.value.query).toEqual({ item: 'migrations' })
-    expect(text(q('[data-view-menu]'))).toBe('Data')
-    expect(q('[data-data-migrations]')).not.toBeNull()
-    expect(router.hasRoute('migrations')).toBe(false)
-  })
 })

@@ -44,7 +44,7 @@ const losses = computed(() => {
     >
       <div class="flex min-w-0 flex-1 flex-col">
         <UAlert
-          v-if="status.plan.value && !status.planInContext.value"
+          v-if="status.plan.value && !status.planShown.value"
           data-testid="migration-banner"
           color="warning"
           variant="subtle"

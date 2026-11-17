@@ -20,7 +20,7 @@ const emit = defineEmits<{ rename: [], delete: [] }>()
 const editor = useEditor()
 const key = computed(() => dataItemKey({ kind, id: item.id }))
 const stop = inject(TREE_STOP, ref(''))
-const shown = computed(() => !editor.dataFiles && !editor.dataMigrations && editor.dataItem?.kind === kind && editor.dataItem.id === item.id)
+const shown = computed(() => editor.dataShown?.kind === kind && editor.dataShown.id === item.id)
 const words = computed(() => ARTIFACT_KINDS[kind])
 
 function show() {

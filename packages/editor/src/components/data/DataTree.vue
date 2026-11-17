@@ -2,13 +2,12 @@
 import { computed, provide, reactive, ref, useTemplateRef, watch } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { dataItemKey } from '../../editor/dataTabs.ts'
-import { FILES_KEY, MIGRATIONS_KEY, TREE_STOP, answeredImports, storeFolded, storedFolded, treeItems } from '../../editor/dataTree.ts'
+import { TREE_STOP, answeredImports, storeFolded, storedFolded, treeItems } from '../../editor/dataTree.ts'
 import type { ArtifactFilters } from '../../editor/dataTree.ts'
 import type { ArtifactKind } from '../../shared/dataArtifacts.ts'
 import { rovingTarget } from '../../editor/rovingKeys.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
-import { useStatus } from '../../status.ts'
 
 /**
  * The Data workspace's tree, Framer CMS's: **Collections** (entities stored by the app: its
@@ -28,7 +27,6 @@ import { useStatus } from '../../status.ts'
  * expands it (or goes to its first collection).
  */
 const editor = useEditor()
-const status = useStatus()
 const tree = useTemplateRef<HTMLElement>('tree')
 
 /** The connections folded in the tree, by id. */
@@ -37,7 +35,7 @@ const collapsed = reactive(new Set<string>())
 const filters = reactive<ArtifactFilters>({ queries: '', actions: '' })
 /** The Queries and Actions sections folded, remembered across reloads. */
 const folded = reactive(storedFolded())
-const items = computed(() => treeItems(editor.collections, editor.connections, collapsed, { queries: editor.queries, actions: editor.actions }, filters, folded, status.plan.value !== null))
+const items = computed(() => treeItems({ collections: editor.collections, connections: editor.connections, collapsed, artifacts: { queries: editor.queries, actions: editor.actions }, filters, folded, migrations: editor.dataPlan !== null }))
 
 function toggleSection(kind: ArtifactKind) {
   if (!folded.delete(kind)) folded.add(kind)
@@ -53,7 +51,8 @@ function toggle(id: string) {
   if (!collapsed.delete(id)) collapsed.add(id)
 }
 
-const shownKey = computed(() => editor.dataFiles ? FILES_KEY : editor.dataMigrations ? MIGRATIONS_KEY : editor.dataItem ? dataItemKey(editor.dataItem) : null)
+/** The key of the item shown: a special view is the tree's entry of the same name (`FILES_KEY`, `MIGRATIONS_KEY`). */
+const shownKey = computed(() => editor.dataSpecial ?? (editor.dataItem ? dataItemKey(editor.dataItem) : null))
 const focusedKey = ref<string | null>(null)
 /** The tab stop: the item with the focus, else the one shown, else the first: always one that is listed. */
 const stop = computed(() => {

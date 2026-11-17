@@ -21,7 +21,7 @@ const { collection, count, indent = false } = defineProps<{ collection: DataColl
 const editor = useEditor()
 const key = computed(() => dataItemKey({ kind: 'collection', id: collection.id }))
 const stop = inject(TREE_STOP, ref(''))
-const shown = computed(() => !editor.dataFiles && !editor.dataMigrations && editor.dataItem?.kind === 'collection' && editor.dataItem.id === collection.id)
+const shown = computed(() => editor.dataShown?.kind === 'collection' && editor.dataShown.id === collection.id)
 const renaming = ref(false)
 const renameValue = ref('')
 
@@ -94,8 +94,10 @@ const menu = computed<DropdownMenuItem[]>(() => [
         :class="shown ? 'text-highlighted' : 'text-dimmed'"
       />
       <span class="truncate">{{ collection.name }}</span>
+      <!-- The `…` button is over the row's end whenever it is shown: the count gives way to it, except on the row shown, where the button is always there and the count sits clear of it. -->
       <span
-        class="ms-auto ps-2 text-xs font-normal text-dimmed tabular-nums group-hover:invisible group-has-data-[state=open]:invisible"
+        class="ms-auto ps-2 text-xs font-normal text-dimmed tabular-nums"
+        :class="shown ? 'me-6' : 'group-hover:invisible group-focus-within:invisible group-has-data-[state=open]:invisible'"
         data-collection-count
       >{{ count ?? '' }}</span>
     </button>

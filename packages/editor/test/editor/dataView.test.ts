@@ -606,7 +606,7 @@ describe('the Data tree of queries and actions (S10)', () => {
 
   it('lists Collections, Connections, Queries, Actions and All model files, in that order', async () => {
     const { editor } = await bootData()
-    const keys = treeItems(editor.collections, editor.connections, new Set(), { queries: editor.queries, actions: editor.actions }).map(item => item.key)
+    const keys = treeItems({ collections: editor.collections, connections: editor.connections, collapsed: new Set(), artifacts: { queries: editor.queries, actions: editor.actions } }).map(item => item.key)
     expect(keys).toEqual([
       'collection:ent_post', 'connection:ds_quotes', 'collection:ent_quote',
       'query:q_all_posts', 'query:q_featured_posts', 'query:q_latest_quotes', 'query:q_post_by_slug',
@@ -617,13 +617,13 @@ describe('the Data tree of queries and actions (S10)', () => {
 
   it('keeps the queries and actions of a folded connection\'s collections listed: they are top level', async () => {
     const { editor } = await bootData()
-    const keys = treeItems(editor.collections, editor.connections, new Set(['ds_quotes']), { queries: editor.queries, actions: [] }).map(item => item.key)
+    const keys = treeItems({ collections: editor.collections, connections: editor.connections, collapsed: new Set(['ds_quotes']), artifacts: { queries: editor.queries, actions: [] } }).map(item => item.key)
     expect(keys).toEqual(['collection:ent_post', 'connection:ds_quotes', 'query:q_all_posts', 'query:q_featured_posts', 'query:q_latest_quotes', 'query:q_post_by_slug', 'files'])
   })
 
   it('lists Migrations just above All model files while a plan is pending (S6), and not otherwise', async () => {
     const { editor } = await bootData()
-    const keys = (migrations?: boolean) => treeItems(editor.collections, editor.connections, new Set(), { queries: [], actions: [] }, { queries: '', actions: '' }, new Set(), migrations).map(item => item.key)
+    const keys = (migrations?: boolean) => treeItems({ collections: editor.collections, connections: editor.connections, collapsed: new Set(), migrations }).map(item => item.key)
     expect(keys().at(-1)).toBe('files')
     expect(keys()).not.toContain('migrations')
     expect(keys(false)).not.toContain('migrations')
@@ -632,7 +632,7 @@ describe('the Data tree of queries and actions (S10)', () => {
 
   it('lists only the items that match a section\'s filter (label, name or collection, any case)', () => {
     const queries = [artifact('q_a', 'Recent posts'), { ...artifact('q_b', 'Top'), collectionName: 'Quote' }]
-    const keys = (filter: string) => treeItems([], [], new Set(), { queries, actions: [] }, { queries: filter, actions: '' }).map(item => item.key)
+    const keys = (filter: string) => treeItems({ collections: [], connections: [], collapsed: new Set(), artifacts: { queries, actions: [] }, filters: { queries: filter, actions: '' } }).map(item => item.key)
     expect(keys('')).toEqual(['query:q_a', 'query:q_b', 'files'])
     expect(keys('RECENT')).toEqual(['query:q_a', 'files'])
     expect(keys('quote')).toEqual(['query:q_b', 'files'])
@@ -742,6 +742,21 @@ describe('the Data location of a query or an action (S10)', () => {
 })
 
 describe('Migrations in the Data workspace (S6)', () => {
+  it('is one of the two special views the workspace shows instead of the item: dataSpecial says which, and dataShown is the item when none is', async () => {
+    const { editor } = await bootData()
+    expect(editor.dataSpecial).toBeNull()
+    expect(editor.dataShown).toEqual({ kind: 'collection', id: 'ent_post' })
+    editor.dataMigrations = true
+    expect(editor.dataSpecial).toBe('migrations')
+    expect(editor.dataShown).toBeNull()
+    editor.dataFiles = true
+    expect(editor.dataSpecial).toBe('files')
+    expect(editor.dataShown).toBeNull()
+    editor.collectionId = 'ent_quote'
+    expect(editor.dataSpecial).toBeNull()
+    expect(editor.dataShown).toEqual({ kind: 'collection', id: 'ent_quote' })
+  })
+
   it('is shown instead of the item, which it keeps, and gives way to All model files', async () => {
     const { editor } = await bootData()
     expect(editor.dataMigrations).toBe(false)

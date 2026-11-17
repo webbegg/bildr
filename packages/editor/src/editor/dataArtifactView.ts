@@ -4,7 +4,7 @@ import type { ActionFile, Model, QueryFile } from '@bildr/codegen/model'
 import type { ArtifactKind } from '../shared/dataArtifacts.ts'
 import { actionsOf, queriesOf } from '../shared/dataModel.ts'
 import type { DataArtifact } from '../shared/dataModel.ts'
-import type { DataItem } from './dataTabs.ts'
+import type { DataItem, DataSpecial } from './dataTabs.ts'
 
 /**
  * Which query or action the Data workspace shows (S10): the "artifact" of `dataView.ts`, composed there. A query or an action is
@@ -23,7 +23,7 @@ import type { DataItem } from './dataTabs.ts'
 /** The workspace's guard over unsaved edits (`dataView.ts`): `apply` runs when the move is made; `changes` is whether it moves anything. */
 export type LeaveData = (apply: () => void, changes?: boolean) => Promise<boolean>
 
-export const createDataArtifactView = (model: Ref<Model | null>, leaveData: LeaveData, filesShown: Ref<boolean>) => {
+export const createDataArtifactView = (model: Ref<Model | null>, leaveData: LeaveData, special: Ref<DataSpecial | null>) => {
   /** The queries and the actions of the model, as the tree lists them. */
   const queries = computed<DataArtifact[]>(() => model.value ? queriesOf(model.value) : [])
   const actions = computed<DataArtifact[]>(() => model.value ? actionsOf(model.value) : [])
@@ -37,8 +37,8 @@ export const createDataArtifactView = (model: Ref<Model | null>, leaveData: Leav
       void leaveData(() => {
         if (id !== null) chosen.value = { kind, id }
         else if (current !== null) chosen.value = null
-        filesShown.value = false
-      }, id !== current || filesShown.value)
+        special.value = null
+      }, id !== current || special.value !== null)
     }
   })
   const queryId = chooser('query')

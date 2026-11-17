@@ -68,6 +68,16 @@ describe('the Data screen', () => {
     expect(text(collection('quotes')?.querySelector('[data-collection-count]') ?? null)).toBe('')
   })
 
+  it('keeps the count of the row shown clear of its … button (always there), and lets the others\' counts give way to it', async () => {
+    await open()
+    const count = (plural: string) => collection(plural)?.querySelector('[data-collection-count]')
+    expect(count('posts')?.classList.contains('me-6')).toBe(true)
+    expect(count('posts')?.classList.contains('group-hover:invisible')).toBe(false)
+    expect(count('quotes')?.classList.contains('me-6')).toBe(false)
+    expect(count('quotes')?.classList.contains('group-hover:invisible')).toBe(true)
+    expect(count('quotes')?.classList.contains('group-focus-within:invisible')).toBe(true)
+  })
+
   it('shows a model with problems as the list of them, and links to All model files', async () => {
     const { actions, router } = await open({ model_get: () => ({ ok: false, problems: [{ path: '.bildr/modules/blog/entities/post.json', message: 'bad entity' }], files: {}, database: false }) })
     expect(q('[data-testid="data-problems"]')?.textContent).toContain('bad entity')
@@ -310,9 +320,13 @@ describe('the Data workspace (S2)', () => {
     expect(activeTab()).toBe('json')
   })
 
-  it('has one name per concept: Collection, Connection and Sample data, never Synced, fixtures, data source or entity (and the Steps tab and the Used in warnings no repository, use-case or generated code)', async () => {
+  it('has one name per concept: Collection, Connection and Sample data, never Synced, fixtures, data source or entity (and the Steps tab and the Used in warnings no repository, use-case or generated code; the pending migration, its tree row, its banner and its plan, no data source or entity)', async () => {
     freeQuotes()
-    await open()
+    // A plan waits (S6) once the status reads it: it drops a column of Post, and a table no collection has.
+    let pending: unknown = null
+    let database = true
+    const losing = { hash: 'abc123', destructive: ['ALTER TABLE `blog_posts` DROP COLUMN `body`;'], losing: ['the data of blog_posts.body', 'the table blog_gone'], statements: ['ALTER TABLE `blog_posts` DROP COLUMN `body`;', 'DROP TABLE `blog_gone`;'] }
+    const { status } = await open({ migration_pending_get: () => ({ pending, database }) })
     const unwanted = /synced|fixtures?\b|data source|entit(y|ies)/i
     // The Steps tab is for people who do not write code: it says nothing of the generator's own words.
     const developerWords = /repository|use-case|generated code/i
@@ -363,6 +377,41 @@ describe('the Data workspace (S2)', () => {
       ...['definition', 'used', 'json', 'results'].map(name => () => click(tab(name))),
       () => click(treeItem('createPost')),
       ...['used', 'json', 'overview'].map(name => () => click(tab(name))),
+      // The pending migration: the tree's row, the banner on the collection it changes, its plan and the confirmation, and the note without a database.
+      () => {
+        pending = losing
+        return status.refreshPending()
+      },
+      async () => {
+        expect(q('[data-tree-item="migrations"]')).not.toBeNull()
+        await click(treeItem('post'))
+        expect(q('[data-testid="collection-migration-banner"]')).not.toBeNull()
+      },
+      async () => {
+        await click(q('[data-testid="collection-migration-review"]'))
+        expect(q('[data-testid="losing"]')).not.toBeNull()
+      },
+      async () => {
+        await click(q('[data-testid="confirm"]'))
+        expect(document.body.querySelector('[role="dialog"]')).not.toBeNull()
+      },
+      cancel,
+      // A plan that loses nothing: the banner offers Apply, and the plan has no list of losses.
+      async () => {
+        pending = { ...losing, destructive: [], losing: [], statements: ['ALTER TABLE `blog_posts` ADD `subtitle` text;'] }
+        await status.refreshPending()
+        await click(treeItem('post'))
+        expect(q('[data-testid="collection-migration-apply"]')).not.toBeNull()
+      },
+      // Without a database there is no plan: the screen says where one is added.
+      async () => {
+        await click(q('[data-testid="collection-migration-review"]'))
+        pending = null
+        database = false
+        await status.refreshPending()
+        expect(q('[data-testid="no-database"]')).not.toBeNull()
+      },
+      () => click(treeItem('createPost')),
       // The Steps tab: its cards open (the check, the refuse with its inline new error, the write), the Add step menu and the Add a field menu.
       () => {
         onSteps = true

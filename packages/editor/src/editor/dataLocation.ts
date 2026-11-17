@@ -13,9 +13,18 @@ import type { Editor } from './useEditor.ts'
  * tab model (which tabs an item has) is `editor/dataTabs.ts`.
  */
 
-/** What the URL query asks for: the parts that are well formed (anything else is left out, never an error). */
-export function parseDataLocation(query: Record<string, unknown>): { item?: DataItem, tab?: DataTab, files?: true, file?: string, migrations?: true } {
-  const found: { item?: DataItem, tab?: DataTab, files?: true, file?: string, migrations?: true } = {}
+/** What the URL query asks for. */
+export interface DataLocation {
+  item?: DataItem
+  tab?: DataTab
+  files?: true
+  file?: string
+  migrations?: true
+}
+
+/** The parts of `query` that are well formed (anything else is left out, never an error). */
+export function parseDataLocation(query: Record<string, unknown>): DataLocation {
+  const found: DataLocation = {}
   const raw = query.item
   if (raw === 'migrations') return { migrations: true }
   if (raw === 'files') {
