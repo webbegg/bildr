@@ -80,12 +80,29 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
     })
   }
 
-  /** All model files (S3) is shown instead of the item, and the `.bildr/` file chosen in it. Choosing a collection or a connection, however it is chosen, shows it. */
-  const filesShown = ref(false)
+  /**
+   * What is shown instead of the item, when something is: All model files (S3) or the pending migration (S6), one at a time. Choosing a
+   * collection, a connection, a query or an action, however it is chosen, shows it instead: the choosers clear this (`filesShown = false`).
+   */
+  const special = ref<'files' | 'migrations' | null>(null)
+  const filesShown = computed<boolean>({
+    get: () => special.value === 'files',
+    set: (shown) => {
+      special.value = shown ? 'files' : null
+    }
+  })
+  /** All model files (S3) is shown instead of the item, and the `.bildr/` file chosen in it. */
   const dataFiles = computed<boolean>({
     get: () => filesShown.value,
     set: (shown) => {
       void leaveData(() => (filesShown.value = shown), shown !== filesShown.value)
+    }
+  })
+  /** The pending migration's plan (S6) is shown instead of the item, which keeps its choice. */
+  const dataMigrations = computed<boolean>({
+    get: () => special.value === 'migrations',
+    set: (shown) => {
+      void leaveData(() => (special.value = shown ? 'migrations' : null), shown !== (special.value === 'migrations'))
     }
   })
   const chosenFile = ref<string | null>(null)
@@ -104,7 +121,7 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
         chosen.value = id
         filesShown.value = false
         if (id !== null) forgetArtifact()
-      }, id !== chosen.value || filesShown.value || (id !== null && artifactChosen.value))
+      }, id !== chosen.value || special.value !== null || (id !== null && artifactChosen.value))
     }
   })
   const collectionId = chooser(chosenCollection)
@@ -205,5 +222,5 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
     if (view.value === 'data') void live.refresh()
   })
 
-  return { collections, connections, queries, actions, queryId, actionId, dataQuery, dataAction, collectionId, connectionId, dataFiles, dataFile, dataDirty, leaveData, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, rowsEditable, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
+  return { collections, connections, queries, actions, queryId, actionId, dataQuery, dataAction, collectionId, connectionId, dataFiles, dataMigrations, dataFile, dataDirty, leaveData, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, rowsEditable, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
 }

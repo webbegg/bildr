@@ -1,53 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
-import { callAction, errorMessage } from '../api.ts'
-import ConfirmModal from '../components/ConfirmModal.vue'
-import ProblemsList from '../components/ProblemsList.vue'
-import { useStatus } from '../status.ts'
-import type { MigrationResult } from '../types.ts'
+import { onMounted } from 'vue'
+import { useMigrationConfirm } from '../../editor/migrationConfirm.ts'
+import { useStatus } from '../../status.ts'
+import ConfirmModal from '../ConfirmModal.vue'
+import ProblemsList from '../ProblemsList.vue'
 
 /**
- * A destructive migration plan waits here until confirmed (S9): what it loses,
- * in the user's words, and its SQL. Confirm posts the plan's hash, so a plan
- * that changed since it was shown is refused.
+ * The pending migration plan (S9, S6), shown in the Data workspace when the tree's Migrations entry is chosen (`?item=migrations`),
+ * or a collection's Review: what confirming loses, in the user's words, and the SQL. A destructive plan waits here until it is
+ * confirmed; Confirm posts the plan's hash, so a plan that changed since it was shown is refused. With no plan it says so, and after
+ * a confirmation it says what was written. Without a database it says there are no migrations.
  */
 
 const status = useStatus()
 const pending = status.pending
-
-const open = ref(false)
-const confirming = ref(false)
-const error = ref<string | null>(null)
-const outcome = ref<MigrationResult | null>(null)
-
-const outcomeText = computed(() => {
-  const result = outcome.value
-  if (!result) return ''
-  switch (result.kind) {
-    case 'written': return `Migration ${result.tag} written${result.applied ? ' and applied' : ''}.`
-    case 'none': return 'Nothing to migrate: the database already matches the model.'
-    case 'pending': return 'The model changed since this plan was shown: review the new plan.'
-    case 'failed': return `The migration failed: ${result.error}${result.tag ? ` (${result.tag} was reverted)` : ''}`
-  }
-  return ''
-})
-const outcomeColor = computed(() => outcome.value?.kind === 'failed' ? 'error' as const : outcome.value?.kind === 'pending' ? 'warning' as const : 'success' as const)
-
-const confirm = async () => {
-  if (!pending.value) return
-  confirming.value = true
-  error.value = null
-  try {
-    outcome.value = (await callAction<{ migration: MigrationResult }>('migration_confirm', { hash: pending.value.hash })).migration
-    open.value = false
-  } catch (caught) {
-    error.value = errorMessage(caught)
-    open.value = false
-  } finally {
-    confirming.value = false
-  }
-  await status.refreshPending()
-}
+const { open, confirming, error, outcome, outcomeText, outcomeColor, confirm } = useMigrationConfirm(status)
 
 onMounted(() => {
   void status.refreshPending()
@@ -55,7 +22,10 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="space-y-6 p-6">
+  <div
+    class="space-y-6 p-6"
+    data-data-migrations
+  >
     <h1 class="text-xl font-semibold">
       Migrations
     </h1>
@@ -91,7 +61,7 @@ onMounted(() => {
       color="neutral"
       variant="subtle"
       icon="i-lucide-database"
-      title="This project has no database, so it has no migrations. Add a sqlite data source in Model to turn the database on."
+      title="This project has no database, so it has no migrations. Add a sqlite data source in All model files to turn the database on."
     />
     <template v-else-if="pending">
       <UCard>

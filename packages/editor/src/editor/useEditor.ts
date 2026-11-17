@@ -1037,6 +1037,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     connectionId: data.connectionId,
     connection: data.connection,
     dataFiles: data.dataFiles,
+    dataMigrations: data.dataMigrations,
     dataFile: data.dataFile,
     dataDirty: data.dataDirty,
     leaveData: data.leaveData,

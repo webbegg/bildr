@@ -22,6 +22,7 @@ export const routes: RouteRecordRaw[] = [
   { path: '/model', redirect: to => ({ path: '/data', query: { item: 'files', ...(typeof to.query.path === 'string' && to.query.path ? { file: to.query.path } : {}) } }) },
   { path: '/code', name: 'code', component: () => import('./views/CodeView.vue'), meta: { bar: true } },
   { path: '/health', name: 'health', component: () => import('./views/HealthView.vue'), meta: { bar: true } },
-  { path: '/migrations', name: 'migrations', component: () => import('./views/MigrationsView.vue'), meta: { bar: true, title: 'Migrations' } },
+  // The pending migration is shown in the Data workspace (S6): its tree's Migrations entry, which the banners link to.
+  { path: '/migrations', redirect: { path: '/data', query: { item: 'migrations' } } },
   { path: '/:rest(.*)*', redirect: '/design' }
 ]

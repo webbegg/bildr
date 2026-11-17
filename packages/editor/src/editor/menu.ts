@@ -1,7 +1,7 @@
 /**
  * The editor's one navigation: the top bar's view menu (S1). Canvas, Design system, Data and Settings
  * are views of the editor (`views.ts` opens the screen that shows one); Code and Checks are screens
- * of their own, reached by route. Migrations has no entry: the banner and the deep link reach it (`/model` redirects to All model files in the Data workspace).
+ * of their own, reached by route. Migrations has no entry: it is the Data tree's entry while a plan is pending, which the banners link to (`/migrations` redirects to it, `/model` to All model files, both in the Data workspace).
  */
 import type { EditorView } from './useEditor.ts'
 

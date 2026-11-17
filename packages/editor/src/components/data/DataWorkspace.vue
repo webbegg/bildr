@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { DATA_TAB_LABELS } from '../../editor/dataTabs.ts'
+import { migrationTargets } from '../../editor/migrationTargets.ts'
 import { rovingTarget } from '../../editor/rovingKeys.ts'
 import type { StoredInputs } from '../../editor/runQuery.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { FOCUS_RING } from '../../editorUi.ts'
+import { useStatus } from '../../status.ts'
 import DataFiles from './DataFiles.vue'
 import DataJson from './DataJson.vue'
+import DataMigrationBanner from './DataMigrationBanner.vue'
+import DataMigrations from './DataMigrations.vue'
 
 /**
  * The Data workspace's centre (S2): the item chosen in the tree, with the tabs its kind has. A
@@ -15,11 +19,27 @@ import DataJson from './DataJson.vue'
  * Endpoints (its settings and its collections' endpoints) and JSON; a query (S10) has Results (it run over the
  * collection's rows), Definition (its form), Used in and JSON; an action has Overview (its form, its code name, its route and
  * how many steps it has), Steps (the step editor, D10c), Used in and JSON. With All model files chosen in the tree it
- * is the list of the model's files and their editor instead. With nothing to show it is
+ * is the list of the model's files and their editor instead, and with Migrations chosen (S6) it is the pending plan. A collection that
+ * the pending plan changes has a banner above its tabs (Review, Apply). With nothing to show it is
  * the empty start. The tab strip is one tab stop: Left and Right move along it (and wrap), Home and End go to its ends.
  */
 const editor = useEditor()
+const status = useStatus()
 const strip = useTemplateRef<HTMLElement>('strip')
+
+/** What the pending plan does to the collection shown, when it changes it (and the project has a database): its banner. */
+const migration = computed(() => {
+  const plan = status.plan.value
+  const shown = editor.dataCollection
+  return plan && shown ? migrationTargets(editor.model, plan).collections[shown.id] ?? null : null
+})
+// The Data screen says so to the shell: with the collection's banner or the plan itself shown, the global banner has nothing to add.
+watch(() => migration.value !== null || (editor.dataMigrations && status.plan.value !== null), (shown) => {
+  status.planInContext.value = shown
+}, { immediate: true })
+onBeforeUnmount(() => {
+  status.planInContext.value = false
+})
 
 const connection = computed(() => editor.dataConnection)
 const collection = computed(() => editor.dataCollection)
@@ -60,8 +80,16 @@ async function onTabKeyDown(event: KeyboardEvent) {
       v-if="editor.dataFiles"
       class="min-h-0 flex-1"
     />
+    <DataMigrations
+      v-else-if="editor.dataMigrations"
+      class="min-h-0 flex-1 overflow-y-auto"
+    />
     <DataEmpty v-else-if="!editor.dataItem" />
     <template v-else>
+      <DataMigrationBanner
+        v-if="migration"
+        :change="migration"
+      />
       <header class="flex h-12 shrink-0 items-center gap-4 border-b border-default ps-4 pe-3">
         <div
           class="flex min-w-0 items-center gap-2"

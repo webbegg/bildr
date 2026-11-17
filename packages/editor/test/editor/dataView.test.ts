@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDesign } from '../../src/design/store.ts'
 import { createEditor } from '../../src/editor/useEditor.ts'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
-import { dataLocationQuery, filesLocationQuery, parseDataLocation } from '../../src/editor/dataLocation.ts'
+import { dataLocationQuery, filesLocationQuery, migrationsLocationQuery, parseDataLocation } from '../../src/editor/dataLocation.ts'
 import { liveRows } from '../../src/design/liveRows.ts'
 import { treeItems } from '../../src/editor/dataTree.ts'
 import { tabsOf } from '../../src/editor/dataTabs.ts'
@@ -476,6 +476,14 @@ describe('the Data location in the URL query (S2)', () => {
     expect(parseDataLocation(query)).toEqual({ item: { kind: 'connection', id: 'ds_quotes' }, tab: 'endpoints' })
   })
 
+  it('reads Migrations (S6) with no tab, and writes it back as it was read', () => {
+    expect(parseDataLocation({ item: 'migrations' })).toEqual({ migrations: true })
+    expect(parseDataLocation({ item: 'migrations', tab: 'fields', file: '.bildr/x.json' })).toEqual({ migrations: true })
+    expect(migrationsLocationQuery()).toEqual({ item: 'migrations' })
+    expect(parseDataLocation(migrationsLocationQuery())).toEqual({ migrations: true })
+    expect(parseDataLocation({ item: 'migrations:ent_post' })).toEqual({})
+  })
+
   it('reads All model files, and the file chosen in it (S3)', () => {
     expect(parseDataLocation({ item: 'files' })).toEqual({ files: true })
     expect(parseDataLocation({ item: 'files', file: '.bildr/theme.json' })).toEqual({ files: true, file: '.bildr/theme.json' })
@@ -613,6 +621,15 @@ describe('the Data tree of queries and actions (S10)', () => {
     expect(keys).toEqual(['collection:ent_post', 'connection:ds_quotes', 'query:q_all_posts', 'query:q_featured_posts', 'query:q_latest_quotes', 'query:q_post_by_slug', 'files'])
   })
 
+  it('lists Migrations just above All model files while a plan is pending (S6), and not otherwise', async () => {
+    const { editor } = await bootData()
+    const keys = (migrations?: boolean) => treeItems(editor.collections, editor.connections, new Set(), { queries: [], actions: [] }, { queries: '', actions: '' }, new Set(), migrations).map(item => item.key)
+    expect(keys().at(-1)).toBe('files')
+    expect(keys()).not.toContain('migrations')
+    expect(keys(false)).not.toContain('migrations')
+    expect(keys(true).slice(-2)).toEqual(['migrations', 'files'])
+  })
+
   it('lists only the items that match a section\'s filter (label, name or collection, any case)', () => {
     const queries = [artifact('q_a', 'Recent posts'), { ...artifact('q_b', 'Top'), collectionName: 'Quote' }]
     const keys = (filter: string) => treeItems([], [], new Set(), { queries, actions: [] }, { queries: filter, actions: '' }).map(item => item.key)
@@ -721,6 +738,47 @@ describe('the Data location of a query or an action (S10)', () => {
     expect(dataLocationQuery({ kind: 'action', id: 'act_create_post' }, 'steps')).toEqual({ item: 'action:act_create_post', tab: 'steps' })
     expect(dataLocationQuery({ kind: 'query', id: 'q_all_posts' }, 'used')).toEqual({ item: 'query:q_all_posts', tab: 'used' })
     expect(parseDataLocation(dataLocationQuery({ kind: 'action', id: 'act_x' }, 'json'))).toEqual({ item: { kind: 'action', id: 'act_x' }, tab: 'json' })
+  })
+})
+
+describe('Migrations in the Data workspace (S6)', () => {
+  it('is shown instead of the item, which it keeps, and gives way to All model files', async () => {
+    const { editor } = await bootData()
+    expect(editor.dataMigrations).toBe(false)
+    editor.dataMigrations = true
+    expect(editor.dataMigrations).toBe(true)
+    expect(editor.dataItem).toEqual({ kind: 'collection', id: 'ent_post' })
+    editor.dataFiles = true
+    expect(editor.dataFiles).toBe(true)
+    expect(editor.dataMigrations).toBe(false)
+    editor.dataMigrations = true
+    expect(editor.dataFiles).toBe(false)
+  })
+
+  it('gives way to a collection, a connection, a query or an action chosen, however it is chosen', async () => {
+    const { editor } = await bootData()
+    editor.dataMigrations = true
+    editor.collectionId = 'ent_quote'
+    expect(editor.dataMigrations).toBe(false)
+    editor.dataMigrations = true
+    editor.connectionId = 'ds_quotes'
+    expect(editor.dataMigrations).toBe(false)
+    editor.dataMigrations = true
+    editor.queryId = 'q_all_posts'
+    expect(editor.dataMigrations).toBe(false)
+    expect(editor.dataItem).toEqual({ kind: 'query', id: 'q_all_posts' })
+    editor.dataMigrations = true
+    editor.actionId = 'act_create_post'
+    expect(editor.dataMigrations).toBe(false)
+  })
+
+  it('asks before it leaves unsaved edits in All model files', async () => {
+    const { editor } = await bootData()
+    editor.dataFiles = true
+    editor.dataDirty = '.bildr/modules/blog/entities/post.json'
+    editor.dataMigrations = true
+    expect(editor.dataFiles).toBe(true)
+    expect(editor.dataMigrations).toBe(false)
   })
 })
 

@@ -88,7 +88,7 @@ describe('the top bar menu is the only navigation', () => {
   it.each([
     ['Canvas', '/code', '/design'],
     ['Settings', '/health', '/design'],
-    ['Design system', '/migrations', '/design'],
+    ['Design system', '/code', '/design'],
     ['Data', '/code', '/data'],
     ['Checks', '/code', '/health']
   ])('chooses %s from the screen at %s, and lands on %s', async (label, from, to) => {
@@ -102,8 +102,7 @@ describe('the top bar menu is the only navigation', () => {
   it.each([
     ['/design', 'Canvas'],
     ['/code?path=.bildr%2Fmodules%2Fblog%2Fentities%2Fpost.json', 'Code'],
-    ['/health', 'Checks'],
-    ['/migrations', 'Migrations']
+    ['/health', 'Checks']
   ])('opens the deep link %s as it is, with the menu showing %s', async (link, label) => {
     const { router } = await open(link)
     expect(router.currentRoute.value.fullPath).toBe(link)
@@ -127,7 +126,7 @@ describe('the top bar menu is the only navigation', () => {
     ['/data/', 'Data'],
     ['/code/', 'Code'],
     ['/health/', 'Checks'],
-    ['/migrations/', 'Migrations'],
+    ['/migrations/', 'Data'],
     ['/model/', 'Data']
   ])('names the screen of the deep link %s with a trailing slash: %s', async (link, label) => {
     await open(link)
@@ -170,7 +169,7 @@ describe('the top bar menu is the only navigation', () => {
   it('renders no migrations banner and no Review link when the project has no database and nothing is pending', async () => {
     await open('/design', null, false)
     expect(q('[data-testid="migration-banner"]')).toBeNull()
-    expect(qa('a').filter(link => link.getAttribute('href') === '/migrations')).toEqual([])
+    expect(qa('a').filter(link => /migrations/.test(link.getAttribute('href') ?? ''))).toEqual([])
     expect(qa('a').filter(link => text(link) === 'Review')).toEqual([])
     expect(await menuLabels()).not.toContain('Migrations')
   })
@@ -181,6 +180,16 @@ describe('the top bar menu is the only navigation', () => {
     q('[role="menu"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await settle()
     await click(q('[data-testid="migration-banner"] a'))
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/migrations'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data'))
+    expect(router.currentRoute.value.query).toEqual({ item: 'migrations' })
+  })
+
+  it('retires the Migrations screen: /migrations opens the plan in the Data workspace, which the menu names Data (S6)', async () => {
+    const { router } = await open('/migrations', pendingPlan())
+    expect(router.currentRoute.value.path).toBe('/data')
+    expect(router.currentRoute.value.query).toEqual({ item: 'migrations' })
+    expect(text(q('[data-view-menu]'))).toBe('Data')
+    expect(q('[data-data-migrations]')).not.toBeNull()
+    expect(router.hasRoute('migrations')).toBe(false)
   })
 })

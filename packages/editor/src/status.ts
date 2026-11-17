@@ -1,5 +1,5 @@
-import { inject, onBeforeUnmount, onMounted, ref } from 'vue'
-import type { InjectionKey, Ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
+import type { ComputedRef, InjectionKey, Ref } from 'vue'
 import { callAction, errorMessage, sessionEnded, subscribeEvents } from './api.ts'
 import type { HealthReport, PendingMigration } from './types.ts'
 
@@ -14,6 +14,10 @@ export interface Status {
   pendingError: Ref<string | null>
   /** Whether the project has an app database (V7); false hides the Migrations screen. True until known. */
   database: Ref<boolean>
+  /** The plan that waits for confirmation, when the project has a database to run it on (S6, V7): what the banners and the Data tree's Migrations entry are shown for. */
+  plan: ComputedRef<PendingMigration | null>
+  /** Whether the Data workspace shows the plan itself (a collection's banner, or the Migrations entry): the global banner says nothing more then. */
+  planInContext: Ref<boolean>
   refreshHealth: () => Promise<void>
   refreshPending: () => Promise<void>
   refresh: () => Promise<void>
@@ -27,6 +31,8 @@ export const createStatus = (): Status => {
   const pending = ref<PendingMigration | null>(null)
   const pendingError = ref<string | null>(null)
   const database = ref(true)
+  const plan = computed(() => database.value ? pending.value : null)
+  const planInContext = ref(false)
 
   const refreshHealth = async () => {
     try {
@@ -49,7 +55,7 @@ export const createStatus = (): Status => {
   const refresh = async () => {
     await Promise.all([refreshHealth(), refreshPending()])
   }
-  return { health, healthError, pending, pendingError, database, refreshHealth, refreshPending, refresh }
+  return { health, healthError, pending, pendingError, database, plan, planInContext, refreshHealth, refreshPending, refresh }
 }
 
 export const useStatus = (): Status => {

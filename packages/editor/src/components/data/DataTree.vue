@@ -2,12 +2,13 @@
 import { computed, provide, reactive, ref, useTemplateRef, watch } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { dataItemKey } from '../../editor/dataTabs.ts'
-import { FILES_KEY, TREE_STOP, answeredImports, storeFolded, storedFolded, treeItems } from '../../editor/dataTree.ts'
+import { FILES_KEY, MIGRATIONS_KEY, TREE_STOP, answeredImports, storeFolded, storedFolded, treeItems } from '../../editor/dataTree.ts'
 import type { ArtifactFilters } from '../../editor/dataTree.ts'
 import type { ArtifactKind } from '../../shared/dataArtifacts.ts'
 import { rovingTarget } from '../../editor/rovingKeys.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
+import { useStatus } from '../../status.ts'
 
 /**
  * The Data workspace's tree, Framer CMS's: **Collections** (entities stored by the app: its
@@ -17,7 +18,8 @@ import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
  * connection (an inline name, then the base URL in its Endpoints tab) or opens the Import from URL
  * dialog (also opened by each `editor.importRequest`). **Queries** and **Actions** (S10) follow, each with a header that folds it
  * (remembered), a `+` that opens its create dialog, a filter box when it has many items and a `…` menu per row that renames or
- * deletes it (F2 and Delete do too, as on the collection and connection rows). **All model files** (S3)
+ * deletes it (F2 and Delete do too, as on the collection and connection rows). **Migrations** (S6) is listed only while a migration plan
+ * is pending and the project has a database, with its number of changes. **All model files** (S3)
  * ends the tree: the artifacts with no collection or connection (pages, components…) and every file as JSON.
  *
  * It is a tree with one tab stop (a roving tabindex: the item that has the focus, else the one shown):
@@ -26,6 +28,7 @@ import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
  * expands it (or goes to its first collection).
  */
 const editor = useEditor()
+const status = useStatus()
 const tree = useTemplateRef<HTMLElement>('tree')
 
 /** The connections folded in the tree, by id. */
@@ -34,7 +37,7 @@ const collapsed = reactive(new Set<string>())
 const filters = reactive<ArtifactFilters>({ queries: '', actions: '' })
 /** The Queries and Actions sections folded, remembered across reloads. */
 const folded = reactive(storedFolded())
-const items = computed(() => treeItems(editor.collections, editor.connections, collapsed, { queries: editor.queries, actions: editor.actions }, filters, folded))
+const items = computed(() => treeItems(editor.collections, editor.connections, collapsed, { queries: editor.queries, actions: editor.actions }, filters, folded, status.plan.value !== null))
 
 function toggleSection(kind: ArtifactKind) {
   if (!folded.delete(kind)) folded.add(kind)
@@ -50,7 +53,7 @@ function toggle(id: string) {
   if (!collapsed.delete(id)) collapsed.add(id)
 }
 
-const shownKey = computed(() => editor.dataFiles ? FILES_KEY : editor.dataItem ? dataItemKey(editor.dataItem) : null)
+const shownKey = computed(() => editor.dataFiles ? FILES_KEY : editor.dataMigrations ? MIGRATIONS_KEY : editor.dataItem ? dataItemKey(editor.dataItem) : null)
 const focusedKey = ref<string | null>(null)
 /** The tab stop: the item with the focus, else the one shown, else the first: always one that is listed. */
 const stop = computed(() => {
@@ -310,6 +313,7 @@ function cancelAdd() {
         @delete="deletingArtifact = { kind: 'action', id: $event }"
       />
 
+      <DataMigrationsRow />
       <DataFilesRow />
     </div>
 

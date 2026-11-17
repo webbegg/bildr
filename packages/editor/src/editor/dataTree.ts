@@ -12,6 +12,9 @@ import type { DataArtifact, DataCollection, DataConnection } from '../shared/dat
 /** The key of the "All model files" entry. */
 export const FILES_KEY = 'files'
 
+/** The key of the Migrations entry (S6), which the tree lists only while a plan is pending. */
+export const MIGRATIONS_KEY = 'migrations'
+
 /** The last Import from API request each editor's Data tree answered, so a request made before it mounts (⌘K from the Canvas) still opens the dialog. */
 export const answeredImports = new WeakMap<object, number>()
 
@@ -59,7 +62,8 @@ export function filterArtifacts(items: readonly DataArtifact[], filter: string):
 /**
  * The items the tree lists, top to bottom: the collections the app stores, then each connection followed by
  * the collections read through it (none while it is collapsed: `collapsed` holds the connection ids), then the
- * queries and the actions (each section as far as its filter lets it, and none of a section that is `folded`), then All model files.
+ * queries and the actions (each section as far as its filter lets it, and none of a section that is `folded`), then Migrations when
+ * a plan is pending (`migrations`, S6), then All model files.
  */
 export function treeItems(
   collections: readonly DataCollection[],
@@ -67,7 +71,8 @@ export function treeItems(
   collapsed: ReadonlySet<string>,
   artifacts: { queries: readonly DataArtifact[], actions: readonly DataArtifact[] } = { queries: [], actions: [] },
   filters: ArtifactFilters = { queries: '', actions: '' },
-  folded: ReadonlySet<ArtifactKind> = new Set()
+  folded: ReadonlySet<ArtifactKind> = new Set(),
+  migrations = false
 ): TreeItem[] {
   const stored = collections.filter(entry => entry.kind !== 'rest').map(entry => ({ key: dataItemKey({ kind: 'collection', id: entry.id }), expandable: false, open: false }))
   const folders = connections.flatMap((connection) => {
@@ -83,6 +88,7 @@ export function treeItems(
     ...folders,
     ...section('query', artifacts.queries, filters.queries),
     ...section('action', artifacts.actions, filters.actions),
+    ...(migrations ? [{ key: MIGRATIONS_KEY, expandable: false, open: false }] : []),
     { key: FILES_KEY, expandable: false, open: false }
   ]
 }

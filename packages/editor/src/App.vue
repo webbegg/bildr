@@ -6,7 +6,7 @@ import { registerScreens } from './editor/views.ts'
 import ScreenBar from './shell/ScreenBar.vue'
 import { usePolling, useStatus } from './status.ts'
 
-/** The editor shell: the pending-migration banner on every screen, the top bar's view menu (the editor's own toolbar, or the ScreenBar of the screens without an editor) and the current screen; one notice instead, once the session ended. */
+/** The editor shell: the pending-migration banner on every screen (on the Data screen, unless the workspace already shows the plan: a collection's banner, or the Migrations entry; S6), the top bar's view menu (the editor's own toolbar, or the ScreenBar of the screens without an editor) and the current screen; one notice instead, once the session ended. */
 
 const route = useRoute()
 const router = useRouter()
@@ -19,7 +19,7 @@ onBeforeUnmount(registerScreens(screen => router.push(screen === 'data' ? '/data
 usePolling(status.refresh)
 
 const losses = computed(() => {
-  const count = status.pending.value?.losing.length ?? 0
+  const count = status.plan.value?.losing.length ?? 0
   return `${count} ${count === 1 ? 'loss' : 'losses'}`
 })
 </script>
@@ -44,14 +44,14 @@ const losses = computed(() => {
     >
       <div class="flex min-w-0 flex-1 flex-col">
         <UAlert
-          v-if="status.pending.value"
+          v-if="status.plan.value && !status.planInContext.value"
           data-testid="migration-banner"
           color="warning"
           variant="subtle"
           icon="i-lucide-database-zap"
           :ui="{ root: 'rounded-none' }"
           :title="`A destructive migration waits for confirmation (${losses}).`"
-          :actions="route.path === '/migrations' ? [] : [{ label: 'Review', to: '/migrations', color: 'warning', variant: 'solid' }]"
+          :actions="[{ label: 'Review', to: { path: '/data', query: { item: 'migrations' } }, color: 'warning', variant: 'solid' }]"
         />
         <ScreenBar v-if="route.meta.bar" />
         <div class="relative min-h-0 flex-1 overflow-y-auto">

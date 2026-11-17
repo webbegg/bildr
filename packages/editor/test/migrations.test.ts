@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import App from '../src/App.vue'
 import { healthReport, pendingPlan } from './fixtures.ts'
+import { baseHandlers, setupHarness } from './design/harness.ts'
 import { byTestId, click, mockActions, mountWithApp } from './helpers.ts'
+
+/** The plan itself (S6) is shown in the Data workspace, which `/migrations` redirects to: those tests run over the Data screen's model. */
+setupHarness()
+const dataHandlers = () => ({ ...baseHandlers(), env_status: () => ({ variables: [] }), health_get: healthReport })
 
 describe('Pending migrations', () => {
   it('shows a banner on every screen while a destructive migration waits', async () => {
@@ -21,7 +26,7 @@ describe('Pending migrations', () => {
   })
 
   it('says there is no database instead of migrations, when opened directly without one', async () => {
-    mockActions({ health_get: healthReport, migration_pending_get: () => ({ pending: null, database: false }) })
+    mockActions({ ...dataHandlers(), migration_pending_get: () => ({ pending: null, database: false }) })
     await mountWithApp(App, '/migrations')
     expect(byTestId('no-database')?.textContent).toContain('This project has no database')
     expect(byTestId('confirm')).toBeNull()
@@ -29,7 +34,7 @@ describe('Pending migrations', () => {
 
   it('lists what would be lost and confirms the plan hash after the modal', async () => {
     const actions = mockActions({
-      health_get: healthReport,
+      ...dataHandlers(),
       migration_pending_get: () => ({ pending: actions.named('migration_confirm').length ? null : pendingPlan() }),
       migration_confirm: () => ({ migration: { kind: 'written', tag: '0003_drop_notes', statements: ['DROP TABLE `blog_notes`;'], applied: true } })
     })
