@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { QueryFile } from '@bildr/codegen/model'
 import type { QueryField } from '../../src/shared/dataArtifacts.ts'
-import { changesOf, conditionText, draftOf, orderText, renameParam, summaryOf, valueOfText } from '../../src/editor/queryDraft.ts'
+import { changedOutside, changesOf, conditionText, draftOf, orderText, rebaseDraft, renameParam, summaryOf, valueOfText } from '../../src/editor/queryDraft.ts'
 
 /** The Query Definition form's draft (S10): what the form shows of a query, and what saving it sends of it. */
 
@@ -205,6 +205,32 @@ describe('changesOf: what the user did not touch is kept as it is stored', () =>
       where: { op: 'gt', field: 'views', value: { $param: 'count' } },
       limit: { $param: 'count' }
     })
+  })
+})
+
+describe('a query that changed under the draft', () => {
+  const base = query()
+  const outside = query({ description: 'Elsewhere', orderBy: [{ field: 'title', direction: 'asc' }] })
+
+  it('is a change in any part the form edits, and not in the name', () => {
+    expect(changedOutside(base, query())).toBe(false)
+    expect(changedOutside(base, query({ name: 'renamed' }))).toBe(false)
+    expect(changedOutside(base, outside)).toBe(true)
+    expect(changedOutside(base, query({ limit: 3 }))).toBe(true)
+    expect(changedOutside(base, query({ where: undefined }))).toBe(true)
+  })
+
+  it('judges the draft against its base: an untouched part changed outside is not sent', () => {
+    const draft = { ...draftOf(base), label: 'Top' }
+    expect(changesOf(draft, base, FIELDS).input).toEqual({ label: 'Top' })
+  })
+
+  it('rebases onto the stored query: untouched parts follow it, touched parts stay', () => {
+    const draft = { ...draftOf(base), description: 'Mine' }
+    const rebased = rebaseDraft(draft, base, outside)
+    expect(rebased.description).toBe('Mine')
+    expect(rebased.orderBy).toEqual([{ field: 'title', direction: 'asc' }])
+    expect(changesOf(rebased, outside, FIELDS).input).toEqual({ description: 'Mine' })
   })
 })
 

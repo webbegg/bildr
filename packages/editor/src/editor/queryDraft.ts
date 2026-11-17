@@ -110,29 +110,60 @@ export interface QueryChanges {
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
+/** The parts of a query that the form edits (its name, id and collection are not in the draft). */
+const editable = (query: QueryFile) => ({
+  label: query.label,
+  description: query.description ?? null,
+  result: query.result,
+  params: query.params,
+  where: query.where ?? null,
+  orderBy: query.orderBy ?? [],
+  limit: query.limit ?? null
+})
+
 /**
- * What saving `draft` asks of the module for `query`: only the parts that changed, or the problems that stop it.
+ * Whether the query as it is stored now differs, in a part the form edits, from the query the draft started from (`base`: the query
+ * as it was when the draft was opened or last saved). A rename is not one: the name is not in the draft.
+ */
+export const changedOutside = (base: QueryFile, query: QueryFile): boolean => !same(editable(base), editable(query))
+
+/**
+ * The draft after the user chose to keep their edits over a query that changed under them: each part of the form the user did
+ * not touch (it still reads as `base` has it) shows the stored query's, and each part they touched stays, so that, saved against
+ * the stored query as the new base, only the touched parts are sent.
+ */
+export function rebaseDraft(draft: QueryDraft, base: QueryFile, query: QueryFile): QueryDraft {
+  const before = draftOf(base)
+  const now = draftOf(query)
+  const part = <K extends keyof QueryDraft>(key: K): QueryDraft[K] => same(draft[key], before[key]) ? now[key] : draft[key]
+  return { label: part('label'), description: part('description'), result: part('result'), params: part('params'), where: part('where'), orderBy: part('orderBy'), limit: part('limit') }
+}
+
+/**
+ * What saving `draft` asks of the module: only the parts that changed from `base`, or the problems that stop it. `base` is the
+ * query the draft started from (when it was opened or last saved), not the query as stored now: a part changed outside the form
+ * that the user did not touch is not theirs to send (the form's copy of it is stale).
  *
  * A part the user did not touch is sent as it is stored, never converted back from its text: a literal that does not
  * survive the text (a null on a number field, a mistyped value, a field the collection no longer has) would otherwise count as a
- * change, or block the save of a label. "Touched" is compared with `draftOf(query)`, the text the form opened with.
+ * change, or block the save of a label. "Touched" is compared with `draftOf(base)`, the text the form opened with.
  */
-export function changesOf(draft: QueryDraft, query: QueryFile, fields: readonly QueryField[]): QueryChanges {
+export function changesOf(draft: QueryDraft, base: QueryFile, fields: readonly QueryField[]): QueryChanges {
   const input: Record<string, unknown> = {}
   const problems: string[] = []
   const typeOf = (name: string) => fields.find(field => field.name === name)?.type
-  const opened = draftOf(query)
+  const opened = draftOf(base)
 
-  if (draft.label !== query.label) {
+  if (draft.label !== base.label) {
     if (draft.label.trim() === '') problems.push('Add a label')
     else input.label = draft.label
   }
-  if (draft.description !== (query.description ?? '')) input.description = draft.description === '' ? null : draft.description
-  if (draft.result !== query.result) input.result = draft.result
+  if (draft.description !== (base.description ?? '')) input.description = draft.description === '' ? null : draft.description
+  if (draft.result !== base.result) input.result = draft.result
 
   const params = draft.params.map((param) => {
     const at = opened.params.findIndex(original => same(original, param))
-    if (at >= 0) return query.params[at]!
+    if (at >= 0) return base.params[at]!
     const converted = param.default === '' ? undefined : valueOfText(param.type, param.default)
     if (converted && 'problem' in converted) problems.push(`Parameter ${param.name || '(unnamed)'}: its default is ${converted.problem}`)
     return { name: param.name, type: param.type, ...converted && 'value' in converted ? { default: converted.value } : {}, ...param.reactive ? { reactive: true } : {} }
@@ -147,9 +178,9 @@ export function changesOf(draft: QueryDraft, query: QueryFile, fields: readonly 
       let value: Value | undefined
       if (draft.where.kind === 'param') value = { $param: draft.where.param }
       else if (draft.where.kind === 'expression') value = draft.where.expression as Value
-      else if (before && query.where && before.kind === 'value' && before.field === field && before.value === draft.where.value && (before.op === 'in') === (op === 'in')) {
+      else if (before && base.where && before.kind === 'value' && before.field === field && before.value === draft.where.value && (before.op === 'in') === (op === 'in')) {
         // Only the operator changed: the literal keeps its stored form.
-        value = query.where.value
+        value = base.where.value
       } else {
         const type = typeOf(field)
         const items = op === 'in' ? draft.where.value.split(',').map(item => item.trim()).filter(item => item !== '') : [draft.where.value]
@@ -160,10 +191,10 @@ export function changesOf(draft: QueryDraft, query: QueryFile, fields: readonly 
       }
       if (value !== undefined) where = { op, field, value }
     }
-    if (!same(where, query.where ?? null)) input.where = where
+    if (!same(where, base.where ?? null)) input.where = where
   }
 
-  if (!same(draft.orderBy, query.orderBy ?? [])) input.orderBy = draft.orderBy
+  if (!same(draft.orderBy, base.orderBy ?? [])) input.orderBy = draft.orderBy
 
   if (!same(draft.limit, opened.limit)) {
     let limit: Value | null = null
@@ -174,7 +205,7 @@ export function changesOf(draft: QueryDraft, query: QueryFile, fields: readonly 
       if ('problem' in converted) problems.push('Limit: enter a whole number')
       else limit = converted.value
     }
-    if (!same(limit, query.limit ?? null)) input.limit = limit
+    if (!same(limit, base.limit ?? null)) input.limit = limit
   }
 
   return { input, problems }

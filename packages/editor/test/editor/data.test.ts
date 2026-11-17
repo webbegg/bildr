@@ -2616,6 +2616,123 @@ describe('Query Definition (S10)', () => {
     expect(text(treeItem('featured')?.querySelector('[data-artifact-label]'))).toBe('Top post')
   })
 
+  describe('the query changing elsewhere while the form is edited', () => {
+    let version = 100
+    const FILE = '.bildr/modules/blog/queries/featured-posts.json'
+    const stored = () => world.model.modules.blog!.queries.find(entry => entry.id === 'q_featured_posts')!
+    /** Another editor, a rename, an undo or a JSON-tab save: the model has a different query, and the editor reads it. */
+    const outside = async (change: (query: ReturnType<typeof stored>) => void) => {
+      change(stored())
+      FakeEventSource.instances.at(-1)!.send({ type: 'model', version: version++, files: [FILE], source: 'disk' })
+      await settle()
+    }
+    const notice = () => q('[data-def-changed]')
+
+    it('says so, leaves the edits, and blocks Save until the user chooses', async () => {
+      const { actions } = await definition()
+      await typeInto(field('label'), 'Top posts')
+      await outside((query) => {
+        query.orderBy = [{ field: 'title', direction: 'asc' }]
+      })
+      expect(text(notice())).toContain('This query changed since you started editing')
+      expect(textButton('Load the new version')).not.toBeNull()
+      expect(textButton('Keep my edits')).not.toBeNull()
+      expect(field('label').value).toBe('Top posts')
+      expect(q('[data-def-save]')?.hasAttribute('disabled')).toBe(true)
+      await save()
+      expect(update(actions)).toEqual([])
+    })
+
+    it('shows no notice while nothing was edited: the form just follows the model', async () => {
+      await definition()
+      await outside((query) => {
+        query.orderBy = [{ field: 'title', direction: 'asc' }]
+      })
+      expect(notice()).toBeNull()
+      expect(text(q('[data-def-sort="0"] [data-def-sort-field]'))).toContain('title')
+      expect(q('[data-def-unsaved]')).toBeNull()
+    })
+
+    it('loads the new version over the edits on request', async () => {
+      const { actions } = await definition()
+      await typeInto(field('label'), 'Top posts')
+      await outside((query) => {
+        query.description = 'Changed elsewhere'
+      })
+      await click(textButton('Load the new version'))
+      expect(notice()).toBeNull()
+      expect(field('label').value).toBe('Featured posts')
+      expect(field('description').value).toBe('Changed elsewhere')
+      expect(q('[data-def-unsaved]')).toBeNull()
+      expect(update(actions)).toEqual([])
+      // Nothing is left to lose: moving on asks nothing.
+      await click(tab('results'))
+      expect(q('[data-confirm]')).toBeNull()
+    })
+
+    it('keeps the edits on request, and then Save sends only what the user touched, so the outside change to an untouched part stays', async () => {
+      const { actions } = await definition()
+      await typeInto(field('label'), 'Top posts')
+      await outside((query) => {
+        query.orderBy = [{ field: 'title', direction: 'asc' }]
+        query.description = 'Changed elsewhere'
+      })
+      await click(textButton('Keep my edits'))
+      expect(notice()).toBeNull()
+      expect(field('label').value).toBe('Top posts')
+      // The untouched parts show the new version, so the form is not a stale copy.
+      expect(field('description').value).toBe('Changed elsewhere')
+      expect(text(q('[data-def-sort="0"] [data-def-sort-field]'))).toContain('title')
+      expect(q('[data-def-save]')?.hasAttribute('disabled')).toBe(false)
+      await save()
+      expect(update(actions)).toEqual([{ query: 'q_featured_posts', inPlace: true, label: 'Top posts' }])
+      expect(stored().label).toBe('Top posts')
+      expect(stored().description).toBe('Changed elsewhere')
+      expect(stored().orderBy).toEqual([{ field: 'title', direction: 'asc' }])
+      expect(notice()).toBeNull()
+      expect(q('[data-def-unsaved]')).toBeNull()
+    })
+
+    it('keeps what the user touched even where the outside change touched the same part', async () => {
+      const { actions } = await definition()
+      await typeInto(field('description'), 'Mine')
+      await outside((query) => {
+        query.description = 'Theirs'
+        query.orderBy = [{ field: 'title', direction: 'asc' }]
+      })
+      await click(textButton('Keep my edits'))
+      await save()
+      expect(update(actions)).toEqual([{ query: 'q_featured_posts', inPlace: true, description: 'Mine' }])
+      expect(stored().description).toBe('Mine')
+      expect(stored().orderBy).toEqual([{ field: 'title', direction: 'asc' }])
+    })
+
+    it('without Save, Discard gives the edits up and the form shows the new version', async () => {
+      await definition()
+      await typeInto(field('label'), 'Top posts')
+      await outside((query) => {
+        query.description = 'Changed elsewhere'
+      })
+      await click(q('[data-def-discard]'))
+      expect(notice()).toBeNull()
+      expect(field('label').value).toBe('Featured posts')
+      expect(field('description').value).toBe('Changed elsewhere')
+    })
+
+    it('is not a change of the form when only the query\'s name changed: no notice, and Save sends the edit', async () => {
+      const { actions } = await definition()
+      await typeInto(field('label'), 'Top posts')
+      await outside((query) => {
+        query.name = 'topPosts'
+      })
+      expect(notice()).toBeNull()
+      expect(field('label').value).toBe('Top posts')
+      await save()
+      expect(update(actions)).toEqual([{ query: 'q_featured_posts', inPlace: true, label: 'Top posts' }])
+      expect(stored().name).toBe('topPosts')
+    })
+  })
+
   it('says a change of One / Many is refused while a page reads the query, with the module\'s message', async () => {
     const { actions } = await definition('q_all_posts', { query_update: () => new Failure(422, 'invalid', 'The query allPosts (q_all_posts) is read by page "index" (pg_index) as "all": changing it to one changes what they bind. Change them first') })
     await click(q('[data-def="result"] [aria-label="One"]'))
@@ -2941,6 +3058,23 @@ describe('Action Overview (S10)', () => {
       expect(text(q('[data-action-error]'))).toContain('Post has no field')
       await click(tab('used'))
       expect(q('[data-confirm]')).toBeNull()
+    })
+
+    it('stops asking once the refused text is typed back to what is saved, with no second save', async () => {
+      const { actions } = await overview('act_create_post', refusing())
+      await typeInto(inputOf('[data-action-field="label"]'), 'Add post')
+      await typeInto(inputOf('[data-action-field="description"]'), 'Another rule')
+      expect(updates(actions)).toHaveLength(2)
+      await typeInto(inputOf('[data-action-field="label"]'), 'Create post')
+      // One field is still refused: the screen still asks.
+      await click(tab('used'))
+      expect(confirmText()).toContain('Discard unsaved changes to Create post?')
+      await click(q('[data-confirm-cancel]'))
+      await typeInto(inputOf('[data-action-field="description"]'), 'Create a post. Rule: the slug must be unique.')
+      await click(tab('used'))
+      expect(q('[data-confirm]')).toBeNull()
+      expect(activeTab()).toBe('used')
+      expect(updates(actions)).toHaveLength(2)
     })
 
     it('stops asking once the refused field is saved', async () => {

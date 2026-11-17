@@ -23,9 +23,11 @@ const kindOf = (asked: ArtifactKind | ArtifactTarget): ArtifactKind => typeof as
 
 /**
  * `asked` is what the dialog was asked for (null: closed), `close` tells the parent to drop it. `opened` runs each time something
- * is asked for, after what is shown and the error are reset, so a dialog starts its fields over.
+ * is asked for, after what is shown and the error are reset, so a dialog starts its fields over. It is given the item the dialog is
+ * about (as `item` is, when the model has it): it runs during this call when the dialog is mounted already asked for, before the
+ * caller has what this returns, so it must not read that.
  */
-export function useArtifactDialog<T extends ArtifactKind | ArtifactTarget>(asked: () => T | null, close: () => void, opened?: (next: T) => void) {
+export function useArtifactDialog<T extends ArtifactKind | ArtifactTarget>(asked: () => T | null, close: () => void, opened?: (next: T, item: DataArtifact | undefined) => void) {
   const editor = useEditor()
   /** What was asked for last, so the dialog keeps its words while it closes. */
   const shown = ref(asked()) as Ref<T | null>
@@ -49,7 +51,7 @@ export function useArtifactDialog<T extends ArtifactKind | ArtifactTarget>(asked
     if (!next) return
     shown.value = next
     error.value = ''
-    opened?.(next)
+    opened?.(next, item.value)
   }, { immediate: true })
 
   /** Runs a module action of the dialog: its result when the module took it, else the refusal is shown here and nothing is returned. */

@@ -57,6 +57,17 @@ async function update(patch: Record<string, unknown>, field?: TextField) {
   }
 }
 
+/**
+ * A refused text typed back to what is saved: nothing is left to lose or to save, so the field is not refused any more (its
+ * `change` sends nothing, as the text is not a change, so this is the one place that sees it).
+ */
+function typedBack(field: TextField, event: Event) {
+  const value = (event.target as HTMLInputElement | HTMLTextAreaElement).value
+  if (!refused.has(field) || value !== (field === 'label' ? action.label : action.description ?? '')) return
+  refused.delete(field)
+  error.value = ''
+}
+
 const toggle = (field: string, on: boolean) => update({
   input: { ...action.input, pick: candidates.value.filter(entry => entry === field ? on : picked.value.has(entry)) }
 })
@@ -92,6 +103,7 @@ const toggle = (field: string, on: boolean) => update({
             commit="change"
             aria-label="Action label"
             data-action-field="label"
+            @input="typedBack('label', $event)"
             @commit="update({ label: $event }, 'label')"
           />
         </EditorFormRow>
@@ -106,6 +118,7 @@ const toggle = (field: string, on: boolean) => update({
             placeholder="What the action does, and the rule it keeps"
             aria-label="Action description"
             data-action-field="description"
+            @input="typedBack('description', $event)"
             @commit="update({ description: $event === '' ? null : $event }, 'description')"
           />
         </EditorFormRow>

@@ -14,8 +14,9 @@ const { target } = defineProps<{ target: ArtifactTarget | null }>()
 const emit = defineEmits<{ close: [] }>()
 
 const name = ref('')
-const { shown, open, words, item, error, saving, submit: run } = useArtifactDialog(() => target, () => emit('close'), () => {
-  name.value = item.value?.name ?? ''
+const { shown, open, words, item, error, saving, submit: run } = useArtifactDialog(() => target, () => emit('close'), (_next, current) => {
+  // `current` and not `item`: this runs while `useArtifactDialog` is still being called, when `item` is not bound yet.
+  name.value = current?.name ?? ''
 })
 
 watch(name, () => {
