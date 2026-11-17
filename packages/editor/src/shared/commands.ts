@@ -15,7 +15,6 @@ import { DEFAULT_FRAMES, defaultFrames, frameShortcut, visibleFrames } from '@bi
 import type { DeviceId } from '@bildr/editor-core/styleFields'
 import type { SelectionStep } from '../editor/selection.ts'
 import { siblingParent, topLevelSelection } from '../editor/selection.ts'
-import { uniqueEntityName } from './dataModel.ts'
 
 export type CommandGroup = 'insert' | 'actions' | 'goto' | 'help'
 
@@ -237,9 +236,10 @@ export interface CommandEditor {
   variablesRequest: number
   /** Bumped to ask the Data view for its Import from API dialog. */
   importRequest: number
-  /** The model's collections (entities), so a new one gets a free name. */
+  /** Bumped to ask the Data view for its New collection dialog. */
+  newCollectionRequest: number
+  /** The model's collections (entities). */
   collections: readonly { name: string }[]
-  createCollection: (name: string) => unknown
   sidebarPanel: SidebarPanel
   /** The device frame being edited. */
   deviceId: DeviceId
@@ -359,11 +359,12 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
         editor.mode = view.id
       }
     })),
-    action('data:new-collection', 'New collection', 'i-lucide-database', ['collection', 'data', 'entity', 'add', 'cms'], always, async ({ editor }) => {
-      await editor.createCollection(uniqueEntityName('Untitled', editor.collections))
+    // The request first: the Data view is another screen, which starts with it, and asks where the rows live (nothing is made silently).
+    action('data:new-collection', 'New collection', 'i-lucide-database', ['collection', 'data', 'entity', 'add', 'cms'], always, ({ editor }) => {
+      editor.newCollectionRequest++
       editor.mode = 'data'
     }),
-    // The request first: the Data view is another screen, which starts with it.
+    // The request first, as above.
     action('data:import-api', 'Import from API', 'i-lucide-globe', ['collection', 'data', 'synced', 'json', 'endpoint'], always, ({ editor }) => {
       editor.importRequest++
       editor.mode = 'data'

@@ -19,6 +19,9 @@ export const MIGRATIONS_KEY = 'migrations' satisfies DataSpecial
 /** The last Import from API request each editor's Data tree answered, so a request made before it mounts (⌘K from the Canvas) still opens the dialog. */
 export const answeredImports = new WeakMap<object, number>()
 
+/** The same for the New collection dialog (S7). */
+export const answeredNewCollections = new WeakMap<object, number>()
+
 /** A section of Queries or Actions with more items than this has a filter box (S10). */
 export const FILTER_FROM = 8
 

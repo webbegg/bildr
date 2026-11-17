@@ -22,6 +22,8 @@ export interface DataStart {
   collectionId?: string | null
   /** The Import from API request count: above 0, the dialog opens. */
   importRequest?: number
+  /** The New collection request count (⌘K): above 0, the dialog opens. */
+  newCollectionRequest?: number
 }
 
 /** Opens a screen; what the shell's router answers when the navigation did not happen (a failure it returns, or a rejection) means the editor there will not be made. */

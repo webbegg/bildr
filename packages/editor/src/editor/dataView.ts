@@ -10,7 +10,9 @@ import type { DataItem, DataSpecial, DataTab } from './dataTabs.ts'
 import { migrationTargets } from './migrationTargets.ts'
 import type { CollectionChange, MigrationTargets } from './migrationTargets.ts'
 import type { PendingMigration } from '../types.ts'
-import { collectionsOf, connectionsOf, defaultSourceOf, fixtureRowsOf } from '../shared/dataModel.ts'
+import { SAMPLE_SOURCE_NAME, storedIn } from './newCollection.ts'
+import type { CollectionStorage } from './newCollection.ts'
+import { collectionsOf, connectionsOf, fixtureRowsOf } from '../shared/dataModel.ts'
 import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
 
 /**
@@ -197,16 +199,22 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
   const reloadRecords = () => live.refresh()
 
   /**
-   * A new collection (the hosted `collection_create { name }`): an entity with one text field, `title`, over the
-   * app's database, else a memory data source (made first when the project has none). Shows it; returns its id.
+   * A new collection (S7): an entity with one text field, `title`, over where the user said its rows live: the app's database,
+   * or Sample data, which is the memory source the project has, else one named "sample" made first. Nothing is chosen for
+   * the user: Database with no database makes nothing and says so. Shows it; returns its id. A source made for it that
+   * the entity then refuses is removed again, and the refusal stays.
    */
-  const createCollection = async (name: string): Promise<string | undefined> => {
+  const createCollection = async ({ name, storage }: { name: string, storage: CollectionStorage }): Promise<string | undefined> => {
     const current = model.value
     if (!current) return undefined
-    let source = defaultSourceOf(current)?.id
+    let source = storedIn(current, storage.kind)?.id
     let madeSource = false
+    if (!source && storage.kind === 'database') {
+      design.error.value = 'This project has no database to keep the rows in. Choose Sample data or a REST API.'
+      return undefined
+    }
     if (!source) {
-      const made = await design.edit('datasource_create', { name: 'memory', kind: 'memory' })
+      const made = await design.edit('datasource_create', { name: SAMPLE_SOURCE_NAME, kind: 'memory' })
       source = made?.datasourceId as string | undefined
       if (!source) return undefined
       madeSource = true

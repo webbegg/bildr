@@ -53,8 +53,9 @@ await run('remote', async ({ page, errors }) => {
     await quiet()
     await until(async () => (await call('health_get')).ok, 60_000)
 
-    // A /posts collection, tested in the dialog.
+    // A /posts collection, tested in the dialog (the connection's Add… opens New collection on REST API, which Continue takes on).
     await page.getByLabel('Add a collection to placeholder').click()
+    await page.locator('[data-artifact-submit]').click()
     await page.locator('[data-connection-source] [data-endpoint-path="list"]').fill('/posts')
     await page.locator('[data-connection-source] [data-endpoint-test="list"]').click()
     const status = page.locator('[data-endpoint-status]')

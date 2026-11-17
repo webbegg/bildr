@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
 import DataView from '../../src/views/DataView.vue'
 import { takeStart } from '../../src/editor/views.ts'
-import { baseHandlers, setupHarness, world } from '../design/harness.ts'
+import { baseHandlers, selectOption, setupHarness, world } from '../design/harness.ts'
 import type { Handlers } from '../design/harness.ts'
 
 /**
@@ -46,7 +46,9 @@ afterEach(() => {
 describe('a new collection in a connection', () => {
   const dialog = async (extra: Handlers = {}) => {
     const actions = await open(extra)
+    // The connection's Add… opens New collection on REST API with that connection chosen; Continue opens the connection's dialog.
     await click(q('[data-connection-add-collection]'))
+    await click(q('[data-artifact-submit]'))
     return actions
   }
   const test = async (path: string) => {
@@ -67,6 +69,16 @@ describe('a new collection in a connection', () => {
     expect(qa('[data-mapping-row]').map(row => row.getAttribute('data-mapping-row'))).toEqual(['id', 'todo', 'completed', 'user_id'])
     expect(qa('[data-preview-column]').map(column => text(column))).toEqual(['Id', 'Todo', 'Completed', 'User id'])
     expect([...q('[data-api-preview] tbody tr')!.querySelectorAll('td')].map(cell => text(cell))).toEqual(['1', 'Buy milk', 'false', '7'])
+  })
+
+  it('starts with the name typed in New collection, and keeps it when the endpoint is tested', async () => {
+    await open({ datasource_preview: () => preview() })
+    await click(q('[data-connection-add-collection]'))
+    await typeInto(q('[data-new-collection-name]'), 'Chores')
+    await click(q('[data-artifact-submit]'))
+    expect((q('[data-api-name]') as HTMLInputElement).value).toBe('Chores')
+    await test('/todos')
+    expect((q('[data-api-name]') as HTMLInputElement).value).toBe('Chores')
   })
 
   it('saves it as one entity_create over the connection, with the plural the path gave', async () => {
@@ -288,6 +300,21 @@ describe('Import from API', () => {
     await click(q('[data-api-save]'))
     expect(inputs(actions, 'entity_create')).toMatchObject([{ name: 'Todo', plural: 'todos', source: 'ds_quotes', endpoints: { list: { path: '/todos', itemsPath: 'todos' } } }])
     expect(q('[role="dialog"]')).toBeNull()
+  })
+
+  it('is where New collection sends a new connection, with the name typed there', async () => {
+    const actions = await open({ datasource_preview: () => preview(), entity_create: ok({ entityId: 'ent_todo' }) })
+    await click(q('[aria-label="Add collection"]'))
+    await click(q('[data-storage="rest"]'))
+    await selectOption(q('[data-new-collection-connection] [role="combobox"]') ?? q('[data-new-collection-connection]'), 'New connection…')
+    await typeInto(q('[data-new-collection-name]'), 'Chores')
+    await click(q('[data-artifact-submit]'))
+    expect(text(q('[role="dialog"]'))).toContain('Import from API')
+    expect((q('[data-api-name]') as HTMLInputElement).value).toBe('Chores')
+    await fetchUrl('https://dummyjson.com/todos')
+    expect((q('[data-api-name]') as HTMLInputElement).value).toBe('Chores')
+    await click(q('[data-api-save]'))
+    expect(inputs(actions, 'entity_create')).toMatchObject([{ name: 'Chores', source: 'ds_quotes' }])
   })
 
   it('makes a data source for an origin the project has none for, named after the host', async () => {

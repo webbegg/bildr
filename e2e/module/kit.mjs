@@ -79,11 +79,13 @@ await run('kit', async ({ page, errors }) => {
   await page.keyboard.press('Escape')
   await page.locator('[data-shortcuts-sheet]').waitFor({ state: 'detached' })
 
-  // The Data screen: inline add, collection rename, the filter menu, the connection's collection dialog.
+  // The Data screen: the New collection dialog, collection rename, the filter menu, the connection's collection dialog.
   await openData(page)
   await page.getByLabel('Add collection').click()
-  await soft(page.getByLabel('New collection name'), 'new collection (inline add)')
-  await page.getByLabel('New collection name').press('Escape')
+  await darkDialog(page, 'new collection')
+  await soft(page.locator('[data-artifact-dialog="create"]'), 'new collection (dialog)')
+  await page.keyboard.press('Escape')
+  await page.locator('[data-artifact-dialog="create"]').waitFor({ state: 'detached' })
   await renameStaysOpen(page, page.locator('[data-collection="posts"]').locator('..'), 'Collection actions', 'Rename collection', 'collections')
 
   await page.locator('[data-collection="posts"]').click()
@@ -92,6 +94,7 @@ await run('kit', async ({ page, errors }) => {
   await page.keyboard.press('Escape')
 
   await page.getByLabel('Add a collection to quotes').click()
+  await page.locator('[data-artifact-submit]').click()
   await darkDialog(page, 'connection modal')
   await soft(page.locator('[data-connection-source] [data-endpoint-path="list"]'), 'connection modal')
   await shot(page, 'kit-import')

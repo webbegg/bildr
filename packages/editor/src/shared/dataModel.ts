@@ -263,10 +263,6 @@ export const pagesUsingEntity = (model: Model, entityId: string): PageFile[] => 
   return modules.flatMap(mod => mod.pages).filter(page => mentions(page, ids))
 }
 
-/** Where a new collection is stored: the app database when the project has one, else a memory source. */
-export const defaultSourceOf = (model: Model): DataSourceFile | undefined =>
-  model.datasources.find(source => source.kind === 'sqlite') ?? model.datasources.find(source => source.kind === 'memory')
-
 /** `name`, or `name2`, `name3`…: the first no entity has, ignoring case (entity names are PascalCased, so a space is not kept). */
 export const uniqueEntityName = (name: string, taken: readonly { name: string }[]): string => {
   const used = new Set(taken.map(entry => entry.name.toLowerCase()))

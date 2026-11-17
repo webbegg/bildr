@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { click, Failure, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
 import type { AppRoutes } from '../helpers.ts'
 import App from '../../src/App.vue'
+import { createDesign } from '../../src/design/store.ts'
+import { createEditor } from '../../src/editor/useEditor.ts'
 import { FOLDED_KEY } from '../../src/editor/dataTree.ts'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
 import { FakeEventSource, baseHandlers, byLabel, combo, indexPage, inputOf, menuItem, menuLabels, modelGet, selectOption, setupHarness, world } from '../design/harness.ts'
@@ -366,7 +368,18 @@ describe('the Data workspace (S2)', () => {
       () => click(collection('quotes')),
       ...['rows', 'fields', 'endpoints'].map(name => () => click(tab(name))),
       () => click(treeItem('quotes')),
+      // New collection (S7): each storage choice, the connection's Add…, and the dialogs it leads to.
+      () => click(byLabel('Add collection')),
+      () => click(q('[data-storage="database"]')),
+      () => click(q('[data-storage="rest"]')),
+      cancel,
       () => click(q('[data-connection-add-collection]')),
+      () => click(q('[data-artifact-submit]')),
+      cancel,
+      () => click(byLabel('Add collection')),
+      () => click(q('[data-storage="rest"]')),
+      () => selectOption(q('[data-new-collection-connection] [role="combobox"]') ?? q('[data-new-collection-connection]'), 'New connection…'),
+      () => click(q('[data-artifact-submit]')),
       cancel,
       () => menuItem(byLabel('Add connection'), 'Import from URL'),
       cancel,
@@ -648,21 +661,21 @@ describe('the Data location (S2)', () => {
     expect(router.currentRoute.value.query).toEqual({ item: ITEMS.quotes, tab: 'endpoints' })
   })
 
-  it('shows a collection made while a connection is selected, and rewrites the URL', async () => {
+  it('shows a collection made while a connection is selected, on its Fields tab, and rewrites the URL', async () => {
     const { router } = await open({
       entity_create: () => {
         const mod = world.model.modules.blog!
         mod.entities.push({ ...structuredClone(mod.entities.find(entity => entity.id === 'ent_post')!), id: 'ent_menu', name: 'Menu', plural: 'menus' })
         return { entityId: 'ent_menu', changed: [] }
-      }
+      },
+      datasource_create: () => ({ datasourceId: 'ds_sample', filePath: '.bildr/datasources/sample.json', database: false })
     })
     await click(treeItem('quotes'))
     expect(router.currentRoute.value.query.item).toBe(ITEMS.quotes)
     await click(q('[aria-label="Add collection"]'))
-    await typeInto(q('[aria-label="New collection name"]'), 'Menu')
-    q('[aria-label="New collection name"]')!.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await settle()
-    expect(router.currentRoute.value.query).toEqual({ item: 'collection:ent_menu', tab: 'rows' })
+    await typeInto(q('[data-new-collection-name]'), 'Menu')
+    await click(q('[data-artifact-submit]'))
+    expect(router.currentRoute.value.query).toEqual({ item: 'collection:ent_menu', tab: 'fields' })
     expect(text(q('[data-data-title] h2'))).toBe('Menu')
   })
 })
@@ -748,13 +761,25 @@ describe('the rows table', () => {
 })
 
 describe('collections', () => {
-  it('adds one with an inline name: an entity over the app database with a first field', async () => {
+  it('adds one from the New collection dialog: an entity over the database it is told to, with a first field', async () => {
     const { actions } = await open({ entity_create: ok({ entityId: 'ent_menu' }) })
     await click(q('[aria-label="Add collection"]'))
-    await typeInto(q('[aria-label="New collection name"]'), 'Menu')
-    q('[aria-label="New collection name"]')!.closest('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
-    await settle()
+    expect(text(q('[role="dialog"]'))).toContain('New collection')
+    await typeInto(q('[data-new-collection-name]'), 'Menu')
+    await click(q('[data-storage="database"]'))
+    await click(q('[data-artifact-submit]'))
     expect(inputs(actions, 'entity_create')).toEqual([{ name: 'Menu', source: 'ds_main', fields: [{ name: 'title', type: 'text' }] }])
+    expect(q('[role="dialog"]')).toBeNull()
+  })
+
+  it('makes nothing when the New collection dialog is cancelled', async () => {
+    const { actions } = await open({ entity_create: ok({ entityId: 'ent_menu' }), datasource_create: ok({ datasourceId: 'ds_sample' }) })
+    await click(q('[aria-label="Add collection"]'))
+    await typeInto(q('[data-new-collection-name]'), 'Menu')
+    await click(textButton('Cancel'))
+    expect(q('[role="dialog"]')).toBeNull()
+    expect(inputs(actions, 'entity_create')).toEqual([])
+    expect(inputs(actions, 'datasource_create')).toEqual([])
   })
 
   it('renames one by double-click, and deletes it after a confirmation', async () => {
@@ -783,13 +808,29 @@ describe('collections', () => {
     expect(inputs(actions, 'entity_delete')).toEqual([])
   })
 
-  it('starts from "Add your first collection" when there are none', async () => {
+  it('starts from "Add your first collection" when there are none, which opens the New collection dialog', async () => {
     world.model.modules.blog!.entities = []
     world.model.modules.blog!.repositories = []
     const { actions } = await open({ entity_create: ok({ entityId: 'ent_untitled' }) })
     expect(q('[data-data-empty]')).not.toBeNull()
     await click(q('[data-empty-new]'))
-    expect(inputs(actions, 'entity_create')).toEqual([{ name: 'Untitled', source: 'ds_main', fields: [{ name: 'title', type: 'text' }] }])
+    expect(text(q('[role="dialog"]'))).toContain('New collection')
+    expect(inputs(actions, 'entity_create')).toEqual([])
+  })
+
+  it('opens the dialog when another screen asked for it (the ⌘K command) before this one was made', async () => {
+    const off = registerScreens(vi.fn())
+    const design = createDesign()
+    try {
+      const earlier = createEditor(design)
+      earlier.newCollectionRequest++
+      earlier.mode = 'data'
+      await open()
+      expect(text(q('[role="dialog"]'))).toContain('New collection')
+    } finally {
+      off()
+      design.dispose()
+    }
   })
 })
 

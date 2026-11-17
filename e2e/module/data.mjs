@@ -35,18 +35,31 @@ await run('data', async ({ page, browser, errors }) => {
   // A module refusal is answered 422, which Chromium logs as a console error: the steps that expect one filter it out.
   const refused422 = /status of 422 \(Unprocessable Entity\)/
 
-  // The collection and its fields, through the Data screen.
+  // The collection and its fields, through the Data screen. New collection (D7, S7) asks for a name and where the rows live.
   await openData(page)
   await page.getByLabel('Add collection').click()
-  await page.getByLabel('New collection name').fill('Menu')
-  await page.getByLabel('New collection name').press('Enter')
+  await page.locator('[data-new-collection-name]').waitFor()
+  const storages = await page.locator('[data-storage]').evaluateAll(options => options.map(option => `${option.getAttribute('data-storage')}${option.getAttribute('aria-checked') === 'true' ? '*' : ''}`))
+  check(storages.join() === 'sample*,database,rest', `New collection offers Sample data (chosen), Database and REST API (${storages})`)
+  await page.locator('[data-new-collection-name]').fill('Menu')
+  await page.waitForTimeout(400)
+  await shot(page, 'd7-new-collection')
+  // Cancel makes nothing: no entity, and no source made for it.
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.locator('[data-new-collection-name]').waitFor({ state: 'detached' })
+  check(!bildr('modules/blog/entities/menu.json') && !bildr('datasources/sample.json'), 'Cancel makes no collection and no data source')
+  await page.getByLabel('Add collection').click()
+  await page.locator('[data-new-collection-name]').fill('Menu')
+  await page.locator('[data-artifact-submit]').click()
   const menu = await until(() => bildr('modules/blog/entities/menu.json'))
-  check(menu?.name === 'Menu' && menu.plural === 'menus', `Add collection writes the "Menu" entity (${menu?.id} ${menu?.plural})`)
+  check(menu?.name === 'Menu' && menu.plural === 'menus', `Create on the default writes the "Menu" entity (${menu?.id} ${menu?.plural})`)
   check(!!bildr('modules/blog/repositories/menu.json'), 'and its repository')
+  const sample = bildr('datasources/sample.json')
+  check(sample?.kind === 'memory' && sample.name === 'sample' && bildr('modules/blog/repositories/menu.json')?.datasource === sample.id, `over the Sample data source made for it, named "sample" (${sample?.kind} ${sample?.name}, read through ${bildr('modules/blog/repositories/menu.json')?.datasource})`)
 
-  // A new collection is shown on its Rows tab; the fields are edited on the Fields tab.
-  check(await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'rows', 'a collection opens on its Rows tab')
-  await page.locator('[role=tab][data-data-tab="fields"]').click()
+  // A new collection opens on its Fields tab, where the fields are added.
+  await page.locator('[data-new-collection-name]').waitFor({ state: 'detached' })
+  check(await until(async () => await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'fields'), 'a new collection opens on its Fields tab')
   await page.getByRole('button', { name: 'Add field', exact: true }).first().click()
   await page.getByLabel('New field name').fill('cost')
   await page.locator('[data-new-field-type]').click()
@@ -69,8 +82,8 @@ await run('data', async ({ page, browser, errors }) => {
   const renamed = await until(() => bildr('modules/blog/entities/menu.json').fields.some(f => f.name === 'remark'))
   check(renamed, 'the Fields tab renames note to remark (in the entity file)')
   check(bildr('modules/blog/entities/menu.json').fields[2].id === 'fld_note', 'the field keeps its id fld_note')
-  // A renamed column is a destructive migration on a database: it waits for the user's confirmation (the Data workspace's Migrations).
-  check(await quiesce(60_000), 'the pending migration of the renamed column is confirmed')
+  // Sample data has no table, so a renamed field leaves nothing to migrate (a stored collection's does: the Migrations step below).
+  check(await quiesce(60_000), 'the app regenerates after the rename, with no migration waiting')
   await quiet()
 
   // Rows: the app's own API creates them (the table is read-only), the table lists the app's rows.

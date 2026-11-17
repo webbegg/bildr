@@ -220,49 +220,68 @@ describe('the rows of the shown collection', () => {
   })
 })
 
-describe('creating a collection', () => {
-  it('is an entity over the app database with a first text field, and is shown', async () => {
-    const { editor, actions } = await bootData({}, { entity_create: () => ({ entityId: 'ent_untitled', repositoryId: 'repo_untitled', queryIds: [] }) })
-    expect(await editor.createCollection('Untitled')).toBe('ent_untitled')
-    expect(actions.named('entity_create').map(call => call.input)).toEqual([{ name: 'Untitled', source: 'ds_main', fields: [{ name: 'title', type: 'text' }] }])
+describe('creating a collection (S7)', () => {
+  const made = (id = 'ent_untitled') => ({ entity_create: () => ({ entityId: id, repositoryId: 'repo_untitled', queryIds: [] }) })
+  const withoutDatabase = () => {
+    world.model.datasources = world.model.datasources.filter(source => source.kind !== 'sqlite')
+  }
+  const memorySource = { id: 'ds_scratch', name: 'scratch', kind: 'memory' as const, env: {} }
+
+  it('on Sample data uses the memory source the project has, with a first text field, and shows it', async () => {
+    world.model.datasources.push(memorySource)
+    const { editor, actions } = await bootData({}, made())
+    expect(await editor.createCollection({ name: 'Untitled', storage: { kind: 'sample' } })).toBe('ent_untitled')
     expect(actions.named('datasource_create')).toEqual([])
+    expect(actions.named('entity_create').map(call => call.input)).toEqual([{ name: 'Untitled', source: 'ds_scratch', fields: [{ name: 'title', type: 'text' }] }])
     expect(editor.collectionId).toBe('ent_untitled')
     expect(editor.connectionId).toBeNull()
   })
 
-  it('makes a memory data source first when the project has no database', async () => {
-    world.model.datasources = world.model.datasources.filter(source => source.kind !== 'sqlite')
-    const { editor, actions } = await bootData({}, { datasource_create: () => ({ datasourceId: 'ds_memory', filePath: '.bildr/datasources/memory.json', database: false }), entity_create: () => ({ entityId: 'ent_untitled' }) })
-    await editor.createCollection('Untitled')
-    expect(actions.named('datasource_create').map(call => call.input)).toEqual([{ name: 'memory', kind: 'memory' }])
-    expect(actions.named('entity_create').map(call => call.input)).toEqual([{ name: 'Untitled', source: 'ds_memory', fields: [{ name: 'title', type: 'text' }] }])
+  it('on Sample data with no memory source makes the one named "sample" first, even when the project has a database', async () => {
+    const { editor, actions } = await bootData({}, { ...made(), datasource_create: () => ({ datasourceId: 'ds_sample', filePath: '.bildr/datasources/sample.json', database: false }) })
+    await editor.createCollection({ name: 'Untitled', storage: { kind: 'sample' } })
+    expect(actions.named('datasource_create').map(call => call.input)).toEqual([{ name: 'sample', kind: 'memory' }])
+    expect(actions.named('entity_create').map(call => call.input)).toEqual([{ name: 'Untitled', source: 'ds_sample', fields: [{ name: 'title', type: 'text' }] }])
+  })
+
+  it('on Database uses the project\'s database and makes no source', async () => {
+    const { editor, actions } = await bootData({}, made())
+    expect(await editor.createCollection({ name: 'Untitled', storage: { kind: 'database' } })).toBe('ent_untitled')
+    expect(actions.named('datasource_create')).toEqual([])
+    expect(actions.named('entity_create').map(call => call.input)).toEqual([{ name: 'Untitled', source: 'ds_main', fields: [{ name: 'title', type: 'text' }] }])
+  })
+
+  it('on Database with no database makes nothing and says so (never a silent memory source)', async () => {
+    withoutDatabase()
+    const { editor, actions } = await bootData({}, made())
+    expect(await editor.createCollection({ name: 'Untitled', storage: { kind: 'database' } })).toBeUndefined()
+    expect(actions.named('datasource_create')).toEqual([])
+    expect(actions.named('entity_create')).toEqual([])
+    expect(editor.error).toContain('no database')
   })
 
   it('shows nothing new when the action refuses', async () => {
     const { editor } = await bootData({}, { entity_create: () => new Failure(422, 'invalid', 'Module "blog" already has the entity Untitled (ent_untitled)') })
-    expect(await editor.createCollection('Untitled')).toBeUndefined()
+    expect(await editor.createCollection({ name: 'Untitled', storage: { kind: 'database' } })).toBeUndefined()
     expect(editor.collectionId).toBeNull()
     expect(editor.error).toContain('already has the entity')
   })
-})
 
-describe('creating a collection on a data source it made', () => {
-  it('deletes the memory source it made when entity_create is refused', async () => {
-    world.model.datasources = world.model.datasources.filter(source => source.kind !== 'sqlite')
+  it('deletes the "sample" source it made when entity_create is refused, and the refusal stays', async () => {
     const { editor, actions } = await bootData({}, {
-      datasource_create: () => ({ datasourceId: 'ds_memory', filePath: '.bildr/datasources/memory.json', database: false }),
+      datasource_create: () => ({ datasourceId: 'ds_sample', filePath: '.bildr/datasources/sample.json', database: false }),
       entity_create: () => new Failure(422, 'invalid', 'Module "blog" already has the entity Untitled (ent_untitled)'),
       datasource_delete: () => ({ changed: [], database: false })
     })
-    expect(await editor.createCollection('Untitled')).toBeUndefined()
-    expect(actions.named('datasource_delete').map(call => call.input)).toEqual([{ datasource: 'ds_memory' }])
-    // The refusal that explains it stays.
+    expect(await editor.createCollection({ name: 'Untitled', storage: { kind: 'sample' } })).toBeUndefined()
+    expect(actions.named('datasource_delete').map(call => call.input)).toEqual([{ datasource: 'ds_sample' }])
     expect(editor.error).toContain('already has the entity')
   })
 
   it('keeps a source the project already had when entity_create is refused', async () => {
+    world.model.datasources.push(memorySource)
     const { editor, actions } = await bootData({}, { entity_create: () => new Failure(422, 'invalid', 'nope'), datasource_delete: () => ({ changed: [] }) })
-    expect(await editor.createCollection('Untitled')).toBeUndefined()
+    expect(await editor.createCollection({ name: 'Untitled', storage: { kind: 'sample' } })).toBeUndefined()
     expect(actions.named('datasource_delete')).toEqual([])
     expect(editor.error).toContain('nope')
   })
@@ -331,6 +350,22 @@ describe('the Data and the Design views are two screens', () => {
       const later = await bootData({}, {}, 'data')
       expect(later.editor.collectionId).toBeNull()
       expect(later.editor.importRequest).toBe(0)
+    } finally {
+      off()
+    }
+  })
+
+  it('a New collection request goes with the view to the Data screen, once', async () => {
+    const open = vi.fn()
+    const off = registerScreens(open)
+    try {
+      const { editor } = await bootData()
+      editor.newCollectionRequest++
+      editor.mode = 'data'
+      const next = await bootData({}, {}, 'data')
+      expect(next.editor.newCollectionRequest).toBe(1)
+      const later = await bootData({}, {}, 'data')
+      expect(later.editor.newCollectionRequest).toBe(0)
     } finally {
       off()
     }
@@ -821,7 +856,7 @@ describe('All model files in the Data workspace (S3)', () => {
   it('is shown for a new collection, which is chosen', async () => {
     const { editor } = await bootData({}, { entity_create: () => ({ entityId: 'ent_untitled' }) })
     editor.dataFiles = true
-    await editor.createCollection('Untitled')
+    await editor.createCollection({ name: 'Untitled', storage: { kind: 'database' } })
     expect(editor.dataFiles).toBe(false)
   })
 })

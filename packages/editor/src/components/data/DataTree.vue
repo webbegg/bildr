@@ -2,7 +2,7 @@
 import { computed, provide, reactive, ref, useTemplateRef, watch } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { dataItemKey } from '../../editor/dataTabs.ts'
-import { TREE_STOP, answeredImports, storeFolded, storedFolded, treeItems } from '../../editor/dataTree.ts'
+import { TREE_STOP, answeredImports, answeredNewCollections, storeFolded, storedFolded, treeItems } from '../../editor/dataTree.ts'
 import type { ArtifactFilters } from '../../editor/dataTree.ts'
 import type { ArtifactKind } from '../../shared/dataArtifacts.ts'
 import { rovingTarget } from '../../editor/rovingKeys.ts'
@@ -10,8 +10,9 @@ import { useEditor } from '../../editor/useEditor.ts'
 import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
 
 /**
- * The Data workspace's tree, Framer CMS's: **Collections** (entities stored by the app: its
- * database or memory, then `+ Add…` for an inline name) and **Connections**: each connection (a
+ * The Data workspace's tree, Framer CMS's: **Collections** (stored by the app: its database or
+ * Sample data, then `Add…`, which opens the New collection dialog: S7, also opened by each
+ * `editor.newCollectionRequest`) and **Connections**: each connection (a
  * REST API) as a folder of the collections read through it. Choosing an item shows it in the
  * workspace beside the tree, on the tabs its kind has. The Connections `+` makes a new
  * connection (an inline name, then the base URL in its Endpoints tab) or opens the Import from URL
@@ -105,8 +106,11 @@ function onKeyDown(event: KeyboardEvent) {
 const internal = computed(() => editor.collections.filter(entry => entry.kind !== 'rest'))
 const connections = computed(() => editor.connections)
 
-const newName = ref('')
-const adding = ref(false)
+/** The New collection dialog, and the connection whose `Add…` opened it. */
+const newCollection = ref(false)
+const newCollectionIn = ref<string | null>(null)
+/** The name typed in it, which the dialog it hands over to starts with. */
+const typedName = ref('')
 const fromApi = ref(false)
 const connectionName = ref('')
 const addingConnection = ref(false)
@@ -122,7 +126,7 @@ watch(addingToConnection, (connection) => {
 
 const connectionMenu: DropdownMenuItem[] = [
   { label: 'New connection', icon: 'i-lucide-server', onSelect: () => (addingConnection.value = true) },
-  { label: 'Import from URL', icon: 'i-lucide-globe', slot: 'from-api', onSelect: () => (fromApi.value = true) }
+  { label: 'Import from URL', icon: 'i-lucide-globe', slot: 'from-api', onSelect: () => importFromUrl('') }
 ]
 
 async function addConnection() {
@@ -150,22 +154,31 @@ function connectionMenuClosed(event: Event) {
 }
 
 watch(() => editor.importRequest, (request) => {
-  if (request > (answeredImports.get(editor) ?? 0)) fromApi.value = true
+  if (request > (answeredImports.get(editor) ?? 0)) importFromUrl('')
   answeredImports.set(editor, request)
 }, { immediate: true })
 
-async function addCollection() {
-  const name = newName.value.trim()
-  if (!name) return
-  if (await editor.createCollection(name)) {
-    newName.value = ''
-    adding.value = false
-  }
+watch(() => editor.newCollectionRequest, (request) => {
+  if (request > (answeredNewCollections.get(editor) ?? 0)) addCollection(null)
+  answeredNewCollections.set(editor, request)
+}, { immediate: true })
+
+/** Opens New collection, on REST API with `connection` chosen when it is the one whose `Add…` was used. */
+function addCollection(connection: string | null) {
+  newCollectionIn.value = connection
+  newCollection.value = true
 }
 
-function cancelAdd() {
-  adding.value = false
-  newName.value = ''
+/** New collection chose a new connection: the Import from URL dialog finishes it, with the name typed. */
+function importFromUrl(name: string) {
+  typedName.value = name
+  fromApi.value = true
+}
+
+/** New collection chose a connection: its collection dialog finishes it, with the name typed. */
+function addToConnection({ connection, name }: { connection: string, name: string }) {
+  typedName.value = name
+  addingTo.value = connection
 }
 </script>
 
@@ -185,7 +198,7 @@ function cancelAdd() {
           Collections
         </p>
         <p
-          v-if="!internal.length && !adding"
+          v-if="!internal.length"
           class="ps-3.5 pe-3 py-1.5 text-xs text-dimmed"
         >
           No collections yet.
@@ -196,29 +209,12 @@ function cancelAdd() {
           :collection="collection"
           :count="editor.collectionCounts[collection.id]"
         />
-        <form
-          v-if="adding"
-          class="px-2"
-          @submit.prevent="addCollection"
-        >
-          <EditorInput
-            v-model="newName"
-            placeholder="Collection name"
-            autofocus
-            aria-label="New collection name"
-            @keydown.esc="cancelAdd"
-            @blur="!newName.trim() && cancelAdd()"
-          />
-        </form>
-        <div
-          v-else
-          class="px-2"
-        >
+        <div class="px-2">
           <button
             type="button"
             class="flex h-9 w-full items-center gap-2.5 rounded-lg ps-3 text-left text-[12px] text-muted hover:bg-white/4 hover:text-toned"
             aria-label="Add collection"
-            @click="adding = true"
+            @click="addCollection(null)"
           >
             <UIcon
               name="i-lucide-plus"
@@ -264,7 +260,7 @@ function cancelAdd() {
           :connection="connection"
           :counts="editor.collectionCounts"
           :open="!collapsed.has(connection.id)"
-          @add="addingTo = connection.id"
+          @add="addCollection(connection.id)"
           @toggle="toggle(connection.id)"
         />
         <form
@@ -329,8 +325,16 @@ function cancelAdd() {
       @close="deletingArtifact = null"
     />
 
+    <DataNewCollection
+      v-model:open="newCollection"
+      :connection="newCollectionIn"
+      @connection="addToConnection"
+      @import="importFromUrl($event.name)"
+    />
+
     <DataApiSource
       v-model:open="fromApi"
+      :typed="typedName"
       title="Import from API"
       description="Paste a JSON endpoint, review the proposed mapping, then save. The rows stay live and read-only."
     />
@@ -339,6 +343,7 @@ function cancelAdd() {
       v-if="dialogConnection"
       :open="!!addingToConnection"
       :connection="dialogConnection"
+      :typed="typedName"
       title="New collection"
       :description="`In ${dialogConnection.name}: test the list endpoint, review the proposed fields, then save.`"
       @update:open="!$event && (addingTo = null)"

@@ -222,10 +222,11 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   const mode = ref<EditorView>(options.view ?? handed.view ?? 'build')
   const screen = screenOf(mode.value)
   const importRequest = ref(screen === 'data' ? handed.data.importRequest ?? 0 : 0)
+  const newCollectionRequest = ref(screen === 'data' ? handed.data.newCollectionRequest ?? 0 : 0)
   // `confirm` is made below: it is only asked once the editor is in use.
   const data = createDataView(design, mode, options => confirm(options), options.plan ?? ref(null))
   if (screen === 'data') data.collectionId.value = handed.data.collectionId ?? null
-  watch(mode, view => requestView(view, screen, { pageId: lastPage.value, collectionId: data.collectionId.value, importRequest: importRequest.value }), { flush: 'sync' })
+  watch(mode, view => requestView(view, screen, { pageId: lastPage.value, collectionId: data.collectionId.value, importRequest: importRequest.value, newCollectionRequest: newCollectionRequest.value }), { flush: 'sync' })
 
   /** Opens a component in the component view, selecting `nodeId`. `nested` pushes it onto the breadcrumb; from Assets or ⌘K it replaces the levels. */
   const editComponent = (id: string, nodeId: string | null = null, { nested = false }: { nested?: boolean } = {}) => {
@@ -1025,7 +1026,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     model, pages, pageId, componentId, component, layoutId, layout, editStack, createRequest, propertiesRequest, confirmRequest, canvasAccent, variantId: design.variantId, variant: design.variant, variantBoard, interactionId, currentPage, treeRef, page,
     // Selection and canvas UI state.
     selectedId, selectedIds, hoveredId, spacingOverlay, tool, deepSelect, previewDark, collapsed, renamingId, clipboard: design.clipboard, history: design.history, mode, insertOpen, searchRequest, sidebarPanel, quickOpen, zoomRequest, previewUrl, previewHint, breakpointBase, deviceId, device: design.device, frameRequest, frames, visibleDevices, hiddenDevices, themeDraft, stylePreview, selected, selectedNodes, nodeName, theme,
-    importRequest, variablesRequest, env,
+    importRequest, newCollectionRequest, variablesRequest, env,
     // The Data view: collections are entities, connections REST data sources; the rows are the app's or the fixtures, never written (U7).
     collections: data.collections,
     connections: data.connections,

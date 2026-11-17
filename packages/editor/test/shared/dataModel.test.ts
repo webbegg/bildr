@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { loadModel } from '../../../codegen/src/model/load.ts'
 import type { Model } from '@bildr/codegen/model'
 import { blogModelFiles } from '../canvas/fixture.ts'
-import { collectionsOf, connectionsOf, defaultSourceOf, detailPagesOf, entityProposal, fieldLabel, fieldTypeItems, fixtureRowsOf, restDefaults, sourceNameOf, uniqueEntityName } from '../../src/shared/dataModel.ts'
+import { collectionsOf, connectionsOf, detailPagesOf, entityProposal, fieldLabel, fieldTypeItems, fixtureRowsOf, restDefaults, sourceNameOf, uniqueEntityName } from '../../src/shared/dataModel.ts'
 
 /**
  * What the Data view reads of the model (U7): the hosted `Collection`/`Connection` as a read-only
@@ -86,17 +86,6 @@ describe('detailPagesOf', () => {
   it('finds the pages that show one row of an entity through a route parameter', () => {
     expect(detailPagesOf(load(), 'ent_post').map(page => page.id)).toEqual(['pg_post_detail'])
     expect(detailPagesOf(load(), 'ent_quote')).toEqual([])
-  })
-})
-
-describe('defaultSourceOf', () => {
-  it('is the app database, else a memory source, else nothing', () => {
-    const model = load()
-    expect(defaultSourceOf(model)?.id).toBe('ds_main')
-    model.datasources = model.datasources.filter(source => source.kind !== 'sqlite')
-    expect(defaultSourceOf(model)).toBeUndefined()
-    model.datasources.push({ id: 'ds_scratch', name: 'scratch', kind: 'memory', env: {} })
-    expect(defaultSourceOf(model)?.id).toBe('ds_scratch')
   })
 })
 

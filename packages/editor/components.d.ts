@@ -40,6 +40,7 @@ declare module 'vue' {
     DataMigrationBanner: typeof import('./src/components/data/DataMigrationBanner.vue')['default']
     DataMigrations: typeof import('./src/components/data/DataMigrations.vue')['default']
     DataMigrationsRow: typeof import('./src/components/data/sidebar/DataMigrationsRow.vue')['default']
+    DataNewCollection: typeof import('./src/components/data/DataNewCollection.vue')['default']
     DataPanel: typeof import('./src/components/data/DataPanel.vue')['default']
     DataPanelCollection: typeof import('./src/components/data/panel/DataPanelCollection.vue')['default']
     DataPanelConnection: typeof import('./src/components/data/panel/DataPanelConnection.vue')['default']

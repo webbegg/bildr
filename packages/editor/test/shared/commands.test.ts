@@ -118,8 +118,8 @@ describe('editorCommands', () => {
       sidebarPanel: 'pages',
       deviceId: 'mobile',
       importRequest: 0,
+      newCollectionRequest: 0,
       collections: [{ name: 'Post' }],
-      createCollection: vi.fn(),
       insert: vi.fn(),
       group: vi.fn(),
       autoLayout: vi.fn(),
@@ -180,11 +180,12 @@ describe('editorCommands', () => {
     expect(seen).toEqual([1])
   })
 
-  it('New collection makes an "Untitled" one (numbered while the name is taken), then opens the Data view', async () => {
-    const { ctx, editor, commands } = context({ collections: [{ name: 'Untitled' }] })
-    await find(commands, 'data:new-collection').run(ctx)
-    expect(editor.createCollection).toHaveBeenCalledWith('Untitled2')
-    expect(editor.mode).toBe('data')
+  it('New collection asks the Data view for its dialog first (the user picks the storage; nothing is made silently)', () => {
+    const { ctx, editor, commands } = context()
+    const seen: number[] = []
+    Object.defineProperty(editor, 'mode', { configurable: true, get: () => 'build', set: () => seen.push(editor.newCollectionRequest) })
+    find(commands, 'data:new-collection').run(ctx)
+    expect(seen).toEqual([1])
   })
 
   it('opens the Settings view, and Environment variables asks it to scroll to them', () => {

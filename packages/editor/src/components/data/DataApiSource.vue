@@ -13,13 +13,13 @@ import { endpointPathProblem, entityProposal, sourceNameOf } from '../../shared/
  * lives in a data source, so Fetch finds the REST data source of the URL's origin or makes one
  * (`datasource_create`, named after the host; one made here and not used is deleted again when the
  * dialog closes), previews through it (`datasource_preview`), and Save is one `entity_create`.
- * Each opening starts clean.
+ * Each opening starts clean, with the name New collection took, if any.
  *
  * Not in the module: editing a saved one-URL source (a collection reads through its data source:
  * Edit mapping is in its panel), paging, a root-array response and a query string in a saved path.
  */
 const open = defineModel<boolean>('open', { default: false })
-defineProps<{ title: string, description?: string }>()
+const props = defineProps<{ title: string, description?: string, typed?: string }>()
 const editor = useEditor()
 const toast = useToast()
 
@@ -67,8 +67,9 @@ function reset() {
   rows.value = []
   items.value = []
   total.value = null
-  name.value = ''
-  nameEdited.value = false
+  // The name typed in New collection stays: fetching does not propose another over it.
+  name.value = props.typed ?? ''
+  nameEdited.value = !!name.value
   error.value = ''
   source.value = null
   mappedFor = ''

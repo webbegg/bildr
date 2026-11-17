@@ -14,6 +14,11 @@ import type { Editor } from './useEditor.ts'
 export async function attempt<T extends Record<string, unknown>>(editor: Editor, name: string, input: Record<string, unknown>, fallback: string): Promise<{ result: T } | { error: string, code?: string }> {
   const result = await editor.run(name, input) as T | undefined
   if (result) return { result }
+  return takeRefusal(editor, fallback)
+}
+
+/** The refusal the editor holds (else `fallback`), taken off the screen's banner for the caller to show where the user is typing. */
+export function takeRefusal(editor: Editor, fallback: string): { error: string, code?: string } {
   const error = editor.error ?? fallback
   const code = editor.errorCode ?? undefined
   editor.dismissError()

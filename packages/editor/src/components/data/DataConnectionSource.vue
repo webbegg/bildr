@@ -15,12 +15,13 @@ import type { DataCollection, DataConnection } from '../../shared/dataModel.ts'
  * Save, which is one `entity_create`. With `collection` it edits that collection's mapping: the
  * list endpoint is shown as saved (no action changes an endpoint of an existing repository) and
  * Test is `repository_endpoint_test`; Save applies the field changes as `entity_field_*` steps
- * (each one undoable, and a refused one stops the rest). Each opening starts from the saved state.
+ * (each one undoable, and a refused one stops the rest). Each opening starts from the saved state (a new one, with the name
+ * New collection took, if any).
  *
  * Not in the module: paging (the generated adapter pages by offset), a root-array response (the
  * adapter reads the items from a top-level key), and an id path (an `id` field is the key).
  */
-const props = defineProps<{ connection: DataConnection, collection?: DataCollection, title: string, description?: string }>()
+const props = defineProps<{ connection: DataConnection, collection?: DataCollection, title: string, description?: string, typed?: string }>()
 const open = defineModel<boolean>('open', { default: false })
 const editor = useEditor()
 const toast = useToast()
@@ -60,8 +61,9 @@ let mappedFor = ''
 
 function reset() {
   const list = listEndpoint.value
-  name.value = ''
-  nameEdited.value = false
+  // The name typed in New collection stays: testing does not propose another over it.
+  name.value = props.typed ?? ''
+  nameEdited.value = !!name.value
   path.value = list?.path ?? '/'
   itemsPath.value = list?.itemsPath ?? ''
   totalPath.value = list?.totalPath ?? ''
