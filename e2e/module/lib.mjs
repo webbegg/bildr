@@ -238,9 +238,17 @@ export async function quiet(ms = 5000, timeout = 90_000) {
   return false
 }
 
-/** The JSON the running app answers at `path` (a route the app doesn't have yet answers its HTML page), or undefined. */
-export async function appApi(path, init) {
-  const response = await fetch(`${app.base}${path}`, init).catch(() => undefined)
+/**
+ * The JSON the running app answers at `path` (a route the app doesn't have yet answers its HTML page), or undefined.
+ * A request that reaches the dev server while Nitro rebuilds can be lost and never answer (seen: 300 s), so one that has no answer
+ * after `timeout` ms is given up (and said so): the caller asks again, as the editor does.
+ */
+export async function appApi(path, init, { timeout = 10_000 } = {}) {
+  const started = Date.now()
+  const response = await fetch(`${app.base}${path}`, { ...init, signal: AbortSignal.timeout(timeout) }).catch((error) => {
+    if (error?.name === 'TimeoutError') console.log(`WARN the app gave no answer to ${init?.method ?? 'GET'} ${path} in ${Date.now() - started}ms; giving it up`)
+    return undefined
+  })
   if (!response || !(response.headers.get('content-type') ?? '').includes('json')) return undefined
   return { status: response.status, body: await response.json().catch(() => undefined) }
 }

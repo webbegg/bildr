@@ -170,16 +170,16 @@ describe('fixture_row_update', () => {
 })
 
 describe('fixture_rows_delete', () => {
-  it('deletes one row, or several at once, and keeps the file when it empties', () => {
+  it('deletes one row, or several at once, and keeps the last row an action\'s generated test loads', () => {
     const p = project()
     const made = p.edit('fixture_row_create', { entity: 'ent_post', values: { title: 'C', slug: 'c' } }).rowId
     expect(p.edit('fixture_rows_delete', { entity: 'ent_post', rows: [FIRST] }).deleted).toEqual([FIRST])
     expect(rows(p).map(row => row.id)).toEqual([SECOND, made])
-    const done = p.edit('fixture_rows_delete', { entity: 'ent_post', rows: [SECOND, made] })
-    expect(done.deleted).toEqual([SECOND, made])
+    const done = p.edit('fixture_rows_delete', { entity: 'ent_post', rows: [SECOND] })
+    expect(done.deleted).toEqual([SECOND])
     expect(paths(done.changes)).toEqual([POSTS])
-    // The file stays (the generated tests of an action that loads rows need it), with no rows.
-    expect(p.json(POSTS)).toMatchObject({ entity: 'ent_post', rows: [] })
+    // The generated test of publishPost loads a post from the seed: the last one stays (see fixtures-integrity.test.ts).
+    expect(p.json(POSTS)).toMatchObject({ entity: 'ent_post', rows: [{ id: made }] })
     expect(() => generate(p.model())).not.toThrow()
   })
 

@@ -132,20 +132,21 @@ export const keyType = (entity: EntityFile): Field['type'] => entity.idStrategy 
 
 // ── Values against field types ───────────────────────────────────────────
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const DATE = /^\d{4}-\d{2}-\d{2}$/
-const DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/
+/** The schemas the generated app validates these types with (`zodField`): a value they refuse can't be stored or seeded. */
+const UUID = z.uuid()
+const DATE = z.iso.date()
+const DATETIME = z.iso.datetime()
 
-/** Whether a stored value fits a field type (null fits a field that may be empty). */
+/** Whether a stored value fits a field type, as the generated app's schema reads it (null fits a field that may be empty). */
 export const fits = (type: Field['type'], value: Value, optional: boolean): boolean => {
   if (value === null) return optional
   if (type === 'integer') return Number.isInteger(value)
   if (type === 'number') return typeof value === 'number'
   if (type === 'boolean') return typeof value === 'boolean'
   if (typeof value !== 'string') return false
-  if (type === 'uuid') return UUID.test(value)
-  if (type === 'date') return DATE.test(value)
-  if (type === 'datetime') return DATETIME.test(value) && !Number.isNaN(Date.parse(value))
+  if (type === 'uuid') return UUID.safeParse(value).success
+  if (type === 'date') return DATE.safeParse(value).success
+  if (type === 'datetime') return DATETIME.safeParse(value).success
   return true
 }
 

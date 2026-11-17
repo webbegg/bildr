@@ -6,6 +6,7 @@ import type { DataCollection, DataField } from '../../shared/dataModel.ts'
 import { nextSort, recordsCount, rowId, tableRows } from '../../shared/dataTable.ts'
 import type { TableFilter, TableSort } from '../../shared/dataTable.ts'
 import type { CellValue } from '../../editor/sampleRows.ts'
+import type { Row } from '@bildr/codegen/query'
 
 /**
  * The shown collection's rows as a Framer CMS table: search, filters and sortable headers over
@@ -55,7 +56,10 @@ const toggle = (id: string) => {
   editor.recordId = editor.recordId === id ? null : id
 }
 
-const save = (row: string, field: DataField, value: CellValue) => saveSampleValue(editor, collection.id, row, field.name, value)
+const save = (row: string, field: DataField, value: CellValue, base: Row) => saveSampleValue(editor, collection.id, row, field.name, value, base)
+
+/** The rows with these ids as the table shows them now, by id: what a delete sends as `base`. */
+const shownRows = (ids: string[]) => Object.fromEntries(editor.collectionRows.flatMap((row, index) => ids.includes(rowId(row, index)) ? [[rowId(row, index), { ...row }]] : []))
 
 function select(id: string, on: boolean) {
   checked.value = on ? [...new Set([...checked.value, id])] : checked.value.filter(entry => entry !== id)
@@ -71,7 +75,7 @@ async function run(job: () => Promise<string | undefined>) {
 const addRow = () => run(() => addSampleRow(editor, collection.id))
 
 const remove = (id: string) => run(async () => {
-  const refused = await deleteSampleRows(editor, collection.id, [id])
+  const refused = await deleteSampleRows(editor, collection.id, [id], shownRows([id]))
   if (!refused) checked.value = checked.value.filter(entry => entry !== id)
   return refused
 })
@@ -79,6 +83,8 @@ const remove = (id: string) => run(async () => {
 async function removeSelected() {
   const ids = selected.value
   const one = ids.length === 1
+  // The rows as they are shown when the user chooses, not as they are after the confirmation.
+  const base = shownRows(ids)
   if (!ids.length || !await editor.confirm({
     title: `Delete ${one ? '1 row' : `${ids.length} rows`}?`,
     description: `${one ? 'The row leaves' : `The ${ids.length} rows leave`} the sample data of ${collection.name}. Undo brings ${one ? 'it' : 'them'} back. The app's own rows are not touched.`,
@@ -86,7 +92,7 @@ async function removeSelected() {
     danger: true
   })) return
   await run(async () => {
-    const refused = await deleteSampleRows(editor, collection.id, ids)
+    const refused = await deleteSampleRows(editor, collection.id, ids, base)
     if (!refused) checked.value = []
     return refused
   })

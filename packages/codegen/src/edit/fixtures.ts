@@ -35,6 +35,8 @@ export const fixtureSource = {
 
 const RowRef = z.string().min(1).max(200).describe('The row\'s id (a row without one: its place among the rows, counting from 0)')
 const Values = z.record(z.string().min(1).max(60), ValueSchema)
+const RowBase = z.record(z.string().min(1).max(60), ValueSchema)
+const BASE_NOTE = 'the row as the caller saw it: when the row at that key is not this one (the rows changed since, so a place among them now names another row), nothing is written and it is refused as a conflict (409)'
 
 /** A row's key: its `id` when it has one, else its place among the rows. */
 export const fixtureRowKey = (row: Record<string, unknown>, index: number): string => typeof row.id === 'string' || typeof row.id === 'number' ? String(row.id) : String(index)
@@ -54,7 +56,7 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 
 /** Why `value` can't be stored for `field` (as a sentence), or undefined when it can. */
 const valueProblem = (field: Field, value: Value): string | undefined => {
-  if (value === null) return field.required && !field.nullable ? `${field.name} is required` : undefined
+  if (value === null) return field.required && !field.nullable && field.default === undefined ? `${field.name} is required` : undefined
   if (!fits(field.type, value, true)) return `${field.name} must be ${TYPE_LABELS[field.type]}`
   const text = typeof value === 'string'
   if (field.type === 'text' || field.type === 'image') {
@@ -120,21 +122,97 @@ const blankOf = (field: Field): Value => {
   }
 }
 
+/** A value some other row (not `except`) already has in this field. */
+const taken = (rows: Row[], name: string, value: Value, except?: number): boolean => rows.some((row, index) => index !== except && row[name] === value)
+
+/**
+ * What a new row holds in a required field that has no default, was not given, and must be unique: the placeholder of
+ * its type if no row has it, else the next one free (text: untitled, untitled-2, …; a number: the next whole number; a
+ * date: the next day; a date and time: the next second).
+ */
+const freeBlank = (field: Field, rows: Row[]): Value => {
+  const blank = blankOf(field)
+  if (!field.unique || !taken(rows, field.name, blank)) return blank
+  /** The `n`th other placeholder of the type (a uuid is new each time, a boolean has no other). */
+  const another = (n: number): Value | undefined => {
+    switch (field.type) {
+      case 'text':
+      case 'image':
+        return n === 1 ? 'untitled' : `untitled-${n}`
+      case 'integer':
+      case 'number':
+        return Number(blank) + n
+      case 'date':
+        return new Date(Date.parse(`${String(blank)}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
+      case 'datetime':
+        return new Date(Date.parse(String(blank)) + n * 1000).toISOString()
+      default:
+        return undefined
+    }
+  }
+  for (let n = 1; n <= rows.length + 1; n++) {
+    const candidate = another(n)
+    if (candidate === undefined) break
+    if (!taken(rows, field.name, candidate) && valueProblem(field, candidate) === undefined) return candidate
+  }
+  return blank
+}
+
+/** The unique fields among `names` whose value in `row` another row (not `except`) already has. */
+const uniqueProblems = (entity: EntityFile, rows: Row[], row: Record<string, Value | undefined>, names: string[], except?: number): string[] =>
+  entity.fields.filter(field => field.unique && names.includes(field.name)).flatMap((field) => {
+    const value = row[field.name]
+    return value === undefined || value === null || !taken(rows, field.name, value, except) ? [] : [`${field.name} must be unique: another sample row already has ${JSON.stringify(value)}`]
+  })
+
+/** What emptying a field stores: null where the field can hold one, else its default, else nothing (the key is left out, which the generated type allows only for a field that is neither required, nullable nor defaulted). */
+const emptied = (field: Field): Value | undefined => field.nullable ? null : field.default
+
+/** A value in one canonical text (object keys sorted), to compare rows by content. */
+const canonical = (value: unknown): string => JSON.stringify(value, (_key, item: unknown) =>
+  item && typeof item === 'object' && !Array.isArray(item)
+    ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
+    : item)
+
 const TIMESTAMPS = ['createdAt', 'updatedAt']
 
 const unknownField = (entity: EntityFile, name: string) => `Entity ${entity.name} has no field "${name}"`
 
-/** The row with this key; an unknown or ambiguous key is refused. */
-const rowIndex = (fixtures: FixturesFile | undefined, entity: EntityFile, key: string): number => {
-  const found = (fixtures?.rows ?? []).flatMap((row, index) => fixtureRowKey(row, index) === key ? [index] : [])
+/**
+ * The row with this key; an unknown or ambiguous key is refused. With `base` (the row as the caller saw it), a row that
+ * differs is a `conflict`: the key is a place among the rows for a row with no id, and the rows may have changed since.
+ */
+const rowIndex = (fixtures: FixturesFile | undefined, entity: EntityFile, key: string, base?: Record<string, Value>): number => {
+  const rows = fixtures?.rows ?? []
+  const found = rows.flatMap((row, index) => fixtureRowKey(row, index) === key ? [index] : [])
   if (!found.length) return fail('not_found', `${entity.name} has no sample row "${key}"`)
-  if (found.length > 1) return fail('invalid', `${entity.name} has ${found.length} sample rows with the id "${key}": make the ids differ in the JSON tab first`)
-  return found[0]!
+  if (found.length > 1) {
+    const named = found.filter(index => typeof rows[index]!.id === 'string' || typeof rows[index]!.id === 'number')
+    return fail('invalid', named.length === found.length
+      ? `${entity.name} has ${found.length} sample rows with the id "${key}": make the ids differ in the JSON tab first`
+      : `"${key}" is the id of one row and the place of another (a row with no id) in ${entity.name}'s sample data, so it can't say which one: give the rows an id in the JSON tab first`)
+  }
+  const index = found[0]!
+  if (base && canonical(base) !== canonical(rows[index])) fail('conflict', `${entity.name} sample row "${key}" changed since you loaded it: reload the rows and try again`)
+  return index
+}
+
+/** The actions whose generated test loads a row of this entity from its seed (`<entity>Seed[0]!.id`): they can't run with no sample row. */
+const needingARow = (draft: Draft, entityId: string): string[] => {
+  const modules = Object.values(draft.model.modules)
+  return modules.flatMap(mod => mod.actions.flatMap((action) => {
+    if (action.input.entity) return []
+    const load = action.steps.find(step => step.kind === 'load')
+    const repository = modules.flatMap(entry => entry.repositories).find(entry => entry.id === load?.repository)
+    return repository?.entity === entityId ? [action.name] : []
+  }))
 }
 
 /**
- * Checks `values` as the new content of fields of `entity`, returning what to store. A null on a field that can't hold one
- * (not nullable, not required) leaves the key out of the row (`undefined`), as the generated type has it.
+ * Checks `values` as the new content of fields of `entity`, returning what to store. A null is stored as what emptying the
+ * field means (`emptied`): null, the field's default, or, for a field that is neither, nothing (`undefined`: the key leaves
+ * the row). The generated seed is typed by the entity (`Post[]`), where a field with a default or that can be null is a
+ * required key: it is never dropped.
  */
 const checked = (entity: EntityFile, values: Record<string, Value>, problems: string[]): Record<string, Value | undefined> => {
   const out: Record<string, Value | undefined> = {}
@@ -147,7 +225,7 @@ const checked = (entity: EntityFile, values: Record<string, Value>, problems: st
     } else {
       const problem = valueProblem(field, value)
       if (problem) problems.push(problem)
-      else out[name] = value === null && !field.nullable ? undefined : value
+      else out[name] = value === null ? emptied(field) : value
     }
   }
   return out
@@ -177,7 +255,8 @@ export const fixtureRowCreate = defineEdit({
     let id: Value | undefined
     if (external) {
       id = own.id
-      if (id === undefined || id === null) problems.push('id is required: it is the key rows are found by')
+      // A given id that is empty or of the wrong type was already refused above, by its field.
+      if (!('id' in values)) problems.push('id is required: it is the key rows are found by')
     } else {
       id = given ?? fixtureSource.newId()
       if (!fits('uuid', id, false)) problems.push('id must be a uuid')
@@ -192,12 +271,13 @@ export const fixtureRowCreate = defineEdit({
       else if (external && field.name === 'id') row.id = id
       else if (field.default !== undefined) row[field.name] = field.default
       else if (field.nullable) row[field.name] = null
-      else if (field.required) row[field.name] = blankOf(field)
+      else if (field.required) row[field.name] = freeBlank(field, rows)
     }
     if (entity.timestamps) {
       row.createdAt = fixtureSource.now()
       row.updatedAt = row.createdAt
     }
+    problems.push(...uniqueProblems(entity, rows, row, entity.fields.map(field => field.name)))
     refuseWith(problems)
     const fixtures = ensureFixtures(draft, entity, module)
     fixtures.rows.push(without(row))
@@ -211,23 +291,25 @@ export const fixtureRowUpdate = defineEdit({
   input: z.object({
     entity: EntityRef,
     row: RowRef,
-    values: Values.refine(values => Object.keys(values).length > 0, 'Give at least one value to change').describe('The fields to change, by name, e.g. { "title": "Hello again" }; the others stay. null empties a field that may be empty. The id and read-only fields can\'t change')
+    base: RowBase.optional().describe(`The row \`row\` names, ${BASE_NOTE}`),
+    values: Values.refine(values => Object.keys(values).length > 0, 'Give at least one value to change').describe('The fields to change, by name, e.g. { "title": "Hello again" }; the others stay. null empties a field: it becomes null where the field can be null, else its default, else the value is left out; refused on a required field with no default. The id and read-only fields can\'t change')
   }),
-  apply: (draft, { entity: entityId, row: key, values }) => {
+  apply: (draft, { entity: entityId, row: key, base, values }) => {
     const { entity } = sampleOf(draft, entityId)
     const fixtures = fixturesOf(draft, entityId)
-    const index = rowIndex(fixtures, entity, key)
+    const index = rowIndex(fixtures, entity, key, base)
     const problems: string[] = []
     if ('id' in values) problems.push('id is the key the row is found by: it can\'t be changed')
     const { id: _id, ...rest } = values
     const next = checked(entity, rest, problems)
-    refuseWith(problems)
     const current = fixtures!.rows[index]!
     const row: Record<string, Value | undefined> = { ...current }
     for (const [name, value] of Object.entries(next)) {
       if (value === undefined) Reflect.deleteProperty(row, name)
       else row[name] = value
     }
+    problems.push(...uniqueProblems(entity, fixtures!.rows, row, Object.keys(next), index))
+    refuseWith(problems)
     fixtures!.rows[index] = without(row)
     return { rowId: key }
   }
@@ -238,15 +320,20 @@ export const fixtureRowUpdate = defineEdit({
 export const fixtureRowsDelete = defineEdit({
   input: z.object({
     entity: EntityRef,
-    rows: z.array(RowRef).min(1).max(500).describe('The ids of the rows to delete (one, or several for a bulk delete); all or none: an unknown row refuses the whole delete')
+    rows: z.array(RowRef).min(1).max(500).describe('The ids of the rows to delete (one, or several for a bulk delete); all or none: an unknown row refuses the whole delete. The last row can\'t go while an action\'s generated test loads a row of the entity'),
+    base: z.record(RowRef, RowBase).optional().describe(`By row key, the rows as the caller saw them: ${BASE_NOTE}; the whole delete is refused`)
   }),
-  apply: (draft, { entity: entityId, rows: keys }) => {
+  apply: (draft, { entity: entityId, rows: keys, base }) => {
     const { entity } = sampleOf(draft, entityId)
     const fixtures = fixturesOf(draft, entityId)
     const unique = [...new Set(keys)]
     const missing = unique.filter(key => !(fixtures?.rows ?? []).some((row, index) => fixtureRowKey(row, index) === key))
     if (missing.length) fail('not_found', `${entity.name} has no sample ${missing.length === 1 ? 'row' : 'rows'} ${missing.map(key => `"${key}"`).join(', ')}`)
-    const doomed = new Set(unique.map(key => rowIndex(fixtures, entity, key)))
+    const doomed = new Set(unique.map(key => rowIndex(fixtures, entity, key, base?.[key])))
+    if (doomed.size === fixtures!.rows.length) {
+      const needers = needingARow(draft, entityId)
+      if (needers.length) fail('invalid', `Keep at least one sample row: ${needers.join(', ')} tests use it`)
+    }
     fixtures!.rows = fixtures!.rows.filter((_row, index) => !doomed.has(index))
     return { deleted: unique }
   }

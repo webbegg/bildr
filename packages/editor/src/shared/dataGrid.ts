@@ -42,8 +42,8 @@ export function moveCell(pos: CellPos, move: CellMove, size: { rows: number, col
 export const cellEditText = (value: unknown): string => value === null || value === undefined ? '' : String(value)
 
 /**
- * The value typed text saves as. Text stays as typed, but an optional one that is emptied is none (null: the key leaves the
- * row); numbers are read, and what is not a number is sent as it is so the module says "must be a number"; dates, date-times
+ * The value typed text saves as. Text stays as typed, but an optional one that is emptied is none (null: the module stores
+ * what emptying means for the field, its default, null, or nothing); numbers are read, and what is not a number is sent as it is so the module says "must be a number"; dates, date-times
  * and uuids are trimmed, empty is none.
  */
 export function cellValue(field: DataField, text: string): string | number | null {

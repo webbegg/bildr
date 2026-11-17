@@ -363,7 +363,8 @@ await run('data', async ({ page, browser, errors }) => {
   const consoleFailures = []
   const onResponse = response => answered.push({ url: response.url(), status: response.status(), type: response.request().resourceType() })
   const onConsole = (message) => {
-    if (message.type() === 'error' && /status of 500 \(Internal Server Error\)/.test(message.text())) consoleFailures.push(message.location().url ?? '')
+    // Chromium words it "status of 500 (Server Error)": this used to look for "(Internal Server Error)", which no message has, so no console 500 was ever expected.
+    if (message.type() === 'error' && /status of 500 \(/.test(message.text())) consoleFailures.push(message.location().url ?? '')
   }
   page.on('response', onResponse)
   page.on('console', onConsole)
@@ -385,7 +386,7 @@ await run('data', async ({ page, browser, errors }) => {
   // A console 500 is expected once per 500 the browser logged for an app route; the others stay in `errors`.
   let expected = consoleFailures.filter(url => fiveHundreds.some(entry => entry.url === url && onAppRoute(entry.url, entry.type))).length
   const rebuildErrors = errors.splice(consoleBefore)
-  errors.push(...rebuildErrors.filter(message => !(expected > 0 && /status of 500 \(Internal Server Error\)/.test(message) && expected--)))
+  errors.push(...rebuildErrors.filter(message => !(expected > 0 && /status of 500 \(/.test(message) && expected--)))
   console.log(`INFO ${rebuildErrors.length - (errors.length - consoleBefore)} console 500(s) on app routes from the rebuild were expected here`)
   await quiet()
 
@@ -517,15 +518,24 @@ await run('data', async ({ page, browser, errors }) => {
     return answer?.status === 200 ? JSON.stringify((answer.body.items ?? []).map(row => [row.id, row.title, row.cost]).sort()) : undefined
   }
   const appBefore = await appRows()
-  // Sample rows are generated into the app's seed files, so each write rebuilds the dev server for a moment and the app's routes answer 500
-  // (as after an action is deleted above). The editor reads the app's rows in the background, so the browser logs those 500s: they are
-  // expected, once each, only on the app's own routes; any other console error stays an error.
+  check(appBefore !== undefined, 'the app answers with its rows before the sample rows are edited')
+  // Sample rows are generated into the app's seed files, so the writes rebuild the dev server (once, when they pause: the module waits for that)
+  // and the app's routes can answer 500 while it does. The editor reads the app's rows in the background, so the browser may log such a 500
+  // as a console error. That one is expected, and it is recognized by what it names: the console message's own URL has to be a route of
+  // the app that the browser got a 500 from, once for each such response. Every other console error stays an error.
   const sampleErrorsFrom = errors.length
-  const rebuilds = []
-  const onRebuild = (message) => {
-    if (message.type() === 'error' && /status of 500 \(/.test(message.text()) && new URL(message.location().url || 'http://none/').pathname.startsWith('/api/blog/')) rebuilds.push(message.location().url)
+  const appFiveHundreds = []
+  const consoleFiveHundreds = []
+  const onSampleResponse = (response) => {
+    if (response.status() === 500 && new URL(response.url()).pathname.startsWith('/api/blog/')) appFiveHundreds.push(response.url())
   }
-  page.on('console', onRebuild)
+  const onSampleConsole = (message) => {
+    // The harness's own listener (lib.mjs launch) ran first: the error it kept for this message is the last one, when it kept one.
+    const kept = errors.at(-1)
+    if (message.type() === 'error' && /status of 500 \(/.test(message.text()) && kept?.endsWith(`: ${message.text()}`)) consoleFiveHundreds.push({ kept, url: message.location().url })
+  }
+  page.on('response', onSampleResponse)
+  page.on('console', onSampleConsole)
   const fixturesFile = () => bildr('modules/blog/fixtures/dish.json')
   const sampleData = () => page.locator('[data-live-badge]').getByRole('button', { name: 'Sample data', exact: true })
   await openData(page)
@@ -566,7 +576,7 @@ await run('data', async ({ page, browser, errors }) => {
   check(fixturesFile().rows[0].cost === 4.5, 'and the file keeps the value it had')
   await page.locator('[data-cell-input]').press('Escape')
   check(await page.locator('[data-cell-input]').count() === 0 && (await page.locator('[data-cell="0-1"]').innerText()).trim() === '4.5', 'Escape gives the cell back as it was saved')
-  errors.splice(0, errors.length, ...errors.filter(message => !refused422.test(message)))
+  errors.push(...errors.splice(sampleErrorsFrom).filter(message => !refused422.test(message)))
 
   // The new row's file is a change the app regenerates for; once it is calm, a reload keeps the value.
   await quiesce(60_000)
@@ -616,16 +626,33 @@ await run('data', async ({ page, browser, errors }) => {
   await page.waitForTimeout(400)
   await shot(page, 'd4-sample-rows')
   await page.locator('[data-cell-input]').press('Escape')
-  errors.splice(0, errors.length, ...errors.filter(message => !refused422.test(message)))
+  errors.push(...errors.splice(sampleErrorsFrom).filter(message => !refused422.test(message)))
+
+  // The module regenerates once the writes have paused: wait for that rebuild, then for the app (a request that reaches the dev server
+  // while it rebuilds can be lost, so `appApi` gives up on one after 10 s and this asks again).
+  await quiesce(60_000)
+  await quiet()
+  check(await settled(), 'the app is regenerated from the sample rows: the model loads with no drift')
 
   // E2: through all of this the app's own rows did not change.
-  check(await until(async () => (await appRows()) !== undefined, 60_000), 'the app answers its list route')
-  check((await appRows()) === appBefore, 'the app\'s own rows are what they were: the editor wrote only sample data')
-  check(!(await action('health_get')).drift?.files?.length, 'and the project has no drift')
-  page.off('console', onRebuild)
-  let expected500s = rebuilds.length
-  errors.push(...errors.splice(sampleErrorsFrom).filter(message => !(expected500s > 0 && /status of 500 \(/.test(message) && expected500s--)))
-  console.log(`INFO ${rebuilds.length - expected500s} console 500(s) on the app's routes while it rebuilt for the sample rows were expected here`)
+  const appAfter = await until(appRows, 60_000)
+  check(appAfter !== undefined, 'the app answers its list route')
+  check(appBefore !== undefined && appAfter === appBefore, 'the app\'s own rows are what they were: the editor wrote only sample data')
+  page.off('response', onSampleResponse)
+  page.off('console', onSampleConsole)
+  const unmatched = [...appFiveHundreds]
+  const expectedErrors = consoleFiveHundreds.filter(({ url }) => {
+    const at = unmatched.indexOf(url)
+    if (at >= 0) unmatched.splice(at, 1)
+    return at >= 0
+  }).map(({ kept }) => kept)
+  const sampleErrors = errors.splice(sampleErrorsFrom)
+  for (const kept of expectedErrors) {
+    const at = sampleErrors.indexOf(kept)
+    if (at >= 0) sampleErrors.splice(at, 1)
+  }
+  errors.push(...sampleErrors)
+  console.log(`INFO ${expectedErrors.length} console 500(s) matched a 500 of the app's routes while it rebuilt for the sample rows; ${consoleFiveHundreds.length - expectedErrors.length} did not and stay errors`)
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 // A new entity regenerates the app and restarts the dev server: its event stream ends mid-request.

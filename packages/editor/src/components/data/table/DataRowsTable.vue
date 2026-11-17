@@ -34,7 +34,8 @@ const { fields, rows, loaded, sort = null, sortable = true, openable = true, ope
   editable?: boolean
   /** The ids of the rows whose checkbox is on. */
   selected?: string[]
-  save?: (row: string, field: DataField, value: CellValue) => Promise<string | undefined>
+  /** `base` is the row as it was shown when the edit began (a row with no id is named by its place, which a delete moves). */
+  save?: (row: string, field: DataField, value: CellValue, base: Row) => Promise<string | undefined>
 }>()
 const emit = defineEmits<{ sort: [key: string], toggle: [id: string], open: [id: string], select: [id: string, on: boolean], selectAll: [on: boolean], remove: [id: string] }>()
 
@@ -52,7 +53,7 @@ function sortIcon(key: string) {
 const root = useTemplateRef<HTMLElement>('root')
 const active = ref<CellPos | null>(null)
 /** The cell being typed in: its row, field and text, and the text a refusal was for (blurring again does not ask again). */
-const editing = ref<{ id: string, name: string, text: string, refused: string | null } | null>(null)
+const editing = ref<{ id: string, name: string, text: string, refused: string | null, base: Row } | null>(null)
 /** The cells (`<row id>|<field>`) whose save is in flight, and the refusal of those whose last save was refused. */
 const pending = reactive(new Set<string>())
 const refusals = reactive<Record<string, string>>({})
@@ -91,12 +92,12 @@ function onCellClick(event: MouseEvent, row: number, col: number) {
 }
 
 /** Sends a value for a cell, keeping its refusal for the cell. Resolves whether it was saved. */
-async function put(id: string, field: DataField, value: CellValue): Promise<boolean> {
+async function put(id: string, field: DataField, value: CellValue, base: Row): Promise<boolean> {
   const key = cellKey(id, field.name)
   if (!save || pending.has(key)) return false
   Reflect.deleteProperty(refusals, key)
   pending.add(key)
-  const refused = await save(id, field, value)
+  const refused = await save(id, field, value, base)
   pending.delete(key)
   if (refused) refusals[key] = refused
   return !refused
@@ -114,7 +115,7 @@ function beginEdit(row: number, col: number) {
   const id = idOf(shown)
   if (pending.has(cellKey(id, field.name))) return
   Reflect.deleteProperty(refusals, cellKey(id, field.name))
-  editing.value = { id, name: field.name, text: cellEditText(shown[field.name]), refused: null }
+  editing.value = { id, name: field.name, text: cellEditText(shown[field.name]), refused: null, base: { ...shown } }
   focusInput()
 }
 
@@ -122,7 +123,7 @@ async function toggle(row: number, col: number) {
   const field = fields[col]
   const shown = rows[row]
   if (!field || !shown || field.readonly) return
-  await put(idOf(shown), field, shown[field.name] !== true)
+  await put(idOf(shown), field, shown[field.name] !== true, { ...shown })
   focusCell({ row, col })
 }
 
@@ -139,7 +140,7 @@ async function commit(): Promise<boolean> {
     Reflect.deleteProperty(refusals, key)
     return true
   }
-  const saved = await put(current.id, field, cellValue(field, current.text))
+  const saved = await put(current.id, field, cellValue(field, current.text), current.base)
   if (saved) {
     editing.value = null
     return true

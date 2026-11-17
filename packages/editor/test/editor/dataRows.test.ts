@@ -5,6 +5,7 @@ import { click, Failure, settle, typeInto } from '../helpers.ts'
 import { designData } from '../../src/design/data.ts'
 import { FOLDED_KEY } from '../../src/editor/dataTree.ts'
 import { takeStart } from '../../src/editor/views.ts'
+import { blogModelFiles } from '../canvas/fixture.ts'
 import { byLabel, indexPage, setupHarness, world } from '../design/harness.ts'
 import { fixtureModule, inputs, open, q, qa, text } from './dataKit.ts'
 
@@ -19,6 +20,8 @@ setupHarness()
 const FIRST = '0b6f6a52-1c7a-4c1e-9a52-7a0e2f3d9a01'
 const SECOND = '0b6f6a52-1c7a-4c1e-9a52-7a0e2f3d9a02'
 const HINT = 'Live rows come from your app. Switch to Sample data to edit.'
+// The rows as the editor first shows them: what an edit sends as `base`, the row the user saw.
+const [FIRST_ROW, SECOND_ROW] = (JSON.parse(blogModelFiles()['.bildr/modules/blog/fixtures/post.json']!) as { rows: Array<Record<string, unknown>> }).rows
 
 afterEach(() => {
   takeStart()
@@ -87,7 +90,7 @@ describe('Sample data cells', () => {
     expect(input.value).toBe('Hello bildr')
     await typeInto(input, 'Hello again')
     await key(input, 'Enter')
-    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: FIRST, values: { title: 'Hello again' } }])
+    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: FIRST, base: FIRST_ROW, values: { title: 'Hello again' } }])
     expect(q('[data-cell-input]')).toBeNull()
     expect(titles()).toEqual(['Hello again', 'A draft'])
   })
@@ -98,7 +101,7 @@ describe('Sample data cells', () => {
     await typeInto(input, 'A better draft')
     input.dispatchEvent(new FocusEvent('blur'))
     await settle()
-    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: SECOND, values: { title: 'A better draft' } }])
+    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: SECOND, base: SECOND_ROW, values: { title: 'A better draft' } }])
     const again = await edit(0, 0)
     await key(again, 'Enter')
     expect(actions.named('fixture_row_update')).toHaveLength(1)
@@ -110,7 +113,9 @@ describe('Sample data cells', () => {
     const input = await edit(0, 2)
     await typeInto(input, '')
     await key(input, 'Enter')
-    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: FIRST, values: { body: null } }])
+    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: FIRST, base: FIRST_ROW, values: { body: null } }])
+    // The row the module stores holds the field's default, not nothing: the generated seed is typed by the entity.
+    expect(world.model.modules.blog!.fixtures.find(entry => entry.entity === 'ent_post')!.rows[0]).toHaveProperty('body', '')
     expect(text(cell(0, 2))).toBe('')
   })
 
@@ -120,11 +125,11 @@ describe('Sample data cells', () => {
     expect(toggle.getAttribute('role')).toBe('switch')
     expect(toggle.getAttribute('aria-checked')).toBe('true')
     await click(toggle)
-    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: FIRST, values: { published: false } }])
+    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: FIRST, base: FIRST_ROW, values: { published: false } }])
     expect(cell(0, 3)!.querySelector('[data-cell-toggle]')!.getAttribute('aria-checked')).toBe('false')
     await click(cell(1, 3))
     await key(cell(1, 3), 'Enter')
-    expect(inputs(actions, 'fixture_row_update')[1]).toEqual({ entity: 'ent_post', row: SECOND, values: { published: true } })
+    expect(inputs(actions, 'fixture_row_update')[1]).toEqual({ entity: 'ent_post', row: SECOND, base: SECOND_ROW, values: { published: true } })
   })
 
   it('leave a read-only field alone', async () => {
@@ -263,7 +268,7 @@ describe('Sample data keyboard', () => {
     await key(cell(0, 0), 'Enter')
     await typeInto(q('[data-cell-input]'), 'Tabbed')
     await key(q('[data-cell-input]'), 'Tab')
-    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: FIRST, values: { title: 'Tabbed' } }])
+    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: FIRST, base: FIRST_ROW, values: { title: 'Tabbed' } }])
     expect(q('[data-cell-input]')).toBeNull()
     expect(active()).toEqual(['0-1'])
     await key(cell(0, 1), 'Enter')
@@ -309,12 +314,23 @@ describe('Sample data rows', () => {
   it('deletes a row with its trash button, as one fixture_rows_delete', async () => {
     const { actions } = await sample()
     await click(qa('[data-record-delete]')[0]!)
-    expect(inputs(actions, 'fixture_rows_delete')).toEqual([{ entity: 'ent_post', rows: [FIRST] }])
+    expect(inputs(actions, 'fixture_rows_delete')).toEqual([{ entity: 'ent_post', rows: [FIRST], base: { [FIRST]: FIRST_ROW } }])
     expect(titles()).toEqual(['A draft'])
+  })
+
+  it('says so on the cell when the rows changed under the key it saved to (a conflict)', async () => {
+    await sample({ fixture_row_update: () => new Failure(409, 'conflict', 'Post sample row "1" changed since you loaded it: reload the rows and try again') })
+    const input = await edit(0, 0)
+    await typeInto(input, 'Late')
+    await key(input, 'Enter')
+    expect(text(q('[data-cell-error]'))).toContain('changed since you loaded it')
+    expect(q$('[data-cell-input]')!.value).toBe('Late')
   })
 
   it('deletes the selected rows after a confirmation, in one fixture_rows_delete', async () => {
     const { actions } = await sample()
+    // A third row, so the two shown first can go and one stays (the last row is kept: see below).
+    await click(q('[data-add-row]'))
     expect(q('[data-delete-selected]')).toBeNull()
     await click(qa('[data-row-select]')[0]!)
     await click(qa('[data-row-select]')[1]!)
@@ -323,9 +339,19 @@ describe('Sample data rows', () => {
     expect(text(q('[data-confirm]')?.closest('[role="dialog"]') ?? null)).toContain('Delete 2 rows?')
     expect(actions.named('fixture_rows_delete')).toHaveLength(0)
     await click(qa('button').find(button => button.textContent?.trim() === 'Delete rows') ?? null)
-    expect(inputs(actions, 'fixture_rows_delete')).toEqual([{ entity: 'ent_post', rows: [FIRST, SECOND] }])
-    expect(qa('[data-record]')).toHaveLength(0)
+    expect(inputs(actions, 'fixture_rows_delete')).toEqual([{ entity: 'ent_post', rows: [FIRST, SECOND], base: { [FIRST]: FIRST_ROW, [SECOND]: SECOND_ROW } }])
+    expect(qa('[data-record]')).toHaveLength(1)
     expect(q('[data-delete-selected]')).toBeNull()
+  })
+
+  it('says why the last row stays, and deletes nothing', async () => {
+    const { actions } = await sample()
+    await click(q('[data-select-all]'))
+    await click(q('[data-delete-selected]'))
+    await click(qa('button').find(button => button.textContent?.trim() === 'Delete rows') ?? null)
+    expect(actions.named('fixture_rows_delete')).toHaveLength(1)
+    expect(text(q('[data-rows-error]'))).toBe('Keep at least one sample row: publishPost tests use it')
+    expect(qa('[data-record]')).toHaveLength(2)
   })
 
   it('keeps the rows when the confirmation is cancelled', async () => {
@@ -374,11 +400,11 @@ describe('the record panel on Sample data', () => {
     const title = panel.querySelector<HTMLInputElement>('[data-record-field="title"] input')!
     expect(title.value).toBe('Hello bildr')
     await typeInto(title, 'From the panel')
-    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: FIRST, values: { title: 'From the panel' } }])
+    expect(inputs(actions, 'fixture_row_update')).toEqual([{ entity: 'ent_post', row: FIRST, base: FIRST_ROW, values: { title: 'From the panel' } }])
     expect(titles()[0]).toBe('From the panel')
     const toggle = panel.querySelector<HTMLElement>('[data-record-field="published"] [role="switch"]')!
     await click(toggle)
-    expect(inputs(actions, 'fixture_row_update')[1]).toEqual({ entity: 'ent_post', row: FIRST, values: { published: false } })
+    expect(inputs(actions, 'fixture_row_update')[1]).toEqual({ entity: 'ent_post', row: FIRST, base: { ...FIRST_ROW, title: 'From the panel' }, values: { published: false } })
     // A read-only field shows its value, with no input.
     expect(panel.querySelector('[data-record-field="publishedAt"] input')).toBeNull()
   })

@@ -70,6 +70,23 @@ describe('sample-data module actions', () => {
     expect(existsSync(join(dir, '.bildr/manifest.json'))).toBe(true)
   })
 
+  it('answers 409 conflict, writing nothing, when the row now at a key is not the one the client saw (base)', async () => {
+    const seen = posts()[1]
+    await done('fixture_row_update', { entity: 'ent_post', row: SECOND, base: seen, values: { title: 'Edited once' } })
+    // The client still holds the first version: the row changed under it.
+    expect(await refused('fixture_row_update', { entity: 'ent_post', row: SECOND, base: seen, values: { title: 'Edited twice' } }, 409, 'conflict')).toContain('changed since you loaded it')
+    expect(await refused('fixture_rows_delete', { entity: 'ent_post', rows: [SECOND], base: { [SECOND]: seen } }, 409, 'conflict')).toContain('changed since you loaded it')
+    expect(posts()[1]).toMatchObject({ title: 'Edited once' })
+  })
+
+  it('keeps the last row an action\'s generated test loads (422), and a null on a field with a default stores the default', async () => {
+    await done('fixture_row_update', { entity: 'ent_post', row: FIRST, values: { body: null, published: null } })
+    expect(posts()[0]).toMatchObject({ body: '', published: false })
+    await done('fixture_rows_delete', { entity: 'ent_post', rows: [FIRST] })
+    expect(await refused('fixture_rows_delete', { entity: 'ent_post', rows: [SECOND] }, 422, 'invalid')).toBe('Keep at least one sample row: publishPost tests use it')
+    expect(posts()).toHaveLength(1)
+  })
+
   it('refuses a value of the wrong type (422) and writes nothing', async () => {
     const message = await refused('fixture_row_update', { entity: 'ent_post', row: FIRST, values: { published: 'yes' } }, 422, 'invalid')
     expect(message).toContain('published must be true or false')

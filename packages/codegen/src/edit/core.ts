@@ -14,8 +14,11 @@ import { walk } from './tree.ts'
  * an edit changes, and the change set it becomes. Pure: no fs.
  */
 
-/** A refusal is a model rule (`invalid`, 422), never a guard: path and write refusals (`forbidden`) belong to the module's actions. */
-export type EditErrorCode = 'invalid_input' | 'not_found' | 'invalid'
+/**
+ * A refusal is a model rule (`invalid`, 422), never a guard: path and write refusals (`forbidden`) belong to the module's actions.
+ * `conflict` (409) is for an edit aimed at a thing that is no longer what the caller saw.
+ */
+export type EditErrorCode = 'invalid_input' | 'not_found' | 'invalid' | 'conflict'
 
 export class EditError extends Error {
   readonly code: EditErrorCode

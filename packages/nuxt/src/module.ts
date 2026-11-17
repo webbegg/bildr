@@ -4,6 +4,7 @@ import { addDevServerHandler, defineNuxtModule, useLogger } from '@nuxt/kit'
 import type { NuxtModule } from '@nuxt/schema'
 import { defineEventHandler, getRequestURL, sendWebResponse, toWebRequest } from 'h3'
 import { detectStarterKit } from '@bildr/codegen/starter'
+import { createCoalescer } from './node/coalesce.ts'
 import { projectEvents } from './node/events.ts'
 import { createHealthRunner } from './node/health.ts'
 import { projectReader } from './node/project.ts'
@@ -161,9 +162,18 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
     void sync()
 
     let watcher: ModelWatcher | undefined
-    let timer: ReturnType<typeof setTimeout> | undefined
-    /** Model files the watcher saw change since the last sync (from the project root). */
-    const seen = new Set<string>()
+    // Changes close together are one regeneration; a stream of sample-row writes waits until it pauses (node/coalesce.ts).
+    const changes = createCoalescer({
+      notify: (files) => {
+        // Changes not made through the module (hand edits, git) are a `disk` model event.
+        try {
+          events.diskChanged(root, files.map(file => `.bildr/${file}`))
+        } catch (error) {
+          logger.warn(`bildr could not report the change to open editors: ${(error as Error).message}`)
+        }
+      },
+      sync: () => void sync()
+    })
     const modelDir = join(root, '.bildr')
     // A watcher that can't start or fails later (inotify limits, the folder removed) turns live
     // regeneration off with a warning; it never takes nuxt dev down.
@@ -178,18 +188,7 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
           onChange: (file) => {
             // Never the manifest or temp files a sync writes: that would loop.
             if (!isModelChange(file)) return
-            seen.add(`.bildr/${file}`)
-            clearTimeout(timer)
-            timer = setTimeout(() => {
-              // Changes not made through the module (hand edits, git) are a `disk` model event.
-              try {
-                events.diskChanged(root, [...seen])
-              } catch (error) {
-                logger.warn(`bildr could not report the change to open editors: ${(error as Error).message}`)
-              }
-              seen.clear()
-              void sync()
-            }, 150)
+            changes.add(file)
           },
           onError: stopWatching
         })
@@ -198,7 +197,7 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
       }
     }
     nuxt.hook('close', () => {
-      clearTimeout(timer)
+      changes.cancel()
       watcher?.close()
     })
   }

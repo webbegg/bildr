@@ -27,7 +27,7 @@ export type Mounted = Awaited<ReturnType<typeof open>>
 export const inputs = (actions: Mounted['actions'], name: string) => actions.named(name).map(call => call.input)
 
 /** How the module answers a refusal, by the code `applyEdit` gives it (`packages/nuxt/src/server`: invalid input is a 400, a missing item a 404). */
-const REFUSAL_STATUS = { invalid_input: 400, not_found: 404, invalid: 422 } as const
+const REFUSAL_STATUS = { invalid_input: 400, not_found: 404, invalid: 422, conflict: 409 } as const
 
 /**
  * The module's query and action edits over the mocked model, which are the real ones: each goes through `applyEdit` of
