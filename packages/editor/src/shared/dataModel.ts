@@ -186,7 +186,7 @@ export const connectionsOf = (model: Model): DataConnection[] =>
     auth: source.auth ? { type: source.auth.type, secret: source.auth.secret, ...(source.auth.header ? { header: source.auth.header } : {}), env: source.env[source.auth.secret] } : undefined
   }))
 
-/** A query or an action as the Data tree lists it: its label (the name when it has none) and the collection it works on. */
+/** A query, an action or a state as the Data tree lists it: its label (the name when it has none) and the collection it works on (a state has none). */
 export interface DataArtifact {
   id: string
   name: string
@@ -223,6 +223,10 @@ export const actionsOf = (model: Model): DataArtifact[] =>
     const collectionId = action.input.entity ?? action.output?.entity ?? written ?? ''
     return { id: action.id, name: action.name, label: action.label || action.name, module, collectionId, collectionName: entityById(model, collectionId)?.name ?? '' }
   }))
+
+/** The states of the model, module by module, as the Data tree lists them (B2, S1): a state is on no collection. */
+export const statesOf = (model: Model): DataArtifact[] =>
+  Object.entries(model.modules).flatMap(([module, mod]) => mod.state.map(state => ({ id: state.id, name: state.name, label: state.label || state.name, module, collectionId: '', collectionName: '' })))
 
 /** The rows an entity's fixtures file holds: what the Data view shows when the app can't answer. */
 export const fixtureRowsOf = (model: Model, entityId: string): Row[] =>

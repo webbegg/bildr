@@ -1,4 +1,4 @@
-import { entityUsesOf, fieldUsesIndex, fieldUsesOf } from '@bildr/codegen/edit'
+import { entityUsesOf, fieldUsesIndex, fieldUsesOf, stateFieldUsesIndex, stateFieldUsesOf } from '@bildr/codegen/edit'
 import type { Model } from '@bildr/codegen/model'
 import { useEntries } from './dataArtifacts.ts'
 import type { UseEntry } from './dataArtifacts.ts'
@@ -30,6 +30,16 @@ export const fieldUsesByName = (model: Model | null, entityId: string): Map<stri
   if (!model) return new Map()
   return new Map([...fieldUsesIndex(model, entityId)].map(([name, uses]) => [name, useEntries(model, uses, { kind: 'field', name })]))
 }
+
+/** Who uses each field of state `stateId`, by field name, from one pass over the model (`stateFieldUsesIndex`, in words). */
+export const stateFieldUsesByName = (model: Model | null, stateId: string): Map<string, UseEntry[]> => {
+  if (!model) return new Map()
+  return new Map([...stateFieldUsesIndex(model, stateId)].map(([name, uses]) => [name, useEntries(model, uses, { kind: 'stateField', name })]))
+}
+
+/** Who uses field `name` of state `stateId` (the pages that bind it, the steps that set it), for the one field a change asks about. */
+export const stateFieldUses = (model: Model | null, stateId: string, name: string): UseEntry[] =>
+  model ? useEntries(model, stateFieldUsesOf(model, stateId, name), { kind: 'stateField', name }) : []
 
 /** Who uses field `name` of collection `entityId`, for the one field a change asks about (the codegen's `fieldUsesOf`). */
 export const fieldUses = (model: Model | null, entityId: string, name: string): UseEntry[] =>

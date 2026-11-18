@@ -1,26 +1,36 @@
 import { usesOf } from '@bildr/codegen/edit'
 import type { ArtifactUse, UseKind } from '@bildr/codegen/edit'
-import type { Model, QueryFile } from '@bildr/codegen/model'
+import type { Model, QueryFile, StateFile } from '@bildr/codegen/model'
 import { entityById, repositoryEntity } from './dataModel.ts'
 import type { FieldType } from './dataModel.ts'
 import { useSentence } from './usageSentences.ts'
 import type { UsedThing } from './usageSentences.ts'
 
 /**
- * What the Data workspace reads of the model about its queries and actions. "Artifact" here means a query or an action, the two
- * kinds the Data tree lists besides collections and connections (S10); it is not the model's wider word for any file.
+ * What the Data workspace reads of the model about its queries, actions and state. "Artifact" here means a query, an action or a state, the
+ * kinds the Data tree lists besides collections and connections (S10, B2); it is not the model's wider word for any file.
  *
  * Pure reads, like `dataModel.ts` next to it: the words and the module actions of each kind, who uses one ("Used in", from the
  * module's own usage index `usesOf`, so it is the list the delete refusal gives), a step in a sentence, and the fields a query
  * can name. What needs the editor (running a module action from a dialog, opening a use) is `editor/dataArtifactActions.ts`.
  */
 
-export type ArtifactKind = 'query' | 'action'
+export type ArtifactKind = 'query' | 'action' | 'state'
 
+/** `plural` heads the tree's section: State is a mass noun, so its section is not "States". */
 export const ARTIFACT_KINDS: Record<ArtifactKind, { label: string, plural: string, rename: string, delete: string }> = {
   query: { label: 'Query', plural: 'Queries', rename: 'query_rename', delete: 'query_delete' },
-  action: { label: 'Action', plural: 'Actions', rename: 'action_rename', delete: 'action_delete' }
+  action: { label: 'Action', plural: 'Actions', rename: 'action_rename', delete: 'action_delete' },
+  state: { label: 'State', plural: 'State', rename: 'state_rename', delete: 'state_delete' }
 }
+
+/** Where a state keeps its values (`state_update` `persist`), in the words of the workspace: never the browser's storage names. */
+export type StatePersist = StateFile['persist']
+export const PERSISTENCE: Array<{ value: StatePersist, label: string, description: string }> = [
+  { value: 'memory', label: 'Forgotten on reload', description: 'The values start over each time the app loads.' },
+  { value: 'session', label: 'Kept for this tab', description: 'The values survive a reload, but not a new tab.' },
+  { value: 'localStorage', label: 'Kept in this browser', description: 'The values survive closing the tab, on this browser only.' }
+]
 
 /** How many rows a query returns: all that match (`many`), or the one a page asks for (`one`). */
 export type QueryResultKind = QueryFile['result']
@@ -28,6 +38,9 @@ export const RESULTS: Array<{ value: QueryResultKind, label: string }> = [{ valu
 
 /** The generated composable of a name (`featuredPosts` → `useFeaturedPosts`): what hand-written code imports. */
 export const composableOf = (name: string): string => `use${name.charAt(0).toUpperCase()}${name.slice(1)}`
+
+/** The generated composable of a state: the module's name comes first (`blog`, `preferences` → `useBlogPreferences`), so two modules' states never meet. */
+export const stateComposableOf = (module: string, name: string): string => composableOf(`${module.split('-').map(part => part.charAt(0).toUpperCase() + part.slice(1)).join('')}${name.charAt(0).toUpperCase()}${name.slice(1)}`)
 
 // ── Who uses one ─────────────────────────────────────────────────────────
 
@@ -72,7 +85,7 @@ export function entriesOf(uses: ArtifactUse[], say: (use: ArtifactUse) => string
 /** `entriesOf` with the sentences of `useSentence`, for the model's `thing`. */
 export const useEntries = (model: Model, uses: ArtifactUse[], thing: UsedThing): UseEntry[] => entriesOf(uses, use => useSentence(model, use, thing))
 
-/** Who uses query or action `id`, one entry per place (the module's usage index, `usesOf`), in the order it gives them. */
+/** Who uses query, action or state `id`, one entry per place (the module's usage index, `usesOf`), in the order it gives them. */
 export function usesOfArtifact(model: Model | null, id: string, artifact: ArtifactKind): UseEntry[] {
   return model ? useEntries(model, usesOf(model, id), { kind: artifact }) : []
 }

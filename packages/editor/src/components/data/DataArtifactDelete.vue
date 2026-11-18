@@ -9,7 +9,7 @@ import { useEditor } from '../../editor/useEditor.ts'
 import DataUsageList from './DataUsageList.vue'
 
 /**
- * The Delete dialog of a query or an action (S10, DW-7e): a confirm that calls `query_delete` / `action_delete`. While the
+ * The Delete dialog of a query, an action or a state (S10, DW-7e, B2): a confirm that calls `query_delete` / `action_delete` / `state_delete`. While the
  * item is used, Delete is disabled and the places that use it are listed as the reason (the same list as its Used in tab, each place a
  * link to the Canvas). The module refuses the same delete too, and that refusal is shown in the dialog when it is asked
  * anyway (the editor's list can be older than the model): it is the backstop, not the way the user learns of it.

@@ -52,6 +52,9 @@ const moduleEdits = (names: EditName[]): Handlers => Object.fromEntries(names.ma
 
 export const artifactModule = (): Handlers => moduleEdits(['query_create', 'query_update', 'query_rename', 'query_delete', 'action_create', 'action_update', 'action_rename', 'action_delete'])
 
+/** The state actions (B2), the real ones over the mocked model, as `artifactModule`'s. */
+export const stateModule = (): Handlers => moduleEdits(['state_create', 'state_update', 'state_rename', 'state_delete', 'page_use_add', 'page_use_remove'])
+
 /** The sample-data actions (D4), the real ones over the mocked model: a cell saved here is the row the Rows tab shows next. */
 export const fixtureModule = (): Handlers => moduleEdits(['fixture_row_create', 'fixture_row_update', 'fixture_rows_delete'])
 
@@ -83,6 +86,7 @@ export const ITEMS = {
   bySlug: 'query:q_post_by_slug',
   createPost: 'action:act_create_post',
   publishPost: 'action:act_publish_post',
+  preferences: 'state:st_preferences',
   files: 'files'
 }
 export const treeItem = (name: keyof typeof ITEMS) => q(`[data-tree-item="${ITEMS[name]}"]`)

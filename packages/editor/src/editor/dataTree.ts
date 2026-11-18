@@ -19,17 +19,17 @@ export const MIGRATIONS_KEY = 'migrations' satisfies DataSpecial
 /** The `seq` of the last dialog request (`editor.dataRequest`) each editor's Data tree answered, so a request made before it mounts (⌘K from the Canvas) still opens its dialog, once. */
 export const answeredDataRequests = new WeakMap<object, number>()
 
-/** A section of Queries or Actions with more items than this has a filter box (S10). */
+/** A section of Queries, Actions or State with more items than this has a filter box (S10). */
 export const FILTER_FROM = 8
 
-/** The localStorage key of the sections the user folded (Queries, Actions): a preference of the editor, kept across reloads. */
+/** The localStorage key of the sections the user folded (Queries, Actions, State): a preference of the editor, kept across reloads. */
 export const FOLDED_KEY = 'bildr:data-folded-sections'
 
 /** The sections remembered as folded; none when nothing was remembered or what was is not a list of sections. */
 export function storedFolded(): Set<ArtifactKind> {
   try {
     const stored: unknown = JSON.parse(localStorage.getItem(FOLDED_KEY) ?? '[]')
-    return new Set(Array.isArray(stored) ? stored.filter((kind): kind is ArtifactKind => kind === 'query' || kind === 'action') : [])
+    return new Set(Array.isArray(stored) ? stored.filter((kind): kind is ArtifactKind => kind === 'query' || kind === 'action' || kind === 'state') : [])
   } catch {
     return new Set()
   }
@@ -47,10 +47,11 @@ export interface TreeItem {
   open: boolean
 }
 
-/** The text each Queries and Actions section is filtered by (`''`: all of it). */
+/** The text each Queries, Actions and State section is filtered by (`''`: all of it). */
 export interface ArtifactFilters {
   queries: string
   actions: string
+  states: string
 }
 
 /** The items whose label, name or collection contain `filter`, ignoring case; an empty filter keeps them all. */
@@ -66,9 +67,9 @@ export interface TreeSource {
   connections: readonly DataConnection[]
   /** The ids of the connections folded. */
   collapsed: ReadonlySet<string>
-  artifacts?: { queries: readonly DataArtifact[], actions: readonly DataArtifact[] }
+  artifacts?: { queries: readonly DataArtifact[], actions: readonly DataArtifact[], states?: readonly DataArtifact[] }
   filters?: ArtifactFilters
-  /** The sections folded (Queries, Actions). */
+  /** The sections folded (Queries, Actions, State). */
   folded?: ReadonlySet<ArtifactKind>
   /** Whether a migration plan is pending (S6): Migrations is listed. */
   migrations?: boolean
@@ -76,10 +77,10 @@ export interface TreeSource {
 
 /**
  * The items the tree lists, top to bottom: the collections the app stores, then each connection followed by
- * the collections read through it (none while it is collapsed), then the queries and the actions (each section as far as its
+ * the collections read through it (none while it is collapsed), then the queries, the actions and the state (each section as far as its
  * filter lets it, and none of a section that is folded), then Migrations when a plan is pending (S6), then All model files.
  */
-export function treeItems({ collections, connections, collapsed, artifacts = { queries: [], actions: [] }, filters = { queries: '', actions: '' }, folded = new Set(), migrations = false }: TreeSource): TreeItem[] {
+export function treeItems({ collections, connections, collapsed, artifacts = { queries: [], actions: [] }, filters = { queries: '', actions: '', states: '' }, folded = new Set(), migrations = false }: TreeSource): TreeItem[] {
   const stored = collections.filter(entry => entry.kind !== 'rest').map(entry => ({ key: dataItemKey({ kind: 'collection', id: entry.id }), expandable: false, open: false }))
   const folders = connections.flatMap((connection) => {
     const key = dataItemKey({ kind: 'connection', id: connection.id })
@@ -94,6 +95,7 @@ export function treeItems({ collections, connections, collapsed, artifacts = { q
     ...folders,
     ...section('query', artifacts.queries, filters.queries),
     ...section('action', artifacts.actions, filters.actions),
+    ...section('state', artifacts.states ?? [], filters.states),
     ...(migrations ? [{ key: MIGRATIONS_KEY, expandable: false, open: false }] : []),
     { key: FILES_KEY, expandable: false, open: false }
   ]

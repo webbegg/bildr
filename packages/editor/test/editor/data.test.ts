@@ -27,7 +27,7 @@ const quotes = [{ id: 1, text: 'Q one', author: 'Ann' }, { id: 2, text: 'Q two',
 const collection = (plural: string) => q(`[data-collection="${plural}"]`)
 
 /** The names of the tree's items, top to bottom: a connection is followed by the collections read through it. */
-const TREE_ORDER = ['post', 'quotes', 'quote', 'allPosts', 'featured', 'latestQuotes', 'bySlug', 'createPost', 'publishPost', 'files'] as const satisfies ReadonlyArray<keyof typeof ITEMS>
+const TREE_ORDER = ['post', 'quotes', 'quote', 'allPosts', 'featured', 'latestQuotes', 'bySlug', 'createPost', 'publishPost', 'preferences', 'files'] as const satisfies ReadonlyArray<keyof typeof ITEMS>
 const key = async (element: Element | null, name: string) => {
   element!.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }))
   await settle()
@@ -1983,8 +1983,8 @@ describe('the JSON tab and All model files (S3)', () => {
 })
 
 describe('Queries and Actions in the Data tree (S10)', () => {
-  const section = (kind: 'query' | 'action') => q(`[data-artifacts="${kind}"]`)
-  const items = (kind: 'query' | 'action') => qa(`[data-artifacts="${kind}"] [data-tree-item]`).map(item => item.getAttribute('data-tree-item'))
+  const section = (kind: 'query' | 'action' | 'state') => q(`[data-artifacts="${kind}"]`)
+  const items = (kind: 'query' | 'action' | 'state') => qa(`[data-artifacts="${kind}"] [data-tree-item]`).map(item => item.getAttribute('data-tree-item'))
   /** A model with `count` more queries over Post, `q_more_1`… */
   const withQueries = (count: number) => {
     const mod = world.model.modules.blog!
@@ -1996,14 +1996,16 @@ describe('Queries and Actions in the Data tree (S10)', () => {
     if (element.hasAttribute('data-collections-internal')) return 'collections'
     if (element.hasAttribute('data-collections-synced')) return 'connections'
     if (element.hasAttribute('data-raw-model')) return 'files'
-    return element.getAttribute('data-artifacts') === 'query' ? 'queries' : 'actions'
+    return ({ query: 'queries', action: 'actions', state: 'state' } as Record<string, string>)[element.getAttribute('data-artifacts')!]!
   }
 
-  it('has Queries and Actions sections after Collections and Connections, before All model files', async () => {
+  it('has Queries, Actions and State sections after Collections and Connections, before All model files', async () => {
     await open()
     // The query selector lists them in the document's order, whatever order the selectors are written in.
     const blocks = qa('[data-raw-model], [data-artifacts], [data-collections-synced], [data-collections-internal]')
-    expect(blocks.map(blockName)).toEqual(['collections', 'connections', 'queries', 'actions', 'files'])
+    expect(blocks.map(blockName)).toEqual(['collections', 'connections', 'queries', 'actions', 'state', 'files'])
+    expect(text(section('state')?.querySelector('[data-artifact-toggle]'))).toBe('State')
+    expect(items('state')).toEqual([ITEMS.preferences])
     expect(text(section('query')?.querySelector('[data-artifact-toggle]'))).toBe('Queries')
     expect(text(section('action')?.querySelector('[data-artifact-toggle]'))).toBe('Actions')
     expect(items('query')).toEqual([ITEMS.allPosts, ITEMS.featured, ITEMS.latestQuotes, ITEMS.bySlug])

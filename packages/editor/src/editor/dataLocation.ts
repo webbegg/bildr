@@ -6,7 +6,7 @@ import type { Editor } from './useEditor.ts'
 
 /**
  * Where the Data workspace is (S2) in the URL query (`/data?item=collection:ent_post&tab=fields`, or `item=query:q_x`,
- * `item=action:act_x`): the item selected in its tree and the tab shown for it, so a deep link or a reload opens the same item on
+ * `item=action:act_x`, `item=state:st_x`): the item selected in its tree and the tab shown for it, so a deep link or a reload opens the same item on
  * the same tab. All model files (S3) is `?item=files`, with the file chosen in it as `&file=<path>` (a path that
  * is typed is in it once the file is saved, so a reload shows what the URL says). The pending migration (S6) is `?item=migrations`:
  * the plan is shown in the workspace (`/migrations` redirects there). The
@@ -79,8 +79,10 @@ export function useDataLocation(editor: Editor): void {
       editor.connectionId = item.id
     } else if (item?.kind === 'query') {
       editor.queryId = item.id
-    } else if (item) {
+    } else if (item?.kind === 'action') {
       editor.actionId = item.id
+    } else if (item) {
+      editor.stateId = item.id
     }
     // The tab shown already (the URL echoes what this editor wrote) is not a choice: a connection's Endpoints must not become a collection's.
     if (tab && tab !== editor.dataTab) editor.dataTab = tab

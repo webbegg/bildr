@@ -10,8 +10,8 @@ import { SELECTED_ITEM } from '../../../editorUi.ts'
 import type { DataArtifact } from '../../../shared/dataModel.ts'
 
 /**
- * A query or an action in the Data tree (S10): an icon, its label (the name when it has none) and the collection it works on as
- * a grey subtitle. Click shows it in the workspace; the `…` menu (on hover, and always on the row shown or focused) renames or
+ * A query, an action or a state in the Data tree (S10, B2): an icon, its label (the name when it has none) and the collection it works on as
+ * a grey subtitle (a state has none). Click shows it in the workspace; the `…` menu (on hover, and always on the row shown or focused) renames or
  * deletes it, and so do F2 and Delete (or Backspace) on the focused row (the dialogs are the tree's, which `rename` and `delete`
  * ask for). It is a tree item (`DataTree.vue`): the tab stop when it is the one the tree names.
  */
@@ -22,10 +22,12 @@ const key = computed(() => dataItemKey({ kind, id: item.id }))
 const stop = inject(TREE_STOP, ref(''))
 const shown = computed(() => editor.dataShown?.kind === kind && editor.dataShown.id === item.id)
 const words = computed(() => ARTIFACT_KINDS[kind])
+const ICONS: Record<ArtifactKind, string> = { query: 'i-lucide-list-filter', action: 'i-lucide-zap', state: 'i-lucide-toggle-right' }
 
 function show() {
   if (kind === 'query') editor.queryId = item.id
-  else editor.actionId = item.id
+  else if (kind === 'action') editor.actionId = item.id
+  else editor.stateId = item.id
   editor.mode = 'data'
 }
 
@@ -53,7 +55,7 @@ const menu = computed<DropdownMenuItem[]>(() => [
       @keydown.delete.prevent="emit('delete')"
     >
       <UIcon
-        :name="kind === 'query' ? 'i-lucide-list-filter' : 'i-lucide-zap'"
+        :name="ICONS[kind]"
         class="size-4 shrink-0"
         :class="shown ? 'text-highlighted' : 'text-dimmed'"
       />

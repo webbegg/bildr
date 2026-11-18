@@ -16,7 +16,8 @@ import DataMigrations from './DataMigrations.vue'
  * Endpoints (the repository's, when it is read through a connection), Used in and JSON (its file, S3); a connection has
  * Endpoints (its settings and its collections' endpoints) and JSON; a query (S10) has Results (it run over the
  * collection's rows), Definition (its form), Used in and JSON; an action has Overview (its form, its code name, its route and
- * how many steps it has), Steps (the step editor, D10c), Used in and JSON. With All model files chosen in the tree it
+ * how many steps it has), Steps (the step editor, D10c), Used in and JSON; a state (B2) has its header (how long it keeps its values),
+ * Fields (the field table), Used in and JSON. With All model files chosen in the tree it
  * is the list of the model's files and their editor instead, and with Migrations chosen (S6) it is the pending plan. A collection that
  * the pending plan changes has a banner above its tabs (Review, Apply: `editor.dataMigration`). With nothing to show it is
  * the empty start. The tab strip is one tab stop: Left and Right move along it (and wrap), Home and End go to its ends.
@@ -28,12 +29,15 @@ const connection = computed(() => editor.dataConnection)
 const collection = computed(() => editor.dataCollection)
 const query = computed(() => editor.dataQuery)
 const action = computed(() => editor.dataAction)
-const title = computed(() => query.value ? query.value.label || query.value.name : action.value ? action.value.label || action.value.name : connection.value?.name ?? collection.value?.name ?? '')
-const kind = computed(() => query.value ? 'Query' : action.value ? 'Action' : connection.value ? 'Connection' : 'Collection')
-const icon = computed(() => query.value ? 'i-lucide-list-filter' : action.value ? 'i-lucide-zap' : connection.value ? 'i-lucide-server' : collection.value?.kind === 'rest' ? 'i-lucide-globe' : 'i-lucide-database')
+const state = computed(() => editor.dataState)
+const title = computed(() => query.value ? query.value.label || query.value.name : action.value ? action.value.label || action.value.name : state.value ? state.value.label || state.value.name : connection.value?.name ?? collection.value?.name ?? '')
+const kind = computed(() => query.value ? 'Query' : action.value ? 'Action' : state.value ? 'State' : connection.value ? 'Connection' : 'Collection')
+const icon = computed(() => query.value ? 'i-lucide-list-filter' : action.value ? 'i-lucide-zap' : state.value ? 'i-lucide-toggle-right' : connection.value ? 'i-lucide-server' : collection.value?.kind === 'rest' ? 'i-lucide-globe' : 'i-lucide-database')
+/** What the Used in tab is about: the item shown, with its kind. */
+const usedIn = computed(() => query.value ? { kind: 'query' as const, id: query.value.id } : action.value ? { kind: 'action' as const, id: action.value.id } : state.value ? { kind: 'state' as const, id: state.value.id } : collection.value ? { kind: 'collection' as const, id: collection.value.id } : null)
 /** The shown item's own `.bildr/` file: what the JSON tab edits. */
 const itemFile = computed(() => {
-  const id = query.value?.id ?? action.value?.id ?? connection.value?.id ?? collection.value?.id
+  const id = query.value?.id ?? action.value?.id ?? state.value?.id ?? connection.value?.id ?? collection.value?.id
   return id ? editor.model?.paths[id] : undefined
 })
 /** What was typed in each query's parameter inputs, by query: kept while another tab or query shows. */
@@ -112,6 +116,10 @@ async function onTabKeyDown(event: KeyboardEvent) {
           </button>
         </div>
       </header>
+      <DataStateHeader
+        v-if="state"
+        :state="state"
+      />
 
       <div
         id="data-tabpanel"
@@ -176,10 +184,14 @@ async function onTabKeyDown(event: KeyboardEvent) {
             v-else-if="editor.dataTab === 'steps' && action"
             :action="action"
           />
+          <DataStateFields
+            v-else-if="editor.dataTab === 'fields' && state"
+            :state="state"
+          />
           <DataUsedIn
-            v-else-if="editor.dataTab === 'used' && (query || action || collection)"
-            :id="(query ?? action ?? collection)!.id"
-            :kind="query ? 'query' : action ? 'action' : 'collection'"
+            v-else-if="editor.dataTab === 'used' && usedIn"
+            :id="usedIn.id"
+            :kind="usedIn.kind"
           />
           <DataJson
             v-else-if="editor.dataTab === 'json'"

@@ -1,7 +1,7 @@
 import type { ConfirmOptions, Editor } from './useEditor.ts'
 import { UPDATED_AUTOMATICALLY } from '../shared/dataArtifacts.ts'
 import type { UseEntry } from '../shared/dataArtifacts.ts'
-import { blockingUses, collectionUses, fieldUses, them, usedInWords } from '../shared/dataUsage.ts'
+import { blockingUses, collectionUses, fieldUses, stateFieldUses, them, usedInWords } from '../shared/dataUsage.ts'
 
 /**
  * The warnings before a delete or a rename of a collection or a field that is used: each asks through the editor's confirm, with the
@@ -62,6 +62,18 @@ export function confirmRemoveField(editor: Editor, collection: { id: string }, f
   if (count) return editor.confirm(blocked(field, uses, count, 'A field can\'t be removed while it is used.'))
   if (!rows) return Promise.resolve(true)
   return editor.confirm({ title: `Remove the field "${field}"?`, description: 'Its values stay in the rows already stored. Undo brings the field back.', confirmLabel: 'Remove field', danger: true })
+}
+
+/**
+ * Remove a field of a state (B2): blocked while a page binds it or a step sets it, as the module refuses `state_update` for it; the places
+ * are listed as links to change first. Resolves whether to go on: nothing is asked for a field nothing uses (it is only taken out of the
+ * draft, and nothing is written until Save).
+ */
+export function confirmRemoveStateField(editor: Editor, state: { id: string }, field: string): Promise<boolean> {
+  const uses = stateFieldUses(editor.model, state.id, field)
+  const count = blockingUses(uses).length
+  if (!count) return Promise.resolve(true)
+  return editor.confirm(blocked(field, uses, count, 'A field can\'t be removed while it is used.'))
 }
 
 /**

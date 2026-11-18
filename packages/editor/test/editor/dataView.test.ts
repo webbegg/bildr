@@ -695,7 +695,7 @@ describe('the Data tree of queries and actions (S10)', () => {
 
   it('lists only the items that match a section\'s filter (label, name or collection, any case)', () => {
     const queries = [artifact('q_a', 'Recent posts'), { ...artifact('q_b', 'Top'), collectionName: 'Quote' }]
-    const keys = (filter: string) => treeItems({ collections: [], connections: [], collapsed: new Set(), artifacts: { queries, actions: [] }, filters: { queries: filter, actions: '' } }).map(item => item.key)
+    const keys = (filter: string) => treeItems({ collections: [], connections: [], collapsed: new Set(), artifacts: { queries, actions: [] }, filters: { queries: filter, actions: '', states: '' } }).map(item => item.key)
     expect(keys('')).toEqual(['query:q_a', 'query:q_b', 'files'])
     expect(keys('RECENT')).toEqual(['query:q_a', 'files'])
     expect(keys('quote')).toEqual(['query:q_b', 'files'])
@@ -937,5 +937,49 @@ describe('All model files in the Data workspace (S3)', () => {
     editor.dataFiles = true
     await editor.createCollection({ name: 'Untitled', storage: { kind: 'database' } })
     expect(editor.dataFiles).toBe(false)
+  })
+})
+
+describe('State in the Data workspace (B2, S1)', () => {
+  // The blog fixture has one state, `preferences` ("Blog preferences"): the page index binds its field and a checkbox sets it.
+  it('lists each state as an item of the tree after the actions, before All model files, and folds and filters it like them', async () => {
+    const { editor } = await bootData()
+    expect(editor.states.map(entry => [entry.id, entry.name, entry.label])).toEqual([['st_preferences', 'preferences', 'Blog preferences']])
+    const source = { collections: editor.collections, connections: editor.connections, collapsed: new Set<string>(), artifacts: { queries: editor.queries, actions: editor.actions, states: editor.states } }
+    expect(treeItems(source).map(item => item.key).slice(-3)).toEqual(['action:act_publish_post', 'state:st_preferences', 'files'])
+    expect(treeItems({ ...source, folded: new Set(['state']) }).map(item => item.key)).not.toContain('state:st_preferences')
+    expect(treeItems({ ...source, filters: { queries: '', actions: '', states: 'zzz' } }).map(item => item.key)).not.toContain('state:st_preferences')
+    expect(treeItems({ ...source, filters: { queries: '', actions: '', states: 'PREF' } }).map(item => item.key)).toContain('state:st_preferences')
+  })
+
+  it('has the tabs Fields, Used in and JSON, which the URL reads and writes', () => {
+    expect(tabsOf('state')).toEqual(['fields', 'used', 'json'])
+    expect(parseDataLocation({ item: 'state:st_preferences', tab: 'used' })).toEqual({ item: { kind: 'state', id: 'st_preferences' }, tab: 'used' })
+    expect(dataLocationQuery({ kind: 'state', id: 'st_preferences' }, 'fields')).toEqual({ item: 'state:st_preferences', tab: 'fields' })
+  })
+
+  it('shows the state chosen instead of the collection, and falls back to it when the state is gone', async () => {
+    const { editor, design } = await bootData()
+    editor.stateId = 'st_preferences'
+    expect(editor.dataItem).toEqual({ kind: 'state', id: 'st_preferences' })
+    expect(editor.dataTabs).toEqual(['fields', 'used', 'json'])
+    expect(editor.dataTab).toBe('fields')
+    expect(editor.dataState?.id).toBe('st_preferences')
+    expect(editor.dataCollection).toBeNull()
+    expect(editor.dataQuery).toBeNull()
+    editor.queryId = 'q_all_posts'
+    expect(editor.dataState).toBeNull()
+    expect(editor.stateId).toBeNull()
+    editor.stateId = 'st_preferences'
+    editor.collectionId = 'ent_quote'
+    expect(editor.dataState).toBeNull()
+    expect(editor.dataItem).toEqual({ kind: 'collection', id: 'ent_quote' })
+    editor.stateId = 'st_preferences'
+    world.model.modules.blog!.state = []
+    await design.refresh()
+    await settle()
+    expect(editor.stateId).toBeNull()
+    // The collection chosen before is the one shown again.
+    expect(editor.dataItem).toEqual({ kind: 'collection', id: 'ent_quote' })
   })
 })

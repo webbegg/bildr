@@ -7,13 +7,13 @@ import { attempt } from './dataArtifactActions.ts'
 import { useEditor } from './useEditor.ts'
 
 /**
- * What the three dialogs of the Queries and Actions sections (create, rename, delete: S10) share, with the shell
+ * What the three dialogs of the Queries, Actions and State sections (create, rename, delete: S10, B2) share, with the shell
  * `components/data/DataArtifactDialog.vue` that draws them: what was asked for (a kind, or an item of a kind) and is kept
  * while the dialog closes, so it keeps its words, whether it is open, the error and the saving state of the action it runs, and
  * the item looked up in the tree's lists.
  */
 
-/** A query or an action of the tree. */
+/** A query, an action or a state of the tree. */
 export interface ArtifactTarget {
   kind: ArtifactKind
   id: string
@@ -44,7 +44,7 @@ export function useArtifactDialog<T extends ArtifactKind | ArtifactTarget>(asked
   /** The item of the tree the dialog is about, when it is about one and the model still has it. */
   const item: ComputedRef<DataArtifact | undefined> = computed(() => {
     const target = shown.value
-    return target && typeof target !== 'string' ? (target.kind === 'query' ? editor.queries : editor.actions).find(entry => entry.id === target.id) : undefined
+    return target && typeof target !== 'string' ? (target.kind === 'query' ? editor.queries : target.kind === 'action' ? editor.actions : editor.states).find(entry => entry.id === target.id) : undefined
   })
 
   watch(asked, (next) => {

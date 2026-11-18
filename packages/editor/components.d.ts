@@ -56,6 +56,8 @@ declare module 'vue' {
     DataRowsTable: typeof import('./src/components/data/table/DataRowsTable.vue')['default']
     DataSourceSwitch: typeof import('./src/components/data/table/DataSourceSwitch.vue')['default']
     DataStaleNotice: typeof import('./src/components/data/DataStaleNotice.vue')['default']
+    DataStateFields: typeof import('./src/components/data/DataStateFields.vue')['default']
+    DataStateHeader: typeof import('./src/components/data/DataStateHeader.vue')['default']
     DataStepCard: typeof import('./src/components/data/steps/DataStepCard.vue')['default']
     DataStepErrorPicker: typeof import('./src/components/data/steps/DataStepErrorPicker.vue')['default']
     DataStepForm: typeof import('./src/components/data/steps/DataStepForm.vue')['default']

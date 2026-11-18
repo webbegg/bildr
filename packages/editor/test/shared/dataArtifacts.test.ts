@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { loadModel } from '@bildr/codegen/model'
 import type { Model } from '@bildr/codegen/model'
-import { RESULTS, composableOf, queryFields, stepSummary, usageKey, usageKindLabel, usesOfArtifact } from '../../src/shared/dataArtifacts.ts'
-import { actionsOf, entityById, queriesOf, repositoryEntity } from '../../src/shared/dataModel.ts'
+import { ARTIFACT_KINDS, PERSISTENCE, RESULTS, composableOf, queryFields, stateComposableOf, stepSummary, usageKey, usageKindLabel, usesOfArtifact } from '../../src/shared/dataArtifacts.ts'
+import { actionsOf, entityById, queriesOf, repositoryEntity, statesOf } from '../../src/shared/dataModel.ts'
+import { stateFieldUses } from '../../src/shared/dataUsage.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 
 /** What the Queries and Actions of the Data workspace read of the model (S10): the blog fixture, as the module loads it. */
@@ -107,5 +108,42 @@ describe('who uses a query or an action', () => {
 describe('the shared words of a query', () => {
   it('has one list of the results a query returns', () => {
     expect(RESULTS.map(result => result.value)).toEqual(['one', 'many'])
+  })
+})
+
+describe('State (B2, S1)', () => {
+  it('lists the states of the model as the tree does: label, name and module, with no collection', () => {
+    expect(statesOf(model)).toEqual([{ id: 'st_preferences', name: 'preferences', label: 'Blog preferences', module: 'blog', collectionId: '', collectionName: '' }])
+  })
+
+  it('says the persistence in the words of the workspace, never the storage\'s', () => {
+    expect(PERSISTENCE.map(choice => [choice.value, choice.label])).toEqual([['memory', 'Forgotten on reload'], ['session', 'Kept for this tab'], ['localStorage', 'Kept in this browser']])
+    expect(ARTIFACT_KINDS.state).toEqual({ label: 'State', plural: 'State', rename: 'state_rename', delete: 'state_delete' })
+  })
+
+  it('names the composable a state generates: the module first, then the name', () => {
+    expect(stateComposableOf('blog', 'preferences')).toBe('useBlogPreferences')
+    expect(stateComposableOf('my-shop', 'cartFilter')).toBe('useMyShopCartFilter')
+  })
+
+  it('lists each place that uses a state once, with a sentence for each way it does', () => {
+    const uses = usesOfArtifact(model, 'st_preferences', 'state')
+    expect(uses.map(use => usageKey(use))).toEqual(['page:pg_index'])
+    const what = uses[0]!.what
+    expect(what).toContain('Reads it as “preferences”')
+    expect(what).toContain('A computed value reads “preferences”')
+    expect(what.some(sentence => /^.+ shows “preferences”$/.test(sentence))).toBe(true)
+    expect(what.some(sentence => /^.+ changes it on an interaction$/.test(sentence))).toBe(true)
+  })
+
+  it('lists who uses one field of a state, the way a collection\'s fields do', () => {
+    const uses = stateFieldUses(model, 'st_preferences', 'showDrafts')
+    expect(uses.map(use => usageKey(use))).toEqual(['page:pg_index'])
+    const what = uses[0]!.what
+    expect(what).toContain('A computed value reads “preferences.showDrafts”')
+    expect(what.some(sentence => /^.+ shows “preferences.showDrafts”$/.test(sentence))).toBe(true)
+    expect(what.some(sentence => /^.+ sets it on an interaction$/.test(sentence))).toBe(true)
+    expect(stateFieldUses(model, 'st_preferences', 'nothing')).toEqual([])
+    expect(stateFieldUses(null, 'st_preferences', 'showDrafts')).toEqual([])
   })
 })

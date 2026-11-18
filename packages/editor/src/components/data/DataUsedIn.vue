@@ -6,7 +6,7 @@ import { blockingUses, collectionUses, usedInWords } from '../../shared/dataUsag
 import { useEditor } from '../../editor/useEditor.ts'
 
 /**
- * A collection's, a query's or an action's Used in tab: the pages, components, layouts and actions that use it, from the
+ * A collection's, a query's, an action's or a state's Used in tab: the pages, components, layouts and actions that use it, from the
  * module's usage index (`usesOf`, `entityUsesOf`: the list a delete is refused with). Each place is one entry with how it uses it;
  * opening it shows it on the Canvas (a page, a component or a layout) or in the workspace (an action), as the collection's "Open
  * detail page" does. What the module changes along with a collection (its own actions) is listed apart as "Updated automatically",
@@ -23,6 +23,7 @@ const follows = computed(() => all.value.filter(use => use.follows))
 const EMPTY = {
   query: 'Not used yet. No page reads this query.',
   action: 'Not used yet. No page or form runs this action.',
+  state: 'Not used yet. No page reads or sets this state.',
   collection: 'Not used yet. No page or component reads this collection.'
 } as const
 </script>

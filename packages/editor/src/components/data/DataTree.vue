@@ -17,7 +17,7 @@ import { NEW_CONNECTION_URL } from '../../shared/dataModel.ts'
  * workspace beside the tree, on the tabs its kind has. The Connections `+` makes a new
  * connection (an inline name, then the base URL in its Endpoints tab) or opens the Import from URL
  * dialog (also opened by an `import` `editor.dataRequest`). New collection's REST API hands on to a second dialog that finishes the
- * collection (step 2: "New collection from <connection>", or "from a new connection"), with the name typed. **Queries** and **Actions** (S10) follow, each with a header that folds it
+ * collection (step 2: "New collection from <connection>", or "from a new connection"), with the name typed. **Queries**, **Actions** (S10) and **State** (B2) follow, each with a header that folds it
  * (remembered), a `+` that opens its create dialog, a filter box when it has many items and a `…` menu per row that renames or
  * deletes it (F2 and Delete do too, as on the collection and connection rows). **Migrations** (S6) is listed only while a migration plan
  * is pending and the project has a database, with its number of changes. **All model files** (S3)
@@ -33,18 +33,18 @@ const tree = useTemplateRef<HTMLElement>('tree')
 
 /** The connections folded in the tree, by id. */
 const collapsed = reactive(new Set<string>())
-/** What each of the Queries and Actions sections is filtered by: the tree lists only what it lets through, so the keys move along that. */
-const filters = reactive<ArtifactFilters>({ queries: '', actions: '' })
-/** The Queries and Actions sections folded, remembered across reloads. */
+/** What each of the Queries, Actions and State sections is filtered by: the tree lists only what it lets through, so the keys move along that. */
+const filters = reactive<ArtifactFilters>({ queries: '', actions: '', states: '' })
+/** The Queries, Actions and State sections folded, remembered across reloads. */
 const folded = reactive(storedFolded())
-const items = computed(() => treeItems({ collections: editor.collections, connections: editor.connections, collapsed, artifacts: { queries: editor.queries, actions: editor.actions }, filters, folded, migrations: editor.dataPlan !== null }))
+const items = computed(() => treeItems({ collections: editor.collections, connections: editor.connections, collapsed, artifacts: { queries: editor.queries, actions: editor.actions, states: editor.states }, filters, folded, migrations: editor.dataPlan !== null }))
 
 function toggleSection(kind: ArtifactKind) {
   if (!folded.delete(kind)) folded.add(kind)
   storeFolded(folded)
 }
 
-/** The create, rename or delete dialog of a query or an action that is open. */
+/** The create, rename or delete dialog of a query, an action or a state that is open. */
 const creating = ref<ArtifactKind | null>(null)
 const renamingArtifact = ref<{ kind: ArtifactKind, id: string } | null>(null)
 const deletingArtifact = ref<{ kind: ArtifactKind, id: string } | null>(null)
@@ -315,6 +315,16 @@ function openConnectionCollection(request: { connection: string, name: string })
         @create="creating = 'action'"
         @rename="renamingArtifact = { kind: 'action', id: $event }"
         @delete="deletingArtifact = { kind: 'action', id: $event }"
+      />
+      <DataArtifactSection
+        v-model:filter="filters.states"
+        kind="state"
+        :items="editor.states"
+        :folded="folded.has('state')"
+        @toggle="toggleSection('state')"
+        @create="creating = 'state'"
+        @rename="renamingArtifact = { kind: 'state', id: $event }"
+        @delete="deletingArtifact = { kind: 'state', id: $event }"
       />
 
       <DataMigrationsRow />

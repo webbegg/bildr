@@ -29,10 +29,10 @@ import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
  * shown come from `rowsSource`, which is Sample data too when Live is chosen and the app does
  * not answer (`rowsFallback`: the choice stays Live, so choosing it again retries).
  *
- * The Data workspace (S2) shows one item at a time, a connection, a collection, a query or an action (S10), on one of the
+ * The Data workspace (S2) shows one item at a time, a connection, a collection, a query, an action (S10) or a state (B2), on one of the
  * tabs its kind has (`dataItem`, `dataTabs`, `dataTab`), or All model files (`dataFiles`, S3) in its place; `editor/dataLocation.ts` mirrors that in
- * the URL. Read the item through `dataCollection` / `dataConnection` / `dataQuery` / `dataAction`, which are narrowed to it. Which
- * query or action is chosen, and how that lives with the other choices, is `editor/dataArtifactView.ts`'s.
+ * the URL. Read the item through `dataCollection` / `dataConnection` / `dataQuery` / `dataAction` / `dataState`, which are narrowed to it. Which
+ * query, action or state is chosen, and how that lives with the other choices, is `editor/dataArtifactView.ts`'s.
  * A query is run over the rows of the collection it reads (`collectionRows` and the rest follow it: the Results tab shows what
  * the collection's Rows tab shows, with the same Live / Sample data switch).
  *
@@ -141,7 +141,7 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
     }
   })
   /** The query or the action chosen (S10), and the rules of how it lives with the collection and connection chosen: `dataArtifactView.ts`. */
-  const { queries, actions, queryId, actionId, artifact, artifactChosen, forgetArtifact, dataQuery, dataAction } = createDataArtifactView(model, leaveData, special)
+  const { queries, actions, states, queryId, actionId, stateId, artifact, artifactChosen, forgetArtifact, dataQuery, dataAction, dataState } = createDataArtifactView(model, leaveData, special)
   const chooser = (chosen: Ref<string | null>) => computed<string | null>({
     get: () => chosen.value,
     set: (id) => {
@@ -268,5 +268,5 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
     if (view.value === 'data') void live.refresh()
   })
 
-  return { collections, connections, queries, actions, queryId, actionId, dataQuery, dataAction, collectionId, connectionId, dataSpecial, dataShown, dataFiles, dataMigrations, dataPlan, dataMigration, planShown, dataFile, dataDirty, reportDirty, leaveData, guardLeave, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, rowsEditable, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
+  return { collections, connections, queries, actions, states, queryId, actionId, stateId, dataQuery, dataAction, dataState, collectionId, connectionId, dataSpecial, dataShown, dataFiles, dataMigrations, dataPlan, dataMigration, planShown, dataFile, dataDirty, reportDirty, leaveData, guardLeave, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, rowsEditable, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
 }

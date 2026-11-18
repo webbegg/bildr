@@ -6,7 +6,7 @@ import { FILTER_FROM, filterArtifacts } from '../../../editor/dataTree.ts'
 import type { DataArtifact } from '../../../shared/dataModel.ts'
 
 /**
- * The Data tree's Queries or Actions section (S10): a header that folds the section (`folded` is the tree's, which remembers it;
+ * The Data tree's Queries, Actions or State section (S10, B2): a header that folds the section (`folded` is the tree's, which remembers it;
  * the header emits `toggle`) with a `+` that asks for the create dialog (`create`), a filter box when the section has more than
  * `FILTER_FROM` items (its text is the tree's: the keys that move along the tree list only what it lets through), and a row for
  * each item. What a row asks for (`rename`, `delete`) the tree answers with its dialogs. A folded section shows only its header.
@@ -20,7 +20,8 @@ const lower = computed(() => words.value.plural.toLowerCase())
 const shown = computed(() => filterArtifacts(items, filter.value))
 const EMPTY: Record<ArtifactKind, string> = {
   query: 'No queries yet. Queries read a collection for your pages.',
-  action: 'No actions yet. Actions change a collection when a form or a button runs them.'
+  action: 'No actions yet. Actions change a collection when a form or a button runs them.',
+  state: 'No state yet. Values the app remembers while it runs, like a filter or a toggle.'
 }
 </script>
 
