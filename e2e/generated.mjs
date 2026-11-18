@@ -331,7 +331,17 @@ async function model(ctx) {
   const dev = start(join(ctx.dir, 'node_modules/.bin/nuxt'), ['dev', '--port', String(port), '--host', '127.0.0.1'], { cwd: ctx.dir, log })
   try {
     const token = await waitFor('the editor link in the dev log', () => /\/__bildr\?token=([0-9a-f]{48})/.exec(readOr(log) ?? '')?.[1], 3 * MINUTE)
-    const action = editorClient(base, token)
+    const client = editorClient(base, token)
+    // Each model write regenerates the app, and one that changes a data source restarts nuxt dev: meanwhile the editor
+    // answers 503. That is the server coming back, not a refusal, so a 503 is retried until it answers (bounded).
+    const action = async (name, input) => {
+      const until = Date.now() + 2 * MINUTE
+      for (;;) {
+        const result = await client(name, input)
+        if (result.status !== 503 || Date.now() > until) return result
+        await new Promise(resolve => setTimeout(resolve, 1000))
+      }
+    }
     await waitFor('health_get to answer', async () => (await action('health_get').catch(() => ({}))).ok, 2 * MINUTE, 1000)
     check(true, `nuxt dev serves the editor actions at ${base}/__bildr (log ${log})`)
 
