@@ -31,11 +31,15 @@ const preview = (over: Record<string, unknown> = {}) => ({
   ...over
 })
 
-const open = async (extra: Handlers = {}) => {
+const open = async (extra: Handlers = {}, path = '/data') => {
   const actions = mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), ...extra })
-  await mountWithApp(DataView, '/data')
+  await mountWithApp(DataView, path)
   return actions
 }
+/** The Post collection's JSON tab with an edit that is not saved: the workspace asks before it moves away from it. */
+const UNSAVED = '/data?item=collection:ent_post&tab=json'
+const typeUnsaved = () => typeInto(q('[data-testid="raw-content"]'), '{ "draft": true }')
+const asked = () => text(q('[data-confirm]')?.closest('[role="dialog"]') ?? null)
 const inputs = (actions: Awaited<ReturnType<typeof open>>, name: string) => actions.named(name).map(call => call.input)
 const button = (label: string) => qa('button').find(entry => entry.textContent?.trim() === label) ?? null
 
@@ -44,8 +48,8 @@ afterEach(() => {
 })
 
 describe('a new collection in a connection', () => {
-  const dialog = async (extra: Handlers = {}) => {
-    const actions = await open(extra)
+  const dialog = async (extra: Handlers = {}, path = '/data') => {
+    const actions = await open(extra, path)
     // The connection's Add… opens New collection on REST API with that connection chosen; Continue opens the connection's dialog.
     await click(q('[data-connection-add-collection]'))
     await click(q('[data-artifact-submit]'))
@@ -102,6 +106,23 @@ describe('a new collection in a connection', () => {
       endpoints: { list: { path: '/todos', itemsPath: 'todos' } }
     }])
     expect(q('[role="dialog"]')).toBeNull()
+  })
+
+  it('asks to discard unsaved edits before it writes: kept, nothing is created and the dialog stays; given up, it creates and shows the collection', async () => {
+    const actions = await dialog({ datasource_preview: () => preview(), entity_create: ok({ entityId: 'ent_todo' }) }, UNSAVED)
+    await typeUnsaved()
+    await test('/todos')
+    await click(q('[data-api-save]'))
+    expect(asked()).toContain('Discard unsaved changes to Post (JSON)?')
+    expect(actions.named('entity_create')).toEqual([])
+    await click(q('[data-confirm-cancel]'))
+    expect(actions.named('entity_create')).toEqual([])
+    expect(q('[data-connection-source]')).not.toBeNull()
+    expect((q('[data-api-name]') as HTMLInputElement).value).toBe('Todo')
+    await click(q('[data-api-save]'))
+    await click(q('[data-confirm-ok]'))
+    expect(inputs(actions, 'entity_create')).toHaveLength(1)
+    expect(q('[data-connection-source]')).toBeNull()
   })
 
   it('leaves out the fields switched off, renames and retypes, and takes the other endpoints the API has', async () => {
@@ -363,6 +384,24 @@ describe('Import from URL', () => {
       expect(q('[role="dialog"]')).toBeNull()
       for (const name of ['entity_create', 'datasource_create', 'datasource_delete']) expect(actions.named(name), name).toEqual([])
     })
+  })
+
+  it('asks to discard unsaved edits before it writes the collection: kept, nothing is created and the dialog stays; given up, it creates', async () => {
+    const actions = await open({ datasource_preview: () => preview(), entity_create: ok({ entityId: 'ent_todo' }) }, UNSAVED)
+    await typeUnsaved()
+    await openImport()
+    await fetchUrl('https://dummyjson.com/todos')
+    await click(q('[data-api-save]'))
+    expect(asked()).toContain('Discard unsaved changes to Post (JSON)?')
+    expect(actions.named('entity_create')).toEqual([])
+    await click(q('[data-confirm-cancel]'))
+    expect(actions.named('entity_create')).toEqual([])
+    expect(q('[data-api-source]')).not.toBeNull()
+    expect((q('[data-api-name]') as HTMLInputElement).value).toBe('Todo')
+    await click(q('[data-api-save]'))
+    await click(q('[data-confirm-ok]'))
+    expect(inputs(actions, 'entity_create')).toHaveLength(1)
+    expect(q('[data-api-source]')).toBeNull()
   })
 
   it('makes a data source for an origin the project has none for, named after the host', async () => {

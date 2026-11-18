@@ -4,8 +4,8 @@ import { useDesign } from './store.ts'
 
 /**
  * A Form submits to an action, and the generator refuses one without: the palette asks which action first
- * (like a component's required values). Only the actions of the page's module that take an entity are
- * offered, since a Form edits an entity's fields; with none, it says so.
+ * (like a component's required values). Only the actions of the page's module that take a collection are
+ * offered, since a Form edits a collection's fields; with none, it says so.
  */
 
 const design = useDesign()
@@ -29,7 +29,7 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
   <UModal
     v-model:open="open"
     title="Which action does the form run?"
-    description="A form submits its fields to an action that takes an entity (create a post, say)."
+    description="A form submits its fields to an action that takes a collection (create a post, say)."
   >
     <template #body>
       <div
@@ -64,7 +64,7 @@ const field = 'w-full rounded-md border border-default bg-default px-2 py-1 text
           class="text-xs text-muted"
           data-testid="form-dialog-none"
         >
-          This module has no action that takes an entity. Add one (a create action comes with every collection) and insert the form again.
+          This module has no action that takes a collection. Add one (a create action comes with every collection) and insert the form again.
         </p>
       </div>
     </template>

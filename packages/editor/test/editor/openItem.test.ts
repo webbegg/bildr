@@ -120,11 +120,11 @@ describe('opening an item from an editor', () => {
 })
 
 describe('opening an item asks before it leaves unsaved edits', () => {
-  const DISCARD = 'Discard unsaved changes to .bildr/modules/blog/entities/post.json?'
+  const DISCARD = 'Discard unsaved changes to Post (JSON)?'
 
   it('asks first from the Data workspace, and opens the item once the edits are given up', async () => {
     const editor = await boot('data')
-    editor.dataDirty = '.bildr/modules/blog/entities/post.json'
+    editor.reportDirty().set('Post (JSON)')
     const opened = openItem({ kind: 'query', id: 'q_featured_posts' }, { editor })
     await settle()
     expect(editor.confirmRequest?.title).toBe(DISCARD)
@@ -137,19 +137,19 @@ describe('opening an item asks before it leaves unsaved edits', () => {
 
   it('keeps the item and the edits when they are kept', async () => {
     const editor = await boot('data')
-    editor.dataDirty = '.bildr/modules/blog/entities/post.json'
+    editor.reportDirty().set('Post (JSON)')
     const opened = openItem({ kind: 'action', id: 'act_create_post' }, { editor })
     await settle()
     editor.confirmRequest?.answer(false)
     expect(await opened).toBe(false)
     expect(editor.dataItem).toEqual({ kind: 'collection', id: 'ent_post' })
-    expect(editor.dataDirty).toBe('.bildr/modules/blog/entities/post.json')
+    expect(editor.dataDirty).toBe('Post (JSON)')
   })
 
   it('asks first before it leaves the Data workspace for the Canvas, and goes nowhere when the edits are kept', async () => {
     const open = screens()
     const editor = await boot('data')
-    editor.dataDirty = '.bildr/modules/blog/entities/post.json'
+    editor.reportDirty().set('Post (JSON)')
     const opened = openItem({ kind: 'page', id: 'pg_index' }, { editor })
     await settle()
     expect(editor.confirmRequest?.title).toBe(DISCARD)
@@ -243,7 +243,7 @@ describe('an item that is gone', () => {
   it('goes to the Design screen from the Data workspace for a page that is gone, after asking about unsaved edits', async () => {
     const open = screens()
     const editor = await boot('data')
-    editor.dataDirty = '.bildr/modules/blog/entities/post.json'
+    editor.reportDirty().set('Post (JSON)')
     const opened = openItem({ kind: 'page', id: 'pg_gone' }, { editor, notify: () => undefined })
     await settle()
     expect(editor.confirmRequest?.title).toContain('Discard unsaved changes')

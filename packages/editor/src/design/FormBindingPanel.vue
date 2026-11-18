@@ -72,7 +72,7 @@ const toggle = (id: string, on: boolean) => {
     <EditorRow
       v-if="entity"
       label="Fields"
-      title="The fields of the action's entity this form edits"
+      title="The fields of the action's collection this form edits"
     >
       <div class="flex min-w-0 flex-1 flex-col gap-1 py-1.5">
         <label

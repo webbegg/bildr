@@ -1,4 +1,4 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowReactive, watch } from 'vue'
 import type { Ref } from 'vue'
 import type { Row } from '@bildr/codegen/query'
 import { createLiveRows } from '../design/liveRows.ts'
@@ -36,9 +36,12 @@ import type { DataCollection, DataConnection } from '../shared/dataModel.ts'
  * A query is run over the rows of the collection it reads (`collectionRows` and the rest follow it: the Results tab shows what
  * the collection's Rows tab shows, with the same Live / Sample data switch).
  *
- * Edits that are not saved (`dataDirty`: the raw editor reports a file's, the query Definition its draft, the action Overview a
- * refused text) are not lost silently: every way of moving the workspace (the item, the tab, All model files, the file in it)
- * goes through `leaveData`, which asks first and moves only when the user discards them.
+ * Edits that are not saved are not lost silently. Whoever holds some reports them to the registry (`reportDirty`: the raw editor
+ * a file's, the query Definition and the action Steps their drafts, the action Overview a refused text, the Rows table a refused
+ * cell), each with its own token, so one that stops reporting (unmounts) clears only its own; `dataDirty` is the label of the one
+ * asked about, an item's name (never a file path). Every way of moving the workspace (the item, the tab, All model files, the file
+ * in it, and every create that selects what it made: `guardLeave`) goes through `leaveData`, which asks first and moves only when
+ * the user discards them.
  *
  * The pending migration plan (S6) is the status's (`plan`, which is null without a database): the workspace shows it where the
  * collection is (`dataMigration`, its banner) or as its own item (`dataSpecial` is `migrations`). `planShown` says whether it does,
@@ -62,8 +65,23 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
   /** The connection the right panel shows (its folder was clicked); null shows the collection. */
   const chosenConnection = ref<string | null>(null)
 
-  /** The `.bildr/` file whose JSON has edits that are not saved, reported by the raw editor; null when there are none. */
-  const dataDirty = ref<string | null>(null)
+  /** Who has edits that are not saved, by the token each reporter holds: the label (an item's name) it asks about. */
+  const reporters = shallowReactive(new Map<symbol, string>())
+  /** The label of the unsaved edits the workspace asks about (the first reported); null when there are none. */
+  const dataDirty = computed<string | null>(() => reporters.values().next().value ?? null)
+  /** One reporter: `set` its label (null: nothing unsaved) and `clear` when it goes. Each touches only its own entry. */
+  const reportDirty = () => {
+    const token = Symbol('dirty')
+    return {
+      set: (label: string | null) => {
+        if (label === null) reporters.delete(token)
+        else reporters.set(token, label)
+      },
+      clear: () => {
+        reporters.delete(token)
+      }
+    }
+  }
   /** How many times the user kept their edits instead of leaving: what moved the screen (the URL) is put back. */
   const leaveDeclined = ref(0)
   let deciding: Promise<boolean> | null = null
@@ -79,7 +97,7 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
     }
     deciding ??= confirm({ title: `Discard unsaved changes to ${dataDirty.value}?`, description: 'Cancel keeps what you typed; discarding loses it.', confirmLabel: 'Discard changes', danger: true }).then((ok) => {
       deciding = null
-      if (ok) dataDirty.value = null
+      if (ok) reporters.clear()
       else leaveDeclined.value++
       return ok
     })
@@ -88,6 +106,12 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
       return ok
     })
   }
+
+  /**
+   * The guard of a create that selects what it made: asks to discard the unsaved edits first, before anything is written, and
+   * resolves whether to go on. Declined, the create writes nothing and its dialog stays open with what was typed.
+   */
+  const guardLeave = (): Promise<boolean> => leaveData(() => undefined)
 
   /**
    * What is shown instead of the item, when something is: All model files (S3) or the pending migration (S6), one at a time. Choosing a
@@ -244,5 +268,5 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
     if (view.value === 'data') void live.refresh()
   })
 
-  return { collections, connections, queries, actions, queryId, actionId, dataQuery, dataAction, collectionId, connectionId, dataSpecial, dataShown, dataFiles, dataMigrations, dataPlan, dataMigration, planShown, dataFile, dataDirty, leaveData, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, rowsEditable, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
+  return { collections, connections, queries, actions, queryId, actionId, dataQuery, dataAction, collectionId, connectionId, dataSpecial, dataShown, dataFiles, dataMigrations, dataPlan, dataMigration, planShown, dataFile, dataDirty, reportDirty, leaveData, guardLeave, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, rowsEditable, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
 }

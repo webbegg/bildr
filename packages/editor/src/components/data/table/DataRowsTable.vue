@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, reactive, ref, useTemplateRef, watch } from 'vue'
 import type { Row } from '@bildr/codegen/query'
 import { fieldLabel } from '../../../shared/dataModel.ts'
 import type { DataField, FieldType } from '../../../shared/dataModel.ts'
@@ -7,6 +7,8 @@ import { cellEditText, cellValue, moveCell } from '../../../shared/dataGrid.ts'
 import type { CellMove, CellPos } from '../../../shared/dataGrid.ts'
 import { rowId } from '../../../shared/dataTable.ts'
 import type { TableSort } from '../../../shared/dataTable.ts'
+import { useDirtyReport } from '../../../editor/useDirtyReport.ts'
+import { useEditor } from '../../../editor/useEditor.ts'
 import type { CellValue, SaveRefusal } from '../../../editor/sampleRows.ts'
 
 /** What a cell says when the row changed under it (a conflict): the typed value is kept, and the next Enter saves it over the row as it is now. */
@@ -24,6 +26,8 @@ const ROW_CHANGED = 'This row changed: your value is kept; press Enter to save i
  * row has a checkbox and a delete button, and what is typed is saved at once through `save`, which answers the module's refusal
  * (undefined when it was saved). A refusal stays on its cell with the text that was typed; a cell is disabled while its save is
  * in flight. A read-only field's cells are shown and moved over, never edited. Without `editable` nothing here writes.
+ * A cell whose save was refused holds text that is not saved, so it is an unsaved edit of the workspace ("Post row"): leaving it
+ * asks first. It stops being one when the cell is saved, cancelled (Escape) or gone.
  */
 const { fields, rows, loaded, sort = null, sortable = true, openable = true, openId = null, editable = false, selected = [], save = undefined } = defineProps<{
   fields: DataField[]
@@ -60,6 +64,14 @@ const editing = ref<{ id: string, name: string, text: string, refused: string | 
 /** The cells (`<row id>|<field>`) whose save is in flight, and the refusal of those whose last save was refused. */
 const pending = reactive(new Set<string>())
 const refusals = reactive<Record<string, string>>({})
+
+const editor = useEditor()
+// Another collection's fields, or Live rows (which are not edited), are not the cell that was being typed in: it is given up.
+watch([() => editable, () => fields.map(field => field.id).join('|')], () => {
+  editing.value = null
+  active.value = null
+})
+useDirtyReport(() => editing.value?.refused != null ? `${editor.dataCollection?.name ?? 'Sample data'} row` : null)
 
 const cellKey = (id: string, name: string) => `${id}|${name}`
 const size = computed(() => ({ rows: rows.length, cols: fields.length }))

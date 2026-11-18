@@ -162,6 +162,11 @@ function syncRows() {
 async function save() {
   if (!canSave.value) return
   saving.value = true
+  // A new collection is shown instead of the item: unsaved edits are asked about before anything is written.
+  if (!props.collection && !await editor.guardLeave()) {
+    saving.value = false
+    return
+  }
   const created = props.collection ? undefined : await create()
   const done = props.collection ? await applyMapping() : !!created
   saving.value = false

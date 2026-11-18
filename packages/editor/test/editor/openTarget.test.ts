@@ -57,11 +57,11 @@ describe('opening a target', () => {
 
   it('asks first before a route leaves unsaved edits of the Data workspace, and does not push it when they are kept', async () => {
     const editor = await boot()
-    editor.dataDirty = '.bildr/modules/blog/entities/post.json'
+    editor.reportDirty().set('Post (JSON)')
     const push = vi.fn()
     const opened = openTarget(code, { editor, push })
     await settle()
-    expect(editor.confirmRequest?.title).toBe('Discard unsaved changes to .bildr/modules/blog/entities/post.json?')
+    expect(editor.confirmRequest?.title).toBe('Discard unsaved changes to Post (JSON)?')
     expect(push).not.toHaveBeenCalled()
     editor.confirmRequest?.answer(false)
     expect(await opened).toBe(false)
@@ -70,7 +70,7 @@ describe('opening a target', () => {
 
   it('pushes the route once the unsaved edits are given up', async () => {
     const editor = await boot()
-    editor.dataDirty = '.bildr/modules/blog/entities/post.json'
+    editor.reportDirty().set('Post (JSON)')
     const push = vi.fn()
     const opened = openTarget(files, { editor, push })
     await settle()

@@ -3,21 +3,21 @@ import { computed } from 'vue'
 import { useDesign } from './store.ts'
 
 /**
- * Where the canvas's data comes from (Q12): a "live" badge when the rows are the
- * app's, "fixtures" when the app could not answer (or lists nothing) and the
- * model's fixtures stand in, "live + fixtures" when it is a mix; a Refresh button
+ * Where the canvas's data comes from (Q12), in the Data workspace's words: "Live" when the rows are the
+ * app's, "Sample data" when the app could not answer (or lists nothing) and the
+ * collection's sample rows stand in, "Live + Sample data" when it is a mix; a Refresh button
  * reads the app again. On a detail page, the record picker chooses which record
  * the page shows (its route parameter).
  */
 
 const design = useDesign()
 const state = computed(() => design.rowsOf.state.value)
-const LABELS = { live: 'live', fixtures: 'fixtures', partial: 'live + fixtures' } as const
+const LABELS = { live: 'Live', fixtures: 'Sample data', partial: 'Live + Sample data' } as const
 const names = (ids: string[]) => ids.map(id => Object.values(design.model.value?.modules ?? {}).flatMap(entry => entry.entities).find(entity => entity.id === id)?.plural ?? id)
 const title = computed(() => {
   if (state.value === 'live') return 'The canvas shows the rows of the running app'
   const why = design.rowsOf.fixtureEntities.value.map(id => `${names([id])[0]} ${design.rowsOf.reasons.value[id] ?? 'has no rows from the app'}`)
-  return `The canvas shows the model's fixtures where the app's rows could not be read: ${why.join('; ')}. Start the app (nuxt dev) and refresh.`
+  return `The canvas shows the Sample data where the app's rows could not be read: ${why.join('; ')}. Start the app (nuxt dev) and refresh.`
 })
 const label = (key: string): string => {
   const detail = design.detail.value

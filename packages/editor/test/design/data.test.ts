@@ -29,7 +29,7 @@ describe('the canvas shows the app\'s rows', () => {
     expect(ids(lastData().all)).toEqual(['draft', 'two', 'one'])
     expect(ids(lastData().quotes)).toEqual([1, 2])
     expect(badge()?.dataset.state).toBe('live')
-    expect(badge()?.textContent).toContain('live')
+    expect(badge()?.textContent?.trim()).toBe('Live')
   })
 
   it('pages through a list route until it has every row', async () => {
@@ -57,7 +57,10 @@ describe('the canvas shows the app\'s rows', () => {
     await open({}, 'pg_index', {})
     expect(ids(lastData().all)).toEqual(['a-draft', 'hello-bildr'])
     expect(badge()?.dataset.state).toBe('fixtures')
-    expect(badge()?.textContent).toContain('fixtures')
+    expect(badge()?.textContent?.trim()).toBe('Sample data')
+    // The tooltip speaks the workspace's words too: Sample data, never fixtures.
+    expect(badge()?.title).toContain('Sample data')
+    expect(badge()?.title).not.toMatch(/fixture/i)
   })
 
   it('gives up on a route that never answers, falls back to the fixtures and says why in the badge', async () => {
@@ -87,6 +90,8 @@ describe('the canvas shows the app\'s rows', () => {
     expect(ids(lastData().all)).toEqual(['draft', 'two', 'one'])
     expect(lastData().quotes).toEqual([])
     expect(badge()?.dataset.state).toBe('partial')
+    expect(badge()?.textContent?.trim()).toBe('Live + Sample data')
+    expect(badge()?.title).not.toMatch(/fixture/i)
   })
 
   it('reads the rows again on a regenerate and on its Refresh button', async () => {

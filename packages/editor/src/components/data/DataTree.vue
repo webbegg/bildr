@@ -143,6 +143,8 @@ const connectionMenu: DropdownMenuItem[] = [
 async function addConnection() {
   const name = connectionName.value.trim()
   if (!name) return
+  // The connection made is shown instead of the item: unsaved edits are asked about before anything is written.
+  if (!await editor.guardLeave()) return
   const result = await editor.run('datasource_create', { name, kind: 'rest', defaults: { baseUrl: NEW_CONNECTION_URL } }) as { datasourceId: string } | undefined
   if (result) {
     editor.connectionId = result.datasourceId

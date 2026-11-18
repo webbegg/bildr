@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import type { ActionFile } from '@bildr/codegen/model'
 import { attempt } from '../../editor/dataArtifactActions.ts'
+import { useDirtyReport } from '../../editor/useDirtyReport.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 
 /**
@@ -10,7 +11,7 @@ import { useEditor } from '../../editor/useEditor.ts'
  * path, what it returns and how many steps it has, with a link to the Steps tab, where they are listed and edited.
  * What the module refuses is shown under the form, with what was typed kept. Every edit is one `action_update`, saved when the
  * field is left; a field whose save was refused still holds its text, so the editor asks before the workspace moves away from it
- * (`dataDirty`, as for the JSON editor). A field toggle is not taken while another save is in flight: it would be built from
+ * (reported to the editor's registry, as for the JSON editor). A field toggle is not taken while another save is in flight: it would be built from
  * the list before that save.
  */
 const { action } = defineProps<{ action: ActionFile }>()
@@ -37,12 +38,7 @@ watch(() => action.id, () => {
 })
 
 const name = computed(() => action.label || action.name)
-watch([() => refused.size, name], ([count, label]) => {
-  editor.dataDirty = count ? label : null
-}, { flush: 'sync', immediate: true })
-onBeforeUnmount(() => {
-  editor.dataDirty = null
-})
+useDirtyReport(() => refused.size ? name.value : null)
 
 async function update(patch: Record<string, unknown>, field?: TextField) {
   error.value = ''

@@ -43,7 +43,9 @@ watch([name, entity, result, template], () => {
 
 async function submit() {
   const typed = name.value.trim()
-  if (!typed || !entity.value) return
+  if (!typed || !entity.value || saving.value) return
+  // What is made is shown instead of the item: unsaved edits are asked about before anything is written.
+  if (!await editor.guardLeave()) return
   if (what.value === 'query') {
     const done = await run<{ queryId: string }>('query_create', { entity: entity.value, result: result.value, name: typed }, 'Could not create the query')
     if (!done) return

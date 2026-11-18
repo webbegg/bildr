@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, toRef, watch } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
 import { ActionCallError, callAction, errorMessage } from '../api.ts'
 import { filesLocationQuery } from '../editor/dataLocation.ts'
 import { jsonErrorMessage } from '../editor/jsonError.ts'
-import { useEditor } from '../editor/useEditor.ts'
+import { useDirtyReport } from '../editor/useDirtyReport.ts'
 import { useFileText } from '../editor/useFileText.ts'
+import { artifactLabel } from '../model.ts'
 import type { Json, ModelProblem } from '../types.ts'
 import ProblemsList from './ProblemsList.vue'
 
@@ -17,7 +18,8 @@ import ProblemsList from './ProblemsList.vue'
  * The text is the file's (`useFileText`): it follows the file when it changes elsewhere unless it has been typed on, and
  * then says so and waits for the user to take the new version or keep their edits, which Save waits for too. Save also
  * sends the file it started from (`base`), so the module refuses a write over a file that changed in the meantime. Edits
- * that are not saved are reported to the editor (`dataDirty`), which asks before the workspace moves away from them. The
+ * that are not saved are reported to the editor under the item's name, `label` (the JSON tab's `Post (JSON)`; in All model files the file's own
+ * name, never its `.bildr/` path), which asks before the workspace moves away from them. The
  * module takes a save only when the whole model is valid after it, and otherwise answers with the problems, shown here with
  * the text kept. The files other than this one that have problems are links that open them in All model files.
  */
@@ -26,10 +28,12 @@ const props = withDefaults(defineProps<{
   invalid?: Record<string, string>
   /** The file shown (a path); empty when none is. */
   path?: string
+  /** What the workspace calls these edits when it asks to discard them; the file's name by default. */
+  label?: string
   deletable?: boolean
   /** Asked before a delete; the delete is made when it answers true. */
   confirmDelete?: (path: string) => Promise<boolean>
-}>(), { invalid: () => ({}), path: '', deletable: true, confirmDelete: undefined })
+}>(), { invalid: () => ({}), path: '', label: undefined, deletable: true, confirmDelete: undefined })
 const emit = defineEmits<{
   /** The module took the file. */
   saved: [path: string]
@@ -38,7 +42,6 @@ const emit = defineEmits<{
   conflict: []
 }>()
 
-const editor = useEditor()
 const file = useFileText({ path: toRef(props, 'path'), files: () => props.files, invalid: () => props.invalid })
 const { content, external, unreadable } = file
 const saving = ref(false)
@@ -48,12 +51,8 @@ const done = ref<string | null>(null)
 const TEXT_HEIGHT = 'h-[max(12rem,calc(100dvh-24rem))]'
 
 // The editor asks before it moves away from edits that are not saved.
-watch([file.dirty, () => props.path], ([dirty, path]) => {
-  editor.dataDirty = dirty ? path : null
-}, { flush: 'sync', immediate: true })
-onBeforeUnmount(() => {
-  editor.dataDirty = null
-})
+const dirtyLabel = computed(() => props.label ?? artifactLabel(props.files[props.path], props.path))
+useDirtyReport(() => file.dirty.value ? dirtyLabel.value : null)
 
 /** The path of the file just deleted: the parent clears it, and "Deleted." stays. */
 let deletedPath: string | null = null

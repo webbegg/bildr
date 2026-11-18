@@ -156,6 +156,34 @@ describe('the New collection dialog', () => {
     expect(editor.dataTab).toBe('fields')
   })
 
+  it('asks before it writes when something is unsaved: kept, nothing is made and the dialog stays; given up, it creates and shows the collection', async () => {
+    const { editor, actions, closed } = await mounted({ ...made, datasource_create: () => ({ datasourceId: 'ds_sample', filePath: '.bildr/datasources/sample.json', database: false }) })
+    editor.reportDirty().set('Post (JSON)')
+    await type('Menu')
+    await create()
+    expect(editor.confirmRequest?.title).toBe('Discard unsaved changes to Post (JSON)?')
+    editor.confirmRequest?.answer(false)
+    await settle()
+    for (const name of ['datasource_create', 'entity_create']) expect(actions.named(name), name).toEqual([])
+    expect(closed).toEqual([])
+    expect(name().value).toBe('Menu')
+    expect(q('[data-artifact-submit]')!.hasAttribute('disabled')).toBe(false)
+    await create()
+    editor.confirmRequest?.answer(true)
+    await settle()
+    expect(actions.named('entity_create').map(call => call.input)).toEqual([{ name: 'Menu', source: 'ds_sample', fields: [{ name: 'title', type: 'text' }] }])
+    expect(editor.collectionId).toBe('ent_menu')
+    expect(editor.dataTab).toBe('fields')
+    expect(closed).toEqual([false])
+  })
+
+  it('does not ask when nothing is unsaved', async () => {
+    const { editor } = await mounted()
+    await type('Menu')
+    await create()
+    expect(editor.confirmRequest).toBeNull()
+  })
+
   it('makes nothing when the user cancels', async () => {
     const { actions, closed } = await mounted()
     await type('Menu')

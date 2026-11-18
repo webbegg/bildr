@@ -14,6 +14,7 @@ import { useEditor } from '../../editor/useEditor.ts'
  * new connection (`import`), which finishes the collection; nothing is made before that. `connection` opens it on REST API with
  * that one chosen (the connection's "Add…").
  *
+ * It asks to discard unsaved edits of the workspace before it writes (`guardLeave`): declined, nothing is made and it stays open.
  * It cannot be closed while it creates, and what a create answers after the dialog was closed and opened again is not
  * for the dialog it is now: nothing closes, nothing is shown, the mode and the tab stay. A Database chosen when the project
  * loses its database falls back to Sample data.
@@ -71,6 +72,12 @@ async function submit() {
   }
   const started = opening
   saving.value = true
+  // What the create selects replaces the item shown: unsaved edits are asked about before anything is written.
+  if (!await editor.guardLeave()) {
+    if (started === opening) saving.value = false
+    return
+  }
+  if (started !== opening) return
   const id = await editor.createCollection({ name: outcome.name, storage: outcome.storage })
   if (started !== opening) return
   saving.value = false

@@ -1,7 +1,7 @@
-import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import type { Ref } from 'vue'
 import { plainCopy } from './draftJson.ts'
-import { useEditor } from './useEditor.ts'
+import { useDirtyReport } from './useDirtyReport.ts'
 
 /**
  * What the Data workspace's draft forms share (S10: the query Definition, D10b, and the action Steps, D10c): a form holds an
@@ -12,7 +12,8 @@ import { useEditor } from './useEditor.ts'
  *
  * - `dirty`: the draft has edits, and `stale`: it has edits while the stored item differs from its base in a part the form
  *   holds. Save waits for the user's choice, the form's `DataStaleNotice`: `discard` ("Load the new version") or `keepMine`.
- * - `dataDirty`: while the draft has edits, the workspace asks before it moves away (`editor.dataDirty` is the item's name).
+ * - While the draft has edits, the workspace asks before it moves away: the form reports them to the editor's registry under the
+ *   item's name (`useDirtyReport`), and clears only its own report when it goes.
  * - The draft follows the model: another item replaces it, and so does a change of the model while nothing was edited.
  *
  * The form's own part is what to compare and how to rebase (`options`), and its Save.
@@ -39,7 +40,6 @@ export interface DraftFormOptions<Stored, Draft> {
 }
 
 export function useDraftForm<Stored, Draft>(options: DraftFormOptions<Stored, Draft>) {
-  const editor = useEditor()
   const draft = ref(options.open(options.stored())) as Ref<Draft>
   /** The item the draft started from. Replaced as a whole, never edited. */
   const base = shallowRef<Stored>(plainCopy(options.stored()))
@@ -50,12 +50,7 @@ export function useDraftForm<Stored, Draft>(options: DraftFormOptions<Stored, Dr
   /** The item changed outside the form while it has edits (not while a save of this form is refreshing the model). */
   const stale = computed(() => dirty.value && !saving.value && options.changedOutside(base.value, options.stored()))
 
-  watch([dirty, options.label], ([unsaved, label]) => {
-    editor.dataDirty = unsaved ? label : null
-  }, { flush: 'sync', immediate: true })
-  onBeforeUnmount(() => {
-    editor.dataDirty = null
-  })
+  useDirtyReport(() => dirty.value ? options.label() : null)
 
   function load(switched: boolean) {
     const before = draft.value

@@ -853,10 +853,61 @@ describe('Migrations in the Data workspace (S6)', () => {
   it('asks before it leaves unsaved edits in All model files', async () => {
     const { editor } = await bootData()
     editor.dataFiles = true
-    editor.dataDirty = '.bildr/modules/blog/entities/post.json'
+    editor.reportDirty().set('Post (JSON)')
     editor.dataMigrations = true
     expect(editor.dataFiles).toBe(true)
     expect(editor.dataMigrations).toBe(false)
+  })
+})
+
+describe('unsaved edits have one owner at a time (the registry)', () => {
+  it('keeps the other reporter dirty when one clears: each clears only its own', async () => {
+    const { editor } = await bootData()
+    const json = editor.reportDirty()
+    const overview = editor.reportDirty()
+    expect(editor.dataDirty).toBeNull()
+    json.set('Post (JSON)')
+    overview.set('Create post')
+    expect(editor.dataDirty).toBe('Post (JSON)')
+    // The JSON editor unmounts (its tab was left): the Overview's refused text is still unsaved.
+    json.clear()
+    expect(editor.dataDirty).toBe('Create post')
+    // A stale clear (an unmount that runs again, or late) does not touch the other's state.
+    json.clear()
+    json.set(null)
+    expect(editor.dataDirty).toBe('Create post')
+    overview.set(null)
+    expect(editor.dataDirty).toBeNull()
+  })
+
+  it('updates a reporter\'s label in place, and a reporter set again after a clear is dirty again', async () => {
+    const { editor } = await bootData()
+    const one = editor.reportDirty()
+    one.set('Create post')
+    one.set('Create a post')
+    expect(editor.dataDirty).toBe('Create a post')
+    one.clear()
+    expect(editor.dataDirty).toBeNull()
+    one.set('Create a post')
+    expect(editor.dataDirty).toBe('Create a post')
+  })
+
+  it('guardLeave asks when something is unsaved, resolves false when the edits are kept and true (with nothing unsaved) when they are given up', async () => {
+    const { editor } = await bootData()
+    expect(await editor.guardLeave()).toBe(true)
+    expect(editor.confirmRequest).toBeNull()
+    editor.reportDirty().set('Post (JSON)')
+    const kept = editor.guardLeave()
+    await settle()
+    expect(editor.confirmRequest?.title).toBe('Discard unsaved changes to Post (JSON)?')
+    editor.confirmRequest?.answer(false)
+    expect(await kept).toBe(false)
+    expect(editor.dataDirty).toBe('Post (JSON)')
+    const given = editor.guardLeave()
+    await settle()
+    editor.confirmRequest?.answer(true)
+    expect(await given).toBe(true)
+    expect(editor.dataDirty).toBeNull()
   })
 })
 

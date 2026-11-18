@@ -185,6 +185,7 @@ async function onTabKeyDown(event: KeyboardEvent) {
             v-else-if="editor.dataTab === 'json'"
             :key="itemFile"
             :path="itemFile"
+            :name="title"
             :linked="!!collection"
           />
         </div>

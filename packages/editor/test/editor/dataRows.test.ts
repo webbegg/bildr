@@ -7,7 +7,7 @@ import { FOLDED_KEY } from '../../src/editor/dataTree.ts'
 import { takeStart } from '../../src/editor/views.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 import { byLabel, FakeEventSource, indexPage, setupHarness, world } from '../design/harness.ts'
-import { fixtureModule, inputs, open, q, qa, text } from './dataKit.ts'
+import { confirmText, fixtureModule, inputs, open, q, qa, text, treeItem } from './dataKit.ts'
 
 /**
  * The Rows tab on Sample data (D4, S4): cells edited in place, the keyboard, add, delete and bulk delete, and the record panel's
@@ -226,6 +226,55 @@ describe('Sample data refusals', () => {
     await click(cell(0, 3)!.querySelector<HTMLElement>('[data-cell-toggle]'))
     expect(text(cell(0, 3)!.querySelector('[data-cell-error]'))).toBe('Cannot toggle')
     expect(cell(0, 3)!.querySelector('[data-cell-toggle]')!.getAttribute('aria-checked')).toBe('true')
+  })
+})
+
+describe('a refused cell is an unsaved edit', () => {
+  const DISCARD = 'Discard unsaved changes to Post row?'
+  /** Types a value the module refuses into the slug of the first row. */
+  const refuse = async () => {
+    const input = await edit(0, 1)
+    await typeInto(input, 'Not Valid')
+    await key(input, 'Enter')
+    expect(q('[data-cell-error]')).not.toBeNull()
+  }
+
+  it('asks before the workspace leaves it, keeps the text when the edit is kept, and moves on when it is given up', async () => {
+    await sample()
+    await refuse()
+    await click(treeItem('quote'))
+    expect(confirmText()).toContain(DISCARD)
+    await click(q('[data-confirm-cancel]'))
+    expect(q$('[data-cell-input]')!.value).toBe('Not Valid')
+    expect(treeItem('post')?.getAttribute('aria-selected')).toBe('true')
+    await click(treeItem('quote'))
+    await click(q('[data-confirm-ok]'))
+    expect(treeItem('quote')?.getAttribute('aria-selected')).toBe('true')
+    // Nothing is left to ask about: the table that held it is gone.
+    await click(treeItem('post'))
+    expect(q('[data-confirm]')).toBeNull()
+  })
+
+  it('is not asked about once Escape gives the cell back, or once a corrected value is saved', async () => {
+    await sample()
+    await refuse()
+    await key(q('[data-cell-input]'), 'Escape')
+    await click(treeItem('quote'))
+    expect(q('[data-confirm]')).toBeNull()
+    await click(treeItem('post'))
+    await refuse()
+    await typeInto(q('[data-cell-input]'), 'valid-slug')
+    await key(q('[data-cell-input]'), 'Enter')
+    expect(q('[data-cell-error]')).toBeNull()
+    await click(treeItem('quote'))
+    expect(q('[data-confirm]')).toBeNull()
+  })
+
+  it('is not asked about when the cell was only opened', async () => {
+    await sample()
+    await edit(0, 1)
+    await click(treeItem('quote'))
+    expect(q('[data-confirm]')).toBeNull()
   })
 })
 

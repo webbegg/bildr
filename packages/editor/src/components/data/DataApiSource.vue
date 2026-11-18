@@ -145,6 +145,11 @@ const canSave = computed(() => valid.value && total.value !== null && !!source.v
 async function save() {
   if (!canSave.value || !source.value) return
   saving.value = true
+  // The collection made is shown instead of the item: unsaved edits are asked about before anything is written.
+  if (!await editor.guardLeave()) {
+    saving.value = false
+    return
+  }
   const typed = name.value.trim()
   const plural = typed === proposal.value.name ? proposal.value.plural : undefined
   const created = await editor.run('entity_create', {

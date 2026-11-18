@@ -16,9 +16,11 @@ import { FOCUS_RING } from '../../editorUi.ts'
  * than three queries are one select, so the strip does not wrap. A save refreshes the model, so Fields and Endpoints show
  * the change.
  */
-const { path, linked = false } = defineProps<{
+const { path, name, linked = false } = defineProps<{
   /** The item's own file. */
   path: string | undefined
+  /** The item's name: its unsaved edits are asked about as `<name> (JSON)`. */
+  name: string
   /** The item is a collection: it has linked files. */
   linked?: boolean
 }>()
@@ -99,6 +101,7 @@ function choose(next: string) {
           :files="files"
           :invalid="invalid"
           :path="current"
+          :label="`${name} (JSON)`"
           :deletable="false"
           @saved="refresh"
           @conflict="refresh"

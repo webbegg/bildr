@@ -482,7 +482,7 @@ await run('data', async ({ page, browser, errors }) => {
   // The text is not saved: moving away asks first, and Cancel keeps it.
   await page.locator('[data-raw-model]').click()
   await page.locator('[data-confirm]').waitFor()
-  check((await page.locator('[role=dialog]').innerText()).includes('Discard unsaved changes to .bildr/modules/blog/entities/menu.json?'), 'leaving the JSON tab with unsaved edits asks to discard them')
+  check((await page.locator('[role=dialog]').innerText()).includes('Discard unsaved changes to Menu (JSON)?'), 'leaving the JSON tab with unsaved edits asks to discard them')
   await page.locator('[data-confirm-cancel]').click()
   check(await page.locator('[data-data-json]').count() === 1 && (await rawContent.inputValue()).includes('ent_missing'), 'Cancel keeps the tab and the text')
 

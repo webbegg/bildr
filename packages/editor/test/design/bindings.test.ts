@@ -335,6 +335,20 @@ describe('a Form\'s action and fields', () => {
   })
 })
 
+describe('the words of the Form panels', () => {
+  const said = (selector: string) => [...document.body.querySelectorAll(selector)].map(element => `${element.textContent} ${element.getAttribute('title') ?? ''}`).join(' ').replace(/\s+/g, ' ')
+
+  it('say collection, never entity, in the inspector and in the dialog that asks which action the form runs', async () => {
+    await open({}, 'pg_new_post')
+    await select('n_form')
+    expect([...document.body.querySelectorAll('[title]')].map(element => element.getAttribute('title')).join('|')).toContain('The fields of the action\'s collection this form edits')
+    expect(said('[data-testid="form-field-fld_body"], [title]')).not.toMatch(/entit/i)
+    await insertType('Form')
+    expect(said('[role="dialog"]')).toContain('A form submits its fields to an action that takes a collection (create a post, say).')
+    expect(said('[role="dialog"]')).not.toMatch(/entit/i)
+  })
+})
+
 describe('inserting a Form from the palette', () => {
   it('asks which action it runs, and inserts it with that action and no fields', async () => {
     const { actions } = await open({ node_insert: ok({ nodeId: 'n_form_2' }) }, 'pg_new_post')

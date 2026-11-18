@@ -1048,6 +1048,20 @@ describe('connections', () => {
     expect(inputs(actions, 'datasource_create')).toEqual([{ name: 'Billing', kind: 'rest', defaults: { baseUrl: 'https://api.example.com' } }])
   })
 
+  it('asks about unsaved edits before it adds a connection, and writes nothing when they are kept', async () => {
+    const { actions } = await open({ datasource_create: ok({ datasourceId: 'ds_billing' }) }, {}, '/data?item=collection:ent_post&tab=json')
+    await typeInto(q('[data-testid="raw-content"]'), '{ "draft": true }')
+    await menuItem(q('[data-synced-add]'), 'New connection')
+    await typeInto(q('[aria-label="New connection name"]'), 'Billing')
+    q('[data-new-connection]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(confirmText()).toContain('Discard unsaved changes to Post (JSON)?')
+    expect(inputs(actions, 'datasource_create')).toEqual([])
+    await click(q('[data-confirm-cancel]'))
+    expect(inputs(actions, 'datasource_create')).toEqual([])
+    expect(treeItem('post')?.getAttribute('aria-selected')).toBe('true')
+  })
+
   it('renames a connection, and deletes it with its collections after a confirmation', async () => {
     freeQuotes()
     const { actions } = await open({ datasource_update: ok(), entity_delete: ok(), datasource_delete: ok({ database: true }) })
@@ -1577,13 +1591,15 @@ describe('the JSON tab and All model files (S3)', () => {
   })
   describe('unsaved edits (S3)', () => {
     const edit = async () => typeInto(q('[data-testid="raw-content"]'), '{ "draft": true }')
-    const DISCARD = `Discard unsaved changes to ${POST}?`
+    // The item's name, never a `.bildr/` path: the JSON tab's `Post (JSON)`, and in All model files the file's own name.
+    const DISCARD = 'Discard unsaved changes to Post (JSON)?'
+    const DISCARD_FILE = 'Discard unsaved changes to Post?'
 
     it('asks before another file is chosen in All model files, keeps the text when it is declined, and shows the other file when it is confirmed', async () => {
       const { router } = await open(keeping(), {}, `/data?item=files&file=${encodeURIComponent(POST)}`)
       await edit()
       await click(fileButton(INDEX_PAGE))
-      expect(confirmText()).toContain(DISCARD)
+      expect(confirmText()).toContain(DISCARD_FILE)
       await click(q('[data-confirm-cancel]'))
       expect(rawText()!.value).toBe('{ "draft": true }')
       expect(text(q('[data-file-path]'))).toBe(POST)
@@ -2973,27 +2989,32 @@ describe('unsaved edits of a query\'s Definition (S10)', () => {
     expect(confirmText()).toContain(DISCARD)
   })
 
-  it('asks before a dirty JSON edit is left for a query, and for a new query', async () => {
-    await open({ ...artifactModule() }, {}, '/data?item=collection:ent_post&tab=json')
+  it('asks before a dirty JSON edit is left for a query, and before a new query is written', async () => {
+    const { actions } = await open({ ...artifactModule() }, {}, '/data?item=collection:ent_post&tab=json')
     await typeInto(q('[data-testid="raw-content"]'), '{ "draft": true }')
-    const discard = 'Discard unsaved changes to .bildr/modules/blog/entities/post.json?'
+    const discard = 'Discard unsaved changes to Post (JSON)?'
     await click(treeItem('featured'))
     expect(confirmText()).toContain(discard)
     await click(q('[data-confirm-cancel]'))
     expect(treeItem('post')?.getAttribute('aria-selected')).toBe('true')
-    // Creating one makes the query, and asks before the workspace moves to it.
+    // Creating one asks before it writes anything: kept, nothing is made and the dialog stays open with what was typed.
     await click(byLabel('New query'))
     await typeInto(inputOf('[data-artifact-name]'), 'recent posts')
     await click(q('[data-artifact-submit]'))
     expect(confirmText()).toContain(discard)
-    expect(q('[data-tree-item="query:q_recent_posts"]')).not.toBeNull()
+    expect(actions.named('query_create')).toHaveLength(0)
+    expect(q('[data-tree-item="query:q_recent_posts"]')).toBeNull()
     await click(q('[data-confirm-cancel]'))
+    expect(actions.named('query_create')).toHaveLength(0)
+    expect(inputOf('[data-artifact-name]').value).toBe('recent posts')
     expect(treeItem('post')?.getAttribute('aria-selected')).toBe('true')
     expect((q('[data-testid="raw-content"]') as HTMLTextAreaElement | null)?.value ?? '').toContain('draft')
-    await click(q('[data-tree-item="query:q_recent_posts"]'))
+    // Given up, it creates the query and shows it.
+    await click(q('[data-artifact-submit]'))
     await click(q('[data-confirm-ok]'))
-    // The tab chosen stays (the query has a JSON tab too).
-    expect(activeTab()).toBe('json')
+    expect(actions.named('query_create')).toHaveLength(1)
+    expect(q('[data-tree-item="query:q_recent_posts"]')).not.toBeNull()
+    expect(activeTab()).toBe('definition')
     expect(text(q('[data-data-title] h2'))).toBe('Recent posts')
   })
 })
