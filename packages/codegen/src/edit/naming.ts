@@ -2,13 +2,13 @@ import { kebab as fileName, pascal } from '../generate/text.ts'
 import { camel, fail } from './core.ts'
 import type { Draft } from './core.ts'
 import { actionNameProblem, queryNameProblem } from './generated-names.ts'
-import { autoImportedNameProblem, composableNameProblem } from './reserved-names.ts'
+import { autoImportedNameProblem, composableProblem } from './reserved-names.ts'
 
 /**
- * Names of queries and actions (D10a). Both become code: a query the composable `use<Name>`, an
- * action the use-case `<name>`, its composable `use<Name>`, its route and its test. So a name is
- * camelCase, not a reserved word, and free among a module's queries AND actions (ignoring case:
- * their files and composables share a folder).
+ * Names of queries, actions and states (D10a, B1). Each becomes code: a query the composable `use<Name>`, an action the use-case
+ * `<name>`, its composable `use<Name>`, its route and its test, a state the composable `use<Module><Name>` and its collection file.
+ * So a name is camelCase, not a reserved word, and free among a module's queries AND actions (ignoring case: their files and
+ * composables share a folder), and a state's does not meet any of them. Also the two text helpers the editor's labels share.
  */
 
 const NAME = /^[a-z][A-Za-z0-9]*$/
@@ -27,6 +27,8 @@ export const isUnusable = (name: string): boolean => UNUSABLE.has(name)
 
 /** `blogPosts` → `blog posts`. */
 export const spaced = (name: string): string => name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
+
+/** `blog posts` → `Blog posts`. */
 export const sentence = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1)
 
 export type CallableKind = 'query' | 'action'
@@ -52,7 +54,7 @@ export const checkCallableFree = (draft: Draft, module: string, name: string, se
   if (list) fail('invalid', `"${name}" is the name of the generated list use-case of ${list.name}: pick another`)
   // A state's composable sits in the same folder: use<Module><State>.
   const state = mod.state.find(entry => stateComposableOf(module, entry.name).toLowerCase() === composableOf(name).toLowerCase())
-  if (state) fail('invalid', `"${name}" would generate ${composableOf(name)}, the composable of the state ${state.name} (${state.id}): pick another`)
+  if (state) fail('invalid', `The name "${name}" clashes with the state ${state.name} (${state.id}), which the app also names ${composableOf(name)}: pick another`)
 }
 
 /** Refuses an action name the module's generated code already declares (its composition root, adapters, error factories…). */
@@ -88,7 +90,7 @@ export const stateName = (given: string): string => {
   const name = NAME.test(given) ? given : camel(given)
   if (!NAME.test(name)) fail('invalid', `"${given}" can't be a state name: start with a letter, like "preferences"`)
   if (isUnusable(name)) fail('invalid', `"${name}" is a reserved word: pick another state name`)
-  if (STATE_LOCALS.includes(name)) fail('invalid', `"${name}" is declared by the generated composable of every state (${STATE_LOCALS.join(', ')}): pick another name`)
+  if (STATE_LOCALS.includes(name)) fail('invalid', `"${name}" is a name the generated code of every state already uses: pick another name`)
   const auto = autoImportedNameProblem(name)
   if (auto) fail('invalid', auto)
   return name
@@ -106,9 +108,9 @@ export const checkStateFree = (draft: Draft, module: string, name: string, self?
   const composable = stateComposableOf(module, name)
   const callable = [...mod.queries.map(query => ({ kind: 'query', id: query.id, name: query.name })), ...mod.actions.map(action => ({ kind: 'action', id: action.id, name: action.name }))]
     .find(entry => composableOf(entry.name).toLowerCase() === composable.toLowerCase())
-  if (callable) fail('invalid', `"${name}" would generate ${composable}, which the ${callable.kind} ${callable.name} (${callable.id}) already generates: pick another`)
-  const problem = composableNameProblem(`${module}-${name}`)
+  if (callable) fail('invalid', `The name "${name}" clashes with the ${callable.kind} ${callable.name} (${callable.id}), which the app also names ${composable}: pick another`)
+  const problem = composableProblem(composable, name)
   if (problem) fail('invalid', problem)
   const collection = mod.entities.find(entity => fileName(entity.plural) === fileName(name))
-  if (collection) fail('invalid', `"${name}" would generate data/${fileName(name)}.collection.ts, the collection of ${collection.name}: pick another`)
+  if (collection) fail('invalid', `The name "${name}" is already taken by the collection ${collection.name}: pick another`)
 }

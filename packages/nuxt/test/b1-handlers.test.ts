@@ -148,7 +148,7 @@ describe('behaviour module actions', () => {
     expect(added).toEqual({ index: 1, addedUses: [], changed: [PAGE] })
     expect(await done('node_interaction_update', { file: 'pg_new_post', nodeId: 'n_cancel', index: 1, on: 'mouseleave' })).toEqual({ addedUses: [], droppedUses: [], changed: [PAGE] })
     // The last step that sets the state goes: the use the page had of it goes with it.
-    expect(await done('node_interaction_remove', { file: 'pg_new_post', nodeId: 'n_cancel', index: 1 })).toEqual({ droppedUses: [{ as: 'reading', state: 'st_reading' }], changed: [PAGE] })
+    expect(await done('node_interaction_remove', { file: 'pg_new_post', nodeId: 'n_cancel', index: 1 })).toEqual({ droppedUses: [{ as: 'reading', state: 'st_reading' }], interactions: [{ index: 0, on: 'click' }], changed: [PAGE] })
     expect(read(PAGE).uses.state).toBeUndefined()
     expect(await done('page_use_add', { page: 'pg_new_post', as: 'reading', state: 'st_reading' })).toEqual({ as: 'reading', changed: [PAGE] })
     expect(await done('page_use_remove', { page: 'pg_new_post', state: 'st_reading' })).toEqual({ changed: [PAGE] })

@@ -56,7 +56,7 @@ const buildFields = (draft: Draft, given: FieldGiven[], existing: StateFile['fie
   return given.map((entry) => {
     const name = fieldName(entry.name)
     if (name === 'id') fail('invalid', '"id" is the key of the state\'s row: pick another field name')
-    // Every object has these: a field named like one can't be typed by the generated setter (its patch is an object literal).
+    // Every object already has these (`toString`, `constructor`…): the generated code that changes a field takes an object literal, which can't type one.
     if (name in Object.prototype) fail('invalid', `"${name}" is a name every object already has: pick another field name`)
     if (names.has(name)) fail('invalid', `Two fields are named "${name}"`)
     names.add(name)
@@ -88,14 +88,14 @@ const buildFields = (draft: Draft, given: FieldGiven[], existing: StateFile['fie
 export const stateCreate = defineEdit({
   input: z.object({
     module: ModuleNameSchema.optional().describe('The module it belongs to; defaults to the project\'s defaultModule'),
-    name: z.string().min(1).max(60).describe('camelCased, e.g. "preferences"; unique among the module\'s states, and free of the names the generated composable use<Module><Name>, its collection file and the module\'s queries and actions take. The id is st_<name>'),
+    name: z.string().min(1).max(60).describe('camelCased, e.g. "preferences"; unique among the module\'s states, and free of the names the module\'s queries, actions and collections take and the names the generated code of a state already uses. The id is st_<name>'),
     label: z.string().min(1).max(100).optional().describe('A human name; defaults to the name in words'),
     persist: z.enum(PERSIST).optional().describe('memory (forgotten on reload; the default), session (kept for this tab) or localStorage (kept in this browser)'),
-    shape: z.enum(['single', 'many']).optional().describe('single (the default): one row of values. many is refused: it is not generated yet'),
+    shape: z.enum(['single', 'many']).optional().describe('single (the default): one row of values. many (a state with several rows) is not generated yet'),
     fields: z.array(FieldInput.omit({ id: true })).min(1).max(50).optional().describe('Its fields, e.g. [{ "name": "showDrafts", "type": "boolean", "default": false }]. Left out: one text field "value", empty')
   }),
   apply: (draft, { module = draft.model.project.defaultModule, name: given, label, persist = 'memory', shape = 'single', fields }) => {
-    if (shape !== 'single') fail('invalid', `A state of shape "${shape}" is not generated yet: only single is`)
+    if (shape !== 'single') fail('invalid', 'A state with several rows is not generated yet: a state holds one row of values')
     const mod = draft.module(module)
     const name = stateName(given)
     checkStateFree(draft, module, name)
@@ -114,7 +114,7 @@ export const stateCreate = defineEdit({
 })
 
 const single = (state: StateFile) => {
-  if (state.shape !== 'single') fail('invalid', `The state ${state.name} (${state.id}) has shape "${state.shape}", which is not generated yet (only single is): delete it and create it again`)
+  if (state.shape !== 'single') fail('invalid', `The state ${state.name} (${state.id}) has several rows, which is not generated yet (a state holds one row of values): delete it and create it again`)
 }
 
 export const stateUpdate = defineEdit({
@@ -147,7 +147,7 @@ export const stateUpdate = defineEdit({
 export const stateRename = defineEdit({
   input: z.object({
     state: StateRef,
-    name: z.string().min(1).max(60).describe('The new name, camelCased; unique among the module\'s states and free of the names the generated files take')
+    name: z.string().min(1).max(60).describe('The new name, camelCased; unique among the module\'s states and free of the names the app already takes, as in state_create')
   }),
   apply: (draft, { state: id, name: given }) => {
     const { state, module } = findState(draft, id)

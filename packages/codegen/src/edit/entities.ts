@@ -4,6 +4,7 @@ import type { ActionFile, EntityFile, FieldSchema, FixturesFile, QueryFile, Repo
 import { camel, defineEdit, fail, kebab, pascal, uniqueName } from './core.ts'
 import type { Draft } from './core.ts'
 import { datasourceById, DataSourceRef } from './datasources.ts'
+import { sentence, spaced } from './naming.ts'
 import { entityUsesOf, fieldUsesOf, refusalLabels } from './usage.ts'
 
 /**
@@ -53,6 +54,13 @@ export const entityById = (draft: Draft, id: string): { entity: EntityFile, modu
   }
   return fail('not_found', `No entity "${id}"`)
 }
+
+/** Collection `id`, or undefined when there is none (`entityById` refuses instead). */
+export const findEntity = (draft: Draft, id: string | undefined): EntityFile | undefined =>
+  Object.values(draft.model.modules).flatMap(mod => mod.entities).find(entry => entry.id === id)
+
+/** The name of collection `id` for a message: the id itself when it is gone. */
+export const entityNameOf = (draft: Draft, id: string | undefined): string => findEntity(draft, id)?.name ?? String(id)
 
 export const repositoryOf = (draft: Draft, entityId: string) => Object.values(draft.model.modules)
   .flatMap(mod => mod.repositories).find(repository => repository.entity === entityId)
@@ -112,10 +120,6 @@ export const createAction = (entity: EntityFile, repositoryId: string, listed: b
 
 /** `note` → `notes`, `category` → `categories`, `box` → `boxes`. */
 const pluralOf = (word: string) => /[^aeiou]y$/.test(word) ? `${word.slice(0, -1)}ies` : /(s|x|z|ch|sh)$/.test(word) ? `${word}es` : `${word}s`
-
-/** `blogPosts` → `blog posts`. */
-const spaced = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
-const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 
 const fieldName = (given: string) => {
   const name = camel(given)

@@ -1,15 +1,18 @@
 import { pascal } from '../generate/text.ts'
 
 /**
- * Names a query or an action can't take because of where the generated code puts them (D10a). Two lists, each in one
- * place, each said to be what it is: add to them when the generator or the toolchain gains a name.
+ * Names that the generated code (or the toolchain it runs on) already takes, so a query, an action, a state or a page's use can't
+ * be called them (D10a for queries and actions, B1 for states and the names a page's script declares). Each list is in one place,
+ * said to be what it is: add to them when the generator or the toolchain gains a name.
  *
  * - The identifiers the generated files declare at their top (`DECLARED_IN_TESTS`, `COMPOSABLES_THE_GENERATOR_IMPORTS`):
  *   read from generate/actions.ts (the use-case test) and generate/client.ts (the composables). The drift guard in
  *   test/edit/d10a-verify-names.test.ts generates a project and fails when a file declares one that isn't listed.
- * - The composables the app already has (`AUTO_IMPORTED`): a query or an action generates `use<Name>`, and Nuxt
- *   auto-imports a composable by its name, so one name given twice is silently dropped from .nuxt/imports.d.ts.
+ * - The composables the app already has (`AUTO_IMPORTED`): a query, an action or a state generates a `use…` composable, and
+ *   Nuxt auto-imports a composable by its name, so one name given twice is silently dropped from .nuxt/imports.d.ts.
  *   The ones of Nuxt, Vue and Nuxt UI win, so the generated one is never the one a page gets.
+ * - The functions Vue and Nuxt auto-import into every page's script (`AUTO_IMPORTED_FUNCTIONS`): a state or a use named like one
+ *   would shadow it (`autoImportedNameProblem`).
  */
 
 /**
@@ -85,14 +88,19 @@ export const autoImportedNameProblem = (name: string): string | undefined => {
   return provider ? `"${name}" is something ${provider} provides to every page (the generated code uses it): pick another name` : undefined
 }
 
-/** Why the composable `use<Name>` of a query or an action called `name` can't be generated, or undefined when it can. */
-export const composableNameProblem = (name: string): string | undefined => {
-  const composable = `use${pascal(name)}`
+/**
+ * Why `composable`, the one that `name` (what the user typed) would generate, can't be generated, or undefined when it can. A query or
+ * an action generates `use<Name>` (`composableNameProblem`); a state generates `use<Module><Name>`.
+ */
+export const composableProblem = (composable: string, name: string): string | undefined => {
   const provider = providerOf(composable)
   if (provider) return `\`${name}\` would generate ${composable}, which ${provider} already provides: pick another name`
   if (COMPOSABLES_THE_GENERATOR_IMPORTS.includes(composable)) return `\`${name}\` would generate ${composable}, which the generated query composables already import from @tanstack/vue-db: pick another name`
   return undefined
 }
+
+/** Why the composable `use<Name>` of a query or an action called `name` can't be generated, or undefined when it can. */
+export const composableNameProblem = (name: string): string | undefined => composableProblem(`use${pascal(name)}`, name)
 
 /** Why an action called `name` can't be generated (its use-case is imported under that name into the generated test), or undefined. */
 export const declaredNameProblem = (name: string): string | undefined =>

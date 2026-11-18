@@ -2,10 +2,10 @@ import { z } from 'zod'
 import { CamelNameSchema, ValueSchema } from '../model/schemas.ts'
 import type { PageFile, Value } from '../model/schemas.ts'
 import { mapPaths, rootOf } from './bindings.ts'
-import { defineEdit, fail } from './core.ts'
+import { defineEdit, fail, isObject } from './core.ts'
 import type { Draft } from './core.ts'
-import { checkExpression, computedType, describeShape, eitherTyped, shapeOf, typeOfValue } from './expressions.ts'
-import type { ExpressionContext, ExpressionKind } from './expressions.ts'
+import { checkExpression, computedType, describeKind, eitherTyped, shapeOf, typeOfValue } from './expressions.ts'
+import type { ExpressionContext, ExpressionKind, Shape } from './expressions.ts'
 import { recheckInteractions } from './interactions.ts'
 import { PageRef } from './pages.ts'
 import { checkAlias } from './queries.ts'
@@ -53,9 +53,9 @@ const wayTo = (entries: Computed[], entry: Computed, target: string, seen = new 
 
 /** Whether a condition reads something the page has: a binding, or `not` of one. */
 const readsSomething = (value: Value | undefined): boolean =>
-  typeof value === 'object' && value !== null && !Array.isArray(value) && (typeof value.$bind === 'string' || ('not' in value && readsSomething(value.not)))
+  isObject(value) && (typeof value.$bind === 'string' || ('not' in value && readsSomething(value.not)))
 
-const entityName = (draft: Draft) => (id: string) => Object.values(draft.model.modules).flatMap(mod => mod.entities).find(entity => entity.id === id)?.name ?? id
+const describeShape = (draft: Draft, shape: Shape): string => describeKind(draft, shape.kind, shape.kind === 'value' ? undefined : shape.entity)
 
 export const pageComputedSet = defineEdit({
   input: z.object({
@@ -81,7 +81,7 @@ export const pageComputedSet = defineEdit({
     checkExpression(branch, otherwise, 'else')
     const shape = { then: shapeOf(branch, then, 'then'), else: shapeOf(branch, otherwise, 'else') }
     const same = shape.then.kind === shape.else.kind && (shape.then.kind === 'value' || (shape.else.kind !== 'value' && shape.then.entity === shape.else.entity))
-    if (!same) fail('invalid', `then is ${describeShape(shape.then, entityName(draft))} but else is ${describeShape(shape.else, entityName(draft))}: both have to be the same kind of value, so a List can take either`)
+    if (!same) fail('invalid', `then is ${describeShape(draft, shape.then)} but else is ${describeShape(draft, shape.else)}: both have to be the same kind of value, so a List can take either`)
     const entry: Computed = { as, if: condition, then, else: otherwise }
     // A value that reads itself, even through the others, never settles.
     const others = entries.filter(item => item.as !== as)
@@ -96,8 +96,8 @@ export const pageComputedSet = defineEdit({
     const had = computedType(context([], 'before'), as)
     const has = eitherTyped(typeOfValue(branch, then), typeOfValue(branch, otherwise))
     if (readers.length && had && has && (had.shape !== has.shape || had.entity !== has.entity)) {
-      const kind = (type: typeof had) => type.shape === 'value' ? 'a plain value' : `${type.shape === 'list' ? 'a list' : 'one row'} of ${entityName(draft)(type.entity ?? '')}`
-      fail('invalid', `${as} is ${kind(had)} and the page reads it (${describeUses(readers)}), but then and else give ${kind(has)}: keep it ${kind(had)}, or change what reads it first`)
+      const was = describeKind(draft, had.shape, had.entity)
+      fail('invalid', `${as} is ${was} and the page reads it (${describeUses(readers)}), but then and else give ${describeKind(draft, has.shape, has.entity)}: keep it ${was}, or change what reads it first`)
     }
     page.uses!.computed![index] = entry
     recheckInteractions(draft, page)

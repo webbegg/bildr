@@ -4,7 +4,7 @@ import { generate } from '../generate/index.ts'
 import type { BreakpointBase } from '../design/tokens.ts'
 import { loadModel, MANIFEST_FILE } from '../model/load.ts'
 import type { Model, ModelProblem, ModuleModel } from '../model/load.ts'
-import type { ComponentFile, LayoutFile, ModelNode, PageFile } from '../model/schemas.ts'
+import type { ComponentFile, LayoutFile, ModelNode, PageFile, Value } from '../model/schemas.ts'
 import { serializeModel } from '../model/serialize.ts'
 import { actionNameProblem, queryNameProblem } from './generated-names.ts'
 import { walk } from './tree.ts'
@@ -34,6 +34,9 @@ export class EditError extends Error {
 export const fail = (code: Exclude<EditErrorCode, 'invalid_input'>, message: string): never => {
   throw new EditError(code, message)
 }
+
+/** Whether `value` is an object of values (not null, not a list): a binding, a template, a step. */
+export const isObject = (value: unknown): value is Record<string, Value> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
 /** One file an edit writes (`content`, canonical) or deletes (`null`), relative to the project root. */
 export interface FileChange {

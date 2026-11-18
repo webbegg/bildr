@@ -2,8 +2,9 @@ import { allFields } from '../generate/context.ts'
 import type { Field } from '../generate/context.ts'
 import { PROPERTY_PATH } from '../model/schemas.ts'
 import type { EntityFile, ModelNode, PropertyDef, StateFile, Value } from '../model/schemas.ts'
-import { fail } from './core.ts'
+import { fail, isObject } from './core.ts'
 import type { Draft } from './core.ts'
+import { entityNameOf, findEntity } from './entities.ts'
 import { bindingScope } from './scope.ts'
 import type { ScopeName } from './scope.ts'
 
@@ -34,9 +35,7 @@ export interface ExpressionContext {
   scalar?: boolean
 }
 
-const isObject = (value: unknown): value is Record<string, Value> => typeof value === 'object' && value !== null && !Array.isArray(value)
-
-/** The entity a Form node's action takes, and the fields of it the Form lists. */
+/** The collection a Form node's action takes, and the fields of it the Form lists. */
 export const formOf = (draft: Draft, form: ModelNode): { entity?: EntityFile, fields: Field[] } => {
   const mods = Object.values(draft.model.modules)
   const action = mods.flatMap(mod => mod.actions).find(entry => entry.id === form.props?.action)
@@ -45,7 +44,7 @@ export const formOf = (draft: Draft, form: ModelNode): { entity?: EntityFile, fi
   return { entity, fields: entity ? entity.fields.filter(field => ids.includes(field.id)) : [] }
 }
 
-/** The names of the fields a Form node holds: the ones of its action's entity it lists. */
+/** The names of the fields a Form node holds: the ones of its action's collection it lists. */
 const formFieldNames = (draft: Draft, form: ModelNode): string[] => formOf(draft, form).fields.map(field => field.name)
 
 /** The `as` names of the Lists above node `id` (inclusive when `within`), closest first. */
@@ -115,7 +114,7 @@ export const checkExpression = (context: ExpressionContext, value: Value | undef
     const { entry, members } = resolvePath(context, value.$bind, where)
     // A name stands for a whole thing unless it ends in a field: a list, a row, a state's row, an action's pending and error.
     const whole = entry.many || entry.entity !== undefined || ['state', 'action', 'site', 'layout'].includes(entry.source)
-    if (context.scalar && !members.length && whole) return fail('invalid', `${where}: "${value.$bind}" is ${entry.many ? 'a list' : 'a whole row'}, not one value: bind one of its fields${entry.fields.length ? ` (${entry.fields.map(field => `${entry.name}.${field}`).join(', ')})` : ''}`)
+    if (context.scalar && !members.length && whole) return fail('invalid', `${where}: "${value.$bind}" is ${describeKind(context.draft, entry.many ? 'list' : 'row', entry.entity)}, not one value: bind one of its fields${entry.fields.length ? ` (${entry.fields.map(field => `${entry.name}.${field}`).join(', ')})` : ''}`)
     if (value.fallback !== undefined) checkExpression(context, value.fallback, `${where} fallback`)
     return
   }
@@ -167,8 +166,9 @@ export const shapeOf = (context: ExpressionContext, value: Value, where: string)
   return { kind: entry.many ? 'list' : 'row', entity: entry.entity }
 }
 
-export const describeShape = (shape: Shape, entityName: (id: string) => string): string =>
-  shape.kind === 'value' ? 'a plain value' : `${shape.kind === 'list' ? 'a list' : 'one row'} of ${entityName(shape.entity)}`
+/** What a value is, in a refusal, one way everywhere: "a list of Post", "one row of Post" or "a plain value" ("a list", "one row" when the collection is not known). */
+export const describeKind = (draft: Draft, kind: 'value' | 'row' | 'list', entity?: string): string =>
+  kind === 'value' ? 'a plain value' : `${kind === 'list' ? 'a list' : 'one row'}${entity ? ` of ${entityNameOf(draft, entity)}` : ''}`
 
 // ── Types: what a value is, against what receives it ─────────────────────
 
@@ -203,10 +203,8 @@ const fieldTyped = (field: Field): Typed => plain(PRIM_OF[field.type], { null: !
 const rowTyped = (members: Record<string, Typed>, entity?: string): Typed => ({ shape: 'row', prims: [], members, ...(entity ? { entity } : {}) })
 const listTyped = (entity: string): Typed => ({ shape: 'list', prims: [], entity, members: { length: plain('number') } })
 
-const entityOfId = (draft: Draft, id: string): EntityFile | undefined => Object.values(draft.model.modules).flatMap(mod => mod.entities).find(entry => entry.id === id)
-
 const entityRow = (draft: Draft, id: string): Typed | undefined => {
-  const entity = entityOfId(draft, id)
+  const entity = findEntity(draft, id)
   return entity ? rowTyped(Object.fromEntries(allFields(entity).map(field => [field.name, fieldTyped(field)])), entity.id) : undefined
 }
 
@@ -316,14 +314,17 @@ export const typeOfValue = (context: ExpressionContext, value: Value | undefined
 export const describeValue = (value: Value | undefined): string =>
   isObject(value) && typeof value.$bind === 'string' ? `"${value.$bind}"` : JSON.stringify(value)
 
+const wordsOf = (prims: Prim[]) => prims.map(prim => PRIM_WORDS[prim]).join(' or ')
+
+/** What a typed value is, in a refusal: the kinds of plain value it is, or `describeKind` of a row or a list. */
+export const describeTyped = (draft: Draft, type: Typed): string => type.shape === 'value' ? wordsOf(type.prims) : describeKind(draft, type.shape, type.entity)
+
 /** What a place takes: the kinds of plain value, and whether null or unset passes. */
 export interface Expect {
   prims: Prim[]
   null?: boolean
   undef?: boolean
 }
-
-const wordsOf = (prims: Prim[]) => prims.map(prim => PRIM_WORDS[prim]).join(' or ')
 
 /**
  * Refuses `value` when what it is can't go where `target` is ("the field title of reading", "a toast title"): another kind of plain value, a
@@ -334,7 +335,7 @@ export const expectValue = (context: ExpressionContext, value: Value | undefined
   if (!type) return
   const label = describeValue(value)
   const takes = `${target} takes ${wordsOf(expect.prims)}`
-  if (type.shape !== 'value') return fail('invalid', `${where}: ${label} is ${type.shape === 'list' ? 'a list' : 'a whole row'}, but ${takes}: bind one of its fields`)
+  if (type.shape !== 'value') return fail('invalid', `${where}: ${label} is ${describeKind(context.draft, type.shape, type.entity)}, but ${takes}: bind one of its fields`)
   const wrong = type.prims.find(prim => !expect.prims.includes(prim))
   if (wrong) return fail('invalid', `${where}: ${label} is ${PRIM_WORDS[wrong]}, but ${takes}`)
   if (type.null && !expect.null) return fail('invalid', `${where}: ${label} can be empty (null), but ${takes}: give the binding a fallback`)

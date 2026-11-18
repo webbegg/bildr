@@ -2,12 +2,13 @@ import { z } from 'zod'
 import { ArtifactIdSchema, INTERACTION_EVENTS, LocalIdSchema, UiStepSchema } from '../model/schemas.ts'
 import type { ActionFile, ModelNode, PageFile, StateFile, Value } from '../model/schemas.ts'
 import { BUTTON_COLORS, uiStepProblems } from '../render/rules.ts'
-import { defineEdit, EditError, fail } from './core.ts'
+import { defineEdit, EditError, fail, isObject } from './core.ts'
 import type { Draft, Tree } from './core.ts'
-import { fits } from './entities.ts'
-import { checkExpression, describeValue, expectValue, formOf, PRIM_WORDS, primOf, typeOfValue } from './expressions.ts'
-import type { ExpressionContext, ExpressionKind, Typed } from './expressions.ts'
+import { entityNameOf, fits } from './entities.ts'
+import { checkExpression, describeTyped, describeValue, expectValue, formOf, primOf, typeOfValue } from './expressions.ts'
+import type { ExpressionContext, ExpressionKind } from './expressions.ts'
 import { dropUnusedUses, freeAlias, moduleOfPage, pageNameProblem, useAction } from './queries.ts'
+import type { UseRef } from './queries.ts'
 import { findNode, walk } from './tree.ts'
 
 /**
@@ -26,7 +27,10 @@ import { findNode, walk } from './tree.ts'
  * - The other way round: an update or a remove that leaves no step naming a state or action the page uses, and nothing binding the
  *   state's name or showing the action in a Form, drops that use in the same edit (`droppedUses`), so `state_delete` is not held by
  *   a use that does nothing. The model can't tell a use an interaction added from one `page_use_add` made, so any use of a state or
- *   action the removed steps named that nothing reads or runs goes: the generator skips a use nothing reads anyway.
+ *   action the removed steps named that nothing reads or runs goes: the generator skips a use nothing reads anyway. The action
+ *   descriptions say so: "a page use nothing else reads is removed with the last step that needed it".
+ * - `node_interaction_update` and `node_interaction_remove` take the event the caller saw at that index (`expectedOn`, `on`): when
+ *   the interaction there is another, it changed since the caller opened it, and the edit is refused.
  * - A value is checked against what receives it (`expectValue`): a state field, a toast's text, a route parameter, an action's
  *   parameter, an action on a collection (a row of it, or the form's), each by what the value is in the generated TypeScript. A
  *   handler the script declares gets the List items it reads from the template (`generate/ui.ts`).
@@ -47,13 +51,16 @@ const KEYS: Record<string, readonly string[]> = {
 }
 
 type Step = Record<string, Value>
-type Added = { as: string, state: string } | { as: string, action: string }
 
-const isObject = (value: unknown): value is Record<string, Value> => typeof value === 'object' && value !== null && !Array.isArray(value)
+/** How a step reads in a refusal: "step 2 (Set state)", numbered from 1 as the editor lists them. */
+const STEP_NAMES: Record<string, string> = { setState: 'Set state', runAction: 'Run action', navigate: 'Go to page', toast: 'Show message', setVariant: 'Set variant' }
+const stepName = (step: Step): string => STEP_NAMES[String(step.kind)] ?? String(step.kind)
+const at = (index: number): string => `step ${index + 1}`
+const atStep = (step: Step, index: number): string => `${at(index)} (${stepName(step)})`
 
 const FileRef = ArtifactIdSchema.describe('The artifact id of a page, component or layout (pg_*, cmp_*, lay_*)')
 const Event = z.enum(INTERACTION_EVENTS).describe('click, change (a Checkbox), submit (a Form), mouseenter or mouseleave; appear is not generated yet')
-const Steps = z.array(UiStepSchema).min(1).max(10).describe('The steps, in order: { kind: "setState", state, field, value }, { kind: "runAction", action, args }, { kind: "navigate", to: { page, params? } }, { kind: "toast", title, description?, color?, icon? }; after an action, further navigate and toast steps take when: "success". setVariant is not generated yet')
+const Steps = z.array(UiStepSchema).min(1).max(10).describe('The steps, in order: Set state { kind: "setState", state, field, value }, Run action { kind: "runAction", action, args }, Go to page { kind: "navigate", to: { page, params? } }, Show message { kind: "toast", title, description?, color?, icon? }. After an action, further Go to page and Show message steps take when: "success". setVariant is not generated yet')
 
 /** The nodes from the tree's root down to node `id`, inclusive. */
 const chainTo = (root: ModelNode, id: string): ModelNode[] => {
@@ -82,7 +89,7 @@ interface Check {
   tree: Tree
   node: ModelNode
   on: string
-  added: Added[]
+  added: UseRef[]
 }
 
 /** Makes the page use the state of a step, under its name or the first free one, unless it does. */
@@ -104,43 +111,45 @@ const actionOf = (draft: Draft, page: PageFile, id: unknown): ActionFile => {
   return mod.actions.find(entry => entry.id === id) ?? fail('not_found', `No action "${String(id)}" in the page's module`)
 }
 
-/** The shape of each step, the steps that go together, and which of them can run on this event (what `events()` and `handler()` generate). */
-const checkOrder = (steps: Step[], on: string) => {
-  const inline = steps.length === 1 && on !== 'submit'
+/** One step is an inline handler (`@click="setX({ … })"`); several, or a submit, are a script handler. */
+const isInline = (steps: Step[], on: string): boolean => steps.length === 1 && on !== 'submit'
+
+/** The steps that go together, and which of them can run on this event (what `events()` and `handler()` generate). */
+const checkOrder = (steps: Step[], on: string, inline: boolean) => {
   const [first] = steps
   if (first!.when !== undefined) fail('invalid', `The first step takes no "when": it is the one that runs first`)
   steps.forEach((step, index) => {
-    if (step.when !== undefined && step.when !== 'success') fail('invalid', `steps.${index}: "when" is "success" (the step runs when the action worked)`)
-    if (step.when !== undefined && !KEYS[String(step.kind)]!.includes('when')) fail('invalid', `steps.${index}: a ${String(step.kind)} step takes no "when"`)
+    if (step.when !== undefined && step.when !== 'success') fail('invalid', `${at(index)}: "when" is "success" (the step runs when the action worked)`)
+    if (step.when !== undefined && !KEYS[String(step.kind)]!.includes('when')) fail('invalid', `${at(index)}: a ${stepName(step)} step takes no "when"`)
   })
   if (inline) return
   const [, ...rest] = steps
   const why = on === 'submit' ? 'a submit' : 'several steps'
   if (first!.kind === 'runAction') {
     rest.forEach((step, index) => {
-      if (step.kind !== 'navigate' && step.kind !== 'toast') notGenerated(`steps.${index + 1}: after an action, ${why} can only go to a page or show a message, not ${String(step.kind)}`)
-      if (step.when !== 'success') fail('invalid', `steps.${index + 1}: a step after an action runs when it worked: say "when": "success"`)
+      if (step.kind !== 'navigate' && step.kind !== 'toast') notGenerated(`${at(index + 1)}: after an action, ${why} can only go to a page or show a message, not a ${stepName(step)} step`)
+      if (step.when !== 'success') fail('invalid', `${at(index + 1)}: a step after an action runs when it worked: say "when": "success"`)
     })
     return
   }
   steps.forEach((step, index) => {
-    if (step.kind === 'setState') notGenerated(`steps.${index}: a setState step can't be one of several steps, or on a submit (${why}): it is a handler that runs an action, then goes to a page or shows a message`)
-    if (step.kind === 'runAction') notGenerated(`steps.${index}: a runAction step has to come first when there are several steps`)
-    if (step.when !== undefined) fail('invalid', `steps.${index}: "when" follows an action: without one the steps run in order`)
+    if (step.kind === 'setState') notGenerated(`${at(index)}: a ${stepName(step)} step can't be one of several steps, or on a submit (${why}): it is a handler that runs an action, then goes to a page or shows a message`)
+    if (step.kind === 'runAction') notGenerated(`${at(index)}: a ${stepName(step)} step has to come first when there are several steps`)
+    if (step.when !== undefined) fail('invalid', `${at(index)}: "when" follows an action: without one the steps run in order`)
   })
 }
 
 const stepKeys = (step: Step, index: number) => {
-  const keys = KEYS[String(step.kind)] ?? notGenerated(`steps.${index}: a ${String(step.kind)} step`)
+  const keys = KEYS[String(step.kind)] ?? notGenerated(`${at(index)}: a ${stepName(step)} step`)
   const extra = Object.keys(step).find(key => !keys.includes(key))
-  if (extra) fail('invalid', `steps.${index}: "${extra}" is not part of a ${String(step.kind)} step (${keys.join(', ')})`)
+  if (extra) fail('invalid', `${at(index)}: "${extra}" is not part of a ${stepName(step)} step (${keys.join(', ')})`)
 }
 
 const checkSetState = (check: Check, context: ExpressionContext, step: Step, where: string) => {
   if (check.tree.kind !== 'page') notGenerated(`${where}: ${check.tree.kind === 'layout' ? 'a layout' : 'a component'} has no state to set (pages use state)`)
   const page = check.tree.owner as PageFile
   const state = stateOf(check.draft, page, step.state)
-  if (state.shape !== 'single') notGenerated(`${where}: the state ${state.name} has shape "${state.shape}"`)
+  if (state.shape !== 'single') notGenerated(`${where}: the state ${state.name} has several rows`)
   const field = state.fields.find(entry => entry.name === step.field) ?? fail('invalid', `${where}: the state ${state.name} has no field "${String(step.field)}" (${state.fields.map(entry => entry.name).join(', ')})`)
   const value = step.value
   checkExpression(context, value, `${where} value`)
@@ -148,12 +157,6 @@ const checkSetState = (check: Check, context: ExpressionContext, step: Step, whe
   // What the value is against what the field holds: the setter takes a partial row, so unset passes, null only for a nullable field.
   expectValue(context, value, where, `${state.name}.${field!.name} (${field!.type})`, { prims: [primOf(field!.type)], null: !!field!.nullable, undef: true })
 }
-
-const entityNameOf = (draft: Draft, id: string | undefined) => Object.values(draft.model.modules).flatMap(mod => mod.entities).find(entity => entity.id === id)?.name ?? String(id)
-
-/** What a value is, in a refusal. */
-const describeTyped = (draft: Draft, type: Typed): string =>
-  type.shape === 'value' ? type.prims.map(prim => PRIM_WORDS[prim]).join(' or ') : `${type.shape === 'list' ? 'a list' : 'one row'}${type.entity ? ` of ${entityNameOf(draft, type.entity)}` : ''}`
 
 const checkRunAction = (check: Check, context: ExpressionContext, step: Step, where: string) => {
   if (check.tree.kind !== 'page') notGenerated(`${where}: ${check.tree.kind === 'layout' ? 'a layout' : 'a component'} runs no actions (pages use them)`)
@@ -223,29 +226,21 @@ const checkToast = (context: ExpressionContext, step: Step, where: string) => {
   if (step.color !== undefined && typeof step.color !== 'string') fail('invalid', `${where} color: a toast colour is one of ${BUTTON_COLORS.join(', ')}, written out: ${describeValue(step.color)} is a value that is only known later`)
 }
 
-/**
- * Checks `steps` for `on` of `node`, makes the page use what they name, and returns them as they are stored. Everything is checked
- * against the draft: a refusal leaves the model as it was.
- */
-const checkSteps = (check: Check, given: Array<Record<string, unknown>>): Step[] => {
-  const { draft, tree, node, on } = check
-  const steps = structuredClone(given) as Step[]
+/** Refuses steps the generator can't turn into code, or can't put in this order: what each kind takes, and what goes with what. No uses are made. */
+const checkShape = (steps: Step[], on: string, inline: boolean) => {
   steps.forEach((step, index) => {
-    if (step.kind === 'setVariant') notGenerated(`steps.${index}: a setVariant step (a component's variants switch with component_interaction_add)`)
+    if (step.kind === 'setVariant') notGenerated(`${at(index)}: a ${stepName(step)} step (a component's variants switch with component_interaction_add)`)
     stepKeys(step, index)
   })
-  checkOrder(steps, on)
-  const chain = chainTo(tree.root, node.id)
-  const inline = steps.length === 1 && on !== 'submit'
-  const allow: ExpressionKind[] = ['bind', 'not', 'route', 'form', 'template', ...(inline && on === 'change' && node.type === 'Checkbox' ? ['event' as const] : [])]
-  const context: ExpressionContext = {
-    draft, file: tree.file, kind: tree.kind, nodeId: node.id, allow: new Set(allow), subject: node.id, scalar: true,
-    form: [...chain].reverse().find(entry => entry.type === 'Form')
-  }
-  // The uses first: a value may read the name a step's state or action is used under.
+  checkOrder(steps, on, inline)
+}
+
+/** Makes the page use the state or action each step names (a layout or component has no uses), adding what it made to `check.added`. */
+const addUses = (check: Check, steps: Step[]) => {
+  const { draft, tree } = check
+  if (tree.kind !== 'page') return
+  const page = tree.owner as PageFile
   for (const step of steps) {
-    if (tree.kind !== 'page') break
-    const page = tree.owner as PageFile
     if (step.kind === 'setState') useState(check, page, stateOf(draft, page, step.state))
     if (step.kind === 'runAction') {
       const action = actionOf(draft, page, step.action)
@@ -254,13 +249,37 @@ const checkSteps = (check: Check, given: Array<Record<string, unknown>>): Step[]
       if (!had && as) check.added.push({ as, action: action.id })
     }
   }
+}
+
+/** Refuses a step whose values the node can't read, or that isn't the kind the step takes. Reads the page's uses: `addUses` goes first. */
+const checkValues = (check: Check, steps: Step[], inline: boolean) => {
+  const { draft, tree, node, on } = check
+  const chain = chainTo(tree.root, node.id)
+  const allow: ExpressionKind[] = ['bind', 'not', 'route', 'form', 'template', ...(inline && on === 'change' && node.type === 'Checkbox' ? ['event' as const] : [])]
+  const context: ExpressionContext = {
+    draft, file: tree.file, kind: tree.kind, nodeId: node.id, allow: new Set(allow), subject: node.id, scalar: true,
+    form: [...chain].reverse().find(entry => entry.type === 'Form')
+  }
   steps.forEach((step, index) => {
-    const where = `steps.${index} (${String(step.kind)})`
+    const where = atStep(step, index)
     if (step.kind === 'setState') checkSetState(check, context, step, where)
     else if (step.kind === 'runAction') checkRunAction(check, context, step, where)
     else if (step.kind === 'navigate') checkNavigate(check, context, step, where)
     else checkToast(context, step, where)
   })
+}
+
+/**
+ * Checks `steps` for `on` of `node`, makes the page use what they name (a value may read the name a step's state or action is used
+ * under, so the uses come before the values), and returns them as they are stored. Everything is done to the draft: a refusal leaves
+ * the model as it was.
+ */
+const prepareSteps = (check: Check, given: Array<Record<string, unknown>>): Step[] => {
+  const steps = structuredClone(given) as Step[]
+  const inline = isInline(steps, check.on)
+  checkShape(steps, check.on, inline)
+  addUses(check, steps)
+  checkValues(check, steps, inline)
   return steps
 }
 
@@ -280,7 +299,7 @@ export const recheckInteractions = (draft: Draft, page: PageFile): void => {
   walk(tree.root, (node) => {
     for (const interaction of node.interactions ?? []) {
       try {
-        checkSteps({ draft, tree, node, on: interaction.on, added: [] }, interaction.do as Array<Record<string, unknown>>)
+        prepareSteps({ draft, tree, node, on: interaction.on, added: [] }, interaction.do as Array<Record<string, unknown>>)
       } catch (error) {
         if (error instanceof EditError) throw new EditError(error.code, `${node.id} (${interaction.on}) would stop working: ${error.message}`)
         throw error
@@ -308,7 +327,7 @@ export const nodeInteractionAdd = defineEdit({
     checkEvent(node, on)
     duplicate(node, on)
     const check: Check = { draft, tree, node, on, added: [] }
-    const stored = checkSteps(check, steps)
+    const stored = prepareSteps(check, steps)
     const list = node.interactions ??= []
     list.push({ on, do: stored as never })
     checkPageNames(draft, tree)
@@ -316,24 +335,32 @@ export const nodeInteractionAdd = defineEdit({
   }
 })
 
+/** The interaction at `index` of `node`; refused when there is none, or when it isn't the one (`seen`) the caller says it opened. */
+const interactionAt = (node: ModelNode, index: number, seen?: string) => {
+  const found = node.interactions?.[index] ?? fail('not_found', `${node.id} has no interaction at index ${index}`)
+  if (seen !== undefined && found.on !== seen) fail('invalid', `${node.id}'s interaction at index ${index} is "${found.on}", not "${seen}": it changed since you opened it`)
+  return found
+}
+
 export const nodeInteractionUpdate = defineEdit({
   input: z.object({
     file: FileRef,
     nodeId: LocalIdSchema,
     index: z.int().nonnegative().describe('Its position in the node\'s interactions'),
-    on: Event.optional(),
+    on: Event.optional().describe('The new event'),
+    expectedOn: Event.optional().describe('The event the caller saw at this index (the editor always sends it): when the interaction there is another, it changed since it was opened and nothing is written'),
     do: Steps.optional().describe('Replaces the steps whole')
   }),
-  apply: (draft, { file, nodeId, index, on, do: steps }) => {
+  apply: (draft, { file, nodeId, index, on, expectedOn, do: steps }) => {
     if (on === undefined && steps === undefined) fail('invalid', 'Give the event (on) or the steps (do) to change')
     const tree = draft.tree(file)
     const node = nodeOf(tree, nodeId)
-    const current = node.interactions?.[index] ?? fail('not_found', `${nodeId} has no interaction at index ${index}`)
+    const current = interactionAt(node, index, expectedOn)
     const event = on ?? current.on
     checkEvent(node, event)
     duplicate(node, event, index)
     const check: Check = { draft, tree, node, on: event, added: [] }
-    const stored = checkSteps(check, steps ?? current.do)
+    const stored = prepareSteps(check, steps ?? current.do)
     const before = usedBy(current.do as Array<Record<string, unknown>>)
     node.interactions![index] = { on: event, do: stored as never }
     checkPageNames(draft, tree)
@@ -342,14 +369,21 @@ export const nodeInteractionUpdate = defineEdit({
 })
 
 export const nodeInteractionRemove = defineEdit({
-  input: z.object({ file: FileRef, nodeId: LocalIdSchema, index: z.int().nonnegative() }),
-  apply: (draft, { file, nodeId, index }) => {
+  input: z.object({
+    file: FileRef,
+    nodeId: LocalIdSchema,
+    index: z.int().nonnegative(),
+    on: Event.optional().describe('The event the caller saw at this index (the editor always sends it): when the interaction there is another, it changed since it was opened and nothing is removed')
+  }),
+  apply: (draft, { file, nodeId, index, on }) => {
     const tree = draft.tree(file)
     const node = nodeOf(tree, nodeId)
-    const removed = node.interactions?.[index] ?? fail('not_found', `${nodeId} has no interaction at index ${index}`)
+    const removed = interactionAt(node, index, on)
     const before = usedBy(removed.do as Array<Record<string, unknown>>)
     node.interactions!.splice(index, 1)
+    // The ones that were after it moved down: the order a caller's indexes now follow.
+    const interactions = node.interactions!.map((entry, position) => ({ index: position, on: entry.on }))
     if (!node.interactions!.length) delete node.interactions
-    return { droppedUses: tree.kind === 'page' ? dropUnusedUses(tree.owner as PageFile, before) : [] }
+    return { droppedUses: tree.kind === 'page' ? dropUnusedUses(tree.owner as PageFile, before) : [], interactions }
   }
 })
