@@ -29,6 +29,8 @@ import { action, app, appApi, appShows, bildr, call, canvas, check, editorUrl, n
 const MIGRATION_PLANNED_MS = 60_000
 const MIGRATION_SHOWN_MS = 30_000
 const MIGRATION_WRITTEN_MS = 60_000
+/** How long the linked-findings step lets a screen settle before a screenshot (D8): the menu's open animation, and the focus ring and hover colour of a link. */
+const SETTLE_MS = 400
 
 await run('data', async ({ page, browser, errors }) => {
   // The app's create route takes the id the client form mints (a uuid).
@@ -755,12 +757,14 @@ await run('data', async ({ page, browser, errors }) => {
   // Drift is made cheaply: a generated file is edited by hand in the scratch project (no check is run). Checks then shows a failure dot on the
   // toolbar and on its menu entry, and the drift item links to the file in Code, and to the page it is generated from.
   const homeFile = 'layers/blog/app/pages/index.vue'
+  const homeModel = '.bildr/modules/blog/pages/index.json'
   const homePath = join(app.root, homeFile)
   const generated = readFileSync(homePath, 'utf8')
-  const dot = page.locator('[data-view-menu] [data-checks-dot]')
-  // The Health report's drift is refreshed by a regeneration, and the module's watcher only sees `.bildr/`: writing a model file again with the
-  // bytes it has (no change to the model) is the cheap way to make the module look at the generated files.
-  const touchPath = join(app.root, '.bildr/modules/blog/pages/new-post.json')
+  const viewMenu = page.locator('[data-view-menu]')
+  const dot = viewMenu.locator('[data-checks-dot]')
+  // The Health report's drift is refreshed by a regeneration, and the module's watcher only sees `.bildr/`: writing the model file the page comes from again
+  // with the bytes it has (no change to the model) is the cheap way to make the module look at the generated files.
+  const touchPath = join(app.root, homeModel)
   const regenerate = () => writeFileSync(touchPath, readFileSync(touchPath, 'utf8'))
   try {
     writeFileSync(homePath, `${generated}<!-- edited by hand -->\n`)
@@ -769,23 +773,26 @@ await run('data', async ({ page, browser, errors }) => {
     await page.goto(editorUrl('/health'))
     await page.locator('[data-testid="drift"]').waitFor()
     await dot.waitFor()
-    check(/1 generated file differs from the model/.test(await dot.getAttribute('title')), `Checks shows a failure dot on the toolbar's menu button, in plain words (${await dot.getAttribute('title')})`)
-    await page.locator('[data-view-menu]').click()
-    const entry = page.locator('[role^=menuitem]').filter({ hasText: /^\s*Checks\s*$/ })
+    // The dot is decoration (aria-hidden): its reason is the button's description.
+    const reason = await viewMenu.getAttribute('title')
+    check(reason === '1 file bildr wrote was edited by hand.' && await dot.getAttribute('aria-hidden') === 'true', `Checks shows a failure dot on the toolbar's menu button, in plain words (${reason})`)
+    await viewMenu.click()
+    const entry = page.locator('[role^=menuitem]').filter({ hasText: /^\s*Checks\b/ })
     check(await entry.locator('[data-checks-dot]').count() === 1 && await page.locator('[role^=menuitem] [data-checks-dot]').count() === 1, 'and on the Checks entry of the menu, and on no other')
-    await page.waitForTimeout(400)
+    await page.waitForTimeout(SETTLE_MS)
     await shot(page, 'd8-checks-menu')
     await page.keyboard.press('Escape')
     const drifted = page.locator(`[data-testid="drift"] [data-target="code:${homeFile}"]`)
     check(await drifted.count() === 1 && await page.locator(`[data-testid="drift"] [data-target="page:pg_index"]`).count() === 1, 'the drift item links to its file in Code and to the page it is generated from')
+    check((await page.locator('[data-testid="checks-summary"]').innerText()) === reason, 'the Checks screen says the same at its top')
     await page.mouse.move(900, 600)
     await page.evaluate(() => document.activeElement?.blur())
-    await page.waitForTimeout(400)
+    await page.waitForTimeout(SETTLE_MS)
     await shot(page, 'd8-checks-links')
     await drifted.click()
     await page.locator('[data-testid="code-tabs"]').waitFor()
     const landed = new URLSearchParams(new URL(page.url()).hash.split('?')[1])
-    check(new URL(page.url()).hash.startsWith('#/code?') && landed.get('file') === homeFile && landed.get('path') === '.bildr/modules/blog/pages/index.json', `clicking it lands on Code with that file (${new URL(page.url()).hash})`)
+    check(new URL(page.url()).hash.startsWith('#/code?') && landed.get('file') === homeFile && landed.get('path') === homeModel, `clicking it lands on Code with that file (${new URL(page.url()).hash})`)
     check(/index\.vue/.test(await page.locator('[data-testid="code-tabs"] [role=tab][aria-selected=true]').innerText()), 'on the tab of the edited file')
     check(!!await until(async () => /edited by hand/.test(await page.locator('[data-testid="code-tabs"]').innerText())), 'which shows the edit')
     // The page it comes from opens on the canvas.
@@ -816,7 +823,7 @@ await run('data', async ({ page, browser, errors }) => {
     // Each problem of the file has its own link (the file is `{}`, so every field it lacks is one).
     const problem = page.locator(`[data-testid="data-problems"] [data-target="files:${detailFile}"]`)
     check(await problem.count() === await page.locator('[data-testid="data-problems"] [data-problem]').count() && await problem.count() > 0 && !/Model screen/.test(await page.locator('[data-testid="data-problems"]').innerText()), 'the Data screen links the problem to its file, with no "(Model screen)"')
-    check(/The model has problems/.test(await dot.getAttribute('title')), `and the toolbar's failure dot says so (${await dot.getAttribute('title')})`)
+    check(/Some model files have problems/.test(await viewMenu.getAttribute('title')), `and the toolbar's failure dot says so (${await viewMenu.getAttribute('title')})`)
     await problem.first().click()
     await page.locator('[data-testid="raw-content"]').waitFor()
     const hash = new URL(page.url()).hash

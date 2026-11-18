@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import type { Model } from '@bildr/codegen/model'
+import { computed, onMounted, reactive, ref, toRaw, watch } from 'vue'
 import { callAction, errorMessage } from '../api.ts'
 import DiffView from '../components/DiffView.vue'
 import ProblemsList from '../components/ProblemsList.vue'
 import StateBadge from '../components/StateBadge.vue'
 import TargetLinks from '../components/TargetLinks.vue'
-import { findingTarget } from '../editor/findingTargets.ts'
+import { checksSummary } from '../editor/checksSummary.ts'
+import { generatedOwners, targetsOfFile, targetsOfFinding, targetsOfProblem } from '../editor/findingTargets.ts'
+import type { Target } from '../editor/findingTargets.ts'
 import { useStatus } from '../status.ts'
 import { CHECK_NAMES } from '../types.ts'
 import type { CheckName, CheckResult, DriftReport } from '../types.ts'
@@ -14,12 +15,15 @@ import type { CheckName, CheckResult, DriftReport } from '../types.ts'
 /**
  * The Checks screen (RA §7, the Health report): model status, drift with diffs, and the project's checks with a Run button each. Checks never block editing.
  * Each finding, drift item and model problem links to where it is (S8, `editor/findingTargets.ts`): the generated file in Code, the collection, page… it comes from.
- * The links need the model (a generated file's owner is what the generator says), read once when the screen opens: without it, there are none.
+ * The links need the model (a generated file's owner is what the generator says), which is the shared status's: it is read again each time the report changes (the
+ * module regenerates, the model changes, a check runs), so the links follow a rename or a fix while the screen is open; without a model there are none.
+ * They are made once for a report and a model (`links`), not for each row each time it is drawn.
  */
 
 const status = useStatus()
 const health = status.health
-const model = ref<Model | null>(null)
+const model = status.model
+watch(health, () => void status.refreshModel(), { immediate: true })
 
 const LABELS: Record<CheckName, string> = { lint: 'Lint and boundaries', types: 'Types', tests: 'Tests', build: 'Build' }
 
@@ -46,6 +50,28 @@ const driftError = computed(() => {
   return value && 'error' in value ? value.error : null
 })
 const anyRunning = computed(() => CHECK_NAMES.some(name => running[name]))
+const summary = computed(() => checksSummary(health.value))
+
+/** The links of every drift item, finding and model problem of the report, for the model there is, and why the files have none when the generator refuses it. */
+const links = computed(() => {
+  const found = new Map<object, Target[]>()
+  const current = model.value
+  let files = 0
+  for (const file of drift.value?.files ?? []) {
+    found.set(toRaw(file), targetsOfFile(file.path, current))
+    files++
+  }
+  for (const name of CHECK_NAMES) {
+    for (const finding of checkOf(name)?.findings ?? []) {
+      found.set(toRaw(finding), targetsOfFinding(finding, current))
+      if (finding.file) files++
+    }
+  }
+  const modelStatus = health.value?.model
+  if (modelStatus && !modelStatus.ok) for (const problem of modelStatus.problems) found.set(toRaw(problem), targetsOfProblem(problem, current))
+  return { found, unavailable: files ? generatedOwners(current).error : null }
+})
+const linksOf = (item: object): Target[] => links.value.found.get(toRaw(item)) ?? []
 
 const run = async (names: CheckName[]) => {
   runError.value = null
@@ -73,9 +99,6 @@ const when = (iso: string) => iso ? new Date(iso).toLocaleString() : ''
 
 onMounted(() => {
   if (!health.value) void status.refreshHealth()
-  void callAction<{ ok: boolean, model?: Model }>('model_get').then((result) => {
-    model.value = result.ok ? result.model ?? null : null
-  }).catch(() => {})
 })
 </script>
 
@@ -99,6 +122,21 @@ onMounted(() => {
         @click="run([...CHECK_NAMES])"
       />
     </div>
+
+    <p
+      v-if="summary"
+      class="text-sm text-highlighted"
+      data-testid="checks-summary"
+    >
+      {{ summary }}
+    </p>
+    <p
+      v-if="links.unavailable"
+      class="text-xs text-muted"
+      data-testid="links-unavailable"
+    >
+      Links unavailable: {{ links.unavailable }}
+    </p>
 
     <ProblemsList
       v-if="status.healthError.value"
@@ -135,8 +173,7 @@ onMounted(() => {
           v-else
           title="invalid: the code is not regenerated until it loads"
           :problems="health.model.problems"
-          :model="model"
-          linked
+          :targets="linksOf"
         />
       </div>
     </UCard>
@@ -177,7 +214,7 @@ onMounted(() => {
           <div class="flex items-center gap-2">
             <StateBadge :state="file.state" />
             <code class="text-sm">{{ file.path }}</code>
-            <TargetLinks :targets="findingTarget({ file: file.path }, model)" />
+            <TargetLinks :targets="linksOf(file)" />
             <UButton
               v-if="file.diff"
               class="ml-auto"
@@ -265,7 +302,7 @@ onMounted(() => {
                 v-if="finding.rule"
                 class="text-xs text-muted"
               >({{ finding.rule }})</span>
-              <TargetLinks :targets="findingTarget(finding, model)" />
+              <TargetLinks :targets="linksOf(finding)" />
             </li>
           </ul>
           <details

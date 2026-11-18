@@ -7,6 +7,7 @@ import DataFiles from '../components/data/DataFiles.vue'
 import DataWorkspace from '../components/data/DataWorkspace.vue'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
 import { useDataLocation } from '../editor/dataLocation.ts'
+import { targetsOfProblem } from '../editor/findingTargets.ts'
 import { createEditor, provideEditor } from '../editor/useEditor.ts'
 import { useStatus } from '../status.ts'
 
@@ -103,8 +104,7 @@ onBeforeUnmount(() => {
         <ProblemsList
           title="The model has problems, so there is nothing to show until they are fixed"
           :problems="editor.problems"
-          :model="editor.model"
-          linked
+          :targets="problem => targetsOfProblem(problem, editor.model)"
         >
           <UButton
             v-if="!editor.dataFiles"

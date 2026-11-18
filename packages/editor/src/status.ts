@@ -1,14 +1,23 @@
-import { computed, inject, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, inject, markRaw, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import type { ComputedRef, InjectionKey, Ref } from 'vue'
+import type { Model } from '@bildr/codegen/model'
 import { callAction, errorMessage, sessionEnded, subscribeEvents } from './api.ts'
 import type { HealthReport, PendingMigration } from './types.ts'
 
 /** How often health and the pending migration are re-read while the page is visible: the module regenerates on its own after a save. */
 export const POLL_MS = 3000
 
-/** The project status every screen shares: the Health report and the pending migration plan. */
+/** The project status every screen shares: the Health report, the pending migration plan and, for the screens that need it, the model. */
 export interface Status {
   health: Ref<HealthReport | null>
+  /**
+   * The model the project has now, when it loads (null while it is not read yet, or it does not load). Not read by the shell's polling: a screen that
+   * needs it asks for it with `refreshModel` (the Checks screen does, each time the report changes). It is raw (`markRaw`: nothing watches inside it),
+   * and only replaced when what the module answers is a different model, so what is computed from it (`findingTargets`) is computed once for it.
+   */
+  model: Ref<Model | null>
+  /** Reads the model again. Answers that arrive out of order do not count: the one asked for last is the one kept. */
+  refreshModel: () => Promise<void>
   healthError: Ref<string | null>
   pending: Ref<PendingMigration | null>
   pendingError: Ref<string | null>
@@ -29,6 +38,7 @@ export const STATUS_KEY: InjectionKey<Status> = Symbol('bildr-status')
 
 export const createStatus = (): Status => {
   const health = ref<HealthReport | null>(null)
+  const model = shallowRef<Model | null>(null)
   const healthError = ref<string | null>(null)
   const pending = ref<PendingMigration | null>(null)
   const pendingError = ref<string | null>(null)
@@ -52,6 +62,21 @@ export const createStatus = (): Status => {
       healthError.value = errorMessage(error)
     }
   }
+  let modelAsked = 0
+  const refreshModel = async () => {
+    const mine = ++modelAsked
+    try {
+      const result = await callAction<{ ok: true, model: Model } | { ok: false }>('model_get')
+      if (mine !== modelAsked) return
+      const next = result.ok ? result.model : null
+      // The same model, read again, stays the object it was.
+      if (next && model.value && JSON.stringify(next) === JSON.stringify(model.value)) return
+      if (next) markRaw(next)
+      model.value = next
+    } catch {
+      // The module could not be asked: what was known stays until it can be.
+    }
+  }
   const refreshPending = async () => {
     try {
       const result = await callAction<{ pending: PendingMigration | null, database?: boolean }>('migration_pending_get')
@@ -65,7 +90,7 @@ export const createStatus = (): Status => {
   const refresh = async () => {
     await Promise.all([refreshHealth(), refreshPending()])
   }
-  return { health, healthError, pending, pendingError, database, plan, planShown, showPlanFrom, refreshHealth, refreshPending, refresh }
+  return { health, model, refreshModel, healthError, pending, pendingError, database, plan, planShown, showPlanFrom, refreshHealth, refreshPending, refresh }
 }
 
 export const useStatus = (): Status => {

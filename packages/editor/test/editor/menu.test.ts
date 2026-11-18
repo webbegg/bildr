@@ -38,11 +38,11 @@ const modeOf = (mounted: Awaited<ReturnType<typeof open>>) =>
 /** The links the page's navigation landmarks hold: a left rail of screens would be a `<nav>` of links; the breadcrumbs are buttons. */
 const navLinks = () => qa('nav a[href]').map(link => link.getAttribute('href'))
 
-/** The labels the view menu lists, in order (it is opened with the keyboard, as the other menu tests do). */
+/** The labels the view menu lists, in order (it is opened with the keyboard, as the other menu tests do): what is seen, not what a failure dot adds for a screen reader. */
 const menuLabels = async () => {
   q('[data-view-menu]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
   await settle()
-  return qa('[role^="menuitem"]').map(item => text(item))
+  return qa('[role^="menuitem"]').map(item => text(item.querySelector('[data-slot="itemLabel"]')))
 }
 
 describe('the top bar menu is the only navigation', () => {

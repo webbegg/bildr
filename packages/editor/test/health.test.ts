@@ -25,7 +25,7 @@ describe('Checks screen', () => {
     expect(byTestId('model-status')?.textContent).toContain('valid')
     const drift = byTestId('drift')
     expect(drift?.textContent).toContain('layers/blog/app/pages/index.vue')
-    expect(drift?.textContent).toContain('detached')
+    expect(drift?.textContent).toContain('Edited by hand')
     expect(drift?.querySelector('[data-line="add"]')?.textContent).toBe('+<h1>My posts</h1>')
 
     const lint = byTestId('check-lint')

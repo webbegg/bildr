@@ -6,6 +6,7 @@ import ProblemsList from '../components/ProblemsList.vue'
 import FormActionDialog from '../design/FormActionDialog.vue'
 import RequiredValuesDialog from '../design/RequiredValuesDialog.vue'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
+import { targetsOfProblem } from '../editor/findingTargets.ts'
 import { PANEL_KEY, clampPanel, storedPanelWidth } from '../editor/panelWidth.ts'
 import { createEditor, provideEditor } from '../editor/useEditor.ts'
 
@@ -145,8 +146,7 @@ const canvasKey = (message: { key: string, code: string, meta: boolean, shift: b
       <ProblemsList
         title="The model has problems, so there is nothing to design until they are fixed"
         :problems="editor.problems"
-        :model="editor.model"
-        linked
+        :targets="problem => targetsOfProblem(problem, editor.model)"
       >
         <UButton
           :to="{ path: '/data', query: { item: 'files' } }"

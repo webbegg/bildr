@@ -1,4 +1,6 @@
 import type { UseEntry } from '../shared/dataArtifacts.ts'
+import { itemOfUse } from '../shared/items.ts'
+import { openItem } from './openItem.ts'
 import type { Editor } from './useEditor.ts'
 
 /**
@@ -26,26 +28,7 @@ export function takeRefusal(editor: Editor, fallback: string): { error: string, 
 }
 
 /**
- * Opens the place a use is in: a page, component or layout on the Canvas (the Design screen, which opens it as it does for a
- * collection's detail page), or an action, a query or a collection in the Data workspace.
+ * Opens the place a use is in: a page, component or layout on the Canvas, or an action, a query or a collection in the Data
+ * workspace. The use says `entity` for a collection (the usage index's word); `openItem`, which every open goes through, says `collection`.
  */
-export function openUse(editor: Editor, use: Pick<UseEntry, 'kind' | 'id'>): void {
-  if (use.kind === 'action') {
-    editor.actionId = use.id
-    editor.mode = 'data'
-  } else if (use.kind === 'query') {
-    editor.queryId = use.id
-    editor.mode = 'data'
-  } else if (use.kind === 'entity') {
-    editor.collectionId = use.id
-    editor.mode = 'data'
-  } else if (use.kind === 'page') {
-    editor.mode = 'build'
-    editor.sidebarPanel = 'pages'
-    editor.selectPage(use.id)
-  } else {
-    editor.sidebarPanel = 'assets'
-    if (use.kind === 'component') editor.editComponent(use.id)
-    else editor.editLayout(use.id)
-  }
-}
+export const openUse = (editor: Editor, use: Pick<UseEntry, 'kind' | 'id'>): Promise<boolean> => openItem(itemOfUse(use), { editor })

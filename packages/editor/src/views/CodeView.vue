@@ -6,9 +6,14 @@ import DiffView from '../components/DiffView.vue'
 import ProblemsList from '../components/ProblemsList.vue'
 import StateBadge from '../components/StateBadge.vue'
 import { artifactLabel } from '../model.ts'
+import { stateLabel } from '../shared/fileStates.ts'
 import type { CodeFile, ModelGetResult } from '../types.ts'
 
-/** The files bildr generates from one model file (`?path=`), read-only, with their state; detached ones show their diff. `&file=` is the generated file a link of the Checks screen (S8) opens: its tab is the one shown. */
+/**
+ * The files bildr generates from one model file (`?path=`), read-only, with their state; ones edited by hand show their diff. `&file=` is the generated file a link of the
+ * Checks screen (S8) opens: its tab is the one shown when the files are read for that link, and a hint says so when this model file does not generate it.
+ * Reading the files again (Reload) keeps the tab the user is on.
+ */
 
 const route = useRoute()
 const router = useRouter()
@@ -26,28 +31,33 @@ const choices = computed(() => {
     .map(file => ({ label: `${artifactLabel(all[file], file)} — ${file}`, value: file }))
 })
 
-/** The tab shown: the file the link names when this model file generates it, else the first. */
+/** The tab shown, by its place in `files`. */
 const active = ref('0')
-const showFile = () => {
-  const index = files.value.findIndex(entry => entry.path === file.value)
+/** Shows the tab of the file `wanted`, or the first when this model file does not generate it. */
+const showFile = (wanted: string | undefined) => {
+  const index = files.value.findIndex(entry => entry.path === wanted)
   active.value = String(Math.max(0, index))
 }
+/** The link names a file this model file does not generate (any more). */
+const unknownFile = computed(() => !!file.value && !loading.value && files.value.length > 0 && !files.value.some(entry => entry.path === file.value))
 
 const tabs = computed(() => files.value.map((file, index) => ({
   label: file.path.split('/').at(-1)!,
   value: String(index),
-  badge: file.state === 'managed' ? undefined : { label: file.state, color: file.state === 'detached' ? 'warning' as const : 'neutral' as const, variant: 'subtle' as const },
+  badge: file.state === 'managed' ? undefined : { label: stateLabel(file.state), color: file.state === 'detached' ? 'warning' as const : 'neutral' as const, variant: 'subtle' as const },
   file
 })))
 
-const load = async () => {
+/** Reads the files; `keepTab` shows the file whose tab the user is on instead of the link's. */
+const load = async ({ keepTab = false } = {}) => {
+  const shown = files.value[Number(active.value)]?.path
   files.value = []
   error.value = null
   if (!path.value) return
   loading.value = true
   try {
     files.value = (await callAction<{ files: CodeFile[] }>('code_view', { path: path.value })).files
-    showFile()
+    showFile(keepTab ? shown : file.value)
   } catch (caught) {
     error.value = errorMessage(caught)
   } finally {
@@ -66,8 +76,8 @@ onMounted(async () => {
   }).catch(() => {})
   await load()
 })
-watch(path, load)
-watch(file, showFile)
+watch(path, () => load())
+watch(file, () => showFile(file.value))
 </script>
 
 <template>
@@ -90,7 +100,7 @@ watch(file, showFile)
         icon="i-lucide-refresh-cw"
         label="Reload"
         :loading="loading"
-        @click="load"
+        @click="load({ keepTab: true })"
       />
     </div>
 
@@ -111,6 +121,14 @@ watch(file, showFile)
       class="text-sm text-muted"
     >
       No generated files come from <code>{{ path }}</code>.
+    </p>
+
+    <p
+      v-if="unknownFile"
+      class="text-sm text-warning"
+      data-testid="code-file-unknown"
+    >
+      That file isn't generated from this model any more
     </p>
 
     <UTabs

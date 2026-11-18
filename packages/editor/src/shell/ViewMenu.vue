@@ -2,9 +2,10 @@
 import { computed, inject } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { DropdownMenuItem } from '@nuxt/ui'
+import ChecksDot from '../components/ChecksDot.vue'
 import EditorButton from '../components/kit/EditorButton.vue'
 import EditorMenu from '../components/kit/EditorMenu.vue'
-import { checksAlert } from '../editor/checksAlert.ts'
+import { checksSummary } from '../editor/checksSummary.ts'
 import { MENU, currentEntry } from '../editor/menu.ts'
 import type { MenuEntry } from '../editor/menu.ts'
 import { EDITOR_KEY } from '../editor/useEditor.ts'
@@ -16,14 +17,15 @@ import { STATUS_KEY } from '../status.ts'
  * On the editor's screens a view entry sets the editor's mode (which opens the other screen when it
  * shows that view); on the other screens, where there is no editor, it opens the screen that does.
  * A screen with no entry shows the `title` its route names.
- * A failure dot (S8) is on the button and on the Checks entry while the last Health report has something wrong (`checksAlert`: a failing check,
- * model problems, drift); it reads the status every screen shares, which the shell already keeps fresh, so it polls nothing of its own.
+ * A failure dot (`ChecksDot`, S8) is on the button and on the Checks entry while the last Health report has something wrong (`checksSummary`: a failing check,
+ * model problems, a file edited by hand); the summary is the button's description and the entry's text for a screen reader. It reads the status every screen
+ * shares, which the shell already keeps fresh, so it polls nothing of its own.
  */
 const route = useRoute()
 const router = useRouter()
 const editor = inject(EDITOR_KEY, null)
 const status = inject(STATUS_KEY, null)
-const alert = computed(() => checksAlert(status?.health.value ?? null))
+const summary = computed(() => checksSummary(status?.health.value ?? null))
 
 const current = computed(() => currentEntry(route.name, editor?.mode ?? null))
 const label = computed(() => current.value?.label ?? route.meta.title ?? '')
@@ -64,26 +66,19 @@ const items = computed<DropdownMenuItem[][]>(() => [
       variant="ghost"
       trailing-icon="i-lucide-chevron-down"
       class="bg-white/6 font-[550] text-highlighted hover:bg-white/10 aria-expanded:bg-white/10"
+      :title="summary ?? undefined"
       data-view-menu
     >
-      {{ label }}<span
-        v-if="alert"
-        class="ms-1.5 inline-block size-1.5 rounded-full bg-error"
-        role="img"
-        :aria-label="alert"
-        :title="alert"
-        data-checks-dot
+      {{ label }}<ChecksDot
+        v-if="summary"
+        class="ms-1.5"
       />
     </EditorButton>
     <template #checks-trailing>
-      <span
-        v-if="alert"
-        class="size-1.5 rounded-full bg-error"
-        role="img"
-        :aria-label="alert"
-        :title="alert"
-        data-checks-dot
-      />
+      <template v-if="summary">
+        <ChecksDot />
+        <span class="sr-only">, {{ summary }}</span>
+      </template>
     </template>
   </EditorMenu>
 </template>

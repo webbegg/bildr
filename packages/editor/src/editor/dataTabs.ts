@@ -16,7 +16,7 @@ export interface DataItem {
 export type DataSpecial = 'files' | 'migrations'
 
 /** The item's key, `collection:<id>`, `connection:<id>`, `query:<id>` or `action:<id>`: the tree's item and the URL's `item` are named by it. */
-export const dataItemKey = (item: DataItem): string => `${item.kind}:${item.id}`
+export const dataItemKey = (item: { kind: string, id: string }): string => `${item.kind}:${item.id}`
 
 /** Whether `value` names a kind of item (a list lookup: `constructor` and the other names objects inherit are not kinds). */
 export const isDataItemKind = (value: unknown): value is DataItemKind => value === 'collection' || value === 'connection' || value === 'query' || value === 'action'

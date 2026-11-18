@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { stateLabel } from '../shared/fileStates.ts'
 import type { FileState } from '../types.ts'
 
-/** Who owns a generated file now (decision D1). */
+/** Who owns a generated file now (decision D1), in plain words ("Edited by hand"). */
 const props = defineProps<{ state: FileState }>()
 
 type Color = 'primary' | 'neutral' | 'warning' | 'error' | 'info' | 'success'
@@ -25,6 +26,6 @@ const color = computed<Color>(() => COLORS[props.state] ?? 'neutral')
     :color="color"
     variant="subtle"
     size="sm"
-    :label="state"
+    :label="stateLabel(state)"
   />
 </template>

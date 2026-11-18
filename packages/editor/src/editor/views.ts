@@ -7,6 +7,7 @@
  * to open it, and the editor created there starts on that view, with what the first one carries
  * (the collection to show, a request to open the New collection or the Import from URL dialog).
  */
+import type { CanvasKind } from '../shared/items.ts'
 import type { EditorView } from './useEditor.ts'
 
 export type Screen = 'design' | 'data'
@@ -66,6 +67,12 @@ export const carryFile = (fileId: string): void => {
   if (pending) pending.data.fileId = fileId
 }
 
+/**
+ * What the Design screen starts with to open a page, a component or a layout: the one place that knows a page is `pageId` and the other two are `fileId`
+ * (`carryPage` and `carryFile` are the same split, for an editor that has chosen one while its screen changes).
+ */
+export const canvasStart = (kind: CanvasKind, id: string): DataStart => kind === 'page' ? { pageId: id } : { fileId: id }
+
 /** Opens the screen that shows `view`, carrying the view and `data` for the editor created there. */
 const beginOpen = (view: EditorView, data: DataStart): void => {
   if (!open) return
@@ -87,5 +94,5 @@ export const requestView = (view: EditorView, from: Screen, data: DataStart = {}
   if (screenOf(view) !== from) beginOpen(view, data)
 }
 
-/** `view` was chosen where no editor is (the Code and Checks screens): opens the screen that shows it, started on it, with what `data` carries (a page or a component to open: a link of the Checks screen). */
+/** `view` was chosen where no editor is (the Code and Checks screens): opens the screen that shows it, started on it. `data` is what the editor created there is handed (`canvasStart`: a page, a component or a layout to open). */
 export const openView = (view: EditorView, data: DataStart = {}): void => beginOpen(view, data)

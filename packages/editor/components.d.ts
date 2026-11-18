@@ -11,6 +11,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    ChecksDot: typeof import('./src/components/ChecksDot.vue')['default']
     ConfirmModal: typeof import('./src/components/ConfirmModal.vue')['default']
     DataActionErrors: typeof import('./src/components/data/steps/DataActionErrors.vue')['default']
     DataActionOverview: typeof import('./src/components/data/DataActionOverview.vue')['default']

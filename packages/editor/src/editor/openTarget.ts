@@ -1,18 +1,20 @@
-import { openUse } from './dataArtifactActions.ts'
-import type { Target, TargetRoute } from './findingTargets.ts'
-import type { Editor } from './useEditor.ts'
-import { openView } from './views.ts'
+import { isFileTarget } from './findingTargets.ts'
+import type { Target } from './findingTargets.ts'
+import { openItem } from './openItem.ts'
+import type { OpenContext, Push } from './openItem.ts'
 
 /**
- * Opens a target (`findingTargets.ts`, S8). A target with a route (an item of the Data workspace, Code, All model files) is a
- * navigation. A page, a component or a layout opens on the canvas: through the editor of the screen when there is one (the Data and
- * Design screens, as a "Used in" link does), else (the Checks screen) the Design screen is opened on it.
+ * Opens a target (`findingTargets.ts`, S8). The two that are not an item, a generated file in Code and a model file in All model files, are a route that is
+ * pushed (from an editor, after asking about unsaved edits in the Data workspace, as any move away from it). An item is opened as every item is (`openItem`).
+ * Resolves whether it was opened.
  */
-export function openTarget(target: Target, nav: { push: (to: TargetRoute) => unknown, editor: Editor | null }): void {
-  if (target.to) {
-    void nav.push(target.to)
-  } else if (target.kind === 'page' || target.kind === 'component' || target.kind === 'layout') {
-    if (nav.editor) openUse(nav.editor, { kind: target.kind, id: target.id })
-    else openView('build', target.kind === 'page' ? { pageId: target.id } : { fileId: target.id })
+export function openTarget(target: Target, context: OpenContext & { push: Push }): Promise<boolean> {
+  if (!isFileTarget(target)) return openItem(target, context)
+  const { to } = target
+  const go = () => void context.push(to)
+  if (!context.editor) {
+    go()
+    return Promise.resolve(true)
   }
+  return context.editor.leaveData(go)
 }

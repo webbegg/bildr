@@ -1,55 +1,81 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createDesign } from '../../src/design/store.ts'
 import { openTarget } from '../../src/editor/openTarget.ts'
-import type { Target } from '../../src/editor/findingTargets.ts'
-import type { Editor } from '../../src/editor/useEditor.ts'
+import type { FileTarget, Target } from '../../src/editor/findingTargets.ts'
+import { createEditor } from '../../src/editor/useEditor.ts'
 import { registerScreens, takeStart } from '../../src/editor/views.ts'
+import { mockActions, settle } from '../helpers.ts'
+import { baseHandlers, setupHarness, world } from '../design/harness.ts'
 
-/** How each kind of target is opened (S8): a route is pushed, an item of the canvas is opened by the editor of the screen, or, on a screen with no editor, by the Design screen that is opened for it. */
+/**
+ * How each kind of target is opened (S8): a generated file in Code or a model file in All model files is a route that is pushed (after asking about
+ * unsaved edits when an editor is there); any other target is an item, opened as every item is (`openItem.test.ts` is where each kind is checked).
+ */
 
-const route = (kind: Target['kind'], id: string, to: NonNullable<Target['to']>): Target => ({ kind, id, label: 'x', to })
+setupHarness()
+
+const disposers: Array<() => void> = []
+afterEach(() => {
+  for (const dispose of disposers.splice(0)) dispose()
+  takeStart()
+})
+
+const code: FileTarget = { kind: 'code', id: 'layers/blog/app/pages/index.vue', label: 'Open file in Code', to: { path: '/code', query: { path: '.bildr/modules/blog/pages/index.json', file: 'layers/blog/app/pages/index.vue' } } }
+const files: FileTarget = { kind: 'files', id: '.bildr/layouts/main.json', label: 'Open in All model files', to: { path: '/data', query: { item: 'files', file: '.bildr/layouts/main.json' } } }
+
+const boot = async () => {
+  mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }) })
+  const design = createDesign()
+  const editor = createEditor(design, { view: 'data' })
+  disposers.push(() => design.dispose())
+  await editor.start()
+  await settle()
+  return editor
+}
 
 describe('opening a target', () => {
-  it.each([
-    [route('code', 'layers/blog/app/pages/index.vue', { path: '/code', query: { path: '.bildr/modules/blog/pages/index.json', file: 'layers/blog/app/pages/index.vue' } })],
-    [route('collection', 'ent_post', { path: '/data', query: { item: 'collection:ent_post' } })],
-    [route('connection', 'ds_quotes', { path: '/data', query: { item: 'connection:ds_quotes' } })],
-    [route('query', 'q_featured_posts', { path: '/data', query: { item: 'query:q_featured_posts' } })],
-    [route('action', 'act_create_post', { path: '/data', query: { item: 'action:act_create_post' } })],
-    [route('files', '.bildr/layouts/main.json', { path: '/data', query: { item: 'files', file: '.bildr/layouts/main.json' } })]
-  ])('pushes the route of %j', (target) => {
+  it.each([[code], [files]])('pushes the route of %j', async (target) => {
     const push = vi.fn()
-    openTarget(target, { push, editor: null })
+    expect(await openTarget(target, { editor: null, push, model: world.model, notify: vi.fn() })).toBe(true)
     expect(push).toHaveBeenCalledWith(target.to)
   })
 
-  it('opens a page, a component and a layout through the editor that is there, as a "Used in" link does', () => {
-    const editor = { mode: 'data', sidebarPanel: '', selectPage: vi.fn(), editComponent: vi.fn(), editLayout: vi.fn() } as unknown as Editor
+  it('opens an item as every item is opened: the Data workspace is pushed on it where there is no editor', async () => {
     const push = vi.fn()
-    openTarget({ kind: 'page', id: 'pg_index', label: 'x' }, { push, editor })
-    expect(editor).toMatchObject({ mode: 'build', sidebarPanel: 'pages' })
-    expect(editor.selectPage).toHaveBeenCalledWith('pg_index')
-    openTarget({ kind: 'component', id: 'cmp_tip', label: 'x' }, { push, editor })
-    expect(editor.editComponent).toHaveBeenCalledWith('cmp_tip')
-    openTarget({ kind: 'layout', id: 'lay_main', label: 'x' }, { push, editor })
-    expect(editor.editLayout).toHaveBeenCalledWith('lay_main')
+    const target: Target = { kind: 'collection', id: 'ent_post', label: 'Open collection “Post”' }
+    await openTarget(target, { editor: null, push, model: world.model, notify: vi.fn() })
+    expect(push).toHaveBeenCalledWith({ path: '/data', query: { item: 'collection:ent_post' } })
+  })
+
+  it('opens the Design screen on a page where there is no editor', async () => {
+    const open = vi.fn()
+    disposers.push(registerScreens(open))
+    await openTarget({ kind: 'page', id: 'pg_index', label: 'x' }, { editor: null, push: vi.fn(), model: world.model, notify: vi.fn() })
+    expect(open).toHaveBeenLastCalledWith('design')
+    expect(takeStart()).toEqual({ view: 'build', data: { pageId: 'pg_index' } })
+  })
+
+  it('asks first before a route leaves unsaved edits of the Data workspace, and does not push it when they are kept', async () => {
+    const editor = await boot()
+    editor.dataDirty = '.bildr/modules/blog/entities/post.json'
+    const push = vi.fn()
+    const opened = openTarget(code, { editor, push })
+    await settle()
+    expect(editor.confirmRequest?.title).toBe('Discard unsaved changes to .bildr/modules/blog/entities/post.json?')
+    expect(push).not.toHaveBeenCalled()
+    editor.confirmRequest?.answer(false)
+    expect(await opened).toBe(false)
     expect(push).not.toHaveBeenCalled()
   })
 
-  it('opens the Design screen on the page, component or layout when no editor is there (the Checks screen)', () => {
-    const open = vi.fn()
-    const off = registerScreens(open)
-    try {
-      const push = vi.fn()
-      openTarget({ kind: 'page', id: 'pg_index', label: 'x' }, { push, editor: null })
-      expect(open).toHaveBeenLastCalledWith('design')
-      expect(takeStart()).toEqual({ view: 'build', data: { pageId: 'pg_index' } })
-      openTarget({ kind: 'component', id: 'cmp_tip', label: 'x' }, { push, editor: null })
-      expect(takeStart()).toEqual({ view: 'build', data: { fileId: 'cmp_tip' } })
-      openTarget({ kind: 'layout', id: 'lay_main', label: 'x' }, { push, editor: null })
-      expect(takeStart()).toEqual({ view: 'build', data: { fileId: 'lay_main' } })
-      expect(push).not.toHaveBeenCalled()
-    } finally {
-      off()
-    }
+  it('pushes the route once the unsaved edits are given up', async () => {
+    const editor = await boot()
+    editor.dataDirty = '.bildr/modules/blog/entities/post.json'
+    const push = vi.fn()
+    const opened = openTarget(files, { editor, push })
+    await settle()
+    editor.confirmRequest?.answer(true)
+    expect(await opened).toBe(true)
+    expect(push).toHaveBeenCalledWith(files.to)
   })
 })

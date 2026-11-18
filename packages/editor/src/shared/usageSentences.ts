@@ -1,6 +1,7 @@
 import type { ArtifactUse } from '@bildr/codegen/edit'
-import type { ComponentFile, LayoutFile, Model, ModelNode, PageFile } from '@bildr/codegen/model'
+import type { Model, ModelNode } from '@bildr/codegen/model'
 import { findNode } from '../design/tree.ts'
+import { findOwner, labelOf } from './items.ts'
 import { layerName } from './layers.ts'
 
 /**
@@ -15,26 +16,16 @@ import { layerName } from './layers.ts'
 
 export type UsedThing = { kind: 'collection' | 'query' | 'action' } | { kind: 'field', name: string }
 
-const quoted = (name: string) => `“${name}”`
+/** A name in the quotes the workspace uses for names (`“Post”`): the sentences here and the links that open the thing named. */
+export const quoted = (name: string) => `“${name}”`
 const capital = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 const article = (word: string) => /^[aeiou]/i.test(word) ? 'an' : 'a'
 
-const labelOf = (model: Model, id: string | undefined): string => {
-  if (!id) return ''
-  const modules = Object.values(model.modules)
-  const item = [...modules.flatMap(mod => mod.queries), ...modules.flatMap(mod => mod.actions)].find(entry => entry.id === id)
-  return item ? item.label || item.name : id
-}
-
 const isAction = (model: Model, id: string | undefined): boolean => !!id && Object.values(model.modules).some(mod => mod.actions.some(action => action.id === id))
-
-type Owner = PageFile | ComponentFile | LayoutFile
-
-const ownerOf = (model: Model, id: string): Owner | undefined => [...Object.values(model.modules).flatMap(mod => [...mod.pages, ...mod.components]), ...model.layouts].find(entry => entry.id === id)
 
 /** The node a use is on, in words, and its type: `a Text`, `the list`, `the form`, or its own name when it has one (`“Hero title”`). */
 const nodeOf = (model: Model, use: ArtifactUse): { words: string, node?: ModelNode } => {
-  const owner = use.node ? ownerOf(model, use.id) : undefined
+  const owner = use.node ? findOwner(model, use.id)?.file : undefined
   const node = owner && use.node ? findNode(owner.root, use.node) : undefined
   if (!owner || !node) return { words: 'a part of it' }
   const components = Object.values(model.modules).flatMap(mod => mod.components)
