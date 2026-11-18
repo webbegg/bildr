@@ -7,8 +7,10 @@ import type { ArtifactTarget } from '../../editor/useArtifactDialog.ts'
 /**
  * The Rename dialog of a query, an action or a state (S10, DW-7e, B2): `query_rename` / `action_rename` / `state_rename`. A rename
  * changes the name, which names the generated code (the `use<Name>` composable, the route file; a state's has its module's name first),
- * and nothing else: the pages, forms, actions and steps that use it hold its id, so they need no change. Hand-written code that imports the generated name does, and the dialog says
- * so. What the module refuses is shown here and what was typed stays.
+ * and nothing else: the pages, forms, actions and steps that use it hold its id, so they need no change. Code the user wrote
+ * themselves that uses the item does, and the dialog says so, with the generated name as a hint of what to look for. The editor can't
+ * tell whether such code exists, so the warning stays, below what the rename does for them. What the module refuses is shown here and
+ * what was typed stays.
  */
 const { target } = defineProps<{ target: ArtifactTarget | null }>()
 const emit = defineEmits<{ close: [] }>()
@@ -56,15 +58,22 @@ async function submit() {
         @keydown.enter.prevent="submit"
       />
     </EditorFormRow>
-    <p
-      v-if="item"
-      class="text-[12px] leading-4 text-muted"
-      data-artifact-warning
-    >
-      Hand-written code that imports `{{ shown?.kind === 'state' ? stateComposableOf(item.module, item.name) : composableOf(item.name) }}` needs the same rename.
-    </p>
-    <p class="text-[12px] leading-4 text-dimmed">
+    <p class="text-[12px] leading-4 text-muted">
       {{ shown?.kind === 'state' ? 'Pages and steps' : 'Pages, forms and actions' }} that use it refer to it by id: they are updated with it.
     </p>
+    <template v-if="item">
+      <p
+        class="text-[12px] leading-4 text-dimmed"
+        data-artifact-warning
+      >
+        Code you wrote yourself that uses this {{ words.label.toLowerCase() }} needs the same rename.
+      </p>
+      <p
+        class="text-[12px] leading-4 text-dimmed"
+        data-artifact-hint
+      >
+        It is generated as `{{ shown?.kind === 'state' ? stateComposableOf(item.module, item.name) : composableOf(item.name) }}`.
+      </p>
+    </template>
   </DataArtifactDialog>
 </template>

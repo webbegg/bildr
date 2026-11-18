@@ -3,8 +3,9 @@ import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import type { StateFile } from '@bildr/codegen/model'
 import { attempt } from '../../editor/dataArtifactActions.ts'
 import { sameJson } from '../../editor/draftJson.ts'
-import { changedOutside, changesOf, draftOf, fieldOfRefusal, moveField, newField, rebaseDraft } from '../../editor/stateDraft.ts'
+import { changedOutside, changesOf, draftOf, fieldOfRefusal, moveField, newField, rebaseDraft, setDefault, setFieldType, toggleEmptyDefault } from '../../editor/stateDraft.ts'
 import type { DraftField, StateDraft } from '../../editor/stateDraft.ts'
+import type { RefusedField } from '../../api.ts'
 import { useDraftForm } from '../../editor/useDraftForm.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { confirmRemoveStateField } from '../../editor/usageWarnings.ts'
@@ -16,13 +17,14 @@ import DataFieldUses from './DataFieldUses.vue'
 /**
  * A state's Fields tab (B2, S1): a table of its fields, one row each: the name, the type, the default (an input that fits the type:
  * a checkbox for a toggle, a number box, a date box…) and whether it is required, with the arrows that reorder, a "−" that removes and
- * `Add field`. Edits are a draft: Save sends the whole list with `state_update` (`editor/stateDraft.ts`, each field with its id so
- * the module matches it), and what the module refuses is shown next to the field it names (a field a page still uses can't be removed,
- * renamed or retyped), or in the footer when it is about the state. Removing a field that is used says so first, listing the places,
- * as removing a collection's field does. A save refreshes the model, so the tree, Used in and the header show the change.
+ * `Add field`. Edits are a draft: Save sends the whole list with `state_update` (`editor/stateDraft.ts`, each saved field with its id so
+ * the module matches it, a field added here with none), and what the module refuses is shown next to the field it names (`field` of
+ * the refusal: a field a page still uses can't be removed, renamed or retyped), or in the footer when it is about the state. Removing
+ * a field that is used says so first, listing the places, as removing a collection's field does. A save refreshes the model, so the
+ * tree, Used in and the header show the change.
  *
  * The draft, its base and the notice for a state that changed under it are the shared draft form (`useDraftForm`, `DataStaleNotice`,
- * `DataDraftFooter`). A state with several rows (not generated yet) is listed read-only.
+ * `DataDraftFooter`). A state that holds several sets of values (not generated yet) is listed read-only.
  */
 const { state } = defineProps<{ state: StateFile }>()
 const editor = useEditor()
@@ -40,15 +42,15 @@ const { draft, base, error, saving, dirty, stale, discard, keepMine } = useDraft
 })
 const changes = computed(() => changesOf(draft.value, base.value))
 
-/** Whether the error shown is the module's refusal (and so may belong to a field), not a problem the form found in a box. */
-const refused = ref(false)
-/** The row the module's refusal is about, when it names one. */
-const refusedKey = computed(() => refused.value && error.value ? fieldOfRefusal(error.value, draft.value.fields, base.value.fields) : null)
+/** The field the module's refusal in `error` is about, when it names one (null for a problem the form found in a box, or a refusal about the state). */
+const refusedField = ref<RefusedField | null>(null)
+/** The row the module's refusal is about, when it names one the draft has. */
+const refusedKey = computed(() => error.value && refusedField.value ? fieldOfRefusal(refusedField.value, draft.value.fields) : null)
 const footerError = computed(() => refusedKey.value ? '' : error.value)
 
 async function save() {
-  if (stale.value || !dirty.value) return
-  refused.value = false
+  if (stale.value || !dirty.value || saving.value) return
+  refusedField.value = null
   if (changes.value.problems.length) {
     error.value = changes.value.problems.join('. ')
     return
@@ -57,7 +59,7 @@ async function save() {
   const done = await attempt(editor, 'state_update', { state: state.id, fields: changes.value.fields }, 'Could not save the state')
   saving.value = false
   if ('error' in done) {
-    refused.value = true
+    refusedField.value = done.field ?? null
     error.value = done.error
     return
   }
@@ -69,12 +71,8 @@ async function save() {
 const INPUTS: Record<FieldType, string> = { text: 'text', integer: 'number', number: 'number', boolean: 'checkbox', date: 'date', datetime: 'datetime-local', image: 'text', uuid: 'text' }
 const label = (field: DraftField) => field.name.trim() || 'new field'
 const CHECKBOX = 'size-3.5 cursor-pointer scheme-dark accent-(--ui-primary)'
-
-function setType(field: DraftField, type: FieldType) {
-  field.type = type
-  // What was typed for another type may not fit this one. A toggle shows its default as a checkbox, which starts unchecked: that is "no", so it is the default.
-  field.default = type === 'boolean' ? 'false' : ''
-}
+/** The columns of the header row and of every field's row. */
+const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_minmax(0,1fr)_4.5rem_6.5rem]'
 
 function setToggle(field: DraftField, event: Event) {
   field.default = (event.target as HTMLInputElement).checked ? 'true' : 'false'
@@ -131,7 +129,7 @@ async function remove(field: DraftField) {
           name="i-lucide-info"
           class="size-4 shrink-0"
         />
-        Not generated yet: a state with several rows is listed here, but it can't be edited. Delete it and create it again to give it one row of values.
+        This state holds several sets of values, which the editor can't edit yet.
       </p>
       <div>
         <p
@@ -144,7 +142,8 @@ async function remove(field: DraftField) {
           The state starts with each field's default.
         </p>
         <div
-          class="grid grid-cols-[minmax(0,1fr)_9.5rem_minmax(0,1fr)_4.5rem_6.5rem] items-center gap-x-2 px-2 pb-1 text-[11px] text-dimmed"
+          class="grid items-center gap-x-2 px-2 pb-1 text-[11px] text-dimmed"
+          :class="COLUMNS"
           data-state-header-row
         >
           <span class="ps-1.5">Name</span>
@@ -160,7 +159,10 @@ async function remove(field: DraftField) {
             class="rounded-lg py-0.5"
             :data-state-field="field.key"
           >
-            <div class="grid grid-cols-[minmax(0,1fr)_9.5rem_minmax(0,1fr)_4.5rem_6.5rem] items-center gap-x-2">
+            <div
+              class="grid items-center gap-x-2"
+              :class="COLUMNS"
+            >
               <template v-if="readOnly">
                 <span
                   class="truncate ps-1.5 text-[12px] text-toned"
@@ -192,7 +194,7 @@ async function remove(field: DraftField) {
                   :aria-label="`Type of ${label(field)}`"
                   :ui="{ content: 'min-w-32' }"
                   data-state-type
-                  @update:model-value="setType(field, $event as FieldType)"
+                  @update:model-value="setFieldType(field, $event as FieldType)"
                 />
                 <input
                   v-if="field.type === 'boolean'"
@@ -203,16 +205,32 @@ async function remove(field: DraftField) {
                   data-state-default
                   @change="setToggle(field, $event)"
                 >
-                <EditorInput
+                <span
                   v-else
-                  :model-value="field.type === 'datetime' ? field.default.slice(0, 16) : field.default"
-                  :type="INPUTS[field.type]"
-                  :step="field.type === 'integer' ? 1 : field.type === 'number' ? 'any' : undefined"
-                  placeholder="No default"
-                  :aria-label="`Default of ${label(field)}`"
-                  data-state-default
-                  @update:model-value="field.default = String($event)"
-                />
+                  class="flex min-w-0 items-center gap-1"
+                >
+                  <EditorInput
+                    :model-value="field.default"
+                    :type="INPUTS[field.type]"
+                    :step="field.type === 'integer' ? 1 : field.type === 'number' ? 'any' : undefined"
+                    :placeholder="field.emptyDefault ? 'Empty text' : 'No default'"
+                    :aria-label="`Default of ${label(field)}`"
+                    class="min-w-0 flex-1"
+                    data-state-default
+                    @update:model-value="setDefault(field, String($event))"
+                  />
+                  <EditorButton
+                    v-if="field.type === 'text'"
+                    label="Empty"
+                    size="xs"
+                    :variant="field.emptyDefault ? 'soft' : 'ghost'"
+                    :aria-pressed="field.emptyDefault"
+                    :aria-label="`${label(field)} starts as an empty text`"
+                    title="Start as an empty text: a default, not the absence of one"
+                    data-state-empty
+                    @click="toggleEmptyDefault(field)"
+                  />
+                </span>
                 <span class="grid place-items-center">
                   <input
                     v-model="field.required"
@@ -267,14 +285,13 @@ async function remove(field: DraftField) {
               :uses="usesOf(field)"
               :open="usesOpen === field.key"
             />
-            <p
+            <DataInlineError
               v-if="refusedKey === field.key"
-              class="mt-1 rounded-lg bg-error/10 px-3 py-2 text-[12px] leading-4 text-error"
-              role="alert"
+              class="mt-1"
               data-state-field-error
             >
               {{ error }}
-            </p>
+            </DataInlineError>
           </div>
           <button
             v-if="!readOnly"

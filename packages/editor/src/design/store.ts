@@ -9,7 +9,7 @@ import { primaryFrame } from '@bildr/editor-core/frames'
 import { devicesFor } from '@bildr/editor-core/styleFields'
 import type { Device, DeviceId } from '@bildr/editor-core/styleFields'
 import { ActionCallError, callAction, errorMessage, subscribeEvents } from '../api.ts'
-import type { BildrEvent } from '../api.ts'
+import type { BildrEvent, RefusedField } from '../api.ts'
 import type { CanvasFile } from '../canvas/render.ts'
 import type { CanvasMode } from '../canvas/protocol.ts'
 import type { ModelProblem } from '../types.ts'
@@ -87,6 +87,8 @@ export const createDesign = () => {
   const error = ref<string | null>(null)
   /** The code of the action's refusal in `error` (`conflict`, `invalid`, …), when it came from the module. */
   const errorCode = ref<string | null>(null)
+  /** The field of a list the refusal in `error` is about, when the module says (a state's fields). */
+  const errorField = ref<RefusedField | null>(null)
   let errorFromRead = false
   const regenerated = ref<{ ok: boolean, problems?: ModelProblem[], error?: string } | null>(null)
   const fileId = ref<string | null>(null)
@@ -294,6 +296,7 @@ export const createDesign = () => {
     const run = queue.then(async () => {
       error.value = null
       errorCode.value = null
+      errorField.value = null
       try {
         const out = await callAction<Record<string, unknown>>(name, input)
         await refresh()
@@ -301,6 +304,7 @@ export const createDesign = () => {
       } catch (caught) {
         error.value = errorMessage(caught)
         errorCode.value = caught instanceof ActionCallError ? caught.code : null
+        errorField.value = caught instanceof ActionCallError ? caught.field ?? null : null
         errorFromRead = false
         return undefined
       }
@@ -312,6 +316,7 @@ export const createDesign = () => {
   const dismissError = () => {
     error.value = null
     errorCode.value = null
+    errorField.value = null
   }
 
   const select = (ids: string[]) => {
@@ -582,7 +587,7 @@ export const createDesign = () => {
   }
 
   return {
-    page, rowsOf, detail, records, record, pickRecord, result, loading, error, errorCode, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
+    page, rowsOf, detail, records, record, pickRecord, result, loading, error, errorCode, errorField, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
     selectedIds, selectedId, selected, selectedParent, hoveredId, dragging, dragCancels, device, devices, deviceChoice, mode, history, clipboard,
     component, variantId, variant, inspected, breadcrumbs, nameOf, dark, selectVariant, override, commitStyle,
     isContainer, scopeOf, pendingInsert, confirmInsert, pendingForm, confirmForm, formActions, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,

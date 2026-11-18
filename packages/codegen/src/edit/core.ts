@@ -20,19 +20,31 @@ import { walk } from './tree.ts'
  */
 export type EditErrorCode = 'invalid_input' | 'not_found' | 'invalid' | 'conflict'
 
+/**
+ * The field of a list (a state's fields) a refusal is about, so a form can show it next to that field without reading the message:
+ * its `id` when the field is saved (or the entry gave one), and its `name` (the one the entry was given, or the field has saved).
+ */
+export interface FieldRef {
+  id?: string
+  name: string
+}
+
 export class EditError extends Error {
   readonly code: EditErrorCode
+  readonly field: FieldRef | undefined
 
   // Plain fields, not parameter properties: Node's type stripping can't run those.
-  constructor(code: EditErrorCode, message: string) {
+  constructor(code: EditErrorCode, message: string, field?: FieldRef) {
     super(message)
     this.name = 'EditError'
     this.code = code
+    this.field = field
   }
 }
 
-export const fail = (code: Exclude<EditErrorCode, 'invalid_input'>, message: string): never => {
-  throw new EditError(code, message)
+/** Refuses the edit; `field` (optional) is the field of a list the refusal is about. */
+export const fail = (code: Exclude<EditErrorCode, 'invalid_input'>, message: string, field?: FieldRef): never => {
+  throw new EditError(code, message, field)
 }
 
 /** Whether `value` is an object of values (not null, not a list): a binding, a template, a step. */
@@ -46,7 +58,7 @@ export interface FileChange {
 
 export type EditOutcome<R = Record<string, unknown>>
   = | { ok: true, changes: FileChange[], result: R }
-    | { ok: false, code: EditErrorCode, message: string, problems?: ModelProblem[] }
+    | { ok: false, code: EditErrorCode, message: string, problems?: ModelProblem[], field?: FieldRef }
 
 // ── Names and ids ────────────────────────────────────────────────────────
 
@@ -298,7 +310,7 @@ export const runEdit = (files: Record<string, string>, def: EditDef, rawInput: u
   try {
     result = def.apply(draft, parsed.data)
   } catch (error) {
-    if (error instanceof EditError) return { ok: false, code: error.code, message: error.message }
+    if (error instanceof EditError) return { ok: false, code: error.code, message: error.message, ...(error.field ? { field: error.field } : {}) }
     throw error
   }
   if (def.readOnly) return { ok: true, changes: [], result }

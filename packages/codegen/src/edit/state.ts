@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { ArtifactIdSchema, FIELD_TYPES, ModuleNameSchema, ValueSchema } from '../model/schemas.ts'
 import type { StateFile } from '../model/schemas.ts'
 import { camel, defineEdit, fail, kebab } from './core.ts'
-import type { Draft } from './core.ts'
+import type { Draft, FieldRef } from './core.ts'
 import { fits, isExpression } from './entities.ts'
 import { checkStateFree, sentence, spaced, stateComposableOf, stateName } from './naming.ts'
 import { describeUses, stateFieldUsesOf, usesOf } from './usage.ts'
@@ -19,7 +19,7 @@ const StateRef = ArtifactIdSchema.describe('A state id, e.g. "st_preferences"')
 const PERSIST = ['memory', 'session', 'localStorage'] as const
 
 const FieldInput = z.object({
-  id: ArtifactIdSchema.optional().describe('state_update: the id of the field this entry is, to keep it when it is renamed; without it, an entry matches the field of the same name, or is a new one'),
+  id: ArtifactIdSchema.optional().describe('state_update: the id of the field this entry is, to keep it when it is renamed. When any entry has an id, an entry without one is a new field; when none has, an entry matches the field of the same name, or is a new one'),
   name: z.string().min(1).max(60).describe('camelCased, e.g. "Show drafts" → "showDrafts"; "id" is the row\'s key'),
   type: z.enum(FIELD_TYPES),
   required: z.boolean().optional().describe('a required field needs a default: the state starts with its defaults'),
@@ -36,9 +36,12 @@ const findState = (draft: Draft, id: string): { state: StateFile, module: string
   return fail('not_found', `No state "${id}"`)
 }
 
-const fieldName = (given: string): string => {
+// The refusals about one field of a list carry its `FieldRef` (`field` of the edit's outcome): the editor shows each next to its field by
+// that, never by reading the message. The id is the one the entry gave (or the saved field's), the name the one the entry was given.
+
+const fieldName = (given: string, ref: FieldRef): string => {
   const name = /^[a-z][A-Za-z0-9]*$/.test(given) ? given : camel(given)
-  if (!/^[a-z][A-Za-z0-9]*$/.test(name)) fail('invalid', `"${given}" can't be a field name: start with a letter, like "showDrafts"`)
+  if (!/^[a-z][A-Za-z0-9]*$/.test(name)) fail('invalid', `"${given}" can't be a field name: start with a letter, like "showDrafts"`, ref)
   return name
 }
 
@@ -46,33 +49,38 @@ const fieldName = (given: string): string => {
 const EXTRAS = ['unique', 'nullable', 'readonly', 'min', 'max', 'pattern', 'patternMessage'] as const
 
 /**
- * The fields `given` stands for, against the state's `existing` ones (none for a new state): an entry with an id is that field, one
- * without matches the field of the same name or is new (minted `fld_<name>`). Defaults are checked against the types: the state
- * starts with them, so a required field has to have one.
+ * The fields `given` stands for, against the state's `existing` ones (none for a new state). An entry with an id is that field,
+ * whatever its name (so a rename, and a new field that takes the old name in the same save, are told apart). When any entry has an
+ * id, the caller keeps ids (the editor sends one for every saved field), so an entry without one is a NEW field (minted
+ * `fld_<name>`): never matched by name to a field another entry has by id, nor to one the list leaves out, which would hand a field
+ * that was removed and added again its old id and its extras. When no entry has an id, an entry matches the field of the same name
+ * or is new. Defaults are checked against the types: the state starts with them, so a required field has to have one.
  */
 const buildFields = (draft: Draft, given: FieldGiven[], existing: StateFile['fields'] = []): StateFile['fields'] => {
   const claimed = new Set<string>()
   const names = new Set<string>()
+  const keepsIds = given.some(entry => entry.id !== undefined)
   return given.map((entry) => {
-    const name = fieldName(entry.name)
-    if (name === 'id') fail('invalid', '"id" is the key of the state\'s row: pick another field name')
+    const ref: FieldRef = { ...(entry.id !== undefined ? { id: entry.id } : {}), name: entry.name }
+    const name = fieldName(entry.name, ref)
+    if (name === 'id') fail('invalid', '"id" is the key of the state\'s row: pick another field name', ref)
     // Every object already has these (`toString`, `constructor`…): the generated code that changes a field takes an object literal, which can't type one.
-    if (name in Object.prototype) fail('invalid', `"${name}" is a name every object already has: pick another field name`)
-    if (names.has(name)) fail('invalid', `Two fields are named "${name}"`)
+    if (name in Object.prototype) fail('invalid', `"${name}" is a name every object already has: pick another field name`, ref)
+    if (names.has(name)) fail('invalid', `Two fields are named "${name}"`, ref)
     names.add(name)
     let match: StateFile['fields'][number] | undefined
     if (entry.id !== undefined) {
-      match = existing.find(field => field.id === entry.id) ?? fail('not_found', `The state has no field "${entry.id}"`)
-    } else {
+      match = existing.find(field => field.id === entry.id) ?? fail('not_found', `The state has no field "${entry.id}"`, ref)
+    } else if (!keepsIds) {
       match = existing.find(field => field.name === name)
     }
-    if (match && claimed.has(match.id)) fail('invalid', `Two fields are the field ${match.id}`)
+    if (match && claimed.has(match.id)) fail('invalid', `Two fields are the field ${match.id}`, ref)
     if (match) claimed.add(match.id)
-    if (entry.default === null) fail('invalid', `${name}: a default is a value, not null`)
+    if (entry.default === null) fail('invalid', `${name}: a default is a value, not null`, ref)
     if (entry.default !== undefined && (isExpression(entry.default) || !fits(entry.type, entry.default, !entry.required))) {
-      fail('invalid', `${name}: the default ${JSON.stringify(entry.default)} doesn't fit ${entry.type}`)
+      fail('invalid', `${name}: the default ${JSON.stringify(entry.default)} doesn't fit ${entry.type}`, ref)
     }
-    if (entry.required && entry.default === undefined) fail('invalid', `${name}: a required field needs a default (the state starts with its defaults)`)
+    if (entry.required && entry.default === undefined) fail('invalid', `${name}: a required field needs a default (the state starts with its defaults)`, ref)
     const kept = match && match.type === entry.type ? Object.fromEntries(EXTRAS.filter(key => match![key] !== undefined).map(key => [key, match![key]])) : {}
     return {
       id: match?.id ?? draft.mint('fld', name),
@@ -122,7 +130,7 @@ export const stateUpdate = defineEdit({
     state: StateRef,
     label: z.string().min(1).max(100).optional(),
     persist: z.enum(PERSIST).optional().describe('memory (forgotten on reload), session (kept for this tab) or localStorage (kept in this browser)'),
-    fields: z.array(FieldInput).min(1).max(50).optional().describe('Replaces the whole list of fields. An entry keeps the field of its id, or of its name; a field left out is removed. A field a page binds or a setState step sets can change its default and whether it is required, but not be removed, renamed or change type')
+    fields: z.array(FieldInput).min(1).max(50).optional().describe('Replaces the whole list of fields. An entry keeps the field of its id (when any entry has an id, one without is a new field), or of its name when none has an id; a field left out is removed. A field a page binds or a setState step sets can change its default and whether it is required, but not be removed, renamed or change type')
   }),
   apply: (draft, { state: id, label, persist, fields }) => {
     const { state } = findState(draft, id)
@@ -134,7 +142,7 @@ export const stateUpdate = defineEdit({
         const what = !now ? 'removed' : now.name !== field.name ? `renamed to ${now.name}` : now.type !== field.type ? `changed to ${now.type}` : undefined
         if (!what) continue
         const uses = stateFieldUsesOf(draft.model, id, field.name)
-        if (uses.length) fail('invalid', `The field ${field.name} of the state ${state.name} (${id}) is still used: ${describeUses(uses)}. It can't be ${what}: change them first`)
+        if (uses.length) fail('invalid', `The field ${field.name} of the state ${state.name} (${id}) is still used: ${describeUses(uses)}. It can't be ${what}: change them first`, { id: field.id, name: field.name })
       }
       state.fields = next
     }

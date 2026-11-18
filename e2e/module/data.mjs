@@ -273,7 +273,8 @@ await run('data', async ({ page, browser, errors }) => {
   // Rename: the page holds the query's id, so it still renders; hand-written code that imports the old name is warned.
   await page.locator(`[data-artifact-menu="${cheap.id}"]`).click({ force: true })
   await page.getByRole('menuitem', { name: 'Rename' }).click()
-  check((await page.locator('[data-artifact-warning]').innerText()).includes('Hand-written code that imports `useCheapDishes` needs the same rename.'), 'Rename warns that hand-written code importing the old name needs the same rename')
+  check((await page.locator('[data-artifact-warning]').innerText()).includes('Code you wrote yourself that uses this query needs the same rename.'), 'Rename warns that code you wrote yourself needs the same rename')
+  check((await page.locator('[data-artifact-hint]').innerText()).includes('useCheapDishes'), 'and names the generated name only as a hint')
   await page.locator('[data-artifact-name]').fill('budgetDishes')
   await page.locator('[data-artifact-submit]').click()
   check(await until(() => bildr('modules/blog/queries/cheap-dishes.json')?.name === 'budgetDishes'), 'the rename writes the query\'s name, in its own file')

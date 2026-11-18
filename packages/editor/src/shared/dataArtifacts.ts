@@ -26,6 +26,8 @@ export const ARTIFACT_KINDS: Record<ArtifactKind, { label: string, plural: strin
 
 /** Where a state keeps its values (`state_update` `persist`), in the words of the workspace: never the browser's storage names. */
 export type StatePersist = StateFile['persist']
+/** What the choice of `PERSISTENCE` is called, in a state's header and in New state. */
+export const KEEPS_VALUES = 'Keeps its values'
 export const PERSISTENCE: Array<{ value: StatePersist, label: string, description: string }> = [
   { value: 'memory', label: 'Forgotten on reload', description: 'The values start over each time the app loads.' },
   { value: 'session', label: 'Kept for this tab', description: 'The values survive a reload, but not a new tab.' },

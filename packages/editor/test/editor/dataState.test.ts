@@ -428,7 +428,7 @@ describe('the Fields tab of a state', () => {
   })
 })
 
-describe('a state with several rows', () => {
+describe('a state that holds several sets of values', () => {
   const several = async () => {
     world.model.modules.blog!.state.push({ id: 'st_cart', name: 'cart', label: 'Cart', persist: 'memory', shape: 'many', fields: [{ id: 'fld_item', name: 'item', type: 'text' }] })
     return mounted({}, '/data?item=state:st_cart&tab=fields')
@@ -436,7 +436,7 @@ describe('a state with several rows', () => {
 
   it('is read-only, and says it is not generated yet', async () => {
     await several()
-    expect(text(q('[data-state-many]'))).toContain('Not generated yet')
+    expect(text(q('[data-state-many]'))).toBe('This state holds several sets of values, which the editor can\'t edit yet.')
     expect(q('[data-state-field] input')).toBeNull()
     expect(q('[data-state-add]')).toBeNull()
     expect(q('[data-state-fields-save]')).toBeNull()
@@ -446,7 +446,7 @@ describe('a state with several rows', () => {
 
   it('says nothing of shapes, entities or composables', async () => {
     await several()
-    expect(text(q('[data-state-many]'))).not.toMatch(/shape|entity|composable/i)
+    expect(text(q('[data-state-many]'))).not.toMatch(/shape|entity|composable|\brows?\b/i)
   })
 })
 
@@ -580,11 +580,12 @@ describe('the dialogs of state', () => {
       return mount
     }
 
-    it('starts on the name and says hand-written code that imports the generated name needs the same rename', async () => {
+    it('starts on the name and says code the user wrote that uses the state needs the same rename, with the generated name as a hint', async () => {
       await openRename()
       expect(text(q('[role="dialog"]'))).toContain('Rename state')
       expect(nameInput().value).toBe('preferences')
-      expect(text(q('[data-artifact-warning]'))).toBe('Hand-written code that imports `useBlogPreferences` needs the same rename.')
+      expect(text(q('[data-artifact-warning]'))).toBe('Code you wrote yourself that uses this state needs the same rename.')
+      expect(text(q('[data-artifact-hint]'))).toBe('It is generated as `useBlogPreferences`.')
       expect(text(q('[data-artifact-dialog="rename"]'))).toContain('Pages and steps that use it refer to it by id: they are updated with it.')
     })
 

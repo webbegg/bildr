@@ -241,18 +241,14 @@ onBeforeUnmount(() => {
             {{ total }} items in the response. Changing the items path and fetching proposes new fields.
           </p>
         </EditorFormRow>
-        <p
+        <DataInlineError
           v-if="error"
-          class="ms-[132px] flex items-start gap-2 rounded-lg bg-error/10 px-3 py-2 text-[12px] leading-4 text-error"
-          role="alert"
+          icon
+          class="ms-[132px]"
           data-api-error
         >
-          <UIcon
-            name="i-lucide-circle-alert"
-            class="size-4 shrink-0"
-          />
           {{ error }}
-        </p>
+        </DataInlineError>
         <EditorFormRow
           v-if="total !== null"
           label="Items path"

@@ -190,14 +190,12 @@ const toggle = (field: string, on: boolean) => update({
         </p>
       </section>
 
-      <p
+      <DataInlineError
         v-if="error"
-        class="rounded-lg bg-error/10 px-3 py-2 text-[12px] leading-4 text-error"
-        role="alert"
         data-action-error
       >
         {{ error }}
-      </p>
+      </DataInlineError>
     </div>
 
     <DataArtifactRename

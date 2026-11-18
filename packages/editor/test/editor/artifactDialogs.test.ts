@@ -45,7 +45,7 @@ describe('a dialog mounted with its target already set', () => {
     await mounted(DataArtifactRename, { target: { kind: 'query', id: 'q_featured_posts' } })
     expect(text(q('[role="dialog"]'))).toContain('Rename query')
     expect((q('[data-artifact-name]') as HTMLInputElement).value).toBe('featuredPosts')
-    expect(text(q('[data-artifact-warning]'))).toContain('`useFeaturedPosts`')
+    expect(text(q('[data-artifact-hint]'))).toContain('`useFeaturedPosts`')
   })
 
   it('Rename starts with the name of the action', async () => {

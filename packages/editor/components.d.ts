@@ -35,6 +35,7 @@ declare module 'vue' {
     DataFiles: typeof import('./src/components/data/DataFiles.vue')['default']
     DataFilesError: typeof import('./src/components/data/DataFilesError.vue')['default']
     DataFilesRow: typeof import('./src/components/data/sidebar/DataFilesRow.vue')['default']
+    DataInlineError: typeof import('./src/components/data/DataInlineError.vue')['default']
     DataJson: typeof import('./src/components/data/DataJson.vue')['default']
     DataMappingPreview: typeof import('./src/components/data/DataMappingPreview.vue')['default']
     DataMappingTable: typeof import('./src/components/data/DataMappingTable.vue')['default']

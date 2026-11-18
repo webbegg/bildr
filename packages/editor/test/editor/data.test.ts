@@ -3104,7 +3104,7 @@ describe('Action Overview (S10)', () => {
     await click(byLabel('Rename action'))
     expect(text(q('[role="dialog"]'))).toContain('Rename action')
     expect(inputOf('[data-artifact-name]').value).toBe('createPost')
-    expect(text(q('[data-artifact-warning]'))).toContain('`useCreatePost`')
+    expect(text(q('[data-artifact-hint]'))).toContain('`useCreatePost`')
   })
 
   it('counts the steps in one line, with a link to the Steps tab', async () => {
@@ -3420,7 +3420,8 @@ describe('the dialogs of queries and actions (S10, DW-7d, DW-7e)', () => {
       await openRename('query:q_featured_posts')
       expect(text(q('[role="dialog"]'))).toContain('Rename query')
       expect(nameInput().value).toBe('featuredPosts')
-      expect(text(q('[data-artifact-warning]'))).toBe('Hand-written code that imports `useFeaturedPosts` needs the same rename.')
+      expect(text(q('[data-artifact-warning]'))).toBe('Code you wrote yourself that uses this query needs the same rename.')
+      expect(text(q('[data-artifact-hint]'))).toBe('It is generated as `useFeaturedPosts`.')
     })
 
     it('renames with query_rename, keeps the query shown, and closes', async () => {
@@ -3434,7 +3435,7 @@ describe('the dialogs of queries and actions (S10, DW-7d, DW-7e)', () => {
 
     it('renames an action with action_rename', async () => {
       const { actions } = await openRename('action:act_publish_post')
-      expect(text(q('[data-artifact-warning]'))).toContain('`usePublishPost`')
+      expect(text(q('[data-artifact-hint]'))).toContain('`usePublishPost`')
       await typeInto(nameInput(), 'releasePost')
       await submit()
       expect(calls(actions, 'action_rename')).toEqual([{ action: 'act_publish_post', name: 'releasePost' }])

@@ -2,7 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useArtifactDialog } from '../../editor/useArtifactDialog.ts'
 import { useEditor } from '../../editor/useEditor.ts'
-import { PERSISTENCE, RESULTS } from '../../shared/dataArtifacts.ts'
+import { KEEPS_VALUES, PERSISTENCE, RESULTS } from '../../shared/dataArtifacts.ts'
 import type { ArtifactKind, QueryResultKind, StatePersist } from '../../shared/dataArtifacts.ts'
 
 /**
@@ -12,7 +12,9 @@ import type { ArtifactKind, QueryResultKind, StatePersist } from '../../shared/d
  * name and how long it keeps its values (`state_create`, on Forgotten on reload) and opens on its Fields. It starts with the one text field
  * the module gives it, `value`, and the dialog says so instead of asking for a first field: the Fields tab is where fields are named and
  * typed, as New collection leaves its first field, `title`, to the Fields tab. What the module refuses is shown in the dialog and what
- * was typed stays. Every new item is valid: the module makes it so.
+ * was typed stays (and the unsaved edits the user agreed to discard first are reported again, as nothing was made). Every new item is
+ * valid: the module makes it so. What differs by kind is `KINDS`: its words, whether it asks for a collection, the action it runs and
+ * the item it opens.
  */
 const { kind } = defineProps<{ kind: ArtifactKind | null }>()
 const emit = defineEmits<{ close: [] }>()
@@ -33,16 +35,62 @@ const { shown, open, words, error, saving, submit: run } = useArtifactDialog(() 
   persist.value = 'memory'
 })
 const what = computed(() => shown.value ?? 'query')
-const DESCRIPTIONS: Record<ArtifactKind, string> = {
-  query: 'A query reads a collection for your pages.',
-  action: 'An action changes a collection when a form or a button runs it.',
-  state: 'State is values the app remembers while it runs, like a filter or a toggle.'
+
+/** What differs between the kinds: its words, the module action that makes it (with what it is given and the refusal's fallback) and the item it opens. */
+interface Kind {
+  description: string
+  help: string
+  placeholder: string
+  /** Whether it is made over a collection, which the dialog asks for. */
+  collection: boolean
+  action: string
+  fallback: string
+  input: (name: string) => Record<string, unknown>
+  /** Shows what was made, on the tab it opens on. */
+  show: (made: Record<string, unknown>) => void
 }
-const NAMES: Record<ArtifactKind, { help: string, placeholder: string }> = {
-  query: { help: 'camelCased, like recent posts → recentPosts', placeholder: 'recentPosts' },
-  action: { help: 'camelCased, like publish post → publishPost', placeholder: 'publishPost' },
-  state: { help: 'camelCased, like cart filter → cartFilter', placeholder: 'preferences' }
+const KINDS: Record<ArtifactKind, Kind> = {
+  query: {
+    description: 'A query reads a collection for your pages.',
+    help: 'camelCased, like recent posts → recentPosts',
+    placeholder: 'recentPosts',
+    collection: true,
+    action: 'query_create',
+    fallback: 'Could not create the query',
+    input: typed => ({ entity: entity.value, result: result.value, name: typed }),
+    show: (made) => {
+      editor.queryId = made.queryId as string
+      editor.dataTab = 'definition'
+    }
+  },
+  action: {
+    description: 'An action changes a collection when a form or a button runs it.',
+    help: 'camelCased, like publish post → publishPost',
+    placeholder: 'publishPost',
+    collection: true,
+    action: 'action_create',
+    fallback: 'Could not create the action',
+    input: typed => ({ entity: entity.value, template: template.value, name: typed }),
+    show: (made) => {
+      editor.actionId = made.actionId as string
+      editor.dataTab = 'overview'
+    }
+  },
+  state: {
+    description: 'State is values the app remembers while it runs, like a filter or a toggle.',
+    help: 'camelCased, like cart filter → cartFilter',
+    placeholder: 'preferences',
+    collection: false,
+    action: 'state_create',
+    fallback: 'Could not create the state',
+    input: typed => ({ name: typed, persist: persist.value }),
+    show: (made) => {
+      editor.stateId = made.stateId as string
+      editor.dataTab = 'fields'
+    }
+  }
 }
+const config = computed(() => KINDS[what.value])
 
 const collectionItems = computed(() => editor.collections.map(collection => ({ label: collection.name, value: collection.id })))
 const TEMPLATES = [
@@ -58,28 +106,18 @@ watch([name, entity, result, template, persist], () => {
 
 async function submit() {
   const typed = name.value.trim()
-  if (!typed || (what.value !== 'state' && !entity.value) || saving.value) return
+  const current = config.value
+  if (!typed || (current.collection && !entity.value) || saving.value) return
   // What is made is shown instead of the item: unsaved edits are asked about before anything is written.
   if (!await editor.guardLeave()) return
-  if (what.value === 'state') {
-    const done = await run<{ stateId: string }>('state_create', { name: typed, persist: persist.value }, 'Could not create the state')
-    if (!done) return
-    editor.mode = 'data'
-    editor.stateId = done.stateId
-    editor.dataTab = 'fields'
-  } else if (what.value === 'query') {
-    const done = await run<{ queryId: string }>('query_create', { entity: entity.value, result: result.value, name: typed }, 'Could not create the query')
-    if (!done) return
-    editor.mode = 'data'
-    editor.queryId = done.queryId
-    editor.dataTab = 'definition'
-  } else {
-    const done = await run<{ actionId: string }>('action_create', { entity: entity.value, template: template.value, name: typed }, 'Could not create the action')
-    if (!done) return
-    editor.mode = 'data'
-    editor.actionId = done.actionId
-    editor.dataTab = 'overview'
+  const made = await run(current.action, current.input(typed), current.fallback)
+  if (!made) {
+    // Nothing was made, and the user may just have agreed to discard edits that are still on the screen.
+    editor.reportDirtyAgain()
+    return
   }
+  editor.mode = 'data'
+  current.show(made)
   emit('close')
 }
 </script>
@@ -89,15 +127,15 @@ async function submit() {
     v-model:open="open"
     dialog="create"
     :title="`New ${words.label.toLowerCase()}`"
-    :description="DESCRIPTIONS[what]"
+    :description="config.description"
     :error="error"
     :saving="saving"
     :submit-label="`Create ${words.label.toLowerCase()}`"
-    :can-submit="!!name.trim() && (what === 'state' || !!entity)"
+    :can-submit="!!name.trim() && (!config.collection || !!entity)"
     @submit="submit"
   >
     <EditorFormRow
-      v-if="what !== 'state'"
+      v-if="config.collection"
       label="Collection"
     >
       <EditorSelect
@@ -137,11 +175,11 @@ async function submit() {
     </EditorFormRow>
     <EditorFormRow
       label="Name"
-      :help="NAMES[what].help"
+      :help="config.help"
     >
       <EditorInput
         v-model="name"
-        :placeholder="NAMES[what].placeholder"
+        :placeholder="config.placeholder"
         autofocus
         aria-label="Name"
         data-artifact-name
@@ -150,13 +188,13 @@ async function submit() {
     </EditorFormRow>
     <template v-if="what === 'state'">
       <EditorFormRow
-        label="Keeps its values"
+        :label="KEEPS_VALUES"
         stacked
       >
         <EditorChoiceCards
           :model-value="persist"
           :items="PERSISTENCE"
-          label="Keeps its values"
+          :label="KEEPS_VALUES"
           hook="data-state-persistence"
           @update:model-value="persist = $event as StatePersist"
         />

@@ -22,13 +22,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-/** An action handler's failure: the HTTP error body `{ok:false, code, message, problems?}`. */
+/** An action handler's failure: the HTTP error body `{ok:false, code, message, problems?, field?}`. */
 export class Failure {
   constructor(
     readonly status: number,
     readonly code: string,
     readonly message: string,
-    readonly problems?: Array<{ path: string, message: string }>
+    readonly problems?: Array<{ path: string, message: string }>,
+    readonly field?: { id?: string, name: string }
   ) {}
 }
 
@@ -76,7 +77,7 @@ export const mockActions = (handlers: Record<string, Handler>, routes: AppRoutes
     const out = await handler(input)
     if (out === UNAUTHORIZED) return json(401, { ok: false, message: SESSION_401_MESSAGE })
     if (out instanceof Failure) {
-      return json(out.status, { ok: false, code: out.code, message: out.message, ...(out.problems ? { problems: out.problems } : {}) })
+      return json(out.status, { ok: false, code: out.code, message: out.message, ...(out.problems ? { problems: out.problems } : {}), ...(out.field ? { field: out.field } : {}) })
     }
     return json(200, { ok: true, result: out })
   })

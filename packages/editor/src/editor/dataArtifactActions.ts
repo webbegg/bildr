@@ -1,3 +1,4 @@
+import type { RefusedField } from '../api.ts'
 import type { UseEntry } from '../shared/dataArtifacts.ts'
 import { itemOfUse } from '../shared/items.ts'
 import { openItem } from './openItem.ts'
@@ -11,20 +12,29 @@ import type { Editor } from './useEditor.ts'
 
 /**
  * Runs a module action and, when the module refuses it, takes the refusal for the caller to show where the user is typing
- * (a dialog, a form) instead of the screen's banner. `error` is its message, and `code` the module's code for it (`conflict`, …).
+ * (a dialog, a form) instead of the screen's banner. `error` is its message, `code` the module's code for it (`conflict`, …), and
+ * `field` the field of a list the refusal is about, when the module says (a state's fields).
  */
-export async function attempt<T extends Record<string, unknown>>(editor: Editor, name: string, input: Record<string, unknown>, fallback: string): Promise<{ result: T } | { error: string, code?: string }> {
+export async function attempt<T extends Record<string, unknown>>(editor: Editor, name: string, input: Record<string, unknown>, fallback: string): Promise<{ result: T } | Refusal> {
   const result = await editor.run(name, input) as T | undefined
   if (result) return { result }
   return takeRefusal(editor, fallback)
 }
 
 /** The refusal the editor holds (else `fallback`), taken off the screen's banner for the caller to show where the user is typing. */
-export function takeRefusal(editor: Editor, fallback: string): { error: string, code?: string } {
+export function takeRefusal(editor: Editor, fallback: string): Refusal {
   const error = editor.error ?? fallback
   const code = editor.errorCode ?? undefined
+  const field = editor.errorField ?? undefined
   editor.dismissError()
-  return { error, ...(code ? { code } : {}) }
+  return { error, ...(code ? { code } : {}), ...(field ? { field } : {}) }
+}
+
+/** What a refusal the caller shows is: its message, the module's code for it and the field of a list it is about. */
+export interface Refusal {
+  error: string
+  code?: string
+  field?: RefusedField
 }
 
 /**

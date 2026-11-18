@@ -54,12 +54,15 @@ export const ERROR_STATUS: Record<ActionErrorCode, number> = {
 export class ActionError extends Error {
   readonly code: ActionErrorCode
   readonly problems: ModelProblem[] | undefined
+  /** The field of a list the refusal is about (a state's fields), so a form shows it next to that field. */
+  readonly field: { id?: string, name: string } | undefined
 
   // Plain fields, not parameter properties: Node's type stripping can't run those.
-  constructor(code: ActionErrorCode, message: string, problems?: ModelProblem[]) {
+  constructor(code: ActionErrorCode, message: string, problems?: ModelProblem[], field?: { id?: string, name: string }) {
     super(message)
     this.name = 'ActionError'
     this.code = code
     this.problems = problems
+    this.field = field
   }
 }

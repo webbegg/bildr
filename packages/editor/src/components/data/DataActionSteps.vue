@@ -151,14 +151,12 @@ function jumpToErrors() {
         @keep-mine="keepMine"
       />
 
-      <p
+      <DataInlineError
         v-if="unplaced"
-        class="rounded-lg bg-error/10 px-3 py-2 text-[12px] leading-4 text-error"
-        role="alert"
         data-steps-refusal
       >
         {{ error }}
-      </p>
+      </DataInlineError>
 
       <div
         class="min-w-0 space-y-6"

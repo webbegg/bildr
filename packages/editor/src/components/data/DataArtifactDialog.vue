@@ -34,18 +34,13 @@ const emit = defineEmits<{ submit: [] }>()
       :data-artifact-dialog="dialog"
     >
       <slot />
-      <p
+      <DataInlineError
         v-if="error"
-        class="flex items-start gap-2 rounded-lg bg-error/10 px-3 py-2 text-[12px] leading-4 text-error"
-        role="alert"
+        icon
         data-artifact-error
       >
-        <UIcon
-          name="i-lucide-circle-alert"
-          class="size-4 shrink-0"
-        />
         {{ error }}
-      </p>
+      </DataInlineError>
     </div>
 
     <template #footer>

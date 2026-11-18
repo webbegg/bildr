@@ -128,10 +128,10 @@ describe('state_update', () => {
     expectGenerates(p)
   })
 
-  it('keeps the id of a field it is given by id or by name, and mints one for a new name', () => {
+  it('keeps the id of a field it is given by id, and mints one for a new name', () => {
     const p = project()
     p.edit('state_create', { name: 'reading', fields: [{ name: 'page', type: 'integer', default: 1 }, { name: 'dark', type: 'boolean', default: false }] })
-    p.edit('state_update', { state: 'st_reading', fields: [{ name: 'dark', type: 'boolean', default: true }, { id: 'fld_page', name: 'pageNumber', type: 'integer', default: 1 }, { name: 'zoom', type: 'number', default: 1 }] })
+    p.edit('state_update', { state: 'st_reading', fields: [{ id: 'fld_dark', name: 'dark', type: 'boolean', default: true }, { id: 'fld_page', name: 'pageNumber', type: 'integer', default: 1 }, { name: 'zoom', type: 'number', default: 1 }] })
     expect(p.json(READING).fields).toEqual([
       { id: 'fld_dark', name: 'dark', type: 'boolean', default: true },
       { id: 'fld_page', name: 'pageNumber', type: 'integer', default: 1 },

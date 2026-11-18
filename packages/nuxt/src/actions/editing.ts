@@ -152,7 +152,7 @@ const editAction = (name: EditName): ActionDef => defineAction({
   run: (input, ctx) => {
     const files = readModelFiles(ctx.root)
     const outcome = applyEdit(files, name, input)
-    if (!outcome.ok) throw new ActionError(outcome.code, outcome.message, outcome.problems)
+    if (!outcome.ok) throw new ActionError(outcome.code, outcome.message, outcome.problems, outcome.field)
     if (isReadOnlyEdit(name)) return outcome.result
     if (outcome.changes.length) historyReady(ctx)
     const written = writeChangeSet(ctx.root, outcome.changes)

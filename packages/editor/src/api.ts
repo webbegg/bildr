@@ -11,16 +11,24 @@ export type ActionErrorCode = 'invalid_input' | 'not_found' | 'invalid' | 'forbi
  */
 export const sessionEnded = ref(false)
 
-/** A failed action: the `{ok:false, code, message, problems?}` body, or a transport failure. */
+/** The field of a list (a state's fields) a refusal is about: its `id` when it has one, and its `name`. */
+export interface RefusedField {
+  id?: string
+  name: string
+}
+
+/** A failed action: the `{ok:false, code, message, problems?, field?}` body, or a transport failure. */
 export class ActionCallError extends Error {
   readonly code: ActionErrorCode
   readonly problems?: ModelProblem[]
+  readonly field?: RefusedField
 
-  constructor(code: ActionErrorCode, message: string, problems?: ModelProblem[]) {
+  constructor(code: ActionErrorCode, message: string, problems?: ModelProblem[], field?: RefusedField) {
     super(message)
     this.name = 'ActionCallError'
     this.code = code
     if (problems) this.problems = problems
+    if (field) this.field = field
   }
 }
 
@@ -62,7 +70,9 @@ export const callAction = async <T = unknown>(name: string, input: Record<string
   const code = typeof body.code === 'string' ? body.code : 'bad_response'
   const message = typeof body.message === 'string' ? body.message : `${name} failed (HTTP ${response.status})`
   const problems = Array.isArray(body.problems) ? body.problems as ModelProblem[] : undefined
-  throw new ActionCallError(code, message, problems)
+  const named = body.field
+  const field = isRecord(named) && typeof named.name === 'string' ? { ...(typeof named.id === 'string' ? { id: named.id } : {}), name: named.name } : undefined
+  throw new ActionCallError(code, message, problems, field)
 }
 
 /**

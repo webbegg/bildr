@@ -200,9 +200,9 @@ const asset = (dist: string | undefined, encoded: string) => {
 }
 
 const actionFailure = (error: ActionError) =>
-  json(ERROR_STATUS[error.code], { ok: false, code: error.code, message: error.message, ...(error.problems ? { problems: error.problems } : {}) })
+  json(ERROR_STATUS[error.code], { ok: false, code: error.code, message: error.message, ...(error.problems ? { problems: error.problems } : {}), ...(error.field ? { field: error.field } : {}) })
 
-/** Calls one action with the JSON body as its input: `{ ok: true, result }`, or `{ ok: false, code, message, problems? }`. */
+/** Calls one action with the JSON body as its input: `{ ok: true, result }`, or `{ ok: false, code, message, problems?, field? }`. */
 const callAction = async (actions: Actions, name: string, request: Request) => {
   if (!(request.headers.get('content-type') ?? '').startsWith('application/json')) return fail(415, 'Send the action input as application/json')
   if (Number(request.headers.get('content-length') ?? 0) > MAX_BODY) return fail(413, 'Input too large')

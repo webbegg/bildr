@@ -82,6 +82,16 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
       }
     }
   }
+  /** How many times the reporters were asked to say again what they hold (`reportDirtyAgain`). */
+  const dirtyAsked = ref(0)
+  /**
+   * Asks every reporter that is still there to report again what it holds. A confirmed discard (`leaveData`, `guardLeave`) clears the
+   * registry before the move it is for is made: when that move did not happen after all (a create the module refused), the forms
+   * that are still open and still hold edits say so again, so the next move asks about them.
+   */
+  const reportDirtyAgain = () => {
+    dirtyAsked.value++
+  }
   /** How many times the user kept their edits instead of leaving: what moved the screen (the URL) is put back. */
   const leaveDeclined = ref(0)
   let deciding: Promise<boolean> | null = null
@@ -268,5 +278,5 @@ export const createDataView = (design: Design, view: Ref<EditorView>, confirm: (
     if (view.value === 'data') void live.refresh()
   })
 
-  return { collections, connections, queries, actions, states, queryId, actionId, stateId, dataQuery, dataAction, dataState, collectionId, connectionId, dataSpecial, dataShown, dataFiles, dataMigrations, dataPlan, dataMigration, planShown, dataFile, dataDirty, reportDirty, leaveData, guardLeave, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, rowsEditable, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
+  return { collections, connections, queries, actions, states, queryId, actionId, stateId, dataQuery, dataAction, dataState, collectionId, connectionId, dataSpecial, dataShown, dataFiles, dataMigrations, dataPlan, dataMigration, planShown, dataFile, dataDirty, reportDirty, dirtyAsked, reportDirtyAgain, leaveData, guardLeave, leaveDeclined, recordId, collection, connection, dataItem, dataCollection, dataConnection, dataTabs, dataTab, rowsPreference, rowsEditable, collectionRows, rowsSource, rowsFallback, recordsError, recordsTotal, recordsLoading: live.loading, collectionCounts, reloadRecords, createCollection }
 }

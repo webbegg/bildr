@@ -4,8 +4,8 @@ import { plainCopy } from './draftJson.ts'
 import { useDirtyReport } from './useDirtyReport.ts'
 
 /**
- * What the Data workspace's draft forms share (S10: the query Definition, D10b, and the action Steps, D10c): a form holds an
- * item (a query, an action) as a draft until Save, and keeps the draft's *base*: the item as it was when the draft was opened
+ * What the Data workspace's draft forms share (S10: the query Definition, D10b, the action Steps, D10c, and B2's state Fields): a form
+ * holds an item (a query, an action, a state) as a draft until Save, and keeps the draft's *base*: the item as it was when the draft was opened
  * or last saved. What the user touched is judged against the base, not against the item as stored now, so a part that changed
  * outside the form (another editor, a rename, an undo, a JSON-tab save) and was not touched is never sent back from the form's
  * stale copy.
@@ -13,7 +13,8 @@ import { useDirtyReport } from './useDirtyReport.ts'
  * - `dirty`: the draft has edits, and `stale`: it has edits while the stored item differs from its base in a part the form
  *   holds. Save waits for the user's choice, the form's `DataStaleNotice`: `discard` ("Load the new version") or `keepMine`.
  * - While the draft has edits, the workspace asks before it moves away: the form reports them to the editor's registry under the
- *   item's name (`useDirtyReport`), and clears only its own report when it goes.
+ *   item's name (`useDirtyReport`), reports them again when the workspace asks (a discard confirmed for a move that was not made),
+ *   and clears only its own report when it goes.
  * - The draft follows the model: another item replaces it, and so does a change of the model while nothing was edited.
  *
  * The form's own part is what to compare and how to rebase (`options`), and its Save.

@@ -38,7 +38,7 @@ const REFUSAL_STATUS = { invalid_input: 400, not_found: 404, invalid: 422, confl
 const moduleEdits = (names: EditName[]): Handlers => Object.fromEntries(names.map(name => [name, (input: Record<string, unknown>) => {
   const files = serializeModel(world.model)
   const outcome = applyEdit(files, name, input)
-  if (!outcome.ok) return new Failure(REFUSAL_STATUS[outcome.code], outcome.code, outcome.message)
+  if (!outcome.ok) return new Failure(REFUSAL_STATUS[outcome.code], outcome.code, outcome.message, undefined, outcome.field)
   const next = { ...files }
   for (const change of outcome.changes) {
     if (change.content === null) Reflect.deleteProperty(next, change.path)

@@ -138,10 +138,10 @@ await run('state', async ({ page, browser, errors }) => {
   check(refusal.status === 422 && refusal.message.includes('is still used') && !!bildr(PERSISTED), `the module refuses it too, and the file stays (${refusal.status} ${refusal.message?.slice(0, 80)})`)
   errors.splice(0, errors.length, ...errors.filter(message => !refused422.test(message)))
 
-  // Rename: the page holds the state's id, so it stays bound and the app renders; hand-written code that imports the old name is warned.
+  // Rename: the page holds the state's id, so it stays bound and the app renders; code the user wrote that uses the state is warned, with the generated name as a hint.
   await page.locator('[data-artifact-menu="st_preferences"]').click({ force: true })
   await page.getByRole('menuitem', { name: 'Rename' }).click()
-  check((await page.locator('[data-artifact-warning]').innerText()).includes('Hand-written code that imports `useBlogPreferences` needs the same rename.'), 'Rename warns that hand-written code importing the old name needs the same rename')
+  check((await page.locator('[data-artifact-warning]').innerText()).includes('Code you wrote yourself that uses this state needs the same rename.') && (await page.locator('[data-artifact-hint]').innerText()).includes('`useBlogPreferences`'), 'Rename warns that code the user wrote needs the same rename, and hints at the generated name')
   await page.locator('[data-artifact-name]').fill('settings')
   await page.locator('[data-artifact-submit]').click()
   await page.locator('[data-artifact-dialog]').waitFor({ state: 'detached' })

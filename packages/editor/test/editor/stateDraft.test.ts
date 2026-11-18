@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { StateFile } from '@bildr/codegen/model'
-import { changedOutside, changesOf, draftOf, fieldOfRefusal, moveField, newField, rebaseDraft } from '../../src/editor/stateDraft.ts'
+import { changedOutside, changesOf, draftOf, fieldOfRefusal, moveField, newField, rebaseDraft, setDefault, setFieldType, toggleEmptyDefault } from '../../src/editor/stateDraft.ts'
 
 /**
  * The State Fields form's draft (B2, S1): a state's fields as the form holds them (a text in every default box) and what saving
@@ -33,6 +33,19 @@ describe('draftOf', () => {
     const given = state()
     delete given.fields[0]!.default
     expect(draftOf(given).fields[0]!.default).toBe('')
+  })
+
+  it('tells a text field that starts empty from one with no default', () => {
+    const given = state()
+    delete given.fields[2]!.default
+    expect(draftOf(state()).fields[2]).toMatchObject({ default: '', emptyDefault: true })
+    expect(draftOf(given).fields[2]).toMatchObject({ default: '', emptyDefault: false })
+  })
+
+  it('shows a stored date and time in the box\'s minutes, whatever seconds or zone it has', () => {
+    const given = state()
+    given.fields.push({ id: 'fld_at', name: 'at', type: 'datetime', default: '2026-11-18T10:30:15+02:00' })
+    expect(draftOf(given).fields[3]!.default).toBe('2026-11-18T10:30')
   })
 })
 
@@ -97,6 +110,135 @@ describe('changesOf', () => {
     draft.fields.push({ ...newField(), name: '  ' })
     expect(changesOf(draft, state())).toEqual({ fields: null, problems: ['perPage: its default is a whole number', 'Name every field'] })
   })
+
+  it('sends a renamed saved field with its id, and a new field with the old name with none', () => {
+    const draft = draftOf(state())
+    draft.fields[2]!.name = 'query'
+    draft.fields.push({ ...newField(), name: 'search', type: 'text' })
+    expect(changesOf(draft, state()).fields!.slice(2)).toEqual([
+      { id: 'fld_search', name: 'query', type: 'text', default: '' },
+      { name: 'search', type: 'text' }
+    ])
+  })
+})
+
+describe('the default a box stands for', () => {
+  /** What a draft of one new field of `type` with `text` in its default box sends, or its problems. */
+  const sent = (type: Parameters<typeof setFieldType>[1], text: string, emptyDefault = false) => {
+    const draft = draftOf(state())
+    draft.fields.push({ ...newField(), name: 'x', type, default: text, emptyDefault })
+    const changes = changesOf(draft, state())
+    return changes.fields ? changes.fields.at(-1) : changes.problems
+  }
+
+  it('sends an empty text as the default for a text field that asked for it, and none otherwise', () => {
+    expect(sent('text', '', true)).toEqual({ name: 'x', type: 'text', default: '' })
+    expect(sent('text', '', false)).toEqual({ name: 'x', type: 'text' })
+    expect(sent('text', '   ', false)).toEqual({ name: 'x', type: 'text' })
+    expect(sent('text', '   ', true)).toEqual({ name: 'x', type: 'text', default: '' })
+  })
+
+  it('ignores the empty choice for a type with no empty value', () => {
+    expect(sent('integer', '', true)).toEqual({ name: 'x', type: 'integer' })
+    expect(sent('uuid', '', true)).toEqual({ name: 'x', type: 'uuid' })
+  })
+
+  it('trims every default, text included', () => {
+    expect(sent('text', '  hello ')).toEqual({ name: 'x', type: 'text', default: 'hello' })
+    expect(sent('integer', ' 12 ')).toEqual({ name: 'x', type: 'integer', default: 12 })
+    expect(sent('number', ' 1.5 ')).toEqual({ name: 'x', type: 'number', default: 1.5 })
+    expect(sent('boolean', ' true ')).toEqual({ name: 'x', type: 'boolean', default: true })
+    expect(sent('date', ' 2026-11-18 ')).toEqual({ name: 'x', type: 'date', default: '2026-11-18' })
+    expect(sent('datetime', ' 2026-11-18T10:30 ')).toEqual({ name: 'x', type: 'datetime', default: '2026-11-18T10:30:00Z' })
+  })
+
+  it('refuses an integer the number type cannot hold exactly', () => {
+    expect(sent('integer', '9007199254740991')).toEqual({ name: 'x', type: 'integer', default: 9007199254740991 })
+    expect(sent('integer', '9007199254740993')).toEqual(['x: its default is a whole number'])
+    expect(sent('integer', '-9007199254740993')).toEqual(['x: its default is a whole number'])
+  })
+
+  it('reads an exponent the same way for a number and a whole number, and nothing else the browser\'s Number would take', () => {
+    expect(sent('number', '1e3')).toEqual({ name: 'x', type: 'number', default: 1000 })
+    expect(sent('integer', '1e3')).toEqual({ name: 'x', type: 'integer', default: 1000 })
+    expect(sent('integer', '1.5e1')).toEqual({ name: 'x', type: 'integer', default: 15 })
+    expect(sent('integer', '1e-3')).toEqual(['x: its default is a whole number'])
+    expect(sent('integer', '1.5')).toEqual(['x: its default is a whole number'])
+    expect(sent('number', '0x10')).toEqual(['x: its default is a number'])
+    expect(sent('number', 'Infinity')).toEqual(['x: its default is a number'])
+    expect(sent('number', '1e999')).toEqual(['x: its default is a number'])
+    expect(sent('number', '1_000')).toEqual(['x: its default is a number'])
+    expect(sent('number', '.5')).toEqual({ name: 'x', type: 'number', default: 0.5 })
+  })
+
+  it('sends zero, never minus zero', () => {
+    expect(Object.is((sent('number', '-0') as { default: number }).default, 0)).toBe(true)
+    expect(Object.is((sent('integer', '-0') as { default: number }).default, 0)).toBe(true)
+  })
+
+  it('takes a date and time with seconds as typed, in UTC', () => {
+    expect(sent('datetime', '2026-11-18T10:30:45')).toEqual({ name: 'x', type: 'datetime', default: '2026-11-18T10:30:45Z' })
+  })
+
+  describe('a stored date and time', () => {
+    const withAt = (stored: string) => {
+      const given = state()
+      given.fields.push({ id: 'fld_at', name: 'at', type: 'datetime', default: stored })
+      return given
+    }
+
+    it.each(['2026-11-18T10:30:15Z', '2026-11-18T10:30:00+02:00', '2026-11-18T10:30:15.250Z'])('is sent unchanged (%s) while its box is not edited, even when the field changes otherwise', (stored) => {
+      const given = withAt(stored)
+      const draft = draftOf(given)
+      draft.fields[3]!.required = true
+      expect(changesOf(draft, given).fields![3]).toEqual({ id: 'fld_at', name: 'at', type: 'datetime', required: true, default: stored })
+      const renamed = draftOf(given)
+      renamed.fields[3]!.name = 'when'
+      expect(changesOf(renamed, given).fields![3]).toEqual({ id: 'fld_at', name: 'when', type: 'datetime', default: stored })
+    })
+
+    it('is sent unchanged when the box is typed over with what it showed', () => {
+      const given = withAt('2026-11-18T10:30:15Z')
+      const draft = draftOf(given)
+      setDefault(draft.fields[3]!, '2026-11-18T10:31')
+      setDefault(draft.fields[3]!, '2026-11-18T10:30')
+      draft.fields[3]!.required = true
+      expect(changesOf(draft, given).fields![3]).toMatchObject({ default: '2026-11-18T10:30:15Z' })
+    })
+
+    it('is sent as the box says once it is edited', () => {
+      const given = withAt('2026-11-18T10:30:15+02:00')
+      const draft = draftOf(given)
+      setDefault(draft.fields[3]!, '2026-11-18T11:00')
+      expect(changesOf(draft, given).fields![3]).toMatchObject({ default: '2026-11-18T11:00:00Z' })
+    })
+  })
+})
+
+describe('editing a default', () => {
+  it('starts a toggle on no, and any other type empty, when the type changes', () => {
+    const field = { ...newField(), name: 'x', default: 'abc', emptyDefault: true }
+    setFieldType(field, 'boolean')
+    expect(field).toMatchObject({ type: 'boolean', default: 'false', emptyDefault: false })
+    setFieldType(field, 'integer')
+    expect(field).toMatchObject({ type: 'integer', default: '', emptyDefault: false })
+  })
+
+  it('takes typing as a default, which is not the empty text any more', () => {
+    const field = { ...newField(), emptyDefault: true }
+    setDefault(field, 'hi')
+    expect(field).toMatchObject({ default: 'hi', emptyDefault: false })
+    setDefault(field, '')
+    expect(field).toMatchObject({ default: '', emptyDefault: false })
+  })
+
+  it('toggles the empty text, which clears the box', () => {
+    const field = { ...newField(), default: 'x' }
+    toggleEmptyDefault(field)
+    expect(field).toMatchObject({ default: '', emptyDefault: true })
+    toggleEmptyDefault(field)
+    expect(field).toMatchObject({ default: '', emptyDefault: false })
+  })
 })
 
 describe('a state that changed under the draft', () => {
@@ -126,27 +268,48 @@ describe('a state that changed under the draft', () => {
     stored.fields.splice(0, 1)
     expect(rebaseDraft(draft, state(), stored).fields.map(field => field.name)).toEqual(['perPage'])
   })
+
+  // Pinned, not endorsed (RELIABILITY-007): a field the user touched is theirs whole. A change made elsewhere to another part of
+  // the same field is not merged into it, so saving it puts the user's copy of that part back.
+  it('keeps a field the user touched whole: what changed elsewhere in another part of it is not merged', () => {
+    const draft = draftOf(state())
+    draft.fields[1]!.name = 'pageSize'
+    const stored = state()
+    stored.fields[1]!.default = 50
+    const rebased = rebaseDraft(draft, state(), stored)
+    expect(rebased.fields[1]).toMatchObject({ id: 'fld_per_page', name: 'pageSize', default: '10' })
+  })
 })
 
 describe('fieldOfRefusal', () => {
   const fields = draftOf(state()).fields
   const key = (name: string) => fields.find(field => field.name === name)!.key
 
-  it('finds the field the module names in its refusal', () => {
-    expect(fieldOfRefusal('The field showDrafts of the state preferences (st_preferences) is still used: page "index" (pg_index) binds "prefs". It can\'t be removed: change them first', fields)).toBe(key('showDrafts'))
-    expect(fieldOfRefusal('perPage: the default "x" doesn\'t fit integer', fields)).toBe(key('perPage'))
-    expect(fieldOfRefusal('Two fields are named "search"', fields)).toBe(key('search'))
+  it('finds the field by the id the refusal names', () => {
+    expect(fieldOfRefusal({ id: 'fld_per_page', name: 'perPage' }, fields)).toBe(key('perPage'))
   })
 
-  it('finds a saved field by the name it has saved, when the draft renamed it', () => {
+  it('finds a saved field by its id when the draft renamed it', () => {
     const renamed = draftOf(state()).fields.map(field => field.name === 'showDrafts' ? { ...field, name: 'showAll' } : field)
-    const refusal = 'The field showDrafts of the state preferences (st_preferences) is still used: page "index" (pg_index) binds "prefs". It can\'t be renamed to showAll: change them first'
-    expect(fieldOfRefusal(refusal, renamed)).toBeNull()
-    expect(fieldOfRefusal(refusal, renamed, state().fields)).toBe('fld_show_drafts')
+    expect(fieldOfRefusal({ id: 'fld_show_drafts', name: 'showDrafts' }, renamed)).toBe('fld_show_drafts')
+  })
+
+  it('finds a new field, which has no id yet, by the name it was sent with', () => {
+    const added = [...fields, { ...newField(), name: ' Show Drafts ' }]
+    expect(fieldOfRefusal({ name: 'Show Drafts' }, added)).toBe(added.at(-1)!.key)
+  })
+
+  it('prefers a new field to a saved one of the same name, when the refusal names no id', () => {
+    const added = [...fields, { ...newField(), name: 'search' }]
+    expect(fieldOfRefusal({ name: 'search' }, added)).toBe(added.at(-1)!.key)
+  })
+
+  it('does not match a field by name when the refusal names an id the draft has not', () => {
+    expect(fieldOfRefusal({ id: 'fld_gone', name: 'search' }, fields)).toBeNull()
   })
 
   it('finds none for a refusal about something else', () => {
-    expect(fieldOfRefusal('No state "st_gone"', fields)).toBeNull()
-    expect(fieldOfRefusal('The field other of the state preferences is still used', fields)).toBeNull()
+    expect(fieldOfRefusal(undefined, fields)).toBeNull()
+    expect(fieldOfRefusal({ name: 'nothing' }, fields)).toBeNull()
   })
 })

@@ -31,14 +31,13 @@ const hook = computed(() => (name: string) => ({ [`data-${prefix}-${name}`]: '' 
       class="flex w-full items-start gap-3"
       :class="inner"
     >
-      <p
+      <DataInlineError
         v-if="error"
-        class="min-w-0 flex-1 rounded-lg bg-error/10 px-3 py-2 text-[12px] leading-4 text-error"
-        role="alert"
+        class="min-w-0 flex-1"
         v-bind="hook('error')"
       >
         {{ error }}
-      </p>
+      </DataInlineError>
       <p
         v-else-if="note"
         class="min-w-0 flex-1 self-center text-[12px] text-muted"
