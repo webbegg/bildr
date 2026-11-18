@@ -84,6 +84,8 @@ await run('data', async ({ page, browser, errors }) => {
   check(fields && fields.map(f => `${f.name}:${f.type}`).join() === 'title:text,cost:number', `the Fields tab adds cost (${fields?.map(f => `${f.name}:${f.type}`)})`)
 
   // A second field, renamed (the field keeps its id); rows use title and cost.
+  // The file is written before the action answers and the add row closes: reopening it earlier gets it closed under the typing.
+  await page.locator('[data-new-field-label]').waitFor({ state: 'detached' })
   await page.getByRole('button', { name: 'Add field', exact: true }).first().click()
   await page.getByLabel('New field name').fill('note')
   await page.getByLabel('New field name').press('Enter')

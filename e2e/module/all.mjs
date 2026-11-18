@@ -15,11 +15,11 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { boot } from './lib.mjs'
 
-// `remote` and `paging` add and remove a data source, which changes the app's nuxt config: nuxt restarts, and the
-// dev server's Vite dependency cache is then often left answering 504 "Outdated Optimize Dep", so no page of the app
-// renders any more. They run last, after every script that renders the generated app (interactions, detail,
-// load-more, visual-editor).
-const SCRIPTS = ['shell', 'design', 'design-system', 'data', 'kit', 'panel-p1', 'colors-p1', 'menu-p1', 'canvas-p2', 'breakpoints-p2', 'desktop-base', 'components', 'layouts-p2', 'interactions', 'detail', 'detail-ui', 'load-more', 'visual-editor', 'real-browser', 'remote', 'paging']
+// `data`, `remote` and `paging` add and remove a data source (`data`: the Sample data source a new collection makes,
+// D7), which changes the app's nuxt config: nuxt restarts, and the dev server's Vite dependency cache is then often
+// left answering 504 "Outdated Optimize Dep", so no page of the app renders any more. They run last, after every
+// script that renders the generated app (interactions, detail, load-more, visual-editor).
+const SCRIPTS = ['shell', 'design', 'design-system', 'kit', 'panel-p1', 'colors-p1', 'menu-p1', 'canvas-p2', 'breakpoints-p2', 'desktop-base', 'components', 'layouts-p2', 'interactions', 'detail', 'detail-ui', 'load-more', 'visual-editor', 'real-browser', 'data', 'remote', 'paging']
 
 const wanted = process.argv.slice(2)
 const names = wanted.length ? wanted : SCRIPTS
