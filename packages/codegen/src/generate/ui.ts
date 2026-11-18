@@ -73,6 +73,13 @@ interface Env {
   optional: { used: Set<string>, guarded: Set<string> }
   /** Page aliases (`uses`) by artifact id: an action's alias names its `execute`, a state's its setter. */
   aliases: { actions: Map<string, string>, state: Map<string, string> }
+  /**
+   * The item names of the Lists around the node being rendered, outermost first, each with the type of one item as a TS type (read
+   * when a handler needs it). Only the template has them: a handler the script declares takes the ones it reads as parameters.
+   */
+  items: Map<string, () => string>
+  /** Shared by every copy of the env: the item names a handler under construction has read (undefined outside one). */
+  track: { items?: Set<string> }
 }
 
 interface Variant {
@@ -119,6 +126,17 @@ const refRoot = (name: string, onUse: () => void, optional?: Env['optional'], lo
     return `${name}.value${members.map(member => `${chain}${member}`).join('')}`
   },
   loading
+})
+
+/** The parameter a handler takes a List's item `as` as: the script has no `post`, only what the template passes. */
+const itemParam = (as: string) => `${as}Item`
+
+/** The item name of a List: itself in the template, the handler's parameter in the script (which the handler being built notes). */
+const itemRoot = (env: Env, as: string): Root => ({
+  resolve: (members, ctx) => {
+    if (ctx === 'script') env.track.items?.add(as)
+    return [ctx === 'script' ? itemParam(as) : as, ...members].join('.')
+  }
 })
 
 const plainRoot = (prefix: string, onUse: () => void = () => {}): Root => ({
@@ -577,7 +595,18 @@ const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
   if (typeof props.empty === 'string') lines.push(...element('p', [attr('if', `${condition()}="!${escapeAttr(items)}.length"`), staticAttr('class', 'text-muted')], escapeText(props.empty), indent))
   const shownIf: Attr[] = lines.length ? [attr('if', 'v-else')] : props.hideWhenEmpty === true ? [attr('if', `v-if="${escapeAttr(items)}.length"`)] : []
 
-  const itemEnv: Env = { ...env, roots: new Map(env.roots).set(as, plainRoot(as)) }
+  // A handler in the List's rows reads the item through a parameter: the type of one item is the items' own, which the script has.
+  if (env.roots.has(itemParam(as))) fail(env, node, `the item name ${as} would give a handler the parameter ${itemParam(as)}, which the page already names`)
+  const itemType = () => {
+    const saved = env.track.items
+    env.track.items = new Set()
+    const code = expression(env, node, props.items, 'script')
+    const outer = env.track.items
+    env.track.items = saved
+    if (outer.size) fail(env, node, `a handler can't read the items of a List over ${[...outer].join(', ')}: its row type is only known in the template`)
+    return `NonNullable<typeof ${code}>[number]`
+  }
+  const itemEnv: Env = { ...env, roots: new Map(env.roots).set(as, itemRoot(env, as)), items: new Map(env.items).set(as, itemType) }
   // `loadMore`: the first n records, and a button that shows n more (state of this node, so one per List).
   const more = loadMoreSize(props.loadMore)
   const shown = more ? identifier(`shown${pascal(node.id.replace(/^n_/, ''))}`, where(env, node)) : undefined
@@ -692,6 +721,8 @@ const handler = (env: Env, node: ModelNode, on: string, steps: Array<Record<stri
     return unsupported()
   }
   const [first, ...rest] = steps
+  // The List items the steps read are the template's: the handler takes them as parameters, and the template passes them.
+  env.track.items = new Set()
   // A one-record query the handler reads may be empty: it returns early then, and reads it without `?.` after.
   env.optional.used.clear()
   if (first?.kind === 'runAction') {
@@ -720,8 +751,11 @@ const handler = (env: Env, node: ModelNode, on: string, steps: Array<Record<stri
     body.push(...all.map(entry => `  ${entry.code}`))
   }
   env.optional.guarded = new Set()
-  env.handlers.push([`// Interaction "${on}": ${summaries.join(', then ')}.`, `const ${name} = async () => {`, ...body, '}'])
-  return name
+  const read = [...env.items.keys()].filter(item => env.track.items!.has(item))
+  env.track.items = undefined
+  const params = read.map(item => `${itemParam(item)}: ${env.items.get(item)!()}`)
+  env.handlers.push([`// Interaction "${on}": ${summaries.join(', then ')}.`, `const ${name} = async (${params.join(', ')}) => {`, ...body, '}'])
+  return `${name}${read.length ? `(${read.join(', ')})` : ''}`
 }
 
 // ── Files ───────────────────────────────────────────────────────────────
@@ -738,7 +772,7 @@ const sfc = (source: string, script: string[], template: string[]) => [
 ].join('\n')
 
 const newEnv = (model: Model, file: string, context?: ModuleContext): Env => ({
-  model, context, file, roots: new Map(), used: new Map(), needs: new Set(), handlers: [], variantLines: [], optional: { used: new Set(), guarded: new Set() }, aliases: { actions: new Map(), state: new Map() },
+  model, context, file, roots: new Map(), used: new Map(), needs: new Set(), handlers: [], variantLines: [], optional: { used: new Set(), guarded: new Set() }, aliases: { actions: new Map(), state: new Map() }, items: new Map(), track: {},
   base: model.project.breakpointBase ?? 'mobile', variantExpr: 'props.variant'
 })
 
@@ -1022,9 +1056,15 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
     })
   }
   const computedEntries = (uses.computed ?? []) as Array<{ as: string, if?: Value, then?: Value, else?: Value }>
+  /** The computed value whose line is being written, and the computed values each reads: they are declared before it. */
+  let writing: string | undefined
+  const reads = new Map<string, Set<string>>()
   for (const entry of computedEntries) {
     if (entry.if === undefined || entry.then === undefined || entry.else === undefined) fail(env, undefined, `computed ${entry.as} needs if, then and else`)
-    env.roots.set(entry.as, refRoot(entry.as, () => use(env, `computed:${entry.as}`, 'value'), undefined, () => [...loadingOf(env, entry.then), ...loadingOf(env, entry.else)]))
+    env.roots.set(entry.as, refRoot(entry.as, () => {
+      use(env, `computed:${entry.as}`, 'value')
+      if (writing !== undefined) reads.set(writing, (reads.get(writing) ?? new Set<string>()).add(entry.as))
+    }, undefined, () => [...loadingOf(env, entry.then), ...loadingOf(env, entry.else)]))
   }
 
   // The template first: it decides which declarations the script needs.
@@ -1048,8 +1088,28 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
   const seoLine = seo.length
     ? `useSeoMeta({ ${seo.map(([key, value]) => `${key}: ${typeof value === 'string' ? tsString(value) : `() => ${expression(env, undefined, value, 'script')}`}`).join(', ')} })`
     : undefined
-  const computedLines = computedEntries.filter(entry => env.used.has(`computed:${entry.as}`)).map(entry =>
-    `const ${entry.as} = computed(() => ${expression(env, undefined, entry.if, 'script')} ? ${expression(env, undefined, entry.then, 'script')} : ${expression(env, undefined, entry.else, 'script')})`)
+  // A computed value the template binds is declared, and so is one only another computed value reads: writing a line can use more.
+  const written = new Map<string, string>()
+  for (let more = true; more;) {
+    more = false
+    for (const entry of computedEntries) {
+      if (written.has(entry.as) || !env.used.has(`computed:${entry.as}`)) continue
+      writing = entry.as
+      written.set(entry.as, `const ${entry.as} = computed(() => ${expression(env, undefined, entry.if, 'script')} ? ${expression(env, undefined, entry.then, 'script')} : ${expression(env, undefined, entry.else, 'script')})`)
+      writing = undefined
+      more = true
+    }
+  }
+  // In dependency order: what a line reads is declared above it.
+  const computedLines: string[] = []
+  const placed = new Set<string>()
+  const place = (as: string) => {
+    if (placed.has(as) || !written.has(as)) return
+    placed.add(as)
+    for (const dependency of reads.get(as) ?? []) place(dependency)
+    computedLines.push(written.get(as)!)
+  }
+  computedEntries.forEach(entry => place(entry.as))
 
   const declarations: string[] = []
   for (const { as, file } of states) {

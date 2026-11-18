@@ -1,7 +1,8 @@
-import { pascal } from '../generate/text.ts'
+import { kebab as fileName, pascal } from '../generate/text.ts'
 import { camel, fail } from './core.ts'
 import type { Draft } from './core.ts'
 import { actionNameProblem, queryNameProblem } from './generated-names.ts'
+import { autoImportedNameProblem, composableNameProblem } from './reserved-names.ts'
 
 /**
  * Names of queries and actions (D10a). Both become code: a query the composable `use<Name>`, an
@@ -49,6 +50,9 @@ export const checkCallableFree = (draft: Draft, module: string, name: string, se
   // The composition root names each exposed list's use-case list<Plural>.
   const list = mod.entities.find(entity => `list${pascal(entity.plural)}`.toLowerCase() === name.toLowerCase())
   if (list) fail('invalid', `"${name}" is the name of the generated list use-case of ${list.name}: pick another`)
+  // A state's composable sits in the same folder: use<Module><State>.
+  const state = mod.state.find(entry => stateComposableOf(module, entry.name).toLowerCase() === composableOf(name).toLowerCase())
+  if (state) fail('invalid', `"${name}" would generate ${composableOf(name)}, the composable of the state ${state.name} (${state.id}): pick another`)
 }
 
 /** Refuses an action name the module's generated code already declares (its composition root, adapters, error factories…). */
@@ -65,3 +69,46 @@ export const checkQueryName = (name: string): void => {
 
 /** The client composable a query or action named `name` generates. */
 export const composableOf = (name: string): string => `use${pascal(name)}`
+
+// ── State (B1) ───────────────────────────────────────────────────────────
+
+/** The composable a state of `module` generates (generate/client.ts): the module's name comes first, so two modules' states never meet. */
+export const stateComposableOf = (module: string, name: string): string => `use${pascal(module)}${pascal(name)}`
+
+/**
+ * What the generated composable of a state declares in its own scope (generate/client.ts, stateComposableFile): the `data` it reads,
+ * the `set` it returns, the `computed` and `useLiveQuery` it imports, the `patch` the setter takes, the `q` of the live query and the
+ * `draft` of the update, and the state's own name as the variable that holds the row. (The type, schema and collection it imports are
+ * named from the module and state, in PascalCase or ending in `Collection`: a camelCase state name never meets them.)
+ */
+const STATE_LOCALS = ['data', 'set', 'computed', 'useLiveQuery', 'patch', 'q', 'draft']
+
+/** `given` as a state's camelCase name, or a refusal when it can't be one. */
+export const stateName = (given: string): string => {
+  const name = NAME.test(given) ? given : camel(given)
+  if (!NAME.test(name)) fail('invalid', `"${given}" can't be a state name: start with a letter, like "preferences"`)
+  if (isUnusable(name)) fail('invalid', `"${name}" is a reserved word: pick another state name`)
+  if (STATE_LOCALS.includes(name)) fail('invalid', `"${name}" is declared by the generated composable of every state (${STATE_LOCALS.join(', ')}): pick another name`)
+  const auto = autoImportedNameProblem(name)
+  if (auto) fail('invalid', auto)
+  return name
+}
+
+/**
+ * Refuses a state name that is taken in `module` (ignoring case, other than by state `self`, when renaming), or whose generated files
+ * would meet another's: its composable use<Module><Name> next to the queries' and actions' (and one Nuxt provides), and its collection
+ * file `data/<name>.collection.ts` next to a collection's.
+ */
+export const checkStateFree = (draft: Draft, module: string, name: string, self?: string): void => {
+  const mod = draft.module(module)
+  const taken = mod.state.find(state => state.id !== self && state.name.toLowerCase() === name.toLowerCase())
+  if (taken) fail('invalid', `Module "${module}" already has the state ${taken.name} (${taken.id})`)
+  const composable = stateComposableOf(module, name)
+  const callable = [...mod.queries.map(query => ({ kind: 'query', id: query.id, name: query.name })), ...mod.actions.map(action => ({ kind: 'action', id: action.id, name: action.name }))]
+    .find(entry => composableOf(entry.name).toLowerCase() === composable.toLowerCase())
+  if (callable) fail('invalid', `"${name}" would generate ${composable}, which the ${callable.kind} ${callable.name} (${callable.id}) already generates: pick another`)
+  const problem = composableNameProblem(`${module}-${name}`)
+  if (problem) fail('invalid', problem)
+  const collection = mod.entities.find(entity => fileName(entity.plural) === fileName(name))
+  if (collection) fail('invalid', `"${name}" would generate data/${fileName(name)}.collection.ts, the collection of ${collection.name}: pick another`)
+}

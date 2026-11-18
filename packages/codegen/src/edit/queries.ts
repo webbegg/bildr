@@ -5,8 +5,11 @@ import { mapNodePaths, mapPaths, rootOf } from './bindings.ts'
 import { camel, defineEdit, fail, kebab, uniqueName } from './core.ts'
 import type { Draft } from './core.ts'
 import { entityById, fits, isExpression, keyType, repositoryOf } from './entities.ts'
-import { callableName, checkCallableFree, checkQueryName, composableOf, isUnusable } from './naming.ts'
+import { pascal } from '../generate/text.ts'
+import { loadMoreSize } from '../render/rules.ts'
+import { callableName, checkCallableFree, checkQueryName, composableOf, isUnusable, stateComposableOf } from './naming.ts'
 import { PageRef } from './pages.ts'
+import { autoImportedNameProblem } from './reserved-names.ts'
 import { walk } from './tree.ts'
 import { describeUses, usesOf as artifactUsesOf } from './usage.ts'
 
@@ -25,26 +28,110 @@ const Order = z.object({ field: CamelNameSchema, direction: z.enum(['asc', 'desc
 const Condition = z.object({ op: z.enum(CONDITION_OPS), field: CamelNameSchema, value: ValueSchema })
 
 /** Names the generated page script declares itself: a use can't take them. */
-const RESERVED = ['site', 'layout', 'route', 'form', 'props', 'toast', 'set', 'execute']
+export const RESERVED = ['site', 'layout', 'route', 'form', 'props', 'toast', 'set', 'execute']
 
 const spaced = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase()
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
-const moduleOfPage = (draft: Draft, page: PageFile) => {
+export const moduleOfPage = (draft: Draft, page: PageFile) => {
   const entry = Object.entries(draft.model.modules).find(([, mod]) => mod.pages.includes(page))!
   return { name: entry[0], mod: entry[1] }
 }
 
 /** Every alias a page already uses. */
-const aliasesOf = (page: PageFile): string[] => [
+export const aliasesOf = (page: PageFile): string[] => [
   ...page.uses?.state ?? [], ...page.uses?.queries ?? [], ...page.uses?.actions ?? [], ...page.uses?.computed ?? []
 ].map(use => use.as)
 
-const checkAlias = (page: PageFile, as: string) => {
-  if (RESERVED.includes(as)) fail('invalid', `"${as}" is a name the page's script uses itself: pick another`)
-  if (aliasesOf(page).includes(as)) fail('invalid', `The page already uses the name "${as}"`)
+export type UseKind = 'state' | 'query' | 'action' | 'computed'
+type Declared = Array<{ name: string, by: string }>
+
+/**
+ * The names the generated page script declares for a use `as` of `kind` (generate/ui.ts, `pageFile`): the name itself, and what the
+ * page derives from it: a state's setter `set<As>`, a query's loading flag `<as>Loading`, an action's `<as>Pending` and `<as>Error`.
+ */
+const declaredBy = (as: string, kind: UseKind): Declared => {
+  const derived = kind === 'state' ? [[`set${pascal(as)}`, 'setter']] : kind === 'query' ? [[`${as}Loading`, 'loading flag']] : kind === 'action' ? [[`${as}Pending`, 'pending flag'], [`${as}Error`, 'error']] : []
+  return [{ name: as, by: `"${as}"` }, ...derived.map(([name, what]) => ({ name: name!, by: `the ${what} of "${as}"` }))]
+}
+
+/**
+ * Every name the page's script declares today: its uses and what they derive, the composables it calls, the handler of each
+ * interaction (`on<Node><Event>`) and the counter of each List that loads more (`shown<Node>`).
+ */
+const declaredNames = (draft: Draft, page: PageFile): Declared => {
+  const { name: module, mod } = moduleOfPage(draft, page)
+  const names: Declared = []
+  // A composable is called once per use, never declared: two uses of one query call it twice, so it is listed once. Two
+  // different items whose composables share a name still meet.
+  const composables = new Set<string>()
+  const composable = (name: string, by: string) => {
+    if (composables.has(by)) return
+    composables.add(by)
+    names.push({ name, by })
+  }
+  for (const use of page.uses?.state ?? []) {
+    names.push(...declaredBy(use.as, 'state'))
+    const state = mod.state.find(entry => entry.id === use.state)
+    if (state) composable(stateComposableOf(module, state.name), `the composable of the state ${state.name}`)
+  }
+  for (const use of page.uses?.queries ?? []) {
+    names.push(...declaredBy(use.as, 'query'))
+    const query = mod.queries.find(entry => entry.id === use.query)
+    if (query) composable(composableOf(query.name), `the composable of the query ${query.name}`)
+  }
+  for (const use of page.uses?.actions ?? []) {
+    names.push(...declaredBy(use.as, 'action'))
+    const action = mod.actions.find(entry => entry.id === use.action)
+    if (action) composable(composableOf(action.name), `the composable of the action ${action.name}`)
+  }
+  for (const use of page.uses?.computed ?? []) names.push(...declaredBy(use.as, 'computed'))
+  walk(page.root, (node) => {
+    const id = pascal(node.id.replace(/^n_/, ''))
+    for (const interaction of node.interactions ?? []) names.push({ name: `on${id}${pascal(interaction.on)}`, by: `the handler of ${node.id}'s ${interaction.on}` })
+    if (node.type === 'List' && loadMoreSize(node.props?.loadMore) !== undefined) names.push({ name: `shown${id}`, by: `the counter of ${node.id}` })
+  })
+  return names
+}
+
+/**
+ * Why the page's script can't declare `added` next to what it has: a name it uses itself, one Vue or Nuxt provides, or one declared
+ * twice. Without `added`, the same for what it has. Undefined when it can.
+ */
+export const pageNameProblem = (draft: Draft, page: PageFile, added: Declared = []): string | undefined => {
+  const seen = new Map<string, string>()
+  const have = declaredNames(draft, page)
+  // With names to add, only they are looked at: what the page has is not theirs to refuse for.
+  if (added.length) for (const { name, by } of have) seen.set(name, by)
+  for (const { name, by } of added.length ? added : have) {
+    if (RESERVED.includes(name)) return `${by === `"${name}"` ? `"${name}"` : `${by} would be "${name}", which`} is a name the page's script uses itself: pick another`
+    // Only the name a page gives a use shadows what Vue and Nuxt provide; what the page derives from it (`createError`) the script never calls.
+    const auto = by === `"${name}"` ? autoImportedNameProblem(name) : undefined
+    if (auto) return auto
+    const other = seen.get(name)
+    if (other) return `The page's script would declare "${name}" twice: as ${other} and as ${by}`
+    seen.set(name, by)
+  }
+  return undefined
+}
+
+/** Why a page can't use `as` as the name of a use of `kind`, together with the names it derives, or undefined when it can. */
+const aliasProblem = (draft: Draft, page: PageFile, as: string, kind: UseKind): string | undefined =>
+  aliasesOf(page).includes(as) ? `The page already uses the name "${as}"` : pageNameProblem(draft, page, declaredBy(as, kind))
+
+export const checkAlias = (draft: Draft, page: PageFile, as: string, kind: UseKind) => {
+  const problem = aliasProblem(draft, page, as, kind)
+  if (problem) fail('invalid', problem)
+}
+
+/** `base`, or `base2`, `base3`…: the first name of a use of `kind` the page can declare, with the names it derives. */
+export const freeAlias = (draft: Draft, page: PageFile, base: string, kind: UseKind): string => {
+  for (let n = 1; ; n++) {
+    const candidate = n === 1 ? base : `${base}${n}`
+    if (!aliasProblem(draft, page, candidate, kind)) return candidate
+  }
 }
 
 /** The field names a query condition or ordering may name: the entity's, its key and its timestamps. */
@@ -75,7 +162,7 @@ export const useAction = (draft: Draft, page: PageFile, actionId: string): strin
   if (existing) return existing.as
   const action = moduleOfPage(draft, page).mod.actions.find(entry => entry.id === actionId)
   if (!action) return undefined
-  const as = uniqueName(action.name, [...aliasesOf(page), ...RESERVED])
+  const as = freeAlias(draft, page, action.name, 'action')
   const uses = page.uses ??= {}
   ;(uses.actions ??= []).push({ as, action: actionId })
   return as
@@ -261,8 +348,8 @@ export const queryCreateForList = defineEdit({
       if (!list) fail('not_found', `Node "${nodeId}" not found in ${page.id}`)
       if (list!.type !== 'List') fail('invalid', `Node "${nodeId}" is a ${list!.type}, not a List`)
     }
-    const as = given ?? uniqueName(entity.plural, [...aliasesOf(page), ...RESERVED])
-    checkAlias(page, as)
+    const as = given ?? freeAlias(draft, page, entity.plural, 'query')
+    checkAlias(draft, page, as, 'query')
     const query: QueryFile = {
       id: draft.mint('q', `${page.name} ${as}`),
       name: uniqueName(camel(`${page.name} ${as}`), mod.queries.map(entry => entry.name)),
@@ -361,8 +448,40 @@ const boundRoots = (page: PageFile): Set<string> => {
   }
   walk(page.root, node => mapNodePaths(node, collect))
   mapPaths(page.uses?.computed, collect)
+  mapPaths(page.uses?.queries?.map(use => use.args), collect)
   mapPaths(page.seo, collect)
   return roots
+}
+
+/**
+ * Drops the uses of `page` of a state or an action named in `named` (ids) that nothing needs any more: no binding of the name the
+ * page uses it under, and no node whose interactions set the state or run the action, or (for an action) whose props hold it (a Form).
+ * What an interaction edit calls after it takes steps away. Returns what it dropped, as `addedUses` lists what a step adds.
+ */
+export const dropUnusedUses = (page: PageFile, named: { state: ReadonlySet<string>, action: ReadonlySet<string> }): Array<{ as: string, state: string } | { as: string, action: string }> => {
+  const uses = page.uses
+  if (!uses) return []
+  const bound = boundRoots(page)
+  const held = (id: string, props: boolean) => {
+    let found = false
+    walk(page.root, (node) => {
+      if (mentions(node.interactions, id) || (props && mentions(node.props, id))) found = true
+    })
+    return found
+  }
+  const dropped: Array<{ as: string, state: string } | { as: string, action: string }> = []
+  for (const use of (uses.state ?? []).filter(entry => named.state.has(entry.state) && !bound.has(entry.as) && !held(entry.state, false))) {
+    uses.state = uses.state!.filter(entry => entry !== use)
+    dropped.push({ as: use.as, state: use.state })
+  }
+  for (const use of (uses.actions ?? []).filter(entry => named.action.has(entry.action) && !bound.has(entry.as) && !held(entry.action, true))) {
+    uses.actions = uses.actions!.filter(entry => entry !== use)
+    dropped.push({ as: use.as, action: use.action })
+  }
+  if (!uses.state?.length) delete uses.state
+  if (!uses.actions?.length) delete uses.actions
+  if (!Object.keys(uses).length) delete page.uses
+  return dropped
 }
 
 const mentions = (value: unknown, id: string): boolean => typeof value === 'string' ? value === id : !!value && typeof value === 'object' && Object.values(value).some(item => mentions(item, id))
@@ -377,13 +496,22 @@ export const pageUseAdd = defineEdit({
     as: Alias,
     query: QueryRef.optional().describe('A query of the page\'s module to read'),
     action: ArtifactIdSchema.optional().describe('An action of the page\'s module its forms and buttons can run'),
+    state: ArtifactIdSchema.optional().describe('A state of the page\'s module its nodes can bind (as.field) and set (a setState step); a page uses a state once'),
     args: z.record(CamelNameSchema, ValueSchema).optional().describe('With a query: its parameters\' values, e.g. { "limit": 6 } or { "slug": { "$route": "slug" } }')
   }),
-  apply: (draft, { page: pageId, as, query: queryId, action: actionId, args }) => {
-    if ((queryId === undefined) === (actionId === undefined)) fail('invalid', 'Give a query or an action to use, not both')
+  apply: (draft, { page: pageId, as, query: queryId, action: actionId, state: stateId, args }) => {
+    if ([queryId, actionId, stateId].filter(given => given !== undefined).length !== 1) fail('invalid', 'Give one query, action or state to use')
     const { page } = draft.page(pageId)
     const { mod } = moduleOfPage(draft, page)
-    checkAlias(page, as)
+    checkAlias(draft, page, as, stateId !== undefined ? 'state' : queryId !== undefined ? 'query' : 'action')
+    if (stateId !== undefined) {
+      if (args) fail('invalid', 'A state use takes no args')
+      if (!mod.state.some(entry => entry.id === stateId)) fail('not_found', `No state "${stateId}" in the page's module`)
+      const used = page.uses?.state?.find(entry => entry.state === stateId)
+      if (used) fail('invalid', `The page already uses ${stateId} as "${used.as}"`)
+      ;((page.uses ??= {}).state ??= []).push({ as, state: stateId })
+      return { as }
+    }
     const uses = page.uses ??= {}
     if (queryId !== undefined) {
       const query = mod.queries.find(entry => entry.id === queryId) ?? fail('not_found', `No query "${queryId}" in the page's module`)
@@ -418,14 +546,34 @@ export const pageUseUpdate = defineEdit({
 })
 
 export const pageUseRemove = defineEdit({
-  input: z.object({ page: PageRef, as: Alias }),
-  apply: (draft, { page: pageId, as }) => {
+  input: z.object({
+    page: PageRef,
+    as: Alias.optional().describe('The name the page uses it under'),
+    state: ArtifactIdSchema.optional().describe('A state the page uses, instead of its name')
+  }),
+  apply: (draft, { page: pageId, as: given, state: stateId }) => {
     const { page } = draft.page(pageId)
     const uses = page.uses
-    const query = uses?.queries?.find(entry => entry.as === as)
-    const action = uses?.actions?.find(entry => entry.as === as)
-    if (!query && !action) fail('not_found', `Page "${page.name}" doesn't read a query or run an action as "${as}"`)
+    if (given === undefined && stateId === undefined) fail('invalid', 'Give the name the page uses (as), or the state it uses (state)')
+    const state = stateId === undefined
+      ? uses?.state?.find(entry => entry.as === given)
+      : uses?.state?.find(entry => entry.state === stateId)
+    if (stateId !== undefined) {
+      if (!state) fail('not_found', `Page "${page.name}" doesn't use the state "${stateId}"`)
+      if (given !== undefined && state!.as !== given) fail('invalid', `Page "${page.name}" uses ${stateId} as "${state!.as}", not "${given}"`)
+    }
+    const as = state?.as ?? given!
+    const query = state ? undefined : uses?.queries?.find(entry => entry.as === as)
+    const action = state ? undefined : uses?.actions?.find(entry => entry.as === as)
+    if (!query && !action && !state) fail('not_found', `Page "${page.name}" doesn't read a query, run an action or use a state as "${as}"`)
     if (boundRoots(page).has(as)) fail('invalid', `The page still binds "${as}": change what reads it first`)
+    if (state) {
+      const holders: string[] = []
+      walk(page.root, (node) => {
+        if (mentions(node.interactions, state.state)) holders.push(node.id)
+      })
+      if (holders.length) fail('invalid', `${holders.join(', ')} set the state ${state.state} through "${as}": change them first`)
+    }
     if (action) {
       const holders: string[] = []
       walk(page.root, (node) => {
@@ -435,8 +583,10 @@ export const pageUseRemove = defineEdit({
     }
     if (query) uses!.queries = uses!.queries!.filter(entry => entry !== query)
     if (action) uses!.actions = uses!.actions!.filter(entry => entry !== action)
+    if (state) uses!.state = uses!.state!.filter(entry => entry !== state)
     if (!uses!.queries?.length) delete uses!.queries
     if (!uses!.actions?.length) delete uses!.actions
+    if (!uses!.state?.length) delete uses!.state
     if (!Object.keys(uses!).length) delete page.uses
     return {}
   }

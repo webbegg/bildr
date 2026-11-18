@@ -91,7 +91,11 @@ const NAMES = [
   // D10a: queries and actions of their own.
   'query_create', 'query_rename', 'query_delete', 'action_create', 'action_update', 'action_rename', 'action_delete',
   // D4: sample-data rows.
-  'fixture_row_create', 'fixture_row_update', 'fixture_rows_delete'
+  'fixture_row_create', 'fixture_row_update', 'fixture_rows_delete',
+  // B1: app behaviour: state, interactions on any node, computed values.
+  'state_create', 'state_update', 'state_rename', 'state_delete',
+  'node_interaction_add', 'node_interaction_update', 'node_interaction_remove',
+  'page_computed_set', 'page_computed_remove'
 ].sort()
 
 // T10a (S11, D12): every editor operation is an action, callable over HTTP.

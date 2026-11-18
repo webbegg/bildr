@@ -37,7 +37,7 @@ export interface ArtifactUse {
   id: string
   name: string
   via: UseVia
-  /** Where in the file: `uses`, `computed`, `seo`, `properties`, `repository`, `relations`, a node id, or the action's section. */
+  /** Where in the file: `uses`, `computed`, `queries` (a query use's arguments), `seo`, `properties`, `repository`, `relations`, a node id, or the action's section. */
   where: string
   /** The node, when the use is on one. */
   node?: string
@@ -131,6 +131,40 @@ export const describeUses = (uses: ArtifactUse[], limit = 6): string => {
 
 const ACTION_PARTS = [['input', 'input'], ['output', 'output'], ['steps', 'step'], ['errors', 'errors'], ['client', 'client']] as const
 
+/**
+ * The page's computed values, SEO fields and nodes that bind `as`, the name the page uses a query, an action, a state or a computed
+ * value under. A List's item name of the same word shadows it for the nodes inside the List. `skip` is a computed value left out (its own).
+ */
+const bindsOf = (page: PageFile, as: string, skip?: string): ArtifactUse[] => {
+  const base = { kind: 'page', id: page.id, name: page.name, via: 'bind' } as const
+  const uses: ArtifactUse[] = []
+  const reads = (value: unknown) => {
+    let bound = false
+    mapPaths(value, (path) => {
+      if (rootOf(path) === as) bound = true
+      return undefined
+    })
+    return bound
+  }
+  if (reads((page.uses?.computed ?? []).filter(entry => entry.as !== skip))) uses.push({ ...base, where: 'computed', as })
+  if (reads((page.uses?.queries ?? []).map(use => use.args))) uses.push({ ...base, where: 'queries', as })
+  if (reads(page.seo)) uses.push({ ...base, where: 'seo', as })
+  walkScoped(page.root, (node, scope) => {
+    let bound = false
+    mapNodePaths(node, (path) => {
+      if (rootOf(path) === as && !scope.has(as)) bound = true
+      return undefined
+    })
+    if (bound) uses.push({ ...base, where: node.id, node: node.id, as })
+  })
+  return uses
+}
+
+/** Who binds the computed value `as` of page `pageId`: the nodes, other computed values and SEO fields that read it. What `page_computed_remove` refuses for. */
+export const computedUsesOf = (model: Model, pageId: string, as: string): ArtifactUse[] => {
+  const page = Object.values(model.modules).flatMap(mod => mod.pages).find(entry => entry.id === pageId)
+  return page ? bindsOf(page, as, as) : []
+}
 /** Everything that uses artifact `artifactId` (a query, action, entity, field…): see the file comment. */
 export const usesOf = (model: Model, artifactId: string): ArtifactUse[] => {
   const ids = new Set([artifactId])
@@ -142,29 +176,10 @@ export const usesOf = (model: Model, artifactId: string): ArtifactUse[] => {
     const page = tree.owner as PageFile
     const aliases = [
       ...(page.uses?.queries ?? []).filter(use => use.query === artifactId).map(use => use.as),
-      ...(page.uses?.actions ?? []).filter(use => use.action === artifactId).map(use => use.as)
+      ...(page.uses?.actions ?? []).filter(use => use.action === artifactId).map(use => use.as),
+      ...(page.uses?.state ?? []).filter(use => use.state === artifactId).map(use => use.as)
     ]
-    const base = { kind: 'page', id: page.id, name: page.name, via: 'bind' } as const
-    for (const as of aliases) {
-      const reads = (value: unknown) => {
-        let bound = false
-        mapPaths(value, (path) => {
-          if (rootOf(path) === as) bound = true
-          return undefined
-        })
-        return bound
-      }
-      if (reads(page.uses?.computed)) uses.push({ ...base, where: 'computed', as })
-      if (reads(page.seo)) uses.push({ ...base, where: 'seo', as })
-      walkScoped(page.root, (node, scope) => {
-        let bound = false
-        mapNodePaths(node, (path) => {
-          if (rootOf(path) === as && !scope.has(as)) bound = true
-          return undefined
-        })
-        if (bound) uses.push({ ...base, where: node.id, node: node.id, as })
-      })
-    }
+    for (const as of aliases) uses.push(...bindsOf(page, as))
   }
 
   // The actions that mention it in their input, output, steps, errors or client part.
@@ -431,3 +446,57 @@ export const entityUsesOf = (model: Model, entityId: string): ArtifactUse[] => {
   }
   return distinct(uses.map(use => use.kind === 'action' && own.has(use.id) ? { ...use, follows: true } : use))
 }
+
+// ── State fields ─────────────────────────────────────────────────────────
+
+/**
+ * Who uses each field of state `stateId`, by field name, in one pass over the model (`only`: just that field): everything that
+ * `state_update` refuses a change of. The nodes, computed values, query arguments and SEO fields of a page that bind it through the alias the page
+ * uses the state under (`preferences.showDrafts`; the whole row, `preferences`, uses every field), and the `setState` steps, on
+ * any node of a page, component or layout, that set it. A step is a use of the kind `interaction`, a binding one of `bind`.
+ */
+export const stateFieldUsesIndex = (model: Model, stateId: string, only?: string): Map<string, ArtifactUse[]> => {
+  const index = new Map<string, ArtifactUse[]>()
+  const state = Object.values(model.modules).flatMap(mod => mod.state).find(entry => entry.id === stateId)
+  if (!state) return index
+  const add = (field: string, use: ArtifactUse) => {
+    if (only !== undefined && field !== only) return
+    const list = index.get(field)
+    if (list) list.push(use)
+    else index.set(field, [use])
+  }
+  for (const tree of treesOf(model)) {
+    const owner = tree.owner as { name: string }
+    const base = { kind: tree.kind, id: tree.file, name: owner.name } as const
+    if (tree.kind === 'page') {
+      const page = tree.owner as PageFile
+      for (const as of (page.uses?.state ?? []).filter(use => use.state === stateId).map(use => use.as)) {
+        const read = (where: string, node?: string) => (path: string): undefined => {
+          const [root, field] = path.split('.')
+          if (root !== as) return undefined
+          const use: ArtifactUse = { ...base, via: 'bind', where, ...(node ? { node } : {}), as }
+          if (field) add(field, use)
+          else for (const entry of state.fields) add(entry.name, use)
+          return undefined
+        }
+        mapPaths(page.uses?.computed, read('computed'))
+        mapPaths((page.uses?.queries ?? []).map(use => use.args), read('queries'))
+        mapPaths(page.seo, read('seo'))
+        walkScoped(page.root, (node, scope) => {
+          if (!scope.has(as)) mapNodePaths(node, read(node.id, node.id))
+        })
+      }
+    }
+    walk(tree.root, (node) => {
+      for (const interaction of node.interactions ?? []) {
+        for (const step of interaction.do) {
+          if (step.kind === 'setState' && step.state === stateId && typeof step.field === 'string') add(step.field, { ...base, via: 'interaction', where: node.id, node: node.id })
+        }
+      }
+    })
+  }
+  return new Map([...index].map(([field, uses]) => [field, distinct(uses)]))
+}
+
+/** Who uses field `fieldName` of state `stateId`: `stateFieldUsesIndex` for that one field. */
+export const stateFieldUsesOf = (model: Model, stateId: string, fieldName: string): ArtifactUse[] => stateFieldUsesIndex(model, stateId, fieldName).get(fieldName) ?? []

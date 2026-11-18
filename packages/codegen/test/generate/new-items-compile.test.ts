@@ -11,6 +11,7 @@ import { generate } from '../../src/generate/index'
 import { loadModel } from '../../src/model/load'
 import { ManifestFileSchema } from '../../src/model/schemas'
 import { planSync } from '../../src/sync/plan'
+import { draftsToggleEdits, withoutDraftsToggle } from '../edit/behaviour-helpers'
 import { applyChanges } from '../edit/helpers'
 import { fixtureModelFiles, fixtureRoot } from '../model/fixture'
 
@@ -97,6 +98,85 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
     session.edit('query_rename', { query: 'q_post_by_slug', name: 'postFromSlug' })
     session.edit('action_rename', { action: 'act_create_post', name: 'addPost' })
     session.edit('action_rename', { action: 'act_publish_post', name: 'releasePost' })
+  }],
+  // B1: app behaviour. State, interactions and computed values are code too: the app they give builds, lints and tests.
+  ['state of every persistence, used, updated and renamed', (session) => {
+    session.edit('state_create', { name: 'reading', persist: 'session', fields: [{ name: 'dark', type: 'boolean', default: false }, { name: 'page', type: 'integer', default: 1 }, { name: 'title', type: 'text', default: 'Hello' }] })
+    session.edit('state_create', { name: 'remembered', persist: 'localStorage', label: 'Remembered', fields: [{ name: 'zoom', type: 'number', default: 1.5 }, { name: 'since', type: 'date', default: '2026-01-01' }, { name: 'note', type: 'text' }] })
+    session.edit('state_create', { name: 'unused' })
+    session.edit('page_use_add', { page: 'pg_new_post', as: 'reading', state: 'st_reading' })
+    session.edit('node_interaction_add', { file: 'pg_new_post', nodeId: 'n_cancel', on: 'mouseenter', do: [{ kind: 'setState', state: 'st_reading', field: 'page', value: 2 }] })
+    session.edit('node_interaction_add', { file: 'pg_new_post', nodeId: 'n_published', on: 'change', do: [{ kind: 'setState', state: 'st_reading', field: 'dark', value: { $event: 'checked' } }] })
+    session.edit('state_update', { state: 'st_remembered', label: 'Kept', persist: 'session', fields: [{ name: 'zoom', type: 'number', default: 2 }, { name: 'note', type: 'text', default: '' }, { name: 'count', type: 'integer', default: 0 }] })
+    session.edit('state_rename', { state: 'st_reading', name: 'progress' })
+    session.edit('state_create', { name: 'scratch' })
+    session.edit('state_delete', { state: 'st_scratch' })
+  }],
+  ['interactions of every step kind, on a page, a layout and a component', (session) => {
+    const uuid = '0b6f6a52-1c7a-4c1e-9a52-7a0e2f3d9b01'
+    session.edit('state_create', { name: 'reading', fields: [{ name: 'dark', type: 'boolean', default: false }, { name: 'page', type: 'integer', default: 1 }] })
+    session.edit('page_use_add', { page: 'pg_index', as: 'reading', state: 'st_reading' })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_head', type: 'Button', props: { text: 'Next' } })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_head', type: 'Button', props: { text: 'Go' } })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_head', type: 'Checkbox', props: { label: 'Dark', value: { $bind: 'reading.dark' } } })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_1', on: 'click', do: [{ kind: 'setState', state: 'st_reading', field: 'page', value: 2 }] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_1', on: 'mouseenter', do: [{ kind: 'setState', state: 'st_reading', field: 'dark', value: { not: { $bind: 'reading.dark' } } }] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_1', on: 'mouseleave', do: [{ kind: 'toast', title: 'Bye', description: { $template: 'Page {reading.page}' }, color: 'info', icon: 'i-lucide-check' }] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_2', on: 'click', do: [{ kind: 'navigate', to: { page: 'pg_post_detail', params: { slug: 'welcome' } } }] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_2', on: 'mouseenter', do: [{ kind: 'runAction', action: 'act_publish_post', args: { id: uuid } }] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_2', on: 'mouseleave', do: [
+      { kind: 'runAction', action: 'act_publish_post', args: { id: uuid } },
+      { kind: 'toast', when: 'success', title: 'Published' },
+      { kind: 'navigate', when: 'success', to: { page: 'pg_new_post' } }
+    ] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_checkbox_1', on: 'change', do: [{ kind: 'setState', state: 'st_reading', field: 'dark', value: { $event: 'checked' } }] })
+    session.edit('node_interaction_update', { file: 'pg_new_post', nodeId: 'n_form', index: 0, do: [
+      { kind: 'runAction', action: 'act_create_post', args: { $form: true } },
+      { kind: 'toast', when: 'success', title: 'Saved', color: 'success' },
+      { kind: 'navigate', when: 'success', to: { page: 'pg_post_detail', params: { slug: { $form: 'slug' } } } }
+    ] })
+    session.edit('node_insert', { file: 'lay_main', parentId: 'n_nav', type: 'Button', props: { text: 'Write' } })
+    session.edit('node_interaction_add', { file: 'lay_main', nodeId: 'n_button_3', on: 'click', do: [{ kind: 'navigate', to: { page: 'pg_new_post' } }] })
+    session.edit('node_interaction_add', { file: 'lay_main', nodeId: 'n_button_3', on: 'mouseenter', do: [{ kind: 'toast', title: { $bind: 'site.name' } }] })
+    session.edit('node_insert', { file: 'cmp_post_card', parentId: 'n_actions', type: 'Button', props: { text: 'Hi' } })
+    session.edit('node_interaction_add', { file: 'cmp_post_card', nodeId: 'n_button_4', on: 'click', do: [{ kind: 'toast', title: { $bind: 'draftLabel' } }] })
+    session.edit('component_variant_add', { component: 'cmp_post_card', name: 'pressed' })
+    session.edit('component_interaction_add', { component: 'cmp_post_card', variant: '', on: 'mouseenter', to: 'var_pressed' })
+    session.edit('node_interaction_remove', { file: 'pg_index', nodeId: 'n_button_1', index: 1 })
+  }],
+  // B1 verification: steps of a List row go through the handler's parameters, and each value is the type its place takes.
+  ['a List row\'s steps (a page to go to, a toast) and values typed into state', (session) => {
+    session.edit('state_create', { name: 'reading', fields: [{ name: 'dark', type: 'boolean', default: false }, { name: 'page', type: 'integer', default: 1 }, { name: 'title', type: 'text', default: 'Hello' }, { name: 'note', type: 'text' }] })
+    session.edit('page_use_add', { page: 'pg_index', as: 'reading', state: 'st_reading' })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_head', type: 'Button', props: { text: 'Count' } })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_list', type: 'Button', props: { text: 'Open' } })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_card_actions', type: 'Button', props: { text: 'Preview' } })
+    // A number from a list's length, text from a template, the opposite of true or false, text from a row's field with a fallback.
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_1', on: 'click', do: [{ kind: 'setState', state: 'st_reading', field: 'page', value: { $bind: 'featured.length' } }] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_1', on: 'mouseenter', do: [{ kind: 'setState', state: 'st_reading', field: 'title', value: { $template: 'Page {reading.page}' } }] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_1', on: 'mouseleave', do: [{ kind: 'setState', state: 'st_reading', field: 'dark', value: { not: { $bind: 'reading.dark' } } }] })
+    // Go to a page from a row: one step, and several (a toast reading the row, then the page); a step inline in the row.
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_2', on: 'click', do: [{ kind: 'navigate', to: { page: 'pg_post_detail', params: { slug: { $bind: 'post.slug' } } } }] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_2', on: 'mouseenter', do: [{ kind: 'setState', state: 'st_reading', field: 'title', value: { $bind: 'post.title' } }] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_2', on: 'mouseleave', do: [{ kind: 'toast', title: { $bind: 'post.title' } }, { kind: 'navigate', to: { page: 'pg_post_detail', params: { slug: { $bind: 'post.slug' } } } }] })
+    // The Button in the card's slot is in the row too.
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_3', on: 'click', do: [{ kind: 'navigate', to: { page: 'pg_post_detail', params: { slug: { $bind: 'post.slug' } } } }] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_3', on: 'mouseenter', do: [{ kind: 'toast', title: { $bind: 'reading.note', fallback: 'No note' }, color: 'info' }] })
+  }],
+  ['computed values that read each other, and a List that shows one', (session) => {
+    session.edit('page_computed_set', { page: 'pg_index', as: 'label', if: { not: { $bind: 'preferences.showDrafts' } }, then: 'Featured posts', else: 'All posts' })
+    session.edit('page_computed_set', { page: 'pg_index', as: 'heading', if: { $bind: 'preferences.showDrafts' }, then: { $bind: 'label' }, else: 'Posts' })
+    session.edit('node_update_props', { file: 'pg_index', nodeId: 'n_h1', props: { text: { $bind: 'heading' } } })
+    // `shown` reads `posts`, which only it reads: both are declared, `posts` first.
+    session.edit('page_computed_set', { page: 'pg_index', as: 'shown', if: { $bind: 'preferences.showDrafts' }, then: { $bind: 'posts' }, else: { $bind: 'featured' } })
+    session.edit('node_update_props', { file: 'pg_index', nodeId: 'n_list', props: { items: { $bind: 'shown' } } })
+  }],
+  ['the drafts toggle, built back through the module actions, and a computed value', (session) => {
+    session.files = withoutDraftsToggle(session.files)
+    draftsToggleEdits((name, input) => session.edit(name, input))
+    session.edit('page_computed_set', { page: 'pg_index', as: 'heading', if: { not: { $bind: 'preferences.showDrafts' } }, then: 'Featured posts', else: 'All posts' })
+    session.edit('node_update_props', { file: 'pg_index', nodeId: 'n_h1', props: { text: { $bind: 'heading' } } })
+    session.edit('page_computed_set', { page: 'pg_index', as: 'posts', if: { $bind: 'preferences.showDrafts' }, then: { $bind: 'featured' }, else: { $bind: 'all' } })
   }]
 ]
 

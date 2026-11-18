@@ -60,6 +60,31 @@ const providerOf = (composable: string): string | undefined => {
   return undefined
 }
 
+/**
+ * The functions (not composables) Vue and Nuxt auto-import into every page and component script, so the generated script uses them
+ * by name (`computed`, `ref`, `reactive`, `navigateTo`, `definePageMeta`…). A name of a state or a page's use that is one of them
+ * would shadow it in the script, or in the composable. The composables are in `AUTO_IMPORTED`.
+ */
+const AUTO_IMPORTED_FUNCTIONS: Record<string, string[]> = {
+  Vue: [
+    'computed', 'customRef', 'defineAsyncComponent', 'defineComponent', 'defineEmits', 'defineExpose', 'defineModel', 'defineProps', 'defineSlots', 'effectScope', 'getCurrentInstance',
+    'getCurrentScope', 'h', 'inject', 'isProxy', 'isReactive', 'isReadonly', 'isRef', 'markRaw', 'nextTick', 'onActivated', 'onBeforeMount', 'onBeforeUnmount', 'onBeforeUpdate',
+    'onDeactivated', 'onErrorCaptured', 'onMounted', 'onScopeDispose', 'onServerPrefetch', 'onUnmounted', 'onUpdated', 'provide', 'reactive', 'readonly', 'ref', 'resolveComponent',
+    'shallowReactive', 'shallowReadonly', 'shallowRef', 'toRaw', 'toRef', 'toRefs', 'toValue', 'triggerRef', 'unref', 'watch', 'watchEffect', 'watchPostEffect', 'watchSyncEffect', 'withDefaults'
+  ],
+  Nuxt: [
+    'abortNavigation', 'addRouteMiddleware', 'callOnce', 'clearError', 'clearNuxtData', 'clearNuxtState', 'createError', 'defineNuxtComponent', 'defineNuxtPlugin', 'defineNuxtRouteMiddleware',
+    'definePageMeta', 'defineRouteRules', 'isNuxtError', 'isPrerendered', 'loadPayload', 'navigateTo', 'onBeforeRouteLeave', 'onBeforeRouteUpdate', 'onNuxtReady', 'prefetchComponents',
+    'preloadComponents', 'preloadRouteComponents', 'refreshCookie', 'refreshNuxtData', 'reloadNuxtApp', 'setPageLayout', 'setResponseStatus', 'showError', 'updateAppConfig'
+  ]
+}
+
+/** Why a state or a page use can't be called `name` (it is an auto-imported function or composable the generated code uses), or undefined. */
+export const autoImportedNameProblem = (name: string): string | undefined => {
+  const provider = providerOf(name) ?? Object.entries(AUTO_IMPORTED_FUNCTIONS).find(([, names]) => names.includes(name))?.[0]
+  return provider ? `"${name}" is something ${provider} provides to every page (the generated code uses it): pick another name` : undefined
+}
+
 /** Why the composable `use<Name>` of a query or an action called `name` can't be generated, or undefined when it can. */
 export const composableNameProblem = (name: string): string | undefined => {
   const composable = `use${pascal(name)}`

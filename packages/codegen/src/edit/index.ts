@@ -17,6 +17,9 @@ import { catalogGet, projectUpdate, themeApply, themeGet, themePresetsList, them
 import { datasourceCreate, datasourceDelete, datasourceUpdate } from './datasources.ts'
 import { actionCreate, actionDelete, actionRename, actionUpdate } from './actions.ts'
 import { pageUseAdd, pageUseRemove, pageUseUpdate, queryCreate, queryCreateForList, queryDelete, queryRename, queryUpdate } from './queries.ts'
+import { nodeInteractionAdd, nodeInteractionRemove, nodeInteractionUpdate } from './interactions.ts'
+import { pageComputedRemove, pageComputedSet } from './computed.ts'
+import { stateCreate, stateDelete, stateRename, stateUpdate } from './state.ts'
 import { entityCreate, entityDelete, entityFieldAdd, entityFieldMove, entityFieldRemove, entityFieldUpdate, entityUpdate } from './entities.ts'
 import { fixtureRowCreate, fixtureRowsDelete, fixtureRowUpdate } from './fixtures.ts'
 
@@ -109,13 +112,25 @@ export const EDITS = {
   action_update: actionUpdate,
   action_rename: actionRename,
   action_delete: actionDelete,
+  // State (B1): the Data workspace's State section.
+  state_create: stateCreate,
+  state_update: stateUpdate,
+  state_rename: stateRename,
+  state_delete: stateDelete,
   // Sample data (D4): the rows of an entity's fixtures file.
   fixture_row_create: fixtureRowCreate,
   fixture_row_update: fixtureRowUpdate,
   fixture_rows_delete: fixtureRowsDelete,
   page_use_add: pageUseAdd,
   page_use_update: pageUseUpdate,
-  page_use_remove: pageUseRemove
+  page_use_remove: pageUseRemove,
+  // Interactions on any node (B1): when <event> → steps.
+  node_interaction_add: nodeInteractionAdd,
+  node_interaction_update: nodeInteractionUpdate,
+  node_interaction_remove: nodeInteractionRemove,
+  // Computed values (B1): "if … then … else …", a List's source.
+  page_computed_set: pageComputedSet,
+  page_computed_remove: pageComputedRemove
 } satisfies Record<string, EditDef>
 
 export type EditName = keyof typeof EDITS
@@ -139,7 +154,7 @@ export const applyEdit = (files: Record<string, string>, name: EditName, input: 
 export { mintId } from './core.ts'
 export { bindingPaths, bindingScope, entityFieldNames, queryBehind } from './scope.ts'
 export type { ScopeName } from './scope.ts'
-export { describeUse, describeUses, entityUsesOf, fieldUsesIndex, fieldUsesOf, idUses, usesOf } from './usage.ts'
+export { computedUsesOf, describeUse, describeUses, entityUsesOf, fieldUsesIndex, fieldUsesOf, idUses, stateFieldUsesIndex, stateFieldUsesOf, usesOf } from './usage.ts'
 export type { ArtifactUse, UseKind, UseVia } from './usage.ts'
 export { fixtureRowKey } from './fixtures.ts'
 export { datasourceEnvVars } from './datasources.ts'
