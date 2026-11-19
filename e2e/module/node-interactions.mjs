@@ -2,7 +2,7 @@
  * Interactions on any node (B3, S2) on the module editor, all through the inspector: on the golden blog's index page a Button is
  * inserted in the header (the Insert panel), and the Interactions section gives it a click that shows a message; the message is
  * changed to going to the post detail page with a slug (a step added, the first one removed); the interaction is removed; and the
- * Checkbox `n_toggle`'s change is read as "Set showDrafts (Blog preferences) to the checkbox's value". A node that takes no events has no
+ * Checkbox `n_toggle`'s change is read as "Set showDrafts · Blog preferences to the checkbox's value". A node that takes no events has no
  * section, and a new interaction left unfinished is kept as a row that says it is not saved. The page's file is checked after
  * each step, and the running app still renders it.
  *
@@ -116,7 +116,7 @@ await run('node-interactions', async ({ page, browser, errors }) => {
   await page.locator('[data-layer-id="n_toggle"]').click()
   check(await until(async () => await section.locator('[data-node-interaction]').count() === 1), 'selecting the checkbox shows its one interaction')
   const row = await section.locator('[data-node-interaction-toggle]').innerText()
-  check(row.replace(/\s+/g, ' ').trim() === 'When Change → Set showDrafts (Blog preferences) to the checkbox\'s value', `its row reads "When Change → Set showDrafts (Blog preferences) to the checkbox's value" (${row.replace(/\s+/g, ' ').trim()})`)
+  check(row.replace(/\s+/g, ' ').trim() === 'When Change → Set showDrafts · Blog preferences to the checkbox\'s value', `its row reads "When Change → Set showDrafts · Blog preferences to the checkbox's value" (${row.replace(/\s+/g, ' ').trim()})`)
   await section.evaluate(element => element.scrollIntoView({ block: 'center' }))
   await page.waitForTimeout(300)
   await shot(page, 'b3-interactions-section')

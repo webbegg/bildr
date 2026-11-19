@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { loadModel } from '@bildr/codegen/model'
 import type { Model } from '@bildr/codegen/model'
-import { stateChip, stateChoiceNow, stateChoices, stateFieldLabel, statePropExpect } from '../../src/shared/stateBinding.ts'
+import { stateChip, stateChoiceNow, stateChoices, statePropExpect } from '../../src/shared/stateBinding.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 
 /**
@@ -26,13 +26,6 @@ describe('statePropExpect', () => {
   it('takes no State for the value of a Checkbox that fills a Form field: the Form gives it its value', () => {
     expect(statePropExpect('Checkbox', 'value', { label: 'Flag', field: 'done' })).toBeUndefined()
     expect(statePropExpect('Checkbox', 'value', { label: 'Flag' })).toEqual({ prims: ['boolean'] })
-  })
-})
-
-describe('stateFieldLabel', () => {
-  it('is the field, and with its State when asked: "showDrafts · Blog preferences"', () => {
-    expect(stateFieldLabel('showDrafts', 'Blog preferences')).toBe('showDrafts · Blog preferences')
-    expect(stateFieldLabel('showDrafts', 'Blog preferences', false)).toBe('showDrafts')
   })
 })
 
@@ -101,7 +94,7 @@ describe('stateChoices', () => {
 
 describe('stateChip', () => {
   it('reads a bound State field as "field · State label"', () => {
-    expect(stateChip(model, 'pg_index', { $bind: 'preferences.showDrafts' })).toEqual({ field: 'showDrafts', label: 'Blog preferences', text: 'showDrafts · Blog preferences' })
+    expect(stateChip(model, 'pg_index', { $bind: 'preferences.showDrafts' })).toEqual({ alias: 'preferences', field: 'showDrafts', label: 'Blog preferences', text: 'showDrafts · Blog preferences' })
   })
 
   it('says nothing for a binding that is not a field of a state the page uses', () => {

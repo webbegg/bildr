@@ -1,5 +1,6 @@
 import type { DataSourceFile, EntityFile, Model, ModuleModel, PageFile, RepositoryFile } from '@bildr/codegen/model'
 import type { Row } from '@bildr/codegen/query'
+import { stateLabel } from './stateModel.ts'
 
 /**
  * What the Data view reads of the model (U7). The hosted editor's `Collection` and
@@ -226,7 +227,7 @@ export const actionsOf = (model: Model): DataArtifact[] =>
 
 /** The states of the model, module by module, as the Data tree lists them (B2, S1): a state is on no collection. */
 export const statesOf = (model: Model): DataArtifact[] =>
-  Object.entries(model.modules).flatMap(([module, mod]) => mod.state.map(state => ({ id: state.id, name: state.name, label: state.label || state.name, module, collectionId: '', collectionName: '' })))
+  Object.entries(model.modules).flatMap(([module, mod]) => mod.state.map(state => ({ id: state.id, name: state.name, label: stateLabel(state), module, collectionId: '', collectionName: '' })))
 
 /** The rows an entity's fixtures file holds: what the Data view shows when the app can't answer. */
 export const fixtureRowsOf = (model: Model, entityId: string): Row[] =>

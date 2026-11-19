@@ -126,10 +126,10 @@ describe('the events a node lists', () => {
 })
 
 describe('a row', () => {
-  it('says "When Change → Set showDrafts (Blog preferences) to the checkbox\'s value" for the checkbox', async () => {
+  it('says "When Change → Set showDrafts · Blog preferences to the checkbox\'s value" for the checkbox', async () => {
     await mounted('pg_index')
     await select('n_toggle')
-    expect(rowTexts()).toEqual(['When Change → Set showDrafts (Blog preferences) to the checkbox\'s value'])
+    expect(rowTexts()).toEqual(['When Change → Set showDrafts · Blog preferences to the checkbox\'s value'])
   })
 
   it('says a button\'s steps in order: the action, then what follows', async () => {
@@ -167,7 +167,7 @@ describe('a Set state step', () => {
       do: [{ kind: 'setState', state: 'st_preferences', field: 'showDrafts', value: { not: { $bind: 'preferences.showDrafts' } } }]
     }])
     expect(world.model.modules.blog!.pages.find(page => page.id === 'pg_index')!.root.children![0]!.children!.find(node => node.id === 'n_toggle')!.interactions![0]!.do[0]!.value).toEqual({ not: { $bind: 'preferences.showDrafts' } })
-    expect(rowTexts()).toEqual(['When Change → Set showDrafts (Blog preferences) to the opposite of the current value'])
+    expect(rowTexts()).toEqual(['When Change → Set showDrafts · Blog preferences to the opposite of the current value'])
   })
 
   it('sets a fixed value: On or Off for a toggle, written as true or false', async () => {
@@ -329,7 +329,7 @@ describe('adding an interaction', () => {
     await pickEvent('Click')
     await addStep('Show message')
     await select('n_toggle')
-    expect(rowTexts()).toEqual(['When Change → Set showDrafts (Blog preferences) to the checkbox\'s value'])
+    expect(rowTexts()).toEqual(['When Change → Set showDrafts · Blog preferences to the checkbox\'s value'])
     await select('n_open')
     expect(rowTexts()).toEqual(['When Click → not saved yet'])
     await click(rowButton(0))

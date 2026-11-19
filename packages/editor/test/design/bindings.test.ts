@@ -400,4 +400,28 @@ describe('the page\'s uses', () => {
     expect(actions.named('page_use_add').map(call => call.input)).toEqual([{ page: 'pg_index', as: 'latest', query: 'q_all_posts' }])
     expect(actions.named('page_use_remove').map(call => call.input)).toEqual([{ page: 'pg_index', as: 'quotes' }])
   })
+
+  it('lists a State by its label and removes it by the State, saying why when the module refuses', async () => {
+    const { actions } = await open(behaviourModule(), 'pg_index')
+    await select('n_page')
+    expect(allByTestId('use-row').find(row => row.dataset.alias === 'preferences')?.textContent).toContain('state · Blog preferences')
+    await click(byTestId('use-remove-preferences'))
+    await settle()
+    expect(actions.named('page_use_remove').map(call => call.input)).toEqual([{ page: 'pg_index', state: 'st_preferences' }])
+    // The page still reads it (a computed value, the checkbox): the module's refusal is on the screen and the use stays.
+    expect(byTestId('design-error')?.textContent).toContain('still binds')
+    expect(indexPage().uses?.state).toEqual([{ as: 'preferences', state: 'st_preferences' }])
+  })
+
+  it('removes a State the page no longer reads', async () => {
+    const newPost = () => world.model.modules.blog!.pages.find(page => page.id === 'pg_new_post')!
+    newPost().uses = { ...newPost().uses, state: [{ as: 'preferences', state: 'st_preferences' }] }
+    const { actions } = await open(behaviourModule(), 'pg_new_post')
+    await select('n_page')
+    await click(byTestId('use-remove-preferences'))
+    await settle()
+    expect(actions.named('page_use_remove').map(call => call.input)).toEqual([{ page: 'pg_new_post', state: 'st_preferences' }])
+    expect(byTestId('design-error')).toBeNull()
+    expect(newPost().uses?.state).toBeUndefined()
+  })
 })

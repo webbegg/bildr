@@ -5,6 +5,7 @@ import { rovingTarget } from '../../editor/rovingKeys.ts'
 import type { StoredInputs } from '../../editor/runQuery.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { FOCUS_RING } from '../../editorUi.ts'
+import { stateLabel } from '../../shared/stateModel.ts'
 import DataFiles from './DataFiles.vue'
 import DataJson from './DataJson.vue'
 import DataMigrationBanner from './DataMigrationBanner.vue'
@@ -30,7 +31,7 @@ const collection = computed(() => editor.dataCollection)
 const query = computed(() => editor.dataQuery)
 const action = computed(() => editor.dataAction)
 const state = computed(() => editor.dataState)
-const title = computed(() => query.value ? query.value.label || query.value.name : action.value ? action.value.label || action.value.name : state.value ? state.value.label || state.value.name : connection.value?.name ?? collection.value?.name ?? '')
+const title = computed(() => query.value ? query.value.label || query.value.name : action.value ? action.value.label || action.value.name : state.value ? stateLabel(state.value) : connection.value?.name ?? collection.value?.name ?? '')
 const kind = computed(() => query.value ? 'Query' : action.value ? 'Action' : state.value ? 'State' : connection.value ? 'Connection' : 'Collection')
 const icon = computed(() => query.value ? 'i-lucide-list-filter' : action.value ? 'i-lucide-zap' : state.value ? 'i-lucide-toggle-right' : connection.value ? 'i-lucide-server' : collection.value?.kind === 'rest' ? 'i-lucide-globe' : 'i-lucide-database')
 /** What the Used in tab is about: the item shown, with its kind. */

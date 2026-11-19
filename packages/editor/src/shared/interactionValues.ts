@@ -1,7 +1,8 @@
 import { bindingScope } from '@bildr/codegen/edit'
 import type { ScopeName } from '@bildr/codegen/edit'
-import type { EntityFile, Model, PageFile, PropertyDef, StateFile } from '@bildr/codegen/model'
+import type { EntityFile, Model, PageFile, PropertyDef } from '@bildr/codegen/model'
 import type { FieldType } from './dataModel.ts'
+import { stateOfAlias } from './stateModel.ts'
 
 /**
  * What a step's value can be at a node (B3, S2). The module checks a step's value against what receives it (`expectValue` of
@@ -68,7 +69,6 @@ const rowFields = (entity: EntityFile): FieldLike[] => [...(entity.idStrategy ==
 const fieldTyped = (field: FieldLike): Typed => ({ prim: primOf(field.type), null: !!field.nullable, undef: !field.required && !field.nullable && field.default === undefined })
 
 const entities = (model: Model): EntityFile[] => Object.values(model.modules).flatMap(mod => mod.entities)
-const states = (model: Model): StateFile[] => Object.values(model.modules).flatMap(mod => mod.state)
 
 /** A component property or a layout variable as its prop is typed in the generated component: a layout's are unset without a default. */
 const propertyTyped = (property: PropertyDef, layout: boolean): Typed | undefined => {
@@ -102,8 +102,7 @@ const membersOf = (model: Model, place: Place, entry: ScopeName): Array<[string,
   }
   switch (entry.source) {
     case 'state': {
-      const use = pageOf(model, place.file)?.uses?.state?.find(item => item.as === entry.name)
-      const state = states(model).find(item => item.id === use?.state)
+      const state = stateOfAlias(model, pageOf(model, place.file), entry.name)
       return (state?.fields ?? []).map((field): [string, Typed] => [`${entry.name}.${field.name}`, fieldTyped(field)])
     }
     case 'action': return [[`${entry.name}.pending`, { prim: 'boolean' }], [`${entry.name}.error`, { prim: 'string', undef: true }]]

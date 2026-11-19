@@ -1,6 +1,7 @@
 import type { Model as ProjectModel, PageFile, StateFile } from '@bildr/codegen/model'
 import type { PlainValue } from '../canvas/protocol.ts'
 import { primOf } from '../shared/interactionValues.ts'
+import { stateById, useOfState } from '../shared/stateModel.ts'
 import { findNode } from './tree.ts'
 
 /**
@@ -12,7 +13,7 @@ import { findNode } from './tree.ts'
  * model edit, a reload of the frame, another page) and go with the editor on a reload. Where the app keeps them (memory, tab,
  * browser) is the app's concern: the canvas never persists them. They start over when preview ends (`design/store.ts`), so the
  * canvas in edit mode is the app's first render, and `prunePreviewState` drops those a model edit left without a field to be the
- * value of.
+ * value of, or over a default that was changed since.
  */
 
 /** The values set in the preview: State id → field name → value. */
@@ -20,8 +21,13 @@ export type StatePreview = Record<string, Record<string, PlainValue>>
 
 type StateField = StateFile['fields'][number]
 
-/** The longest text a preview value can be: the canvas is another window, and a message from it is not trusted to be sane. */
-const MAX_TEXT = 10_000
+/**
+ * The longest text a preview value can be: the canvas is another window, and a message from it is not trusted to be sane, so its
+ * values are bounded here. This is a different limit from `stateDraft.ts`'s, which checks what a person types as a field's default
+ * (a whole number there must be a safe integer, since the model stores it as JSON); a value from the canvas is checked against the
+ * field's type and this cap.
+ */
+const MAX_PREVIEW_TEXT = 10_000
 
 /**
  * Whether `value` is something the field holds: what the generated app's `setState` would store without a type error. The kind
@@ -31,12 +37,10 @@ const MAX_TEXT = 10_000
 const fits = (field: StateField, value: unknown): value is PlainValue => {
   if (value === null) return field.nullable === true
   if (typeof value !== primOf(field.type)) return false
-  if (typeof value === 'string') return value.length <= MAX_TEXT
+  if (typeof value === 'string') return value.length <= MAX_PREVIEW_TEXT
   if (typeof value === 'number') return field.type === 'integer' ? Number.isInteger(value) : Number.isFinite(value)
   return true
 }
-
-const statesOf = (model: ProjectModel | null): StateFile[] => Object.values(model?.modules ?? {}).flatMap(entry => entry.state)
 
 /** A `bildr:interaction` of the canvas (`canvas/protocol.ts`): the node whose interaction ran for `on`, and the step it reported. */
 export interface ReportedStep {
@@ -55,14 +59,14 @@ export interface ReportedStep {
 export function applySetState(model: ProjectModel | null, page: PageFile | undefined, values: StatePreview, reported: ReportedStep): StatePreview {
   const { nodeId, on, step } = reported
   if (step.kind !== 'setState' || typeof step.state !== 'string' || typeof step.field !== 'string') return values
-  if (!page?.uses?.state?.some(use => use.state === step.state)) return values
+  if (!page || !useOfState(page, step.state)) return values
   const node = findNode(page.root, nodeId)
   const has = node?.interactions?.some(interaction => interaction.on === on && interaction.do.some((entry) => {
     const own = entry as Record<string, unknown>
     return own.kind === 'setState' && own.state === step.state && own.field === step.field
   }))
   if (!has) return values
-  const state = statesOf(model).find(entry => entry.id === step.state)
+  const state = model ? stateById(model, step.state) : undefined
   const field = state?.shape === 'single' ? state.fields.find(entry => entry.name === step.field) : undefined
   if (!state || !field || !fits(field, step.value)) return values
   return { ...values, [state.id]: { ...values[state.id], [field.name]: step.value } }
@@ -74,14 +78,18 @@ const countOf = (values: StatePreview): number => Object.values(values).reduce((
  * `values` without what the model no longer has a place for: the values of a State that is gone, of a field that was removed or
  * renamed (a renamed field starts again at its default), or whose type no longer holds the value. A State left with no value is
  * dropped too (an entry is never empty). `values` itself comes back when nothing was dropped.
+ *
+ * `before` is the model the values were set against: a field whose default was changed since starts again at the new default, so its
+ * value (set over the old one) goes too. Without it the defaults are not compared.
  */
-export function prunePreviewState(model: ProjectModel, values: StatePreview): StatePreview {
-  const states = statesOf(model)
+export function prunePreviewState(model: ProjectModel, values: StatePreview, before?: ProjectModel | null): StatePreview {
   const kept = Object.fromEntries(Object.entries(values).flatMap(([id, fields]) => {
-    const state = states.find(entry => entry.id === id)
+    const state = stateById(model, id)
+    const earlier = before ? stateById(before, id) : undefined
     const fitting = Object.entries(fields).filter(([name, value]) => {
       const field = state?.shape === 'single' ? state.fields.find(entry => entry.name === name) : undefined
-      return !!field && fits(field, value)
+      const was = earlier?.fields.find(entry => entry.name === name)
+      return !!field && fits(field, value) && (!was || was.default === field.default)
     })
     return fitting.length ? [[id, Object.fromEntries(fitting)]] : []
   }))

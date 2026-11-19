@@ -2,7 +2,7 @@ import { computed, reactive } from 'vue'
 import type { ModelNode } from '@bildr/codegen/model'
 import { computedUsesOf, queryBehind } from '@bildr/codegen/edit'
 import { takeRefusal } from '../editor/dataArtifactActions.ts'
-import { STUCK, compensate, withStateUse } from '../editor/stateUse.ts'
+import { STUCK, compensate, dropStateUse, withStateUse } from '../editor/stateUse.ts'
 import { useEditor } from '../editor/useEditor.ts'
 import type { Editor } from '../editor/useEditor.ts'
 import { isExpression } from '../shared/bindings.ts'
@@ -12,7 +12,7 @@ import { freeAlias } from '../shared/pageNames.ts'
 import { useDesign } from './store.ts'
 
 /**
- * A List's conditional source (B4, S4) for its source panel: "if <a true or false value> then <list> else <list>", the page's computed
+ * A List's conditional source (B4, S4) for its source panel: "if <an on or off value> then <list> else <list>", the page's computed
  * value (`page_computed_set`) which the List's `items` bind by name. A List already bound to one the panel can read shows it, and an
  * edit writes the same value in place. Choosing "Depends on a condition" on a List with one query starts a condition that is written,
  * with the List bound to it, once the value and both lists are chosen; a State the page does not use yet is added first (`withStateUse`),
@@ -95,11 +95,6 @@ export function useListCondition(node: () => ModelNode) {
     mine.key++
   }
 
-  /** The page's use of the State at the root `alias` goes when nothing reads it: the module refuses while something does, which is the answer. */
-  async function dropStateUse(file: string, alias: string) {
-    if (!await editor.run('page_use_remove', { page: file, as: alias })) takeRefusal(editor, 'The page still reads it')
-  }
-
   /** Writes `next`: the computed value, in place or new, with the page's use of the State it reads, and the List bound to it. */
   async function writeCondition(next: ConditionDraft, existing: ReturnType<typeof conditionOf>) {
     const onPage = page.value
@@ -136,7 +131,7 @@ export function useListCondition(node: () => ModelNode) {
       mine.orphan = null
       // Moved to another State: the one it read is no longer needed by this condition.
       const before = existing?.path.split('.')[0]
-      if (before && before !== next.path.split('.')[0] && onPage.uses?.state?.some(use => use.as === before)) await dropStateUse(file, before)
+      if (before && before !== next.path.split('.')[0] && onPage.uses?.state?.some(use => use.as === before)) await dropStateUse(editor, file, before)
     } finally {
       mine.busy = false
     }

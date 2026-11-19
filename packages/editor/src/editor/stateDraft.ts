@@ -99,6 +99,10 @@ export function toggleEmptyDefault(field: DraftField) {
  * The default a box stands for in a field of its type, trimmed whatever the type: its value, none (an empty box), or what the text
  * is not. A number is written as digits, a point and an exponent (`1e3` is 1000, for a whole number too when it comes out whole),
  * and a whole number is one the number type holds exactly. An empty box is none, unless a text field asked for the empty text.
+ *
+ * These limits are the ones of a default a person types and the model stores as JSON (a whole number must be a safe integer, so it
+ * is the same number back). `design/previewState.ts` checks a different thing, a value the canvas reports, against the field's type
+ * and a cap on the length of a text (`MAX_PREVIEW_TEXT`): it has no use for the digits a box accepts, and a default has none for the cap.
  */
 function valueOfDefault(field: Pick<DraftField, 'type' | 'default' | 'emptyDefault'>): { value: Value } | { none: true } | { problem: string } {
   const typed = field.default.trim()
@@ -109,7 +113,7 @@ function valueOfDefault(field: Pick<DraftField, 'type' | 'default' | 'emptyDefau
     if (field.type === 'integer') return Number.isSafeInteger(number) ? { value: number + 0 } : { problem: 'a whole number' }
     return Number.isFinite(number) ? { value: number + 0 } : { problem: 'a number' }
   }
-  if (field.type === 'boolean') return typed === 'true' || typed === 'false' ? { value: typed === 'true' } : { problem: 'true or false' }
+  if (field.type === 'boolean') return typed === 'true' || typed === 'false' ? { value: typed === 'true' } : { problem: 'on or off' }
   if (field.type === 'datetime' && DATETIME_BOX_VALUE.test(typed)) return { value: datetimeOfBox(typed) }
   return { value: typed }
 }

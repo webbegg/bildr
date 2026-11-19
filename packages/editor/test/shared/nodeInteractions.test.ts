@@ -234,16 +234,16 @@ describe('what a step can name', () => {
 describe('what a row says', () => {
   const say = (e: Env, steps: Array<Record<string, Value>>) => summarize(e, steps)
 
-  it('words the checkbox\'s step as "Set showDrafts (Blog preferences) to the checkbox\'s value"', () => {
-    expect(say(TOGGLE, [{ kind: 'setState', state: 'st_preferences', field: 'showDrafts', value: { $event: 'checked' } }])).toBe('Set showDrafts (Blog preferences) to the checkbox\'s value')
+  it('words the checkbox\'s step as "Set showDrafts · Blog preferences to the checkbox\'s value"', () => {
+    expect(say(TOGGLE, [{ kind: 'setState', state: 'st_preferences', field: 'showDrafts', value: { $event: 'checked' } }])).toBe('Set showDrafts · Blog preferences to the checkbox\'s value')
   })
 
   it('words the other values', () => {
     const set = (value: Value) => say(TOGGLE, [{ kind: 'setState', state: 'st_preferences', field: 'showDrafts', value }])
-    expect(set(true)).toBe('Set showDrafts (Blog preferences) to on')
-    expect(set(false)).toBe('Set showDrafts (Blog preferences) to off')
-    expect(set({ not: { $bind: 'preferences.showDrafts' } })).toBe('Set showDrafts (Blog preferences) to the opposite of the current value')
-    expect(set({ $bind: 'post.published' })).toBe('Set showDrafts (Blog preferences) to post.published')
+    expect(set(true)).toBe('Set showDrafts · Blog preferences to on')
+    expect(set(false)).toBe('Set showDrafts · Blog preferences to off')
+    expect(set({ not: { $bind: 'preferences.showDrafts' } })).toBe('Set showDrafts · Blog preferences to the opposite of the current value')
+    expect(set({ $bind: 'post.published' })).toBe('Set showDrafts · Blog preferences to post.published')
   })
 
   it('says a step written by hand is one, rather than guessing what it does', () => {

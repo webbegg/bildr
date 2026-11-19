@@ -102,14 +102,14 @@ describe('the condition\'s form', () => {
     expect(labels).toEqual(['showDrafts · Blog preferences', 'showDrafts · Beta flags'])
   })
 
-  it('says what to add when nothing is true or false yet', async () => {
+  it('says what to add when nothing is on or off yet', async () => {
     singleSource()
     withoutState()
     world.model.modules.blog!.state = []
     await open(behaviourModule(), 'pg_index')
     await select('n_list')
     await choose('list-items', 'cond')
-    expect(text(byTestId('list-condition-hint'))).toBe('Nothing true or false to depend on yet: add a true/false field to a State in Data.')
+    expect(text(byTestId('list-condition-hint'))).toBe('Nothing on or off to depend on yet: add a Toggle field to a State in Data.')
   })
 })
 

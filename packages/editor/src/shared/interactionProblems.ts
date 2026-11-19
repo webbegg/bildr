@@ -2,7 +2,8 @@ import { ICON_NAME } from '@bildr/codegen/render'
 import { textProblem } from './bindings.ts'
 import { fixedValue } from './interactionConversion.ts'
 import { routeParams } from './interactionValues.ts'
-import { actionOf, pageOf, stateAlias, stateLabel, stateOf, targetOf, textNames } from './nodeInteractions.ts'
+import { actionOf, pageOf, stateAlias, targetOf, textNames } from './nodeInteractions.ts'
+import { stateById, stateLabel } from './stateModel.ts'
 import type { Env, NavigateDraft, RunActionDraft, SetStateDraft, StepDraft, Target, ToastDraft, ValueDraft } from './nodeInteractions.ts'
 
 /**
@@ -26,7 +27,7 @@ function valueProblem(draft: ValueDraft, target: Target | undefined, what: strin
 
 const setStateProblems = (env: Env, step: SetStateDraft): string[] => {
   if (!step.state) return ['Choose a state']
-  const state = stateOf(env.model, step.state)
+  const state = stateById(env.model, step.state)
   if (!state) return ['This state no longer exists']
   if (!step.field) return ['Choose a field']
   if (!state.fields.some(field => field.name === step.field)) return [`${stateLabel(state)} has no field “${step.field}”`]

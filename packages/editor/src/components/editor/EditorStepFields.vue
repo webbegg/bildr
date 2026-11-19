@@ -4,8 +4,9 @@ import { BUTTON_COLORS } from '@bildr/codegen/render'
 import { expressionText } from '../../shared/bindings.ts'
 import { routeParams } from '../../shared/interactionValues.ts'
 import {
-  actionsFor, actionUse, pagesFor, stateAlias, stateFor, stateLabel, statesFor, STEP_KIND_LABELS, textScope, valueModes
+  actionsFor, actionUse, pagesFor, stateAlias, stateFor, statesFor, STEP_KIND_LABELS, textScope, valueModes
 } from '../../shared/nodeInteractions.ts'
+import { stateLabel } from '../../shared/stateModel.ts'
 import { pageOptionLabel } from '../../shared/sidebar.ts'
 import type { Env, StepDraft, ValueDraft } from '../../shared/nodeInteractions.ts'
 

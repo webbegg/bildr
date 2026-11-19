@@ -6,6 +6,7 @@ import { EVENT_LABELS } from './interactionPanel.ts'
 import type { NodeEvent } from './interactionPanel.ts'
 import { primOf, valueChoices } from './interactionValues.ts'
 import type { Choice, Expect, Place } from './interactionValues.ts'
+import { stateById, statesOfPage, useOfState } from './stateModel.ts'
 
 /**
  * The inspector's Interactions on any node (B3, S2), as pure functions the section and its editor are built on: "When <event> →
@@ -135,16 +136,18 @@ export const isOnly = (value: Record<string, Value>, key: string): boolean => Ob
 
 const pages = (model: Model): PageFile[] => Object.values(model.modules).flatMap(mod => mod.pages)
 export const pageOf = (model: Model, id: string): PageFile | undefined => pages(model).find(page => page.id === id)
-export const stateOf = (model: Model, id: string): StateFile | undefined => Object.values(model.modules).flatMap(mod => mod.state).find(state => state.id === id)
 export const actionOf = (model: Model, id: string): ActionFile | undefined => Object.values(model.modules).flatMap(mod => mod.actions).find(action => action.id === id)
 
 const placePage = (env: Env): PageFile | undefined => env.place.kind === 'page' ? pageOf(env.model, env.place.file) : undefined
 
-/** The module the page being edited is in: its states and actions are the ones a step can name. */
+/** The module the page being edited is in: its actions are the ones a step can name (its states are `statesOfPage`). */
 const moduleOfPage = (env: Env): ModuleModel | undefined => Object.values(env.model.modules).find(mod => mod.pages.some(page => page.id === env.place.file))
 
 /** The states a Set state step can name: the page's module's, the ones that hold one row (several rows are not generated yet), used by the page or not (the module makes the page use it). A layout or component has none to use. */
-export const statesFor = (env: Env): StateFile[] => (env.place.kind === 'page' ? moduleOfPage(env)?.state.filter(state => state.shape === 'single') ?? [] : [])
+export const statesFor = (env: Env): StateFile[] => {
+  const page = placePage(env)
+  return page ? statesOfPage(env.model, page).filter(state => state.shape === 'single') : []
+}
 
 /** The state `id` among `statesFor`. */
 export const stateFor = (env: Env, id: string): StateFile | undefined => statesFor(env).find(state => state.id === id)
@@ -194,9 +197,7 @@ export function actionUse(env: Env, action: ActionFile): { how: 'form' } | { how
 }
 
 /** The name the page reads the state under, when it uses it. */
-export const stateAlias = (env: Env, stateId: string): string | undefined => placePage(env)?.uses?.state?.find(use => use.state === stateId)?.as
-
-export const stateLabel = (state: StateFile): string => state.label || state.name
+export const stateAlias = (env: Env, stateId: string): string | undefined => useOfState(placePage(env), stateId)?.as
 
 /** The names a message's text may bind: what the generator resolves in the file (`site` only in a layout, a List's item only on a page). */
 export const textScope = (env: Env): ScopeName[] => bindingScope(env.model, env.place.file, env.place.nodeId)
@@ -217,7 +218,7 @@ export interface Target {
 /** What step `step` of `drafts` sets or passes, for the value `name` (a page's parameter): its type, what it takes, and the path it reads for "opposite". */
 export function targetOf(env: Env, step: StepDraft, name?: string): Target | undefined {
   if (step.kind === 'setState') {
-    const state = stateOf(env.model, step.state)
+    const state = stateById(env.model, step.state)
     const field = state?.fields.find(entry => entry.name === step.field)
     if (!state || !field) return undefined
     const alias = stateAlias(env, state.id)

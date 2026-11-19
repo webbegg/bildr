@@ -2,13 +2,14 @@
 import { computed, ref } from 'vue'
 import type { PageFile, Value } from '@bildr/codegen/model'
 import { FIELD, FIELD_RING } from '../editorUi.ts'
+import { stateById, stateLabel } from '../shared/stateModel.ts'
 import { useDesign } from './store.ts'
 
 /**
  * What a page uses (P5, mapping §4): the queries it reads, with the arguments it gives their
  * parameters (`page_use_update`), the actions its forms and buttons run, and its state. Add a query or an
  * action under a name the page's bindings use (`page_use_add`); remove one nothing binds any more
- * (`page_use_remove`, refused otherwise). It sits in the inspector's Page section under the detail
+ * (`page_use_remove`, refused otherwise: the module's refusal is shown). A State is removed by the State (`{ page, state }`), and listed by its label. It sits in the inspector's Page section under the detail
  * page rows (EditorPageCollection), in the kit's field look.
  */
 
@@ -18,10 +19,14 @@ const field = `${FIELD} ${FIELD_RING} w-full min-w-0 px-2 text-default`
 
 const module = computed(() => Object.values(design.model.value?.modules ?? {}).find(mod => mod.pages.some(entry => entry.id === props.page.id)))
 const queries = computed(() => props.page.uses?.queries ?? [])
-const rows = computed(() => [
-  ...queries.value.map(use => ({ as: use.as, kind: 'query' as const, label: module.value?.queries.find(entry => entry.id === use.query)?.label ?? use.query, removable: true })),
-  ...(props.page.uses?.actions ?? []).map(use => ({ as: use.as, kind: 'action' as const, label: module.value?.actions.find(entry => entry.id === use.action)?.label ?? use.action, removable: true })),
-  ...(props.page.uses?.state ?? []).map(use => ({ as: use.as, kind: 'state' as const, label: module.value?.state.find(entry => entry.id === use.state)?.label ?? use.state, removable: false }))
+interface UseRow { as: string, kind: 'query' | 'action' | 'state', label: string, state?: string }
+const rows = computed((): UseRow[] => [
+  ...queries.value.map(use => ({ as: use.as, kind: 'query' as const, label: module.value?.queries.find(entry => entry.id === use.query)?.label ?? use.query })),
+  ...(props.page.uses?.actions ?? []).map(use => ({ as: use.as, kind: 'action' as const, label: module.value?.actions.find(entry => entry.id === use.action)?.label ?? use.action })),
+  ...(props.page.uses?.state ?? []).map((use) => {
+    const state = design.model.value ? stateById(design.model.value, use.state) : undefined
+    return { as: use.as, kind: 'state' as const, label: state ? stateLabel(state) : use.as, state: use.state }
+  })
 ])
 const paramsOf = (alias: string) => {
   const use = queries.value.find(entry => entry.as === alias)
@@ -33,7 +38,8 @@ const textOf = (value: Value | undefined) => value === undefined ? '' : typeof v
 const setArg = (alias: string, name: string, type: string, text: string) =>
   design.edit('page_use_update', { page: props.page.id, as: alias, args: { [name]: text.trim() === '' ? null : ['integer', 'number'].includes(type) ? Number(text) : type === 'boolean' ? text === 'true' : text } })
 
-const remove = (alias: string) => design.edit('page_use_remove', { page: props.page.id, as: alias })
+/** A State use goes by the State it is of (`state`), any other by the name the page reads it under. */
+const remove = (row: UseRow) => design.edit('page_use_remove', { page: props.page.id, ...(row.state ? { state: row.state } : { as: row.as }) })
 
 const alias = ref('')
 const source = ref('')
@@ -71,12 +77,11 @@ const add = async () => {
         <code class="rounded-sm bg-white/8 px-1 py-0.5 text-highlighted">{{ row.as }}</code>
         <span class="min-w-0 flex-1 truncate text-dimmed">{{ row.kind }} · {{ row.label }}</span>
         <button
-          v-if="row.removable"
           type="button"
           class="grid size-5 place-items-center rounded-lg text-dimmed hover:bg-white/8 hover:text-highlighted"
           :aria-label="`Remove ${row.as}`"
           :data-testid="`use-remove-${row.as}`"
-          @click="remove(row.as)"
+          @click="remove(row)"
         >
           <UIcon
             name="i-lucide-x"

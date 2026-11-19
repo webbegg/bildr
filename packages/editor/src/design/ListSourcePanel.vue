@@ -18,7 +18,7 @@ import { useListCondition } from './useListCondition.ts'
  * a parameter is the page's argument (`page_use_update`). It sits in the inspector's Behaviour section
  * of a List, in the kit's field look.
  *
- * "Depends on a condition" (B4, S4) makes the source "if <a true or false value> then <list> else <list>", the page's computed value
+ * "Depends on a condition" (B4, S4) makes the source "if <an on or off value> then <list> else <list>", the page's computed value
  * the List's `items` bind (`useListCondition` reads and writes it, `ListConditionForm` is its form). Each branch's query keeps its own
  * sort, filter and limit below, named by the branch (Then, Otherwise): the two lists are different queries, and what they show is
  * theirs to set, so the condition only chooses between them.

@@ -1,6 +1,8 @@
 import type { Model as ProjectModel, PageFile, QueryFile, Value } from '@bildr/codegen/model'
 import { evaluateQuery } from '@bildr/codegen/query'
 import type { Row } from '@bildr/codegen/query'
+import { evaluate, MISSING } from '../canvas/render.ts'
+import { stateById } from '../shared/stateModel.ts'
 import type { StatePreview } from './previewState.ts'
 
 /**
@@ -8,7 +10,8 @@ import type { StatePreview } from './previewState.ts'
  * (the app's, when `rows` has them, else the model's fixtures; evaluated with
  * the query's own where, order and limit by `@bildr/codegen/query`, as the app's
  * query composable does; a `one` query's row or null), a state's defaults, an
- * action's idle status, and a computed `if`/`then`/`else` over those. A state's
+ * action's idle status, and a computed `if`/`then`/`else` over those, worked out by the canvas's own `evaluate` (so `not`, a template
+ * or a literal read as they do in the generated app). A state's
  * row is its defaults with the values set in the preview over them (`state`, by
  * state id: B5), so a computed value follows what the preview set. `site` is
  * the project and `$route` the route parameters of the record picked on a
@@ -65,7 +68,6 @@ export function designData(model: ProjectModel, page: PageFile | undefined, inpu
   if (Object.keys(route).length) data.$route = route
   const modules = Object.values(model.modules)
   const queries = modules.flatMap(entry => entry.queries)
-  const states = modules.flatMap(entry => entry.state)
   const fixtures = modules.flatMap(entry => entry.fixtures)
 
   for (const use of page.uses.queries ?? []) {
@@ -76,7 +78,7 @@ export function designData(model: ProjectModel, page: PageFile | undefined, inpu
     data[use.as] = evaluateQuery(query, rows, args).value
   }
   for (const use of page.uses.state ?? []) {
-    const state = states.find(entry => entry.id === use.state)
+    const state = stateById(model, use.state)
     if (!state) continue
     const defaults = Object.fromEntries(state.fields.flatMap(field => field.default === undefined ? [] : [[field.name, field.default]]))
     const previewed = input.state?.[state.id] ?? {}
@@ -87,8 +89,12 @@ export function designData(model: ProjectModel, page: PageFile | undefined, inpu
   for (const use of page.uses.actions ?? []) data[use.as] = { pending: false, error: null }
   for (const computed of page.uses.computed ?? []) {
     const { as, if: condition, then, else: otherwise } = computed as { as: string, if?: Value, then?: Value, else?: Value }
-    const pick = (expression: Value | undefined) => isRecord(expression) && typeof expression.$bind === 'string' ? pathValue(data, expression.$bind) : expression
-    if (condition !== undefined) data[as] = pick(pick(condition) ? then : otherwise)
+    if (condition === undefined) continue
+    // What the data can't give (a root nothing provides) is left out: the render sees it missing, and shows a placeholder.
+    const test = evaluate(condition, data)
+    if (test === MISSING) continue
+    const picked = evaluate(test ? then : otherwise, data)
+    if (picked !== MISSING) data[as] = picked
   }
   return data
 }

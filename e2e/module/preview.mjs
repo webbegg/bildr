@@ -9,6 +9,8 @@
  * 4. Reset state (shown in preview) puts the State back to its default while preview goes on; so does leaving preview, and so does
  *    reloading the editor, which holds the value in memory only.
  * 5. Design mode is still design mode afterwards: a click selects. (In preview, Space and Enter on the focused checkbox toggle it.)
+ * 6. "Is off" (a `not` over the field, B4) flips the List the other way: with the field off, as it starts, the List shows the Then
+ *    list; in preview the toggle sends it to the Otherwise list; and "is on" puts the page back as it was.
  *
  * The canvas reads the app's rows when the app answers and the model's Sample data when it does not. The app's database starts
  * empty, so the script seeds it with a published post and the draft (as visual-editor.mjs does), and waits for the Live badge: the
@@ -16,7 +18,9 @@
  */
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
-import { canvas, check, openEditor, run, seedPosts, shot, until } from './lib.mjs'
+import { bildr, canvas, check, openEditor, run, seedPosts, shot, until } from './lib.mjs'
+
+const INDEX = '.bildr/modules/blog/pages/index.json'
 
 /** A shot in e2e/module/.shots/, and in B5_SHOTS when it is set. */
 async function snap(page, name) {
@@ -103,6 +107,25 @@ await run('preview', async ({ page, errors }) => {
   await page.locator('[data-sidebar-switcher] [role=tab]').filter({ hasText: /^Layers$/ }).click()
   await frame.locator('[data-node="n_h1"]').click()
   check(await until(async () => await page.locator('[data-layer-id="n_h1"][aria-selected="true"]').count() === 1), 'back in design mode a click selects the heading')
+
+  // 6. "Is off": the condition read the other way flips the List the other way.
+  await page.locator('[data-layer-id="n_list"]').click()
+  const isOn = page.locator('[data-testid="list-condition-not"]')
+  await isOn.waitFor()
+  const condition = () => JSON.stringify(bildr(INDEX).uses.computed?.[0]?.if)
+  check(condition() === JSON.stringify({ $bind: 'preferences.showDrafts' }), 'the golden page\'s List shows All posts when showDrafts is on')
+  await isOn.selectOption('off')
+  check(await until(() => condition() === JSON.stringify({ not: { $bind: 'preferences.showDrafts' } })), `"is off" writes the condition as a not (${condition()})`)
+  check(await shows('A draft', true) && await checked() === 'false', 'with the field off, as it starts, the List shows the Then list: all posts, the draft too')
+  await interact.click()
+  await label.click()
+  check(await shows('A draft', false) && await shows('Hello bildr', true) && await checked() === 'true', 'in preview the toggle turns the field on and sends the List to the Otherwise list: the featured posts')
+  await label.click()
+  check(await shows('A draft', true) && await checked() === 'false', 'and turning it off again flips it back')
+  await interact.click()
+  await isOn.selectOption('on')
+  check(await until(() => condition() === JSON.stringify({ $bind: 'preferences.showDrafts' })), 'choosing "is on" again puts the page\'s condition back')
+  check(await shows('A draft', false), 'and the List back to the featured posts')
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 })

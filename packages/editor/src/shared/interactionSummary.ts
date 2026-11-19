@@ -1,11 +1,12 @@
 import type { Value } from '@bildr/codegen/model'
 import { isExpression, valueText } from './bindings.ts'
-import { actionOf, isOnly, pageOf, stateLabel, stateOf } from './nodeInteractions.ts'
+import { actionOf, isOnly, pageOf } from './nodeInteractions.ts'
 import type { Env, Stored } from './nodeInteractions.ts'
+import { stateById, stateFieldText } from './stateModel.ts'
 
 /**
  * What an interaction's row says (B3, S2), and which step a module refusal is about. The words are the ones a person reads, never the
- * code's: "Set showDrafts (Blog preferences) to the checkbox's value", "Run Publish post, then show “Post published”".
+ * code's: "Set showDrafts · Blog preferences to the checkbox's value", "Run Publish post, then show “Post published”".
  */
 
 function valueWords(value: Value | undefined): string {
@@ -27,9 +28,11 @@ function valueWords(value: Value | undefined): string {
 function phrase(env: Env, step: Stored): string {
   switch (step.kind) {
     case 'setState': {
-      const state = stateOf(env.model, String(step.state))
+      const state = stateById(env.model, String(step.state))
       const to = valueWords(step.value)
-      return `Set ${String(step.field)} (${state ? stateLabel(state) : String(step.state)})${to ? ` to ${to}` : ''}`
+      // A State that is gone is not named by its id: the field alone says what the step sets.
+      const field = state ? stateFieldText(String(step.field), state) : String(step.field)
+      return `Set ${field}${to ? ` to ${to}` : ''}`
     }
     case 'runAction': {
       const action = actionOf(env.model, String(step.action))
@@ -47,7 +50,7 @@ function phrase(env: Env, step: Stored): string {
   }
 }
 
-/** What an interaction's steps say, for its row: "Set showDrafts (Blog preferences) to the checkbox's value". The ones after the first read on, "then …". */
+/** What an interaction's steps say, for its row: "Set showDrafts · Blog preferences to the checkbox's value". The ones after the first read on, "then …". */
 export function summarize(env: Env, steps: ReadonlyArray<Record<string, unknown>>): string {
   return steps.map((step, index) => {
     const text = phrase(env, step as Stored)

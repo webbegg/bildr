@@ -3,8 +3,9 @@ import type { Model, PageFile, Value } from '@bildr/codegen/model'
 import { isExpression } from './bindings.ts'
 import { valueChoices } from './interactionValues.ts'
 import { isOnly } from './nodeInteractions.ts'
-import { stateChoices, stateFieldLabel } from './stateBinding.ts'
+import { stateChoices } from './stateBinding.ts'
 import type { StateChoice } from './stateBinding.ts'
+import { stateById, stateFieldText } from './stateModel.ts'
 
 /**
  * A List's conditional source (B4, S4): "if <a true or false value> then <a list> else <another list of the same collection>", which the
@@ -92,13 +93,17 @@ export function conditionChoices(model: Model, page: PageFile): ConditionChoice[
     .filter(choice => choice.kind === 'bind' && !stateRoots.has(choice.path.split('.')[0]!))
   const shared = (field: string) => states.filter(state => state.field === field).length > 1
   return [
-    ...states.map((state): ConditionChoice => ({
-      path: state.path,
-      label: stateFieldLabel(state.field, state.stateLabel, shared(state.field)),
-      title: stateFieldLabel(state.field, state.stateLabel),
-      group: state.stateLabel,
-      state
-    })),
+    ...states.map((choice): ConditionChoice => {
+      // The choices come from the model's own States, so the State is there.
+      const owner = stateById(model, choice.state)!
+      return {
+        path: choice.path,
+        label: stateFieldText(choice.field, owner, shared(choice.field)),
+        title: stateFieldText(choice.field, owner),
+        group: choice.stateLabel,
+        state: choice
+      }
+    }),
     ...others.map((choice): ConditionChoice => ({ path: choice.path, label: choice.label, title: choice.label }))
   ]
 }

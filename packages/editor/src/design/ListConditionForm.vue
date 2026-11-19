@@ -5,7 +5,7 @@ import type { BranchChoice, ConditionChoice, ConditionDraft } from '../shared/li
 
 /**
  * The form of a List's condition (B4, S4), the rows under the Items select once the source depends on a condition:
- * "If <a true or false value> <is on | is off>", "Then <list>", "Otherwise <list>". The value is a full-width row, its State fields
+ * "If <an on or off value> <is on | is off>", "Then <list>", "Otherwise <list>". The value is a full-width row, its State fields
  * listed under their State (`optgroup`) and named by the field alone unless two fields share a name; its title says the whole name,
  * so a narrow inspector never hides which field it is. A change goes up (`change`) and the panel writes it (`useListCondition`).
  */
@@ -112,7 +112,7 @@ const valueOf = (event: Event) => (event.target as HTMLSelectElement).value
       class="text-dimmed"
       data-testid="list-condition-hint"
     >
-      Nothing true or false to depend on yet: add a true/false field to a State in Data.
+      Nothing on or off to depend on yet: add a Toggle field to a State in Data.
     </p>
     <div :class="row">
       Then

@@ -152,6 +152,11 @@ describe('the default a box stands for', () => {
     expect(sent('datetime', ' 2026-11-18T10:30 ')).toEqual({ name: 'x', type: 'datetime', default: '2026-11-18T10:30:00Z' })
   })
 
+  it('says a Toggle\'s default is on or off, in the words of the field type', () => {
+    expect(sent('boolean', 'maybe')).toEqual(['x: its default is on or off'])
+    expect(sent('boolean', 'false')).toEqual({ name: 'x', type: 'boolean', default: false })
+  })
+
   it('refuses an integer the number type cannot hold exactly', () => {
     expect(sent('integer', '9007199254740991')).toEqual({ name: 'x', type: 'integer', default: 9007199254740991 })
     expect(sent('integer', '9007199254740993')).toEqual(['x: its default is a whole number'])

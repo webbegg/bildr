@@ -43,8 +43,14 @@ const readsByRoute = (model: Model, pageId: string, queryId: string | undefined)
     && Object.values(use.args ?? {}).some(value => typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>).$route === 'string'))
 }
 
-/** The sentence for one way `use` uses `thing`. */
-export function useSentence(model: Model, use: ArtifactUse, thing: UsedThing): string {
+/** What a page that lists a State among its data, and nothing on it reads or sets, is said to do. */
+export const LISTED_NOT_READ = 'Is listed in the page\'s data, but nothing reads it'
+
+/**
+ * The sentence for one way `use` uses `thing`. `bare` says the place has no other way of using it (a page that lists a State among its
+ * data with nothing reading or setting it): its `uses` entry is then not a read.
+ */
+export function useSentence(model: Model, use: ArtifactUse, thing: UsedThing, bare = false): string {
   const as = use.as ? ` as ${quoted(use.as)}` : ''
   const where = nodeOf(model, use)
   const here = capital(where.words)
@@ -53,7 +59,7 @@ export function useSentence(model: Model, use: ArtifactUse, thing: UsedThing): s
     case 'uses':
       if (thing.kind === 'query') return `Reads it${as || ' as a value'}`
       if (thing.kind === 'action') return `Runs it${as || ' as an action'}`
-      if (thing.kind === 'state') return `Reads it${as || ' as a value'}`
+      if (thing.kind === 'state') return bare ? LISTED_NOT_READ : `Reads it${as || ' as a value'}`
       if (!use.by) return `Uses it${as}`
       return `${isAction(model, use.by) ? 'Runs' : readsByRoute(model, use.id, use.by) ? 'Detail page: reads' : 'Reads'} ${quoted(through)}${as}`
     case 'bind': {

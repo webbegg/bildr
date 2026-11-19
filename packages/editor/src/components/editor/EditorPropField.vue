@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import type { Value } from '@bildr/codegen/model'
 import type { Provenance } from '@bildr/editor-core/styleFields'
 import { FIELD, SELECT_UI } from '../../editorUi.ts'
+import { unbindStateProp } from '../../editor/stateUse.ts'
 import { useBinding } from '../../editor/useBinding.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { expressionText, isExpression, isReadableBinding, textProblem, textValue, valueText } from '../../shared/bindings.ts'
@@ -10,7 +11,7 @@ import { BINDABLE } from '../../shared/nodeProps.ts'
 import type { PropDef } from '../../shared/nodeProps.ts'
 import { propOptions } from '../../shared/propGroups.ts'
 import { pageOptionLabel } from '../../shared/sidebar.ts'
-import { propLock } from '../../shared/stateBinding.ts'
+import { propLock, stateChip } from '../../shared/stateBinding.ts'
 
 /**
  * One prop row, Framer's label-column look: a grey label (blue when the
@@ -72,6 +73,17 @@ const expression = computed(() => {
   return TEXT_KINDS.includes(props.def.kind) && isReadableBinding(value, scope.value) ? undefined : value
 })
 
+/**
+ * Unbind on the chip: a State field takes the page's use of the State off with it when nothing else on the page reads or sets it
+ * (`unbindStateProp`), as binding it added the use; any other expression is just cleared.
+ */
+function unbindExpression() {
+  const node = editor.selected
+  const chip = node && editor.model && editor.page ? stateChip(editor.model, editor.page.id, props.value) : undefined
+  if (node && chip) void unbindStateProp(editor, node, props.def.name, chip.alias)
+  else emit('update', null)
+}
+
 const pageItems = computed(() => [{ label: 'None', value: NONE }, ...editor.pages.map(page => ({ label: pageOptionLabel(page), value: page.id }))])
 const pageId = computed(() => (isExpression(props.value) && typeof props.value.page === 'string' ? props.value.page : NONE))
 const setPage = (id: string) => emit('update', id === NONE ? null : { page: id })
@@ -119,7 +131,7 @@ const setOption = (value: string) => emit('update', props.def.numeric ? Number(v
         mode="prop"
         :name="def.name"
         :expression="expression"
-        @unbind="emit('update', null)"
+        @unbind="unbindExpression"
       />
       <template v-else-if="TEXT_KINDS.includes(def.kind)">
         <EditorCommitInput

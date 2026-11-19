@@ -12,6 +12,7 @@ import { confirmRemoveStateField } from '../../editor/usageWarnings.ts'
 import { FIELD_TYPE_ICONS, FIELD_TYPE_LABELS, fieldTypeItems } from '../../shared/dataModel.ts'
 import type { FieldType } from '../../shared/dataModel.ts'
 import { stateFieldUsesByName } from '../../shared/dataUsage.ts'
+import { stateLabel } from '../../shared/stateModel.ts'
 import DataFieldUses from './DataFieldUses.vue'
 
 /**
@@ -34,7 +35,7 @@ const readOnly = computed(() => state.shape !== 'single')
 const { draft, base, error, saving, dirty, stale, discard, keepMine } = useDraftForm<StateFile, StateDraft>({
   stored: () => state,
   id: () => state.id,
-  label: () => state.label || state.name,
+  label: () => stateLabel(state),
   open: draftOf,
   dirty: (current, saved) => !sameJson(current, draftOf(saved)),
   changedOutside,

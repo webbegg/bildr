@@ -54,6 +54,42 @@ describe('the render data of a page that uses a State', () => {
   })
 })
 
+describe('a computed value, as the generated app works it out', () => {
+  /** The index page with its computed `posts` replaced: `if`, `then` and `else` as a model can hold them. */
+  const withComputed = (entry: Record<string, unknown>) => {
+    const page = structuredClone(index)
+    page.uses = { ...page.uses, computed: [{ as: 'posts', ...entry }] as never }
+    return page
+  }
+  const isOff = withComputed({ if: { not: { $bind: 'preferences.showDrafts' } }, then: { $bind: 'featured' }, else: { $bind: 'all' } })
+
+  it('reads "is off" the other way round: `not` a field picks `then` while the field is off and `else` once it is on', () => {
+    const off = designData(model, isOff)
+    expect(off.posts).toBe(off.featured)
+    const on = designData(model, isOff, { state: { st_preferences: { showDrafts: true } } })
+    expect(on.posts).toBe(on.all)
+  })
+
+  it('reads a `not` of a `not` as the field itself', () => {
+    const twice = withComputed({ if: { not: { not: { $bind: 'preferences.showDrafts' } } }, then: { $bind: 'all' }, else: { $bind: 'featured' } })
+    const off = designData(model, twice)
+    expect(off.posts).toBe(off.featured)
+    const on = designData(model, twice, { state: { st_preferences: { showDrafts: true } } })
+    expect(on.posts).toBe(on.all)
+  })
+
+  it('works out a template and a literal in `then` and `else`, as the canvas does', () => {
+    const texts = withComputed({ if: { $bind: 'preferences.showDrafts' }, then: { $template: 'Drafts of {site.name}' }, else: 'Published only' })
+    expect(designData(model, texts).posts).toBe('Published only')
+    expect(designData(model, texts, { state: { st_preferences: { showDrafts: true } } }).posts).toBe(`Drafts of ${model.project.name}`)
+  })
+
+  it('reads a literal condition', () => {
+    expect(designData(model, withComputed({ if: false, then: 'yes', else: 'no' })).posts).toBe('no')
+    expect(designData(model, withComputed({ if: { not: false }, then: 'yes', else: 'no' })).posts).toBe('yes')
+  })
+})
+
 describe('Set state in the preview', () => {
   it('sets the field of the State, merging with what is set', () => {
     expect(applySetState(model, index, {}, report(true))).toEqual({ st_preferences: { showDrafts: true } })
@@ -166,6 +202,24 @@ describe('what a model edit drops from the preview values', () => {
     const changed = fresh()
     changed.modules.blog!.state[0]!.fields[0]!.type = 'integer'
     expect(prunePreviewState(changed, { st_preferences: { showDrafts: true } })).toEqual({})
+  })
+
+  it('drops the value of a field whose default was changed since: the field starts again at the new default', () => {
+    const edited = fresh()
+    edited.modules.blog!.state[0]!.fields[0]!.default = true
+    const set = { st_preferences: { showDrafts: true } }
+    expect(prunePreviewState(edited, set, model)).toEqual({})
+  })
+
+  it('keeps the value of a field whose default is the same, even when another field\'s changed', () => {
+    const edited = fresh()
+    const state = edited.modules.blog!.state[0]!
+    state.fields.push({ id: 'fld_x', name: 'extra', type: 'text', default: 'new' })
+    const before = fresh()
+    before.modules.blog!.state[0]!.fields.push({ id: 'fld_x', name: 'extra', type: 'text', default: 'old' })
+    expect(prunePreviewState(edited, { st_preferences: { showDrafts: true, extra: 'x' } }, before)).toEqual({ st_preferences: { showDrafts: true } })
+    const same = { st_preferences: { showDrafts: true } }
+    expect(prunePreviewState(edited, same, before)).toBe(same)
   })
 
   it('drops an empty entry, and says so by returning new values', () => {

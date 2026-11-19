@@ -1,11 +1,12 @@
-import type { Model, PageFile, StateFile, Value } from '@bildr/codegen/model'
+import type { Model, Value } from '@bildr/codegen/model'
 import { isExpression } from './bindings.ts'
 import { fieldAccepted } from './interactionValues.ts'
 import type { Expect, Place } from './interactionValues.ts'
 import type { FieldType } from './dataModel.ts'
-import { isOnly, pageOf, stateLabel } from './nodeInteractions.ts'
+import { isOnly, pageOf } from './nodeInteractions.ts'
 import { freeAlias } from './pageNames.ts'
 import { BINDABLE } from './nodeProps.ts'
+import { stateFieldText, stateLabel, stateOfAlias, statesOfPage, useOfState } from './stateModel.ts'
 
 /**
  * What a prop can bind to State (B4, S3). The binding picker offers the module's states and their fields, typed for the prop (a
@@ -48,12 +49,6 @@ export interface StateChoice {
   used: boolean
 }
 
-/** How a State field is named: the field, and with its State ("showDrafts · Blog preferences") unless `withState` is false. */
-export const stateFieldLabel = (field: string, label: string, withState = true): string => (withState ? `${field} · ${label}` : field)
-
-/** The states of the module a page is in. */
-export const statesOfPage = (model: Model, page: PageFile): StateFile[] => Object.values(model.modules).find(mod => mod.pages.includes(page))?.state ?? []
-
 /**
  * The fields of the page's module's states that `expect` takes, in the order of the module's states and of their fields. Nothing for a
  * layout or a component.
@@ -62,7 +57,7 @@ export function stateChoices(model: Model, place: Pick<Place, 'file' | 'kind'>, 
   const page = place.kind === 'page' ? pageOf(model, place.file) : undefined
   if (!page) return []
   return statesOfPage(model, page).filter(state => state.shape === 'single').flatMap((state) => {
-    const use = page.uses?.state?.find(entry => entry.state === state.id)
+    const use = useOfState(page, state.id)
     const alias = use?.as ?? freeAlias(page, state.name, 'state')
     return state.fields.filter(field => fieldAccepted(expect, field)).map((field): StateChoice => ({
       state: state.id, stateLabel: stateLabel(state), field: field.name, type: field.type, alias, path: `${alias}.${field.name}`, used: !!use
@@ -80,6 +75,8 @@ export const stateChoiceNow = (model: Model, place: Pick<Place, 'file' | 'kind'>
 
 /** What a chip shows for a bound State field: "showDrafts · Blog preferences". */
 export interface StateChip {
+  /** The name the page reads the State under. */
+  alias: string
   field: string
   /** The State's label. */
   label: string
@@ -92,8 +89,7 @@ export function stateChip(model: Model, pageId: string, value: Value | undefined
   const page = pageOf(model, pageId)
   const [alias, field, ...rest] = value.$bind.split('.')
   if (!page || !alias || !field || rest.length) return undefined
-  const state = statesOfPage(model, page).find(entry => entry.id === page.uses?.state?.find(use => use.as === alias)?.state)
+  const state = stateOfAlias(model, page, alias)
   if (!state?.fields.some(entry => entry.name === field)) return undefined
-  const label = stateLabel(state)
-  return { field, label, text: stateFieldLabel(field, label) }
+  return { alias, field, label: stateLabel(state), text: stateFieldText(field, state) }
 }

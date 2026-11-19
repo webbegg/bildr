@@ -198,9 +198,13 @@ export const createDesign = () => {
     if (!previewIsEmpty(stateValues.value)) stateValues.value = {}
   }
   watch(mode, resetStateValues)
-  // An invalid model (a file half written, read again a moment later) is `null`: the values wait for the next valid one.
+  // An invalid model (a file half written, read again a moment later) is `null`: the values wait for the next valid one. A value goes
+  // too when the default of its field changed since the last valid model: the field starts again at the new default.
+  let lastValid: typeof model.value = model.value
   watch(model, (current) => {
-    if (current) stateValues.value = prunePreviewState(current, stateValues.value)
+    if (!current) return
+    stateValues.value = prunePreviewState(current, stateValues.value, lastValid)
+    lastValid = current
   })
   const data = computed(() => model.value
     ? designData(model.value, page.value, { rows: rowsOf.rows.value, route: routeParams(model.value, page.value, record.value), state: stateValues.value })

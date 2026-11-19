@@ -84,8 +84,11 @@ export function entriesOf(uses: ArtifactUse[], say: (use: ArtifactUse) => string
   return [...places.values()]
 }
 
-/** `entriesOf` with the sentences of `useSentence`, for the model's `thing`. */
-export const useEntries = (model: Model, uses: ArtifactUse[], thing: UsedThing): UseEntry[] => entriesOf(uses, use => useSentence(model, use, thing))
+/** `entriesOf` with the sentences of `useSentence`, for the model's `thing`. A place whose only use of a State is its `uses` entry lists it and reads nothing. */
+export const useEntries = (model: Model, uses: ArtifactUse[], thing: UsedThing): UseEntry[] => {
+  const doesMore = new Set(uses.filter(use => use.via !== 'uses').map(usageKey))
+  return entriesOf(uses, use => useSentence(model, use, thing, !doesMore.has(usageKey(use))))
+}
 
 /** Who uses query, action or state `id`, one entry per place (the module's usage index, `usesOf`), in the order it gives them. */
 export function usesOfArtifact(model: Model | null, id: string, artifact: ArtifactKind): UseEntry[] {

@@ -463,6 +463,18 @@ describe('Used in, for a state', () => {
     expect(entry).toContain('changes it on an interaction')
   })
 
+  it('says a page that lists the state but nothing on it reads or sets it is just that', async () => {
+    const post = world.model.modules.blog!.pages.find(page => page.id === 'pg_new_post')!
+    post.uses = { ...post.uses, state: [{ as: 'prefs', state: 'st_preferences' }] }
+    await mounted({}, '/data?item=state:st_preferences&tab=used')
+    expect(entries()).toEqual(['page:pg_index', 'page:pg_new_post'])
+    const bare = text(q('[data-use="page:pg_new_post"]'))
+    expect(bare).toContain('Is listed in the page\'s data, but nothing reads it')
+    expect(bare).not.toContain('Reads it')
+    // A page that reads it keeps saying how.
+    expect(text(q('[data-use="page:pg_index"]'))).toContain('Reads it as “preferences”')
+  })
+
   it('opens the page on the Canvas from its entry', async () => {
     const opened = vi.fn()
     const off = registerScreens(opened)

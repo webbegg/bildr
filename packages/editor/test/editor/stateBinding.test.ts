@@ -63,12 +63,31 @@ describe('binding a Checkbox\'s value to State', () => {
     expect(actions.named('node_update_props').at(-1)!.input).toEqual({ file: 'pg_index', nodeId: 'n_toggle', props: { value: { $bind: 'preferences.showDrafts' } } })
   })
 
-  it('leaves the page\'s use of the State in place when the field is unbound, which the generated app ignores', async () => {
+  it('keeps the page\'s use of the State, without a word, when the field is unbound and the page still reads or sets the State', async () => {
     const { actions } = await open(behaviourModule(), 'pg_index')
     await select('n_toggle')
     await click(propRow('value')!.querySelector('[data-binding-chip-unbind]'))
-    expect(actions.named('page_use_remove')).toEqual([])
+    await settle()
+    // The module is asked, and refuses: the page's computed value and the checkbox's Set state still use it. Nothing is shown of that.
+    expect(actions.named('node_update_props').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_toggle', props: { value: null } }])
+    expect(actions.named('page_use_remove').map(call => call.input)).toEqual([{ page: 'pg_index', as: 'preferences' }])
     expect(world.model.modules.blog!.pages.find(page => page.id === 'pg_index')!.uses?.state).toEqual([{ as: 'preferences', state: 'st_preferences' }])
+    expect(byTestId('design-error')).toBeNull()
+  })
+
+  it('takes the page\'s use of the State off when the field is unbound and nothing else on the page reads or sets it', async () => {
+    addFlag()
+    const { actions } = await open(behaviourModule(), 'pg_new_post')
+    await select('n_flag')
+    await menuItem(dot('value'), 'showDrafts')
+    expect(newPost().uses?.state).toEqual([{ as: 'preferences', state: 'st_preferences' }])
+    await click(propRow('value')!.querySelector('[data-binding-chip-unbind]'))
+    await settle()
+    expect(actions.calls.map(call => call.name).filter(name => name.startsWith('page_use') || name === 'node_update_props')).toEqual(['page_use_add', 'node_update_props', 'node_update_props', 'page_use_remove'])
+    expect(actions.named('page_use_remove')[0]!.input).toEqual({ page: 'pg_new_post', as: 'preferences' })
+    expect(flagProps()?.value).toBeUndefined()
+    expect(newPost().uses?.state).toBeUndefined()
+    expect(byTestId('design-error')).toBeNull()
   })
 
   it('takes the page\'s use of the State off again when the bind is refused, and says why', async () => {
@@ -88,9 +107,12 @@ describe('binding a Checkbox\'s value to State', () => {
     const { actions } = await open({ ...behaviourModule(), node_update_props: () => new Failure(422, 'invalid', 'Refused') }, 'pg_index')
     await select('n_toggle')
     await click(propRow('value')!.querySelector('[data-binding-chip-unbind]'))
+    await settle()
+    // The unbind asked the module to drop the use (refused: the page still reads it); the refused bind that follows asks for nothing.
+    const asked = actions.named('page_use_remove').length
     await menuItem(dot('value'), 'showDrafts')
     expect(actions.named('page_use_add')).toEqual([])
-    expect(actions.named('page_use_remove')).toEqual([])
+    expect(actions.named('page_use_remove')).toHaveLength(asked)
   })
 })
 

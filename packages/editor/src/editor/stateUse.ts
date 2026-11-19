@@ -52,6 +52,25 @@ export async function withStateUse<T>(editor: Editor, pageId: string, choice: Pi
 }
 
 /**
+ * The page's use of the State read under `alias` goes when nothing on the page reads or sets it: the module refuses while something
+ * does, and that refusal is the answer, so it is taken off the screen and left unsaid (the use stays, as it was).
+ */
+export async function dropStateUse(editor: Editor, pageId: string, alias: string) {
+  if (!await editor.run('page_use_remove', { page: pageId, as: alias })) takeRefusal(editor, 'The page still reads it')
+}
+
+/**
+ * Takes a State field off a prop of a node of the page (`node_update_props`, `null`) and, once it is unbound, the page's use of that
+ * State when nothing else on the page reads or sets it (`dropStateUse`), as binding it added the use. `alias` is the name the page read
+ * the State under. A refused unbind leaves the use alone: the field is still bound.
+ */
+export async function unbindStateProp(editor: Editor, node: ModelNode, prop: string, alias: string) {
+  const file = placeOf(editor, node.id).file
+  if (!await editor.runOnPage('node_update_props', { nodeId: node.id, props: { [prop]: null } })) return
+  await dropStateUse(editor, file, alias)
+}
+
+/**
  * Binds a prop of a node of the page to the State field `picked` (`{ $bind: 'alias.field' }`), adding the page's use of the State first
  * when it has none. The name and the use are the page's as it is when the field is picked, not as the menu was when it was built.
  */

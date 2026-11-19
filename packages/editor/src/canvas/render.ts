@@ -85,7 +85,8 @@ export interface PlanElement {
 }
 export type PlanChild = PlanElement | string
 
-const MISSING: unique symbol = Symbol('missing')
+/** What an expression reads when the scope has no root for it (`designData` leaves such a computed value to the render). */
+export const MISSING: unique symbol = Symbol('missing')
 type Evaluated = unknown
 
 const isObject = (value: unknown): value is Record<string, Value> => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -110,7 +111,8 @@ const resolvePath = (scope: Scope, path: string): Evaluated => {
 const templateParts = (template: string) => template.split(/(\{[\w.]+\})/).filter(Boolean)
   .map(part => /^\{[\w.]+\}$/.test(part) ? { text: '', path: part.slice(1, -1) } : { text: part, path: undefined })
 
-const evaluate = (value: Value | undefined, scope: Scope): Evaluated => {
+/** An expression over a scope, as the generated app reads it (`not`, `$bind` with its fallback, `$template`, a literal): the canvas's one evaluator. */
+export const evaluate = (value: Value | undefined, scope: Scope): Evaluated => {
   if (value === undefined || value === null) return undefined
   if (!isObject(value)) return value
   if (typeof value.$bind === 'string') {

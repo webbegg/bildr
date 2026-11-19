@@ -103,6 +103,28 @@ describe('the canvas holds the State\'s values', () => {
     expect(shown()).toEqual(featured)
   })
 
+  it('drops a value when the field\'s default is changed in Data: the field starts again at its new default', async () => {
+    await open({}, 'pg_index')
+    await preview()
+    // Set to off, which the default already is: the preview holds that as a value of its own.
+    await setState(false)
+    expect(preferences()).toEqual({ showDrafts: false })
+    world.model.modules.blog!.state[0]!.fields[0]!.default = true
+    await modelChanged()
+    // The new default shows: the old value did not outlive the default it was set over.
+    expect(preferences()).toEqual({ showDrafts: true })
+    expect(shown()).toEqual(everything)
+  })
+
+  it('keeps a value when the model changes in a way that leaves the field\'s default as it was', async () => {
+    await open({}, 'pg_index')
+    await preview()
+    await setState(true)
+    world.model.modules.blog!.state[0]!.fields[0]!.required = true
+    await modelChanged()
+    expect(preferences()).toEqual({ showDrafts: true })
+  })
+
   it('drops the values of a State that was deleted, and does not bring them back with the State', async () => {
     await open({}, 'pg_index')
     await preview()

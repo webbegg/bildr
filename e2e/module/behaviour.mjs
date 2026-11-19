@@ -9,8 +9,8 @@
  *    listed under its State, on a full-width row with the is on / is off select below it).
  *
  * The page's file is then the golden one (the same `uses.state`, `uses.computed` and `items` binding, and the same page but for the
- * toggle's change, which B3's UI makes), the running app renders it, and going back to one list drops the computed value (the page's
- * use of the State stays: nothing generated for an unused use). Shots go to e2e/module/.shots/ (and to B4_SHOTS when it is set).
+ * toggle's change, which B3's UI makes), the running app renders it, and going back to one list drops the computed value, and unbinding the
+ * checkbox's field then takes the page's use of the State off with it. Shots go to e2e/module/.shots/ (and to B4_SHOTS when it is set).
  */
 import { mkdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -149,15 +149,16 @@ await run('behaviour', async ({ page, browser, errors }) => {
   const single = await until(() => !bildr(INDEX).uses.computed && bildr(INDEX))
   check(!!single && JSON.stringify(findNode(single.root, node => node.id === 'n_list').props.items) === JSON.stringify({ $bind: 'all' }), 'choosing All posts binds the List to it and drops the computed value nothing else reads')
   check(await page.locator('[data-testid="list-condition"]').count() === 0, 'and the condition is gone from the panel')
-  // Unbinding the checkbox leaves the use in place (it is harmless: the generated app declares only what is read).
+  // Unbinding the checkbox's field takes the page's use of the State off with it: nothing else on the page reads or sets it now.
   await page.locator('[data-layer-id="n_toggle"]').click()
   await row.locator('[data-binding-chip-unbind]').click()
   const unbound = await until(() => !toggleOf(bildr(INDEX)).props.value && bildr(INDEX))
-  check(!!unbound && JSON.stringify(unbound.uses.state) === JSON.stringify([{ as: 'preferences', state: 'st_preferences' }]), 'unbinding the field removes the binding and leaves the page\'s use of the State in place')
+  check(!!unbound, 'unbinding the field removes the binding')
+  check(await until(() => !bildr(INDEX).uses.state?.length), `and the page's use of the State, which nothing else reads (${JSON.stringify(bildr(INDEX).uses.state)})`)
   check(await quiesce(60_000), 'the app regenerates')
   await quiet()
   const after = await appShows(browser, '/', 'Show drafts')
-  check(after.html.includes('Show drafts'), 'the running app still renders it with the use unread')
+  check(after.html.includes('Show drafts'), 'the running app still renders the page')
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 }, { ignore: [/ERR_INCOMPLETE_CHUNKED_ENCODING/, /ERR_CONNECTION_(REFUSED|RESET)/] })
