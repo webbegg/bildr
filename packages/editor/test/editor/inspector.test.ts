@@ -2,7 +2,7 @@ import { defineComponent, h } from 'vue'
 import { describe, expect, it } from 'vitest'
 import EditorCommitInput from '../../src/components/editor/EditorCommitInput.vue'
 import { click, mountWithApp, settle, typeInto } from '../helpers.ts'
-import { byLabel, inspectorHead, menuItem, menuLabels, open, pickOpenItem, postCard, propInput, propRow, propSelect, resetStyle, select, selectLayer, selectOption, setupHarness, showVariant, styleField, typeStyle } from '../design/harness.ts'
+import { byLabel, inspectorHead, menuItem, menuLabels, open, optionLabels, pickOpenItem, postCard, propInput, propRow, propSelect, resetStyle, select, selectLayer, selectOption, setupHarness, showVariant, styleField, typeStyle } from '../design/harness.ts'
 
 /**
  * The hosted inspector over the module (U4): the head, the Page section, the prop sections with the
@@ -132,7 +132,11 @@ describe('the prop sections', () => {
     await select('n_h1')
     await selectOption(propSelect('level'), '3')
     await select('n_read_more')
-    await selectOption(propSelect('to'), 'index')
+    // The pages are named as the sidebar names them: Home, or the path.
+    expect(await optionLabels(propSelect('to'))).toEqual(['None', 'Home', '/posts/new', '/posts/:slug'])
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await settle()
+    await selectOption(propSelect('to'), 'Home')
     expect(actions.named('node_update_props').map(call => call.input)).toEqual([
       { file: 'pg_index', nodeId: 'n_h1', props: { level: 3 } },
       { file: 'pg_index', nodeId: 'n_read_more', props: { to: { page: 'pg_index' }, href: null } }

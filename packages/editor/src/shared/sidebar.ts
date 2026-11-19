@@ -33,6 +33,15 @@ export function pageRowLabel(page: Pick<PageFile, 'name' | 'path'>, home: boolea
   return slugify(page.name) === said || (home && page.name === 'index') ? { path } : { path, hint: page.name }
 }
 
+/**
+ * A page as a select's option reads it: the sidebar's label on one line, `Home`, `/pricing`, or `/posts/:slug · post-detail` (the
+ * name only where the path does not say it). The one label every page picker (a link's page, a Go to page step) uses.
+ */
+export function pageOptionLabel(page: Pick<PageFile, 'name' | 'path'>): string {
+  const { path, hint } = pageRowLabel(page, page.path === '/')
+  return hint ? `${path} · ${hint}` : path
+}
+
 /** The items (e.g. the Assets panel's theme styles) whose name matches. */
 export function filterByName<T extends { name: string }>(items: readonly T[], query: string): T[] {
   return items.filter(item => matches(query, item.name))

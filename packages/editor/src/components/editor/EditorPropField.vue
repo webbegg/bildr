@@ -9,6 +9,7 @@ import { expressionText, isExpression, isReadableBinding, textProblem, textValue
 import { BINDABLE } from '../../shared/nodeProps.ts'
 import type { PropDef } from '../../shared/nodeProps.ts'
 import { propOptions } from '../../shared/propGroups.ts'
+import { pageOptionLabel } from '../../shared/sidebar.ts'
 
 /**
  * One prop row, Framer's label-column look: a grey label (blue when the
@@ -65,7 +66,7 @@ const expression = computed(() => {
   return TEXT_KINDS.includes(props.def.kind) && isReadableBinding(value, scope.value) ? undefined : value
 })
 
-const pageItems = computed(() => [{ label: 'None', value: NONE }, ...editor.pages.map(page => ({ label: `${page.name} (${page.path})`, value: page.id }))])
+const pageItems = computed(() => [{ label: 'None', value: NONE }, ...editor.pages.map(page => ({ label: pageOptionLabel(page), value: page.id }))])
 const pageId = computed(() => (isExpression(props.value) && typeof props.value.page === 'string' ? props.value.page : NONE))
 const setPage = (id: string) => emit('update', id === NONE ? null : { page: id })
 

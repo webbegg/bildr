@@ -16,6 +16,9 @@ import { EVENT_LABELS, interactionLabel, interactionRows, interactionTargets, tr
  * component's, the default of every variant.
  *
  * An interaction is keyed `<variant>:<index>` (it has no id in the model).
+ *
+ * Titled "Variant changes", not "Interactions" (B3): a node in the component view also has its own Interactions ("When Click → …",
+ * EditorNodeInteractions), and two sections with one title would not say which does what. These change the component's variant.
  */
 const editor = useEditor()
 
@@ -62,8 +65,8 @@ const transitionOpen = ref(false)
 <template>
   <EditorStyleSection
     v-if="def"
-    label="Interactions"
-    add-label="Add interaction"
+    label="Variant changes"
+    add-label="Add variant change"
     :menu="menu"
     data-component-interactions
     @add="add"

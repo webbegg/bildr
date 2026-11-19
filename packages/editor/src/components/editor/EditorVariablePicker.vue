@@ -14,8 +14,10 @@ import { insertAt, pathToken } from '../../shared/bindings.ts'
  * text (the parent commits it, as a `{ $bind }` or `{ $template }`, see `textValue`), then puts
  * focus and the caret back after the token. The field is the nearest input or textarea around the button.
  * The hosted editor listed its `{{ env.NAME }}` variables and the record's `{{ item.x }}` fields
- * here; the model's variables are the names in scope (`design.scopeOf`).
+ * here; the model's variables are the names in scope (`design.scopeOf`). `names` lists others instead (a step's text in the
+ * Interactions popover reads only what the generated handler resolves).
  */
+const props = defineProps<{ names?: ScopeName[] }>()
 const emit = defineEmits<{ insert: [text: string] }>()
 const editor = useEditor()
 
@@ -53,7 +55,7 @@ const SOURCE_LABELS: Record<ScopeName['source'], string> = {
   item: 'Item of a List', query: 'Query', state: 'State', action: 'Action', computed: 'Computed value', prop: 'Property', layout: 'Layout variable', site: 'The site'
 }
 
-const scope = computed(() => (editor.selectedId ? editor.scopeOf(editor.selectedId) : []))
+const scope = computed(() => props.names ?? (editor.selectedId ? editor.scopeOf(editor.selectedId) : []))
 
 const items = computed<DropdownMenuItem[][]>(() => {
   const groups = scope.value

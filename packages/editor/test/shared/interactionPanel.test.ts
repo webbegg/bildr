@@ -22,7 +22,7 @@ const go = (on: string, to: string, delay?: number) => ({ on, do: [{ kind: 'setV
 
 describe('labels', () => {
   it('names the events as Framer does, one per event of the model', () => {
-    expect(EVENT_LABELS).toEqual({ click: 'Click', mouseenter: 'Mouse enter', mouseleave: 'Mouse leave', appear: 'Appear' })
+    expect(EVENT_LABELS).toEqual({ click: 'Click', change: 'Change', submit: 'Submit', mouseenter: 'Mouse enter', mouseleave: 'Mouse leave', appear: 'Appear' })
     expect([...VARIANT_EVENTS]).toEqual([...MODEL_EVENTS])
     expect([...TRANSITION_EASINGS]).toEqual([...MODEL_EASINGS])
   })

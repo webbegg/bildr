@@ -29,7 +29,9 @@ import { sharedStyle } from '../../shared/panel.ts'
  *
  * The module's data panels sit in the prop sections they belong to (S4): a List's
  * source (ListSourcePanel) and a Form's action and fields (FormBindingPanel) in
- * Behaviour, what a page uses (PageUsesPanel) under the page's rows.
+ * Behaviour, what a page uses (PageUsesPanel) under the page's rows. After the prop
+ * sections, an Interactions section says what the node does on an event ("When Click → …",
+ * EditorNodeInteractions, B3): on a Button, Checkbox or Form of a page, layout or component, and not on any other node.
  *
  * In the component and layout views the file's own sections follow (EditorComponentPanel:
  * an Instance's values, the variants, interactions and properties; EditorLayoutPanel:
@@ -250,6 +252,8 @@ function renamePage(field: 'name' | 'path', value: string) {
             :node="node"
           />
         </EditorStyleSection>
+
+        <EditorNodeInteractions :node="node" />
       </template>
 
       <EditorStyleFields

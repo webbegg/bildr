@@ -1,4 +1,4 @@
-import type { ComponentFile, Transition } from '@bildr/codegen/model'
+import type { ComponentFile, ModelNode, Transition } from '@bildr/codegen/model'
 import { DEFAULT_TRANSITION } from '@bildr/codegen/render'
 
 /**
@@ -23,7 +23,11 @@ export type TransitionEasing = NonNullable<Transition['easing']>
 export const VARIANT_EVENTS = ['click', 'mouseenter', 'mouseleave', 'appear'] as const satisfies readonly VariantEvent[]
 export const TRANSITION_EASINGS = ['ease', 'ease-in', 'ease-out', 'ease-in-out', 'linear'] as const satisfies readonly TransitionEasing[]
 
-export const EVENT_LABELS: Record<VariantEvent, string> = { click: 'Click', mouseenter: 'Mouse enter', mouseleave: 'Mouse leave', appear: 'Appear' }
+/** The events a node's interaction takes (B3): the variant events are the four that are not change and submit. */
+export type NodeEvent = NonNullable<ModelNode['interactions']>[number]['on']
+
+/** What every list of events calls each one, a node's (B3) and a component variant's: the one map. */
+export const EVENT_LABELS: Record<NodeEvent, string> = { click: 'Click', change: 'Change', submit: 'Submit', mouseenter: 'Mouse enter', mouseleave: 'Mouse leave', appear: 'Appear' }
 
 /** An interaction of a variant as the rows show it: `key` is `<variant>:<index>`, `to` the variant it goes to (`''`: the primary). */
 export interface InteractionRow {

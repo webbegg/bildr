@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ModelNode } from '@bildr/codegen/model'
 import { sameComponentNodes, sameTypeNodes } from '../../src/editor/selection.ts'
 import { INSERT_TOOLS, toolHint } from '../../src/editor/tools.ts'
-import { filterByName, filterLayers, filterPages, pageRowLabel } from '../../src/shared/sidebar.ts'
+import { filterByName, filterLayers, filterPages, pageOptionLabel, pageRowLabel } from '../../src/shared/sidebar.ts'
 
 /** Ported from the hosted `test/editor/sidebar.test.ts` (and its `sameTypeNodes`/`toolHint` cases), over the model's pages (`path`, not `slug`). */
 
@@ -39,6 +39,16 @@ describe('pageRowLabel', () => {
     expect(pageRowLabel({ name: 'about-us', path: '/about-us' }, false)).toEqual({ path: '/about-us' })
     expect(pageRowLabel({ name: 'post-detail', path: '/posts/:slug' }, false)).toEqual({ path: '/posts/:slug', hint: 'post-detail' })
     expect(pageRowLabel({ name: 'landing', path: '/' }, true)).toEqual({ path: 'Home', hint: 'landing' })
+  })
+})
+
+describe('pageOptionLabel', () => {
+  it('names a page in a select the way the sidebar does: Home, or its path, and its name when the path does not say it', () => {
+    expect(pageOptionLabel({ name: 'index', path: '/' })).toBe('Home')
+    expect(pageOptionLabel({ name: 'pricing', path: '/pricing' })).toBe('/pricing')
+    expect(pageOptionLabel({ name: 'posts-slug', path: '/posts/:slug' })).toBe('/posts/:slug')
+    expect(pageOptionLabel({ name: 'post-detail', path: '/posts/:slug' })).toBe('/posts/:slug · post-detail')
+    expect(pageOptionLabel({ name: 'landing', path: '/' })).toBe('Home · landing')
   })
 })
 

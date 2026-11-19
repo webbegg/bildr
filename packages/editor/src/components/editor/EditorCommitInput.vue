@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import type { ScopeName } from '@bildr/codegen/edit'
 import { FIELD_INVALID, INPUT_UI, mergeUi, TEXTAREA_UI, VARIABLE_FIELD_UI } from '../../editorUi.ts'
 
 /**
@@ -12,9 +13,9 @@ import { FIELD_INVALID, INPUT_UI, mergeUi, TEXTAREA_UI, VARIABLE_FIELD_UI } from
  * again, so it can never reach an action as `null` and remove the value. A text of spaces alone
  * is blank like an empty one: it commits as `''`, never as a number (`Number('  ')` is 0).
  * `invalid` marks the field as refused by its owner (which shows why); `edit` tells the owner the
- * draft changed, so it can clear that.
+ * draft changed, so it can clear that. `names` are the names the Insert variable menu lists, when not the selected node's.
  */
-const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft', variables?: boolean, numeric?: boolean, invalid?: boolean }>(), { size: 'sm', variant: 'soft', variables: false, invalid: false })
+const props = withDefaults(defineProps<{ modelValue: string, multiline?: boolean, placeholder?: string, size?: 'xs' | 'sm', variant?: 'outline' | 'soft', variables?: boolean, numeric?: boolean, invalid?: boolean, names?: ScopeName[] }>(), { size: 'sm', variant: 'soft', variables: false, invalid: false, names: undefined })
 const emit = defineEmits<{ commit: [value: string], edit: [] }>()
 
 const draft = ref(props.modelValue)
@@ -63,7 +64,10 @@ function insert(text: string) {
       v-if="variables"
       #trailing
     >
-      <EditorVariablePicker @insert="insert" />
+      <EditorVariablePicker
+        :names="names"
+        @insert="insert"
+      />
     </template>
   </UTextarea>
   <UInput
@@ -83,7 +87,10 @@ function insert(text: string) {
       v-if="variables"
       #trailing
     >
-      <EditorVariablePicker @insert="insert" />
+      <EditorVariablePicker
+        :names="names"
+        @insert="insert"
+      />
     </template>
   </UInput>
 </template>

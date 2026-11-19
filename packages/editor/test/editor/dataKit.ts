@@ -55,6 +55,9 @@ export const artifactModule = (): Handlers => moduleEdits(['query_create', 'quer
 /** The state actions (B2), the real ones over the mocked model, as `artifactModule`'s. */
 export const stateModule = (): Handlers => moduleEdits(['state_create', 'state_update', 'state_rename', 'state_delete', 'page_use_add', 'page_use_remove'])
 
+/** The node interaction actions (B3), the real ones over the mocked model: what the inspector's Interactions write, and the module's own refusals of it. */
+export const interactionModule = (): Handlers => moduleEdits(['node_interaction_add', 'node_interaction_update', 'node_interaction_remove'])
+
 /** The sample-data actions (D4), the real ones over the mocked model: a cell saved here is the row the Rows tab shows next. */
 export const fixtureModule = (): Handlers => moduleEdits(['fixture_row_create', 'fixture_row_update', 'fixture_rows_delete'])
 
