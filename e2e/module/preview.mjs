@@ -51,7 +51,7 @@ await run('preview', async ({ page, errors }) => {
 
   // 2. A click in design mode selects.
   await control.click()
-  check(await page.locator('[data-layer-id="n_toggle"][aria-selected="true"]').count() === 1, 'a click on the checkbox in design mode selects it')
+  check(await until(async () => await page.locator('[data-layer-id="n_toggle"][aria-selected="true"]').count() === 1), 'a click on the checkbox in design mode selects it')
   check(await checked() === 'false' && !(await text()).includes('A draft'), 'and changes nothing on the canvas')
 
   // 3. Preview: the toggle switches the List.

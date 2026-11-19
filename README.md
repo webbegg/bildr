@@ -23,13 +23,23 @@ pnpm dev          # nuxt dev
 The editor is a Vue and Nuxt UI single-page app (`@bildr/editor`) that `@bildr/nuxt` serves while `nuxt dev` runs. Its screens:
 
 - **Design**: pages, layers, components and layouts on a canvas with device frames, an inspector for props and styles, the theme and the design library, and the variant board. Edits are live in the running app.
-- **Data**: data sources, entities and their fields, repositories and their endpoints, and the rows the app reads. Records are read-only here.
+- **Data**: data sources, entities and their fields, repositories and their endpoints, State, and the rows the app reads. Records are read-only here.
 - **Model**: the `.bildr/` files as they are, with their validation problems.
 - **View code**: the generated files and which ones you changed.
 - **Health**: the project's checks (typecheck, lint, tests, build) and their results.
 - **Migrations**: the pending database migration, when the project has a database.
 
 Undo and redo (Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z) work on every edit. ⌘K opens the quick actions.
+
+## App behaviour
+
+What the app remembers, what a control does and which list a page shows are set in the editor, not only in JSON. The drafts toggle of the blog (a "Show drafts" checkbox that switches a list between the featured posts and all of them) is built in five steps:
+
+1. **Define State.** In Data, the State section (after Actions) has a "+". Name the State and choose how long it keeps its values: "Forgotten on reload", "Kept for this tab" or "Kept in this browser". Its Fields tab sets each field's name, type, default and whether it is required, and Save writes them. Used in lists the pages that read or set it. A State that is used can't be deleted, and a field that is used can't be renamed.
+2. **Give a control steps.** Select a button, a checkbox or a form (on a page, layout or component) and open Interactions in the inspector. "+" adds an event: Click, Change, Submit, Mouse enter or Mouse leave. Appear is shown as not generated yet. Add steps to it: Set state, Run action, Go to page or Show message. A Set state step sets a field to the control's value, to a fixed value or to the opposite of its current value. The value picker offers only what is in scope.
+3. **Bind a prop to a State field.** The dot beside a prop opens the binding menu, which lists State fields. Picking one binds the prop and adds the State to the page's uses.
+4. **Make a List depend on a condition.** Select the List and set Items to "Depends on a condition": If a State field is on, Then one query, Otherwise another. The page keeps this as a computed value, and editing the source edits it.
+5. **Preview it.** Turn on Interact in the Design toolbar. The canvas holds each State field's default and applies Set state when you click, so the toggle switches the list. Reset state puts the values back. They are also dropped when preview ends or the editor reloads. A Set state from a layout or component view is ignored in preview, because State belongs to a page.
 
 ## What a project holds
 
@@ -55,6 +65,8 @@ The editor's operations are plain actions. Each one is a typed function with a s
 - Events: `/__bildr/api/events` streams changes, so an open editor shows an agent's edit within a moment.
 
 `model_get` returns the loaded model and its problems, `model_file_put` writes a model file, and the node, page, component, layout, theme, entity and data-source actions edit it in a validated way. Every edit is one undo step.
+
+The actions behind [App behaviour](#app-behaviour): `state_create`, `state_update`, `state_rename` and `state_delete` for State; `node_interaction_add`, `node_interaction_update` and `node_interaction_remove` for a node's interactions; `page_use_add` and `page_use_remove`, which also take a `state`, for a page's use of a State; `page_computed_set` and `page_computed_remove` for the condition behind a List.
 
 ## Working on bildr itself
 
