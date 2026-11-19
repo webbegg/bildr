@@ -57,6 +57,20 @@ export type ModelMigration = (files: Record<string, unknown>) => Record<string, 
 /** Migrations keyed by the version they migrate from. Empty while only version 1 exists. */
 export const MODEL_MIGRATIONS: Record<number, ModelMigration> = {}
 
+/** The first `$input` path a step value reads, anywhere in it, or undefined when it reads none. */
+const inputRead = (value: unknown): string | undefined => {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const read = inputRead(entry)
+      if (read !== undefined) return read
+    }
+    return undefined
+  }
+  if (!value || typeof value !== 'object') return undefined
+  if ('$input' in value) return String((value as { $input: unknown }).$input)
+  return inputRead(Object.values(value))
+}
+
 export interface LoadOptions {
   /** The version to load into (tests only; defaults to CURRENT_SCHEMA_VERSION). */
   current?: number
@@ -310,6 +324,13 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       const last = action.steps.at(-1)
       if (!action.steps.some(step => step.kind === 'repository') && !(last?.kind === 'return' && last.if === true)) {
         report(path, 'steps', 'An action needs a "repository" step (create, update or delete), or a last "return" step that always runs ("if": true), to do its work')
+      }
+      // An action with neither parameters nor a collection input has no `input` in its use-case: a step can't read one.
+      if (!action.input.entity && !action.input.params?.length) {
+        action.steps.forEach((step, index) => {
+          const read = inputRead(step)
+          if (read !== undefined) report(path, `steps.${index}`, `This action takes no input, so a step can't read "${read}" from it: give the action an input, or change the step`)
+        })
       }
       // It returns the use-case's result, so it must be last: one repository step per action.
       action.steps.forEach((step, index) => {

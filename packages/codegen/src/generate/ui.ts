@@ -672,6 +672,9 @@ const runAction = (env: Env, node: ModelNode, step: Record<string, Value>, ctx: 
   const alias = env.aliases.actions.get(String(step.action)) ?? fail(env, node, `action ${String(step.action)} isn't in the page's uses.actions`)
   use(env, `action:${alias}`, 'execute')
   const args = step.args
+  // An action with no parameters and no collection input is run with nothing.
+  const { input } = actionById(env, node, step.action)
+  if (!input.entity && !(input.params ?? []).length) return args === undefined ? `${alias}()` : fail(env, node, 'runAction on an action that takes no input has no args')
   if (isObject(args) && args.$form === true) return `${alias}(${expression(env, node, args, ctx)})`
   const entries = isObject(args) ? Object.values(args) : []
   if (entries.length !== 1) return fail(env, node, 'runAction takes `$form: true` or one argument')

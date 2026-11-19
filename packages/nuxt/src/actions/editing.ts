@@ -134,7 +134,7 @@ const DESCRIPTIONS: Record<EditName, string> = {
     'Events (on): click, change, submit, mouseenter, mouseleave; appear is not generated yet. Only Button (click, mouseenter, mouseleave), Checkbox (adds change) and Form (adds submit) nodes get events; any other node is not generated yet. One interaction per event on a node.',
     'Steps (do, in order):',
     '- Set state: { kind: "setState", state, field, value }',
-    '- Run action: { kind: "runAction", action, args } (args: { "$form": true } inside a Form, or the action\'s one parameter, { "id": value })',
+    '- Run action: { kind: "runAction", action, args } (args: { "$form": true } inside a Form, or the action\'s one parameter, { "id": value }; an action that takes no input has no args, and is refused any)',
     '- Go to page: { kind: "navigate", to: { page, params } } (params: every :param of the page\'s path)',
     '- Show message: { kind: "toast", title, description?, color?, icon? }',
     'One step is an inline handler. Several steps, or a submit, run an action first and then Go to page and Show message steps with when: "success", or Go to page and Show message steps in order; a Set state step can\'t be one of several. setVariant is not generated yet.',

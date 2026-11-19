@@ -286,7 +286,8 @@ const routeFile = (context: ModuleContext, analyzed: Analyzed) => {
       params.length > 0 && 'import { IdSchema } from \'#core/kernel/ids\'',
       inputEntity && `import { New${inputEntity.name}Schema } from '#${context.name}/domain/${entityNames(inputEntity).file}'`,
       '',
-      'export default defineEventHandler(async (event) => {',
+      // A route that reads neither a body nor a parameter has no use for the event.
+      `export default defineEventHandler(async (${inputEntity || params.length ? 'event' : ''}) => {`,
       inputEntity && `  const input = await readValidatedBody(event, New${inputEntity.name}Schema)`,
       ...params.map(param => `  const ${param.name} = IdSchema.parse(getRouterParam(event, ${tsString(param.name)}))`),
       `  return unwrapOrThrow(await ${invoke}, ${camel(context.name)}ErrorStatus)`,
@@ -380,8 +381,59 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
 
 interface Optimistic { kind: 'insert' | 'update' | 'delete', entity: string, key?: Value, unless?: string, set?: Record<string, Value> }
 
+/**
+ * The client composable of an action that takes no input (B7): `execute()` takes nothing and calls the route. There is no optimistic
+ * action: it has no row or parameter to show ahead of the server, and TanStack DB's transaction only calls its `mutationFn` when
+ * something was mutated, so an empty `onMutate` would never reach the server.
+ */
+const noInputComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
+  const { action, output } = analyzed
+  if (action.client.optimistic) throw new Error(`${action.id}: an action with no input can't be optimistic (it has no row or parameter to show ahead of the server)`)
+  const source = context.source(action.id)
+  const invalidated = action.client.invalidates.map(id => entityById(context, id))
+  const collections = new Set(invalidated.map(entity => entityNames(entity).collection))
+  const doc = `Action "${action.label}": runs the server use-case${invalidated.length ? `; invalidates ${invalidated.map(entity => entity.name).join(', ')}` : ''}.`
+  return {
+    path: `layers/${context.name}/app/composables/${context.name}/use${pascal(action.name)}.ts`,
+    source,
+    content: file([
+      header(source),
+      'import { ref } from \'vue\'',
+      output && importLine(`#${context.name}/domain/${entityNames(output).file}`, [{ name: output.name, type: true }]),
+      ...[...collections].sort().map((collection) => {
+        const entity = context.module.entities.find(entry => entityNames(entry).collection === collection)!
+        return `import { ${collection} } from '../../data/${kebab(entity.plural)}.collection'`
+      }),
+      '',
+      `/** ${docText(doc)} */`,
+      `export const use${pascal(action.name)} = () => {`,
+      '  const pending = ref(false)',
+      '  const error = ref<string>()',
+      '',
+      '  const execute = async (): Promise<boolean> => {',
+      '    pending.value = true',
+      '    error.value = undefined',
+      '    try {',
+      `      await $fetch${output ? `<${output.name}>` : ''}(${tsString(`/api/${context.name}${action.http.path}`)}, { method: ${tsString(action.http.method)} })`,
+      ...invalidated.map(entity => `      await ${entityNames(entity).collection}.utils.refetch()`),
+      '      return true',
+      '    } catch (cause) {',
+      '      error.value = errorMessage(cause)',
+      '      return false',
+      '    } finally {',
+      '      pending.value = false',
+      '    }',
+      '  }',
+      '',
+      '  return { execute, pending, error }',
+      '}'
+    ])
+  }
+}
+
 const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
   const { action, inputEntity, params, output } = analyzed
+  if (!inputEntity && params.length === 0) return noInputComposableFile(context, analyzed)
   const source = context.source(action.id)
   const composable = `use${pascal(action.name)}`
   const optimistic = action.client.optimistic as Optimistic | undefined

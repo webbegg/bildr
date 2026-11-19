@@ -172,6 +172,8 @@ async function save() {
   saving.value = false
   if (!done) {
     error.value = editor.error ?? 'Could not save the mapping'
+    // A new collection asked to discard unsaved edits first; nothing was made, so what is still on the screen is still unsaved.
+    if (!props.collection) editor.reportDirtyAgain()
     return
   }
   if (created) {

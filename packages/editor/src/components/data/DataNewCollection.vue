@@ -83,6 +83,8 @@ async function submit() {
   saving.value = false
   if (!id) {
     error.value = takeRefusal(editor, 'Could not create the collection').error
+    // Nothing was made, and the user may just have agreed to discard edits that are still on the screen.
+    editor.reportDirtyAgain()
     return
   }
   editor.mode = 'data'

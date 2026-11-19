@@ -152,6 +152,9 @@ export const applyEdit = (files: Record<string, string>, name: EditName, input: 
 }
 
 export { mintId } from './core.ts'
+// The names a page's script declares or gets from Vue and Nuxt: the editor offers none of them as the name of a use (B7).
+export { pageNodeNames, RESERVED as RESERVED_PAGE_NAMES } from './queries.ts'
+export { AUTO_IMPORTED_FUNCTION_NAMES } from './reserved-names.ts'
 export { bindingPaths, bindingScope, entityFieldNames, queryBehind } from './scope.ts'
 export type { ScopeName } from './scope.ts'
 export { computedUsesOf, describeUse, describeUses, entityUsesOf, fieldUsesIndex, fieldUsesOf, idUses, stateFieldUsesIndex, stateFieldUsesOf, usesOf } from './usage.ts'

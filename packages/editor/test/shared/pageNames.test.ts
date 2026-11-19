@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { loadModel } from '@bildr/codegen/model'
 import type { Model, PageFile } from '@bildr/codegen/model'
-import { RESERVED as MODULE_RESERVED } from '../../../codegen/src/edit/queries.ts'
+import { AUTO_IMPORTED_FUNCTION_NAMES, RESERVED_PAGE_NAMES } from '@bildr/codegen/edit'
 import { autoImportedNameProblem } from '../../../codegen/src/edit/reserved-names.ts'
-import { AUTO_IMPORTED_FUNCTIONS, RESERVED_NAMES, freeAlias } from '../../src/shared/pageNames.ts'
+import { freeAlias } from '../../src/shared/pageNames.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 
 /**
@@ -66,10 +66,29 @@ describe('freeAlias', () => {
   })
 })
 
-describe('the names the editor copies from the generator', () => {
-  it('are the module\'s: its reserved names, and every auto-imported function it refuses as a name', () => {
-    expect([...RESERVED_NAMES].sort()).toEqual([...MODULE_RESERVED].sort())
-    const unknown = AUTO_IMPORTED_FUNCTIONS.filter(name => !autoImportedNameProblem(name))
-    expect(unknown).toEqual([])
+describe('the names the page\'s script declares for what is in it (B7)', () => {
+  it('leaves out the handler of each interaction, `on<Node><Event>`', () => {
+    // The new-post form has a submit interaction: its handler is onFormSubmit.
+    const shown = page()
+    expect(freeAlias(shown, 'onFormSubmit', 'computed')).toBe('onFormSubmit2')
+    expect(freeAlias(shown, 'onFormClick', 'computed')).toBe('onFormClick')
+  })
+
+  it('leaves out the counter of a List that loads more, `shown<Node>`', () => {
+    const shown = page()
+    shown.root.children = [{ id: 'n_feed', type: 'List', props: { items: { $bind: 'x' }, as: 'post', loadMore: 5 } }]
+    expect(freeAlias(shown, 'shownFeed', 'computed')).toBe('shownFeed2')
+    shown.root.children = [{ id: 'n_feed', type: 'List', props: { items: { $bind: 'x' }, as: 'post' } }]
+    expect(freeAlias(shown, 'shownFeed', 'computed')).toBe('shownFeed')
+  })
+})
+
+describe('the names the editor reads from the generator', () => {
+  it('are the module\'s own lists: no name the generator reserves or auto-imports is offered, and the module refuses each', () => {
+    const shown = page()
+    expect(RESERVED_PAGE_NAMES).toContain('toast')
+    expect(AUTO_IMPORTED_FUNCTION_NAMES).toContain('navigateTo')
+    for (const name of [...RESERVED_PAGE_NAMES, ...AUTO_IMPORTED_FUNCTION_NAMES]) expect(freeAlias(shown, name, 'computed'), name).not.toBe(name)
+    expect(AUTO_IMPORTED_FUNCTION_NAMES.filter(name => !autoImportedNameProblem(name))).toEqual([])
   })
 })

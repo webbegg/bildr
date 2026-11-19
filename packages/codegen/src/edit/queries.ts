@@ -92,6 +92,13 @@ const declaredNames = (draft: Draft, page: PageFile): Declared => {
     if (action) composable(composableOf(action.name), `the name the action ${action.name} generates`)
   }
   for (const use of page.uses?.computed ?? []) names.push(...declaredBy(use.as, 'computed'))
+  names.push(...nodeNames(page))
+  return names
+}
+
+/** The names the page's script declares for its nodes: the handler of each interaction (`on<Node><Event>`) and the counter of each List that loads more (`shown<Node>`). */
+const nodeNames = (page: PageFile): Declared => {
+  const names: Declared = []
   walk(page.root, (node) => {
     const id = pascal(node.id.replace(/^n_/, ''))
     for (const interaction of node.interactions ?? []) names.push({ name: `on${id}${pascal(interaction.on)}`, by: `the handler of ${node.id}'s ${interaction.on}` })
@@ -99,6 +106,9 @@ const declaredNames = (draft: Draft, page: PageFile): Declared => {
   })
   return names
 }
+
+/** The names the page's script declares for its nodes (the handlers and the load-more counters), for the editor to leave out when it offers a name. */
+export const pageNodeNames = (page: PageFile): string[] => nodeNames(page).map(entry => entry.name)
 
 /**
  * Why the page's script can't declare `added` next to what it has: a name it uses itself, one Vue or Nuxt provides, or one declared

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { applyEdit } from '@bildr/codegen/edit'
 import type { EditName } from '@bildr/codegen/edit'
 import { loadModel } from '@bildr/codegen/model'
-import type { ActionFile, Model, Value } from '@bildr/codegen/model'
+import type { Model, Value } from '@bildr/codegen/model'
 import { draftOfStep, stepsOfDrafts } from '../../src/shared/interactionConversion.ts'
 import { draftProblems } from '../../src/shared/interactionProblems.ts'
 import { refusalAt, summarize } from '../../src/shared/interactionSummary.ts'
@@ -330,16 +330,52 @@ describe('a step written by hand', () => {
   })
 })
 
-describe('an action that takes no input', () => {
-  it('can\'t be run from a node: it is listed with why, and the module refuses a step that gives it none', () => {
-    const ping = { id: 'act_ping', name: 'ping', input: {} } as ActionFile
-    expect(actionUse(TOGGLE, ping)).toEqual({ how: 'no', why: 'Takes no input yet' })
-    // B1 and the generator both want `$form: true` or exactly one argument: an action without input has none to give.
-    const path = Object.keys(files).find(file => file.endsWith('actions/publish-post.json'))!
-    const publish = JSON.parse(files[path]!) as Record<string, unknown>
-    const noInput = { ...files, [path]: JSON.stringify({ ...publish, input: { params: [] } }) }
-    const outcome = applyEdit(noInput, 'node_interaction_update', { file: 'pg_post_detail', nodeId: 'n_publish', index: 0, expectedOn: 'click', do: [{ kind: 'runAction', action: 'act_publish_post' }] })
-    expect(outcome).toMatchObject({ ok: false, message: expect.stringContaining('args is { "$form": true } or the one argument') })
+describe('an action that takes no input (B7)', () => {
+  /** The blog with `tidyPosts`: an action with neither a collection's row nor a parameter to take. */
+  const quiet = () => {
+    let next = files
+    for (const [name, input] of [['action_create', { entity: 'ent_post', template: 'blank', name: 'tidyPosts' }], ['action_update', { action: 'act_tidy_posts', input: {} }]] as const) {
+      const outcome = applyEdit(next, name, input)
+      if (!outcome.ok) throw new Error(outcome.message)
+      next = { ...next, ...Object.fromEntries(outcome.changes.map(change => [change.path, change.content!])) }
+    }
+    const grown = loadModel(next)
+    if (!grown.ok) throw new Error(JSON.stringify(grown.problems))
+    return { files: next, model: grown.model }
+  }
+  const tidy = { kind: 'runAction' as const, action: 'act_tidy_posts', args: { mode: 'none' as const } }
+
+  it('is run with nothing: it is listed like any other, and its step is complete with no value', () => {
+    const { model: grown } = quiet()
+    const e: Env = { ...TOGGLE, model: grown }
+    const ping = grown.modules.blog!.actions.find(action => action.id === 'act_tidy_posts')!
+    expect(actionUse(e, ping)).toEqual({ how: 'none' })
+    expect(draftProblems(e, [tidy])).toEqual([[]])
+  })
+
+  it('is written with no args, and a stored step with none reads back as the same step', () => {
+    const { model: grown } = quiet()
+    const e: Env = { ...TOGGLE, model: grown }
+    expect(stepsOfDrafts(e, [tidy])).toEqual([{ kind: 'runAction', action: 'act_tidy_posts' }])
+    expect(draftOfStep(e, { kind: 'runAction', action: 'act_tidy_posts' })).toEqual(tidy)
+  })
+
+  it('is accepted by the module as the editor writes it', () => {
+    const { files: next, model: grown } = quiet()
+    const e: Env = { ...env('pg_index', 'n_toggle', 'Checkbox', 'click'), model: grown }
+    const outcome = applyEdit(next, 'node_interaction_add', { file: 'pg_index', nodeId: 'n_toggle', on: 'click', do: stepsOfDrafts(e, [tidy]) })
+    expect(outcome.ok ? 'ok' : outcome.message).toBe('ok')
+  })
+
+  it('does not make a step that needs input complete: an action with a parameter still asks for its value', () => {
+    expect(draftProblems(TOGGLE, [{ kind: 'runAction', action: 'act_publish_post', args: { mode: 'none' } }])).toEqual([['Choose a value for id']])
+    expect(draftProblems(TOGGLE, [{ kind: 'runAction', action: 'act_create_post', args: { mode: 'none' } }])).toEqual([['Choose what it gets']])
+  })
+
+  it('needs no form around the node: it is run from anywhere an action can be', () => {
+    const { model: grown } = quiet()
+    const e: Env = { ...HEAD, model: grown }
+    expect(actionsFor(e).map(action => actionUse(e, action).how)).toContain('none')
   })
 })
 

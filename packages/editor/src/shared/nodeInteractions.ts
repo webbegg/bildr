@@ -182,18 +182,18 @@ const formAbove = (env: Env): ModelNode | undefined => {
 }
 
 /**
- * How an action is run from the node: with the values of the Form around it (an action on a collection), or with its one
- * parameter. Anything else the module doesn't generate from a node, and says why: an action that takes no input has no argument
- * to give, and the module (`checkRunAction`) and the generator (`runAction`) both want `$form: true` or exactly one.
+ * How an action is run from the node: with the values of the Form around it (an action on a collection), with its one
+ * parameter, or with nothing (an action that takes no input: the step has no `args`). Anything else the module doesn't generate
+ * from a node, and says why.
  */
-export function actionUse(env: Env, action: ActionFile): { how: 'form' } | { how: 'param', name: string } | { how: 'no', why: string } {
+export function actionUse(env: Env, action: ActionFile): { how: 'form' } | { how: 'param', name: string } | { how: 'none' } | { how: 'no', why: string } {
   const form = formAbove(env)
   const edited = form ? actionOf(env.model, String(form.props?.action))?.input.entity : undefined
   if (action.input.entity && form && (!edited || edited === action.input.entity)) return { how: 'form' }
   const params = action.input.params ?? []
   if (params.length === 1) return { how: 'param', name: params[0]!.name }
   if (action.input.entity) return { how: 'no', why: form ? 'The form around this element edits another collection' : 'Needs a form around this element' }
-  return { how: 'no', why: params.length ? 'Takes several values' : 'Takes no input yet' }
+  return params.length ? { how: 'no', why: 'Takes several values' } : { how: 'none' }
 }
 
 /** The name the page reads the state under, when it uses it. */

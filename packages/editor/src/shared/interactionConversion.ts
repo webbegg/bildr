@@ -118,10 +118,11 @@ function stepOut(env: Env, draft: StepDraft, names: string[]): Stored {
     }
     case 'runAction': {
       const { args } = draft
-      const written: Value = args.mode === 'form'
+      const written: Value | undefined = args.mode === 'form'
         ? { $form: true }
-        : args.mode === 'param' ? { [args.name]: valueOut(args.value, targetOf(env, draft)) ?? null } : args.mode === 'other' ? args.value : {}
-      return { kind: 'runAction', action: draft.action, args: written }
+        : args.mode === 'param' ? { [args.name]: valueOut(args.value, targetOf(env, draft)) ?? null } : args.mode === 'other' ? args.value : undefined
+      // An action that takes no input is written with no args.
+      return { kind: 'runAction', action: draft.action, ...(written !== undefined ? { args: written } : {}) }
     }
     case 'navigate': {
       const params = Object.fromEntries(Object.entries(draft.params).flatMap(([name, value]) => {

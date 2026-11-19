@@ -153,6 +153,59 @@ describe('node_interaction_add: runAction', () => {
   })
 })
 
+describe('node_interaction_add: runAction on an action that takes no input (B7)', () => {
+  /** A model with the action `tidyPosts`, which takes neither a collection's row nor a parameter. */
+  const quiet = () => {
+    const p = base()
+    p.edit('action_create', { entity: 'ent_post', template: 'blank', name: 'tidyPosts' })
+    p.edit('action_update', { action: 'act_tidy_posts', input: {} })
+    return p
+  }
+  const tidy = { kind: 'runAction', action: 'act_tidy_posts' }
+
+  it('runs it with no args: an inline handler calls it with nothing', () => {
+    const p = quiet()
+    const result = add(p, { on: 'click', do: [tidy] })
+    expect(result.addedUses).toEqual([{ as: 'tidyPosts', action: 'act_tidy_posts' }])
+    expect(interactionsOf(p)).toEqual([{ on: 'click', do: [tidy] }])
+    expect(generated(p.files)[PAGE_VUE]).toContain('@click="tidyPosts()"')
+  })
+
+  it('runs it from a script handler, and goes on when it worked', () => {
+    const p = quiet()
+    add(p, { on: 'click', do: [tidy, { kind: 'toast', when: 'success', title: 'Tidied' }] })
+    add(p, { on: 'mouseenter', do: [tidy, { kind: 'toast', when: 'success', title: 'A' }, { kind: 'navigate', when: 'success', to: { page: 'pg_new_post' } }] })
+    const vue = generated(p.files)[PAGE_VUE]!
+    expect(vue).toContain('if (await tidyPosts()) toast.add({ title: \'Tidied\' })')
+    expect(vue).toContain('if (await tidyPosts()) {')
+  })
+
+  it('generates a client composable whose execute takes nothing', () => {
+    const p = quiet()
+    const composable = generated(p.files)['layers/blog/app/composables/blog/useTidyPosts.ts']!
+    expect(composable).toContain('const execute = async (): Promise<boolean> => {')
+    // No optimistic action: TanStack DB only calls its mutationFn when something was mutated, so this one calls the route itself.
+    expect(composable).not.toContain('createOptimisticAction')
+    expect(composable).toContain('await $fetch(\'/api/blog/posts/tidy-posts\', { method: \'POST\' })')
+    expect(generated(p.files)['layers/blog/server/api/blog/posts/tidy-posts.post.ts']).toContain('defineEventHandler(async () => {')
+  })
+
+  it('refuses args it does not take, however they are given', () => {
+    const p = quiet()
+    refuse(p, { on: 'click', do: [{ ...tidy, args: {} }] })
+    refuse(p, { on: 'click', do: [{ ...tidy, args: { id: UUID } }] })
+    refuse(p, { on: 'click', do: [{ ...tidy, args: { $form: true } }] })
+    expect(refuse(p, { on: 'click', do: [{ ...tidy, args: {} }] }).message).toContain('takes no input')
+  })
+
+  it('still refuses a missing args for an action that needs input', () => {
+    const p = quiet()
+    refuse(p, { on: 'click', do: [{ kind: 'runAction', action: 'act_publish_post' }] })
+    p.edit('action_create', { entity: 'ent_post', template: 'blank', name: 'draftIt' })
+    refuse(p, { on: 'click', do: [{ kind: 'runAction', action: 'act_draft_it' }] })
+  })
+})
+
 describe('node_interaction_add: navigate and toast', () => {
   it('goes to a page, with its params', () => {
     const p = base()

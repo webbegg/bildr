@@ -149,7 +149,10 @@ async function addConnection() {
   if (result) {
     editor.connectionId = result.datasourceId
     cancelConnection()
+    return
   }
+  // Nothing was made, and the user may just have agreed to discard edits that are still on the screen.
+  editor.reportDirtyAgain()
 }
 
 function cancelConnection() {

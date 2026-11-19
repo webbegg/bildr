@@ -1,3 +1,4 @@
+import { AUTO_IMPORTED_FUNCTION_NAMES, pageNodeNames, RESERVED_PAGE_NAMES } from '@bildr/codegen/edit'
 import type { ModelNode, PageFile } from '@bildr/codegen/model'
 import { routeParams } from './interactionValues.ts'
 
@@ -8,27 +9,13 @@ import { routeParams } from './interactionValues.ts'
  * record instead), not a route parameter, and not one the page's script uses itself or Vue and Nuxt provide to it.
  *
  * The module refuses a name its script cannot declare (`page_use_add`, `page_computed_set`) and is the last word; this one is the
- * names offered, so the module is not asked for one it refuses. The two lists below are copied from `packages/codegen/src/edit`
- * (`RESERVED` of queries.ts, and `AUTO_IMPORTED_FUNCTIONS` of reserved-names.ts, which the package does not export); a test reads them
- * against the module's, so a name in them it does not refuse fails. The composables (`use…`) the generator and Nuxt auto-import are
- * left out by shape, not listed.
+ * names offered, so the module is not asked for one it refuses. The reserved names, the auto-imported functions and the names a page's
+ * nodes declare (`on<Node><Event>`, `shown<Node>`) are the module's own, read from `@bildr/codegen/edit`. The composables (`use…`)
+ * the generator and Nuxt auto-import are left out by shape, not listed: the names of the composables of the page's own uses need the
+ * module, which is the last word on them.
  */
 
 export type UseKind = 'state' | 'query' | 'action' | 'computed'
-
-/** The names the generated page script declares itself. */
-export const RESERVED_NAMES = ['site', 'layout', 'route', 'form', 'props', 'toast', 'set', 'execute']
-
-/** The functions Vue and Nuxt auto-import into every page's script. */
-export const AUTO_IMPORTED_FUNCTIONS = [
-  'computed', 'customRef', 'defineAsyncComponent', 'defineComponent', 'defineEmits', 'defineExpose', 'defineModel', 'defineProps', 'defineSlots', 'effectScope', 'getCurrentInstance',
-  'getCurrentScope', 'h', 'inject', 'isProxy', 'isReactive', 'isReadonly', 'isRef', 'markRaw', 'nextTick', 'onActivated', 'onBeforeMount', 'onBeforeUnmount', 'onBeforeUpdate',
-  'onDeactivated', 'onErrorCaptured', 'onMounted', 'onScopeDispose', 'onServerPrefetch', 'onUnmounted', 'onUpdated', 'provide', 'reactive', 'readonly', 'ref', 'resolveComponent',
-  'shallowReactive', 'shallowReadonly', 'shallowRef', 'toRaw', 'toRef', 'toRefs', 'toValue', 'triggerRef', 'unref', 'watch', 'watchEffect', 'watchPostEffect', 'watchSyncEffect', 'withDefaults',
-  'abortNavigation', 'addRouteMiddleware', 'callOnce', 'clearError', 'clearNuxtData', 'clearNuxtState', 'createError', 'defineNuxtComponent', 'defineNuxtPlugin', 'defineNuxtRouteMiddleware',
-  'definePageMeta', 'defineRouteRules', 'isNuxtError', 'isPrerendered', 'loadPayload', 'navigateTo', 'onBeforeRouteLeave', 'onBeforeRouteUpdate', 'onNuxtReady', 'prefetchComponents',
-  'preloadComponents', 'preloadRouteComponents', 'refreshCookie', 'refreshNuxtData', 'reloadNuxtApp', 'setPageLayout', 'setResponseStatus', 'showError', 'updateAppConfig'
-]
 
 const capital = (name: string): string => name.charAt(0).toUpperCase() + name.slice(1)
 
@@ -46,8 +33,9 @@ const itemNames = (node: ModelNode): string[] => [
   ...(node.children ?? []).flatMap(itemNames)
 ]
 
-/** The names the page has: its uses and what they derive, its Lists' record names and its route parameters. */
+/** The names the page has: its uses and what they derive, its Lists' record names, the names its nodes declare and its route parameters. */
 const takenBy = (page: PageFile): Set<string> => new Set([
+  ...pageNodeNames(page),
   ...(page.uses?.state ?? []).flatMap(use => declaredBy(use.as, 'state')),
   ...(page.uses?.queries ?? []).flatMap(use => declaredBy(use.as, 'query')),
   ...(page.uses?.actions ?? []).flatMap(use => declaredBy(use.as, 'action')),
@@ -57,7 +45,7 @@ const takenBy = (page: PageFile): Set<string> => new Set([
 ])
 
 /** A name the script uses itself or gets from Vue and Nuxt; `use…` is how a composable of theirs starts, so the name asked for is not that. */
-const provided = (name: string): boolean => RESERVED_NAMES.includes(name) || AUTO_IMPORTED_FUNCTIONS.includes(name)
+const provided = (name: string): boolean => RESERVED_PAGE_NAMES.includes(name) || AUTO_IMPORTED_FUNCTION_NAMES.includes(name)
 
 /** `base`, or `base2`, `base3`…: the first name of a use of `kind` the page can give, with the names it would derive. */
 export function freeAlias(page: PageFile, base: string, kind: UseKind): string {

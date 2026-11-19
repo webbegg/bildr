@@ -162,6 +162,8 @@ async function save() {
   saving.value = false
   if (!created) {
     error.value = editor.error ?? 'Could not save the collection'
+    // Nothing was made, and the user may just have agreed to discard edits that are still on the screen.
+    editor.reportDirtyAgain()
     return
   }
   saved = true

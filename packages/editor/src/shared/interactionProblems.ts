@@ -41,7 +41,11 @@ const runActionProblems = (env: Env, step: RunActionDraft): string[] => {
   const action = actionOf(env.model, step.action)
   if (!action) return ['This action no longer exists']
   const { args } = step
-  if (args.mode === 'none') return [action.input.params?.length ? `Choose a value for ${action.input.params[0]!.name}` : 'Choose what it gets']
+  if (args.mode === 'none') {
+    // An action that takes no input has nothing to choose: it is run as it is.
+    if (!action.input.entity && !action.input.params?.length) return []
+    return [action.input.params?.length ? `Choose a value for ${action.input.params[0]!.name}` : 'Choose what it gets']
+  }
   if (args.mode === 'param') {
     const problem = valueProblem(args.value, targetOf(env, step), `Choose a value for ${args.name}`)
     return problem ? [problem] : []

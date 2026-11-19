@@ -6,10 +6,14 @@
  * section, and a new interaction left unfinished is kept as a row that says it is not saved. The page's file is checked after
  * each step, and the running app still renders it.
  *
+ * An action that takes no input (B7) is made in setup (a blank action whose input is taken away: the one place a module action is
+ * called). The Button's click runs it from the inspector with nothing to choose, the file holds the step with no `args`, and a click on
+ * the Button in the running app calls the action's route.
+ *
  * (`interactions.mjs` is the component's variant interactions, the hover and click of a card, written by the module's actions.)
  * Shots go to e2e/module/.shots/.
  */
-import { appShows, bildr, check, findNode, openEditor, quiesce, quiet, run, shot, until } from './lib.mjs'
+import { action, appShows, bildr, check, findNode, openApp, openEditor, quiesce, quiet, run, shot, until } from './lib.mjs'
 
 const INDEX = 'modules/blog/pages/index.json'
 
@@ -17,6 +21,10 @@ await run('node-interactions', async ({ page, browser, errors }) => {
   const head = () => findNode(bildr(INDEX).root, node => node.id === 'n_head')
   const section = page.locator('[data-node-interactions]')
   const fields = page.locator('[data-node-interaction-fields]')
+
+  // Setup: an action that takes no input (a blank action over Post, whose input is taken away). Nothing else here calls a module action.
+  await action('action_create', { entity: 'ent_post', template: 'blank', name: 'tidyPosts' })
+  await action('action_update', { action: 'act_tidy_posts', input: {} })
 
   await openEditor(page, 'pg_index')
 
@@ -111,6 +119,43 @@ await run('node-interactions', async ({ page, browser, errors }) => {
   check(!head().children.find(node => node.id === button.id).interactions, 'and nothing was written')
   await section.locator('[data-node-interaction-delete]').click()
   check(await until(async () => await section.locator('[data-interactions-empty]').count() === 1), 'removing it drops the draft')
+
+  // Click → Run action on an action that takes no input: nothing to choose, no `args` in the file, and the running app calls it.
+  await section.locator('[data-section-action="add"]').click()
+  await page.getByRole('menuitem', { name: 'Click', exact: true }).click()
+  await fields.waitFor()
+  await page.locator('[data-interaction-add-step]').click()
+  await page.getByRole('menuitem', { name: 'Run action', exact: true }).click()
+  await page.locator('[data-step="0"] [data-step-action]').click()
+  const choices = (await page.getByRole('option').allInnerTexts()).map(choice => choice.replace(/\s+/g, ' ').trim())
+  check(choices.includes('Tidy posts'), `the action that takes no input is a choice, not disabled with a reason (${choices.join(' | ')})`)
+  await page.getByRole('option', { name: 'Tidy posts', exact: true }).click()
+  check(await until(async () => (await page.locator('[data-step="0"] [data-step-no-input]').innerText()).trim() === 'This action takes no input'), 'the step says it takes no input, and asks for nothing')
+  const tidy = await until(() => head().children.find(node => node.id === button.id).interactions && head().children.find(node => node.id === button.id))
+  check(JSON.stringify(tidy?.interactions) === JSON.stringify([{ on: 'click', do: [{ kind: 'runAction', action: 'act_tidy_posts' }] }]), `the file has click → run the action, with no args (${JSON.stringify(tidy?.interactions)})`)
+  check(bildr(INDEX).uses.actions?.some(use => use.action === 'act_tidy_posts'), 'and the page uses the action')
+  check(await until(async () => (await section.locator('[data-node-interaction-toggle]').innerText()).replace(/\s+/g, ' ').trim() === 'When Click → Run Tidy posts'), 'the row reads "When Click → Run Tidy posts"')
+  await section.evaluate(element => element.scrollIntoView({ block: 'center' }))
+  await page.waitForTimeout(300)
+  await shot(page, 'b7-interactions-no-input-action')
+  check(await quiesce(60_000), 'the app regenerates with the action called with nothing')
+  await quiet()
+  const context = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  try {
+    const live = await openApp(context, '/')
+    const label = tidy.props?.text ?? 'Button'
+    const seen = []
+    live.on('request', request => seen.push(`${request.method()} ${request.url().replace(/^https?:\/\/[^/]+/, '')}`))
+    live.on('pageerror', error => seen.push(`pageerror: ${error.message}`))
+    const tidyButton = live.locator('button', { hasText: label }).first()
+    await tidyButton.waitFor({ timeout: 30_000 })
+    const answered = live.waitForResponse(answer => answer.request().method() === 'POST' && answer.url().includes('/api/blog/posts/tidy-posts'), { timeout: 30_000 }).catch(() => undefined)
+    await tidyButton.click()
+    const response = await answered
+    check(!!response?.ok(), `a click on the Button in the running app calls the action (${response ? response.status() : `no call; the page made ${seen.join(', ')}; its buttons: ${(await live.locator('button').allInnerTexts()).join(' | ')}`})`)
+  } finally {
+    await context.close()
+  }
 
   // The checkbox's change, as the golden blog has it.
   await page.locator('[data-layer-id="n_toggle"]').click()

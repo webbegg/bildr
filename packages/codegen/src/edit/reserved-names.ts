@@ -82,6 +82,9 @@ const AUTO_IMPORTED_FUNCTIONS: Record<string, string[]> = {
   ]
 }
 
+/** Every function Vue and Nuxt auto-import into a page's script, by name: what the editor leaves out when it offers a name. */
+export const AUTO_IMPORTED_FUNCTION_NAMES: readonly string[] = Object.values(AUTO_IMPORTED_FUNCTIONS).flat()
+
 /** Why a state or a page use can't be called `name` (it is an auto-imported function or composable the generated code uses), or undefined. */
 export const autoImportedNameProblem = (name: string): string | undefined => {
   const provider = providerOf(name) ?? Object.entries(AUTO_IMPORTED_FUNCTIONS).find(([, names]) => names.includes(name))?.[0]

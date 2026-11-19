@@ -582,6 +582,34 @@ describe('a Run action step', () => {
   })
 })
 
+describe('a Run action step on an action that takes no input (B7)', () => {
+  /** An action of the blog with neither a collection's row nor a parameter. */
+  const addPing = () => world.model.modules.blog!.actions.push({
+    id: 'act_ping', name: 'ping', label: 'Ping', http: { method: 'POST', path: '/posts/ping' }, input: {}, errors: [],
+    steps: [{ kind: 'return', if: true, value: { $var: 'undefined' } }], client: { invalidates: [] }
+  })
+
+  it('lists it enabled, says it takes no input, and writes the step with no args', async () => {
+    addPing()
+    addButton()
+    const { actions } = await mounted('pg_index')
+    await select('n_open')
+    sectionAdd('data-node-interactions').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))
+    await settle()
+    qa('[role^="menuitem"]').find(item => text(item) === 'Click')!.click()
+    await settle()
+    await addStep('Run action')
+    expect(await optionLabels(combo('[data-step="0"] [data-step-action]'))).toEqual(['Create post (needs a form around this element)', 'Publish post', 'Ping'])
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await settle()
+    await choose('[data-step="0"] [data-step-action]', 'Ping')
+    expect(text(must('[data-step="0"] [data-step-no-input]'))).toBe('This action takes no input')
+    expect(calls(actions, 'node_interaction_add')).toEqual([{ file: 'pg_index', nodeId: 'n_open', on: 'click', do: [{ kind: 'runAction', action: 'act_ping' }] }])
+    expect(indexPage().uses!.actions).toEqual([{ as: 'ping', action: 'act_ping' }])
+    expect(rowTexts()).toEqual(['When Click → Run Ping'])
+  })
+})
+
 describe('the order of steps', () => {
   it('offers after an action only Go to page and Show message, and writes the ones after it with when: success', async () => {
     const { actions } = await mounted('pg_post_detail')

@@ -163,6 +163,20 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
     session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_3', on: 'click', do: [{ kind: 'navigate', to: { page: 'pg_post_detail', params: { slug: { $bind: 'post.slug' } } } }] })
     session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_3', on: 'mouseenter', do: [{ kind: 'toast', title: { $bind: 'reading.note', fallback: 'No note' }, color: 'info' }] })
   }],
+  // B7: an action with neither parameters nor a collection input is run with nothing, inline and from a script handler.
+  ['an action that takes no input, run with no args', (session) => {
+    session.edit('action_create', { entity: 'ent_post', template: 'blank', name: 'tidyPosts' })
+    session.edit('action_update', { action: 'act_tidy_posts', input: {} })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_head', type: 'Button', props: { text: 'Tidy' } })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_1', on: 'click', do: [{ kind: 'runAction', action: 'act_tidy_posts' }] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_1', on: 'mouseenter', do: [
+      { kind: 'runAction', action: 'act_tidy_posts' },
+      { kind: 'toast', when: 'success', title: 'Tidied' },
+      { kind: 'navigate', when: 'success', to: { page: 'pg_new_post' } }
+    ] })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_head', type: 'Button', props: { text: 'Tidy and say' } })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_2', on: 'click', do: [{ kind: 'runAction', action: 'act_tidy_posts' }, { kind: 'toast', when: 'success', title: 'Done' }] })
+  }],
   ['computed values that read each other, and a List that shows one', (session) => {
     session.edit('page_computed_set', { page: 'pg_index', as: 'label', if: { not: { $bind: 'preferences.showDrafts' } }, then: 'Featured posts', else: 'All posts' })
     session.edit('page_computed_set', { page: 'pg_index', as: 'heading', if: { $bind: 'preferences.showDrafts' }, then: { $bind: 'label' }, else: 'Posts' })

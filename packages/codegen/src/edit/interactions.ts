@@ -18,6 +18,8 @@ import { findNode, walk } from './tree.ts'
  * silently ignore:
  *
  * - `setState {state, field, value}`, `runAction {action, args}`, `navigate {to: {page, params}}` and `toast {title, …}`; `setVariant` is not generated.
+ *   `args` of a `runAction` is `{ $form: true }`, the one argument the action takes, or none at all: an action with neither parameters
+ *   nor a collection input is run with nothing (`alias()`), and is refused any `args`; an action that needs input is refused a missing one.
  * - Events: click, change, submit, mouseenter, mouseleave; `appear` is not generated. Only a Button, a Checkbox and a Form get events.
  * - One step is an inline handler (`@click="setX({ … })"`); several steps, or a submit, are a script handler that runs an action, then
  *   the navigate and toast steps that follow when it worked (`when: "success"`), or navigate and toast steps in order.
@@ -60,7 +62,7 @@ const atStep = (step: Step, index: number): string => `${at(index)} (${stepName(
 
 const FileRef = ArtifactIdSchema.describe('The artifact id of a page, component or layout (pg_*, cmp_*, lay_*)')
 const Event = z.enum(INTERACTION_EVENTS).describe('click, change (a Checkbox), submit (a Form), mouseenter or mouseleave; appear is not generated yet')
-const Steps = z.array(UiStepSchema).min(1).max(10).describe('The steps, in order: Set state { kind: "setState", state, field, value }, Run action { kind: "runAction", action, args }, Go to page { kind: "navigate", to: { page, params? } }, Show message { kind: "toast", title, description?, color?, icon? }. After an action, further Go to page and Show message steps take when: "success". setVariant is not generated yet')
+const Steps = z.array(UiStepSchema).min(1).max(10).describe('The steps, in order: Set state { kind: "setState", state, field, value }, Run action { kind: "runAction", action, args? } (no args for an action that takes no input), Go to page { kind: "navigate", to: { page, params? } }, Show message { kind: "toast", title, description?, color?, icon? }. After an action, further Go to page and Show message steps take when: "success". setVariant is not generated yet')
 
 /** The nodes from the tree's root down to node `id`, inclusive. */
 const chainTo = (root: ModelNode, id: string): ModelNode[] => {
@@ -163,6 +165,11 @@ const checkRunAction = (check: Check, context: ExpressionContext, step: Step, wh
   const page = check.tree.owner as PageFile
   const action = actionOf(check.draft, page, step.action)
   const args = step.args
+  // An action with neither parameters nor a collection input is run with nothing: `alias()`. Args it can't read would be dropped or break the call.
+  if (!action.input.entity && !(action.input.params ?? []).length) {
+    if (args !== undefined) fail('invalid', `${where}: ${action.name} takes no input, so the step has no args`)
+    return
+  }
   if (!isObject(args)) return fail('invalid', `${where}: args is { "$form": true } or the one argument the action takes, like { "id": … }`)
   if ('$form' in args) {
     if (Object.keys(args).length !== 1 || args.$form !== true) fail('invalid', `${where}: the form is { "$form": true }`)
@@ -191,8 +198,6 @@ const checkRunAction = (check: Check, context: ExpressionContext, step: Step, wh
     if (type && (type.shape !== 'row' || type.entity !== action.input.entity)) {
       fail('invalid', `${where}: ${action.name} takes one whole row of ${entityNameOf(check.draft, action.input.entity)} (a row of it the page reads, or { "$form": true }), but ${describeValue(value)} is ${describeTyped(check.draft, type)}`)
     }
-  } else {
-    fail('invalid', `${where}: ${action.name} takes no input to give`)
   }
 }
 

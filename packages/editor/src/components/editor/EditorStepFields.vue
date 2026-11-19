@@ -93,6 +93,12 @@ const paramNames = computed(() => {
 })
 
 const setStateModes = computed(() => (props.step.kind === 'setState' ? valueModes(props.env, props.steps, props.index) : undefined))
+/** The chosen action is one that takes no input: the step has nothing to ask. */
+const takesNoInput = computed(() => {
+  const step = props.step
+  const action = step.kind === 'runAction' ? actionsFor(props.env).find(entry => entry.id === step.action) : undefined
+  return !!action && actionUse(props.env, action).how === 'none'
+})
 const paramModes = computed(() => (props.step.kind === 'runAction' && props.step.args.mode === 'param' ? valueModes(props.env, props.steps, props.index) : undefined))
 const navigateModes = (name: string) => valueModes(props.env, props.steps, props.index, name)
 
@@ -197,6 +203,17 @@ function setText(key: 'title' | 'description', value: string) {
           data-step-form
         >
           The values of the form
+        </p>
+      </EditorRow>
+      <EditorRow
+        v-else-if="step.args.mode === 'none' && takesNoInput"
+        label="Input"
+      >
+        <p
+          class="text-[11px] text-dimmed"
+          data-step-no-input
+        >
+          This action takes no input
         </p>
       </EditorRow>
       <EditorRow
