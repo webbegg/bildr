@@ -4,7 +4,11 @@ import type { ModelNode, QueryFile, Value } from '@bildr/codegen/model'
 import { CONDITION_OPS } from '@bildr/codegen/model'
 import { entityFieldNames, queryBehind } from '@bildr/codegen/edit'
 import { FIELD, FIELD_RING } from '../editorUi.ts'
+import { isExpression } from '../shared/bindings.ts'
+import { computedValues } from '../shared/listSource.ts'
+import ListConditionForm from './ListConditionForm.vue'
 import { useDesign } from './store.ts'
+import { useListCondition } from './useListCondition.ts'
 
 /**
  * A List's source (P5, mapping §4): the query it reads, picked among the page's uses or created
@@ -13,6 +17,11 @@ import { useDesign } from './store.ts'
  * this use reads the query, a copy `q_<page>_<as>` when others do (Q5). A limit the query takes as
  * a parameter is the page's argument (`page_use_update`). It sits in the inspector's Behaviour section
  * of a List, in the kit's field look.
+ *
+ * "Depends on a condition" (B4, S4) makes the source "if <a true or false value> then <list> else <list>", the page's computed value
+ * the List's `items` bind (`useListCondition` reads and writes it, `ListConditionForm` is its form). Each branch's query keeps its own
+ * sort, filter and limit below, named by the branch (Then, Otherwise): the two lists are different queries, and what they show is
+ * theirs to set, so the condition only chooses between them.
  */
 
 const props = defineProps<{ node: ModelNode }>()
@@ -20,35 +29,33 @@ const design = useDesign()
 const field = `${FIELD} ${FIELD_RING} w-full min-w-0 px-2 text-default`
 const small = `${FIELD} ${FIELD_RING} min-w-0 px-1.5 text-default disabled:opacity-50`
 
-const isExpression = (value: unknown): value is Record<string, Value> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const page = computed(() => design.page.value)
 const model = computed(() => design.model.value)
-const current = computed(() => isExpression(props.node.props?.items) && typeof props.node.props.items.$bind === 'string' ? props.node.props.items.$bind.split('.')[0]! : '')
+const { itemsRoot, condition, form, summary, ifOptions, thenOptions, elseOptions, branchOf, changeCondition, pickSource, busy, failure, formKey } = useListCondition(() => props.node)
+
+/** What the Items select shows: a condition, written or being made, is one entry. */
+const sourceValue = computed(() => (form.value ? 'cond' : itemsRoot.value))
 
 /** The page's uses a List can repeat over: query uses that return many rows, and computed values built from them. */
 const aliases = computed<string[]>(() => {
-  const shown = page.value
-  const current = model.value
-  if (!shown || !current) return []
-  const many = (alias: string) => queryBehind(current, shown, alias)?.result === 'many'
-  return [...(shown.uses?.queries ?? []).map(use => use.as), ...(shown.uses?.computed ?? []).map(use => use.as)].filter(many)
+  const onPage = page.value
+  const inModel = model.value
+  if (!onPage || !inModel) return []
+  const many = (alias: string) => queryBehind(inModel, onPage, alias)?.result === 'many'
+  return [...(onPage.uses?.queries ?? []).map(use => use.as), ...computedValues(onPage).map(use => use.as)].filter(many)
 })
 const entities = computed(() => {
-  const shown = page.value
-  const current = model.value
-  const module = current && shown ? Object.values(current.modules).find(mod => mod.pages.some(entry => entry.id === shown.id)) : undefined
+  const onPage = page.value
+  const inModel = model.value
+  const module = inModel && onPage ? Object.values(inModel.modules).find(mod => mod.pages.some(entry => entry.id === onPage.id)) : undefined
   return (module?.entities ?? []).filter((entity) => {
     const repository = module!.repositories.find(entry => entry.entity === entity.id)
     return repository?.expose?.list && repository.operations.includes('list')
   })
 })
 
-const pickItems = (event: Event) => {
-  const value = (event.target as HTMLSelectElement).value
-  if (!value || !page.value) return
-  if (value.startsWith('new:')) void design.edit('query_create_for_list', { page: page.value.id, entity: value.slice(4), nodeId: props.node.id })
-  else void design.setProps(props.node.id, { items: { $bind: value } })
-}
+/** "Then" for the list a true condition shows, "Otherwise" for the other. */
+const branchText = (alias: string) => (branchOf(alias) === 'then' ? 'Then' : 'Otherwise')
 
 // ── The queries behind the binding ──────────────────────────────────────
 
@@ -56,18 +63,18 @@ interface Source { alias: string, query: QueryFile, args: Record<string, Value> 
 
 /** The query uses behind the List's items: the alias itself, or the branches of a computed alias. */
 const sources = computed<Source[]>(() => {
-  const shown = page.value
-  const current_ = model.value
-  if (!shown || !current_ || !current.value) return []
+  const onPage = page.value
+  const inModel = model.value
+  if (!onPage || !inModel || !itemsRoot.value) return []
   const aliasesBehind = (alias: string, seen: string[] = []): string[] => {
     if (seen.includes(alias)) return []
-    if (shown.uses?.queries?.some(use => use.as === alias)) return [alias]
-    const computed_ = (shown.uses?.computed ?? []).find(use => use.as === alias) as { then?: Value, else?: Value } | undefined
-    return [computed_?.then, computed_?.else].flatMap(branch => isExpression(branch) && typeof branch.$bind === 'string' ? aliasesBehind(branch.$bind.split('.')[0]!, [...seen, alias]) : [])
+    if (onPage.uses?.queries?.some(use => use.as === alias)) return [alias]
+    const entry = computedValues(onPage).find(use => use.as === alias)
+    return [entry?.then, entry?.else].flatMap(branch => isExpression(branch) && typeof branch.$bind === 'string' ? aliasesBehind(branch.$bind.split('.')[0]!, [...seen, alias]) : [])
   }
-  return [...new Set(aliasesBehind(current.value))].flatMap((alias) => {
-    const use = shown.uses!.queries!.find(entry => entry.as === alias)!
-    const query = Object.values(current_.modules).flatMap(mod => mod.queries).find(entry => entry.id === use.query)
+  return [...new Set(aliasesBehind(itemsRoot.value))].flatMap((alias) => {
+    const use = onPage.uses!.queries!.find(entry => entry.as === alias)!
+    const query = Object.values(inModel.modules).flatMap(mod => mod.queries).find(entry => entry.id === use.query)
     return query ? [{ alias, query, args: use.args ?? {} }] : []
   })
 })
@@ -159,21 +166,25 @@ const filterValue = (source: Source, event: Event) => editFilter(source, 'value'
         data-testid="list-items"
         :class="field"
         aria-label="Items"
-        :value="current"
-        @change="pickItems"
+        :value="sourceValue"
+        :disabled="busy"
+        @change="pickSource(($event.target as HTMLSelectElement).value)"
       >
         <option
-          v-if="current && !aliases.includes(current)"
-          :value="current"
+          v-if="itemsRoot && !form && !aliases.includes(itemsRoot)"
+          :value="itemsRoot"
         >
-          {{ current }}
+          {{ itemsRoot }}
         </option>
         <option
-          v-for="alias in aliases"
+          v-for="alias in aliases.filter(entry => entry !== condition?.as)"
           :key="alias"
           :value="alias"
         >
           {{ alias }}
+        </option>
+        <option value="cond">
+          Depends on a condition
         </option>
         <option
           v-for="entity in entities"
@@ -185,15 +196,39 @@ const filterValue = (source: Source, event: Event) => editFilter(source, 'value'
       </select>
     </EditorRow>
 
+    <ListConditionForm
+      v-if="form"
+      :key="formKey"
+      :form="form"
+      :summary="summary"
+      :if-options="ifOptions"
+      :then-options="thenOptions"
+      :else-options="elseOptions"
+      :busy="busy"
+      @change="changeCondition"
+    />
+    <p
+      v-if="failure"
+      class="text-[12px] leading-4 text-error"
+      role="alert"
+      data-testid="list-condition-error"
+    >
+      {{ failure }}
+    </p>
+
     <div
       v-for="source in sources"
       :key="source.alias"
       class="flex flex-col gap-1.5 rounded-lg bg-elevated/60 p-2 text-[12px]"
       data-testid="source"
       :data-alias="source.alias"
+      :data-branch="branchOf(source.alias)"
     >
       <div class="font-[550] text-highlighted">
-        {{ source.query.label }} <span class="font-normal text-dimmed">as {{ source.alias }}</span>
+        <span
+          v-if="branchOf(source.alias)"
+          class="me-1 font-normal text-dimmed"
+        >{{ branchText(source.alias) }}:</span>{{ source.query.label }} <span class="font-normal text-dimmed">as {{ source.alias }}</span>
       </div>
       <div class="grid grid-cols-[3.5rem_1fr_auto] items-center gap-1 text-dimmed">
         Sort

@@ -50,7 +50,7 @@ interface Typed {
   undef?: boolean
 }
 
-interface FieldLike {
+export interface FieldLike {
   name: string
   type: FieldType
   required?: boolean
@@ -79,6 +79,9 @@ const propertyTyped = (property: PropertyDef, layout: boolean): Typed | undefine
 }
 
 const accepts = (expect: Expect, type: Typed): boolean => expect.prims.includes(type.prim) && (!type.null || !!expect.null) && (!type.undef || !!expect.undef)
+
+/** Whether a state's (or any) field, typed as the generated app types it, is a value `expect` takes (B4: the State a prop can bind to). */
+export const fieldAccepted = (expect: Expect, field: FieldLike): boolean => accepts(expect, fieldTyped(field))
 
 const pageOf = (model: Model, id: string): PageFile | undefined => Object.values(model.modules).flatMap(mod => mod.pages).find(page => page.id === id)
 

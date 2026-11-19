@@ -14,7 +14,7 @@ export type PropGroup = typeof PROP_GROUPS[number]
 
 const BY_NAME: Record<string, PropGroup> = {
   text: 'Content', label: 'Content', placeholder: 'Content', alt: 'Content', empty: 'Content', loading: 'Content', as: 'Content',
-  type: 'Behaviour', field: 'Behaviour', href: 'Behaviour', disabled: 'Behaviour', inputType: 'Behaviour', hideWhenEmpty: 'Behaviour', loadMore: 'Behaviour',
+  type: 'Behaviour', field: 'Behaviour', value: 'Behaviour', href: 'Behaviour', disabled: 'Behaviour', inputType: 'Behaviour', hideWhenEmpty: 'Behaviour', loadMore: 'Behaviour',
   variant: 'Appearance', color: 'Appearance', size: 'Appearance', level: 'Appearance', layout: 'Appearance', wrap: 'Appearance'
 }
 

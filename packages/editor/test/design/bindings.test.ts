@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { applyEdit } from '../../../codegen/src/edit/index.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 import { allByTestId, byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
+import { behaviourModule } from '../editor/dataKit.ts'
 import { caretAtEnd, check, choose, combo, find, indexPage, insertComponent, insertType, menuLabels, open, optionLabels, pickOpenItem, propInput, propRow, propSelect, select, selectOption, setupHarness, variablePicker, world } from './harness.ts'
 
 /**
@@ -24,19 +25,20 @@ const options = (id: string) => [...(byTestId(id) as HTMLSelectElement).options]
 
 describe('a List\'s source', () => {
   it('picks among the page\'s lists and offers a new query for each entity', async () => {
-    const outcomes: unknown[] = []
-    const { actions } = await open({ node_update_props: ok(), query_create_for_list: real('query_create_for_list', outcomes) }, 'pg_index')
+    const { actions } = await open(behaviourModule(), 'pg_index')
     await select('n_list')
-    expect(options('list-items')).toEqual(['featured', 'all', 'quotes', 'posts', 'new:ent_post', 'new:ent_quote'])
-    expect((byTestId('list-items') as HTMLSelectElement).value).toBe('posts')
+    // `posts` is a condition (B4): it is the "Depends on a condition" entry, not a name.
+    expect(options('list-items')).toEqual(['featured', 'all', 'quotes', 'cond', 'new:ent_post', 'new:ent_quote'])
+    expect((byTestId('list-items') as HTMLSelectElement).value).toBe('cond')
 
     await choose('list-items', 'all')
     await choose('list-items', 'new:ent_post')
 
     expect(actions.named('node_update_props').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_list', props: { items: { $bind: 'all' } } }])
     expect(actions.named('query_create_for_list').map(call => call.input)).toEqual([{ page: 'pg_index', entity: 'ent_post', nodeId: 'n_list' }])
-    // pg_index already uses "posts": the module takes the next free name instead of refusing, and the List is bound to it.
-    expect(outcomes).toMatchObject([{ ok: true, result: { as: 'posts2' } }])
+    // The List left `posts`, which nothing else reads, so it went; the new query took the next free name, and the List is bound to it.
+    expect(actions.named('page_computed_remove').map(call => call.input)).toEqual([{ page: 'pg_index', as: 'posts' }])
+    expect(find(indexPage().root, 'n_list')!.props!.items).toEqual({ $bind: 'posts' })
     expect(byTestId('design-error')).toBeNull()
   })
 

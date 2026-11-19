@@ -12,6 +12,10 @@ import type { BindingDotAction } from '../../shared/bindingDot.ts'
 import { propertyValues, styleBindCandidates, unbindLabel, variantOverridden } from '../../shared/bindingDot.ts'
 import { appendProblem, pathToken, textValue, valueText } from '../../shared/bindings.ts'
 import { propBindingAdd, styleBindingAdd } from '../../shared/componentEditor.ts'
+import { stateChoices, statePropExpect } from '../../shared/stateBinding.ts'
+import type { StateChoice } from '../../shared/stateBinding.ts'
+import { bindPropToState } from '../../editor/stateUse.ts'
+import { placeOf } from '../../editor/useInteractionDraft.ts'
 import { BINDABLE } from '../../shared/nodeProps.ts'
 import type { PropDef } from '../../shared/nodeProps.ts'
 
@@ -39,6 +43,10 @@ type PropertyBinding = NonNullable<PropertyDef['bindings']>[number]
  * overrides (or removes), the menu offers Reset override. Each pick is one
  * action, one undo step. The bound row itself shows the property's chip
  * (EditorBindingValue, which shares this state through `useBinding`).
+ *
+ * On a page, a prop that takes State (a Checkbox's value, the text a node shows, B4) lists the fields of the module's States the prop
+ * can read, under each State's label: a field of a State the page does not use yet is bound the same way, the page's use being
+ * added first (`bindPropToState`: a refused bind takes the use off again).
  */
 const props = defineProps<{
   mode: 'style' | 'prop'
@@ -120,6 +128,19 @@ const driveable = computed(() => props.mode === 'style' || (!!single.value && !!
 const readable = computed(() => (props.mode === 'prop' && single.value ? bindingPaths(editor.scopeOf(single.value.id), { leaves: true }) : []))
 const scopeNames = computed(() => (single.value ? editor.scopeOf(single.value.id).map(entry => entry.name) : []))
 
+/** The State fields this prop can read (a page only): the used ones and the ones a pick would add the use of. */
+const stateOptions = computed<StateChoice[]>(() => {
+  const node = single.value
+  const model = editor.model
+  const expect = props.mode === 'prop' && node ? statePropExpect(node.type, props.name, node.props) : undefined
+  return expect && model ? stateChoices(model, placeOf(editor, node!.id), expect) : []
+})
+
+const bindState = (choice: StateChoice) => {
+  const node = single.value
+  if (node) void bindPropToState(editor, node, props.name, choice)
+}
+
 const swatchItems = computed(() => {
   if (!token.value || !editor.theme) return []
   if (!isColor.value) return token.value.values.map(value => ({ label: value, onSelect: () => pick(value) }))
@@ -168,6 +189,15 @@ const items = computed<DropdownMenuItem[][]>(() => {
     // A brace group that is no name cannot sit in a template (the model has no escape): the text must change first.
     const problem = readable.value.length ? appendProblem(text, readable.value[0]!, scopeNames.value) : undefined
     groups.push([{ label: 'Bind to data', icon: 'i-lucide-braces', disabled: !names.length || !!problem, ...(problem ? { description: problem } : {}), children: names }])
+  }
+  // One group per State: its label, then the fields the prop can read.
+  const byState = new Map<string, StateChoice[]>()
+  for (const choice of stateOptions.value) byState.set(choice.state, [...byState.get(choice.state) ?? [], choice])
+  for (const choices of byState.values()) {
+    groups.push([
+      { type: 'label', label: choices[0]!.stateLabel },
+      ...choices.map(choice => ({ label: choice.field, icon: 'i-lucide-database', description: choice.used ? 'Used on this page' : 'State, added to this page', onSelect: () => bindState(choice) }))
+    ])
   }
   return groups
 })

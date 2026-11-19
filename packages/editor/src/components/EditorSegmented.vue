@@ -9,7 +9,7 @@ import { FIELD, FOCUS_RING } from '../editorUi.ts'
  * segments show their label in a delayed tooltip; `dense` (the default) is the
  * kit's 30 px field (FIELD in editorUi.ts), `:dense="false"` a 28 px inset track.
  * The pill and segments are `rounded-md` (6 px), concentric inside the 8 px
- * track's 2 px inset.
+ * track's 2 px inset. `disabled` dims the track and takes no click.
  */
 const props = withDefaults(defineProps<{
   items: { value: string, label: string, icon?: string }[]
@@ -18,7 +18,8 @@ const props = withDefaults(defineProps<{
   fallback?: string
   tooltips?: boolean
   dense?: boolean
-}>(), { inherited: undefined, fallback: undefined, dense: true })
+  disabled?: boolean
+}>(), { inherited: undefined, fallback: undefined, dense: true, disabled: false })
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 
 const shown = computed(() => props.modelValue ?? props.inherited ?? props.fallback)
@@ -30,7 +31,7 @@ const isInherited = (value: string) => props.modelValue === undefined && value =
 <template>
   <div
     class="relative flex min-w-0 p-0.5"
-    :class="dense ? `${FIELD} w-full` : 'h-7 rounded-lg bg-muted'"
+    :class="[dense ? `${FIELD} w-full` : 'h-7 rounded-lg bg-muted', disabled && 'opacity-50']"
     role="group"
   >
     <span
@@ -55,6 +56,7 @@ const isInherited = (value: string) => props.modelValue === undefined && value =
           : tone === 'set' ? 'text-highlighted' : 'text-toned']"
         :aria-label="item.label"
         :aria-pressed="item.value === modelValue"
+        :disabled="disabled"
         :data-inherited="isInherited(item.value) || undefined"
         @click="emit('update:modelValue', item.value)"
       >

@@ -58,6 +58,36 @@ export const stateModule = (): Handlers => moduleEdits(['state_create', 'state_u
 /** The node interaction actions (B3), the real ones over the mocked model: what the inspector's Interactions write, and the module's own refusals of it. */
 export const interactionModule = (): Handlers => moduleEdits(['node_interaction_add', 'node_interaction_update', 'node_interaction_remove'])
 
+/**
+ * What binding a prop to State and a List to a condition write (B4), the real ones over the mocked model: the state's use of a page, the
+ * prop, the computed value, and the module's own refusals of them.
+ */
+export const behaviourModule = (): Handlers => moduleEdits(['node_update_props', 'page_use_add', 'page_use_remove', 'page_computed_set', 'page_computed_remove', 'query_create_for_list', 'query_update'])
+
+/**
+ * The module's undo over `handlers` (the mocked model): `history_undo` puts the model back as it was before the last edit that
+ * changed it, one edit at a time, as the module's history does (every action is a step of its own). `history_get` counts the steps.
+ */
+export const withHistory = (handlers: Handlers): Handlers => {
+  const steps: Array<typeof world.model> = []
+  const recorded = Object.fromEntries(Object.entries(handlers).map(([name, handler]) => [name, (input: Record<string, unknown>) => {
+    const before = world.model
+    const out = handler(input)
+    if (!(out instanceof Failure) && world.model !== before) steps.push(before)
+    return out
+  }]))
+  return {
+    ...recorded,
+    history_get: () => ({ undo: steps.map(() => ({ action: 'edit' })), redo: [] }),
+    history_undo: () => {
+      const before = steps.pop()
+      if (!before) return new Failure(409, 'conflict', 'Nothing to undo')
+      world.model = before
+      return { action: 'edit', files: [] }
+    }
+  }
+}
+
 /** The sample-data actions (D4), the real ones over the mocked model: a cell saved here is the row the Rows tab shows next. */
 export const fixtureModule = (): Handlers => moduleEdits(['fixture_row_create', 'fixture_row_update', 'fixture_rows_delete'])
 

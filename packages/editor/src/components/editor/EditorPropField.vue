@@ -10,6 +10,7 @@ import { BINDABLE } from '../../shared/nodeProps.ts'
 import type { PropDef } from '../../shared/nodeProps.ts'
 import { propOptions } from '../../shared/propGroups.ts'
 import { pageOptionLabel } from '../../shared/sidebar.ts'
+import { propLock } from '../../shared/stateBinding.ts'
 
 /**
  * One prop row, Framer's label-column look: a grey label (blue when the
@@ -30,6 +31,9 @@ import { pageOptionLabel } from '../../shared/sidebar.ts'
  * binding on a prop that is not bindable, any expression on a boolean, select, number, icon or page prop) shows
  * as a read-only chip with Unbind, so an edit never replaces it by accident: only Unbind or a new commit does.
  * A link to a page is a `{ page }` value (`to`), the pages of the project listed by name.
+ *
+ * A prop the node cannot take by hand (`propLock`: the value of a Checkbox that fills a Form field, which the Form gives it) is shown
+ * disabled, without the binding dot, and says why under the control.
  */
 const props = defineProps<{ def: PropDef, value: Value, changed: boolean, bindable?: boolean }>()
 const emit = defineEmits<{ update: [value: Value | null], reset: [] }>()
@@ -37,6 +41,8 @@ const editor = useEditor()
 const binding = useBinding('prop', () => props.def.name)
 /** Bound to a property here: the property's chip takes the control's place. */
 const chipped = computed(() => !!props.bindable && !!binding.ownBound.value)
+/** Why this prop can't be set or bound by hand on the selected node, when it can't. */
+const lock = computed(() => (editor.selected ? propLock(editor.selected.type, props.def.name, editor.selected.props) : undefined))
 
 const provenance = computed<Provenance>(() => (props.changed ? { state: 'set', key: props.def.name, value: valueText(props.value) || (isExpression(props.value) ? expressionText(props.value) : String(props.value)) } : { state: 'unset' }))
 const BOOLEAN_ITEMS = [{ value: 'true', label: 'On' }, { value: 'false', label: 'Off' }]
@@ -87,7 +93,7 @@ const setOption = (value: string) => emit('update', props.def.numeric ? Number(v
       :data-field-label="def.name"
     >
       <EditorBindingDot
-        v-if="bindable"
+        v-if="bindable && !lock"
         mode="prop"
         :name="def.name"
         :prop="def"
@@ -160,6 +166,7 @@ const setOption = (value: string) => emit('update', props.def.numeric ? Number(v
         dense
         :model-value="String(value === true)"
         :items="BOOLEAN_ITEMS"
+        :disabled="!!lock"
         :aria-label="def.label"
         @update:model-value="emit('update', $event === 'true')"
       />
@@ -185,6 +192,13 @@ const setOption = (value: string) => emit('update', props.def.numeric ? Number(v
         class="w-full"
         @update:model-value="setPage"
       />
+      <p
+        v-if="lock"
+        class="mt-1 text-[12px] leading-4 text-dimmed"
+        data-prop-locked
+      >
+        {{ lock }}
+      </p>
     </div>
   </div>
 </template>

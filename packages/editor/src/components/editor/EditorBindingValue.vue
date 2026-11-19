@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { Value } from '@bildr/codegen/model'
+import { computed } from 'vue'
 import { useBinding } from '../../editor/useBinding.ts'
 import { expressionText } from '../../shared/bindings.ts'
+import { stateChip } from '../../shared/stateBinding.ts'
 
 /**
  * A bindable row's value column, Framer's token chip: while the row's own
@@ -12,11 +14,19 @@ import { expressionText } from '../../shared/bindings.ts'
  *
  * `expression` (a prop value that is an expression the row's control cannot hold, `$bind`
  * out of scope and the like) is a chip too, read-only: it shows the expression, and × (Unbind,
- * `unbind`) is the only way to replace it from here.
+ * `unbind`) is the only way to replace it from here. A binding of a State field the page uses reads "showDrafts · Blog preferences"
+ * (the field, then the State's label), not its path (B4, S3).
  */
 const props = defineProps<{ mode: 'style' | 'prop', name: string, expression?: Record<string, Value> }>()
 const emit = defineEmits<{ unbind: [] }>()
 const { editor, ownBound, owner, unbind } = useBinding(() => props.mode, () => props.name)
+/** What the expression chip says, worked out once: a State field as "field · State label", anything else as the expression is. */
+const chip = computed(() => {
+  const state = editor.model && props.expression ? stateChip(editor.model, editor.page?.id ?? '', props.expression) : undefined
+  const text = state?.text ?? (props.expression ? expressionText(props.expression) : '')
+  const title = state ? `Bound to the field ${state.field} of the State ${state.label}: unbind it to edit the value` : `Bound to ${text}: unbind it to edit the value`
+  return { text, title, isState: !!state }
+})
 </script>
 
 <template>
@@ -25,23 +35,24 @@ const { editor, ownBound, owner, unbind } = useBinding(() => props.mode, () => p
     class="flex h-[30px] w-full min-w-0 items-center"
     data-binding-chip
     data-bound-expression
+    :data-bound-state="chip.isState || undefined"
   >
     <div class="flex h-6 min-w-0 items-center rounded-md bg-(--editor-context)/15 text-(--editor-context) ring-1 ring-(--editor-context)/30 ring-inset">
       <span
         class="flex h-full min-w-0 items-center gap-1 ps-1.5 pe-1 text-[12px] font-[550]"
-        :title="`Bound to ${expressionText(expression)}: unbind it to edit the value`"
+        :title="chip.title"
       >
         <UIcon
-          name="i-lucide-braces"
+          :name="chip.isState ? 'i-lucide-database' : 'i-lucide-braces'"
           class="size-3 shrink-0"
         />
-        <span class="truncate">{{ expressionText(expression) }}</span>
+        <span class="truncate">{{ chip.text }}</span>
       </span>
       <button
         type="button"
         class="grid h-full w-5 shrink-0 place-items-center rounded-e-md outline-none hover:bg-(--editor-context)/25 focus-visible:ring-1 focus-visible:ring-(--editor-context)"
         title="Unbind"
-        :aria-label="`Unbind ${expressionText(expression)}`"
+        :aria-label="`Unbind ${chip.text}`"
         data-binding-chip-unbind
         @click="emit('unbind')"
       >

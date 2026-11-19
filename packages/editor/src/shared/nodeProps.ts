@@ -71,7 +71,11 @@ export const NODE_PROP_DEFS: Record<string, PropDef[]> = {
     toggle('multiline', 'Multiline'),
     { name: 'rows', label: 'Rows', kind: 'number', default: 3 }
   ],
-  Checkbox: [text('label', 'Label'), text('field', 'Field', { description: 'The boolean field of the enclosing Form this checkbox fills.' })],
+  Checkbox: [
+    text('label', 'Label'),
+    text('field', 'Field', { description: 'The boolean field of the enclosing Form this checkbox fills.' }),
+    toggle('value', 'Checked', false, { description: 'On or off, or a State field it shows (bind it with the dot). Used when the checkbox has no Field.' })
+  ],
   List: [
     text('as', 'Item name', { description: 'What the List calls each record inside it.' }),
     choice('layout', 'Layout', LIST_LAYOUTS, 'stack', { description: 'grid uses the cols token.' }),
