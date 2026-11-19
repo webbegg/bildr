@@ -562,8 +562,9 @@ function onMessage(event: MessageEvent) {
     editor.dragging = null
     void editor.updateStyle(message.nodeId, message.style)
   } else if (message.type === 'bildr:interaction') {
-    // A submitted form or an action run in preview may have changed the app's rows.
+    // A submitted form or an action run in preview may have changed the app's rows; a Set state step carries its value, worked out by the canvas.
     if (message.step.kind === 'runAction') editor.refreshDataSoon()
+    else if (message.step.kind === 'setState') editor.setStateValue(message.nodeId, message.on, message.step)
   } else if (id && message.type === 'bildr:size') heights[id] = message.height
   else if (id && message.type === 'bildr:wheel') onFrameWheel(el, message)
   else if (id && message.type === 'bildr:pan') panBy(message.dx, message.dy)

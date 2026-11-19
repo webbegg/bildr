@@ -5,6 +5,7 @@ import { editorTakesKey, hasTextSelection } from '@bildr/editor-core/clipboardKe
 import ProblemsList from '../components/ProblemsList.vue'
 import FormActionDialog from '../design/FormActionDialog.vue'
 import RequiredValuesDialog from '../design/RequiredValuesDialog.vue'
+import { previewIsEmpty } from '../design/previewState.ts'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
 import { targetsOfProblem } from '../editor/findingTargets.ts'
 import { PANEL_KEY, clampPanel, storedPanelWidth } from '../editor/panelWidth.ts'
@@ -121,6 +122,20 @@ const canvasKey = (message: { key: string, code: string, meta: boolean, shift: b
         >
           The app could not regenerate
         </span>
+        <!-- While interacting. -->
+        <UTooltip
+          v-if="preview"
+          :text="previewIsEmpty(editor.stateValues) ? 'Nothing changed yet' : 'Put every state back to its defaults'"
+        >
+          <EditorButton
+            variant="ghost"
+            icon="i-lucide-rotate-ccw"
+            aria-label="Reset state"
+            :disabled="previewIsEmpty(editor.stateValues)"
+            data-testid="reset-state"
+            @click="editor.resetStateValues()"
+          />
+        </UTooltip>
         <UTooltip :text="preview ? 'Back to editing' : 'Run the interactions on the canvas'">
           <EditorButton
             variant="ghost"

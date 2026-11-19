@@ -6,6 +6,7 @@ import {
   LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses
 } from '@bildr/codegen/render'
 import { INSTANCE_ID_SEPARATOR, layoutNodeId } from './ids.ts'
+import type { PlainValue } from './protocol.ts'
 
 /**
  * The canvas renderer's pure half (P4a, spec V4): a `.bildr` page, component
@@ -77,6 +78,8 @@ export interface PlanElement {
   placeholder?: boolean
   /** The node's own interactions (preview mode runs them). */
   interactions?: ModelNode['interactions']
+  /** The scope the node renders in, on a node with a Set state step: preview mode works the step's value out over it (`stepValue`). */
+  scope?: Record<string, unknown>
   /** The root of an instance whose component has states or interactions (preview mode switches its variant). */
   variantRoot?: { key: string, component: ComponentFile, variant: string, css: boolean }
 }
@@ -119,10 +122,28 @@ const evaluate = (value: Value | undefined, scope: Scope): Evaluated => {
     return inner === MISSING ? MISSING : !inner
   }
   if (typeof value.$route === 'string') return resolvePath(scope, `$route.${value.$route}`)
+  if (value.$event === 'checked') return resolvePath(scope, '$event')
   if (value.$form !== undefined) return value.$form === true ? { ...(scope.$form as object) } : resolvePath(scope, `$form.${String(value.$form)}`)
   if (typeof value.$template === 'string') return templateParts(value.$template).map(part => part.path ? text(resolvePath(scope, part.path), part.path) : part.text).join('')
   return undefined
 }
+
+/**
+ * The value a Set state step stores when its interaction runs in preview, worked out as the generated handler does over the scope
+ * its node renders in: a fixed value, `not` a binding, a binding or a template, and `{ $event: 'checked' }` the Checkbox's new
+ * `checked`. Undefined when it can't be worked out (a binding nothing provides, a list or a row): there is nothing to set.
+ */
+export function stepValue(value: Value | undefined, scope: Record<string, unknown>, checked?: boolean): PlainValue | undefined {
+  if (value === null) return null
+  const result = evaluate(value, checked === undefined ? scope : { ...scope, $event: checked })
+  return result === null || typeof result === 'string' || typeof result === 'number' || typeof result === 'boolean' ? result : undefined
+}
+
+/** Whether a node has a Set state step in any of its interactions (preview mode reports those, with their value: `protocol.ts`). */
+export const setsState = (node: ModelNode): boolean => !!node.interactions?.some(interaction => interaction.do.some(step => (step as Record<string, Value>).kind === 'setState'))
+
+/** Whether a plan element is a Checkbox's control, whose clicks are its `change` (and its label's, which preview mode resolves to it). */
+export const isCheckbox = (element: PlanElement): boolean => element.tag === NODE_ELEMENTS.Checkbox
 
 /** A value as text: a missing one as its path (`{post.title}`). */
 const text = (value: Evaluated, path = 'value'): string => value === MISSING ? `{${path}}` : value === undefined || value === null ? '' : String(value)
@@ -396,6 +417,7 @@ const base = (frame: Frame, node: ModelNode, options: Options, tag: string, look
     children: [],
     ...(options.copy ? { copy: true } : {}),
     ...(node.interactions?.length ? { interactions: node.interactions } : {}),
+    ...(setsState(node) ? { scope: frame.scope } : {}),
     ...(options.variantRoot ? { variantRoot: options.variantRoot } : {}),
     ...extra
   }

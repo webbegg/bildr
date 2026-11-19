@@ -1,13 +1,16 @@
 import type { Model as ProjectModel, PageFile, QueryFile, Value } from '@bildr/codegen/model'
 import { evaluateQuery } from '@bildr/codegen/query'
 import type { Row } from '@bildr/codegen/query'
+import type { StatePreview } from './previewState.ts'
 
 /**
  * What the canvas shows a page's bindings (P4b, P5): by alias, a query's rows
  * (the app's, when `rows` has them, else the model's fixtures; evaluated with
  * the query's own where, order and limit by `@bildr/codegen/query`, as the app's
  * query composable does; a `one` query's row or null), a state's defaults, an
- * action's idle status, and a computed `if`/`then`/`else` over those. `site` is
+ * action's idle status, and a computed `if`/`then`/`else` over those. A state's
+ * row is its defaults with the values set in the preview over them (`state`, by
+ * state id: B5), so a computed value follows what the preview set. `site` is
  * the project and `$route` the route parameters of the record picked on a
  * detail page. Anything else stays missing and renders as a placeholder.
  */
@@ -17,6 +20,8 @@ export interface DataInput {
   rows?: Record<string, Row[]>
   /** The route parameters of the record a detail page shows. */
   route?: Record<string, unknown>
+  /** The values set in the preview, by state id then field: they replace the defaults of the fields the state still has. */
+  state?: StatePreview
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -74,7 +79,10 @@ export function designData(model: ProjectModel, page: PageFile | undefined, inpu
     const state = states.find(entry => entry.id === use.state)
     if (!state) continue
     const defaults = Object.fromEntries(state.fields.flatMap(field => field.default === undefined ? [] : [[field.name, field.default]]))
-    data[use.as] = state.shape === 'many' ? [] : defaults
+    const previewed = input.state?.[state.id] ?? {}
+    // Only the fields the State has now: a model edit can remove one before the store has pruned its value (`prunePreviewState`).
+    const overrides = Object.fromEntries(state.fields.flatMap(field => Object.hasOwn(previewed, field.name) ? [[field.name, previewed[field.name]]] : []))
+    data[use.as] = state.shape === 'many' ? [] : { ...defaults, ...overrides }
   }
   for (const use of page.uses.actions ?? []) data[use.as] = { pending: false, error: null }
   for (const computed of page.uses.computed ?? []) {

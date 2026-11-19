@@ -25,7 +25,7 @@ import { canvasKeyMessage, isCanvasMessage } from './protocol.ts'
 import { HANDLE_PX, useGestures } from './useGestures.ts'
 import type { Indicator } from './useGestures.ts'
 import type { CanvasMode, CanvasToEditor, EditorToCanvas, RenderMessage, SpacingOverlay } from './protocol.ts'
-import { pageNodeId, renderPlan } from './render.ts'
+import { isCheckbox, pageNodeId, renderPlan, stepValue } from './render.ts'
 import type { CanvasFile, PlanChild, PlanElement } from './render.ts'
 
 /**
@@ -46,7 +46,8 @@ import type { CanvasFile, PlanChild, PlanElement } from './render.ts'
  * In edit mode a click selects and nothing in the page runs (links don't
  * navigate, buttons don't act). In preview mode (`bildr:mode`) interactions
  * run: component variants and toasts here; navigate, runAction and setState
- * steps are reported (`bildr:interaction`). Style previews from the editor
+ * steps are reported (`bildr:interaction`; a Checkbox click is its `change`, and a
+ * setState step goes with its value worked out here, `protocol.ts`). Style previews from the editor
  * show over the file until it clears them or a render shows their values.
  * Handle drags (resize, padding and gap) and the drag-to-reorder of the
  * selection (`useGestures.ts`, the hosted gesture lifecycle) preview live and
@@ -67,6 +68,8 @@ const shown = reactive<Record<string, string>>({})
 const listShown = reactive<Record<string, number>>({})
 /** Preview mode: the hover or pressed state each instance under the pointer shows over its variant; it ends with the pointer. */
 const pointer = reactive<Record<string, string>>({})
+/** Preview mode: what each Checkbox that has no value of its own shows, by its slot (`placed`): off at first, then alternating as the app's does. It ends with preview. */
+const unboundChecked = reactive<Record<string, boolean>>({})
 const selectedId = ref<string | null>(null)
 const selectedIds = ref<string[]>([])
 /** The node under the pointer here, or the one the editor's layers hover. */
@@ -99,13 +102,44 @@ const file = computed<CanvasFile | null>(() => {
   return tree === current.root ? current : { ...current, root: tree } as CanvasFile
 })
 
-const plan = computed<PlanElement[]>(() => {
+const built = computed<PlanElement[]>(() => {
   const message = render.value
   if (!message || !file.value || message.view !== 'page') return []
   return renderPlan({ file: file.value, components: message.components, layouts: message.layouts, data: message.data, ...(message.paths ? { paths: message.paths } : {}), variant: message.variant ?? null, shown: { ...shown, ...pointer }, listShown: { ...listShown } })
 })
 
-/** The first (non-copy) plan element of each node id, for interactions and labels. */
+/**
+ * The plan as drawn, and where each element is in it. A node a List repeats is drawn once per row, in plan order: the nth element
+ * of a node id is the nth `data-node` of that id in the document, so a click finds the exact element it was on (`planAt`), with
+ * the row's own scope. In preview a Checkbox with no value to show (a `field` or nothing: the app's own toggles it, off at first)
+ * is drawn from `unboundChecked` by its slot, the node id and which of its rows it is.
+ */
+const placed = computed(() => {
+  const rendered = new Map<string, PlanElement[]>()
+  const slots = new WeakMap<PlanElement, string>()
+  const unbound = new WeakSet<PlanElement>()
+  const place = (children: PlanChild[]): PlanChild[] => children.map((child) => {
+    if (typeof child === 'string') return child
+    const own: PlanElement = { ...child }
+    if (child.node) {
+      const same = rendered.get(child.node) ?? []
+      same.push(own)
+      rendered.set(child.node, same)
+      const slot = `${child.node}#${same.length - 1}`
+      slots.set(own, slot)
+      if (mode.value === 'preview' && isCheckbox(child) && !('modelValue' in child.attrs)) {
+        own.attrs = { ...child.attrs, modelValue: unboundChecked[slot] === true }
+        unbound.add(own)
+      }
+    }
+    own.children = place(child.children)
+    return own
+  })
+  return { plan: place(built.value) as PlanElement[], rendered, slots, unbound }
+})
+const plan = computed(() => placed.value.plan)
+
+/** The first (non-copy) plan element of each node id, for labels (and what a node is, which its copies share). */
 const elements = computed(() => {
   const map = new Map<string, PlanElement>()
   const visit = (children: PlanChild[]) => {
@@ -222,6 +256,7 @@ function onMessage(event: MessageEvent) {
     for (const key of Object.keys(shown)) Reflect.deleteProperty(shown, key)
     for (const key of Object.keys(listShown)) Reflect.deleteProperty(listShown, key)
     for (const key of Object.keys(pointer)) Reflect.deleteProperty(pointer, key)
+    for (const key of Object.keys(unboundChecked)) Reflect.deleteProperty(unboundChecked, key)
   } else if (message.type === 'bildr:cancel-drag') {
     handles.cancel()
   } else if (message.type === 'bildr:select') {
@@ -419,10 +454,19 @@ const onDragLeave = (event: DragEvent) => {
 
 type Step = Record<string, Value>
 
-/** Runs a node's steps for `on`: toasts here, everything else reported to the editor. */
-function runSteps(nodeId: string, on: string, steps: Step[]) {
+/**
+ * Runs a node's steps for `on`, in order: toasts here, everything else reported to the editor. A Set state step is reported with
+ * its value worked out here, where the node's scope (the row's own) and the event are (`checked`: a Checkbox's new value). One that
+ * can't be worked out stops the steps after it, as a failed action does: the message after it does not show.
+ */
+function runSteps(element: PlanElement, on: string, steps: Step[], checked?: boolean) {
+  const nodeId = pageNodeId(element.node!)
   for (const step of steps) {
-    if (step.kind === 'toast') toast.add({ title: String(step.title ?? ''), ...(typeof step.description === 'string' ? { description: step.description } : {}), ...(typeof step.color === 'string' ? { color: step.color as 'primary' } : {}), ...(typeof step.icon === 'string' ? { icon: step.icon } : {}) })
+    if (step.kind === 'setState') {
+      const value = element.scope ? stepValue(step.value, element.scope, checked) : undefined
+      if (value === undefined) return
+      post({ type: 'bildr:interaction', nodeId, on, step: { ...step, value } })
+    } else if (step.kind === 'toast') toast.add({ title: String(step.title ?? ''), ...(typeof step.description === 'string' ? { description: step.description } : {}), ...(typeof step.color === 'string' ? { color: step.color as 'primary' } : {}), ...(typeof step.icon === 'string' ? { icon: step.icon } : {}) })
     else post({ type: 'bildr:interaction', nodeId, on, step })
   }
 }
@@ -470,15 +514,33 @@ function pointerState(root: PlanElement, kind: 'hover' | 'pressed' | null) {
   else if (!kind) Reflect.deleteProperty(pointer, info.key)
 }
 
+/** The plan element a node's DOM element was drawn from: that row's, for a node a List repeats (its first one when the document and the plan disagree). */
+function planAt(el: Element): PlanElement | undefined {
+  const id = el.getAttribute('data-node')!
+  const drawn = placed.value.rendered.get(id)
+  const here = document.querySelectorAll(`[data-node="${CSS.escape(id)}"]`)
+  return drawn && drawn.length === here.length ? drawn[[...here].indexOf(el)] : elements.value.get(id)
+}
+
 /** The plan elements from `target` up to the document, nearest first. */
 function planChain(target: EventTarget | null): PlanElement[] {
   const chain: PlanElement[] = []
   for (let el = nodeOf(target); el; el = nodeOf(el.parentElement)) {
-    const element = elements.value.get(el.getAttribute('data-node')!)
+    const element = planAt(el)
     if (element) chain.push(element)
   }
   return chain
 }
+
+/** What a preview click reaches: a Checkbox's label is its control (the label is beside the control's element, and the canvas stops its own activation). */
+function previewTarget(target: EventTarget | null): EventTarget | null {
+  const label = target instanceof Element ? target.closest('label[for]') : null
+  const control = label ? document.getElementById(label.getAttribute('for')!) : null
+  return control && nodeOf(control) === control ? control : target
+}
+
+/** Whether a Checkbox shows as checked now (in preview every Checkbox is drawn with its value, `placed`). */
+const isChecked = (element: PlanElement): boolean => element.attrs.modelValue === true
 
 /** A preview event: the nearest node with an interaction for it runs it, and the nearest interactive instance switches variant. */
 function preview(event: Event, on: string) {
@@ -490,10 +552,17 @@ function preview(event: Event, on: string) {
     listShown[key] = (listShown[key] ?? size) + size
     return
   }
-  const chain = planChain(event.target)
+  const chain = planChain(previewTarget(event.target))
   const own = chain.find(element => element.interactions?.some(interaction => interaction.on === on))
   if (own) {
-    for (const interaction of own.interactions!.filter(entry => entry.on === on)) runSteps(pageNodeId(own.node!), on, interaction.do as Step[])
+    for (const interaction of own.interactions!.filter(entry => entry.on === on)) runSteps(own, on, interaction.do as Step[])
+  }
+  // A click on a Checkbox is its `change`: to the value it is not now.
+  const box = on === 'click' ? chain.find(isCheckbox) : undefined
+  if (box) {
+    const checked = !isChecked(box)
+    if (placed.value.unbound.has(box)) unboundChecked[placed.value.slots.get(box)!] = checked
+    for (const interaction of (box.interactions ?? []).filter(entry => entry.on === 'change')) runSteps(box, 'change', interaction.do as Step[], checked)
   }
   for (const element of chain) {
     if (element.variantRoot && runVariant(element, on)) break
@@ -613,6 +682,22 @@ function onContextMenu(event: MouseEvent) {
   if (id) post({ type: 'bildr:contextmenu', nodeId: id, x: event.clientX, y: event.clientY, ...variantField() })
 }
 
+const CONTROLS = 'button, input, select, textarea, a[href], [role="checkbox"], [role="switch"], [role="button"]'
+/**
+ * In preview Space and Enter on a focused control are the control's: a Checkbox toggles (its `change` runs), any other control keeps
+ * its own click. They don't pan (Space) and aren't the editor's keys (Enter). Space pans when no control is focused, and in edit mode.
+ */
+function controlKey(event: KeyboardEvent): boolean {
+  if (mode.value !== 'preview' || (event.code !== 'Space' && event.key !== 'Enter') || !(event.target instanceof Element) || !event.target.closest(CONTROLS)) return false
+  const el = nodeOf(event.target)
+  const element = el ? planAt(el) : undefined
+  if (element && isCheckbox(element)) {
+    event.preventDefault()
+    if (event.type === 'keydown' && !event.repeat) preview(event, 'click')
+  }
+  return true
+}
+
 const SHORTCUT_KEYS = new Set(['Delete', 'Backspace', 'Escape', 'Enter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 function onKeyDown(event: KeyboardEvent) {
   // Esc is a drag's own: it must not also clear the editor's selection.
@@ -620,6 +705,7 @@ function onKeyDown(event: KeyboardEvent) {
     event.preventDefault()
     return
   }
+  if (controlKey(event)) return
   const meta = event.metaKey || event.ctrlKey
   if (event.key === 'Alt') alt.value = true
   if (event.code === 'Space') {
@@ -642,6 +728,7 @@ function onKeyDown(event: KeyboardEvent) {
 
 function onKeyUp(event: KeyboardEvent) {
   if (event.key === 'Alt') alt.value = false
+  if (controlKey(event)) return
   if (event.code !== 'Space') return
   event.preventDefault()
   post({ type: 'bildr:space', down: false })

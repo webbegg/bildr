@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { loadModel } from '../../../codegen/src/model/load.ts'
-import { CANVAS_LINK, pageNodeId, renderPlan } from '../../src/canvas/render.ts'
+import type { ModelNode } from '../../../codegen/src/model/schemas.ts'
+import { CANVAS_LINK, pageNodeId, renderPlan, setsState } from '../../src/canvas/render.ts'
 import type { PlanChild, PlanElement, RenderInput } from '../../src/canvas/render.ts'
 import { blogModelFiles } from './fixture.ts'
 
@@ -11,6 +12,7 @@ if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems))
 const fixture = loaded.model
 const blog = fixture.modules.blog!
 const page = (name: string) => blog.pages.find(entry => entry.name === name)!
+const find = (tree: ModelNode, id: string): ModelNode | undefined => tree.id === id ? tree : tree.children?.map(child => find(child, id)).find(Boolean)
 
 const plan = (file: RenderInput['file'], data: Record<string, unknown> = {}, paths?: Record<string, string>) => renderPlan({ file, components: blog.components, layouts: fixture.layouts, data, ...(paths ? { paths } : {}) })
 const all = (children: PlanChild[], out: PlanElement[] = []): PlanElement[] => {
@@ -115,6 +117,14 @@ describe('page links', () => {
     expect(byNode(elements, 'n_read_more')[0]!.attrs.to).toBe('/posts/first')
     const home = all(elements).filter(element => element.tag === 'ULink' && element.attrs.to === '/')
     expect(home.length).toBeGreaterThan(0)
+  })
+
+  it('says which nodes set a State: only a node with a Set state step, which then carries its scope', () => {
+    const elements = plan(page('index'), { preferences: { showDrafts: false }, featured: rows, quotes: [] })
+    expect(setsState(find(page('index').root, 'n_toggle')!)).toBe(true)
+    expect(setsState(find(page('index').root, 'n_h1')!)).toBe(false)
+    expect(byNode(elements, 'n_toggle')[0]!.scope).toMatchObject({ preferences: { showDrafts: false } })
+    expect(byNode(elements, 'n_h1')[0]!.scope).toBeUndefined()
   })
 
   it('stays inert without a path or without the param\'s value', () => {

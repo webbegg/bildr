@@ -3,6 +3,7 @@ import type { VueWrapper } from '@vue/test-utils'
 import ui from '@nuxt/ui/vue-plugin'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadModel } from '../../../codegen/src/model/load.ts'
+import type { ModelNode } from '../../../codegen/src/model/schemas.ts'
 import CanvasApp from '../../src/canvas/CanvasApp.vue'
 import type { CanvasToEditor, EditorToCanvas, RenderMessage } from '../../src/canvas/protocol.ts'
 import { createCanvasRouter } from '../../src/canvas/router.ts'
@@ -254,6 +255,231 @@ describe('preview mode', () => {
     document.documentElement.dispatchEvent(new MouseEvent('mouseleave'))
     await settle()
     expect(toggle().textContent?.trim()).toBe('Hide')
+  })
+})
+
+describe('Set state in preview (B5)', () => {
+  const click = async (target: HTMLElement) => {
+    target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await settle()
+  }
+  const toggle = () => node('n_toggle')!
+  /** The checkbox's control (the node's element) and the label beside it. */
+  const box = toggle
+  const label = () => document.querySelector<HTMLElement>(`label[for="${toggle().id}"]`)!
+  const reported = () => sent('bildr:interaction').map(message => message.step)
+  const set = (value: unknown) => ({ kind: 'setState', state: 'st_preferences', field: 'showDrafts', value })
+  const find = (tree: ModelNode, id: string): ModelNode | undefined => tree.id === id ? tree : tree.children?.map(child => find(child, id)).find(Boolean)
+  /** The index page with the toggle's change setting the field to `value`. */
+  const withChange = (value: unknown): RenderMessage => {
+    const file = structuredClone(page('index'))
+    find(file.root, 'n_toggle')!.interactions = [{ on: 'change', do: [set(value)] }] as ModelNode['interactions']
+    return { ...render('index', { featured: posts, quotes: [] }), file }
+  }
+
+  it('draws the checkbox as the State field it is bound to: off by default, on once the State says so', async () => {
+    await send(render('index', { featured: posts, quotes: [] }))
+    expect(box().getAttribute('aria-checked')).toBe('false')
+    await send(render('index', { featured: posts, quotes: [], preferences: { showDrafts: true } }))
+    expect(box().getAttribute('aria-checked')).toBe('true')
+    await send(render('index', { featured: posts, quotes: [], preferences: {} }))
+    expect(box().getAttribute('aria-checked')).toBe('false')
+  })
+
+  it('selects, and reports nothing to set, in edit mode', async () => {
+    await send(render('index', { featured: posts, quotes: [] }))
+    await click(box())
+    expect(sent('bildr:click').map(message => message.nodeId)).toEqual(['n_toggle'])
+    expect(sent('bildr:interaction')).toEqual([])
+  })
+
+  it('reports the new value of the checkbox, as its change gives it: on, then off once the State says on', async () => {
+    await send(render('index', { featured: posts, quotes: [] }))
+    await send({ type: 'bildr:mode', mode: 'preview' })
+    await click(box())
+    expect(reported()).toEqual([set(true)])
+    expect(sent('bildr:interaction')[0]).toMatchObject({ nodeId: 'n_toggle', on: 'change' })
+    expect(sent('bildr:click')).toEqual([])
+
+    await send(render('index', { featured: posts, quotes: [], preferences: { showDrafts: true } }))
+    await click(box())
+    expect(reported()).toEqual([set(true), set(false)])
+  })
+
+  it('reports one change for a click on the checkbox\'s label too', async () => {
+    await send(render('index', { featured: posts, quotes: [] }))
+    await send({ type: 'bildr:mode', mode: 'preview' })
+    await click(label())
+    expect(reported()).toEqual([set(true)])
+  })
+
+  it('works the value out in the canvas: a fixed value, the opposite of a binding, a bound value, a template', async () => {
+    const data = { featured: posts, quotes: [], preferences: { showDrafts: true, name: 'ada' } }
+    await send({ type: 'bildr:mode', mode: 'preview' })
+    for (const value of [false, 'text', 4, { not: { $bind: 'preferences.showDrafts' } }, { $bind: 'preferences.name' }, { $template: 'hi {preferences.name}' }]) {
+      posted = []
+      await send({ ...withChange(value), data: { site: { name: 'Blog' }, ...data } })
+      await click(box())
+      expect(reported()).toEqual([set(typeof value === 'object' ? { not: false, $bind: 'ada', $template: 'hi ada' }[Object.keys(value)[0] as 'not'] : value)])
+    }
+  })
+
+  it('says nothing for a value it cannot work out', async () => {
+    await send({ type: 'bildr:mode', mode: 'preview' })
+    await send(withChange({ $bind: 'nowhere.field' }))
+    await click(box())
+    await send(withChange({ $bind: 'featured' }))
+    await click(box())
+    expect(sent('bildr:interaction')).toEqual([])
+  })
+
+  it('keeps working after a render that changes nothing about the checkbox, and starts over when the mode changes', async () => {
+    await send({ type: 'bildr:mode', mode: 'preview' })
+    await send(render('index', { featured: posts, quotes: [] }))
+    await send(render('index', { featured: posts, quotes: [], site: { name: 'Other' } }))
+    await click(box())
+    expect(reported()).toEqual([set(true)])
+    await send({ type: 'bildr:mode', mode: 'edit' })
+    posted = []
+    await click(box())
+    expect(sent('bildr:interaction')).toEqual([])
+  })
+
+  describe('on the exact row that was clicked', () => {
+    const rows = [...posts, { id: 'c', title: 'Third', slug: 'third', body: 'Three', published: true }]
+    const copies = (id: string) => [...document.querySelectorAll<HTMLElement>(`[data-node="${id}"]`)]
+    /** The index page with `added` as one more child of `parent`, and the rows as the featured posts. */
+    const withChild = (parent: string, added: ModelNode): RenderMessage => {
+      const file = structuredClone(page('index'))
+      find(file.root, parent)!.children!.push(added)
+      return { ...render('index', { featured: rows, quotes: [] }), file }
+    }
+    const step = (value: unknown, field = 'showDrafts') => ({ kind: 'setState', state: 'st_preferences', field, value })
+    const on = (event: string, value: unknown): ModelNode['interactions'] => [{ on: event, do: [step(value)] }] as ModelNode['interactions']
+
+    it('works a bound value out in row 3, not in the first row', async () => {
+      await send(withChild('n_list', { id: 'n_row', type: 'Button', props: { label: 'Pick' }, interactions: on('click', { $bind: 'post.slug' }) } as ModelNode))
+      await send({ type: 'bildr:mode', mode: 'preview' })
+      expect(copies('n_row')).toHaveLength(3)
+      await click(copies('n_row')[2]!)
+      await click(copies('n_row')[0]!)
+      await click(copies('n_row')[1]!)
+      expect(reported()).toEqual([set('third'), set('first'), set('second')])
+    })
+
+    it('reports the new value of the checkbox of that row: a bound one from its own row, not the first row\'s', async () => {
+      await send(withChild('n_list', { id: 'n_pub', type: 'Checkbox', props: { label: 'Published', value: { $bind: 'post.published' } }, interactions: on('change', { $event: 'checked' }) } as ModelNode))
+      await send({ type: 'bildr:mode', mode: 'preview' })
+      expect(copies('n_pub').map(entry => entry.getAttribute('aria-checked'))).toEqual(['true', 'false', 'true'])
+      await click(copies('n_pub')[1]!)
+      await click(copies('n_pub')[2]!)
+      expect(reported()).toEqual([set(true), set(false)])
+    })
+
+    it('an unbound checkbox starts off and alternates, as the app\'s does; each row has its own, and leaving preview starts them over', async () => {
+      await send(withChild('n_list', { id: 'n_free', type: 'Checkbox', props: { label: 'Free' }, interactions: on('change', { $event: 'checked' }) } as ModelNode))
+      await send({ type: 'bildr:mode', mode: 'preview' })
+      const state = () => copies('n_free').map(entry => entry.getAttribute('aria-checked'))
+      expect(state()).toEqual(['false', 'false', 'false'])
+      await click(copies('n_free')[0]!)
+      await click(copies('n_free')[0]!)
+      await click(copies('n_free')[2]!)
+      expect(reported()).toEqual([set(true), set(false), set(true)])
+      expect(state()).toEqual(['false', 'false', 'true'])
+      await send({ type: 'bildr:mode', mode: 'edit' })
+      await send({ type: 'bildr:mode', mode: 'preview' })
+      expect(state()).toEqual(['false', 'false', 'false'])
+      posted = []
+      await click(copies('n_free')[2]!)
+      expect(reported()).toEqual([set(true)])
+    })
+
+    it('an unbound checkbox outside a List alternates too', async () => {
+      await send(withChild('n_head', { id: 'n_free', type: 'Checkbox', props: { label: 'Free' }, interactions: on('change', { $event: 'checked' }) } as ModelNode))
+      await send({ type: 'bildr:mode', mode: 'preview' })
+      await click(node('n_free')!)
+      await click(node('n_free')!)
+      await click(node('n_free')!)
+      expect(reported()).toEqual([set(true), set(false), set(true)])
+    })
+  })
+
+  describe('steps in order', () => {
+    const titles = () => document.body.textContent ?? ''
+    const withSteps = (steps: unknown[]): RenderMessage => {
+      const file = structuredClone(page('index'))
+      find(file.root, 'n_toggle')!.interactions = [{ on: 'change', do: steps }] as ModelNode['interactions']
+      return { ...render('index', { featured: posts, quotes: [] }), file }
+    }
+    // The toasts of the canvas outlive a test: each one has its own title.
+    const toast = (title: string) => ({ kind: 'toast', title })
+
+    it('shows a message after the Set state before it was reported', async () => {
+      await send(withSteps([set(true), toast('Saved it')]))
+      await send({ type: 'bildr:mode', mode: 'preview' })
+      const seen: boolean[] = []
+      vi.mocked(window.parent.postMessage).mockImplementation((message: unknown) => {
+        posted.push(message as CanvasToEditor)
+        seen.push(titles().includes('Saved it'))
+      })
+      await click(box())
+      expect(reported()).toEqual([set(true)])
+      expect(seen).toEqual([false])
+      expect(titles()).toContain('Saved it')
+    })
+
+    it('stops at a Set state it cannot work out, as a failed action does: the message after it does not show', async () => {
+      await send(withSteps([set({ $bind: 'nowhere.field' }), toast('Too early')]))
+      await send({ type: 'bildr:mode', mode: 'preview' })
+      await click(box())
+      expect(sent('bildr:interaction')).toEqual([])
+      expect(titles()).not.toContain('Too early')
+    })
+
+    it('runs the steps before an unresolved one', async () => {
+      await send(withSteps([toast('Went first'), set({ $bind: 'nowhere.field' }), { kind: 'navigate', to: { page: 'pg_index' } }]))
+      await send({ type: 'bildr:mode', mode: 'preview' })
+      await click(box())
+      expect(titles()).toContain('Went first')
+      expect(sent('bildr:interaction')).toEqual([])
+    })
+  })
+
+  describe('keys', () => {
+    const key = async (target: EventTarget, type: 'keydown' | 'keyup', code: string, name: string) => {
+      target.dispatchEvent(new KeyboardEvent(type, { code, key: name, bubbles: true, cancelable: true }))
+      await settle()
+    }
+    const space = (target: EventTarget, type: 'keydown' | 'keyup' = 'keydown') => key(target, type, 'Space', ' ')
+
+    it('Space on the focused checkbox toggles it in preview, and does not pan', async () => {
+      await send(render('index', { featured: posts, quotes: [] }))
+      await send({ type: 'bildr:mode', mode: 'preview' })
+      await space(box())
+      await space(box(), 'keyup')
+      expect(reported()).toEqual([set(true)])
+      expect(sent('bildr:space')).toEqual([])
+    })
+
+    it('Enter on the focused checkbox toggles it in preview, and is not the editor\'s key', async () => {
+      await send(render('index', { featured: posts, quotes: [] }))
+      await send({ type: 'bildr:mode', mode: 'preview' })
+      await key(box(), 'keydown', 'Enter', 'Enter')
+      expect(reported()).toEqual([set(true)])
+      expect(sent('bildr:key')).toEqual([])
+    })
+
+    it('Space pans when no control is focused in preview, and in edit mode even over a checkbox', async () => {
+      await send(render('index', { featured: posts, quotes: [] }))
+      await send({ type: 'bildr:mode', mode: 'preview' })
+      await space(document.body)
+      expect(sent('bildr:space')).toEqual([{ type: 'bildr:space', down: true }])
+      await send({ type: 'bildr:mode', mode: 'edit' })
+      posted = []
+      await space(box())
+      expect(sent('bildr:space')).toEqual([{ type: 'bildr:space', down: true }])
+      expect(sent('bildr:interaction')).toEqual([])
+    })
   })
 })
 

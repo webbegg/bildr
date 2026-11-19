@@ -1,4 +1,4 @@
-import { computed, inject, ref, shallowRef } from 'vue'
+import { computed, inject, ref, shallowRef, watch } from 'vue'
 import type { InjectionKey } from 'vue'
 import { DEFAULT_THEME } from '@bildr/codegen/design'
 import { bindingScope } from '@bildr/codegen/edit'
@@ -16,6 +16,8 @@ import type { ModelProblem } from '../types.ts'
 import type { Row } from '@bildr/codegen/query'
 import { designData, detailField, routeParams } from './data.ts'
 import { createLiveRows } from './liveRows.ts'
+import { applySetState, previewIsEmpty, prunePreviewState } from './previewState.ts'
+import type { StatePreview } from './previewState.ts'
 import { topLevelSelection } from '../editor/selection.ts'
 import { findNode, findParent, moveTarget, nodeIds } from './tree.ts'
 import type { DropPosition } from './tree.ts'
@@ -181,8 +183,27 @@ export const createDesign = () => {
     if (!picked) return undefined
     return records.value.find(row => String(row[picked.field]) === recordKey.value) ?? records.value[0]
   })
+  /**
+   * The values a Set state step set in the preview (B5), by state id: kept while the canvas is in preview, over each State's
+   * defaults, and the same for every page and device frame. They start over when preview ends or on Reset state, and a model edit
+   * drops those a field no longer has.
+   */
+  const stateValues = ref<StatePreview>({})
+  const setStateValue = (nodeId: string, on: string, step: Record<string, unknown>) => {
+    // The canvas answers later than the click: a step that arrives once preview has ended (and the values with it) is not applied.
+    // Only a page sets a State (`applySetState`): in a layout or component view `page` is undefined and nothing is set.
+    if (mode.value === 'preview') stateValues.value = applySetState(model.value, page.value, stateValues.value, { nodeId, on, step })
+  }
+  const resetStateValues = () => {
+    if (!previewIsEmpty(stateValues.value)) stateValues.value = {}
+  }
+  watch(mode, resetStateValues)
+  // An invalid model (a file half written, read again a moment later) is `null`: the values wait for the next valid one.
+  watch(model, (current) => {
+    if (current) stateValues.value = prunePreviewState(current, stateValues.value)
+  })
   const data = computed(() => model.value
-    ? designData(model.value, page.value, { rows: rowsOf.rows.value, route: routeParams(model.value, page.value, record.value) })
+    ? designData(model.value, page.value, { rows: rowsOf.rows.value, route: routeParams(model.value, page.value, record.value), state: stateValues.value })
     : {})
 
   const device = computed<Device>(() => {
@@ -591,7 +612,7 @@ export const createDesign = () => {
     selectedIds, selectedId, selected, selectedParent, hoveredId, dragging, dragCancels, device, devices, deviceChoice, mode, history, clipboard,
     component, variantId, variant, inspected, breadcrumbs, nameOf, dark, selectVariant, override, commitStyle,
     isContainer, scopeOf, pendingInsert, confirmInsert, pendingForm, confirmForm, formActions, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,
-    setLocked, rename, copy, paste, setProps, setStyle, start, dispose, refreshDataSoon,
+    setLocked, rename, copy, paste, setProps, setStyle, start, dispose, refreshDataSoon, stateValues, setStateValue, resetStateValues,
     chooseDevice: (id: DeviceId) => {
       deviceChoice.value = id
     }
