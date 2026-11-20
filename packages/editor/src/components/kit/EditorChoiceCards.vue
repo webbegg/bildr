@@ -9,7 +9,7 @@ import { FOCUS_RING } from '../../editorUi.ts'
  * either axis go round the cards and pick the one they reach, and Home and End pick the first and the last. The chosen card shows
  * a dot in its radio, not a colour only. `label` names the group for screen readers. `hook` is the data attribute each card
  * carries with its value (`data-storage="sample"`), and `<hook>-description` the one on its description, so the screens that use
- * it keep their own hooks. `columns` lays the cards out in one column (the default) or two.
+ * it keep their own hooks. `columns` lays the cards out in one column (the default) or two. `disabled` turns every card off.
  */
 const props = withDefaults(defineProps<{
   items: readonly { value: string, label: string, description?: string }[]
@@ -17,7 +17,8 @@ const props = withDefaults(defineProps<{
   label: string
   hook?: string
   columns?: 1 | 2
-}>(), { modelValue: undefined, hook: undefined, columns: 1 })
+  disabled?: boolean
+}>(), { modelValue: undefined, hook: undefined, columns: 1, disabled: false })
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>()
 const group = useTemplateRef<HTMLElement>('group')
 
@@ -25,6 +26,7 @@ const group = useTemplateRef<HTMLElement>('group')
 const stop = computed(() => Math.max(0, props.items.findIndex(item => item.value === props.modelValue)))
 
 function onKeyDown(event: KeyboardEvent, at: number) {
+  if (props.disabled) return
   const count = props.items.length
   const to = rovingTarget(event.key, at, count, { axis: 'vertical', wrap: true }) ?? rovingTarget(event.key, at, count, { axis: 'horizontal', wrap: true })
   if (to === null) return
@@ -49,8 +51,9 @@ function onKeyDown(event: KeyboardEvent, at: number) {
       role="radio"
       :aria-checked="modelValue === item.value"
       :tabindex="at === stop ? 0 : -1"
+      :disabled="disabled"
       class="flex items-start gap-2.5 rounded-lg border px-3 py-2 text-left transition-colors"
-      :class="[FOCUS_RING, modelValue === item.value ? 'border-primary bg-primary/10' : 'border-white/8 hover:bg-white/4']"
+      :class="[FOCUS_RING, modelValue === item.value ? 'border-primary bg-primary/10' : 'border-white/8 hover:bg-white/4', disabled ? 'opacity-50' : '']"
       v-bind="hook ? { [hook]: item.value } : {}"
       @click="emit('update:modelValue', item.value)"
       @keydown="onKeyDown($event, at)"

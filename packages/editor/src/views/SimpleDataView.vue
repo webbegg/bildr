@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import ProblemsList from '../components/ProblemsList.vue'
 import DataEmptyState from '../components/data/DataEmptyState.vue'
+import SimpleApiCreate from '../components/simple-data/SimpleApiCreate.vue'
 import SimpleApiPanel from '../components/simple-data/SimpleApiPanel.vue'
 import SimpleDataList from '../components/simple-data/SimpleDataList.vue'
 import SimpleStoreCreate from '../components/simple-data/SimpleStoreCreate.vue'
@@ -16,7 +17,8 @@ import { plainWords } from '../shared/simpleData.ts'
  * The simple Data section (simple data, SD-1, S2, S3), the screen at `/data` that the menu's Data entry opens: the Data view for what
  * most apps need, the values their pages share and the remote APIs they call. On the left a list with two sections, State (the
  * stores) and APIs; beside it the item chosen, a store's form (how long it keeps its values and its fields, saved together) or an API's
- * panel, or the form that makes a store. Every edit is a module action (`state_*`); the screen shares the workspace's editor, its
+ * panel (its settings, queries, actions and models, `api_*`), or the form that makes a store; the APIs section's + opens the New API dialog.
+ * Every edit is a module action (`state_*`, `api_*`); the screen shares the workspace's editor, its
  * chrome and its guard over unsaved edits (`useDataScreen`). The store or API shown is in the URL (`?item=state:st_cart`,
  * `?item=api:ds_shop`, `useSimpleData`).
  *
@@ -26,7 +28,7 @@ import { plainWords } from '../shared/simpleData.ts'
  * workspace's All model files.
  */
 const editor = useDataScreen()
-const { stores, apis, store, removed, api, shown, creating, choose, startCreate, created } = useSimpleData(editor)
+const { stores, apis, store, removed, api, shown, creating, choose, startCreate, created, makingApi, startCreateApi, createdApi } = useSimpleData(editor)
 
 /** What the model says is wrong, in the section's words. */
 const problems = computed(() => editor.problems.map(problem => ({ ...problem, message: plainWords(problem.message) })))
@@ -136,6 +138,7 @@ const advanced = computed(() => ({ path: ADVANCED_PATH, query: shown.value?.kind
           :creating="creating"
           @choose="choose($event)"
           @create="startCreate()"
+          @create-api="startCreateApi()"
         />
       </aside>
       <main class="flex min-w-0 flex-1 bg-(--editor-canvas)">
@@ -154,6 +157,7 @@ const advanced = computed(() => ({ path: ADVANCED_PATH, query: shown.value?.kind
         />
         <SimpleApiPanel
           v-else-if="api"
+          :key="api.id"
           :api="api"
           class="min-w-0 flex-1"
         />
@@ -186,6 +190,10 @@ const advanced = computed(() => ({ path: ADVANCED_PATH, query: shown.value?.kind
         </DataEmptyState>
       </main>
     </div>
+    <SimpleApiCreate
+      v-model:open="makingApi"
+      @created="createdApi($event)"
+    />
     <div
       v-if="editor.error"
       class="absolute bottom-8 left-1/2 z-20 flex max-w-[min(32rem,90%)] -translate-x-1/2 items-center gap-1 rounded-xl bg-(--editor-bar) py-1 ps-3 pe-1 text-[12px] text-error shadow-[0_4px_16px_rgba(0,0,0,0.35)] ring ring-white/10"

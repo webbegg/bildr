@@ -91,6 +91,20 @@ export function useSimpleData(editor: Editor) {
     creating.value = false
   }
 
+  /** Shows the API just made. */
+  const createdApi = (id: string) => {
+    chosen.value = { kind: 'api', id }
+    creating.value = false
+    gone.value = null
+  }
+
+  /** Whether the New API dialog is open: it asks about unsaved edits before it opens, since the API it makes is shown instead of what is. */
+  const makingApi = ref(false)
+  const startCreateApi = (): Promise<boolean> =>
+    editor.leaveData(() => {
+      makingApi.value = true
+    })
+
   // ── The URL ────────────────────────────────────────────────────────────
 
   const write = () => {
@@ -116,7 +130,7 @@ export function useSimpleData(editor: Editor) {
   })
   watch(() => editor.leaveDeclined, write)
 
-  return { chosen, creating, stores, apis, store, removed, api, shown, choose, startCreate, created }
+  return { chosen, creating, stores, apis, store, removed, api, shown, choose, startCreate, created, makingApi, startCreateApi, createdApi }
 }
 
 /**

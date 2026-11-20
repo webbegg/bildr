@@ -9,8 +9,8 @@ import { stateLabel } from '../../shared/stateModel.ts'
 /**
  * The simple Data section's list (simple data, S2): two sections, **Stores** (the stores the app's pages share: every state of the
  * model, each with how long it keeps its values) and **APIs** (the remote APIs the app calls, each with its base URL's host). A row
- * chooses what the section shows; the Stores section's + makes a store. Each section has an empty state that says what it is for. An
- * API is made in a later step, so its section has no way to make one yet. The rows are plain words: a store, an API.
+ * chooses what the section shows; the Stores section's + makes a store and the APIs section's + opens the New API dialog. Each section has
+ * an empty state that says what it is for. The rows are plain words: a store, an API.
  */
 const { stores, apis, shown, creating } = defineProps<{
   stores: StateFile[]
@@ -18,7 +18,7 @@ const { stores, apis, shown, creating } = defineProps<{
   shown: SimpleChoice | null
   creating: boolean
 }>()
-const emit = defineEmits<{ choose: [choice: SimpleChoice], create: [] }>()
+const emit = defineEmits<{ choose: [choice: SimpleChoice], create: [], createApi: [] }>()
 
 const keeps = (store: StateFile) => PERSISTENCE.find(choice => choice.value === store.persist)?.label ?? ''
 const isShown = (kind: SimpleChoice['kind'], id: string) => shown?.kind === kind && shown.id === id
@@ -117,13 +117,22 @@ const ROW = 'flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-1.5 t
       data-simple-section="apis"
       aria-labelledby="simple-apis-heading"
     >
-      <div class="flex h-8 items-center ps-2.5">
+      <div class="flex h-8 items-center justify-between ps-2.5 pe-1">
         <h2
           id="simple-apis-heading"
           class="text-[12px] font-[550] text-muted"
         >
           APIs
         </h2>
+        <EditorButton
+          variant="ghost"
+          size="xs"
+          icon="i-lucide-plus"
+          aria-label="New API"
+          title="New API"
+          data-simple-new-api
+          @click="emit('createApi')"
+        />
       </div>
       <ul
         v-if="apis.length"
@@ -170,8 +179,17 @@ const ROW = 'flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-1.5 t
           No APIs yet
         </p>
         <p class="mt-1 text-[12px] leading-4 text-muted">
-          The remote APIs your app calls will be listed here, with their address.
+          The remote APIs your app calls are listed here, with their address.
         </p>
+        <EditorButton
+          class="mt-3"
+          variant="primary"
+          size="xs"
+          icon="i-lucide-plus"
+          label="New API"
+          data-simple-empty-new-api
+          @click="emit('createApi')"
+        />
       </div>
     </section>
   </div>

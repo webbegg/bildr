@@ -22,7 +22,9 @@ import { boot } from './lib.mjs'
 // `simple-data` makes and deletes a store (state files only, no data source), so it runs before them, after the scripts that render the app.
 // `load-more` runs after `preview` and `drafts-toggle`: it gives the app's database seven newer draft posts, and those two read "A draft" and
 // "Hello bildr" from the canvas's List, which shows the newest six rows of All posts (loadMore: 6): with the seven in front, both fall off it.
-const SCRIPTS = ['shell', 'design', 'design-system', 'kit', 'panel-p1', 'colors-p1', 'menu-p1', 'canvas-p2', 'breakpoints-p2', 'desktop-base', 'components', 'layouts-p2', 'interactions', 'detail', 'detail-ui', 'visual-editor', 'real-browser', 'state', 'node-interactions', 'behaviour', 'preview', 'drafts-toggle', 'load-more', 'simple-data', 'data', 'remote', 'paging']
+// `simple-api` makes an API data source (and deletes it), which regenerates the app's API layer like the scripts above do for theirs, so it runs last.
+
+const SCRIPTS = ['shell', 'design', 'design-system', 'kit', 'panel-p1', 'colors-p1', 'menu-p1', 'canvas-p2', 'breakpoints-p2', 'desktop-base', 'components', 'layouts-p2', 'interactions', 'detail', 'detail-ui', 'visual-editor', 'real-browser', 'state', 'node-interactions', 'behaviour', 'preview', 'drafts-toggle', 'load-more', 'simple-data', 'data', 'remote', 'paging', 'simple-api']
 
 const wanted = process.argv.slice(2)
 const names = wanted.length ? wanted : SCRIPTS

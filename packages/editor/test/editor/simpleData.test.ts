@@ -95,24 +95,24 @@ describe('the list of the simple Data section', () => {
     expect(text(api)).not.toContain('https://')
   })
 
-  it('shows a polished empty state in each section, and no way to create an API yet', async () => {
+  it('shows a polished empty state in each section, and a + to make an API', async () => {
     world.model.modules.blog!.state = []
     world.model.datasources = world.model.datasources.filter(source => source.kind !== 'api')
     await mounted()
     expect(text(q('[data-simple-empty="state"]'))).toContain('No stores yet')
     expect(text(q('[data-simple-empty="apis"]'))).toContain('No APIs yet')
     expect(q('[data-simple-empty="state"] [data-simple-empty-new]')).not.toBeNull()
-    expect(q('[data-simple-section="apis"] button')).toBeNull()
-    expect(q('[data-simple-new-api]')).toBeNull()
+    expect(q('[data-simple-section="apis"] [data-simple-new-api]')).not.toBeNull()
   })
 
-  it('shows a placeholder that names the API and its base URL when an API is chosen', async () => {
+  it('shows the API\'s panel, with its name and its base URL, when an API is chosen', async () => {
     addApi()
     const { router } = await mounted()
     await click(q('[data-simple-api="ds_shop_api"]'))
     const panel = q('[data-simple-api-panel]')
     expect(text(panel)).toContain('shop-api')
-    expect(text(panel)).toContain('https://api.example.com/v1')
+    expect(inputOf('[data-api-name]').value).toBe('shop-api')
+    expect(inputOf('[data-api-baseurl]').value).toBe('https://api.example.com/v1')
     expect(router.currentRoute.value.query).toEqual({ item: 'api:ds_shop_api' })
   })
 

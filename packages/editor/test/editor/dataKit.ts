@@ -35,7 +35,7 @@ const REFUSAL_STATUS = { invalid_input: 400, not_found: 404, invalid: 422, confl
  * it writes becomes the model the mocked `model_get` serves. So the editor's tests meet the module's own rules (names, uses,
  * refusals and their words), not a copy of them.
  */
-const moduleEdits = (names: EditName[]): Handlers => Object.fromEntries(names.map(name => [name, (input: Record<string, unknown>) => {
+export const moduleEdits = (names: EditName[]): Handlers => Object.fromEntries(names.map(name => [name, (input: Record<string, unknown>) => {
   const files = serializeModel(world.model)
   const outcome = applyEdit(files, name, input)
   if (!outcome.ok) return new Failure(REFUSAL_STATUS[outcome.code], outcome.code, outcome.message, undefined, outcome.field)
@@ -54,6 +54,9 @@ export const artifactModule = (): Handlers => moduleEdits(['query_create', 'quer
 
 /** The state actions (B2), the real ones over the mocked model, as `artifactModule`'s. */
 export const stateModule = (): Handlers => moduleEdits(['state_create', 'state_update', 'state_rename', 'state_delete', 'page_use_add', 'page_use_remove'])
+
+/** The API actions (simple data, P1), the real ones over the mocked model, as `artifactModule`'s: an API, its models, queries and actions, and deleting it. */
+export const apiModule = (): Handlers => moduleEdits(['api_create', 'api_update', 'api_model_set', 'api_model_rename', 'api_model_delete', 'api_query_set', 'api_query_rename', 'api_query_delete', 'api_action_set', 'api_action_rename', 'api_action_delete', 'datasource_delete'])
 
 /** The node interaction actions (B3), the real ones over the mocked model: what the inspector's Interactions write, and the module's own refusals of it. */
 export const interactionModule = (): Handlers => moduleEdits(['node_interaction_add', 'node_interaction_update', 'node_interaction_remove'])

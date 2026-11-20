@@ -1,0 +1,275 @@
+<script setup lang="ts">
+import { computed, nextTick, useTemplateRef } from 'vue'
+import type { ApiSource } from '@bildr/codegen/edit'
+import type { ApiModel } from '@bildr/codegen/model'
+import DataDraftFooter from '../data/DataDraftFooter.vue'
+import DataStaleNotice from '../data/DataStaleNotice.vue'
+import { attempt } from '../../editor/dataArtifactActions.ts'
+import { modelChangedOutside, modelDirty, modelDraftOf, modelOutput, modelProblems, moveField, newField } from '../../editor/simpleApiDraft.ts'
+import type { FieldDraft, ModelDraft } from '../../editor/simpleApiDraft.ts'
+import { useDraftForm } from '../../editor/useDraftForm.ts'
+import { useEditor } from '../../editor/useEditor.ts'
+import { FIELD_TYPES } from '../../shared/simpleApi.ts'
+import { plainWords } from '../../shared/simpleData.ts'
+
+/**
+ * The editor of a model of an API (simple data, S6): the shape of what the API answers or takes, as a table of fields (name, type, whether
+ * it is a list, whether it may be missing, whether it may be empty, and the key the API calls it) that can be added to, removed from and
+ * reordered, in one draft with one Save (`api_model_set`) and one Discard. A field may hold another model (not this one: the module
+ * refuses a model that holds itself). What the module refuses shows in the footer, in the section's words, and the edits stay. A model
+ * that is new is only a name until it is saved; a rename (`name` changes) keeps the form and its edits.
+ */
+const { source, name } = defineProps<{ source: ApiSource, name: string }>()
+const emit = defineEmits<{ back: [], rename: [] }>()
+const editor = useEditor()
+const root = useTemplateRef<HTMLElement>('root')
+
+const stored = (): ApiModel | null => source.models.find(entry => entry.name === name) ?? null
+const { draft, error, saving, dirty, stale, discard, keepMine } = useDraftForm<ApiModel | null, ModelDraft>({
+  stored,
+  id: () => 'model',
+  label: () => name,
+  open: modelDraftOf,
+  dirty: modelDirty,
+  changedOutside: modelChangedOutside,
+  rebase: draft => draft
+})
+
+/** The models a field may hold: every one but this. */
+const others = computed(() => source.models.filter(model => model.name !== name).map(model => ({ value: model.name, label: model.name })))
+const label = (field: { name: string }) => field.name.trim() || 'new field'
+
+async function save() {
+  if (stale.value || !dirty.value || saving.value) return
+  const problems = modelProblems(draft.value)
+  if (problems.length) {
+    error.value = problems.join('. ')
+    return
+  }
+  saving.value = true
+  const done = await attempt(editor, 'api_model_set', { datasource: source.id, model: modelOutput(name, draft.value) }, 'Could not save the model')
+  saving.value = false
+  if ('error' in done) {
+    error.value = plainWords(done.error)
+    return
+  }
+  discard()
+}
+
+async function add() {
+  const field = newField()
+  draft.value.fields.push(field)
+  await nextTick()
+  root.value?.querySelector<HTMLInputElement>(`[data-model-field="${field.key}"] [data-model-field-name], [data-model-field="${field.key}"][data-model-field-name]`)?.focus()
+}
+const move = (index: number, by: -1 | 1) => {
+  draft.value.fields = moveField(draft.value, index, index + by)
+}
+/** A field that is not a model holds no model. */
+const setType = (field: FieldDraft, type: FieldDraft['type']) => {
+  field.type = type
+  if (type !== 'model') field.model = ''
+}
+const remove = (key: string) => {
+  draft.value.fields = draft.value.fields.filter(field => field.key !== key)
+}
+
+const CHECKBOX = 'size-3.5 cursor-pointer scheme-dark accent-(--ui-primary)'
+const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_3rem_3.5rem_4rem_minmax(0,1fr)_5.5rem]'
+</script>
+
+<template>
+  <div
+    ref="root"
+    class="flex min-h-0 flex-1 flex-col"
+    :data-api-editor="`model:${name}`"
+  >
+    <div class="flex h-11 shrink-0 items-center gap-2 border-b border-default ps-4 pe-3">
+      <EditorButton
+        variant="ghost"
+        icon="i-lucide-arrow-left"
+        :label="source.name"
+        :aria-label="`Back to ${source.name}`"
+        data-api-back
+        @click="emit('back')"
+      />
+      <span class="text-dimmed">/</span>
+      <h3
+        class="truncate text-[13px] font-[550] text-highlighted"
+        data-api-editor-title
+      >
+        {{ name }}
+      </h3>
+      <span class="shrink-0 text-[11px] text-dimmed">Model</span>
+      <span class="flex-1" />
+      <EditorButton
+        v-if="stored()"
+        variant="ghost"
+        icon="i-lucide-pencil"
+        label="Rename"
+        data-api-editor-rename
+        @click="emit('rename')"
+      />
+    </div>
+
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      <div class="mx-auto w-full max-w-3xl space-y-6 px-6 py-6">
+        <DataStaleNotice
+          v-if="stale"
+          prefix="simple-model"
+          title="This model changed since you started editing"
+          description="Your edits are still here. Load the new version to drop them, or keep them: your version replaces the new one when you save."
+          @load-new="discard"
+          @keep-mine="keepMine"
+        />
+
+        <p class="text-[12px] leading-4 text-muted">
+          A model is the shape of what the API answers or takes. Each field is one value, or a list of them, with the type it has.
+        </p>
+
+        <section>
+          <h3
+            class="flex h-9 items-center text-[12px] font-[550] text-highlighted"
+            data-model-fields-title
+          >
+            {{ draft.fields.length }} {{ draft.fields.length === 1 ? 'field' : 'fields' }}
+          </h3>
+          <div
+            class="grid items-center gap-x-2 px-1 pb-1 text-[11px] text-dimmed"
+            :class="COLUMNS"
+          >
+            <span class="ps-1.5">Name</span>
+            <span>Type</span>
+            <span>List</span>
+            <span>Optional</span>
+            <span>Can be empty</span>
+            <span>Called in the API</span>
+            <span />
+          </div>
+          <div
+            v-for="(field, index) in draft.fields"
+            :key="field.key"
+            class="rounded-lg px-1 py-0.5"
+            :data-model-field="field.key"
+          >
+            <div
+              class="grid items-center gap-x-2"
+              :class="COLUMNS"
+            >
+              <EditorInput
+                v-model="field.name"
+                placeholder="Name, e.g. Title"
+                :aria-label="`Name of ${label(field)}`"
+                data-model-field-name
+              />
+              <EditorSelect
+                :model-value="field.type"
+                :items="FIELD_TYPES"
+                :aria-label="`Type of ${label(field)}`"
+                data-model-field-type
+                @update:model-value="setType(field, $event as FieldDraft['type'])"
+              />
+              <input
+                type="checkbox"
+                :class="CHECKBOX"
+                :checked="field.list"
+                :aria-label="`${label(field)} is a list`"
+                data-model-field-list
+                @change="field.list = ($event.target as HTMLInputElement).checked"
+              >
+              <input
+                type="checkbox"
+                :class="CHECKBOX"
+                :checked="field.optional"
+                :aria-label="`${label(field)} may be missing`"
+                data-model-field-optional
+                @change="field.optional = ($event.target as HTMLInputElement).checked"
+              >
+              <input
+                type="checkbox"
+                :class="CHECKBOX"
+                :checked="field.nullable"
+                :aria-label="`${label(field)} may be empty`"
+                data-model-field-nullable
+                @change="field.nullable = ($event.target as HTMLInputElement).checked"
+              >
+              <EditorInput
+                v-model="field.remote"
+                placeholder="Same name"
+                :aria-label="`The name the API gives ${label(field)}`"
+                data-model-field-remote
+              />
+              <span class="flex w-[5.5rem] items-center justify-end gap-0.5">
+                <EditorButton
+                  icon="i-lucide-arrow-up"
+                  variant="ghost"
+                  size="xs"
+                  :aria-label="`Move ${label(field)} up`"
+                  :disabled="index === 0"
+                  data-model-field-up
+                  @click="move(index, -1)"
+                />
+                <EditorButton
+                  icon="i-lucide-arrow-down"
+                  variant="ghost"
+                  size="xs"
+                  :aria-label="`Move ${label(field)} down`"
+                  :disabled="index === draft.fields.length - 1"
+                  data-model-field-down
+                  @click="move(index, 1)"
+                />
+                <EditorButton
+                  icon="i-lucide-minus"
+                  variant="ghost"
+                  size="xs"
+                  :aria-label="`Remove ${label(field)}`"
+                  data-model-field-remove
+                  @click="remove(field.key)"
+                />
+              </span>
+            </div>
+            <div
+              v-if="field.type === 'model'"
+              class="mt-1 ps-1.5"
+            >
+              <EditorSelect
+                :model-value="field.model || undefined"
+                :items="others"
+                :placeholder="others.length ? 'Choose a model' : 'No other models yet'"
+                :disabled="!others.length"
+                :aria-label="`Model of ${label(field)}`"
+                class="max-w-56"
+                data-model-field-model
+                @update:model-value="field.model = $event"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            class="mt-1 flex h-9 w-full items-center gap-1.5 rounded-lg ps-2 text-left text-[12px] text-muted hover:bg-white/4 hover:text-toned"
+            aria-label="Add field"
+            data-model-field-add
+            @click="add"
+          >
+            <UIcon
+              name="i-lucide-plus"
+              class="size-4 shrink-0"
+            />
+            Add field
+          </button>
+        </section>
+      </div>
+    </div>
+
+    <DataDraftFooter
+      prefix="simple-model"
+      inner="mx-auto max-w-3xl px-6"
+      :error="error"
+      :dirty="dirty"
+      :saving="saving"
+      :disabled="!dirty || stale"
+      @discard="discard"
+      @save="save"
+    />
+  </div>
+</template>
