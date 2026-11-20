@@ -130,6 +130,12 @@ export const JS_RESERVED_WORDS: readonly string[] = [
 export const LINT_RESTRICTED_FOLDERS: readonly string[] = ['app', 'server', 'infrastructure']
 
 /**
+ * The files of `layers/apis/app/data/` every browser source shares (generate/api-browser.ts and api-server.ts): a browser source's own
+ * composition is `app/data/<name>.ts`, so a source with one of these names would write to the same file.
+ */
+export const BROWSER_SHARED_FILES: readonly string[] = ['browser-client', 'api-query']
+
+/**
  * What the generated files of an API source import or declare by a name that doesn't come from the model, by where it comes from.
  * An operation (a camelCase name) can't take one of the lowercase names, a model (PascalCase) one of the capitalised: either would be
  * declared twice in a file, or shadow what the file imports. The drift guard in test/edit/api-names.test.ts generates a project and fails
@@ -144,5 +150,7 @@ export const API_DECLARED_NAMES: Record<string, string[]> = {
   'the helpers of the browser runtime': ['createBrowserClient', 'BrowserFailure', 'valueOrThrow'],
   'the kernel schemas an entity imports': ['IdSchema', 'TimestampSchema'],
   'the types the generated files import': ['ApiClient', 'ApiRequest', 'ErrorStatusMap', 'FetchFailure', 'MaybeRefOrGetter', 'QuerySchema'],
-  'a global the generated files use': ['Array', 'Error', 'Object', 'Partial', 'Promise', 'Record', 'String', 'T']
+  // `console` is called, and `AbortSignal` named as a type, in the composition next to the use-cases it imports under their own names: an operation called `console` would hide it.
+  // Only the globals of files that also name something of the model are here: the shared clients (BrowserFailure, createFetchClient…) import nothing from it.
+  'a global the generated files use': ['Array', 'Error', 'Object', 'Partial', 'Promise', 'Record', 'String', 'T', 'console', 'encodeURIComponent', 'AbortSignal']
 }

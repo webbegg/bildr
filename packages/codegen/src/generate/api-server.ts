@@ -424,7 +424,8 @@ const routeFileOf = (source: ApiSource, names: SourceNames, operation: Operation
 /**
  * `app/composables/apis/use<S><Op>.ts`: a query is reactive data over the query client, an action an async `run`. The public signature is
  * the same for both runtimes; only what is called differs: a server source calls its Nitro route, a browser one the use-case itself
- * (through the composition of app/data/<s>.ts), which answers a Result that `valueOrThrow` turns into the value or the error the UI sees.
+ * (through the composition of app/data/<s>.ts), which answers a Result that `valueOrThrow` turns into the value or the error the UI sees. A query passes
+ * the AbortSignal of its fetch to the composition, so a cancelled query cancels its request, as the `$fetch` of a server one does.
  */
 export const composableFile = (source: ApiSource, names: SourceNames, operation: Operation, runtime: ApiSource['runtime'] = 'server'): Emitted => {
   const browser = runtime === 'browser'
@@ -447,7 +448,7 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
     importLine('../../data/api-query', [operation.kind === 'query' ? 'useApiQuery' : 'useApiAction']),
     ...(browser ? [importLine('../../data/browser-client', ['valueOrThrow']), importLine(`../../data/${names.dir}`, [names.root])] : [])
   )
-  // The local the browser composables hold the composed use-cases in.
+  // The local the browser composables hold the composition in: `api(signal)` gives the use-cases bound to that call's signal.
   const use = 'api'
   if (operation.kind === 'query' && browser) {
     return {
@@ -463,7 +464,7 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
         `  return useApiQuery<${fields.length ? input : 'undefined'}, ${result}>({`,
         `    key: ['apis', ${tsString(names.dir)}, ${tsString(operation.name)}],`,
         `    input${fields.length ? '' : ': undefined'},`,
-        `    fetch: async ${fields.length ? 'query' : '()'} => valueOrThrow(await ${use}.${operation.name}(${fields.length ? 'query' : ''}))`,
+        `    fetch: async (${fields.length ? 'query' : '_input'}, signal) => valueOrThrow(await ${use}(signal).${operation.name}(${fields.length ? 'query' : ''}))`,
         '  })',
         '}'
       ])
@@ -491,7 +492,7 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
   if (browser) {
     const generics = operation.result ? `<${fields.length ? input : 'undefined'}, ${result}>` : ''
     const parameter = fields.length ? (operation.result ? 'input' : `input: ${input}`) : ''
-    const call = `valueOrThrow(await ${use}.${operation.name}(${fields.length ? 'input' : ''}))`
+    const call = `valueOrThrow(await ${use}().${operation.name}(${fields.length ? 'input' : ''}))`
     return {
       path: `layers/apis/app/composables/apis/${name}.ts`,
       source: names.source,

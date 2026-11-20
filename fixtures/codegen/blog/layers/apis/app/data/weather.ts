@@ -9,9 +9,9 @@ import { forecast } from '../../shared/domain/weather/use-cases/forecast'
 import { reportForecast } from '../../shared/domain/weather/use-cases/report-forecast'
 import { BrowserFailure, createBrowserClient } from './browser-client'
 
-/** The HTTP client of the "weather" API: it calls the base URL of runtimeConfig.public.apis.weather, and nothing else. */
-const weatherClient = (): ApiClient => {
-  const call = createBrowserClient({ baseUrl: useRuntimeConfig().public.apis.weather.baseUrl })
+/** The HTTP client of the "weather" API: it calls the base URL it is given (the one of runtimeConfig.public.apis.weather), and nothing else. `signal` cancels its calls. */
+const weatherClient = (baseUrl: string, signal?: AbortSignal): ApiClient => {
+  const call = createBrowserClient({ baseUrl, signal })
   return async (path, request) => {
     try {
       return await call(path, request)
@@ -22,12 +22,18 @@ const weatherClient = (): ApiClient => {
   }
 }
 
-/** The use-cases of the "weather" API, wired to its HTTP repository. Call it in a composable's setup: it reads the runtime config. */
+/**
+ * The use-cases of the "weather" API, wired to its HTTP repository. Call it in a composable's setup (it reads the runtime config): it answers
+ * the function that gives the use-cases, for the `signal` of the call (a query that is cancelled aborts it).
+ */
 export const useWeatherApi = () => {
-  // The detail of an answer that is not what the model says (field paths, expected types) goes to the console: the error the UI sees has none.
-  const repository = httpWeatherRepository(weatherClient(), detail => console.warn('The "weather" API answered something unexpected: ' + detail))
-  return {
-    forecast: forecast({ weather: repository }),
-    reportForecast: reportForecast({ weather: repository })
+  const baseUrl = useRuntimeConfig().public.apis.weather.baseUrl
+  return (signal?: AbortSignal) => {
+    // The detail of an answer that is not what the model says (field paths, expected types) goes to the console: the error the UI sees has none.
+    const repository = httpWeatherRepository(weatherClient(baseUrl, signal), detail => console.warn('The "weather" API answered something unexpected: ' + detail))
+    return {
+      forecast: forecast({ weather: repository }),
+      reportForecast: reportForecast({ weather: repository })
+    }
   }
 }

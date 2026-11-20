@@ -12,6 +12,6 @@ export const useWeatherForecast = (input: MaybeRefOrGetter<ForecastInput>) => {
   return useApiQuery<ForecastInput, Forecast>({
     key: ['apis', 'weather', 'forecast'],
     input,
-    fetch: async query => valueOrThrow(await api.forecast(query))
+    fetch: async (query, signal) => valueOrThrow(await api(signal).forecast(query))
   })
 }

@@ -9,7 +9,7 @@ import { useWeatherApi } from '../../data/weather'
 export const useWeatherReportForecast = () => {
   const api = useWeatherApi()
   return useApiAction<ReportForecastInput, Forecast>(
-    async input => valueOrThrow(await api.reportForecast(input)),
+    async input => valueOrThrow(await api().reportForecast(input)),
     ['apis', 'weather']
   )
 }

@@ -410,7 +410,9 @@ describe('generate: browser-runtime api sources', () => {
     const root = fromWeather('app/data/weather.ts')
     expect(root).toContain('useRuntimeConfig().public.apis.weather.baseUrl')
     expect(root).toContain('export const useWeatherApi = () => {')
-    expect(root).toContain('httpWeatherRepository(weatherClient(), detail => console.warn(')
+    // The use-cases are bound to the signal of the call (verify R3-003: a cancelled query cancels its request).
+    expect(root).toContain('return (signal?: AbortSignal) => {')
+    expect(root).toContain('httpWeatherRepository(weatherClient(baseUrl, signal), detail => console.warn(')
     expect(root).toContain('forecast: forecast({ weather: repository })')
     expect(root).toContain('reportForecast: reportForecast({ weather: repository })')
     // It reads no other setting: no secret, no server config.
@@ -423,6 +425,7 @@ describe('generate: browser-runtime api sources', () => {
   it('has a client over fetch that keeps the confinement of the server one, and sends no credentials', () => {
     const client = fromWeather('app/data/browser-client.ts')
     expect(client).toContain('redirect: \'manual\'')
+    expect(client).toContain('anyOf([cancel, timeout])')
     expect(client).toContain('opaqueredirect')
     expect(client).toContain('credentials: \'omit\'')
     expect(client).toContain('AbortSignal.timeout(')
@@ -438,11 +441,12 @@ describe('generate: browser-runtime api sources', () => {
     expect(query).toContain('const api = useWeatherApi()')
     expect(query).toContain('useApiQuery<ForecastInput, Forecast>({')
     expect(query).toContain('key: [\'apis\', \'weather\', \'forecast\'],')
-    expect(query).toContain('fetch: async query => valueOrThrow(await api.forecast(query))')
+    // The query passes the AbortSignal of its fetch on, as the server composables give it to $fetch.
+    expect(query).toContain('fetch: async (query, signal) => valueOrThrow(await api(signal).forecast(query))')
     const action = fromWeather('app/composables/apis/useWeatherReportForecast.ts')
     expect(action).toContain('export const useWeatherReportForecast = () => {')
     expect(action).toContain('useApiAction<ReportForecastInput, Forecast>(')
-    expect(action).toContain('async input => valueOrThrow(await api.reportForecast(input))')
+    expect(action).toContain('async input => valueOrThrow(await api().reportForecast(input))')
     expect(action).toContain('[\'apis\', \'weather\']')
     for (const text of [query, action]) expect(text).not.toMatch(/\$fetch|\/api\/apis/)
   })

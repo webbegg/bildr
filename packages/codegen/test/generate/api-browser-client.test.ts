@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import ts from 'typescript'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { generate } from '../../src/generate/index'
 import { loadModel } from '../../src/model/load'
 import { fixtureModelFiles } from '../model/fixture'
@@ -17,7 +17,7 @@ import { fixtureModelFiles } from '../model/fixture'
  */
 interface Request { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', query?: Record<string, string | number | boolean | undefined>, body?: unknown }
 interface Module {
-  createBrowserClient: (options: { baseUrl: string }) => (path: string, request: Request) => Promise<unknown>
+  createBrowserClient: (options: { baseUrl: string, signal?: AbortSignal }) => (path: string, request: Request) => Promise<unknown>
   valueOrThrow: <T>(result: { ok: true, value: T } | { ok: false, error: { message: string } }) => T
 }
 
@@ -146,5 +146,182 @@ describe('generated browser client', () => {
   it('valueOrThrow gives the value of an ok answer and throws the message of an error', () => {
     expect(client.valueOrThrow({ ok: true, value: 3 })).toBe(3)
     expect(() => client.valueOrThrow({ ok: false, error: { message: 'The "weather" API answered 503.' } })).toThrow('The "weather" API answered 503.')
+  })
+
+  // Verify R3-001, R3-002, R3-003: the branches a real local server can't reach, run with a fake `fetch`.
+  describe('with a fake fetch', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals()
+      vi.restoreAllMocks()
+    })
+
+    /** `fetch` answers what `answer` makes of the call; the inits it was called with are kept. */
+    const fakeFetch = (answer: (init: RequestInit) => Promise<Response>) => {
+      const inits: RequestInit[] = []
+      vi.stubGlobal('fetch', (_url: unknown, init: RequestInit) => {
+        inits.push(init)
+        return answer(init)
+      })
+      return inits
+    }
+    /** A call that never answers: it only ends (rejected, as a real fetch is) when its signal aborts. */
+    const hangs = (init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      const signal = init.signal!
+      if (signal.aborted) return reject(signal.reason)
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    })
+    const MB = 1_000_000
+    /** An answer of `size` bytes in chunks of 100 kB, with the headers given. `cancelled` says whether the reader was cancelled. */
+    const streamed = (size: number, headers: Record<string, string> = {}) => {
+      const state = { cancelled: false, sent: 0 }
+      const body = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (state.sent >= size) return controller.close()
+          controller.enqueue(new Uint8Array(Math.min(100_000, size - state.sent)).fill(32))
+          state.sent += 100_000
+        },
+        cancel() {
+          state.cancelled = true
+        }
+      })
+      return { state, response: new Response(body, { status: 200, headers }) }
+    }
+
+    it('refuses an answer over 1 MB that arrives in chunks with no Content-Length, and stops reading it', async () => {
+      const { state, response } = streamed(5 * MB)
+      expect(response.headers.get('content-length')).toBeNull()
+      fakeFetch(async () => response)
+      await expect(client.createBrowserClient({ baseUrl })('/chunked', { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', status: 200, message: 'answered more than 1 MB' })
+      expect(state.cancelled).toBe(true)
+      expect(state.sent).toBeLessThan(5 * MB)
+    })
+
+    it('refuses an answer over 1 MB whose Content-Length says it is small', async () => {
+      const { state, response } = streamed(2 * MB, { 'content-length': '10' })
+      fakeFetch(async () => response)
+      await expect(client.createBrowserClient({ baseUrl })('/lies', { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', message: 'answered more than 1 MB' })
+      expect(state.cancelled).toBe(true)
+    })
+
+    it('reads an answer of exactly 1 MB (a JSON string of that size, in chunks)', async () => {
+      const text = JSON.stringify('x'.repeat(MB - 2))
+      expect(text.length).toBe(MB)
+      fakeFetch(async () => new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          const bytes = new TextEncoder().encode(text)
+          for (let at = 0; at < bytes.length; at += 100_000) controller.enqueue(bytes.slice(at, at + 100_000))
+          controller.close()
+        }
+      })))
+      await expect(client.createBrowserClient({ baseUrl })('/limit', { method: 'GET' })).resolves.toHaveLength(MB - 2)
+    })
+
+    it('fails on an opaqueredirect (the browser hides a redirect it did not follow: status 0), reading nothing', async () => {
+      const cancelled = vi.fn()
+      const opaque = { type: 'opaqueredirect', status: 0, ok: false, headers: new Headers(), body: { cancel: cancelled } } as unknown as Response
+      fakeFetch(async () => opaque)
+      await expect(client.createBrowserClient({ baseUrl })('/moved', { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', status: 0, message: 'answered a redirect, which is not followed' })
+      expect(cancelled).toHaveBeenCalled()
+    })
+
+    it('fails with the generic failure when the fetch rejects (network error, or a refusal by CORS: the browser says no more)', async () => {
+      fakeFetch(async () => {
+        throw new TypeError('Failed to fetch')
+      })
+      const failure = await client.createBrowserClient({ baseUrl })('/things', { method: 'GET' }).catch((error: Error) => error)
+      expect(failure).toMatchObject({ name: 'BrowserFailure', status: 0, message: 'couldn\'t be reached, or doesn\'t allow calls from this page' })
+      expect(JSON.stringify(failure)).not.toContain('Failed to fetch')
+    })
+
+    it('fails when the answer does not come within the timeout (the 10 s signal aborts)', async () => {
+      const timeout = new AbortController()
+      vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+      const inits = fakeFetch(hangs)
+      const call = client.createBrowserClient({ baseUrl })('/slow', { method: 'GET' })
+      timeout.abort()
+      await expect(call).rejects.toMatchObject({ name: 'BrowserFailure', status: 0, message: 'didn\'t answer within 10 s' })
+      expect(AbortSignal.timeout).toHaveBeenCalledWith(10_000)
+      expect(inits[0]!.signal).toBeInstanceOf(AbortSignal)
+    })
+
+    it('fails when the body stops arriving within the timeout too', async () => {
+      const timeout = new AbortController()
+      vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+      fakeFetch(async init => new Response(new ReadableStream<Uint8Array>({
+        pull: () => new Promise<void>((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true }))
+      })))
+      const call = client.createBrowserClient({ baseUrl })('/trickle', { method: 'GET' })
+      await new Promise(resolve => setTimeout(resolve, 20))
+      timeout.abort()
+      await expect(call).rejects.toMatchObject({ name: 'BrowserFailure', status: 0, message: 'didn\'t answer within 10 s' })
+    })
+
+    // Verify R3-003: TanStack gives each fetch of a query an AbortSignal, and a cancelled query must not keep its request.
+    describe('a signal given by the caller (a query that is cancelled)', () => {
+      it('aborting it cancels the request that is under way', async () => {
+        const cancel = new AbortController()
+        const inits = fakeFetch(hangs)
+        const call = client.createBrowserClient({ baseUrl, signal: cancel.signal })('/slow', { method: 'GET' })
+        expect(inits[0]!.signal!.aborted).toBe(false)
+        cancel.abort()
+        await expect(call).rejects.toMatchObject({ name: 'BrowserFailure', status: 0, message: 'was cancelled' })
+        expect(inits[0]!.signal!.aborted).toBe(true)
+      })
+
+      it('aborting it cancels the reading of a body that is arriving', async () => {
+        const cancel = new AbortController()
+        fakeFetch(async init => new Response(new ReadableStream<Uint8Array>({
+          pull: () => new Promise<void>((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true }))
+        })))
+        const call = client.createBrowserClient({ baseUrl, signal: cancel.signal })('/trickle', { method: 'GET' })
+        await new Promise(resolve => setTimeout(resolve, 20))
+        cancel.abort()
+        await expect(call).rejects.toMatchObject({ name: 'BrowserFailure', message: 'was cancelled' })
+      })
+
+      it('a signal that is already aborted sends a request that is cancelled at once', async () => {
+        const inits = fakeFetch(hangs)
+        await expect(client.createBrowserClient({ baseUrl, signal: AbortSignal.abort() })('/slow', { method: 'GET' })).rejects.toMatchObject({ message: 'was cancelled' })
+        expect(inits[0]!.signal!.aborted).toBe(true)
+      })
+
+      it('keeps the timeout next to it: the 10 s signal still ends the call', async () => {
+        const timeout = new AbortController()
+        vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+        fakeFetch(hangs)
+        const call = client.createBrowserClient({ baseUrl, signal: new AbortController().signal })('/slow', { method: 'GET' })
+        timeout.abort()
+        await expect(call).rejects.toMatchObject({ status: 0, message: 'didn\'t answer within 10 s' })
+      })
+
+      it('a call that is not cancelled answers as it did', async () => {
+        const inits = fakeFetch(async () => new Response('{"ok":true}', { status: 200 }))
+        await expect(client.createBrowserClient({ baseUrl, signal: new AbortController().signal })('/things', { method: 'GET' })).resolves.toEqual({ ok: true })
+        expect(inits[0]!.signal!.aborted).toBe(false)
+      })
+
+      it('works in a browser without AbortSignal.any (it joins the signals by hand)', async () => {
+        const any = Object.getOwnPropertyDescriptor(AbortSignal, 'any')!
+        Object.defineProperty(AbortSignal, 'any', { value: undefined, configurable: true, writable: true })
+        try {
+          const cancel = new AbortController()
+          const inits = fakeFetch(hangs)
+          const call = client.createBrowserClient({ baseUrl, signal: cancel.signal })('/slow', { method: 'GET' })
+          cancel.abort()
+          await expect(call).rejects.toMatchObject({ message: 'was cancelled' })
+          expect(inits[0]!.signal!.aborted).toBe(true)
+          const timeout = new AbortController()
+          vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
+          fakeFetch(hangs)
+          const late = client.createBrowserClient({ baseUrl, signal: new AbortController().signal })('/slow', { method: 'GET' })
+          timeout.abort()
+          await expect(late).rejects.toMatchObject({ message: 'didn\'t answer within 10 s' })
+          vi.restoreAllMocks()
+          await expect(client.createBrowserClient({ baseUrl, signal: AbortSignal.abort() })('/slow', { method: 'GET' })).rejects.toMatchObject({ message: 'was cancelled' })
+        } finally {
+          Object.defineProperty(AbortSignal, 'any', any)
+        }
+      })
+    })
   })
 })

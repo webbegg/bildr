@@ -2,7 +2,7 @@ import { entityNames, moduleContext } from '../generate/context.ts'
 import { camel, kebab, pascal } from '../generate/text.ts'
 import type { Model } from '../model/load.ts'
 import type { ApiSource } from './api.ts'
-import { API_DECLARED_NAMES, composableNameProblem, composableProblem, declaredNameProblem, JS_RESERVED_WORDS, LINT_RESTRICTED_FOLDERS } from './reserved-names.ts'
+import { API_DECLARED_NAMES, BROWSER_SHARED_FILES, composableNameProblem, composableProblem, declaredNameProblem, JS_RESERVED_WORDS, LINT_RESTRICTED_FOLDERS } from './reserved-names.ts'
 
 /**
  * The names a module's generated server code already declares at the top of a file: the composition root's
@@ -118,10 +118,13 @@ export const apiDeclaredName = (name: string): string | undefined => FIXED_API_N
  * Why the API `source` can't be generated as it is (a name its files can't take), or undefined. The `api_*` edits refuse the
  * name with this message, and the generator throws it for a hand-written file: either way nothing is generated that doesn't build.
  */
-export const apiNameProblem = (source: ApiNamed & Pick<ApiSource, 'auth'>): string | undefined => {
+export const apiNameProblem = (source: ApiNamed & Pick<ApiSource, 'auth' | 'runtime'>): string | undefined => {
   const where = `API "${source.name}"`
   if (LINT_RESTRICTED_FOLDERS.includes(source.name)) {
     return `${where}: "${source.name}" is a folder name the generated app's lint rules refuse in an import path (${LINT_RESTRICTED_FOLDERS.join(', ')}): pick another name`
+  }
+  if (source.runtime === 'browser' && BROWSER_SHARED_FILES.includes(source.name)) {
+    return `${where}: "${source.name}" is the name of a file every browser API source shares (layers/apis/app/data/${source.name}.ts, where its own composition would go): pick another name`
   }
   if (camel(source.name) === 'constructor') return `${where}: "${source.name}" would be the settings key \`constructor\`: pick another name`
   const secret = source.auth?.secret

@@ -64,12 +64,27 @@ const baseOf = (baseUrl: string): URL => {
   throw new BrowserFailure(0, 'has no valid base URL')
 }
 
+/** The signals as one that aborts when any of them does: `AbortSignal.any`, or by hand in a browser that has none yet. */
+const anyOf = (signals: AbortSignal[]): AbortSignal => {
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals)
+  const joined = new AbortController()
+  for (const signal of signals) {
+    if (signal.aborted) {
+      joined.abort(signal.reason)
+      break
+    }
+    signal.addEventListener('abort', () => joined.abort(signal.reason), { once: true })
+  }
+  return joined.signal
+}
+
 /**
  * A client over `fetch` for one API, run in the page: the path is under `baseUrl` (a path that leaves it, or has a "." or ".." segment the URL would resolve,
  * is refused), a redirect is not followed (it could leave the base URL), no credentials are sent, and an answer is cut off after the timeout and the size cap.
+ * `signal` is the caller's (a query that is cancelled): aborting it cancels the call, next to the timeout.
  * It answers the parsed JSON, or undefined for an empty answer.
  */
-export const createBrowserClient = ({ baseUrl }: { baseUrl: string }) =>
+export const createBrowserClient = ({ baseUrl, signal: cancel }: { baseUrl: string, signal?: AbortSignal | undefined }) =>
   async (path: string, { method, query, body }: BrowserRequest): Promise<unknown> => {
     const base = baseOf(baseUrl)
     const relative = path.replace(/^\//, '')
@@ -80,9 +95,10 @@ export const createBrowserClient = ({ baseUrl }: { baseUrl: string }) =>
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value))
     }
-    const signal = AbortSignal.timeout(TIMEOUT_MS)
+    const timeout = AbortSignal.timeout(TIMEOUT_MS)
+    const signal = cancel ? anyOf([cancel, timeout]) : timeout
     // A browser says nothing more about a failed call (a refusal by CORS looks like a network error).
-    const gone = () => new BrowserFailure(0, signal.aborted ? `didn't answer within ${TIMEOUT_MS / 1000} s` : 'couldn\'t be reached, or doesn\'t allow calls from this page')
+    const gone = () => new BrowserFailure(0, timeout.aborted ? `didn't answer within ${TIMEOUT_MS / 1000} s` : cancel?.aborted ? 'was cancelled' : 'couldn\'t be reached, or doesn\'t allow calls from this page')
     let response: Response
     try {
       response = await fetch(url, {

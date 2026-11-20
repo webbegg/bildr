@@ -48,12 +48,12 @@
     },
     "layers/apis/app/composables/apis/useWeatherForecast.ts": {
       "owner": "managed",
-      "sha256": "6e144958934d9a6dbc81ccf36fc29e45910193263a36100c8756330815594e00",
+      "sha256": "b78bf149e7c1f4f76b7a774823f2c6370d7ed61c62a6bc237ff9202c4e6ca356",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/app/composables/apis/useWeatherReportForecast.ts": {
       "owner": "managed",
-      "sha256": "fe40d73424bc4b949302c98f9e8dc294c76886cdd427d24c8d9bd30e078acd85",
+      "sha256": "2b9f4f0cd1a23761890e8fb2f565df25f4ae1dd0e1c196f2d4405aae1d700e42",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/app/data/api-query.ts": {
@@ -62,11 +62,11 @@
     },
     "layers/apis/app/data/browser-client.ts": {
       "owner": "managed",
-      "sha256": "d09c81c347c0685115b15bf781fd98ce86d772b204c0e177935b31c12123c35f"
+      "sha256": "115f1bd375eff193cad0a1e2f98111d19d65e2379c0f37b6b0806d815454d8cd"
     },
     "layers/apis/app/data/weather.ts": {
       "owner": "managed",
-      "sha256": "dd1f304bce2947a2da17d93267fdf4491eee1ccb2efbd073d04a1127ce4dd367",
+      "sha256": "af69f27d741641d6b5fe27beb800a704f22728f81ee5edd5cc6597bda9aafb79",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/nuxt.config.ts": {

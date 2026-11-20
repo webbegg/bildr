@@ -123,6 +123,18 @@ describe('a source name and a secret name the generated code can\'t take', () =>
     expect(root).not.toMatch(/const \{/)
   })
 
+  it.each(['browser-client', 'api-query'])('a browser source named %s would be the file of the client or of the helpers every browser source shares: refused with a name message, at create, at rename and at a switch to the browser', (name) => {
+    const taken = `API "${name}": "${name}" is the name of a file every browser API source shares (layers/apis/app/data/${name}.ts, where its own composition would go): pick another name`
+    expect(project().refuse('api_create', { name, baseUrl: 'https://x.example.com', runtime: 'browser' }, 'invalid').message).toBe(taken)
+    const p = shop({ runtime: 'browser' })
+    expect(p.refuse('api_update', { datasource: 'ds_shop', name }, 'invalid').message).toBe(taken)
+    expect(p.json(SHOP).name).toBe('shop')
+    // On the server it has no composition in app/data: it is fine, until it is switched to the browser.
+    const server = project()
+    server.edit('api_create', { name, baseUrl: 'https://x.example.com' })
+    expect(server.refuse('api_update', { datasource: `ds_${name.replace('-', '_')}`, runtime: 'browser' }, 'invalid').message).toBe(taken)
+  })
+
   it('names that only differ in case or dashes are not refused as "app"', () => {
     project().edit('api_create', { name: 'application', baseUrl: 'https://x.example.com' })
     project().edit('api_create', { name: 'my-app', baseUrl: 'https://x.example.com' })
@@ -240,6 +252,48 @@ describe('what the generator declares is in the reserved lists (drift guard)', (
     const used = new Set(code.match(/\b[A-Z][A-Za-z0-9]*\b/g) ?? [])
     return { declared, used }
   }
+
+  /** The globals (by name, as a bare identifier: not a property, not an object key) a generated file calls or reads. */
+  const globalsIn = (content: string) => {
+    const code = content
+      .replace(/^import .*$/gm, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/.*$/gm, '')
+      .replace(/'(?:[^'\\\n]|\\.)*'/g, '\'\'')
+      // What a template holds between `${` and `}` is code; the rest is text.
+      .replace(/`(?:[^`\\]|\\.)*`/g, text => [...text.matchAll(/\$\{([^}]*)\}/g)].map(match => match[1]).join(' '))
+    const globals = new Set(Object.getOwnPropertyNames(globalThis))
+    const found = new Set<string>()
+    for (const match of code.matchAll(/(?<![.\w$])([A-Za-z_$][\w$]*)\b(?!\s*:(?!:))/g)) if (globals.has(match[1]!)) found.add(match[1]!)
+    return found
+  }
+
+  it('a query, an action or a model named like a global a generated file uses is refused (an operation `console` would hide the console its composition calls)', () => {
+    for (const name of ['console', 'encodeURIComponent']) {
+      const message = shop().refuse('api_query_set', { datasource: 'ds_shop', query: items(name) }, 'invalid').message
+      expect(message).toBe(`API "shop": the query "${name}" would be named ${name}, which is already declared or imported by the generated files (a global the generated files use): pick another name`)
+      expect(shop({ runtime: 'browser' }).refuse('api_action_set', { datasource: 'ds_shop', action: { name, method: 'POST', path: '/x', params: [] } }, 'invalid').message).toContain('(a global the generated files use)')
+    }
+    const p = shop()
+    p.edit('api_query_set', { datasource: 'ds_shop', query: items('list') })
+    p.refuse('api_query_rename', { datasource: 'ds_shop', query: 'list', name: 'console' }, 'invalid')
+  })
+
+  it('every global a generated API file uses next to a name of the model is in the reserved lists (drift guard)', () => {
+    const model = wide()
+    const files = generate(model).filter(file => file.path.startsWith('layers/apis/'))
+    // `undefined` and the other words of the language are refused as the name of an operation on their own (JS_RESERVED_WORDS).
+    const known = new Set<string>([...Object.values(API_DECLARED_NAMES).flat(), ...JS_RESERVED_WORDS])
+    // The shared files import nothing the model names, so a global they use can't be hidden by an operation or a model: they are not held to this.
+    const shared = new Set(['layers/apis/server/lib/fetch-client.ts', 'layers/apis/app/data/api-query.ts', 'layers/apis/app/data/browser-client.ts', 'layers/apis/test/browser-client.test.ts', 'layers/apis/test/fetch-client.test.ts', 'layers/apis/nuxt.config.ts'])
+    const missing: string[] = []
+    for (const file of files.filter(entry => !shared.has(entry.path))) {
+      for (const name of globalsIn(file.content)) if (!known.has(name)) missing.push(`${file.path}: ${name}`)
+    }
+    expect(missing).toEqual([])
+    // The one that clashed: the composition calls console.warn / console.error next to the use-cases it imports under their own names.
+    expect(files.some(file => globalsIn(file.content).has('console'))).toBe(true)
+  })
 
   it.each(['createBrowserClient', 'valueOrThrow'])('a query named %s (the browser composition and composables import it) is refused', (name) => {
     const message = shop({ runtime: 'browser' }).refuse('api_query_set', { datasource: 'ds_shop', query: items(name) }, 'invalid').message
