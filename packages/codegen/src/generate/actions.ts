@@ -382,39 +382,55 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
 interface Optimistic { kind: 'insert' | 'update' | 'delete', entity: string, key?: Value, unless?: string, set?: Record<string, Value> }
 
 /**
- * The client composable of an action that takes no input (B7): `execute()` takes nothing and calls the route. There is no optimistic
- * action: it has no row or parameter to show ahead of the server, and TanStack DB's transaction only calls its `mutationFn` when
- * something was mutated, so an empty `onMutate` would never reach the server.
+ * The client composable of an action with no `client.optimistic` (B7 for no input, fix/action-server-call for the rest): `execute(...)`
+ * calls the route with its input, then refetches what the action invalidates. It is not a `createOptimisticAction` with an empty
+ * `onMutate`: TanStack DB's transaction only calls its `mutationFn` when something was mutated, so that never reached the server.
+ * The public surface is the optimistic composable's: `execute` (true when the server answered), `pending` and `error`.
  */
-const noInputComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
-  const { action, output } = analyzed
-  if (action.client.optimistic) throw new Error(`${action.id}: an action with no input can't be optimistic (it has no row or parameter to show ahead of the server)`)
+const directComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
+  const { action, inputEntity, params, output } = analyzed
+  if (action.client.optimistic) throw new Error(`${action.id}: an optimistic action goes through createOptimisticAction`)
+  if (!inputEntity && params.length > 1) throw new Error(`${action.id}: client actions need one entity input or one parameter`)
   const source = context.source(action.id)
   const invalidated = action.client.invalidates.map(id => entityById(context, id))
   const collections = new Set(invalidated.map(entity => entityNames(entity).collection))
   const doc = `Action "${action.label}": runs the server use-case${invalidated.length ? `; invalidates ${invalidated.map(entity => entity.name).join(', ')}` : ''}.`
+  const uuidInput = inputEntity?.idStrategy === 'uuid'
+  // The input's and the output's types, each imported from its own entity's file.
+  const domain = new Map<string, ImportName[]>()
+  for (const [entity, name] of [[inputEntity, inputEntity && `New${inputEntity.name}`], [output, output?.name]] as const) {
+    if (entity && name) domain.set(entityNames(entity).file, [...(domain.get(entityNames(entity).file) ?? []), { name, type: true }])
+  }
+  const alias = inputEntity && uuidInput ? `type ${pascal(action.name)}Input = Omit<New${inputEntity.name}, 'id'>` : undefined
+  const signature = inputEntity ? `input: ${uuidInput ? `${pascal(action.name)}Input` : `New${inputEntity.name}`}` : params.map(param => `${param.name}: ${tsType(param.type)}`).join('')
+  const route = `/api/${context.name}${action.http.path}`
+  const url = params.length ? `\`${route.replace(/:(\w+)/g, '${$1}')}\`` : tsString(route)
+  const body = inputEntity ? `, body: ${uuidInput ? '{ ...input, id: newId() }' : 'input'}` : ''
   return {
     path: `layers/${context.name}/app/composables/${context.name}/use${pascal(action.name)}.ts`,
     source,
     content: file([
       header(source),
       'import { ref } from \'vue\'',
-      output && importLine(`#${context.name}/domain/${entityNames(output).file}`, [{ name: output.name, type: true }]),
+      uuidInput && importLine('#core/kernel/ids', ['newId']),
+      ...[...domain.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([path, names]) => importLine(`#${context.name}/domain/${path}`, names)),
       ...[...collections].sort().map((collection) => {
         const entity = context.module.entities.find(entry => entityNames(entry).collection === collection)!
         return `import { ${collection} } from '../../data/${kebab(entity.plural)}.collection'`
       }),
       '',
+      alias,
+      alias !== undefined && '',
       `/** ${docText(doc)} */`,
       `export const use${pascal(action.name)} = () => {`,
       '  const pending = ref(false)',
       '  const error = ref<string>()',
       '',
-      '  const execute = async (): Promise<boolean> => {',
+      `  const execute = async (${signature}): Promise<boolean> => {`,
       '    pending.value = true',
       '    error.value = undefined',
       '    try {',
-      `      await $fetch${output ? `<${output.name}>` : ''}(${tsString(`/api/${context.name}${action.http.path}`)}, { method: ${tsString(action.http.method)} })`,
+      `      await $fetch${output ? `<${output.name}>` : ''}(${url}, { method: ${tsString(action.http.method)}${body} })`,
       ...invalidated.map(entity => `      await ${entityNames(entity).collection}.utils.refetch()`),
       '      return true',
       '    } catch (cause) {',
@@ -433,10 +449,11 @@ const noInputComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
 
 const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
   const { action, inputEntity, params, output } = analyzed
-  if (!inputEntity && params.length === 0) return noInputComposableFile(context, analyzed)
+  const optimistic = action.client.optimistic as Optimistic | undefined
+  if (!optimistic) return directComposableFile(context, analyzed)
+  if (!inputEntity && params.length === 0) throw new Error(`${action.id}: an action with no input can't be optimistic (it has no row or parameter to show ahead of the server)`)
   const source = context.source(action.id)
   const composable = `use${pascal(action.name)}`
-  const optimistic = action.client.optimistic as Optimistic | undefined
   const invalidated = action.client.invalidates.map(id => entityById(context, id))
   const collections = new Set(invalidated.map(entity => entityNames(entity).collection))
   const ids = new Set<string>()
@@ -463,56 +480,53 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
     execute = { signature: `${argument}: ${generic}`, call: `action(${argument})` }
   }
 
+  // An action with no `client.optimistic` never gets here (directComposableFile): its onMutate would be empty and TanStack DB would
+  // skip the server. An optimistic one whose onMutate changes nothing on a call (publishing an already published post: `unless`)
+  // skips the server the same way. That one is left as is: the server's answer would be the row unchanged (see the use-case).
   const mutate: string[] = []
-  if (optimistic) {
-    const entity = entityById(context, optimistic.entity)
-    const collection = entityNames(entity).collection
-    collections.add(collection)
-    if (optimistic.kind === 'insert') {
-      const create = analyzed.steps.find(step => step.kind === 'repository' && step.op === 'create')
-      const set = (create?.set ?? {}) as Record<string, Value>
-      const stamps = entity.timestamps ? ['createdAt', 'updatedAt'] : []
-      const at = nowCount(set) + stamps.length >= 2
-      if (at || nowCount(set)) ids.add('now')
-      const scope = { input: (name: string) => `input.${name}`, at }
-      const picked = new Set(action.input.pick ?? allFields(entity).map(field => field.name))
-      const defaults = entity.fields.filter(field => picked.has(field.name) && field.default !== undefined).map(field => `${field.name}: ${tsLiteral(field.default!)}`)
-      mutate.push(
-        `onMutate: (${argument}) => {`,
-        ...(at ? ['  const at = now()'] : []),
-        `  ${collection}.insert({`,
-        `    ${[...defaults, '...input'].join(', ')},`,
-        `    ${[...setEntries(set, scope), ...stamps.map(name => `${name}: ${at ? 'at' : 'now()'}`)].join(', ')}`,
-        '  })',
-        '},'
-      )
-    } else if (optimistic.kind === 'update') {
-      const set = optimistic.set ?? {}
-      const at = nowCount(set) >= 2
-      if (nowCount(set)) ids.add('now')
-      const scope = { input: (name: string) => name, at }
-      mutate.push(
-        `onMutate: (${argument}) => {`,
-        `  ${collection}.update(${compile(optimistic.key ?? null, scope)}, (draft) => {`,
-        ...(at ? ['    const at = now()'] : []),
-        ...(optimistic.unless ? [`    if (draft.${optimistic.unless}) return`] : []),
-        ...Object.entries(set).map(([key, value]) => `    draft.${key} = ${compile(value, scope)}`),
-        '  })',
-        '},'
-      )
-    } else {
-      mutate.push(`onMutate: (${argument}) => {`, `  ${collection}.delete(${compile(optimistic.key ?? null, { input: name => name, at: false })})`, '},')
-    }
+  const entity = entityById(context, optimistic.entity)
+  const collection = entityNames(entity).collection
+  collections.add(collection)
+  if (optimistic.kind === 'insert') {
+    const create = analyzed.steps.find(step => step.kind === 'repository' && step.op === 'create')
+    const set = (create?.set ?? {}) as Record<string, Value>
+    const stamps = entity.timestamps ? ['createdAt', 'updatedAt'] : []
+    const at = nowCount(set) + stamps.length >= 2
+    if (at || nowCount(set)) ids.add('now')
+    const scope = { input: (name: string) => `input.${name}`, at }
+    const picked = new Set(action.input.pick ?? allFields(entity).map(field => field.name))
+    const defaults = entity.fields.filter(field => picked.has(field.name) && field.default !== undefined).map(field => `${field.name}: ${tsLiteral(field.default!)}`)
+    mutate.push(
+      `onMutate: (${argument}) => {`,
+      ...(at ? ['  const at = now()'] : []),
+      `  ${collection}.insert({`,
+      `    ${[...defaults, '...input'].join(', ')},`,
+      `    ${[...setEntries(set, scope), ...stamps.map(name => `${name}: ${at ? 'at' : 'now()'}`)].join(', ')}`,
+      '  })',
+      '},'
+    )
+  } else if (optimistic.kind === 'update') {
+    const set = optimistic.set ?? {}
+    const at = nowCount(set) >= 2
+    if (nowCount(set)) ids.add('now')
+    const scope = { input: (name: string) => name, at }
+    mutate.push(
+      `onMutate: (${argument}) => {`,
+      `  ${collection}.update(${compile(optimistic.key ?? null, scope)}, (draft) => {`,
+      ...(at ? ['    const at = now()'] : []),
+      ...(optimistic.unless ? [`    if (draft.${optimistic.unless}) return`] : []),
+      ...Object.entries(set).map(([key, value]) => `    draft.${key} = ${compile(value, scope)}`),
+      '  })',
+      '},'
+    )
   } else {
-    // createOptimisticAction needs an onMutate: an action with nothing to show ahead of the server's answer gives it an empty one.
-    mutate.push('onMutate: () => {', '  // Nothing to show before the server answers.', '},')
+    mutate.push(`onMutate: (${argument}) => {`, `  ${collection}.delete(${compile(optimistic.key ?? null, { input: name => name, at: false })})`, '},')
   }
 
   const route = `/api/${context.name}${action.http.path}`
   const url = params.length ? `\`${route.replace(/:(\w+)/g, '${$1}')}\`` : tsString(route)
   const fetchType = output ? `<${output.name}>` : ''
-  const kind = optimistic ? `optimistic ${optimistic.kind}, confirmed by the server use-case` : 'runs the server use-case'
-  const doc = `Action "${action.label}": ${kind}${invalidated.length ? `; invalidates ${invalidated.map(entity => entity.name).join(', ')}` : ''}.`
+  const doc = `Action "${action.label}": optimistic ${optimistic.kind}, confirmed by the server use-case${invalidated.length ? `; invalidates ${invalidated.map(entity => entity.name).join(', ')}` : ''}.`
   // The types it imports are the input's and the output's: an action with neither (a delete) imports none.
   const typed = inputEntity ?? output
 

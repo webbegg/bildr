@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { generateActions } from '../../src/generate/actions'
 import { loadModel } from '../../src/model/load'
 import type { Model } from '../../src/model/load'
+import { project } from '../edit/helpers'
 import { fixtureModelFiles, fixtureRoot } from '../model/fixture'
 
 const fixtureModel = (): Model => {
@@ -43,6 +44,66 @@ describe('generateActions on the golden fixture', () => {
       expect(file.owner, file.path).toBe('managed')
       expect(file.source, file.path).toBe(manifest[file.path]!.source)
     }
+  })
+})
+
+/** The golden blog plus actions with no `client.optimistic`: an update, a delete on an unlisted entity, a blank one over an entity, and one with no input. */
+const withDirectActions = () => {
+  const p = project()
+  p.edit('datasource_create', { name: 'scratch', kind: 'memory' })
+  p.edit('entity_create', { name: 'note', source: 'ds_scratch', fields: [{ name: 'title', type: 'text', required: true }] })
+  p.files['.bildr/modules/blog/fixtures/note.json'] = `${JSON.stringify({ entity: 'ent_note', rows: [{ id: '0b6f6a52-1c7a-4c1e-9a52-7a0e2f3d9b01', title: 'First note' }] }, null, 2)}\n`
+  p.edit('action_create', { entity: 'ent_note', template: 'update', name: 'editNote' })
+  p.edit('action_create', { entity: 'ent_note', template: 'blank', name: 'tidyNotes' })
+  p.edit('entity_create', { name: 'secret', source: 'ds_scratch', expose: false, fields: [{ name: 'code', type: 'text', required: true }] })
+  p.edit('action_create', { entity: 'ent_secret', template: 'delete', name: 'removeSecret' })
+  p.edit('action_create', { entity: 'ent_post', template: 'blank', name: 'tidyPosts' })
+  p.edit('action_update', { action: 'act_tidy_posts', input: {} })
+  return generateActions(p.model())
+}
+
+// TanStack DB doesn't call a transaction's mutationFn when nothing was mutated (optimistic-action-contract.test.ts), so an action with
+// nothing to show ahead of the server calls it directly: $fetch, then a refetch of what it invalidates.
+describe('the composable of an action with no optimistic update', () => {
+  const files = withDirectActions()
+  const composable = (name: string) => files.find(file => file.path === `layers/blog/app/composables/blog/${name}.ts`)!.content
+
+  it('an update posts to its route with the id and refetches what it invalidates', () => {
+    const source = composable('useEditNote')
+    expect(source).not.toContain('createOptimisticAction')
+    expect(source).not.toContain('onMutate')
+    expect(source).toContain('const execute = async (id: string): Promise<boolean> => {')
+    expect(source).toContain('await $fetch<Note>(`/api/blog/notes/${id}`, { method: \'PATCH\' })')
+    expect(source).toContain('await notesCollection.utils.refetch()')
+    expect(source).toContain('return { execute, pending, error }')
+  })
+
+  it('a delete on an entity the app doesn\'t list posts and has nothing to refetch', () => {
+    const source = composable('useRemoveSecret')
+    expect(source).not.toContain('createOptimisticAction')
+    expect(source).toContain('const execute = async (id: string): Promise<boolean> => {')
+    expect(source).toContain('await $fetch(`/api/blog/secrets/${id}`, { method: \'DELETE\' })')
+    expect(source).not.toContain('Collection')
+  })
+
+  it('a blank action over an entity sends the entity as the body, with a client-made id', () => {
+    const source = composable('useTidyNotes')
+    expect(source).not.toContain('createOptimisticAction')
+    expect(source).toContain('import { newId } from \'#core/kernel/ids\'')
+    expect(source).toContain('type TidyNotesInput = Omit<NewNote, \'id\'>')
+    expect(source).toContain('const execute = async (input: TidyNotesInput): Promise<boolean> => {')
+    expect(source).toContain('await $fetch(\'/api/blog/notes/tidy-notes\', { method: \'POST\', body: { ...input, id: newId() } })')
+  })
+
+  it('an action with no input still posts with nothing', () => {
+    const source = composable('useTidyPosts')
+    expect(source).toContain('const execute = async (): Promise<boolean> => {')
+    expect(source).toContain('await $fetch(\'/api/blog/posts/tidy-posts\', { method: \'POST\' })')
+  })
+
+  it('an action with an optimistic update keeps createOptimisticAction', () => {
+    expect(composable('usePublishPost')).toContain('createOptimisticAction<string>({')
+    expect(composable('useCreatePost')).toContain('createOptimisticAction<NewPost>({')
   })
 })
 

@@ -10,10 +10,14 @@
  * called). The Button's click runs it from the inspector with nothing to choose, the file holds the step with no `args`, and a click on
  * the Button in the running app calls the action's route.
  *
+ * An action that takes input but has no optimistic update (fix/action-server-call) is made at the end: the update template over a Note
+ * (in a memory data source, with a sample row), whose steps are given a title to set. A Button runs it with the note's id, and a click in
+ * the running app sends the PATCH and the note's title changes.
+ *
  * (`interactions.mjs` is the component's variant interactions, the hover and click of a card, written by the module's actions.)
  * Shots go to e2e/module/.shots/.
  */
-import { action, appShows, bildr, check, findNode, openApp, openEditor, quiesce, quiet, run, shot, until } from './lib.mjs'
+import { action, appApi, appShows, bildr, check, findNode, openApp, openEditor, quiesce, quiet, run, shot, until } from './lib.mjs'
 
 const INDEX = 'modules/blog/pages/index.json'
 
@@ -214,6 +218,46 @@ await run('node-interactions', async ({ page, browser, errors }) => {
   await page.waitForTimeout(300)
   await shot(page, 'b3-interactions-action-step')
   check(publishFile() === publishBefore, 'and looking at it writes nothing: the file is as it was')
+
+  // An action with input and no optimistic update, run from a Button: the running app sends the request and the row changes.
+  // A Note in a memory data source (no database migration), with one sample row, and the update template over it. The template's steps
+  // change nothing, so its update step gets a field to set; the row changes only if the request reaches the server.
+  const ROW = '0b6f6a52-1c7a-4c1e-9a52-7a0e2f3d9b77'
+  await action('datasource_create', { name: 'scratch', kind: 'memory' })
+  await action('entity_create', { name: 'note', source: 'ds_scratch', fields: [{ name: 'title', type: 'text', required: true }] })
+  await action('fixture_row_create', { entity: 'ent_note', values: { id: ROW, title: 'Before the click' } })
+  await action('action_create', { entity: 'ent_note', template: 'update', name: 'retitleNote' })
+  const template = bildr('modules/blog/actions/retitle-note.json')
+  await action('action_update', {
+    action: 'act_retitle_note',
+    steps: template.steps.map(step => step.kind === 'repository' ? { ...step, set: { title: 'Retitled' } } : step)
+  })
+  const retitleAction = bildr('modules/blog/actions/retitle-note.json')
+  check(!retitleAction.client.optimistic && retitleAction.input.params?.length === 1 && retitleAction.http.method === 'PATCH', `the update action takes an id and has no optimistic update (${JSON.stringify(retitleAction.client)})`)
+  await action('node_insert', { file: 'pg_index', parentId: 'n_head', type: 'Button', props: { text: 'Retitle the note' } })
+  const retitleButton = head().children.find(node => node.props?.text === 'Retitle the note')
+  check(!!retitleButton, `a Button for it is in the header (${retitleButton?.id})`)
+  await action('node_interaction_add', { file: 'pg_index', nodeId: retitleButton.id, on: 'click', do: [{ kind: 'runAction', action: 'act_retitle_note', args: { id: ROW } }] })
+  check(await quiesce(60_000), 'the app regenerates with the update action called with the note\'s id')
+  await quiet()
+  const titleOf = async () => (await appApi('/api/blog/notes?limit=100&offset=0'))?.body?.items?.find(row => row.id === ROW)?.title
+  check(await until(async () => (await titleOf()) === 'Before the click', 90_000), `the note starts as "Before the click" (${await titleOf()})`)
+  const retitleContext = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  try {
+    const live = await openApp(retitleContext, '/')
+    const seen = []
+    live.on('request', request => seen.push(`${request.method()} ${request.url().replace(/^https?:\/\/[^/]+/, '')}`))
+    live.on('pageerror', error => seen.push(`pageerror: ${error.message}`))
+    const click = live.locator('button', { hasText: 'Retitle the note' }).first()
+    await click.waitFor({ timeout: 30_000 })
+    const answered = live.waitForResponse(answer => answer.request().method() === 'PATCH' && answer.url().includes(`/api/blog/notes/${ROW}`), { timeout: 30_000 }).catch(() => undefined)
+    await click.click()
+    const response = await answered
+    check(!!response?.ok(), `a click on the Button sends the action's request (${response ? response.status() : `no request; the page made ${seen.filter(entry => !entry.includes('/_nuxt/')).join(', ') || 'only module loads'}`})`)
+    check(await until(async () => (await titleOf()) === 'Retitled'), `and the row's title changes to "Retitled" (${await titleOf()})`)
+  } finally {
+    await retitleContext.close()
+  }
 
   check(errors.length === 0, `no console errors${errors.length ? `: ${errors.join(' | ')}` : ''}`)
 }, { ignore: [/ERR_INCOMPLETE_CHUNKED_ENCODING/, /ERR_CONNECTION_(REFUSED|RESET)/] })

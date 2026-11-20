@@ -177,6 +177,29 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
     session.edit('node_insert', { file: 'pg_index', parentId: 'n_head', type: 'Button', props: { text: 'Tidy and say' } })
     session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_2', on: 'click', do: [{ kind: 'runAction', action: 'act_tidy_posts' }, { kind: 'toast', when: 'success', title: 'Done' }] })
   }],
+  // An action with no optimistic update calls the server itself (fix/action-server-call): the update, a delete on an entity the app doesn't
+  // list and a blank action over an entity, each run from a page (the first two from a Button, the last from the form).
+  ['actions with no optimistic update, run from a page', (session) => {
+    const uuid = '0b6f6a52-1c7a-4c1e-9a52-7a0e2f3d9b01'
+    session.edit('datasource_create', { name: 'scratch', kind: 'memory' })
+    session.edit('entity_create', { name: 'note', source: 'ds_scratch', fields: [{ name: 'title', type: 'text', required: true }] })
+    session.fixtureRow('.bildr/modules/blog/fixtures/note.json', 'ent_note', { id: uuid, title: 'First note' })
+    session.edit('action_create', { entity: 'ent_note', template: 'update', name: 'editNote' })
+    session.edit('entity_create', { name: 'secret', source: 'ds_scratch', expose: false, fields: [{ name: 'code', type: 'text', required: true }] })
+    session.edit('action_create', { entity: 'ent_secret', template: 'delete', name: 'removeSecret' })
+    session.edit('action_create', { entity: 'ent_post', template: 'blank', name: 'tidyPosts' })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_head', type: 'Button', props: { text: 'Edit' } })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_head', type: 'Button', props: { text: 'Remove' } })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_1', on: 'click', do: [
+      { kind: 'runAction', action: 'act_edit_note', args: { id: uuid } },
+      { kind: 'toast', when: 'success', title: 'Edited' }
+    ] })
+    session.edit('node_interaction_add', { file: 'pg_index', nodeId: 'n_button_2', on: 'click', do: [{ kind: 'runAction', action: 'act_remove_secret', args: { id: uuid } }] })
+    session.edit('node_interaction_update', { file: 'pg_new_post', nodeId: 'n_form', index: 0, do: [
+      { kind: 'runAction', action: 'act_tidy_posts', args: { $form: true } },
+      { kind: 'navigate', when: 'success', to: { page: 'pg_index' } }
+    ] })
+  }],
   ['computed values that read each other, and a List that shows one', (session) => {
     session.edit('page_computed_set', { page: 'pg_index', as: 'label', if: { not: { $bind: 'preferences.showDrafts' } }, then: 'Featured posts', else: 'All posts' })
     session.edit('page_computed_set', { page: 'pg_index', as: 'heading', if: { $bind: 'preferences.showDrafts' }, then: { $bind: 'label' }, else: 'Posts' })
