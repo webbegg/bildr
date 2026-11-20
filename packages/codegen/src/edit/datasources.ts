@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Model } from '../model/load.ts'
-import { ArtifactIdSchema, CamelNameSchema, EnvNameSchema } from '../model/schemas.ts'
+import { ArtifactIdSchema, CamelNameSchema, EnvNameSchema, urlProblem } from '../model/schemas.ts'
 import type { DataSourceFile } from '../model/schemas.ts'
 import { DATABASE_DEPENDENCIES } from '../starter/starter.ts'
 import { camel, defineEdit, fail, kebab, snake } from './core.ts'
@@ -32,19 +32,6 @@ export const datasourceById = (draft: Draft, id: string): DataSourceFile =>
 
 /** `NUXT_DATASOURCES_<NAME>_<SETTING>`: the env var Nuxt maps onto `runtimeConfig.datasources.<name>.<setting>`. */
 export const envNameOf = (source: string, setting: string) => `NUXT_DATASOURCES_${snake(camel(source)).toUpperCase()}_${snake(setting).toUpperCase()}`
-
-export const urlProblem = (value: string): string | undefined => {
-  let url: URL
-  try {
-    url = new URL(value)
-  } catch {
-    return `"${value}" is not an absolute URL, like "https://api.example.com/v1"`
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'A base URL is http or https'
-  if (url.username || url.password) return 'A base URL can\'t hold a user name or password: put the secret in an env var (auth)'
-  if (url.search || url.hash) return 'A base URL has no query or fragment'
-  return undefined
-}
 
 export const sourceName = (draft: Draft, given: string, except?: string): string => {
   const name = kebab(given)
@@ -185,5 +172,6 @@ export const datasourceEnvVars = (model: Pick<Model, 'datasources'>): DataSource
     datasource: source.id,
     setting,
     secret: source.auth?.secret === setting,
-    hasDefault: source.defaults?.[setting] !== undefined
+    // An API source holds its base URL itself, not in defaults.
+    hasDefault: source.defaults?.[setting] !== undefined || (source.kind === 'api' && setting === 'baseUrl' && source.baseUrl !== undefined)
   })))

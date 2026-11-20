@@ -160,6 +160,8 @@ export type ApiQuery = z.infer<typeof ApiQuerySchema>
 export type ApiAction = z.infer<typeof ApiActionSchema>
 
 interface ApiParts {
+  baseUrl?: string
+  env?: Record<string, string>
   runtime?: (typeof API_RUNTIMES)[number]
   auth?: { secret: string }
   models?: ApiModel[]
@@ -183,11 +185,54 @@ const pathProblem = (path: string, params: ApiParam[]): string | undefined => {
 
 const duplicateOf = (names: string[]) => names.find((name, index) => names.indexOf(name) !== index)
 
+/** Why `value` can't be a base URL: REST `defaults.baseUrl` and API `baseUrl` share the rule. */
+export const urlProblem = (value: string): string | undefined => {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return `"${value}" is not an absolute URL, like "https://api.example.com/v1"`
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'A base URL is http or https'
+  if (url.username || url.password) return 'A base URL can\'t hold a user name or password: put the secret in an env var (auth)'
+  if (url.search || url.hash) return 'A base URL has no query or fragment'
+  return undefined
+}
+
+/** The model cycle through `models`, if any: each model is walked once (depth-first, three colours). */
+const modelCycle = (models: ApiModel[]): string[] | undefined => {
+  const byName = new Map(models.map(model => [model.name, model]))
+  const done = new Set<string>()
+  const trail: string[] = []
+  const walk = (name: string): string[] | undefined => {
+    if (trail.includes(name)) return [...trail.slice(trail.indexOf(name)), name]
+    if (done.has(name)) return undefined
+    trail.push(name)
+    for (const field of byName.get(name)?.fields ?? []) {
+      if (!field.model || !byName.has(field.model)) continue
+      const cycle = walk(field.model)
+      if (cycle) return cycle
+    }
+    trail.pop()
+    done.add(name)
+    return undefined
+  }
+  for (const model of models) {
+    const cycle = walk(model.name)
+    if (cycle) return cycle
+  }
+  return undefined
+}
+
 /** What's wrong with an API source's parts: the load check and the edits share it. */
 export const apiProblems = (source: ApiParts): ApiProblem[] => {
   const problems: ApiProblem[] = []
   const models = source.models ?? []
   const known = new Set(models.map(model => model.name))
+  const url = source.baseUrl === undefined ? undefined : urlProblem(source.baseUrl)
+  if (url) problems.push({ path: ['baseUrl'], message: url })
+  if (source.env && !source.env.baseUrl) problems.push({ path: ['env', 'baseUrl'], message: 'An API data source needs the env var of its base URL (env.baseUrl)' })
+  if (source.auth?.secret === 'baseUrl') problems.push({ path: ['auth', 'secret'], message: '"baseUrl" is the base URL setting: name the secret another way, like "apiKey"' })
   if (source.runtime === 'browser' && source.auth) {
     problems.push({ path: ['auth'], message: 'An API that runs in the browser can\'t use a secret: the browser would see it. Run it on the server, or remove the auth' })
   }
@@ -207,24 +252,8 @@ export const apiProblems = (source: ApiParts): ApiProblem[] => {
     })
   })
   // A model can't contain itself: the generated types and checks would never end.
-  const byName = new Map(models.map(model => [model.name, model]))
-  const reported = new Set<string>()
-  const walk = (name: string, trail: string[]): string[] | undefined => {
-    if (trail.includes(name)) return [...trail.slice(trail.indexOf(name)), name]
-    for (const field of byName.get(name)?.fields ?? []) {
-      if (!field.model || !byName.has(field.model)) continue
-      const cycle = walk(field.model, [...trail, name])
-      if (cycle) return cycle
-    }
-    return undefined
-  }
-  for (const model of models) {
-    const cycle = walk(model.name, [])
-    if (cycle && cycle[0] === model.name && !cycle.some(name => reported.has(name))) {
-      problems.push({ path: ['models'], message: `Model cycle: ${cycle.join(' → ')}` })
-      cycle.forEach(name => reported.add(name))
-    }
-  }
+  const cycle = modelCycle(models)
+  if (cycle) problems.push({ path: ['models'], message: `Model cycle: ${cycle.join(' → ')}` })
   const operations = [...(source.queries ?? []).map(query => ({ kind: 'queries' as const, op: query })), ...(source.actions ?? []).map(action => ({ kind: 'actions' as const, op: action }))]
   const duplicate = duplicateOf(operations.map(({ op }) => op.name))
   if (duplicate) problems.push({ path: ['queries'], message: `A query or action is already named "${duplicate}"` })

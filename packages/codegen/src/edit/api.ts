@@ -3,7 +3,7 @@ import { API_RUNTIMES, ApiActionSchema, ApiModelSchema, ApiQuerySchema, apiProbl
 import type { ApiAction, ApiModel, ApiQuery, DataSourceFile } from '../model/schemas.ts'
 import { defineEdit, fail } from './core.ts'
 import type { Draft } from './core.ts'
-import { AuthInput, datasourceById, DataSourceRef, envNameOf, sourceName, urlProblem } from './datasources.ts'
+import { AuthInput, datasourceById, DataSourceRef, envNameOf, sourceName } from './datasources.ts'
 
 /**
  * API data sources (simple data, SD-2): a remote JSON API with a first-class `baseUrl`, the
@@ -26,19 +26,21 @@ export const apiById = (draft: Draft, id: string): ApiSource => {
 const baseUrlEnv = (name: string, runtime: ApiSource['runtime']) =>
   runtime === 'browser' ? envNameOf(name, 'baseUrl').replace(/^NUXT_/, 'NUXT_PUBLIC_') : envNameOf(name, 'baseUrl')
 
-/** Fills in the env vars and runs the source's rules, failing on the first problem. */
-const settle = (source: ApiSource, previous?: { name: string, runtime: ApiSource['runtime'] }) => {
-  const problem = urlProblem(source.baseUrl)
-  if (problem) fail('invalid', problem)
+/**
+ * Fills in the env vars and runs the source's rules, failing on the first problem. An env
+ * var bildr named follows the source's name and runtime (generated code reads
+ * `runtimeConfig.datasources.<name>`, which Nuxt fills from that name); one the user named stays.
+ */
+const settle = (source: ApiSource, previous: { name: string, auth?: { secret: string } } = source) => {
   const env: Record<string, string> = { ...source.env }
-  // A base URL env var bildr named follows the runtime; one the user named stays.
-  const ours = previous ? [baseUrlEnv(previous.name, 'server'), baseUrlEnv(previous.name, 'browser')] : []
-  if (!env.baseUrl || ours.includes(env.baseUrl)) env.baseUrl = baseUrlEnv(previous?.name ?? source.name, source.runtime)
+  const oursBase = [baseUrlEnv(previous.name, 'server'), baseUrlEnv(previous.name, 'browser')]
+  if (!env.baseUrl || oursBase.includes(env.baseUrl)) env.baseUrl = baseUrlEnv(source.name, source.runtime)
   for (const setting of Object.keys(env)) {
     if (setting !== 'baseUrl' && setting !== source.auth?.secret) Reflect.deleteProperty(env, setting)
   }
   if (source.auth) {
-    env[source.auth.secret] ??= envNameOf(source.name, source.auth.secret)
+    const secret = source.auth.secret
+    if (!env[secret] || env[secret] === envNameOf(previous.name, secret)) env[secret] = envNameOf(source.name, secret)
     if (source.auth.type === 'header' && !source.auth.header) fail('invalid', 'A "header" auth needs the header name, like "X-Api-Key"')
     if (source.auth.type === 'bearer' && source.auth.header) fail('invalid', 'A "bearer" auth sends "Authorization: Bearer …": it takes no header name')
   }
@@ -85,7 +87,7 @@ export const apiUpdate = defineEdit({
   }),
   apply: (draft, { datasource: id, name, baseUrl, runtime, auth }) => {
     const source = apiById(draft, id)
-    const previous = { name: source.name, runtime: source.runtime }
+    const previous = { name: source.name }
     if (name !== undefined) source.name = sourceName(draft, name, id)
     if (baseUrl !== undefined) source.baseUrl = baseUrl
     if (runtime !== undefined) source.runtime = runtime
