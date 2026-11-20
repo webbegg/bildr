@@ -9,6 +9,7 @@
     "e2e:module": "node e2e/module/all.mjs",
     "palettes": "node --experimental-strip-types scripts/generate-palettes.ts",
     "lint": "eslint .",
+    "release": "node scripts/release.ts",
     "test": "vitest run",
     "typecheck": "pnpm --filter './packages/**' typecheck"
   },

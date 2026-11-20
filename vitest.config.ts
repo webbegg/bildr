@@ -11,6 +11,7 @@ export default defineConfig({
           exclude: [...configDefaults.exclude, 'packages/editor/**']
         }
       },
+      { test: { name: 'scripts', include: ['scripts/test/**/*.test.ts'] } },
       'packages/editor/vitest.config.ts'
     ]
   }
