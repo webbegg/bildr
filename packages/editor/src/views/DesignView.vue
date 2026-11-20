@@ -7,6 +7,7 @@ import FormActionDialog from '../design/FormActionDialog.vue'
 import RequiredValuesDialog from '../design/RequiredValuesDialog.vue'
 import { previewIsEmpty } from '../design/previewState.ts'
 import { createDesign, DESIGN_KEY } from '../design/store.ts'
+import { ADVANCED_PATH } from '../editor/dataRoutes.ts'
 import { targetsOfProblem } from '../editor/findingTargets.ts'
 import { PANEL_KEY, clampPanel, storedPanelWidth } from '../editor/panelWidth.ts'
 import { createEditor, provideEditor } from '../editor/useEditor.ts'
@@ -164,7 +165,7 @@ const canvasKey = (message: { key: string, code: string, meta: boolean, shift: b
         :targets="problem => targetsOfProblem(problem, editor.model)"
       >
         <UButton
-          :to="{ path: '/data', query: { item: 'files' } }"
+          :to="{ path: ADVANCED_PATH, query: { item: 'files' } }"
           label="Open model files"
           icon="i-lucide-file-json"
           color="error"

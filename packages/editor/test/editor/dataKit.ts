@@ -16,8 +16,8 @@ export const q = (selector: string) => document.body.querySelector<HTMLElement>(
 export const qa = (selector: string) => [...document.body.querySelectorAll<HTMLElement>(selector)]
 export const text = (element: Element | null | undefined) => element?.textContent?.replace(/\s+/g, ' ').trim() ?? ''
 
-/** Mounts the Data screen with the base handlers plus `extra`. */
-export const open = async (extra: Handlers = {}, routes: AppRoutes = {}, path = '/data') => {
+/** Mounts the Data screen (the workspace, `/data/advanced`) with the base handlers plus `extra`. */
+export const open = async (extra: Handlers = {}, routes: AppRoutes = {}, path = '/data/advanced') => {
   const actions = mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), ...extra }, routes)
   const mounted = await mountWithApp(DataView, path)
   return { actions, ...mounted }

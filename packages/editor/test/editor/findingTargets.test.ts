@@ -139,7 +139,7 @@ describe('the generator is asked once for a model, not once for each link', () =
 })
 
 describe('where a model problem leads: its file in All model files, or its item once the model loads', () => {
-  const files = (path: string) => ({ kind: 'files', id: path, label: 'Open in All model files', to: { path: '/data', query: { item: 'files', file: path } } })
+  const files = (path: string) => ({ kind: 'files', id: path, label: 'Open in All model files', to: { path: '/data/advanced', query: { item: 'files', file: path } } })
 
   it('links a problem to its file in All model files while the model does not load', () => {
     const problem = { path: '.bildr/modules/blog/pages/index.json', message: 'Unknown node type "Wat"' }

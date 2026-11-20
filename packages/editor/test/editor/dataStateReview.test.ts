@@ -286,7 +286,7 @@ describe('the words of the State dialogs and notices', () => {
   })
 
   it('words the rename warning around code the user wrote, with the generated name as a hint', async () => {
-    await mounted({}, '/data')
+    await mounted({}, '/data/advanced')
     await menuItem(q('[data-artifact-menu="st_preferences"]'), 'Rename')
     expect(text(q('[data-artifact-warning]'))).toBe('Code you wrote yourself that uses this state needs the same rename.')
     expect(text(q('[data-artifact-hint]'))).toBe('It is generated as `useBlogPreferences`.')
@@ -294,7 +294,7 @@ describe('the words of the State dialogs and notices', () => {
   })
 
   it('words the rename warning of a query and an action the same way', async () => {
-    await mounted({}, '/data')
+    await mounted({}, '/data/advanced')
     await menuItem(q('[data-artifact-menu="q_featured_posts"]'), 'Rename')
     expect(text(q('[data-artifact-warning]'))).toBe('Code you wrote yourself that uses this query needs the same rename.')
     expect(text(q('[data-artifact-hint]'))).toBe('It is generated as `useFeaturedPosts`.')

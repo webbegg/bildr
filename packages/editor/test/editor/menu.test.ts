@@ -111,10 +111,10 @@ describe('the top bar menu is the only navigation', () => {
     expect(navLinks()).toEqual([])
   })
 
-  it('opens the Data deep link on /data, with only the item and the tab the screen shows in its query (S2)', async () => {
-    const { router } = await open('/data')
+  it('opens the Data workspace on /data/advanced, with only the item and the tab the screen shows in its query (S2)', async () => {
+    const { router } = await open('/data/advanced')
     const route = router.currentRoute.value
-    expect(route.path).toBe('/data')
+    expect(route.path).toBe('/data/advanced')
     expect(Object.keys(route.query).sort()).toEqual(['item', 'tab'])
     expect(text(q('[data-view-menu]'))).toBe('Data')
     expect(text(q('[data-brand]'))).toBe('bildr')
@@ -136,7 +136,7 @@ describe('the top bar menu is the only navigation', () => {
   it('retires the Model screen: /model opens All model files in the Data workspace, which the menu names Data (S3)', async () => {
     const { router } = await open('/model')
     const route = router.currentRoute.value
-    expect(route.path).toBe('/data')
+    expect(route.path).toBe('/data/advanced')
     expect(route.query).toEqual({ item: 'files' })
     expect(text(q('[data-view-menu]'))).toBe('Data')
     expect(q('[data-data-files]')).not.toBeNull()
@@ -146,7 +146,7 @@ describe('the top bar menu is the only navigation', () => {
 
   it('keeps the file a /model deep link names, as file= (S3)', async () => {
     const { router } = await open('/model?path=.bildr%2Flayouts%2Fmain.json')
-    expect(router.currentRoute.value.path).toBe('/data')
+    expect(router.currentRoute.value.path).toBe('/data/advanced')
     expect(router.currentRoute.value.query).toEqual({ item: 'files', file: '.bildr/layouts/main.json' })
     const content = q('[data-testid="raw-content"]')
     expect((content?.matches('textarea') ? content : content?.querySelector('textarea')) as HTMLTextAreaElement | null).toHaveProperty('value', expect.stringContaining('"lay_main"'))
@@ -180,7 +180,7 @@ describe('the top bar menu is the only navigation', () => {
     q('[role="menu"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await settle()
     await click(q('[data-testid="migration-banner"] a'))
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data/advanced'))
     expect(router.currentRoute.value.query).toEqual({ item: 'migrations' })
   })
 })

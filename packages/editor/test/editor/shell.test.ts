@@ -495,7 +495,7 @@ describe('what the editor adds to the hosted one (S4)', () => {
     await fromCanvas({ type: 'bildr:ready' })
     expect(byTestId('design-problems')?.textContent).not.toContain('(Model screen)')
     await click(byTestId('open-model'))
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data/advanced'))
     expect(router.currentRoute.value.query).toEqual({ item: 'files' })
   })
 

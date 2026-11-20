@@ -31,7 +31,7 @@ const preview = (over: Record<string, unknown> = {}) => ({
   ...over
 })
 
-const open = async (extra: Handlers = {}, path = '/data') => {
+const open = async (extra: Handlers = {}, path = '/data/advanced') => {
   const actions = mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), ...extra })
   await mountWithApp(DataView, path)
   return actions
@@ -48,7 +48,7 @@ afterEach(() => {
 })
 
 describe('a new collection in a connection', () => {
-  const dialog = async (extra: Handlers = {}, path = '/data') => {
+  const dialog = async (extra: Handlers = {}, path = '/data/advanced') => {
     const actions = await open(extra, path)
     // The connection's Add… opens New collection on REST API with that connection chosen; Continue opens the connection's dialog.
     await click(q('[data-connection-add-collection]'))
@@ -425,7 +425,7 @@ describe('Import from URL', () => {
 
   it('deletes the data source it made when the screen goes away with the dialog open (a route change)', async () => {
     const actions = mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), datasource_create: ok({ datasourceId: 'ds_example_org' }), datasource_preview: () => preview(), datasource_delete: ok({ database: true }) })
-    const { wrapper } = await mountWithApp(DataView, '/data')
+    const { wrapper } = await mountWithApp(DataView, '/data/advanced')
     await openImport()
     await fetchUrl('https://example.org/todos')
     wrapper.unmount()

@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { sessionEnded } from './api.ts'
+import { ADVANCED_PATH, SIMPLE_PATH } from './editor/dataRoutes.ts'
 import { registerScreens } from './editor/views.ts'
 import ScreenBar from './shell/ScreenBar.vue'
 import { usePolling, useStatus } from './status.ts'
@@ -12,9 +13,9 @@ const route = useRoute()
 const router = useRouter()
 const status = useStatus()
 
-// The Data view is its own screen: an editor that is asked for it (or for the Canvas, Design or Settings from there) opens the other one (editor/views.ts).
+// The Data view is its own screen (the simple section: the workspace is reached from it, `Advanced`): an editor that is asked for it (or for the Canvas, Design or Settings from there) opens the other one (editor/views.ts).
 // The navigation's result goes back to views.ts, so a failed or cancelled one drops what was carried for the next screen.
-onBeforeUnmount(registerScreens(screen => router.push(screen === 'data' ? '/data' : '/design')))
+onBeforeUnmount(registerScreens(screen => router.push(screen === 'data' ? SIMPLE_PATH : '/design')))
 
 usePolling(status.refresh)
 
@@ -51,7 +52,7 @@ const losses = computed(() => {
           icon="i-lucide-database-zap"
           :ui="{ root: 'rounded-none' }"
           :title="`A destructive migration waits for confirmation (${losses}).`"
-          :actions="[{ label: 'Review', to: { path: '/data', query: { item: 'migrations' } }, color: 'warning', variant: 'solid' }]"
+          :actions="[{ label: 'Review', to: { path: ADVANCED_PATH, query: { item: 'migrations' } }, color: 'warning', variant: 'solid' }]"
         />
         <ScreenBar v-if="route.meta.bar" />
         <div class="relative min-h-0 flex-1 overflow-y-auto">

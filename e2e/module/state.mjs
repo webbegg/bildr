@@ -53,7 +53,7 @@ await run('state', async ({ page, browser, errors }) => {
   check(made?.id === 'st_preferences' && made.name === 'preferences' && made.persist === 'memory' && made.shape === 'single', `Create writes the state, forgotten on reload (${made?.id} ${made?.persist} ${made?.shape})`)
   check(made?.fields.length === 1 && made.fields[0].name === 'value' && made.fields[0].type === 'text', 'with its one text field, value')
   check(await until(async () => await page.locator('[role=tab][aria-selected=true]').getAttribute('data-data-tab') === 'fields'), 'a new state opens on its Fields tab')
-  check(decodeURIComponent(page.url()).endsWith('#/data?item=state:st_preferences&tab=fields'), `its item and tab are in the URL (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
+  check(decodeURIComponent(page.url()).endsWith('#/data/advanced?item=state:st_preferences&tab=fields'), `its item and tab are in the URL (${decodeURIComponent(page.url()).replace(/.*#/, '#')})`)
   check((await page.locator('[data-data-tab]').allInnerTexts()).map(name => name.trim()).join() === 'Fields,Used in,JSON', 'it has the tabs Fields, Used in and JSON')
   check(await page.locator('[data-artifacts="state"] [data-tree-item="state:st_preferences"]').count() === 1, 'and a row in the State section')
 

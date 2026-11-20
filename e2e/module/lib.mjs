@@ -453,13 +453,21 @@ export async function openEditor(page, file, { route = '/design', variant } = {}
   await canvas(page).locator('[data-node]').first().waitFor({ state: 'attached' })
 }
 
-/** Opens the Data screen (`/__bildr#/data`) and waits until it has loaded. */
+/** Opens the advanced Data screen, the workspace (`/__bildr#/data/advanced`), and waits until it has loaded. The simple section is `openSimpleData`. */
 export async function openData(page) {
-  await page.goto(editorUrl('/data'))
+  await page.goto(editorUrl('/data/advanced'))
   await page.locator('[data-testid="data"]').waitFor()
   await page.locator('[data-testid="data-loading"]').waitFor({ state: 'detached' })
   // The workspace's tree of Collections and Connections is there once the model has loaded.
   await page.locator('[data-data-tree]').waitFor()
+}
+
+/** Opens the simple Data section (`/__bildr#/data`) and waits until its list has loaded. */
+export async function openSimpleData(page) {
+  await page.goto(editorUrl('/data'))
+  await page.locator('[data-testid="simple-data"]').waitFor()
+  await page.locator('[data-testid="data-loading"]').waitFor({ state: 'detached' })
+  await page.locator('[data-simple-list]').waitFor()
 }
 
 /** The storage choices of the New collection dialog in the order shown, the chosen one marked with `*`: `['sample*', 'database', 'rest']`. */

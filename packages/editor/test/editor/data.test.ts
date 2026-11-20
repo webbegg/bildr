@@ -88,14 +88,14 @@ describe('the Data screen', () => {
     expect(q('[data-testid="data-problems"]')?.textContent).not.toContain('(Model screen)')
     await click(q('[data-testid="open-model"]'))
     await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({ item: 'files' }))
-    expect(router.currentRoute.value.path).toBe('/data')
+    expect(router.currentRoute.value.path).toBe('/data/advanced')
   })
 
   it('links to All model files at the bottom of the tree', async () => {
     const { router } = await open()
     await click(q('[data-raw-model]'))
     await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({ item: 'files' }))
-    expect(router.currentRoute.value.path).toBe('/data')
+    expect(router.currentRoute.value.path).toBe('/data/advanced')
   })
 
   it('opens the other screen for a view the Data screen does not show, through the view menu', async () => {
@@ -111,12 +111,18 @@ describe('the Data screen', () => {
     }
   })
 
-  it('is reached from the Design screen\'s view menu, the only navigation', async () => {
+  it('is reached from the Design screen\'s view menu, the only navigation: the menu opens the simple section, whose Advanced switch opens it', async () => {
     mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }) })
     const { router } = await mountWithApp(App, '/design')
     expect(q('nav')).toBeNull()
     await menuItem(q('[data-view-menu]'), 'Data')
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data'))
+    await settle()
+    expect(q('[data-view-menu]')?.textContent?.trim()).toBe('Data')
+    expect(q('[data-testid="simple-data"]')).not.toBeNull()
+    expect(q('[data-collections-internal]')).toBeNull()
+    await click(q('[data-testid="simple-to-advanced"]'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data/advanced'))
     await settle()
     expect(q('[data-view-menu]')?.textContent?.trim()).toBe('Data')
     expect(q('[data-collections-internal]')).not.toBeNull()
@@ -1216,7 +1222,7 @@ describe('the JSON tab and All model files (S3)', () => {
     file.fields.push({ id: 'fld_extra', name: 'extra', type: 'text' })
     return file
   }
-  const json = async (extra: Handlers = {}, path = '/data') => {
+  const json = async (extra: Handlers = {}, path = '/data/advanced') => {
     saved.reset()
     const mounted = await open({ ...keeping(addField), ...extra }, {}, path)
     await click(tab('json'))
@@ -1372,7 +1378,7 @@ describe('the JSON tab and All model files (S3)', () => {
     it('lists every model file by kind, inside the workspace, with the one raw editor', async () => {
       const { router } = await open()
       await click(q('[data-raw-model]'))
-      expect(router.currentRoute.value.path).toBe('/data')
+      expect(router.currentRoute.value.path).toBe('/data/advanced')
       expect(q('[data-data-files]')).not.toBeNull()
       expect(q('[data-data-tree]')).not.toBeNull()
       expect(q('[role="tablist"]')).toBeNull()
@@ -1694,7 +1700,7 @@ describe('the JSON tab and All model files (S3)', () => {
     it('asks before the screen is left for another one', async () => {
       saved.reset()
       mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), ...keeping(addField) })
-      const { router } = await mountWithApp(App, '/data')
+      const { router } = await mountWithApp(App, '/data/advanced')
       await click(tab('json'))
       await edit()
       const leaving = router.push('/code')
@@ -1702,7 +1708,7 @@ describe('the JSON tab and All model files (S3)', () => {
       expect(confirmText()).toContain(DISCARD)
       await click(q('[data-confirm-cancel]'))
       await leaving
-      expect(router.currentRoute.value.path).toBe('/data')
+      expect(router.currentRoute.value.path).toBe('/data/advanced')
       expect(rawText()!.value).toBe('{ "draft": true }')
     })
   })
@@ -1969,7 +1975,7 @@ describe('the JSON tab and All model files (S3)', () => {
     it('opens All model files from the /model deep link too, and from a file the problems name', async () => {
       const module = broken()
       const { router } = await open(module.handlers, {}, `/model?path=${encodeURIComponent(POST)}`)
-      expect(router.currentRoute.value.path).toBe('/data')
+      expect(router.currentRoute.value.path).toBe('/data/advanced')
       expect(q('[data-testid="data-problems"]')).not.toBeNull()
       expect(shownFile()).toMatchObject({ id: 'ent_post' })
     })
@@ -2962,7 +2968,7 @@ describe('unsaved edits of a query\'s Definition (S10)', () => {
     expect(confirmText()).toContain(DISCARD)
     await click(q('[data-confirm-cancel]'))
     await leaving
-    expect(router.currentRoute.value.path).toBe('/data')
+    expect(router.currentRoute.value.path).toBe('/data/advanced')
     expect(inputOf('[data-def="label"]').value).toBe('Top posts')
   })
 
@@ -3282,7 +3288,7 @@ describe('the JSON tab of a query and of an action (S10)', () => {
 })
 
 describe('the dialogs of queries and actions (S10, DW-7d, DW-7e)', () => {
-  const mounted = (extra: Handlers = {}, path = '/data') => open({ ...artifactModule(), ...extra }, {}, path)
+  const mounted = (extra: Handlers = {}, path = '/data/advanced') => open({ ...artifactModule(), ...extra }, {}, path)
   const dialog = (kind: 'create' | 'rename' | 'delete') => q(`[data-artifact-dialog="${kind}"]`)
   const nameInput = () => inputOf('[data-artifact-name]')
   const submit = () => click(q('[data-artifact-submit]'))

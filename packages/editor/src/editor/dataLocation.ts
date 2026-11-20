@@ -5,11 +5,11 @@ import type { DataItem, DataTab } from './dataTabs.ts'
 import type { Editor } from './useEditor.ts'
 
 /**
- * Where the Data workspace is (S2) in the URL query (`/data?item=collection:ent_post&tab=fields`, or `item=query:q_x`,
+ * Where the Data workspace is (S2) in the URL query (`/data/advanced?item=collection:ent_post&tab=fields`, or `item=query:q_x`,
  * `item=action:act_x`, `item=state:st_x`): the item selected in its tree and the tab shown for it, so a deep link or a reload opens the same item on
  * the same tab. All model files (S3) is `?item=files`, with the file chosen in it as `&file=<path>` (a path that
  * is typed is in it once the file is saved, so a reload shows what the URL says). The pending migration (S6) is `?item=migrations`:
- * the plan is shown in the workspace (`/migrations` redirects there). The
+ * the plan is shown in the workspace (`/migrations` redirects there, as an old `/data` link to any of these does: `dataRoutes.ts`). The
  * tab model (which tabs an item has) is `editor/dataTabs.ts`.
  */
 
@@ -96,7 +96,7 @@ export function useDataLocation(editor: Editor): void {
 
   const write = () => {
     const query = wanted.value
-    if (!query || route.name !== 'data') return
+    if (!query || route.name !== 'data-advanced') return
     if (route.query.item === query.item && route.query.tab === query.tab && route.query.file === query.file) return
     // A tab and a file belong to the item the query names: the other's are dropped.
     const { tab: _tab, file: _file, ...rest } = route.query
@@ -106,7 +106,7 @@ export function useDataLocation(editor: Editor): void {
   apply(route.query)
   watch(wanted, write, { immediate: true })
   watch(() => route.fullPath, () => {
-    if (route.name !== 'data') return
+    if (route.name !== 'data-advanced') return
     apply(route.query)
     // With edits that are not saved the move waits for the user: the URL follows the screen once it moves (`wanted`), or goes back when it was declined.
     if (editor.dataDirty === null) write()

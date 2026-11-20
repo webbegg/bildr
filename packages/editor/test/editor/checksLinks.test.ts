@@ -233,7 +233,7 @@ describe('the links of the Checks screen', () => {
   it('opens a collection in the Data workspace from a finding', async () => {
     const { router } = await open('/health', failing)
     await click(link('collection:ent_post'))
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data/advanced'))
     expect(router.currentRoute.value.query.item).toBe('collection:ent_post')
     expect(q('[data-testid="data"]')).not.toBeNull()
     expect(activeTab()).toBeTruthy()
@@ -261,7 +261,7 @@ describe('the links of the Checks screen', () => {
     // The model loads here (it was fixed since the report): each problem is linked to the item its file holds.
     expect(links(model())).toEqual(['page:pg_index', 'collection:ent_post'])
     await click(link('collection:ent_post'))
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data/advanced'))
     expect(router.currentRoute.value.query.item).toBe('collection:ent_post')
   })
 
@@ -271,7 +271,7 @@ describe('the links of the Checks screen', () => {
     expect(links(model())).toEqual([`files:${INDEX_FILE}`])
     expect(labels(model())).toEqual(['Open in All model files'])
     await click(link(`files:${INDEX_FILE}`))
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data/advanced'))
     expect(router.currentRoute.value.query).toEqual({ item: 'files', file: INDEX_FILE })
   })
 
@@ -393,13 +393,13 @@ describe('the links of the model problems on the Data and Design screens', () =>
   const broken = { model_get: () => ({ ok: false, problems, files: modelGet().files, database: false }) }
 
   it('links each problem on the Data screen to its file in All model files, which opens on that file', async () => {
-    const { router } = await open('/data', passing, broken)
+    const { router } = await open('/data/advanced', passing, broken)
     const list = q('[data-testid="data-problems"]')
     expect(labels(list)).toEqual(['Open in All model files'])
     expect(text(list)).not.toContain('(Model screen)')
     await click(link(`files:${INDEX_FILE}`))
     await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({ item: 'files', file: INDEX_FILE }))
-    expect(router.currentRoute.value.path).toBe('/data')
+    expect(router.currentRoute.value.path).toBe('/data/advanced')
     await vi.waitFor(() => expect(q('[data-testid="raw-content"]')).not.toBeNull())
   })
 
@@ -409,12 +409,12 @@ describe('the links of the model problems on the Data and Design screens', () =>
     expect(labels(list)).toEqual(['Open in All model files'])
     expect(text(list)).not.toContain('(Model screen)')
     await click(link(`files:${INDEX_FILE}`))
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data/advanced'))
     expect(router.currentRoute.value.query).toEqual({ item: 'files', file: INDEX_FILE })
   })
 
   it('keeps the Open model files button beside them', async () => {
-    await open('/data', passing, broken)
+    await open('/data/advanced', passing, broken)
     expect(q('[data-testid="open-model"]')).not.toBeNull()
   })
 })

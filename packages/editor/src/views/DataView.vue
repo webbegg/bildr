@@ -1,18 +1,14 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, provide } from 'vue'
-import { onBeforeRouteLeave } from 'vue-router'
-import { useToast } from '@nuxt/ui/composables/useToast'
 import ProblemsList from '../components/ProblemsList.vue'
 import DataFiles from '../components/data/DataFiles.vue'
 import DataWorkspace from '../components/data/DataWorkspace.vue'
-import { createDesign, DESIGN_KEY } from '../design/store.ts'
 import { useDataLocation } from '../editor/dataLocation.ts'
+import { ADVANCED_PATH, SIMPLE_PATH } from '../editor/dataRoutes.ts'
 import { targetsOfProblem } from '../editor/findingTargets.ts'
-import { createEditor, provideEditor } from '../editor/useEditor.ts'
-import { useStatus } from '../status.ts'
+import { useDataScreen } from '../editor/useDataScreen.ts'
 
 /**
- * The Data screen (U7, `/data`), the Data workspace (S2): the hosted editor's Data view over the `.bildr/`
+ * The advanced Data screen (U7, `/data/advanced`), the Data workspace (S2): the hosted editor's Data view over the `.bildr/`
  * model, with the hosted page's chrome (the toolbar, whose view menu goes back to the Canvas, Design and
  * Settings, and ⌘K). Collections are entities, connections are REST data sources, and every edit is a module
  * action (`entity_*`, `datasource_*`); the rows are the app's or the entity's sample data, read-only (E2).
@@ -23,56 +19,14 @@ import { useStatus } from '../status.ts'
  * problems are listed, and the files and their editor stay beside them. They are shown too when the model could
  * not be read at all, or the module said it is not ok without naming a problem: never an endless spinner.
  *
- * It is its own screen, not a mode of `DesignView`: the adapter opens it when the view changes to
- * Data (`editor/views.ts`), and the editor made here starts on it. The pending migration plan is the shell's status (S6): the
+ * The simple Data section is `/data` (simple data, SD-1), which the menu's Data entry opens: its Advanced switch opens this screen, and the
+ * toolbar's Simple link goes back. It is its own screen, not a mode of `DesignView`: the editor made here starts on the Data view. The pending migration plan is the shell's status (S6): the
  * workspace shows it where the collections it changes are, and tells the shell when it does (`editor.planShown`), so the shell's
  * own banner is shown only while the plan is not.
  */
 
-const design = createDesign()
-provide(DESIGN_KEY, design)
-const toast = useToast()
-const status = useStatus()
-const editor = provideEditor(createEditor(design, { toast: notice => toast.add(notice), view: 'data', plan: status.plan }))
-const withdrawPlanShown = status.showPlanFrom(computed(() => editor.planShown))
+const editor = useDataScreen()
 useDataLocation(editor)
-// Leaving the screen is a move away from unsaved edits too.
-onBeforeRouteLeave(() => editor.dataDirty === null || editor.leaveData(() => {}))
-
-function isEditable(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null
-  return !!el?.closest?.('input, textarea, select, [contenteditable=""], [contenteditable="true"]')
-}
-
-// Keys inside a popover or menu are theirs.
-function inFloatingLayer(event: KeyboardEvent): boolean {
-  return !!(event.target as HTMLElement | null)?.closest?.('[data-dismissable-layer], [role="dialog"], [role="menu"], [role="listbox"]')
-}
-
-// ⌘K opens the quick actions and ⌘P the preview from anywhere; undo and redo work outside fields.
-function onKeyDown(event: KeyboardEvent) {
-  const meta = event.metaKey || event.ctrlKey
-  const key = event.key.toLowerCase()
-  if (meta && !event.shiftKey && !event.altKey && (key === 'p' || key === 'k')) {
-    if (editor.shortcut(event.key, true, false)) event.preventDefault()
-    return
-  }
-  if (event.defaultPrevented || isEditable(event.target) || inFloatingLayer(event)) return
-  if (meta && (key === 'z' || key === 'y') && editor.shortcut(event.key, true, event.shiftKey)) event.preventDefault()
-}
-
-// The dark editor chrome (main.css) is scoped to this page's document.
-onMounted(() => {
-  window.addEventListener('keydown', onKeyDown)
-  document.documentElement.classList.add('bildr-editor')
-  void editor.start()
-})
-onBeforeUnmount(() => {
-  withdrawPlanShown()
-  window.removeEventListener('keydown', onKeyDown)
-  document.documentElement.classList.remove('bildr-editor')
-  editor.dispose()
-})
 </script>
 
 <template>
@@ -89,6 +43,14 @@ onBeforeUnmount(() => {
           :title="`The model has ${editor.problems.length} problem${editor.problems.length === 1 ? '' : 's'}`"
           data-testid="problems-count"
         >{{ editor.problems.length }} {{ editor.problems.length === 1 ? 'problem' : 'problems' }}</span>
+        <EditorButton
+          variant="ghost"
+          icon="i-lucide-layout-list"
+          label="Simple"
+          title="Back to the simple Data section"
+          :to="SIMPLE_PATH"
+          data-testid="advanced-to-simple"
+        />
       </template>
     </EditorToolbar>
     <EditorQuickActions />
@@ -108,7 +70,7 @@ onBeforeUnmount(() => {
         >
           <UButton
             v-if="!editor.dataFiles"
-            :to="{ path: '/data', query: { item: 'files' } }"
+            :to="{ path: ADVANCED_PATH, query: { item: 'files' } }"
             label="Open model files"
             icon="i-lucide-file-json"
             color="error"
@@ -157,7 +119,7 @@ onBeforeUnmount(() => {
             @click="editor.reload()"
           />
           <UButton
-            :to="{ path: '/data', query: { item: 'files' } }"
+            :to="{ path: ADVANCED_PATH, query: { item: 'files' } }"
             label="Open model files"
             icon="i-lucide-file-json"
             color="error"

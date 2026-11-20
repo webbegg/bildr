@@ -1,13 +1,14 @@
 import type { Model } from '@bildr/codegen/model'
 import { isCanvasKind, nameOfItem } from '../shared/items.ts'
 import type { Item, ItemKind } from '../shared/items.ts'
+import { ADVANCED_PATH } from './dataRoutes.ts'
 import { dataItemKey } from './dataTabs.ts'
 import type { Editor, EditorToast, EditorView } from './useEditor.ts'
 import { canvasStart, openView } from './views.ts'
 
 /**
  * The one way an item is opened (`shared/items.ts`), whoever asks: a "Used in" link (`openUse`) and a link of the Checks screen
- * (`openTarget`). A page, a component or a layout opens on the Canvas, a collection, a connection, a query or an action in the Data workspace.
+ * (`openTarget`). A page, a component or a layout opens on the Canvas, a collection, a connection, a query or an action in the Data workspace (`/data/advanced`: the simple Data section has none of them, and hands such a move over, `useAdvancedHandoff`).
  *
  * - **With an editor** (the Data and Design screens) it is the editor that opens it: choosing the item, or the Canvas or the Data view, which opens
  *   the other screen when the item is not on this one (`views.ts`). Every move goes through `leaveData`, so unsaved edits in the Data workspace are asked about
@@ -68,7 +69,7 @@ function openIn(editor: Editor, item: Item): void {
 /** Opens `item` from a screen with no editor: its screen, started on it. `item` is only its kind's screen when `home`. */
 function openFrom(item: Item, push: Push, home: boolean): void {
   if (isCanvasKind(item.kind)) openView('build', home ? {} : canvasStart(item.kind, item.id))
-  else void push({ path: '/data', query: home ? {} : { item: dataItemKey(item) } })
+  else void push({ path: ADVANCED_PATH, query: home ? {} : { item: dataItemKey(item) } })
 }
 
 const GONE: Record<ItemKind, string> = {

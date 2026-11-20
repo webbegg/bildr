@@ -19,9 +19,10 @@ import { boot } from './lib.mjs'
 // D7), which changes the app's nuxt config: nuxt restarts, and the dev server's Vite dependency cache is then often
 // left answering 504 "Outdated Optimize Dep", so no page of the app renders any more. They run last, after every
 // script that renders the generated app (interactions, detail, load-more, visual-editor).
+// `simple-data` makes and deletes a store (state files only, no data source), so it runs before them, after the scripts that render the app.
 // `load-more` runs after `preview` and `drafts-toggle`: it gives the app's database seven newer draft posts, and those two read "A draft" and
 // "Hello bildr" from the canvas's List, which shows the newest six rows of All posts (loadMore: 6): with the seven in front, both fall off it.
-const SCRIPTS = ['shell', 'design', 'design-system', 'kit', 'panel-p1', 'colors-p1', 'menu-p1', 'canvas-p2', 'breakpoints-p2', 'desktop-base', 'components', 'layouts-p2', 'interactions', 'detail', 'detail-ui', 'visual-editor', 'real-browser', 'state', 'node-interactions', 'behaviour', 'preview', 'drafts-toggle', 'load-more', 'data', 'remote', 'paging']
+const SCRIPTS = ['shell', 'design', 'design-system', 'kit', 'panel-p1', 'colors-p1', 'menu-p1', 'canvas-p2', 'breakpoints-p2', 'desktop-base', 'components', 'layouts-p2', 'interactions', 'detail', 'detail-ui', 'visual-editor', 'real-browser', 'state', 'node-interactions', 'behaviour', 'preview', 'drafts-toggle', 'load-more', 'simple-data', 'data', 'remote', 'paging']
 
 const wanted = process.argv.slice(2)
 const names = wanted.length ? wanted : SCRIPTS

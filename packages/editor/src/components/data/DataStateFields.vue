@@ -3,7 +3,7 @@ import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import type { StateFile } from '@bildr/codegen/model'
 import { attempt } from '../../editor/dataArtifactActions.ts'
 import { sameJson } from '../../editor/draftJson.ts'
-import { changedOutside, changesOf, draftOf, fieldOfRefusal, moveField, newField, rebaseDraft, setDefault, setFieldType, toggleEmptyDefault } from '../../editor/stateDraft.ts'
+import { DEFAULT_INPUTS, changedOutside, changesOf, draftOf, fieldOfRefusal, moveField, newField, rebaseDraft, setDefault, setFieldType, toggleEmptyDefault } from '../../editor/stateDraft.ts'
 import type { DraftField, StateDraft } from '../../editor/stateDraft.ts'
 import type { RefusedField } from '../../api.ts'
 import { useDraftForm } from '../../editor/useDraftForm.ts'
@@ -68,8 +68,6 @@ async function save() {
   discard()
 }
 
-/** The input type that fits each field type's default. */
-const INPUTS: Record<FieldType, string> = { text: 'text', integer: 'number', number: 'number', boolean: 'checkbox', date: 'date', datetime: 'datetime-local', image: 'text', uuid: 'text' }
 const label = (field: DraftField) => field.name.trim() || 'new field'
 const CHECKBOX = 'size-3.5 cursor-pointer scheme-dark accent-(--ui-primary)'
 /** The columns of the header row and of every field's row. */
@@ -212,7 +210,7 @@ async function remove(field: DraftField) {
                 >
                   <EditorInput
                     :model-value="field.default"
-                    :type="INPUTS[field.type]"
+                    :type="DEFAULT_INPUTS[field.type]"
                     :step="field.type === 'integer' ? 1 : field.type === 'number' ? 'any' : undefined"
                     :placeholder="field.emptyDefault ? 'Empty text' : 'No default'"
                     :aria-label="`Default of ${label(field)}`"

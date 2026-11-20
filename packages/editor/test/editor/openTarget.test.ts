@@ -21,7 +21,7 @@ afterEach(() => {
 })
 
 const code: FileTarget = { kind: 'code', id: 'layers/blog/app/pages/index.vue', label: 'Open file in Code', to: { path: '/code', query: { path: '.bildr/modules/blog/pages/index.json', file: 'layers/blog/app/pages/index.vue' } } }
-const files: FileTarget = { kind: 'files', id: '.bildr/layouts/main.json', label: 'Open in All model files', to: { path: '/data', query: { item: 'files', file: '.bildr/layouts/main.json' } } }
+const files: FileTarget = { kind: 'files', id: '.bildr/layouts/main.json', label: 'Open in All model files', to: { path: '/data/advanced', query: { item: 'files', file: '.bildr/layouts/main.json' } } }
 
 const boot = async () => {
   mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }) })
@@ -44,7 +44,7 @@ describe('opening a target', () => {
     const push = vi.fn()
     const target: Target = { kind: 'collection', id: 'ent_post', label: 'Open collection “Post”' }
     await openTarget(target, { editor: null, push, model: world.model, notify: vi.fn() })
-    expect(push).toHaveBeenCalledWith({ path: '/data', query: { item: 'collection:ent_post' } })
+    expect(push).toHaveBeenCalledWith({ path: '/data/advanced', query: { item: 'collection:ent_post' } })
   })
 
   it('opens the Design screen on a page where there is no editor', async () => {

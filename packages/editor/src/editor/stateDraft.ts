@@ -33,6 +33,9 @@ export interface StateDraft {
   fields: DraftField[]
 }
 
+/** The input type that fits each field type's default: what the forms that edit a state's fields (the Fields tab, the simple section's store form) show it in. */
+export const DEFAULT_INPUTS: Record<FieldType, string> = { text: 'text', integer: 'number', number: 'number', boolean: 'checkbox', date: 'date', datetime: 'datetime-local', image: 'text', uuid: 'text' }
+
 /** What the browser's date and time box holds: `YYYY-MM-DDTHH:MM`, no seconds and no zone. */
 const DATETIME_BOX_LENGTH = 'YYYY-MM-DDTHH:MM'.length
 /** What it can hand back: the minutes, or with seconds. */

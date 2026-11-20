@@ -1,6 +1,7 @@
 import { generate } from '@bildr/codegen/generate'
 import type { Model } from '@bildr/codegen/model'
 import { kindOfPath } from '../model.ts'
+import { ADVANCED_PATH } from './dataRoutes.ts'
 import type { FileKind } from '../model.ts'
 import { repositoryEntity } from '../shared/dataModel.ts'
 import { nameOfItem } from '../shared/items.ts'
@@ -25,7 +26,7 @@ export type TargetKind = ItemKind | 'code' | 'files'
 
 /** A route the target opens: the targets that are not an item (`code`, `files`) are places of their own. */
 export interface TargetRoute {
-  path: '/data' | '/code'
+  path: typeof ADVANCED_PATH | '/code'
   query: Record<string, string>
 }
 
@@ -144,5 +145,5 @@ export function targetsOfProblem(problem: ModelProblem, model: Model | null): Ta
   if (!kindOfPath(problem.path)) return []
   const item = model ? itemAt(model, problem.path) : undefined
   if (item) return [item]
-  return [{ kind: 'files', id: problem.path, label: 'Open in All model files', to: { path: '/data', query: { item: 'files', file: problem.path } } }]
+  return [{ kind: 'files', id: problem.path, label: 'Open in All model files', to: { path: ADVANCED_PATH, query: { item: 'files', file: problem.path } } }]
 }

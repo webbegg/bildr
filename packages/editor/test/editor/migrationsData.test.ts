@@ -28,7 +28,7 @@ interface Options {
   confirm?: () => unknown
 }
 
-const open = async ({ path = '/data', pending = losingPlan(), database = true, confirm }: Options = {}) => {
+const open = async ({ path = '/data/advanced', pending = losingPlan(), database = true, confirm }: Options = {}) => {
   let waiting = pending
   const actions = mockActions({
     ...baseHandlers(),
@@ -89,7 +89,7 @@ describe('the tree\'s Migrations entry', () => {
     const { router } = await open()
     await click(entry())
     await vi.waitFor(() => expect(router.currentRoute.value.query).toEqual({ item: 'migrations' }))
-    expect(router.currentRoute.value.path).toBe('/data')
+    expect(router.currentRoute.value.path).toBe('/data/advanced')
     expect(q('[data-data-workspace] [data-testid="statements"]')?.textContent).toContain(DROP)
     expect(q('[data-testid="confirm"]')).not.toBeNull()
     expect(q('[role="tablist"]')).toBeNull()
@@ -223,7 +223,7 @@ describe('the plan in the Data workspace', () => {
 describe('the route /migrations', () => {
   it('redirects to the plan in the Data workspace, and the old screen is gone', async () => {
     const { router } = await open({ path: '/migrations' })
-    expect(router.currentRoute.value.path).toBe('/data')
+    expect(router.currentRoute.value.path).toBe('/data/advanced')
     expect(router.currentRoute.value.query).toEqual({ item: 'migrations' })
     expect(q('[data-testid="statements"]')).not.toBeNull()
     expect(text(q('[data-view-menu]'))).toBe('Data')
@@ -412,7 +412,7 @@ describe('the global banner', () => {
     const { router } = await open({ path: '/health' })
     expect(text(globalBanner())).toContain('1 loss')
     await click(q('[data-testid="migration-banner"] a'))
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data'))
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data/advanced'))
     expect(router.currentRoute.value.query).toEqual({ item: 'migrations' })
   })
 

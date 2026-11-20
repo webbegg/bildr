@@ -171,13 +171,13 @@ describe('opening an item from a screen with no editor', () => {
   it('pushes the Data workspace on a collection, a connection, a query or an action', async () => {
     const { push, context } = withoutEditor()
     await openItem({ kind: 'collection', id: 'ent_post' }, context)
-    expect(push).toHaveBeenLastCalledWith({ path: '/data', query: { item: 'collection:ent_post' } })
+    expect(push).toHaveBeenLastCalledWith({ path: '/data/advanced', query: { item: 'collection:ent_post' } })
     await openItem({ kind: 'connection', id: 'ds_quotes' }, context)
-    expect(push).toHaveBeenLastCalledWith({ path: '/data', query: { item: 'connection:ds_quotes' } })
+    expect(push).toHaveBeenLastCalledWith({ path: '/data/advanced', query: { item: 'connection:ds_quotes' } })
     await openItem({ kind: 'query', id: 'q_featured_posts' }, context)
-    expect(push).toHaveBeenLastCalledWith({ path: '/data', query: { item: 'query:q_featured_posts' } })
+    expect(push).toHaveBeenLastCalledWith({ path: '/data/advanced', query: { item: 'query:q_featured_posts' } })
     await openItem({ kind: 'action', id: 'act_create_post' }, context)
-    expect(push).toHaveBeenLastCalledWith({ path: '/data', query: { item: 'action:act_create_post' } })
+    expect(push).toHaveBeenLastCalledWith({ path: '/data/advanced', query: { item: 'action:act_create_post' } })
   })
 
   it('opens the Design screen on a page (its own start), and on a component or a layout (another)', async () => {
@@ -196,7 +196,7 @@ describe('opening an item from a screen with no editor', () => {
   it('opens what it is asked for while the model is not known (nothing says it is gone)', async () => {
     const { push, notice, context } = withoutEditor(null)
     await openItem({ kind: 'collection', id: 'ent_gone' }, context)
-    expect(push).toHaveBeenLastCalledWith({ path: '/data', query: { item: 'collection:ent_gone' } })
+    expect(push).toHaveBeenLastCalledWith({ path: '/data/advanced', query: { item: 'collection:ent_gone' } })
     expect(notice).not.toHaveBeenCalled()
   })
 })
@@ -211,7 +211,7 @@ describe('an item that is gone', () => {
     const { push, notice, context } = withoutEditor()
     expect(await openItem({ kind, id }, context)).toBe(true)
     expect(push).toHaveBeenCalledOnce()
-    expect(push).toHaveBeenLastCalledWith({ path: '/data', query: {} })
+    expect(push).toHaveBeenLastCalledWith({ path: '/data/advanced', query: {} })
     expect(notice).toHaveBeenCalledWith(expect.objectContaining({ title, color: 'warning' }))
   })
 

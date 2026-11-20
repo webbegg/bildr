@@ -2,6 +2,7 @@
 import { computed, ref, toRef, watch } from 'vue'
 import { ActionCallError, callAction, errorMessage } from '../api.ts'
 import { filesLocationQuery } from '../editor/dataLocation.ts'
+import { ADVANCED_PATH } from '../editor/dataRoutes.ts'
 import { jsonErrorMessage } from '../editor/jsonError.ts'
 import { useDirtyReport } from '../editor/useDirtyReport.ts'
 import { useFileText } from '../editor/useFileText.ts'
@@ -191,7 +192,7 @@ const run = async (name: 'model_file_put' | 'model_file_delete') => {
             :key="other"
           >
             <UButton
-              :to="{ path: '/data', query: filesLocationQuery(other) }"
+              :to="{ path: ADVANCED_PATH, query: filesLocationQuery(other) }"
               :label="other"
               color="error"
               variant="link"

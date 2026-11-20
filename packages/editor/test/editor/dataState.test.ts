@@ -22,7 +22,7 @@ afterEach(() => {
 
 const STATE = '/data?item=state:st_preferences&tab=fields'
 const FILE = '.bildr/modules/blog/state/preferences.json'
-const mounted = (extra: Handlers = {}, path = '/data') => open({ ...stateModule(), ...extra }, {}, path)
+const mounted = (extra: Handlers = {}, path = '/data/advanced') => open({ ...stateModule(), ...extra }, {}, path)
 const textButton = (label: string) => qa('button').find(candidate => candidate.textContent?.trim() === label) ?? null
 const calls = (actions: Awaited<ReturnType<typeof open>>['actions'], name: string) => inputs(actions, name)
 const stored = () => world.model.modules.blog!.state.find(entry => entry.id === 'st_preferences')!
@@ -89,7 +89,7 @@ describe('the State section of the Data tree', () => {
   })
 
   it('falls back to the first collection for a deep link to a state that is gone', async () => {
-    const { router } = await mounted({}, '/data?item=state:st_gone')
+    const { router } = await mounted({}, '/data/advanced?item=state:st_gone')
     expect(text(q('[data-data-title] h2'))).toBe('Post')
     expect(router.currentRoute.value.query).toEqual({ item: 'collection:ent_post', tab: 'rows' })
   })
@@ -489,7 +489,7 @@ describe('Used in, for a state', () => {
   })
 
   it('says nothing uses a state that is not used', async () => {
-    const { actions } = await mounted({}, '/data')
+    const { actions } = await mounted({}, '/data/advanced')
     await click(byLabel('New state'))
     await typeInto(inputOf('[data-artifact-name]'), 'cart')
     await click(q('[data-artifact-submit]'))
