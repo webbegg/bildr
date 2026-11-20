@@ -163,7 +163,7 @@ interface ApiParts {
   baseUrl?: string
   env?: Record<string, string>
   runtime?: (typeof API_RUNTIMES)[number]
-  auth?: { secret: string }
+  auth?: { type: 'bearer' | 'header', secret: string, header?: string }
   models?: ApiModel[]
   queries?: ApiQuery[]
   actions?: ApiAction[]
@@ -231,8 +231,23 @@ export const apiProblems = (source: ApiParts): ApiProblem[] => {
   const known = new Set(models.map(model => model.name))
   const url = source.baseUrl === undefined ? undefined : urlProblem(source.baseUrl)
   if (url) problems.push({ path: ['baseUrl'], message: url })
-  if (source.env && !source.env.baseUrl) problems.push({ path: ['env', 'baseUrl'], message: 'An API data source needs the env var of its base URL (env.baseUrl)' })
-  if (source.auth?.secret === 'baseUrl') problems.push({ path: ['auth', 'secret'], message: '"baseUrl" is the base URL setting: name the secret another way, like "apiKey"' })
+  const baseEnv = source.env?.baseUrl
+  if (source.env && !baseEnv) problems.push({ path: ['env', 'baseUrl'], message: 'An API data source needs the env var of its base URL (env.baseUrl)' })
+  // Browser code reads only runtimeConfig.public, which Nuxt fills from NUXT_PUBLIC_ vars; a server URL stays private.
+  if (baseEnv && source.runtime === 'browser' && !baseEnv.startsWith('NUXT_PUBLIC_')) {
+    problems.push({ path: ['env', 'baseUrl'], message: 'An API that runs in the browser reads its base URL from a NUXT_PUBLIC_ env var' })
+  }
+  if (baseEnv && source.runtime === 'server' && baseEnv.startsWith('NUXT_PUBLIC_')) {
+    problems.push({ path: ['env', 'baseUrl'], message: 'An API that runs on the server reads its base URL from an env var that isn\'t NUXT_PUBLIC_: the page would see it' })
+  }
+  for (const setting of Object.keys(source.env ?? {})) {
+    if (setting !== 'baseUrl' && setting !== source.auth?.secret) problems.push({ path: ['env', setting], message: `An API data source reads only its base URL and its secret from env: remove "${setting}"` })
+  }
+  const auth = source.auth
+  if (auth?.secret === 'baseUrl') problems.push({ path: ['auth', 'secret'], message: '"baseUrl" is the base URL setting: name the secret another way, like "apiKey"' })
+  if (auth?.type === 'header' && !auth.header) problems.push({ path: ['auth', 'header'], message: 'A "header" auth needs the header name, like "X-Api-Key"' })
+  if (auth?.type === 'bearer' && auth.header) problems.push({ path: ['auth', 'header'], message: 'A "bearer" auth sends "Authorization: Bearer …": it takes no header name' })
+  if (auth?.header && !/^[A-Za-z0-9-]{1,64}$/.test(auth.header)) problems.push({ path: ['auth', 'header'], message: 'Use a header name like "X-Api-Key"' })
   if (source.runtime === 'browser' && source.auth) {
     problems.push({ path: ['auth'], message: 'An API that runs in the browser can\'t use a secret: the browser would see it. Run it on the server, or remove the auth' })
   }
@@ -264,6 +279,10 @@ export const apiProblems = (source: ApiParts): ApiProblem[] => {
     if (path) problems.push({ path: [...where, 'path'], message: `${op.name}: ${path}` })
     const param = duplicateOf(op.params.map(item => item.name))
     if (param) problems.push({ path: [...where, 'params'], message: `${op.name}: Two parameters are named "${param}"` })
+    const sent = duplicateOf(op.params.map(item => `${item.in}:${item.key ?? item.name}`))
+    if (sent && !param) problems.push({ path: [...where, 'params'], message: `${op.name}: Two parameters send the key "${sent.slice(sent.indexOf(':') + 1)}"` })
+    const result = 'result' in op ? op.result : undefined
+    if (result && !result.many && result.itemsPath !== undefined) problems.push({ path: [...where, 'result'], message: `${op.name}: Only a list result reads its items at an itemsPath` })
     const refs = [('result' in op ? op.result?.model : undefined), ('body' in op ? op.body?.model : undefined)]
     for (const ref of refs) if (ref && !known.has(ref)) problems.push({ path: where, message: `${op.name}: Unknown model "${ref}"` })
   }

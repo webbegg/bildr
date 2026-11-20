@@ -8,8 +8,8 @@ import { AuthInput, datasourceById, DataSourceRef, envNameOf, sourceName } from 
 /**
  * API data sources (simple data, SD-2): a remote JSON API with a first-class `baseUrl`, the
  * models of its answers and bodies, and named queries (GET) and actions (writes). Every edit
- * leaves the source as `apiProblems` wants it; the load check runs the same rules on a
- * hand-written file. Secrets follow the REST rule: the auth secret is an env var only.
+ * leaves the source as `apiProblems` wants it, and the load check runs the same rules on a
+ * hand-written file; `settle` only fills in the env names. Secrets follow the REST rule: the auth secret is an env var only.
  */
 
 export type ApiSource = DataSourceFile & Required<Pick<DataSourceFile, 'baseUrl' | 'runtime' | 'models' | 'queries' | 'actions'>>
@@ -41,8 +41,6 @@ const settle = (source: ApiSource, previous: { name: string, auth?: { secret: st
   if (source.auth) {
     const secret = source.auth.secret
     if (!env[secret] || env[secret] === envNameOf(previous.name, secret)) env[secret] = envNameOf(source.name, secret)
-    if (source.auth.type === 'header' && !source.auth.header) fail('invalid', 'A "header" auth needs the header name, like "X-Api-Key"')
-    if (source.auth.type === 'bearer' && source.auth.header) fail('invalid', 'A "bearer" auth sends "Authorization: Bearer …": it takes no header name')
   }
   source.env = env
   const first = apiProblems(source)[0]
