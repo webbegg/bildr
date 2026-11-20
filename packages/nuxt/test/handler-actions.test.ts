@@ -98,7 +98,9 @@ const NAMES = [
   'page_computed_set', 'page_computed_remove',
   // Simple data P1: API data sources.
   'api_create', 'api_update', 'api_model_set', 'api_model_rename', 'api_model_delete',
-  'api_query_set', 'api_query_rename', 'api_query_delete', 'api_action_set', 'api_action_rename', 'api_action_delete'
+  'api_query_set', 'api_query_rename', 'api_query_delete', 'api_action_set', 'api_action_rename', 'api_action_delete',
+  // Simple data P4: try a call of an API data source and propose its models.
+  'api_try'
 ].sort()
 
 // T10a (S11, D12): every editor operation is an action, callable over HTTP.
@@ -118,6 +120,8 @@ describe('action list', () => {
     expect(byName.code_view!.readOnly).toBe(true)
     expect(byName.model_file_put!.readOnly).toBe(false)
     expect(byName.migration_confirm!.readOnly).toBe(false)
+    // A confirmed api_try sends writes to the remote API: never advertised read-only to MCP clients (verify P4).
+    expect(byName.api_try!.readOnly).toBe(false)
     expect(byName.model_file_put!.inputSchema).toMatchObject({ properties: { path: { type: 'string' } }, required: ['path', 'content'] })
   })
 

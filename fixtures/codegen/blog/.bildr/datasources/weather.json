@@ -1,0 +1,67 @@
+{
+  "$schema": "https://bildr.dev/schema/datasource.v1.json",
+  "id": "ds_weather",
+  "name": "weather",
+  "kind": "api",
+  "env": {
+    "baseUrl": "NUXT_PUBLIC_APIS_WEATHER_BASE_URL"
+  },
+  "baseUrl": "https://weather.example.com/v1",
+  "runtime": "browser",
+  "models": [
+    {
+      "name": "Forecast",
+      "fields": [
+        {
+          "name": "city",
+          "type": "text"
+        },
+        {
+          "name": "celsius",
+          "type": "number"
+        },
+        {
+          "name": "observedAt",
+          "type": "datetime",
+          "key": "observed_at"
+        }
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "name": "forecast",
+      "description": "The forecast of one city.",
+      "path": "/forecast",
+      "params": [
+        {
+          "name": "city",
+          "in": "query",
+          "type": "text",
+          "required": true,
+          "key": "q"
+        }
+      ],
+      "result": {
+        "model": "Forecast",
+        "many": false
+      }
+    }
+  ],
+  "actions": [
+    {
+      "name": "reportForecast",
+      "description": "Reports an observation.",
+      "method": "POST",
+      "path": "/reports",
+      "params": [],
+      "body": {
+        "model": "Forecast"
+      },
+      "result": {
+        "model": "Forecast",
+        "many": false
+      }
+    }
+  ]
+}

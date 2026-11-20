@@ -30,10 +30,10 @@ describe('env names', () => {
     const p = project()
     p.edit('api_create', { name: 'Shop API', baseUrl: 'https://shop.example.com/v1', auth: { type: 'bearer' } })
     p.edit('api_update', { datasource: 'ds_shop_api', name: 'Store' })
-    expect(p.json('.bildr/datasources/shop-api.json').env).toEqual({ baseUrl: 'NUXT_DATASOURCES_STORE_BASE_URL', apiKey: 'NUXT_DATASOURCES_STORE_API_KEY' })
-    const own = project({ ...p.files, [FILE]: JSON.stringify({ ...p.json(FILE), env: { baseUrl: 'NUXT_MY_URL', apiKey: 'NUXT_DATASOURCES_STORE_API_KEY' } }) })
+    expect(p.json('.bildr/datasources/shop-api.json').env).toEqual({ baseUrl: 'NUXT_APIS_STORE_BASE_URL', apiKey: 'NUXT_APIS_STORE_API_KEY' })
+    const own = project({ ...p.files, [FILE]: JSON.stringify({ ...p.json(FILE), env: { baseUrl: 'NUXT_MY_URL', apiKey: 'NUXT_APIS_STORE_API_KEY' } }) })
     own.edit('api_update', { datasource: 'ds_shop_api', name: 'Shop' })
-    expect(own.json(FILE).env).toEqual({ baseUrl: 'NUXT_MY_URL', apiKey: 'NUXT_DATASOURCES_SHOP_API_KEY' })
+    expect(own.json(FILE).env).toEqual({ baseUrl: 'NUXT_MY_URL', apiKey: 'NUXT_APIS_SHOP_API_KEY' })
   })
 
   it('env_status knows the model holds the base URL default', () => {

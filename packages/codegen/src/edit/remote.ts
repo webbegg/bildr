@@ -1,4 +1,4 @@
-import type { FIELD_TYPES } from '../model/schemas.ts'
+import type { ApiField, ApiModel, FIELD_TYPES } from '../model/schemas.ts'
 
 /**
  * What `datasource_preview` and `repository_endpoint_test` work out from a REST data
@@ -156,4 +156,100 @@ export const inferFields = (items: unknown[]): InferredField[] => {
     fields.push({ name, type, remote })
   }
   return fields
+}
+
+// ── API models ───────────────────────────────────────────────────────────
+
+const MAX_DEPTH = 5
+/** A proposal any user can review: more nested objects than this are left out (their fields with them). */
+const MAX_MODELS = 30
+
+/** `order-line` / `order_lines` → `OrderLine` / `OrderLines`; a valid model name, kept as given (`URLList`). */
+const modelName = (raw: string): string => {
+  if (/^[A-Z][A-Za-z0-9]*$/.test(raw)) return raw
+  const camel = fieldName(raw)
+  return camel.charAt(0).toUpperCase() + camel.slice(1)
+}
+
+/**
+ * Proposes the models of an API answer, in the order `api_model_set` takes them one by one:
+ * nested models first, the root model last. `sample` is one object or an array of them (up to 20
+ * are read). Fields are camelCase with the remote `key` when it differs; the type comes from
+ * the values (an image URL is text); a nested object is a model, a list of objects or scalars
+ * a list; null makes a field `nullable`, a key missing in some items `optional`. Each nested
+ * object gets a model of its own (named from its key, made unique), so a model never holds
+ * itself. Nothing for a sample with no object.
+ */
+export const inferApiModels = (sample: unknown, rootName: string): ApiModel[] => {
+  const objects = (Array.isArray(sample) ? sample.slice(0, SAMPLE_SIZE) : [sample]).filter(isObject)
+  if (!objects.length) return []
+  const models: ApiModel[] = []
+  const taken = new Set<string>()
+  const claim = (wanted: string, parent: string | undefined): string => {
+    let name = wanted
+    if (taken.has(name) && parent) name = `${parent}${wanted}`
+    for (let n = 2; taken.has(name); n++) name = `${wanted}${n}`
+    taken.add(name)
+    return name
+  }
+
+  // Builds the model of `items` (objects, in the order found) and returns its name, or undefined when it has no field.
+  const build = (wanted: string, items: Record<string, unknown>[], parent: string | undefined, depth: number): string | undefined => {
+    const name = claim(modelName(wanted), parent)
+    const at = models.push({ name, fields: [] }) - 1
+    const usedNames = new Set<string>()
+    const fields: ApiField[] = []
+    const keys = [...new Set(items.flatMap(item => Object.keys(item)))].filter(key => KEY.test(key) && key.length <= 64)
+    for (const key of keys) {
+      if (fields.length >= MAX_FIELDS) break
+      const present = items.filter(item => Object.hasOwn(item, key))
+      const values = present.map(item => item[key])
+      const known = values.filter(value => value !== null && value !== undefined)
+      const base = fieldName(key)
+      let fieldNameOf = base
+      for (let n = 2; usedNames.has(fieldNameOf); n++) fieldNameOf = `${base}${n}`
+      const flags: Partial<ApiField> = {
+        ...(present.length < items.length ? { optional: true } : {}),
+        ...(values.length > known.length ? { nullable: true } : {})
+      }
+      const shape = shapeOf(key, known, name, depth)
+      if (!shape) continue
+      usedNames.add(fieldNameOf)
+      fields.push({ name: fieldNameOf, ...shape, ...(fieldNameOf === key ? {} : { key }), ...flags })
+    }
+    if (!fields.length) {
+      models.splice(at, 1)
+      taken.delete(name)
+      return undefined
+    }
+    models[at]!.fields = fields
+    return name
+  }
+
+  // The type of a field from its non-null values: a model, a list, a scalar, or none when they mix kinds.
+  const shapeOf = (key: string, known: unknown[], parent: string, depth: number): Pick<ApiField, 'type' | 'model' | 'list'> | undefined => {
+    if (known.every(isObject) && known.length) {
+      if (depth >= MAX_DEPTH || models.length >= MAX_MODELS) return undefined
+      const model = build(key, known as Record<string, unknown>[], parent, depth + 1)
+      return model ? { type: 'model', model } : undefined
+    }
+    if (known.length && known.every(Array.isArray)) {
+      const elements = (known as unknown[][]).flat().filter(value => value !== null && value !== undefined)
+      const inner = elements.length && elements.every(isObject) ? shapeOf(key, elements, parent, depth) : scalarOf(key, elements)
+      return inner ? { ...inner, list: true } : undefined
+    }
+    return scalarOf(key, known)
+  }
+
+  const scalarOf = (key: string, values: unknown[]): { type: Exclude<FieldType, 'image'> } | undefined => {
+    if (values.some(value => Array.isArray(value) || isObject(value))) return undefined
+    const present = values.filter(value => value !== '')
+    const type = typeOf(key, present)
+    if (!type) return undefined
+    return { type: type === 'image' ? 'text' : type }
+  }
+
+  build(rootName, objects, undefined, 0)
+  // Built root first, each model before what it holds: reversed, each model comes after every model it names, as api_model_set takes them.
+  return models.reverse()
 }

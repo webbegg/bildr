@@ -1,11 +1,11 @@
 import { z } from 'zod'
-import { datasourceEnvVars, detectItems, inferFields, remoteUrl } from '@bildr/codegen/edit'
+import { datasourceEnvVars, detectItems, inferApiModels, inferFields, isApiSource, remoteUrl } from '@bildr/codegen/edit'
 import { redact } from '@bildr/codegen/env'
-import { ArtifactIdSchema, loadModel, REPOSITORY_OPERATIONS } from '@bildr/codegen/model'
-import type { InferredField } from '@bildr/codegen/edit'
-import type { DataSourceFile, Model } from '@bildr/codegen/model'
+import { ArtifactIdSchema, CamelNameSchema, loadModel, PascalNameSchema, REPOSITORY_OPERATIONS } from '@bildr/codegen/model'
+import type { ApiSource, InferredField } from '@bildr/codegen/edit'
+import type { ApiParam, ApiQuery, DataSourceFile, Model } from '@bildr/codegen/model'
 import { readModelFiles } from '../node/project.ts'
-import { authHeaders, envSource, fetchJson, readDotEnv, RemoteError, resolveSettings } from '../node/remote.ts'
+import { authHeaders, envSource, fetchJson, fetchRemote, readDotEnv, RemoteError, resolveSettings } from '../node/remote.ts'
 import { ActionError, defineAction } from './define.ts'
 import type { ActionDef } from './define.ts'
 
@@ -169,4 +169,154 @@ const envStatus = defineAction({
   }
 })
 
-export const DATA_ACTIONS: readonly ActionDef[] = [datasourcePreview, repositoryEndpointTest, envStatus] as ActionDef[]
+// ── api_try (simple data): one call of an API data source ───────────────────
+
+const MAX_TEXT = 10_000
+
+/** What a saved query or action answers, or nothing for a call by path. */
+type Expected = ApiQuery['result'] | undefined
+
+interface Call {
+  method: string
+  path: string
+  /** The saved operation's parameters; none for a call by path. */
+  params: ApiParam[] | undefined
+  label: string
+  expected: Expected
+  saved: boolean
+}
+
+const apiSourceOf = (model: Model, id: string): ApiSource => {
+  const source = model.datasources.find(entry => entry.id === id)
+  if (!source) throw new ActionError('not_found', `No data source "${id}"`)
+  if (!isApiSource(source)) throw new ActionError('invalid_input', `${id} is a ${source.kind} data source: only API sources can be tried`)
+  return source
+}
+
+const callOf = (source: ApiSource, input: { path?: string, query?: string, action?: string, method?: string }): Call => {
+  if (input.query !== undefined || input.action !== undefined) {
+    const query = input.query === undefined ? undefined : source.queries.find(entry => entry.name === input.query)
+    const action = input.action === undefined ? undefined : source.actions.find(entry => entry.name === input.action)
+    if (input.query !== undefined && !query) throw new ActionError('not_found', `No query "${input.query}" in ${source.name}`)
+    if (input.action !== undefined && !action) throw new ActionError('not_found', `No action "${input.action}" in ${source.name}`)
+    const op = (query ?? action)!
+    const method = action?.method ?? 'GET'
+    if (input.method && input.method !== method) throw new ActionError('invalid_input', `${op.name} is a ${method}: drop the method`)
+    return { method, path: op.path, params: op.params, label: op.name, expected: op.result, saved: true }
+  }
+  return { method: input.method ?? 'GET', path: input.path!, params: undefined, label: input.path!, expected: undefined, saved: false }
+}
+
+const scalar = (value: string | number | boolean) => String(value)
+
+/** The path (with its `:name` filled in, encoded) and the query string a call sends. */
+const fillPath = (call: Call, given: Record<string, string | number | boolean>): string => {
+  const query = new URLSearchParams()
+  const [pathname = '', search = ''] = call.path.split(/\?(.*)/s, 2)
+  let filled = pathname
+  const fill = (name: string, value: string | number | boolean | undefined) => {
+    if (value === undefined) throw new ActionError('invalid_input', `Give the path parameter "${name}"`)
+    filled = filled.replace(new RegExp(`(?<=/):${name}(?![A-Za-z0-9])`), () => encodeURIComponent(scalar(value)))
+  }
+  // Own keys only: a parameter named like an object member (constructor, toString) is missing when not given.
+  const valueOf = (name: string) => Object.hasOwn(given, name) ? given[name] : undefined
+  if (call.params) {
+    for (const key of Object.keys(given)) {
+      if (!call.params.some(param => param.name === key)) throw new ActionError('invalid_input', `${call.label} has no parameter "${key}"`)
+    }
+    for (const param of call.params) {
+      const value = valueOf(param.name)
+      if (param.in === 'path') fill(param.name, value)
+      else if (value !== undefined) query.set(param.key ?? param.name, scalar(value))
+      else if (param.required) throw new ActionError('invalid_input', `Give the query parameter "${param.name}"`)
+    }
+  } else {
+    const inPath = [...pathname.matchAll(/(?<=\/):([A-Za-z][A-Za-z0-9]*)/g)].map(match => match[1]!)
+    for (const name of inPath) fill(name, valueOf(name))
+    for (const [key, value] of Object.entries(given)) if (!inPath.includes(key)) query.set(key, scalar(value))
+  }
+  const sent = query.toString()
+  return `${filled}${sent ? `${search ? `?${search}&` : '?'}${sent}` : search ? `?${search}` : ''}`
+}
+
+const getAt = (json: unknown, path: string): unknown => path.split('.').reduce<unknown>((value, key) => isObject(value) ? value[key] : undefined, json)
+
+/** `json` with the list at `path` cut to its first `size` items. */
+const trimmedAt = (json: unknown, path: string, size: number): unknown => {
+  if (!path) return Array.isArray(json) ? json.slice(0, size) : json
+  const [head = '', ...rest] = path.split('.')
+  if (!isObject(json) || !(head in json)) return json
+  return { ...json, [head]: trimmedAt(json[head], rest.join('.'), size) }
+}
+
+/** Where the list of items is: what a saved query says, else detected (not for a call that answers one thing). */
+const itemsOf = (json: unknown, call: Call): { path: string, items: unknown[] } | null => {
+  if (call.saved && !call.expected?.many) return null
+  if (call.expected?.itemsPath) {
+    const found = getAt(json, call.expected.itemsPath)
+    return Array.isArray(found) ? { path: call.expected.itemsPath, items: found } : null
+  }
+  const found = detectItems(json)
+  return found ? { path: found.itemsPath, items: found.items } : null
+}
+
+/** `/categories/:id/products` → `Product`: the last fixed segment, singular. */
+const modelNameOf = (path: string): string => {
+  const segment = path.split('?')[0]!.split('/').filter(part => part && !part.startsWith(':')).at(-1) ?? 'item'
+  const singular = segment.endsWith('ies') ? `${segment.slice(0, -3)}y` : /[^su]s$/.test(segment) ? segment.slice(0, -1) : segment
+  return singular
+}
+
+const apiTry = defineAction({
+  name: 'api_try',
+  description: `Send one call of an API data source, as the generated app would, and propose the models of its answer. Give one of: path (relative to the data source's base URL, e.g. "/products/:id"; :name is filled from params, the other params go in the query string), query (a saved query's name) or action (a saved action's name; its params go by their remote key). Saved operations use their own method; for a path, method is GET unless set. GET only unless confirm: true: a POST, PUT, PATCH or DELETE could change the API's data, so it is refused without confirm. body is the JSON a write sends. Calls go through the editor's remote guards: under the base URL only, redirects off it (and any redirect of a write) refused, at most 10 s and 1 MB; the auth secret comes from the env (not sent for a browser-runtime source) and is never returned. Returns status, url, json (a list cut to its first ${SAMPLE_ITEMS} items) or text, items { path, count } when the answer holds a list, and proposal { result: { model, many, itemsPath? }, models } to use with api_model_set (one call per model, in the listed order: nested models first, the root last) and api_query_set / api_action_set; model names the proposed root model.`,
+  input: z.object({
+    datasource: ArtifactIdSchema.describe('An API data source id, e.g. "ds_shop"'),
+    path: PathInput.optional(),
+    query: CamelNameSchema.optional().describe('The name of a saved query'),
+    action: CamelNameSchema.optional().describe('The name of a saved action'),
+    method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional().describe('For a path (default GET); a saved operation has its own'),
+    params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().describe('Parameter values, by name'),
+    body: z.union([z.record(z.string(), z.unknown()), z.array(z.unknown())]).optional().describe('The JSON body of a write'),
+    confirm: z.boolean().optional().describe('true to send a write (POST, PUT, PATCH, DELETE)'),
+    model: PascalNameSchema.optional().describe('The name for the proposed root model (default: the saved result\'s, else from the path)')
+  }).refine(input => [input.path, input.query, input.action].filter(value => value !== undefined).length === 1, 'Give one of path, query or action'),
+  // Not read-only: with confirm it sends writes to the remote API, and MCP clients may auto-approve a read-only tool.
+  readOnly: false,
+  run: async (input, { root }) => {
+    const source = apiSourceOf(loaded(root), input.datasource)
+    const call = callOf(source, input)
+    if (call.method === 'GET' && input.body !== undefined) throw new ActionError('invalid_input', 'A GET has no body')
+    if (call.method !== 'GET' && input.confirm !== true) {
+      throw new ActionError('forbidden', `api_try sends a ${call.method}: it could change the API's data. Pass confirm: true to send it`)
+    }
+    const settings = resolveSettings(root, source)
+    const target = remoteUrl(settings.baseUrl ?? '', fillPath(call, input.params ?? {}))
+    if (!target.ok) throw new ActionError('invalid_input', target.message)
+    // A browser source has no secret: the browser would see it, so the call is tried as the browser would send it.
+    const { headers, secrets } = source.runtime === 'browser' ? { headers: { accept: 'application/json' }, secrets: [] as string[] } : authHeaders(source, settings)
+    const clean = <T>(value: T): T => secrets.length ? redactValue(value, secrets) as T : value
+    const url = redact(target.url, secrets)
+    let answer
+    try {
+      answer = await fetchRemote(target.url, { baseUrl: settings.baseUrl!, headers, method: call.method, body: input.body })
+    } catch (error) {
+      if (error instanceof RemoteError) throw new ActionError('upstream', secrets.length ? redact(error.message, secrets) : error.message)
+      throw error
+    }
+    if ('text' in answer) return { status: answer.status, url, text: clean(answer.text).slice(0, MAX_TEXT) }
+    const json = clean(answer.json)
+    const found = itemsOf(json, call)
+    // An error answer (4xx, 5xx) is not a model to propose.
+    const models = answer.status < 200 || answer.status >= 300 ? [] : inferApiModels(found ? found.items : json, input.model ?? call.expected?.model ?? modelNameOf(call.path))
+    return {
+      status: answer.status,
+      url,
+      json: found ? trimmedAt(json, found.path, SAMPLE_ITEMS) : json,
+      ...(found ? { items: { path: found.path, count: found.items.length } } : {}),
+      ...(models.length ? { proposal: { result: { model: models.at(-1)!.name, many: found !== null, ...(found?.path ? { itemsPath: found.path } : {}) }, models } } : {})
+    }
+  }
+})
+
+export const DATA_ACTIONS: readonly ActionDef[] = [datasourcePreview, repositoryEndpointTest, envStatus, apiTry] as ActionDef[]
