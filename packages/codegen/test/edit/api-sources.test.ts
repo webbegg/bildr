@@ -21,7 +21,7 @@ describe('api_create and api_update', () => {
       id: 'ds_shop_api',
       name: 'shop-api',
       kind: 'api',
-      env: { baseUrl: 'NUXT_DATASOURCES_SHOP_API_BASE_URL' },
+      env: { baseUrl: 'NUXT_APIS_SHOP_API_BASE_URL' },
       baseUrl: 'https://shop.example.com/v1',
       runtime: 'server',
       models: [],
@@ -33,13 +33,13 @@ describe('api_create and api_update', () => {
   it('the secret is an env var only; browser runtime takes public env names and no secret auth', () => {
     const { p } = withApi({ auth: { type: 'bearer' } })
     expect(p.json(FILE)).toMatchObject({
-      env: { baseUrl: 'NUXT_DATASOURCES_SHOP_API_BASE_URL', apiKey: 'NUXT_DATASOURCES_SHOP_API_API_KEY' },
+      env: { baseUrl: 'NUXT_APIS_SHOP_API_BASE_URL', apiKey: 'NUXT_APIS_SHOP_API_API_KEY' },
       auth: { type: 'bearer', secret: 'apiKey' }
     })
     expect(p.refuse('api_update', { datasource: 'ds_shop_api', runtime: 'browser' }, 'invalid').message)
       .toBe('An API that runs in the browser can\'t use a secret: the browser would see it. Run it on the server, or remove the auth')
     p.edit('api_update', { datasource: 'ds_shop_api', runtime: 'browser', auth: null })
-    expect(p.json(FILE)).toMatchObject({ runtime: 'browser', env: { baseUrl: 'NUXT_PUBLIC_DATASOURCES_SHOP_API_BASE_URL' } })
+    expect(p.json(FILE)).toMatchObject({ runtime: 'browser', env: { baseUrl: 'NUXT_PUBLIC_APIS_SHOP_API_BASE_URL' } })
     expect(p.json(FILE).auth).toBeUndefined()
   })
 

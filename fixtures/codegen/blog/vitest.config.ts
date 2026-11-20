@@ -16,7 +16,7 @@ export default defineConfig({
   test: {
     passWithNoTests: true,
     projects: [
-      { extends: true, test: { name: 'unit', include: ['layers/*/test/{application,infrastructure}/**/*.test.ts'] } },
+      { extends: true, test: { name: 'unit', include: ['layers/*/test/{application,infrastructure}/**/*.test.ts', 'layers/apis/test/**/*.test.ts'] } },
       { extends: true, test: { name: 'api', include: ['layers/*/test/api/**/*.test.ts'], testTimeout: 120_000, hookTimeout: 300_000 } }
     ]
   }
