@@ -120,6 +120,8 @@ describe('action list', () => {
     expect(byName.code_view!.readOnly).toBe(true)
     expect(byName.model_file_put!.readOnly).toBe(false)
     expect(byName.migration_confirm!.readOnly).toBe(false)
+    // A confirmed api_try sends writes to the remote API: never advertised read-only to MCP clients (verify P4).
+    expect(byName.api_try!.readOnly).toBe(false)
     expect(byName.model_file_put!.inputSchema).toMatchObject({ properties: { path: { type: 'string' } }, required: ['path', 'content'] })
   })
 

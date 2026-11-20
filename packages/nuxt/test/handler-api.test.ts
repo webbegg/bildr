@@ -123,8 +123,11 @@ describe('api_try: a GET', () => {
     const list = await ok('api_try', { datasource: 'ds_stub', path: '/products', params: { limit: 2 } })
     expect(list).toMatchObject({ status: 200, url: `${base}/products?limit=2`, items: { path: 'data', count: 2 }, json: { total: 2, query: { limit: '2' } } })
     expect(list.proposal.result).toEqual({ model: 'Product', many: true, itemsPath: 'data' })
-    expect(list.proposal.models.map((model: Json) => model.name)).toEqual(['Product', 'Maker'])
-    expect(list.proposal.models[0].fields).toEqual([
+    // Nested first, the root last: api_model_set takes them in this order (verify P4).
+    expect(list.proposal.models.map((model: Json) => model.name)).toEqual(['Maker', 'Product'])
+    for (const model of list.proposal.models) await ok('api_model_set', { datasource: 'ds_stub', model })
+    await ok('api_query_set', { datasource: 'ds_stub', query: { name: 'tried', path: '/products', result: list.proposal.result } })
+    expect(list.proposal.models[1].fields).toEqual([
       { name: 'id', type: 'integer' },
       { name: 'title', type: 'text' },
       { name: 'unitPrice', type: 'number', key: 'unit_price' },

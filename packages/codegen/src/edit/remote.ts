@@ -169,8 +169,8 @@ const modelName = (raw: string): string => {
 }
 
 /**
- * Proposes the models of an API answer (`api_model_set` takes them as they are): the root
- * model first, nested ones after. `sample` is one object or an array of them (up to 20
+ * Proposes the models of an API answer, in the order `api_model_set` takes them one by one:
+ * nested models first, the root model last. `sample` is one object or an array of them (up to 20
  * are read). Fields are camelCase with the remote `key` when it differs; the type comes from
  * the values (an image URL is text); a nested object is a model, a list of objects or scalars
  * a list; null makes a field `nullable`, a key missing in some items `optional`. Each nested
@@ -247,5 +247,6 @@ export const inferApiModels = (sample: unknown, rootName: string): ApiModel[] =>
   }
 
   build(rootName, objects, undefined, 0)
-  return models
+  // Built root first, each model before what it holds: reversed, each model comes after every model it names, as api_model_set takes them.
+  return models.reverse()
 }

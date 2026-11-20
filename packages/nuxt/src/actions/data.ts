@@ -267,7 +267,7 @@ const modelNameOf = (path: string): string => {
 
 const apiTry = defineAction({
   name: 'api_try',
-  description: `Send one call of an API data source, as the generated app would, and propose the models of its answer. Give one of: path (relative to the data source's base URL, e.g. "/products/:id"; :name is filled from params, the other params go in the query string), query (a saved query's name) or action (a saved action's name; its params go by their remote key). Saved operations use their own method; for a path, method is GET unless set. GET only unless confirm: true: a POST, PUT, PATCH or DELETE could change the API's data, so it is refused without confirm. body is the JSON a write sends. Calls go through the editor's remote guards: under the base URL only, redirects off it (and any redirect of a write) refused, at most 10 s and 1 MB; the auth secret comes from the env (not sent for a browser-runtime source) and is never returned. Returns status, url, json (a list cut to its first ${SAMPLE_ITEMS} items) or text, items { path, count } when the answer holds a list, and proposal { result: { model, many, itemsPath? }, models } to use with api_model_set and api_query_set / api_action_set; model names the proposed root model.`,
+  description: `Send one call of an API data source, as the generated app would, and propose the models of its answer. Give one of: path (relative to the data source's base URL, e.g. "/products/:id"; :name is filled from params, the other params go in the query string), query (a saved query's name) or action (a saved action's name; its params go by their remote key). Saved operations use their own method; for a path, method is GET unless set. GET only unless confirm: true: a POST, PUT, PATCH or DELETE could change the API's data, so it is refused without confirm. body is the JSON a write sends. Calls go through the editor's remote guards: under the base URL only, redirects off it (and any redirect of a write) refused, at most 10 s and 1 MB; the auth secret comes from the env (not sent for a browser-runtime source) and is never returned. Returns status, url, json (a list cut to its first ${SAMPLE_ITEMS} items) or text, items { path, count } when the answer holds a list, and proposal { result: { model, many, itemsPath? }, models } to use with api_model_set (one call per model, in the listed order: nested models first, the root last) and api_query_set / api_action_set; model names the proposed root model.`,
   input: z.object({
     datasource: ArtifactIdSchema.describe('An API data source id, e.g. "ds_shop"'),
     path: PathInput.optional(),
@@ -279,7 +279,8 @@ const apiTry = defineAction({
     confirm: z.boolean().optional().describe('true to send a write (POST, PUT, PATCH, DELETE)'),
     model: PascalNameSchema.optional().describe('The name for the proposed root model (default: the saved result\'s, else from the path)')
   }).refine(input => [input.path, input.query, input.action].filter(value => value !== undefined).length === 1, 'Give one of path, query or action'),
-  readOnly: true,
+  // Not read-only: with confirm it sends writes to the remote API, and MCP clients may auto-approve a read-only tool.
+  readOnly: false,
   run: async (input, { root }) => {
     const source = apiSourceOf(loaded(root), input.datasource)
     const call = callOf(source, input)
@@ -311,7 +312,7 @@ const apiTry = defineAction({
       url,
       json: found ? trimmedAt(json, found.path, SAMPLE_ITEMS) : json,
       ...(found ? { items: { path: found.path, count: found.items.length } } : {}),
-      ...(models.length ? { proposal: { result: { model: models[0]!.name, many: found !== null, ...(found?.path ? { itemsPath: found.path } : {}) }, models } } : {})
+      ...(models.length ? { proposal: { result: { model: models.at(-1)!.name, many: found !== null, ...(found?.path ? { itemsPath: found.path } : {}) }, models } } : {})
     }
   }
 })

@@ -45,7 +45,7 @@ describe('inferApiModels', () => {
 
   it('does not look past the 20th item', () => {
     const items = [...Array.from({ length: 20 }, () => ({ id: 1 })), { id: 1, late: true }]
-    expect(inferApiModels(items, 'Row')[0]!.fields.map(field => field.name)).toEqual(['id'])
+    expect(inferApiModels(items, 'Row').at(-1)!.fields.map(field => field.name)).toEqual(['id'])
   })
 
   it('makes nested objects models (root first) and lists of objects or scalars lists', () => {
@@ -57,8 +57,9 @@ describe('inferApiModels', () => {
       scores: [1, 2],
       empty: []
     }, 'order')
-    expect(models.map(model => model.name)).toEqual(['Order', 'Address', 'Geo', 'Lines'])
-    expect(models[0]!.fields).toEqual([
+    // In the order api_model_set takes them (verify P4): a model after every model it names, the root last.
+    expect(models.map(model => model.name)).toEqual(['Lines', 'Geo', 'Address', 'Order'])
+    expect(models[3]!.fields).toEqual([
       { name: 'id', type: 'integer' },
       { name: 'address', type: 'model', model: 'Address' },
       { name: 'lines', type: 'model', model: 'Lines', list: true },
@@ -66,21 +67,21 @@ describe('inferApiModels', () => {
       { name: 'scores', type: 'integer', list: true },
       { name: 'empty', type: 'text', list: true }
     ])
-    expect(models[1]!.fields).toEqual([{ name: 'city', type: 'text' }, { name: 'geo', type: 'model', model: 'Geo' }])
+    expect(models[2]!.fields).toEqual([{ name: 'city', type: 'text' }, { name: 'geo', type: 'model', model: 'Geo' }])
     expect(valid(models)).toEqual([])
   })
 
   it('keeps model names Pascal and unique, and never makes a cycle', () => {
-    const models = inferApiModels({ user: { user: { user: { id: 1 } } }, other: { user: { id: 2 } }, 'order-line': { id: 3 } }, 'user')
+    const models = inferApiModels({ 'user': { user: { user: { id: 1 } } }, 'other': { user: { id: 2 } }, 'order-line': { id: 3 } }, 'user')
     const names = models.map(model => model.name)
     expect(new Set(names).size).toBe(names.length)
     for (const name of names) expect(name).toMatch(/^[A-Z][A-Za-z0-9]*$/)
-    expect(names[0]).toBe('User')
+    expect(names.at(-1)).toBe('User')
     expect(valid(models)).toEqual([])
   })
 
   it('keeps field names unique when keys collapse to the same name', () => {
-    const [model] = inferApiModels({ full_name: 'a', fullName: 'b', 'full-name': 'c' }, 'p')
+    const [model] = inferApiModels({ 'full_name': 'a', 'fullName': 'b', 'full-name': 'c' }, 'p')
     const names = model!.fields.map(field => field.name)
     expect(new Set(names).size).toBe(3)
     expect(valid([model!])).toEqual([])
