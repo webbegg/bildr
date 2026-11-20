@@ -95,7 +95,10 @@ const NAMES = [
   // B1: app behaviour: state, interactions on any node, computed values.
   'state_create', 'state_update', 'state_rename', 'state_delete',
   'node_interaction_add', 'node_interaction_update', 'node_interaction_remove',
-  'page_computed_set', 'page_computed_remove'
+  'page_computed_set', 'page_computed_remove',
+  // Simple data P1: API data sources.
+  'api_create', 'api_update', 'api_model_set', 'api_model_rename', 'api_model_delete',
+  'api_query_set', 'api_query_rename', 'api_query_delete', 'api_action_set', 'api_action_rename', 'api_action_delete'
 ].sort()
 
 // T10a (S11, D12): every editor operation is an action, callable over HTTP.

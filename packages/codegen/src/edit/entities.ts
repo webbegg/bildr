@@ -220,6 +220,7 @@ export const entityCreate = defineEdit({
   apply: (draft, { module = draft.model.project.defaultModule, name: given, plural: givenPlural, source: sourceId, fields: givenFields, expose = true, endpoints }) => {
     const mod = draft.module(module)
     const source = datasourceById(draft, sourceId)
+    if (source.kind === 'api') fail('invalid', `"${source.name}" is an API data source: it has queries and actions, not collections`)
     const name = pascal(given)
     if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) fail('invalid', `"${given}" can't be an entity name: start with a letter, like "Post"`)
     const taken = mod.entities.find(entity => entity.name.toLowerCase() === name.toLowerCase())

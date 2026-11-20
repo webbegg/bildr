@@ -15,6 +15,7 @@ import {
 } from './layouts.ts'
 import { catalogGet, projectUpdate, themeApply, themeGet, themePresetsList, themeUpdate } from './theme.ts'
 import { datasourceCreate, datasourceDelete, datasourceUpdate } from './datasources.ts'
+import { apiActionDelete, apiActionRename, apiActionSet, apiCreate, apiModelDelete, apiModelRename, apiModelSet, apiQueryDelete, apiQueryRename, apiQuerySet, apiUpdate } from './api.ts'
 import { actionCreate, actionDelete, actionRename, actionUpdate } from './actions.ts'
 import { pageUseAdd, pageUseRemove, pageUseUpdate, queryCreate, queryCreateForList, queryDelete, queryRename, queryUpdate } from './queries.ts'
 import { nodeInteractionAdd, nodeInteractionRemove, nodeInteractionUpdate } from './interactions.ts'
@@ -94,6 +95,18 @@ export const EDITS = {
   datasource_create: datasourceCreate,
   datasource_update: datasourceUpdate,
   datasource_delete: datasourceDelete,
+  // API data sources (simple data): a base URL, models, queries and actions; deleted with datasource_delete.
+  api_create: apiCreate,
+  api_update: apiUpdate,
+  api_model_set: apiModelSet,
+  api_model_rename: apiModelRename,
+  api_model_delete: apiModelDelete,
+  api_query_set: apiQuerySet,
+  api_query_rename: apiQueryRename,
+  api_query_delete: apiQueryDelete,
+  api_action_set: apiActionSet,
+  api_action_rename: apiActionRename,
+  api_action_delete: apiActionDelete,
   entity_create: entityCreate,
   entity_update: entityUpdate,
   entity_delete: entityDelete,
@@ -161,6 +174,8 @@ export { computedUsesOf, describeUse, describeUses, entityUsesOf, fieldUsesIndex
 export type { ArtifactUse, UseKind, UseVia } from './usage.ts'
 export { fixtureRowKey } from './fixtures.ts'
 export { datasourceEnvVars } from './datasources.ts'
+export { isApiSource } from './api.ts'
+export type { ApiSource } from './api.ts'
 export type { DataSourceEnvVar } from './datasources.ts'
 export { detectItems, inferFields, isUnder, remoteUrl } from './remote.ts'
 export type { InferredField, RemoteUrl } from './remote.ts'

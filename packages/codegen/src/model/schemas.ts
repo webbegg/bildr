@@ -89,7 +89,157 @@ export const ThemeFileSchema = ThemeSchema.extend(schemaField)
  * Where a repository's rows live: `sqlite` (the app database), `rest` (a remote API) or
  * `memory` (the server process, seeded from the module fixtures at boot, never persisted).
  */
-export const DATASOURCE_KINDS = ['sqlite', 'rest', 'memory'] as const
+export const DATASOURCE_KINDS = ['sqlite', 'rest', 'memory', 'api'] as const
+
+// ── API data sources (simple data, SD-2) ─────────────────────────────────
+
+/**
+ * An `api` data source is a remote JSON API the app calls by name: its `baseUrl`, the
+ * models its responses and bodies have, and named queries (GET) and actions (writes).
+ * It owns no collections: queries and actions are the whole contract. `runtime` says
+ * where the generated calls run: on the server (the secret stays there) or in the browser.
+ */
+export const API_RUNTIMES = ['server', 'browser'] as const
+export const API_VALUE_TYPES = ['text', 'integer', 'number', 'boolean', 'datetime', 'date', 'uuid'] as const
+export const API_FIELD_TYPES = [...API_VALUE_TYPES, 'model'] as const
+export const API_PARAM_TYPES = ['text', 'integer', 'number', 'boolean'] as const
+export const API_ACTION_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const
+
+/** The remote JSON key of a field or parameter, when it isn't its name (`created_at`). */
+const RemoteKeySchema = z.string().min(1).max(64)
+/** A path under the base URL: `/` then segments, `:name` for a path parameter; no `..`, query or fragment. */
+export const API_PATH = /^\/(?:(?:[\w\-~]+|:[a-z][A-Za-z0-9]*)(?:\.(?:[\w\-~]+))*(?:\/|$))*$/
+
+export const ApiFieldSchema = z.object({
+  name: CamelNameSchema,
+  type: z.enum(API_FIELD_TYPES),
+  /** For `type: "model"`: the model of the value. */
+  model: PascalNameSchema.optional(),
+  /** A list of values (or of models). */
+  list: z.boolean().optional(),
+  /** The key may be missing. */
+  optional: z.boolean().optional(),
+  /** The value may be null. */
+  nullable: z.boolean().optional(),
+  key: RemoteKeySchema.optional()
+})
+export const ApiModelSchema = z.object({ name: PascalNameSchema, fields: z.array(ApiFieldSchema).min(1) })
+export const ApiParamSchema = z.object({
+  name: CamelNameSchema,
+  in: z.enum(['path', 'query']),
+  type: z.enum(API_PARAM_TYPES),
+  /** A query parameter the call can't go without (path parameters always are). */
+  required: z.boolean().optional(),
+  key: RemoteKeySchema.optional()
+})
+/** What a call answers: one model or a list of them, read at `itemsPath` (dots, `data.items`) when the list is wrapped. */
+export const ApiResultSchema = z.object({ model: PascalNameSchema, many: z.boolean(), itemsPath: z.string().regex(PROPERTY_PATH).optional() })
+export const ApiQuerySchema = z.object({
+  name: CamelNameSchema,
+  description: z.string().max(500).optional(),
+  path: z.string().max(300),
+  params: z.array(ApiParamSchema),
+  result: ApiResultSchema
+})
+export const ApiActionSchema = z.object({
+  name: CamelNameSchema,
+  description: z.string().max(500).optional(),
+  method: z.enum(API_ACTION_METHODS),
+  path: z.string().max(300),
+  params: z.array(ApiParamSchema),
+  /** The JSON body the action sends. */
+  body: z.object({ model: PascalNameSchema }).optional(),
+  /** What it answers; none for an empty answer (204). */
+  result: ApiResultSchema.optional()
+})
+
+export type ApiField = z.infer<typeof ApiFieldSchema>
+export type ApiModel = z.infer<typeof ApiModelSchema>
+export type ApiParam = z.infer<typeof ApiParamSchema>
+export type ApiQuery = z.infer<typeof ApiQuerySchema>
+export type ApiAction = z.infer<typeof ApiActionSchema>
+
+interface ApiParts {
+  runtime?: (typeof API_RUNTIMES)[number]
+  auth?: { secret: string }
+  models?: ApiModel[]
+  queries?: ApiQuery[]
+  actions?: ApiAction[]
+}
+
+export interface ApiProblem { path: (string | number)[], message: string }
+
+const pathProblem = (path: string, params: ApiParam[]): string | undefined => {
+  if (!API_PATH.test(path)) return `"${path}" can't be a path: A path is "/" followed by segments, like "/products/:id" (no "..", query or fragment)`
+  const inPath = [...path.matchAll(/:([a-z][A-Za-z0-9]*)/g)].map(match => match[1]!)
+  const pathParams = params.filter(param => param.in === 'path').map(param => param.name)
+  const missing = inPath.find(name => !pathParams.includes(name))
+  if (missing) return `":${missing}" in the path needs a path parameter "${missing}"`
+  const extra = pathParams.find(name => !inPath.includes(name))
+  if (extra) return `Path parameter "${extra}" is not in the path: add ":${extra}" to it, or make it a query parameter`
+  if (new Set(inPath).size !== inPath.length) return 'A path names each parameter once'
+  return undefined
+}
+
+const duplicateOf = (names: string[]) => names.find((name, index) => names.indexOf(name) !== index)
+
+/** What's wrong with an API source's parts: the load check and the edits share it. */
+export const apiProblems = (source: ApiParts): ApiProblem[] => {
+  const problems: ApiProblem[] = []
+  const models = source.models ?? []
+  const known = new Set(models.map(model => model.name))
+  if (source.runtime === 'browser' && source.auth) {
+    problems.push({ path: ['auth'], message: 'An API that runs in the browser can\'t use a secret: the browser would see it. Run it on the server, or remove the auth' })
+  }
+  const duplicateModel = duplicateOf(models.map(model => model.name))
+  if (duplicateModel) problems.push({ path: ['models'], message: `A model is already named "${duplicateModel}"` })
+  models.forEach((model, index) => {
+    const duplicate = duplicateOf(model.fields.map(field => field.name))
+    if (duplicate) problems.push({ path: ['models', index, 'fields'], message: `Two fields of ${model.name} are named "${duplicate}"` })
+    const keys = model.fields.map(field => field.key ?? field.name)
+    const duplicateKey = duplicateOf(keys)
+    if (duplicateKey && !duplicate) problems.push({ path: ['models', index, 'fields'], message: `Two fields of ${model.name} read the key "${duplicateKey}"` })
+    model.fields.forEach((field, at) => {
+      const where = ['models', index, 'fields', at]
+      if (field.type === 'model' && !field.model) problems.push({ path: where, message: `${model.name}.${field.name} is a "model" field: name its model` })
+      if (field.type !== 'model' && field.model) problems.push({ path: where, message: `${model.name}.${field.name}: Only a "model" field names a model` })
+      if (field.model && !known.has(field.model)) problems.push({ path: where, message: `${model.name}.${field.name}: Unknown model "${field.model}"` })
+    })
+  })
+  // A model can't contain itself: the generated types and checks would never end.
+  const byName = new Map(models.map(model => [model.name, model]))
+  const reported = new Set<string>()
+  const walk = (name: string, trail: string[]): string[] | undefined => {
+    if (trail.includes(name)) return [...trail.slice(trail.indexOf(name)), name]
+    for (const field of byName.get(name)?.fields ?? []) {
+      if (!field.model || !byName.has(field.model)) continue
+      const cycle = walk(field.model, [...trail, name])
+      if (cycle) return cycle
+    }
+    return undefined
+  }
+  for (const model of models) {
+    const cycle = walk(model.name, [])
+    if (cycle && cycle[0] === model.name && !cycle.some(name => reported.has(name))) {
+      problems.push({ path: ['models'], message: `Model cycle: ${cycle.join(' → ')}` })
+      cycle.forEach(name => reported.add(name))
+    }
+  }
+  const operations = [...(source.queries ?? []).map(query => ({ kind: 'queries' as const, op: query })), ...(source.actions ?? []).map(action => ({ kind: 'actions' as const, op: action }))]
+  const duplicate = duplicateOf(operations.map(({ op }) => op.name))
+  if (duplicate) problems.push({ path: ['queries'], message: `A query or action is already named "${duplicate}"` })
+  const counters = { queries: 0, actions: 0 }
+  for (const { kind, op } of operations) {
+    const where = [kind, counters[kind]++]
+    const path = pathProblem(op.path, op.params)
+    if (path) problems.push({ path: [...where, 'path'], message: `${op.name}: ${path}` })
+    const param = duplicateOf(op.params.map(item => item.name))
+    if (param) problems.push({ path: [...where, 'params'], message: `${op.name}: Two parameters are named "${param}"` })
+    const refs = [('result' in op ? op.result?.model : undefined), ('body' in op ? op.body?.model : undefined)]
+    for (const ref of refs) if (ref && !known.has(ref)) problems.push({ path: where, message: `${op.name}: Unknown model "${ref}"` })
+  }
+  return problems
+}
 
 export const DataSourceFileSchema = z.object({
   ...schemaField,
@@ -100,8 +250,22 @@ export const DataSourceFileSchema = z.object({
   env: z.record(CamelNameSchema, EnvNameSchema),
   /** Non-secret defaults written into runtimeConfig. */
   defaults: z.record(CamelNameSchema, z.string()).optional(),
-  auth: z.object({ type: z.enum(['bearer', 'header']), secret: CamelNameSchema, header: z.string().optional() }).optional()
+  auth: z.object({ type: z.enum(['bearer', 'header']), secret: CamelNameSchema, header: z.string().optional() }).optional(),
+  // `api` only: the base URL its paths are under, where its calls run, and what it offers.
+  baseUrl: z.string().max(2000).optional(),
+  runtime: z.enum(API_RUNTIMES).optional(),
+  models: z.array(ApiModelSchema).optional(),
+  queries: z.array(ApiQuerySchema).optional(),
+  actions: z.array(ApiActionSchema).optional()
 }).superRefine((source, ctx) => {
+  const apiKeys = ['baseUrl', 'runtime', 'models', 'queries', 'actions'] as const
+  if (source.kind === 'api') {
+    for (const key of apiKeys) if (source[key] === undefined) ctx.addIssue({ code: 'custom', path: [key], message: `An API data source needs "${key}"` })
+    if (source.defaults) ctx.addIssue({ code: 'custom', path: ['defaults'], message: 'An API data source has its baseUrl, no other settings' })
+    for (const problem of apiProblems(source)) ctx.addIssue({ code: 'custom', path: problem.path, message: problem.message })
+  } else {
+    for (const key of apiKeys) if (source[key] !== undefined) ctx.addIssue({ code: 'custom', path: [key], message: `Only an API data source has "${key}"` })
+  }
   if (source.kind === 'memory') {
     for (const key of ['defaults', 'auth'] as const) {
       if (source[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'A memory data source keeps its rows in the server process: it has no settings' })

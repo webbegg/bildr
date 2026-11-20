@@ -310,6 +310,9 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       const path = at(repo.id)
       ref(path, 'entity', 'entity', repo.entity, 'entity')
       ref(path, 'datasource', 'datasource', repo.datasource, 'data source')
+      if (model.datasources.find(source => source.id === repo.datasource)?.kind === 'api') {
+        report(path, 'datasource', `"${repo.datasource}" is an API data source: it has queries and actions, not collections`)
+      }
       repo.finders?.forEach((finder, index) => ref(path, `finders.${index}.by`, 'field', finder.by, 'field'))
     }
     for (const query of mod.queries) ref(at(query.id), 'from', 'entity', query.from, 'entity')

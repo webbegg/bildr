@@ -327,7 +327,8 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
       wiring.push(`  const ${names.plural} = ${adapter}(${datasource.kind === 'sqlite' ? 'useDb()' : `useRemote(${tsString(datasource.name)})`})`)
     }
     if (datasource.kind === 'sqlite') sources.database = true
-    else if (!sources[datasource.kind].includes(datasource.name)) sources[datasource.kind].push(datasource.name)
+    // A repository never lives on an api source (load.ts refuses it).
+    else if (datasource.kind !== 'api' && !sources[datasource.kind].includes(datasource.name)) sources[datasource.kind].push(datasource.name)
     if (listed(repository)) {
       const useCase = `list${pascal(entity.plural)}`
       imports.push({ path: `../application/queries/list-${kebab(entity.plural)}`, name: useCase })

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Model } from '../model/load.ts'
-import { ArtifactIdSchema, CamelNameSchema, DATASOURCE_KINDS, EnvNameSchema } from '../model/schemas.ts'
+import { ArtifactIdSchema, CamelNameSchema, EnvNameSchema } from '../model/schemas.ts'
 import type { DataSourceFile } from '../model/schemas.ts'
 import { DATABASE_DEPENDENCIES } from '../starter/starter.ts'
 import { camel, defineEdit, fail, kebab, snake } from './core.ts'
@@ -15,8 +15,11 @@ import type { Draft } from './core.ts'
 
 export const DataSourceRef = ArtifactIdSchema.describe('A data source id, e.g. "ds_api"')
 
+/** What `datasource_create` makes; API sources have their own edits (`api_*`). */
+const STORE_KINDS = ['sqlite', 'rest', 'memory'] as const
+
 const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/
-const AuthInput = z.object({
+export const AuthInput = z.object({
   type: z.enum(['bearer', 'header']).describe('bearer: "Authorization: Bearer <secret>"; header: "<header>: <secret>"'),
   secret: CamelNameSchema.optional().describe('The setting that holds the secret (default "apiKey"); its value comes from its env var only'),
   header: z.string().regex(HEADER_NAME, 'Use a header name like "X-Api-Key"').optional().describe('The header name, for type "header"')
@@ -28,9 +31,9 @@ export const datasourceById = (draft: Draft, id: string): DataSourceFile =>
   draft.model.datasources.find(source => source.id === id) ?? fail('not_found', `No data source "${id}"`)
 
 /** `NUXT_DATASOURCES_<NAME>_<SETTING>`: the env var Nuxt maps onto `runtimeConfig.datasources.<name>.<setting>`. */
-const envNameOf = (source: string, setting: string) => `NUXT_DATASOURCES_${snake(camel(source)).toUpperCase()}_${snake(setting).toUpperCase()}`
+export const envNameOf = (source: string, setting: string) => `NUXT_DATASOURCES_${snake(camel(source)).toUpperCase()}_${snake(setting).toUpperCase()}`
 
-const urlProblem = (value: string): string | undefined => {
+export const urlProblem = (value: string): string | undefined => {
   let url: URL
   try {
     url = new URL(value)
@@ -43,7 +46,7 @@ const urlProblem = (value: string): string | undefined => {
   return undefined
 }
 
-const sourceName = (draft: Draft, given: string, except?: string): string => {
+export const sourceName = (draft: Draft, given: string, except?: string): string => {
   const name = kebab(given)
   if (!/^[a-z][a-z0-9-]*$/.test(name)) fail('invalid', `"${given}" can't be a data source name: start with a letter, like "api"`)
   const other = draft.model.datasources.find(source => source.name === name && source.id !== except)
@@ -83,7 +86,7 @@ const hasSqlite = (draft: Draft, except?: string) => draft.model.datasources.fin
 export const datasourceCreate = defineEdit({
   input: z.object({
     name: z.string().min(1).max(60).describe('Kebab-cased into its name, e.g. "Billing API" → "billing-api"; the id is ds_<name>'),
-    kind: z.enum(DATASOURCE_KINDS).describe('rest: a JSON API (baseUrl, auth); memory: rows in the server process, seeded from fixtures, never persisted; sqlite: the app database (at most one)'),
+    kind: z.enum(STORE_KINDS).describe('rest: a JSON API (baseUrl, auth); memory: rows in the server process, seeded from fixtures, never persisted; sqlite: the app database (at most one)'),
     defaults: SettingsInput.optional().describe('Non-secret settings, e.g. { "baseUrl": "https://api.example.com/v1" } (rest) or { "url": "file:.data/app.db" } (sqlite)'),
     env: EnvInput.optional().describe('Setting → the env var that holds its value at runtime (default NUXT_DATASOURCES_<NAME>_<SETTING>)'),
     auth: AuthInput.optional()
@@ -124,6 +127,7 @@ export const datasourceUpdate = defineEdit({
   }),
   apply: (draft, { datasource: id, name, defaults, env, auth }) => {
     const source = datasourceById(draft, id)
+    if (source.kind === 'api') fail('invalid', `"${source.name}" is an API data source: change it with api_update`)
     if (name !== undefined) source.name = sourceName(draft, name, id)
     if (source.kind === 'memory' && (defaults || env || auth)) fail('invalid', 'A memory data source keeps its rows in the server process: it has no settings')
     if (source.kind === 'sqlite' && auth) fail('invalid', 'The app database takes no auth')
