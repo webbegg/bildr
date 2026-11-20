@@ -18,14 +18,19 @@ export const localBildrNuxt = (moduleUrl: string = import.meta.url): string | un
   return pkg.name === '@bildr/nuxt' ? `link:${dir}` : undefined
 }
 
+/** Set by `bun build --define` when the single-file binary is built (scripts/build-binaries.mjs); undeclared on Node. */
+declare const CREATE_BILDR_VERSION: string | undefined
+
 /**
  * The `@bildr/nuxt` spec a created project gets unless one is given (`--bildr`).
+ * - From the single-file binary (no package.json inside it): `^<version>` injected at build time.
  * - From this checkout's sources (`src/*.ts`, as the tests and e2e run it): a link
  *   to the local package, so the project installs without the registry.
  * - From the built package (`dist/*.js`, as `pnpm create bildr` runs it):
  *   `^<create-bildr's version>`; the packages are released together.
  */
 export const defaultBildrNuxt = (moduleUrl: string = import.meta.url): string => {
+  if (typeof CREATE_BILDR_VERSION === 'string') return `^${CREATE_BILDR_VERSION}`
   const local = moduleUrl.endsWith('.ts') ? localBildrNuxt(moduleUrl) : undefined
   if (local) return local
   // package.json is one level up from both src/ and dist/.

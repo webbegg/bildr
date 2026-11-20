@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadModel } from '@bildr/codegen/model'
 import { detectStarterKit } from '@bildr/codegen/starter'
 import { planSync } from '@bildr/codegen/sync'
@@ -77,6 +77,23 @@ describe('createProject', () => {
     expect(defaultBildrNuxt(new URL('../dist/create.js', import.meta.url).href)).toBe('^0.1.0')
     // From this checkout's sources: the local package, so tests and e2e install it unpublished.
     expect(defaultBildrNuxt(new URL('../src/create.ts', import.meta.url).href)).toBe(`link:${fileURLToPath(new URL('../../nuxt', import.meta.url)).replace(/\/$/, '')}`)
+  })
+
+  // The single-file binary has no package.json to read: `bun build --define CREATE_BILDR_VERSION=...` injects the version.
+  it('uses the build-time CREATE_BILDR_VERSION when one is defined, before any file lookup', () => {
+    vi.stubGlobal('CREATE_BILDR_VERSION', '7.8.9')
+    try {
+      // A module URL with no package.json next to it, as inside the binary.
+      expect(defaultBildrNuxt('file:///$bunfs/root/create-bildr')).toBe('^7.8.9')
+      expect(defaultBildrNuxt(new URL('../src/create.ts', import.meta.url).href)).toBe('^7.8.9')
+      const dir = join(root, 'embedded')
+      createProject(dir, { name: 'Embedded' })
+      expect(JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')).devDependencies['@bildr/nuxt']).toBe('^7.8.9')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+    // Not defined (Node runs): the runtime lookup, as before.
+    expect(defaultBildrNuxt(new URL('../dist/create.js', import.meta.url).href)).toBe('^0.1.0')
   })
 
   it('links the local @bildr/nuxt by default when it runs from this checkout, so the project installs', () => {

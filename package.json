@@ -4,12 +4,14 @@
   "type": "module",
   "scripts": {
     "build:editor": "pnpm --filter @bildr/editor build",
+    "build:binaries": "node scripts/build-binaries.mjs",
     "build:packages": "pnpm --filter './packages/**' build",
     "e2e:generated": "node e2e/generated.mjs",
     "e2e:module": "node e2e/module/all.mjs",
     "palettes": "node --experimental-strip-types scripts/generate-palettes.ts",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:install": "node scripts/test-install.mjs",
     "typecheck": "pnpm --filter './packages/**' typecheck"
   },
   "devDependencies": {

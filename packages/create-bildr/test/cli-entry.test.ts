@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { afterEach, beforeEach, expect, it } from 'vitest'
 
 const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url))
@@ -22,6 +22,14 @@ it('runs when invoked through a bin symlink', () => {
   const usage = spawnSync(process.execPath, [link], { cwd: root, encoding: 'utf8' })
   expect(usage.status).toBe(1)
   expect(usage.stderr).toContain('Usage: pnpm create bildr <directory>')
+})
+
+// `import.meta.main` is true only for the entry module (it is how the Bun binary starts), never for an imported one.
+it('does not run main when the module is only imported', () => {
+  const run = spawnSync(process.execPath, ['--input-type=module', '-e', `await import(${JSON.stringify(pathToFileURL(cli).href)})`], { cwd: root, encoding: 'utf8' })
+  expect(run.status, run.stderr).toBe(0)
+  expect(run.stderr).toBe('')
+  expect(run.stdout).toBe('')
 })
 
 it('explains a target that is an existing file', () => {

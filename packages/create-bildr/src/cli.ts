@@ -63,7 +63,10 @@ const main = () => {
   }
 }
 
-/** Run as a program, also through the symlink a package manager installs as the bin. */
+/**
+ * Run as a program, also through the symlink a package manager installs as the bin.
+ * In the Bun single-file binary argv[1] is a virtual path, so `import.meta.main` (Bun, and Node 22.18+) decides there.
+ */
 const isEntry = () => {
   try {
     return Boolean(process.argv[1]) && realpathSync(process.argv[1]!) === realpathSync(fileURLToPath(import.meta.url))
@@ -72,4 +75,4 @@ const isEntry = () => {
   }
 }
 
-if (isEntry()) main()
+if (isEntry() || import.meta.main === true) main()

@@ -1,7 +1,12 @@
 name: release
 
-# Publishes @bildr/codegen, @bildr/editor, @bildr/nuxt and create-bildr to npm when a
-# version tag is pushed (decision D13). Before the first release (see RELEASING in the README):
+# When a version tag is pushed (decision D13) this publishes @bildr/codegen, @bildr/editor, @bildr/nuxt
+# and create-bildr to npm, and then, only if that publish succeeded, attaches the create-bildr single-file
+# binaries (built with Bun for Linux, macOS and Windows), SHA256SUMS and the install scripts to the GitHub
+# Release of the tag, which is what `curl -fsSL https://github.com/webbegg/bildr/releases/latest/download/install.sh | sh`
+# downloads. The binary's projects depend on @bildr/nuxt of its own version, so no release may exist for
+# a version that is not on npm. A tag with a `-` (v0.2.0-rc.1) makes a prerelease, which is never "latest".
+# Before the first release (see Releasing in the README):
 # - create the `bildr` organization on npmjs.com (the @bildr scope);
 # - add an npm automation token as the repository secret NPM_TOKEN;
 # - bump `version` in the four packages/*/package.json (they release together) and push a tag `v<version>`.
@@ -64,6 +69,60 @@ jobs:
 
       - name: Test
         run: pnpm run test
+
+  # Builds the binaries and attaches them to the tag's GitHub Release. The only job with contents: write,
+  # and it runs no project scripts at install. It has no npm token and no OIDC token. It waits for publish:
+  # no Release (so no latest/install.sh) appears when the npm publish failed.
+  binaries:
+    needs: [check, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Install node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # No package build first: Bun bundles the workspace sources.
+      # dist-bin/: create-bildr-<os>-<arch>[.exe] x5, SHA256SUMS, install.sh, install.ps1.
+      - name: Build the binaries
+        run: pnpm build:binaries
+
+      # A tag with a `-` (v0.2.0-rc.1) is a prerelease, so it never becomes the "latest" release.
+      - name: Attach to the GitHub Release
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist-bin/* --clobber
+          else
+            case "$GITHUB_REF_NAME" in
+              *-*) prerelease=--prerelease ;;
+              *) prerelease= ;;
+            esac
+            # shellcheck disable=SC2086
+            gh release create "$GITHUB_REF_NAME" dist-bin/* --verify-tag --generate-notes $prerelease
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
 
   # Only this job can mint the OIDC token npm provenance needs, and it runs no project scripts at install.
   publish:

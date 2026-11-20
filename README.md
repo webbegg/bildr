@@ -7,6 +7,29 @@ A visual app builder where everything you can do in the editor, an agent can do 
 
 ## Run it
 
+Install the `create-bildr` command, a single executable. On Linux and macOS:
+
+```bash
+curl -fsSL https://github.com/webbegg/bildr/releases/latest/download/install.sh | sh
+```
+
+On Windows (PowerShell):
+
+```powershell
+powershell -c "irm https://github.com/webbegg/bildr/releases/latest/download/install.ps1 | iex"
+```
+
+It installs to `~/.bildr/bin` and tells you if that needs adding to your `PATH`. Then create a project:
+
+```bash
+create-bildr my-app
+cd my-app
+pnpm install
+pnpm dev          # nuxt dev
+```
+
+Or, without installing anything, through npm:
+
 ```bash
 pnpm create bildr my-app
 cd my-app
@@ -16,7 +39,7 @@ pnpm dev          # nuxt dev
 
 `nuxt dev` prints the editor link, `/__bildr?token=…`. Open it: the token becomes an HttpOnly cookie for that session, and a new `nuxt dev` mints a new token. The app itself runs at <http://localhost:3000/>, next to the editor.
 
-`create-bildr` takes `--name`, `--module`, `--database sqlite|none` and `--bildr <spec>` (see `packages/create-bildr`). Requires Node 22.18 or newer.
+`create-bildr` takes `--name`, `--module`, `--database sqlite|none` and `--bildr <spec>` (see `packages/create-bildr`). The installer needs no Node, but running the created project still needs Node 22.18 or newer and pnpm; so does `pnpm create bildr`.
 
 ## The editor (`/__bildr`)
 
@@ -138,5 +161,7 @@ Each release:
 
 1. Set the same `version` in every `packages/*/package.json` (the tag check reads all five, the private `editor-core` too), and commit.
 2. `git tag v<version> && git push origin v<version>`.
+
+The same workflow attaches the `create-bildr` binaries (Linux, macOS and Windows, x64 and arm64 except Windows arm64), `SHA256SUMS`, `install.sh` and `install.ps1` to the GitHub Release of the tag; that is what the curl install above downloads. Build them locally with `pnpm build:binaries` (needs [Bun](https://bun.sh) and the installed dependencies, not the built packages, since Bun bundles the sources; output in `dist-bin/`; `--targets linux-x64,darwin-arm64` builds a subset, `--out <dir>` writes elsewhere), and test the installer with `pnpm test:install` (builds the binary for this machine into a scratch dir under `~/.cache/cli-bin-test`, so it never touches `dist-bin/`, serves it from a local folder and installs it into another scratch dir).
 
 The workflow refuses a tag that differs from the package versions, runs lint, typecheck and tests, and publishes with provenance. To look at a package before releasing it: `pnpm --filter <package> pack`, then list the tarball.
