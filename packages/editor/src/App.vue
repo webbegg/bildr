@@ -2,8 +2,8 @@
 import { computed, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { sessionEnded } from './api.ts'
-import { ADVANCED_PATH, SIMPLE_PATH } from './editor/dataRoutes.ts'
-import { registerScreens } from './editor/views.ts'
+import { ADVANCED_PATH } from './editor/dataRoutes.ts'
+import { dataScreenRoute, registerScreens } from './editor/views.ts'
 import ScreenBar from './shell/ScreenBar.vue'
 import { usePolling, useStatus } from './status.ts'
 
@@ -15,7 +15,7 @@ const status = useStatus()
 
 // The Data view is its own screen (the simple section: the workspace is reached from it, `Advanced`): an editor that is asked for it (or for the Canvas, Design or Settings from there) opens the other one (editor/views.ts).
 // The navigation's result goes back to views.ts, so a failed or cancelled one drops what was carried for the next screen.
-onBeforeUnmount(registerScreens(screen => router.push(screen === 'data' ? SIMPLE_PATH : '/design')))
+onBeforeUnmount(registerScreens(screen => router.push(screen === 'data' ? dataScreenRoute() : '/design')))
 
 usePolling(status.refresh)
 

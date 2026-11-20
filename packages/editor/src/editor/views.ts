@@ -8,6 +8,7 @@
  * (the collection to show, a request to open the New collection or the Import from URL dialog).
  */
 import type { CanvasKind } from '../shared/items.ts'
+import { dataRouteOf } from './dataRoutes.ts'
 import type { EditorView } from './useEditor.ts'
 
 export type Screen = 'design' | 'data'
@@ -27,6 +28,11 @@ export interface DataStart {
   /** The component or layout the Design screen opens in its own view (a "Used in" link of the Data workspace). */
   fileId?: string | null
   collectionId?: string | null
+  /** The connection, query, action or store chosen: which Data screen opens, and on what (`dataRouteOf`). */
+  connectionId?: string | null
+  queryId?: string | null
+  actionId?: string | null
+  stateId?: string | null
   /** The last dialog asked for (the earlier one, if two were asked for before the screen opened, is dropped). */
   dataRequest?: DataRequest | null
 }
@@ -56,6 +62,9 @@ export const takeStart = (screen?: Screen): { view: EditorView | null, data: Dat
   if (!start || (screen && screenOf(start.view) !== screen)) return { view: null, data: {} }
   return { view: start.view, data: start.data }
 }
+
+/** Where the Data screen asked for now is (the router's answer to `open('data')`): the screen and the item or dialog `pending` carries. */
+export const dataScreenRoute = (): ReturnType<typeof dataRouteOf> => dataRouteOf(pending?.view === 'data' ? pending.data : {})
 
 /** The page chosen while a screen change is on its way: the Design screen opens it. */
 export const carryPage = (pageId: string): void => {

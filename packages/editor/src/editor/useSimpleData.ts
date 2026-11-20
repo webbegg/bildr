@@ -1,12 +1,14 @@
-import { computed, ref, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { StateFile } from '@bildr/codegen/model'
 import { apisOf } from '../shared/simpleData.ts'
 import type { SimpleApi } from '../shared/simpleData.ts'
 import { stateById } from '../shared/stateModel.ts'
+import { plainCopy } from './draftJson.ts'
 import { dataLocationQuery, filesLocationQuery, migrationsLocationQuery } from './dataLocation.ts'
 import { ADVANCED_PATH, needsAdvanced } from './dataRoutes.ts'
 import type { Editor } from './useEditor.ts'
+import { openView } from './views.ts'
 
 /**
  * Which store or API the simple Data section (simple data, S2) shows, and how that lives with the URL and with the unsaved edits:
@@ -16,7 +18,9 @@ import type { Editor } from './useEditor.ts'
  *   (Back, a link), written with `replace` once the model is loaded, since choosing is not a navigation.
  * - **Every move goes through the editor's `leaveData`**, so edits that are not saved are asked about first and the move is made only
  *   when the user discards them; a move declined puts the URL back.
- * - **What the model no longer has is not shown** (a store deleted here or elsewhere, a link older than the last change): nothing is.
+ * - **What the model no longer has is not shown** (a store deleted here or elsewhere, a link older than the last change): nothing is,
+ *   unless its form has edits that are not saved: then the form stays, on the store as it was (`removed`), so the edits are not
+ *   dropped silently. It says so (`SimpleStoreForm`), and goes with the edits, when they are discarded or another choice is made.
  */
 
 export interface SimpleChoice {
@@ -44,8 +48,22 @@ export function useSimpleData(editor: Editor) {
   const stores = computed<StateFile[]>(() => editor.states.map(item => editor.model ? stateById(editor.model, item.id) : undefined).filter((state): state is StateFile => !!state))
   const apis = computed<SimpleApi[]>(() => editor.model ? apisOf(editor.model) : [])
 
-  /** The store shown, when a store is chosen and the model has it. */
-  const store = computed(() => chosen.value?.kind === 'state' && !creating.value ? stores.value.find(entry => entry.id === chosen.value!.id) ?? null : null)
+  /** The store the model has, when a store is chosen. */
+  const live = computed(() => chosen.value?.kind === 'state' && !creating.value ? stores.value.find(entry => entry.id === chosen.value!.id) ?? null : null)
+  /** The chosen store, as it was, when the model lost it while its form had edits (`editor.dataDirty`): the form keeps them. */
+  const gone = shallowRef<StateFile | null>(null)
+  // Read as it goes, before the form that holds the edits is gone with the store.
+  watch(live, (now, before) => {
+    gone.value = !now && before && editor.dataDirty !== null ? plainCopy(before) : null
+  }, { flush: 'sync' })
+  // The edits were discarded: nothing is held any more.
+  watch(() => editor.dataDirty, (dirty) => {
+    if (dirty === null) gone.value = null
+  })
+  /** The store shown, when a store is chosen and the model has it, or had it and the form has edits. */
+  const store = computed<StateFile | null>(() => live.value ?? (chosen.value?.kind === 'state' && !creating.value && gone.value?.id === chosen.value.id ? gone.value : null))
+  /** Whether the store shown is one the model no longer has. */
+  const removed = computed(() => !live.value && store.value !== null)
   /** The API shown, when an API is chosen and the model has it. */
   const api = computed(() => chosen.value?.kind === 'api' && !creating.value ? apis.value.find(entry => entry.id === chosen.value!.id) ?? null : null)
   /** The choice that is shown: what is chosen and the model has. */
@@ -56,6 +74,7 @@ export function useSimpleData(editor: Editor) {
     editor.leaveData(() => {
       chosen.value = choice
       creating.value = false
+      gone.value = null
     }, keyOf(choice) !== keyOf(shown.value) || creating.value)
 
   /** Shows the New store form, after asking about unsaved edits. */
@@ -63,6 +82,7 @@ export function useSimpleData(editor: Editor) {
     editor.leaveData(() => {
       creating.value = true
       chosen.value = null
+      gone.value = null
     }, !creating.value)
 
   /** Shows the store just made. */
@@ -96,13 +116,15 @@ export function useSimpleData(editor: Editor) {
   })
   watch(() => editor.leaveDeclined, write)
 
-  return { chosen, creating, stores, apis, store, api, shown, choose, startCreate, created }
+  return { chosen, creating, stores, apis, store, removed, api, shown, choose, startCreate, created }
 }
 
 /**
  * What the simple section does when something asks for an item only the workspace has (a "Used in" link to an action or a query, the
  * Checks screen's link to a collection): the editor chose it (`openItem`), and the simple section has no place to show it, so the
- * workspace is opened on it. Only a change of what is chosen is a request: the choices a new editor starts with are none.
+ * workspace is opened on it. Only a change of what is chosen is a request: the choices a new editor starts with are none (an item the
+ * simple section is opened with is the router's to send, `dataRouteOf`). The same for a dialog only the workspace has, which ⌘K asks for
+ * (New collection, Import from URL): the request goes with the screen, which opens it.
  */
 export function useAdvancedHandoff(editor: Editor): void {
   const router = useRouter()
@@ -113,5 +135,8 @@ export function useAdvancedHandoff(editor: Editor): void {
         ? filesLocationQuery(editor.dataFile)
         : editor.dataItem ? dataLocationQuery(editor.dataItem, editor.dataTab) : {}
     void router.push({ path: ADVANCED_PATH, query })
+  })
+  watch(() => editor.dataRequest, (request) => {
+    if (request) openView('data', { dataRequest: request })
   })
 }

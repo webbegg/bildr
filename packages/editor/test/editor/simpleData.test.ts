@@ -12,7 +12,7 @@ import { routes } from '../../src/router.ts'
 import App from '../../src/App.vue'
 import DataView from '../../src/views/DataView.vue'
 import SimpleDataView from '../../src/views/SimpleDataView.vue'
-import { baseHandlers, combo, inputOf, setupHarness, world } from '../design/harness.ts'
+import { FakeEventSource, baseHandlers, combo, inputOf, setupHarness, world } from '../design/harness.ts'
 import type { Handlers } from '../design/harness.ts'
 import { confirmText, inputs, q, qa, stateModule, text } from './dataKit.ts'
 
@@ -85,7 +85,7 @@ describe('the list of the simple Data section', () => {
     await mounted()
     expect(q('[data-testid="simple-data"]')).not.toBeNull()
     expect(q('[data-view-menu]')?.textContent?.trim()).toBe('Data')
-    expect(text(q('[data-simple-section="state"] h2'))).toBe('State')
+    expect(text(q('[data-simple-section="state"] h2'))).toBe('Stores')
     expect(text(q('[data-simple-section="apis"] h2'))).toBe('APIs')
     expect(qa('[data-simple-section="state"] [data-simple-store]').map(item => item.getAttribute('data-simple-store'))).toEqual(['st_preferences'])
     expect(text(store('st_preferences'))).toContain('Blog preferences')
@@ -104,14 +104,6 @@ describe('the list of the simple Data section', () => {
     expect(q('[data-simple-empty="state"] [data-simple-empty-new]')).not.toBeNull()
     expect(q('[data-simple-section="apis"] button')).toBeNull()
     expect(q('[data-simple-new-api]')).toBeNull()
-  })
-
-  it('speaks in plain words: no artifact, entity or datasource', async () => {
-    addApi()
-    await mounted()
-    await click(store('st_preferences'))
-    const said = [document.body.textContent ?? '', ...qa('[aria-label], [title], [placeholder]').flatMap(element => ['aria-label', 'title', 'placeholder'].map(name => element.getAttribute(name) ?? ''))].join(' ')
-    expect(said).not.toMatch(/artifact|entity|datasource|data source/i)
   })
 
   it('shows a placeholder that names the API and its base URL when an API is chosen', async () => {
@@ -137,6 +129,249 @@ describe('the list of the simple Data section', () => {
     await mounted()
     expect(q('[data-simple-store-form]')).toBeNull()
     expect(q('[data-simple-nothing]')).not.toBeNull()
+  })
+})
+
+/** What the section says in words, wherever the user reads it: its text and the text of its labels, titles and placeholders. */
+const said = () => [
+  document.body.textContent ?? '',
+  ...qa('[aria-label], [title], [placeholder]').flatMap(element => ['aria-label', 'title', 'placeholder'].map(name => element.getAttribute(name) ?? ''))
+].join(' ')
+/** The words of the model's code and of the advanced workspace, which the simple section does not use. */
+const JARGON = /\b(state|composable|collection|entity|artifact|datasource|data source)\b/i
+const COMPOSABLE = /\buse[A-Z][A-Za-z0-9]+/
+const CAMEL = /\b[a-z]+[A-Z][A-Za-z]*\b/
+
+describe('the words of the simple section', () => {
+  it('are plain everywhere it shows: the list, the forms, the dialogs and the refusals', async () => {
+    addApi()
+    addStore()
+    await mounted()
+    const seen: Array<[string, string]> = []
+    const note = (what: string) => seen.push([what, said()])
+    const cancel = async () => click(textButton('Cancel'))
+    note('the list')
+
+    await click(store('st_preferences'))
+    note('a store\'s form')
+    await click(inRow(row('fld_show_drafts'), 'data-field-uses'))
+    note('the places a field is used')
+    await click(inRow(row('fld_show_drafts'), 'data-simple-field-remove'))
+    note('the field a page uses can\'t be removed')
+    await click(q('[data-confirm-cancel]'))
+    await typeInto(inputOf('[data-simple-field="fld_show_drafts"] [data-simple-field-name]'), 'showAll')
+    await save()
+    note('the refusal next to a field')
+    await click(q('[data-simple-state-discard]'))
+
+    await click(q('[data-simple-rename]'))
+    note('the Rename dialog')
+    await typeInto(inputOf('[data-artifact-dialog="rename"] [data-artifact-name]'), 'posts')
+    await click(q('[data-artifact-submit]'))
+    expect(text(q('[data-artifact-dialog="rename"] [data-artifact-error]'))).not.toBe('')
+    note('a refused rename')
+    await cancel()
+
+    await click(q('[data-simple-delete]'))
+    note('the Delete dialog of a store a page uses')
+    await cancel()
+    await click(store('st_cart'))
+    await click(q('[data-simple-delete]'))
+    note('the Delete dialog of a store nothing uses')
+    await cancel()
+
+    await click(q('[data-simple-new-store]'))
+    note('the New store form')
+    await typeInto(inputOf('[data-simple-name]'), 'posts')
+    await click(q('[data-simple-create-submit]'))
+    expect(text(q('[data-simple-create-error]'))).not.toBe('')
+    note('a refused name: taken by data')
+    await typeInto(inputOf('[data-simple-name]'), 'preferences')
+    await click(q('[data-simple-create-submit]'))
+    expect(text(q('[data-simple-create-error]'))).not.toBe('')
+    note('a refused name: a store has it')
+
+    for (const [what, words] of seen) {
+      expect(words, what).not.toMatch(JARGON)
+      expect(words, what).not.toMatch(COMPOSABLE)
+    }
+  })
+
+  it('use no camelCase example in what they explain: the help and the placeholders', async () => {
+    await mounted()
+    await click(q('[data-simple-new-store]'))
+    // The words of each element apart (their text, joined, would run labels into the help below them).
+    const apart = (element: Element | null) => (element?.innerHTML ?? '').replace(/<[^>]*>/g, ' ')
+    const help = [apart(q('[data-simple-create]')), ...qa('[data-simple-create] [placeholder]').map(element => element.getAttribute('placeholder') ?? '')].join(' ')
+    expect(help).not.toMatch(CAMEL)
+    await click(store('st_preferences'))
+    const placeholder = inputOf('[data-simple-field-name]').placeholder
+    expect(placeholder).toBe('Name, e.g. Show drafts')
+    expect(placeholder).not.toMatch(CAMEL)
+  })
+
+  it('call it a store, in the list and in the dialogs\' titles', async () => {
+    await mounted({}, '/data?item=state:st_preferences')
+    expect(text(q('[data-simple-section="state"] h2'))).toBe('Stores')
+    await click(q('[data-simple-rename]'))
+    expect(text(q('[role="dialog"] h2, [role="dialog"] [data-slot="title"]'))).toBe('Rename store')
+    await click(textButton('Cancel'))
+    await click(q('[data-simple-delete]'))
+    expect(text(q('[role="dialog"] h2, [role="dialog"] [data-slot="title"]'))).toBe('Delete store')
+  })
+})
+
+describe('a store changed, removed or renamed elsewhere while its form has edits', () => {
+  const FILE = '.bildr/modules/blog/state/preferences.json'
+  let version = 200
+  /** Another editor, a rename, an undo or a JSON-tab save: the model has a different store, and the editor reads it. */
+  const outside = async (change: () => void) => {
+    change()
+    FakeEventSource.instances.at(-1)!.send({ type: 'model', version: version++, files: [FILE], source: 'disk' })
+    await settle()
+  }
+  const OPEN = '/data?item=state:st_preferences'
+  const checkbox = () => inRow(row('fld_show_drafts'), 'data-simple-field-default') as HTMLInputElement
+
+  it('changed: says so, keeps the edits and blocks Save until the user chooses', async () => {
+    const { actions } = await mounted({}, OPEN)
+    await addField('search', 'Text')
+    await outside(() => {
+      stored().fields[0]!.default = true
+    })
+    expect(text(q('[data-simple-state-changed]'))).toContain('This store changed since you started editing')
+    expect(textButton('Load the new version')).not.toBeNull()
+    expect(textButton('Keep my edits')).not.toBeNull()
+    expect(rows()).toHaveLength(2)
+    expect(q('[data-simple-state-save]')?.hasAttribute('disabled')).toBe(true)
+    await save()
+    expect(calls(actions, 'state_update')).toEqual([])
+  })
+
+  it('changed: shows no notice while nothing was edited, and follows the model', async () => {
+    await mounted({}, OPEN)
+    await outside(() => {
+      stored().fields[0]!.default = true
+    })
+    expect(q('[data-simple-state-changed]')).toBeNull()
+    expect(checkbox().checked).toBe(true)
+  })
+
+  it('changed: "Load the new version" drops the edits and shows the new store', async () => {
+    const { actions } = await mounted({}, OPEN)
+    await addField('search', 'Text')
+    await outside(() => {
+      stored().fields[0]!.default = true
+    })
+    await click(textButton('Load the new version'))
+    expect(q('[data-simple-state-changed]')).toBeNull()
+    expect(rows()).toHaveLength(1)
+    expect(checkbox().checked).toBe(true)
+    expect(q('[data-simple-state-unsaved]')).toBeNull()
+    expect(calls(actions, 'state_update')).toEqual([])
+  })
+
+  it('changed: "Keep my edits" keeps them over the new store, and saves them with what changed elsewhere', async () => {
+    const { actions } = await mounted({}, OPEN)
+    await addField('search', 'Text')
+    await outside(() => {
+      stored().fields[0]!.default = true
+    })
+    await click(textButton('Keep my edits'))
+    expect(q('[data-simple-state-changed]')).toBeNull()
+    expect(rows()).toHaveLength(2)
+    expect(checkbox().checked).toBe(true)
+    await save()
+    expect(calls(actions, 'state_update')).toEqual([{
+      state: 'st_preferences',
+      fields: [{ id: 'fld_show_drafts', name: 'showDrafts', type: 'boolean', default: true }, { name: 'search', type: 'text' }]
+    }])
+  })
+
+  it('changed: a change of how long it keeps its values counts, and "Keep my edits" takes the new one when it was not touched', async () => {
+    await mounted({}, OPEN)
+    await addField('search', 'Text')
+    await outside(() => {
+      stored().persist = 'session'
+    })
+    expect(q('[data-simple-state-changed]')).not.toBeNull()
+    await click(textButton('Keep my edits'))
+    expect(q('[data-simple-persist="session"]')?.getAttribute('aria-checked')).toBe('true')
+    expect(rows()).toHaveLength(2)
+  })
+
+  it('deleted: keeps the edits, says the store was deleted and has nothing to save them to', async () => {
+    addStore()
+    const { actions } = await mounted({}, '/data?item=state:st_cart')
+    await addField('search', 'Text')
+    await outside(() => {
+      world.model.modules.blog!.state = world.model.modules.blog!.state.filter(entry => entry.id !== 'st_cart')
+    })
+    expect(text(q('[data-simple-state-removed]'))).toContain('This store was deleted')
+    expect(q('[data-simple-store-form]')?.getAttribute('data-simple-store-form')).toBe('st_cart')
+    expect(rows()).toHaveLength(2)
+    expect(store('st_cart')).toBeNull()
+    expect(q('[data-simple-state-unsaved]')).not.toBeNull()
+    expect(q('[data-simple-state-save]')?.hasAttribute('disabled')).toBe(true)
+    await save()
+    expect(calls(actions, 'state_update')).toEqual([])
+  })
+
+  it('deleted: asks before another store is shown, and closes once the edits are discarded', async () => {
+    addStore()
+    await mounted({}, '/data?item=state:st_cart')
+    await addField('search', 'Text')
+    await outside(() => {
+      world.model.modules.blog!.state = world.model.modules.blog!.state.filter(entry => entry.id !== 'st_cart')
+    })
+    await click(store('st_preferences'))
+    expect(confirmText()).toContain('Discard unsaved changes to Cart?')
+    await click(q('[data-confirm-cancel]'))
+    expect(q('[data-simple-store-form]')?.getAttribute('data-simple-store-form')).toBe('st_cart')
+    expect(rows()).toHaveLength(2)
+    await click(q('[data-simple-state-discard]'))
+    expect(q('[data-simple-store-form]')).toBeNull()
+    expect(q('[data-simple-state-removed]')).toBeNull()
+  })
+
+  it('deleted: the form just goes when nothing was edited', async () => {
+    addStore()
+    await mounted({}, '/data?item=state:st_cart')
+    await outside(() => {
+      world.model.modules.blog!.state = world.model.modules.blog!.state.filter(entry => entry.id !== 'st_cart')
+    })
+    expect(q('[data-simple-store-form]')).toBeNull()
+    expect(q('[data-simple-state-removed]')).toBeNull()
+  })
+
+  it('renamed: says so, keeps the edits on the renamed store and saves them to it', async () => {
+    addStore()
+    const { actions } = await mounted({}, '/data?item=state:st_cart')
+    await addField('search', 'Text')
+    await outside(() => {
+      stored('st_cart').name = 'basket'
+    })
+    expect(text(q('[data-simple-state-renamed]'))).toContain('This store was renamed')
+    expect(q('[data-simple-store-form]')?.getAttribute('data-simple-store-form')).toBe('st_cart')
+    expect(q('[data-simple-state-changed]')).toBeNull()
+    expect(rows()).toHaveLength(2)
+    await save()
+    const sent = calls(actions, 'state_update')
+    expect(sent).toHaveLength(1)
+    expect(sent[0]!.state).toBe('st_cart')
+    expect(stored('st_cart').name).toBe('basket')
+    expect(stored('st_cart').fields.map(field => field.name)).toEqual(['value', 'search'])
+    expect(q('[data-simple-state-renamed]')).toBeNull()
+  })
+
+  it('renamed: shows no notice when nothing was edited', async () => {
+    addStore()
+    await mounted({}, '/data?item=state:st_cart')
+    await outside(() => {
+      stored('st_cart').name = 'basket'
+    })
+    expect(q('[data-simple-state-renamed]')).toBeNull()
+    expect(q('[data-simple-store-form]')?.getAttribute('data-simple-store-form')).toBe('st_cart')
   })
 })
 
@@ -284,7 +519,8 @@ describe('a store\'s form', () => {
     await mounted({ state_update: () => new Failure(422, 'invalid', 'The state can\'t be saved right now') }, OPEN)
     await click(q('[data-simple-persist="session"]'))
     await save()
-    expect(text(q('[data-simple-state-error]'))).toBe('The state can\'t be saved right now')
+    // In the section's words: a store.
+    expect(text(q('[data-simple-state-error]'))).toBe('The store can\'t be saved right now')
     expect(q('[data-simple-state-unsaved]')).not.toBeNull()
   })
 
@@ -409,16 +645,40 @@ describe('moving between the simple section and the workspace', () => {
 
   it('shows a model with problems as the list of them, and links to All model files in the workspace', async () => {
     const { router } = await mounted({ model_get: () => ({ ok: false, problems: [{ path: '.bildr/modules/blog/entities/post.json', message: 'bad entity' }], files: {}, database: false }) })
-    expect(q('[data-testid="data-problems"]')?.textContent).toContain('bad entity')
+    // In the section's words: no entity.
+    expect(q('[data-testid="data-problems"]')?.textContent).toContain('bad data')
     expect(q('[data-simple-list]')).toBeNull()
     await click(q('[data-testid="open-model"]'))
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data/advanced'))
     expect(router.currentRoute.value.query).toEqual({ item: 'files' })
   })
 
-  it('has a button labelled Advanced', async () => {
+  it('has a button labelled Advanced, with its own hook', async () => {
     await mounted()
-    expect(textButton('Advanced') ?? q('[data-testid="simple-to-advanced"]')).not.toBeNull()
+    // It is a link (it has a route), so it is found by its hook, and its label is read from it.
+    const advanced = q('[data-testid="simple-to-advanced"]')
+    expect(advanced).not.toBeNull()
+    expect(text(advanced)).toBe('Advanced')
+    expect(advanced?.getAttribute('href')).toContain('/data/advanced')
+  })
+
+  it('keeps the hash of the link it sends to the workspace', async () => {
+    const { router } = await mounted()
+    await router.push('/data?item=query:q_all_posts#top')
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/data/advanced'))
+    expect(router.currentRoute.value.query).toEqual({ item: 'query:q_all_posts' })
+    expect(router.currentRoute.value.hash).toBe('#top')
+  })
+
+  it('opens the whole app on /data?item=state:<id>: the simple section, on that store', async () => {
+    addStore()
+    mockActions({ ...baseHandlers(), env_status: () => ({ variables: [] }), ...stateModule() })
+    const { router } = await mountWithApp(App, '/data?item=state:st_cart')
+    expect(router.currentRoute.value.path).toBe('/data')
+    expect(q('[data-testid="simple-data"]')).not.toBeNull()
+    expect(q('[data-testid="data"]')).toBeNull()
+    expect(q('[data-simple-store-form]')?.getAttribute('data-simple-store-form')).toBe('st_cart')
+    expect(router.currentRoute.value.query).toEqual({ item: 'state:st_cart' })
   })
 })
 

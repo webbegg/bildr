@@ -230,7 +230,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   // `confirm` is made below: it is only asked once the editor is in use.
   const data = createDataView(design, mode, options => confirm(options), options.plan ?? ref(null))
   if (screen === 'data') data.collectionId.value = handed.data.collectionId ?? null
-  watch(mode, view => requestView(view, screen, { pageId: lastPage.value, collectionId: data.collectionId.value, dataRequest: dataRequest.value }), { flush: 'sync' })
+  watch(mode, view => requestView(view, screen, { pageId: lastPage.value, collectionId: data.collectionId.value, connectionId: data.connectionId.value, queryId: data.queryId.value, actionId: data.actionId.value, stateId: data.stateId.value, dataRequest: dataRequest.value }), { flush: 'sync' })
 
   /** Opens a component in the component view, selecting `nodeId`. `nested` pushes it onto the breadcrumb; from Assets or ⌘K it replaces the levels. */
   const editComponent = (id: string, nodeId: string | null = null, { nested = false }: { nested?: boolean } = {}) => {

@@ -10,6 +10,7 @@ import { ADVANCED_PATH } from '../editor/dataRoutes.ts'
 import { targetsOfProblem } from '../editor/findingTargets.ts'
 import { useDataScreen } from '../editor/useDataScreen.ts'
 import { useAdvancedHandoff, useSimpleData } from '../editor/useSimpleData.ts'
+import { plainWords } from '../shared/simpleData.ts'
 
 /**
  * The simple Data section (simple data, SD-1, S2, S3), the screen at `/data` that the menu's Data entry opens: the Data view for what
@@ -25,7 +26,10 @@ import { useAdvancedHandoff, useSimpleData } from '../editor/useSimpleData.ts'
  * workspace's All model files.
  */
 const editor = useDataScreen()
-const { stores, apis, store, api, shown, creating, choose, startCreate, created } = useSimpleData(editor)
+const { stores, apis, store, removed, api, shown, creating, choose, startCreate, created } = useSimpleData(editor)
+
+/** What the model says is wrong, in the section's words. */
+const problems = computed(() => editor.problems.map(problem => ({ ...problem, message: plainWords(problem.message) })))
 useAdvancedHandoff(editor)
 
 /** The workspace on the store shown, so Advanced keeps the user where they are. */
@@ -50,7 +54,7 @@ const advanced = computed(() => ({ path: ADVANCED_PATH, query: shown.value?.kind
           variant="ghost"
           icon="i-lucide-sliders-horizontal"
           label="Advanced"
-          title="Collections, connections, queries and actions"
+          title="The full Data workspace, for more control"
           :to="advanced"
           data-testid="simple-to-advanced"
         />
@@ -65,7 +69,7 @@ const advanced = computed(() => ({ path: ADVANCED_PATH, query: shown.value?.kind
     >
       <ProblemsList
         title="The model has problems, so there is nothing to show until they are fixed"
-        :problems="editor.problems"
+        :problems="problems"
         :targets="problem => targetsOfProblem(problem, editor.model)"
       >
         <UButton
@@ -97,7 +101,7 @@ const advanced = computed(() => ({ path: ADVANCED_PATH, query: shown.value?.kind
     >
       <ProblemsList
         title="The model could not be read"
-        :message="editor.error ?? 'The module answered that the model is not ok, and named no problem.'"
+        :message="plainWords(editor.error ?? 'The module answered that the model is not ok, and named no problem.')"
       >
         <div class="mt-2 flex gap-2">
           <UButton
@@ -145,6 +149,7 @@ const advanced = computed(() => ({ path: ADVANCED_PATH, query: shown.value?.kind
           v-else-if="store"
           :key="store.id"
           :state="store"
+          :removed="removed"
           class="min-w-0 flex-1"
         />
         <SimpleApiPanel
@@ -188,10 +193,10 @@ const advanced = computed(() => ({ path: ADVANCED_PATH, query: shown.value?.kind
     >
       <span
         class="truncate"
-        :title="editor.error"
+        :title="plainWords(editor.error)"
         data-testid="design-error"
       >
-        {{ editor.error }}
+        {{ plainWords(editor.error) }}
       </span>
       <EditorButton
         variant="ghost"

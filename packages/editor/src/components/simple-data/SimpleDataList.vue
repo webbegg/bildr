@@ -7,9 +7,9 @@ import type { SimpleApi } from '../../shared/simpleData.ts'
 import { stateLabel } from '../../shared/stateModel.ts'
 
 /**
- * The simple Data section's list (simple data, S2): two sections, **State** (the stores the app's pages share: every state of the
+ * The simple Data section's list (simple data, S2): two sections, **Stores** (the stores the app's pages share: every state of the
  * model, each with how long it keeps its values) and **APIs** (the remote APIs the app calls, each with its base URL's host). A row
- * chooses what the section shows; the State section's + makes a store. Each section has an empty state that says what it is for. An
+ * chooses what the section shows; the Stores section's + makes a store. Each section has an empty state that says what it is for. An
  * API is made in a later step, so its section has no way to make one yet. The rows are plain words: a store, an API.
  */
 const { stores, apis, shown, creating } = defineProps<{
@@ -41,7 +41,7 @@ const ROW = 'flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 py-1.5 t
           id="simple-state-heading"
           class="text-[12px] font-[550] text-muted"
         >
-          State
+          Stores
         </h2>
         <EditorButton
           variant="ghost"

@@ -21,6 +21,7 @@ import type { StatePersist } from '../../shared/dataArtifacts.ts'
 import { FIELD_TYPE_ICONS, fieldTypeItems } from '../../shared/dataModel.ts'
 import type { FieldType } from '../../shared/dataModel.ts'
 import { stateFieldUsesByName } from '../../shared/dataUsage.ts'
+import { plainWords } from '../../shared/simpleData.ts'
 import { stateLabel } from '../../shared/stateModel.ts'
 
 /**
@@ -32,8 +33,12 @@ import { stateLabel } from '../../shared/stateModel.ts'
  * field a page uses says so and lists the places (`confirmRemoveStateField`). Rename and Delete are the workspace's dialogs
  * (`state_rename`, `state_delete`): Delete is refused while a page, a component or an action uses the store, and lists them.
  * A store with several sets of values (the module does not generate it yet) can only be renamed or deleted.
+ *
+ * A store changed, renamed or deleted elsewhere while the form has edits does not lose them: a change says so and asks (above), a rename
+ * says so and the edits stay on the renamed store (its id is the same), and a deletion (`removed`: the section keeps the form, with the
+ * store as it was) says so and has nothing to save them to, so only Discard is left. The words are the section's (`plainWords`).
  */
-const { state } = defineProps<{ state: StateFile }>()
+const { state, removed = false } = defineProps<{ state: StateFile, removed?: boolean }>()
 const editor = useEditor()
 const root = useTemplateRef<HTMLElement>('root')
 
@@ -48,6 +53,8 @@ const { draft, base, error, saving, dirty, stale, discard, keepMine } = useDraft
   rebase: storeRebase
 })
 const changes = computed(() => storeChangesOf(draft.value, base.value))
+/** The store was renamed (here or elsewhere) since the draft started: its edits are on the renamed store. */
+const renamed = computed(() => dirty.value && !removed && state.name !== base.value.name)
 
 /** The field the module's refusal in `error` is about, when it names one. */
 const refusedField = ref<RefusedField | null>(null)
@@ -55,7 +62,7 @@ const refusedKey = computed(() => error.value && refusedField.value ? fieldOfRef
 const footerError = computed(() => refusedKey.value ? '' : error.value)
 
 async function save() {
-  if (stale.value || !dirty.value || saving.value) return
+  if (removed || stale.value || !dirty.value || saving.value) return
   refusedField.value = null
   if (changes.value.problems.length) {
     error.value = changes.value.problems.join('. ')
@@ -67,7 +74,7 @@ async function save() {
   saving.value = false
   if ('error' in done) {
     refusedField.value = done.field ?? null
-    error.value = done.error
+    error.value = plainWords(done.error)
     return
   }
   // The model is refreshed: the form shows the store as it is now, and that is what the next edits start from.
@@ -130,24 +137,44 @@ const deleting = ref<{ kind: 'state', id: string } | null>(null)
       </h2>
       <span class="shrink-0 text-[11px] text-dimmed">Store</span>
       <span class="flex-1" />
-      <EditorButton
-        variant="ghost"
-        icon="i-lucide-pencil"
-        label="Rename"
-        data-simple-rename
-        @click="renaming = { kind: 'state', id: state.id }"
-      />
-      <EditorButton
-        variant="ghost"
-        icon="i-lucide-trash-2"
-        label="Delete"
-        data-simple-delete
-        @click="deleting = { kind: 'state', id: state.id }"
-      />
+      <template v-if="!removed">
+        <EditorButton
+          variant="ghost"
+          icon="i-lucide-pencil"
+          label="Rename"
+          data-simple-rename
+          @click="renaming = { kind: 'state', id: state.id }"
+        />
+        <EditorButton
+          variant="ghost"
+          icon="i-lucide-trash-2"
+          label="Delete"
+          data-simple-delete
+          @click="deleting = { kind: 'state', id: state.id }"
+        />
+      </template>
     </header>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
       <div class="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
+        <UAlert
+          v-if="removed"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-trash-2"
+          title="This store was deleted"
+          description="Your edits are still here, but there is no store left to save them to. Discard them to close this form."
+          data-simple-state-removed
+        />
+        <UAlert
+          v-else-if="renamed"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-pencil"
+          title="This store was renamed"
+          description="Your edits are still here: they are saved to the renamed store."
+          data-simple-state-renamed
+        />
         <DataStaleNotice
           v-if="stale"
           prefix="simple-state"
@@ -211,7 +238,7 @@ const deleting = ref<{ kind: 'state', id: string } | null>(null)
               >
                 <EditorInput
                   v-model="field.name"
-                  placeholder="Name, e.g. showDrafts"
+                  placeholder="Name, e.g. Show drafts"
                   :aria-label="`Name of ${label(field)}`"
                   :invalid="refusedKey === field.key"
                   data-simple-field-name
@@ -320,17 +347,19 @@ const deleting = ref<{ kind: 'state', id: string } | null>(null)
       :error="footerError"
       :dirty="dirty"
       :saving="saving"
-      :disabled="!dirty || stale"
+      :disabled="!dirty || stale || removed"
       @discard="discard"
       @save="save"
     />
 
     <DataArtifactRename
       :target="renaming"
+      plain
       @close="renaming = null"
     />
     <DataArtifactDelete
       :target="deleting"
+      plain
       @close="deleting = null"
     />
   </div>

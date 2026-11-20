@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
+import { dataRouteOf } from '../../src/editor/dataRoutes.ts'
 import { routes } from '../../src/router.ts'
 
 /**
@@ -14,6 +15,23 @@ const go = async (to: string) => {
   await router.isReady()
   return router.currentRoute.value
 }
+
+describe('the screen a hand-over opens', () => {
+  it('is the workspace on a collection, a connection, a query or an action, the simple section on a store', () => {
+    expect(dataRouteOf({ collectionId: 'ent_post' })).toEqual({ path: '/data/advanced', query: { item: 'collection:ent_post' } })
+    expect(dataRouteOf({ connectionId: 'ds_quotes' })).toEqual({ path: '/data/advanced', query: { item: 'connection:ds_quotes' } })
+    expect(dataRouteOf({ queryId: 'q_all' })).toEqual({ path: '/data/advanced', query: { item: 'query:q_all' } })
+    expect(dataRouteOf({ actionId: 'act_x' })).toEqual({ path: '/data/advanced', query: { item: 'action:act_x' } })
+    expect(dataRouteOf({ stateId: 'st_cart' })).toEqual({ path: '/data', query: { item: 'state:st_cart' } })
+  })
+
+  it('is the workspace for a dialog only it has, and the simple section for nothing', () => {
+    expect(dataRouteOf({ dataRequest: { kind: 'new-collection', seq: 1 } })).toEqual({ path: '/data/advanced', query: {} })
+    expect(dataRouteOf({ dataRequest: { kind: 'import', seq: 1 }, collectionId: 'ent_post' })).toEqual({ path: '/data/advanced', query: { item: 'collection:ent_post' } })
+    expect(dataRouteOf({})).toEqual({ path: '/data', query: {} })
+    expect(dataRouteOf({ collectionId: null, stateId: null, dataRequest: null })).toEqual({ path: '/data', query: {} })
+  })
+})
 
 describe('the Data routes', () => {
   it('opens the simple section at /data, and the workspace at /data/advanced', async () => {
@@ -54,6 +72,21 @@ describe('the Data routes', () => {
     expect(store.path).toBe('/data')
     expect(store.query).toEqual({ item: 'state:st_preferences' })
     expect((await go('/data?item=api:ds_shop')).path).toBe('/data')
+  })
+
+  it('keeps the hash of a link it redirects, and the query with it', async () => {
+    const route = await go('/data?item=collection:ent_post&tab=fields#rows')
+    expect(route.path).toBe('/data/advanced')
+    expect(route.query).toEqual({ item: 'collection:ent_post', tab: 'fields' })
+    expect(route.hash).toBe('#rows')
+    expect((await go('/data?item=files#top')).hash).toBe('#top')
+    expect((await go('/data?item=state:st_preferences#top')).hash).toBe('#top')
+  })
+
+  it('opens the simple section on the store /data?item=state:<id> names', async () => {
+    const route = await go('/data?item=state:st_cart')
+    expect(route.name).toBe('data')
+    expect(route.query).toEqual({ item: 'state:st_cart' })
   })
 
   it('sends /model and /migrations to the workspace', async () => {

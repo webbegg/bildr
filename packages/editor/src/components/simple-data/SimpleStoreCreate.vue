@@ -5,12 +5,13 @@ import { attempt } from '../../editor/dataArtifactActions.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { KEEPS_VALUES, PERSISTENCE } from '../../shared/dataArtifacts.ts'
 import type { StatePersist } from '../../shared/dataArtifacts.ts'
+import { plainWords } from '../../shared/simpleData.ts'
 
 /**
  * The New store form of the simple Data section (simple data, S3): a name, how long the store keeps its values (the choices of the
  * Data workspace, in the same words) and what shape it has, which is one set of values: the module makes a store with several sets
  * only later, so the form says what it makes and does not ask. `state_create` makes it with one text field, `value`, which its form
- * then edits. What the module refuses is shown here and what was typed stays; what was made is shown instead of this form.
+ * then edits. The words are the section's (`plainWords`). What the module refuses is shown here and what was typed stays; what was made is shown instead of this form.
  */
 const emit = defineEmits<{ created: [id: string], cancel: [] }>()
 const editor = useEditor()
@@ -30,7 +31,7 @@ async function submit() {
   const done = await attempt<{ stateId: string }>(editor, 'state_create', { name: typed, persist: persist.value }, 'Could not create the store')
   saving.value = false
   if ('error' in done) {
-    error.value = done.error
+    error.value = plainWords(done.error)
     return
   }
   emit('created', done.result.stateId)
@@ -53,12 +54,12 @@ async function submit() {
     </header>
     <EditorFormRow
       label="Name"
-      help="Any words: “cart filter” becomes cartFilter"
+      help="Any words, like “Cart filter”"
       stacked
     >
       <EditorInput
         v-model="name"
-        placeholder="cartFilter"
+        placeholder="Cart filter"
         autofocus
         aria-label="Name"
         data-simple-name
