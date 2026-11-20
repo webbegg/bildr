@@ -65,13 +65,14 @@ jobs:
       - name: Test
         run: pnpm run test
 
-  # Only this job can mint the OIDC token npm provenance needs, and it runs no project scripts at install.
+  # Only this job can mint an OIDC token (npm trusted publishing), and it runs no project scripts at install.
+  # No provenance: npm does not generate it for private repositories.
   publish:
     needs: check
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # npm provenance: the registry links each published version to this workflow run.
+      # npm trusted publishing: pnpm exchanges this for a publish token when a trusted publisher is set up.
       id-token: write
 
     steps:
@@ -102,4 +103,3 @@ jobs:
         run: pnpm -r --filter './packages/**' publish --access public --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_PROVENANCE: true
