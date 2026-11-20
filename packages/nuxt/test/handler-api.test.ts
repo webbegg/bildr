@@ -160,7 +160,7 @@ describe('api_try: a GET', () => {
 
   it('reads the base URL from the env var when it is set (it wins over the model)', async () => {
     await apiSource()
-    writeFileSync(join(dir, '.env'), `NUXT_DATASOURCES_STUB_BASE_URL=${base}/alt\n`)
+    writeFileSync(join(dir, '.env'), `NUXT_APIS_STUB_BASE_URL=${base}/alt\n`)
     expect((await ok('api_try', { datasource: 'ds_stub', path: '/who' })).json).toEqual({ who: 'alt' })
   })
 
@@ -232,7 +232,7 @@ describe('api_try: the guards', () => {
 describe('api_try: secrets', () => {
   it('sends the auth from the env and never echoes the secret: not in the url, json, text or errors', async () => {
     await apiSource({ auth: { type: 'bearer' } })
-    writeFileSync(join(dir, '.env'), `NUXT_DATASOURCES_STUB_API_KEY="${SECRET}"\n`)
+    writeFileSync(join(dir, '.env'), `NUXT_APIS_STUB_API_KEY="${SECRET}"\n`)
     const echoed = await ok('api_try', { datasource: 'ds_stub', path: '/echo', params: { token: SECRET } })
     expect(seen[0]!.authorization).toBe(`Bearer ${SECRET}`)
     expect(echoed.json.authorization).toBe('Bearer •••')
@@ -248,7 +248,7 @@ describe('api_try: secrets', () => {
 
   it('tries a browser source without auth: the secret is never sent', async () => {
     await apiSource({ auth: { type: 'header', header: 'X-Api-Key' } })
-    writeFileSync(join(dir, '.env'), `NUXT_DATASOURCES_STUB_API_KEY="${SECRET}"\n`)
+    writeFileSync(join(dir, '.env'), `NUXT_APIS_STUB_API_KEY="${SECRET}"\n`)
     await ok('api_try', { datasource: 'ds_stub', path: '/echo' })
     expect(seen[0]!.authorization).toBe(SECRET)
     await ok('api_update', { datasource: 'ds_stub', runtime: 'browser', auth: null })
