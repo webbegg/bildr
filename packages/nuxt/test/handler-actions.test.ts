@@ -98,7 +98,9 @@ const NAMES = [
   'page_computed_set', 'page_computed_remove',
   // Simple data P1: API data sources.
   'api_create', 'api_update', 'api_model_set', 'api_model_rename', 'api_model_delete',
-  'api_query_set', 'api_query_rename', 'api_query_delete', 'api_action_set', 'api_action_rename', 'api_action_delete'
+  'api_query_set', 'api_query_rename', 'api_query_delete', 'api_action_set', 'api_action_rename', 'api_action_delete',
+  // Simple data P4: try a call of an API data source and propose its models.
+  'api_try'
 ].sort()
 
 // T10a (S11, D12): every editor operation is an action, callable over HTTP.
