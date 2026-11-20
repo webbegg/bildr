@@ -218,19 +218,21 @@ const fillPath = (call: Call, given: Record<string, string | number | boolean>):
     if (value === undefined) throw new ActionError('invalid_input', `Give the path parameter "${name}"`)
     filled = filled.replace(new RegExp(`(?<=/):${name}(?![A-Za-z0-9])`), () => encodeURIComponent(scalar(value)))
   }
+  // Own keys only: a parameter named like an object member (constructor, toString) is missing when not given.
+  const valueOf = (name: string) => Object.hasOwn(given, name) ? given[name] : undefined
   if (call.params) {
     for (const key of Object.keys(given)) {
       if (!call.params.some(param => param.name === key)) throw new ActionError('invalid_input', `${call.label} has no parameter "${key}"`)
     }
     for (const param of call.params) {
-      const value = given[param.name]
+      const value = valueOf(param.name)
       if (param.in === 'path') fill(param.name, value)
       else if (value !== undefined) query.set(param.key ?? param.name, scalar(value))
       else if (param.required) throw new ActionError('invalid_input', `Give the query parameter "${param.name}"`)
     }
   } else {
     const inPath = [...pathname.matchAll(/(?<=\/):([A-Za-z][A-Za-z0-9]*)/g)].map(match => match[1]!)
-    for (const name of inPath) fill(name, given[name])
+    for (const name of inPath) fill(name, valueOf(name))
     for (const [key, value] of Object.entries(given)) if (!inPath.includes(key)) query.set(key, scalar(value))
   }
   const sent = query.toString()

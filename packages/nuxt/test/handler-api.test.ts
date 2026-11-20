@@ -171,6 +171,14 @@ describe('api_try: a GET', () => {
     expect((await failure('api_try', { datasource: 'ds_stub', path: '/products/:id' }, 400, 'invalid_input')).message).toBe('Give the path parameter "id"')
     expect((await failure('api_try', { datasource: 'ds_stub', path: '/echo', body: { a: 1 } }, 400, 'invalid_input')).message).toBe('A GET has no body')
   })
+
+  it('a parameter named like an object member is missing when not given (review P4)', async () => {
+    await withShop()
+    expect((await failure('api_try', { datasource: 'ds_stub', path: '/items/:constructor' }, 400, 'invalid_input')).message).toBe('Give the path parameter "constructor"')
+    await ok('api_query_set', { datasource: 'ds_stub', query: { name: 'byToString', path: '/items/:toString', params: [{ name: 'toString', in: 'path', type: 'text' }], result: { model: 'Product', many: false } } })
+    expect((await failure('api_try', { datasource: 'ds_stub', query: 'byToString' }, 400, 'invalid_input')).message).toBe('Give the path parameter "toString"')
+    expect(seen).toEqual([])
+  })
 })
 
 describe('api_try: a write', () => {

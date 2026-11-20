@@ -161,9 +161,12 @@ export const inferFields = (items: unknown[]): InferredField[] => {
 // ── API models ───────────────────────────────────────────────────────────
 
 const MAX_DEPTH = 5
+/** A proposal any user can review: more nested objects than this are left out (their fields with them). */
+const MAX_MODELS = 30
 
-/** `order-line` / `order_lines` → `OrderLine` / `OrderLines`; a valid model name. */
+/** `order-line` / `order_lines` → `OrderLine` / `OrderLines`; a valid model name, kept as given (`URLList`). */
 const modelName = (raw: string): string => {
+  if (/^[A-Z][A-Za-z0-9]*$/.test(raw)) return raw
   const camel = fieldName(raw)
   return camel.charAt(0).toUpperCase() + camel.slice(1)
 }
@@ -226,7 +229,7 @@ export const inferApiModels = (sample: unknown, rootName: string): ApiModel[] =>
   // The type of a field from its non-null values: a model, a list, a scalar, or none when they mix kinds.
   const shapeOf = (key: string, known: unknown[], parent: string, depth: number): Pick<ApiField, 'type' | 'model' | 'list'> | undefined => {
     if (known.every(isObject) && known.length) {
-      if (depth >= MAX_DEPTH) return undefined
+      if (depth >= MAX_DEPTH || models.length >= MAX_MODELS) return undefined
       const model = build(key, known as Record<string, unknown>[], parent, depth + 1)
       return model ? { type: 'model', model } : undefined
     }

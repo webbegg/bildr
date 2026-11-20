@@ -93,4 +93,18 @@ describe('inferApiModels', () => {
     expect(inferApiModels([1, 2], 'x')).toEqual([])
     expect(inferApiModels({}, 'x')).toEqual([])
   })
+
+  it('keeps a root name that is already a model name (review P4)', () => {
+    expect(inferApiModels({ id: 1 }, 'URLList').at(-1)!.name).toBe('URLList')
+    expect(inferApiModels({ id: 1 }, 'HTTPError').at(-1)!.name).toBe('HTTPError')
+    expect(inferApiModels({ id: 1 }, 'order-line').at(-1)!.name).toBe('OrderLine')
+  })
+
+  it('proposes at most 30 models (review P4)', () => {
+    const wide = Object.fromEntries(Array.from({ length: 50 }, (_, index) => [`k${index}`, { a: { b: { c: 1 } } }]))
+    const models = inferApiModels(wide, 'root')
+    expect(models.length).toBeLessThanOrEqual(30)
+    expect(models.at(-1)!.name).toBe('Root')
+    expect(valid(models)).toEqual([])
+  })
 })
