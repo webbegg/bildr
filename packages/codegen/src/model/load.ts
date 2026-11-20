@@ -325,6 +325,11 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       if (!action.steps.some(step => step.kind === 'repository') && !(last?.kind === 'return' && last.if === true)) {
         report(path, 'steps', 'An action needs a "repository" step (create, update or delete), or a last "return" step that always runs ("if": true), to do its work')
       }
+      // The route, the use-case and the client composable each take one input: the body of the entity, or the route parameters.
+      // Both would leave the composable reading a parameter it never gets and the route parsing one it never uses.
+      if (action.input.entity && action.input.params?.length) {
+        report(path, 'input', 'An action takes a collection input (a body) or route parameters, not both: its client composable, route and use-case take one of them. Pass the id in the entity input (pick it), or drop the input and keep the route parameter')
+      }
       // An action with neither parameters nor a collection input has no `input` in its use-case: a step can't read one.
       if (!action.input.entity && !action.input.params?.length) {
         action.steps.forEach((step, index) => {
