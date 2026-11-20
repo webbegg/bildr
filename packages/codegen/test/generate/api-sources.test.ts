@@ -83,7 +83,7 @@ describe('generate: server-runtime api sources', () => {
       '  name: z.string(),',
       '  price: z.number(),',
       '  inStock: z.boolean().optional(),',
-      '  createdAt: TimestampSchema,',
+      '  createdAt: z.iso.datetime({ offset: true }),',
       '  note: z.string().nullable(),',
       '  categories: z.array(CategorySchema)',
       '})'
@@ -126,12 +126,12 @@ describe('generate: server-runtime api sources', () => {
     const useCase = read(generated, 'layers/apis/shared/domain/catalog/use-cases/products.ts')
     expect(useCase).toContain('export const ProductsInputSchema = z.object({\n  category: z.string().optional()\n})')
     expect(useCase).toContain('export const products = (deps: ProductsDeps) =>')
-    expect(useCase).toContain('Promise<Result<Product[], CatalogError>>')
+    expect(useCase).toContain('Promise<KernelResult<Product[], CatalogError>>')
     expect(useCase).toContain('ProductsInputSchema.safeParse(input)')
     expect(useCase).toContain('deps.catalog.products(parsed.data)')
     expect(useCase).toContain('if (cause instanceof CatalogFailure) return err(cause.error)')
     expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/create-product.ts')).toContain('  body: ProductSchema')
-    expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/delete-product.ts')).toContain('Promise<Result<void, CatalogError>>')
+    expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/delete-product.ts')).toContain('Promise<KernelResult<void, CatalogError>>')
     expect(read(generated, 'layers/apis/shared/domain/catalog/errors.ts')).toContain('export class CatalogFailure extends Error')
   })
 
@@ -142,11 +142,12 @@ describe('generate: server-runtime api sources', () => {
     expect(http).toContain('http(\'/products\', { method: \'GET\', query: { cat: input.category } })')
     expect(http).toContain('read(z.array(ProductDtoSchema), itemsAt(answer, [\'data\', \'items\'])).map(toProduct)')
     // A path parameter, encoded, and a single model.
-    expect(http).toContain('http(`/products/${encodeURIComponent(String(input.id))}`, { method: \'GET\' })')
+    expect(http).toContain('http(`/products/${segment(input.id)}`, { method: \'GET\' })')
+    expect(http).toContain('return encodeURIComponent(text)')
     expect(http).toContain('return toProduct(read(ProductDtoSchema, answer))')
     // A body mapped to the remote, a call with no result.
     expect(http).toContain('{ method: \'POST\', body: fromProduct(input.body) }')
-    expect(http).toContain('await http(`/products/${encodeURIComponent(String(input.id))}`, { method: \'DELETE\' })')
+    expect(http).toContain('await http(`/products/${segment(input.id)}`, { method: \'DELETE\' })')
     expect(http).toContain('invalidAnswer(parsed.error.message)')
   })
 
@@ -156,14 +157,15 @@ describe('generate: server-runtime api sources', () => {
 
   it('wires the server: a client over fetch under the base URL, a route per operation, a composable each', () => {
     const root = read(generated, 'layers/apis/server/utils/catalog.ts')
-    expect(root).toContain('useRuntimeConfig().datasources.catalog')
+    expect(root).toContain('useRuntimeConfig().apis.catalog')
     expect(root).toContain('export const useCatalogApi = () => {')
     expect(root).toContain('httpCatalogRepository(catalogClient())')
     expect(root).toContain('export const catalogErrorStatus: ErrorStatusMap = {')
     const client = read(generated, 'layers/apis/server/lib/fetch-client.ts')
     expect(client).toContain('redirect: \'manual\'')
     expect(client).toContain('AbortSignal.timeout(')
-    expect(client).toContain('url.origin !== base.origin || !url.pathname.startsWith(base.pathname)')
+    expect(client).toContain('url.origin !== base.origin || url.pathname !== `${base.pathname}${relative}`')
+    expect(client).toContain('const MAX_BYTES = 1_000_000')
     const route = read(generated, 'layers/apis/server/api/apis/catalog/products.get.ts')
     expect(route).toContain('getValidatedQuery(event, QuerySchema)')
     expect(route).toContain('unwrapOrThrow(await useCatalogApi().products(input), catalogErrorStatus)')
@@ -178,23 +180,26 @@ describe('generate: server-runtime api sources', () => {
 
   it('reads the secret only from the source\'s runtimeConfig: a bearer token', () => {
     const root = read(generated, 'layers/apis/server/utils/catalog.ts')
-    expect(root).toContain('const { baseUrl, apiKey } = useRuntimeConfig().datasources.catalog')
-    expect(root).toContain('if (apiKey) headers.authorization = `Bearer ${apiKey}`')
+    expect(root).toContain('const config = useRuntimeConfig().apis.catalog')
+    expect(root).toContain('if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`')
     expect(generated.filter(file => file.path.startsWith('layers/apis/')).map(file => file.content).join('\n')).not.toMatch(/https:\/\/catalog\.example\.com|NUXT_DATASOURCES/)
   })
 
   it('sends a header auth as its own header, and none without auth', () => {
     const source = { ...catalog(), auth: { type: 'header', secret: 'apiKey', header: 'X-Api-Key' } }
-    expect(read(files({ [CATALOG]: JSON.stringify(source) }), 'layers/apis/server/utils/catalog.ts')).toContain('if (apiKey) headers[\'X-Api-Key\'] = apiKey')
+    expect(read(files({ [CATALOG]: JSON.stringify(source) }), 'layers/apis/server/utils/catalog.ts')).toContain('if (config.apiKey) headers[\'X-Api-Key\'] = config.apiKey')
     const { auth: _, ...open } = source
-    const env = { baseUrl: 'NUXT_DATASOURCES_CATALOG_BASE_URL' }
+    const env = { baseUrl: 'NUXT_APIS_CATALOG_BASE_URL' }
     const root = read(files({ [CATALOG]: JSON.stringify({ ...open, env }) }), 'layers/apis/server/utils/catalog.ts')
-    expect(root).toContain('const { baseUrl } = useRuntimeConfig().datasources.catalog')
-    expect(root).not.toMatch(/authorization|Bearer/i)
+    expect(root).toContain('const config = useRuntimeConfig().apis.catalog')
+    expect(root).not.toMatch(/authorization|Bearer|config\.apiKey/i)
   })
 
-  it('puts the source in the core runtimeConfig, with its base URL and an empty secret', () => {
-    expect(read(generated, 'layers/core/nuxt.config.ts')).toContain('catalog: { baseUrl: \'https://catalog.example.com/v1\', apiKey: \'\' }')
+  it('puts the source in the core runtimeConfig under apis (not datasources), with its base URL and an empty secret', () => {
+    const config = read(generated, 'layers/core/nuxt.config.ts')
+    expect(config).toContain('apis: {\n      catalog: { baseUrl: \'https://catalog.example.com/v1\', apiKey: \'\' }\n    }')
+    expect(config.split('apis: {')[0]).not.toContain('catalog')
+    expect(config).toContain('datasources: {\n      quotes:')
   })
 
   it('runs the generated tests with the unit project, and registers the layer\'s composables', () => {
@@ -214,7 +219,7 @@ describe('generate: server-runtime api sources', () => {
 describe('generate: api sources it leaves out', () => {
   it('generates nothing for a browser-runtime source (slice P3)', () => {
     const { auth: _, ...source } = catalog()
-    const browser = { ...source, runtime: 'browser', env: { baseUrl: 'NUXT_PUBLIC_DATASOURCES_CATALOG_BASE_URL' } }
+    const browser = { ...source, runtime: 'browser', env: { baseUrl: 'NUXT_PUBLIC_APIS_CATALOG_BASE_URL' } }
     const generated = files({ [CATALOG]: JSON.stringify(browser) })
     expect(paths(generated)).toEqual([])
     expect(read(generated, 'vitest.config.ts')).not.toContain('layers/apis')

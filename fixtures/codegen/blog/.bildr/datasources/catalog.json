@@ -4,8 +4,8 @@
   "name": "catalog",
   "kind": "api",
   "env": {
-    "baseUrl": "NUXT_DATASOURCES_CATALOG_BASE_URL",
-    "apiKey": "NUXT_DATASOURCES_CATALOG_API_KEY"
+    "baseUrl": "NUXT_APIS_CATALOG_BASE_URL",
+    "apiKey": "NUXT_APIS_CATALOG_API_KEY"
   },
   "auth": {
     "type": "bearer",

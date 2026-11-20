@@ -1,9 +1,10 @@
 import { z } from 'zod'
 import { API_RUNTIMES, ApiActionSchema, ApiModelSchema, ApiQuerySchema, apiProblems, CamelNameSchema, PascalNameSchema } from '../model/schemas.ts'
 import type { ApiAction, ApiModel, ApiQuery, DataSourceFile } from '../model/schemas.ts'
-import { defineEdit, fail } from './core.ts'
+import { camel, defineEdit, fail, snake } from './core.ts'
 import type { Draft } from './core.ts'
 import { AuthInput, datasourceById, DataSourceRef, envNameOf, sourceName } from './datasources.ts'
+import { apiNameProblem } from './generated-names.ts'
 
 /**
  * API data sources (simple data, SD-2): a remote JSON API with a first-class `baseUrl`, the
@@ -22,29 +23,41 @@ export const apiById = (draft: Draft, id: string): ApiSource => {
   return source as ApiSource
 }
 
+/**
+ * `NUXT_APIS_<NAME>_<SETTING>`: the env var Nuxt maps onto `runtimeConfig.apis.<name>.<setting>`. API sources have a key of their own
+ * (REST ones are under `datasources`), so one kind's settings can't change the type of the other's.
+ */
+const apiEnvName = (name: string, setting: string) => `NUXT_APIS_${snake(camel(name)).toUpperCase()}_${snake(setting).toUpperCase()}`
+
 /** The env var of the base URL: browser code reads only `runtimeConfig.public`, hence `NUXT_PUBLIC_`. */
 const baseUrlEnv = (name: string, runtime: ApiSource['runtime']) =>
-  runtime === 'browser' ? envNameOf(name, 'baseUrl').replace(/^NUXT_/, 'NUXT_PUBLIC_') : envNameOf(name, 'baseUrl')
+  runtime === 'browser' ? apiEnvName(name, 'baseUrl').replace(/^NUXT_/, 'NUXT_PUBLIC_') : apiEnvName(name, 'baseUrl')
+
+/** The names bildr gave `setting` of the source `name` before: under `datasources` (P1), where the REST sources are. */
+const legacyEnvNames = (name: string, setting: string) => [envNameOf(name, setting), envNameOf(name, setting).replace(/^NUXT_/, 'NUXT_PUBLIC_')]
 
 /**
  * Fills in the env vars and runs the source's rules, failing on the first problem. An env
  * var bildr named follows the source's name and runtime (generated code reads
- * `runtimeConfig.datasources.<name>`, which Nuxt fills from that name); one the user named stays.
+ * `runtimeConfig.apis.<name>`, which Nuxt fills from that name); one the user named stays.
  */
 const settle = (source: ApiSource, previous: { name: string, auth?: { secret: string } } = source) => {
   const env: Record<string, string> = { ...source.env }
-  const oursBase = [baseUrlEnv(previous.name, 'server'), baseUrlEnv(previous.name, 'browser')]
+  const oursBase = [baseUrlEnv(previous.name, 'server'), baseUrlEnv(previous.name, 'browser'), ...legacyEnvNames(previous.name, 'baseUrl')]
   if (!env.baseUrl || oursBase.includes(env.baseUrl)) env.baseUrl = baseUrlEnv(source.name, source.runtime)
   for (const setting of Object.keys(env)) {
     if (setting !== 'baseUrl' && setting !== source.auth?.secret) Reflect.deleteProperty(env, setting)
   }
   if (source.auth) {
     const secret = source.auth.secret
-    if (!env[secret] || env[secret] === envNameOf(previous.name, secret)) env[secret] = envNameOf(source.name, secret)
+    if (!env[secret] || [apiEnvName(previous.name, secret), ...legacyEnvNames(previous.name, secret)].includes(env[secret])) env[secret] = apiEnvName(source.name, secret)
   }
   source.env = env
   const first = apiProblems(source)[0]
   if (first) fail('invalid', first.message)
+  // The names the generated code can't take (reserved words, names it declares itself): the generator throws the same message.
+  const naming = apiNameProblem(source)
+  if (naming) fail('invalid', naming)
 }
 
 export const apiCreate = defineEdit({

@@ -1,4 +1,5 @@
 import type { ApiSource } from '../edit/api.ts'
+import { apiComposableName } from '../edit/generated-names.ts'
 import type { Model } from '../model/load.ts'
 import type { ApiField } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
@@ -26,6 +27,16 @@ import { docText, file, header, kebab, pascal, tsString } from './text.ts'
 export const generateApis = (model: Model): GeneratedFile[] => {
   const sources = serverApiSources(model).filter(isCallable)
   if (!sources.length) return []
+  // A composable is auto-imported by its name: two sources must not generate one name (`a-b` + `c` and `a` + `bC` are both useABC).
+  const composables = new Map<string, string>()
+  for (const source of sources) {
+    for (const operation of operationsOf(source)) {
+      const name = apiComposableName(source.name, operation.name)
+      const other = composables.get(name)
+      if (other) throw new Error(`${namesOf(model, source).source}: the ${operation.kind} "${operation.name}" of "${source.name}" and ${other} would both generate the composable ${name}: pick another name`)
+      composables.set(name, `the operation "${operation.name}" of "${source.name}"`)
+    }
+  }
   const files = [
     ...sources.flatMap(source => sourceFiles(model, source)),
     ...generateApiRuntime(model, sources)
@@ -60,11 +71,16 @@ const modelOf = (source: ApiSource, name: string) => source.models.find(entry =>
 
 // ── Domain ─────────────────────────────────────────────────────────────
 
-/** The zod expression of an entity field: the same scalars the entities of the other data sources use. */
+/**
+ * The zod expression of an entity field: the same scalars the entities of the other data sources use. A datetime takes what the
+ * DTO takes (an offset too), so an entity fetched from the API is a valid body to send back.
+ */
 const entityField = (field: ApiField, kernel: Set<KernelName>): string => {
   const base = field.type === 'model'
     ? modelNames(field.model!).schema
-    : zodField({ id: 'fld_api', name: field.name, type: field.type, required: true }, kernel)
+    : field.type === 'datetime'
+      ? DTO_VALUE.datetime
+      : zodField({ id: 'fld_api', name: field.name, type: field.type, required: true }, kernel)
   return wrapField(field, base)
 }
 
@@ -148,7 +164,8 @@ const useCaseLines = (source: ApiSource, names: SourceNames, operation: Operatio
   return [
     fields.length > 0 && 'import { z } from \'zod\'',
     'import { err, ok } from \'#core/kernel/result\'',
-    'import type { Result } from \'#core/kernel/result\'',
+    // Aliased: a model can be named Result.
+    'import type { Result as KernelResult } from \'#core/kernel/result\'',
     ...[...byModel.entries()].sort(([a], [b]) => a < b ? -1 : 1).map(([model, entries]) => importLine(`../entities/${modelNames(model).file}`, entries)),
     importLine('../errors', [{ name: names.error, type: true }, names.failure, ...(fields.length ? ['invalidInput'] : [])]),
     importLine(`../repositories/${names.portFile}`, [{ name: names.port, type: true }]),
@@ -168,7 +185,7 @@ const useCaseLines = (source: ApiSource, names: SourceNames, operation: Operatio
     '',
     `/** ${label}. */`,
     `export const ${operation.name} = (deps: ${type}Deps) =>`,
-    `  async (${fields.length ? `input: ${type}Input` : ''}): Promise<Result<${result}, ${names.error}>> => {`,
+    `  async (${fields.length ? `input: ${type}Input` : ''}): Promise<KernelResult<${result}, ${names.error}>> => {`,
     ...(fields.length
       ? [
           `    const parsed = ${type}InputSchema.safeParse(input)`,
@@ -268,6 +285,7 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
   const results = operations.filter(operation => operation.result)
   const usesList = results.some(operation => operation.result!.many)
   const usesPath = results.some(operation => operation.result!.itemsPath)
+  const usesSegment = operations.some(operation => pathTemplate(operation.path).dynamic)
   const unique = (names: Array<string | undefined>) => [...new Set(names.filter((name): name is string => !!name))].sort()
   const answered = unique(operations.map(operation => operation.result?.model))
   const sent = unique(operations.map(operation => operation.body))
@@ -278,7 +296,7 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
       ...(answered.includes(name) ? [modelNames(name).to] : []),
       ...(sent.includes(name) ? [modelNames(name).from] : [])
     ])),
-    importLine(`../../../domain/${source.name}/errors`, [names.failure, ...(results.length ? ['invalidAnswer'] : [])]),
+    importLine(`../../../domain/${source.name}/errors`, [names.failure, ...(results.length ? ['invalidAnswer'] : []), ...(usesSegment ? ['invalidInput'] : [])]),
     importLine(`../../../domain/${source.name}/repositories/${names.portFile}`, [{ name: names.port, type: true }]),
     importLine('../client', [{ name: 'ApiClient', type: true }]),
     '',
@@ -289,6 +307,19 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
           '  const parsed = schema.safeParse(answer)',
           `  if (!parsed.success) throw new ${names.failure}(invalidAnswer(parsed.error.message))`,
           '  return parsed.data',
+          '}',
+          ''
+        ]
+      : []),
+    ...(usesSegment
+      ? [
+          '/** A path parameter as one segment of the path: encoded, and never empty, "." or ".." (the URL would resolve those to another path). */',
+          'const segment = (value: string | number | boolean): string => {',
+          '  const text = String(value)',
+          '  if (text === \'\' || text === \'.\' || text === \'..\') {',
+          `    throw new ${names.failure}(invalidInput(\`a path parameter can't be \${text === '' ? 'empty' : \`"\${text}"\`}\`))`,
+          '  }',
+          '  return encodeURIComponent(text)',
           '}',
           ''
         ]

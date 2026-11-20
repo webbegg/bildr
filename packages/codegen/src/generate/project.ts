@@ -94,9 +94,10 @@ const nuxtConfigFile = (model: Model): GeneratedFile => {
   const sqlite = model.datasources.filter(source => source.kind === 'sqlite')
   // The app database is optional (V7): none for an API-only project, at most one.
   if (sqlite.length > 1) throw new Error(`The project can have at most one sqlite data source (the app database), found ${sqlite.length}`)
-  // REST sources, and API sources that run on the server (a browser one reads runtimeConfig.public: slice P3).
-  const apis = new Set<DataSourceFile>(serverApiSources(model))
-  const rest = model.datasources.filter(source => source.kind === 'rest' || apis.has(source))
+  // REST sources under `datasources`, API sources that run on the server under `apis` (a browser one reads runtimeConfig.public: slice P3).
+  // Apart, so a source with no auth or another secret can't change the type `useRemote` reads the REST ones through.
+  const rest = model.datasources.filter(source => source.kind === 'rest')
+  const apis = serverApiSources(model)
   return {
     path: 'layers/core/nuxt.config.ts',
     owner: 'managed',
@@ -124,9 +125,15 @@ const nuxtConfigFile = (model: Model): GeneratedFile => {
           ]
         : []),
       '    // Data sources. Values come from NUXT_DATASOURCES_* env vars; see .env.example.',
-      rest.length
-        ? ['    datasources: {', rest.map(restSourceLine).join(',\n'), '    }'].join('\n')
-        : '    datasources: {}',
+      `${rest.length
+        ? ['    datasources: {', rest.map(sourceLine).join(',\n'), '    }'].join('\n')
+        : '    datasources: {}'}${apis.length ? ',' : ''}`,
+      ...(apis.length
+        ? [
+            '    // API data sources. Values come from NUXT_APIS_* env vars; see .env.example.',
+            ['    apis: {', apis.map(sourceLine).join(',\n'), '    }'].join('\n')
+          ]
+        : []),
       '  }',
       '})'
     ])
@@ -134,5 +141,5 @@ const nuxtConfigFile = (model: Model): GeneratedFile => {
 }
 
 /** `name: { setting: default }` with every setting the env maps; secrets and unset ones start empty. An API source's base URL is in the model. */
-const restSourceLine = (source: DataSourceFile) =>
+const sourceLine = (source: DataSourceFile) =>
   `      ${camel(source.name)}: { ${Object.keys(source.env).map(key => `${key}: ${tsString((key === 'baseUrl' && source.kind === 'api' ? source.baseUrl : source.defaults?.[key]) ?? '')}`).join(', ')} }`

@@ -68,7 +68,18 @@ const repositoryTestLines = (source: ApiSource, names: SourceNames, operations: 
     const at = operation.result?.itemsPath ? ` under ${operation.result.itemsPath}` : ''
     const label = `${operation.name}: ${operation.method} ${operation.path}${operation.result ? `, reads the ${operation.result.many ? 'list' : 'model'}${at} and maps it` : ''}`
     const sent = literal([{ path: samplePath(operation, input), request: expectedRequest(source, operation, input) }], '    ')
+    // A text path parameter of ".." would make the URL call another path of the API, with its secret.
+    const dotted = operation.params.find(param => param.in === 'path' && param.type === 'text')
     return [
+      ...(dotted
+        ? [[
+            `  it(${tsString(`${operation.name}: refuses a path parameter that would change the path (".."), without calling the API`)}, async () => {`,
+            '    const { http, calls } = recording(undefined)',
+            `    await expect(${names.adapter}(http).${operation.name}(${literal({ ...input, [dotted.name]: '..' }, '    ')})).rejects.toMatchObject({ error: { type: 'invalid_input' } })`,
+            '    expect(calls).toEqual([])',
+            '  })'
+          ]]
+        : []),
       [
         `  it(${tsString(label)}, async () => {`,
         `    const { http, calls } = recording(${literal(answer, '    ')})`,

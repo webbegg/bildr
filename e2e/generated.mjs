@@ -726,8 +726,8 @@ async function smoke(ctx) {
       HOST: '127.0.0.1',
       NUXT_DB_URL: `file:${dbFile}`,
       NUXT_DATASOURCES_QUOTES_BASE_URL: `http://127.0.0.1:${stub.address().port}`,
-      NUXT_DATASOURCES_CATALOG_BASE_URL: `http://127.0.0.1:${catalog.server.address().port}`,
-      NUXT_DATASOURCES_CATALOG_API_KEY: 'e2e-catalog-key'
+      NUXT_APIS_CATALOG_BASE_URL: `http://127.0.0.1:${catalog.server.address().port}`,
+      NUXT_APIS_CATALOG_API_KEY: 'e2e-catalog-key'
     }
   })
   let browser

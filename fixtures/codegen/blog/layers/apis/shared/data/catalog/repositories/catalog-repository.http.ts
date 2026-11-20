@@ -2,7 +2,7 @@
 import { type ZodType, z } from 'zod'
 import { ProductDtoSchema } from '../validations/product.schema'
 import { fromProduct, toProduct } from '../mappers/product.mapper'
-import { CatalogFailure, invalidAnswer } from '../../../domain/catalog/errors'
+import { CatalogFailure, invalidAnswer, invalidInput } from '../../../domain/catalog/errors'
 import type { CatalogRepository } from '../../../domain/catalog/repositories/catalog-repository'
 import type { ApiClient } from '../client'
 
@@ -11,6 +11,15 @@ const read = <T>(schema: ZodType<T>, answer: unknown): T => {
   const parsed = schema.safeParse(answer)
   if (!parsed.success) throw new CatalogFailure(invalidAnswer(parsed.error.message))
   return parsed.data
+}
+
+/** A path parameter as one segment of the path: encoded, and never empty, "." or ".." (the URL would resolve those to another path). */
+const segment = (value: string | number | boolean): string => {
+  const text = String(value)
+  if (text === '' || text === '.' || text === '..') {
+    throw new CatalogFailure(invalidInput(`a path parameter can't be ${text === '' ? 'empty' : `"${text}"`}`))
+  }
+  return encodeURIComponent(text)
 }
 
 /** The value under `path` (property names) of the answer: undefined where the answer has no such property. */
@@ -24,7 +33,7 @@ export const httpCatalogRepository = (http: ApiClient): CatalogRepository => ({
     return read(z.array(ProductDtoSchema), itemsAt(answer, ['data', 'items'])).map(toProduct)
   },
   async product(input) {
-    const answer = await http(`/products/${encodeURIComponent(String(input.id))}`, { method: 'GET' })
+    const answer = await http(`/products/${segment(input.id)}`, { method: 'GET' })
     return toProduct(read(ProductDtoSchema, answer))
   },
   async createProduct(input) {
@@ -32,6 +41,6 @@ export const httpCatalogRepository = (http: ApiClient): CatalogRepository => ({
     return toProduct(read(ProductDtoSchema, answer))
   },
   async deleteProduct(input) {
-    await http(`/products/${encodeURIComponent(String(input.id))}`, { method: 'DELETE' })
+    await http(`/products/${segment(input.id)}`, { method: 'DELETE' })
   }
 })

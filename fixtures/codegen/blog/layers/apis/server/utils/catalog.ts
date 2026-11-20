@@ -11,12 +11,12 @@ import { product } from '../../shared/domain/catalog/use-cases/product'
 import { products } from '../../shared/domain/catalog/use-cases/products'
 import { FetchFailure, createFetchClient } from '../lib/fetch-client'
 
-/** The HTTP client of the "catalog" API: it calls the base URL of runtimeConfig.datasources.catalog, sending its secret there and nowhere else. */
+/** The HTTP client of the "catalog" API: it calls the base URL of runtimeConfig.apis.catalog, sending its secret there and nowhere else. */
 const catalogClient = (): ApiClient => {
-  const { baseUrl, apiKey } = useRuntimeConfig().datasources.catalog
+  const config = useRuntimeConfig().apis.catalog
   const headers: Record<string, string> = { accept: 'application/json' }
-  if (apiKey) headers.authorization = `Bearer ${apiKey}`
-  const call = createFetchClient({ baseUrl, headers })
+  if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`
+  const call = createFetchClient({ baseUrl: config.baseUrl, headers })
   return async (path, request) => {
     try {
       return await call(path, request)

@@ -108,3 +108,40 @@ export const composableNameProblem = (name: string): string | undefined => compo
 /** Why an action called `name` can't be generated (its use-case is imported under that name into the generated test), or undefined. */
 export const declaredNameProblem = (name: string): string | undefined =>
   DECLARED_IN_TESTS.includes(name) ? `"${name}" is declared by the generated test of every action, which imports the use-case under its name: pick another name` : undefined
+
+// ── API data sources (simple data, SD-5) ───────────────────────────────
+
+/**
+ * The words JavaScript and TypeScript reserve (strict mode, in a module): a query or an action is a `const` of its own name in
+ * its use-case file, and a name given to an interface can read as syntax (`new(…)` is a construct signature), so none can be one.
+ * `constructor` is no keyword but a method of that name in the repository port is a class member in disguise (`no-misused-new`).
+ */
+export const JS_RESERVED_WORDS: readonly string[] = [
+  'arguments', 'await', 'break', 'case', 'catch', 'class', 'const', 'constructor', 'continue', 'debugger', 'default', 'delete', 'do', 'else', 'enum', 'eval', 'export', 'extends',
+  'false', 'finally', 'for', 'function', 'if', 'implements', 'import', 'in', 'instanceof', 'interface', 'let', 'new', 'null', 'package', 'private', 'protected', 'public',
+  'return', 'static', 'super', 'switch', 'this', 'throw', 'true', 'try', 'typeof', 'undefined', 'var', 'void', 'while', 'with', 'yield'
+]
+
+/**
+ * The folders of an API source (`shared/domain/<source>/…`, `shared/data/<source>/…`) that the generated eslint config restricts in
+ * an import path (the `banned` patterns of the starter's eslint.config.mjs: any path with an app, server or infrastructure folder in it):
+ * a source with one of these names would make its own files fail the lint.
+ */
+export const LINT_RESTRICTED_FOLDERS: readonly string[] = ['app', 'server', 'infrastructure']
+
+/**
+ * What the generated files of an API source import or declare by a name that doesn't come from the model, by where it comes from.
+ * An operation (a camelCase name) can't take one of the lowercase names, a model (PascalCase) one of the capitalised: either would be
+ * declared twice in a file, or shadow what the file imports. The drift guard in test/edit/api-names.test.ts generates a project and fails
+ * when a generated file declares or uses a name that isn't here nor derived from the model.
+ */
+export const API_DECLARED_NAMES: Record<string, string[]> = {
+  'the zod and kernel imports of a use-case': ['z', 'ok', 'err', 'KernelResult', 'ZodType'],
+  'the error helpers of the domain': ['remoteFailed', 'invalidAnswer', 'invalidInput'],
+  'the locals of the generated functions': ['input', 'parsed', 'cause', 'deps', 'repository', 'result', 'http', 'calls', 'answer', 'read', 'itemsAt', 'segment', 'recording', 'unused', 'methods', 'query', 'body', 'params', 'event', 'signal', 'headers', 'call', 'config', 'secret', 'path', 'request', 'baseUrl', 'fetch', 'text', 'value'],
+  'the vitest imports of the generated tests': ['describe', 'expect', 'it'],
+  'the helpers of the server runtime': ['useRuntimeConfig', 'createFetchClient', 'defineEventHandler', 'getValidatedQuery', 'readValidatedBody', 'setResponseStatus', 'unwrapOrThrow', 'useApiQuery', 'useApiAction'],
+  'the kernel schemas an entity imports': ['IdSchema', 'TimestampSchema'],
+  'the types the generated files import': ['ApiClient', 'ApiRequest', 'ErrorStatusMap', 'FetchFailure', 'MaybeRefOrGetter', 'QuerySchema'],
+  'a global the generated files use': ['Array', 'Error', 'Object', 'Partial', 'Promise', 'Record', 'String', 'T']
+}

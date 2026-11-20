@@ -19,7 +19,8 @@ export class FetchFailure extends Error {
 }
 
 const TIMEOUT_MS = 10_000
-const MAX_BYTES = 5_000_000
+// The cap of the editor's own remote fetches (node/remote.ts).
+const MAX_BYTES = 1_000_000
 
 /** The body of the answer as text, refusing one over MAX_BYTES (by its header, or as it arrives). */
 const readCapped = async (response: Response): Promise<string> => {
@@ -52,7 +53,7 @@ const readCapped = async (response: Response): Promise<string> => {
 }
 
 /**
- * A client over `fetch` for one API: the path is under `baseUrl` (a path that leaves it is refused), a redirect is
+ * A client over `fetch` for one API: the path is under `baseUrl` (a path that leaves it, or has a "." or ".." segment the URL would resolve, is refused), a redirect is
  * not followed (it could leave the base URL, with the secret), and an answer is cut off after the timeout and the size cap.
  * It answers the parsed JSON, or undefined for an empty answer.
  */
@@ -60,8 +61,11 @@ export const createFetchClient = ({ baseUrl, headers }: { baseUrl: string, heade
   const base = new URL(baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`)
 
   return async (path: string, { method, query, body }: FetchRequest): Promise<unknown> => {
-    const url = new URL(path.replace(/^\//, ''), base)
-    if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) throw new FetchFailure(0, 'was asked for a path outside its base URL')
+    const relative = path.replace(/^\//, '')
+    // A path parameter ".." (or "%2e%2e") would be resolved by the URL to another path of the API, called with the secret.
+    if (relative.split('/').some(segment => /^(?:\.|%2e){1,2}$/i.test(segment))) throw new FetchFailure(0, 'was asked for a path with a "." or ".." segment')
+    const url = new URL(relative, base)
+    if (url.origin !== base.origin || url.pathname !== `${base.pathname}${relative}`) throw new FetchFailure(0, 'was asked for a path outside its base URL')
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value))
     }

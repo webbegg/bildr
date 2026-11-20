@@ -69,7 +69,8 @@ const fetchClientFile = (): Emitted => ({
     '}',
     '',
     'const TIMEOUT_MS = 10_000',
-    'const MAX_BYTES = 5_000_000',
+    '// The cap of the editor\'s own remote fetches (node/remote.ts).',
+    'const MAX_BYTES = 1_000_000',
     '',
     '/** The body of the answer as text, refusing one over MAX_BYTES (by its header, or as it arrives). */',
     'const readCapped = async (response: Response): Promise<string> => {',
@@ -102,7 +103,7 @@ const fetchClientFile = (): Emitted => ({
     '}',
     '',
     '/**',
-    ' * A client over `fetch` for one API: the path is under `baseUrl` (a path that leaves it is refused), a redirect is',
+    ' * A client over `fetch` for one API: the path is under `baseUrl` (a path that leaves it, or has a "." or ".." segment the URL would resolve, is refused), a redirect is',
     ' * not followed (it could leave the base URL, with the secret), and an answer is cut off after the timeout and the size cap.',
     ' * It answers the parsed JSON, or undefined for an empty answer.',
     ' */',
@@ -110,8 +111,11 @@ const fetchClientFile = (): Emitted => ({
     '  const base = new URL(baseUrl.endsWith(\'/\') ? baseUrl : `${baseUrl}/`)',
     '',
     '  return async (path: string, { method, query, body }: FetchRequest): Promise<unknown> => {',
-    '    const url = new URL(path.replace(/^\\//, \'\'), base)',
-    '    if (url.origin !== base.origin || !url.pathname.startsWith(base.pathname)) throw new FetchFailure(0, \'was asked for a path outside its base URL\')',
+    '    const relative = path.replace(/^\\//, \'\')',
+    '    // A path parameter ".." (or "%2e%2e") would be resolved by the URL to another path of the API, called with the secret.',
+    '    if (relative.split(\'/\').some(segment => /^(?:\\.|%2e){1,2}$/i.test(segment))) throw new FetchFailure(0, \'was asked for a path with a "." or ".." segment\')',
+    '    const url = new URL(relative, base)',
+    '    if (url.origin !== base.origin || url.pathname !== `${base.pathname}${relative}`) throw new FetchFailure(0, \'was asked for a path outside its base URL\')',
     '    for (const [key, value] of Object.entries(query ?? {})) {',
     '      if (value !== undefined) url.searchParams.set(key, String(value))',
     '    }',
@@ -225,9 +229,10 @@ const STATUSES = ['remote_failed: 502', 'invalid_answer: 502', 'invalid_input: 4
 const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
   const operations = operationsOf(source)
   const secret = source.auth ? identifier(source.auth.secret, `the secret of "${source.name}"`) : undefined
+  // The settings are read as properties of `config`, never destructured: a secret named like a local (`headers`, `call`) or a reserved word is safe.
   const auth = source.auth?.type === 'header'
-    ? `headers[${tsString(source.auth.header!)}] = ${secret}`
-    : `headers.authorization = \`Bearer \${${secret}}\``
+    ? `headers[${tsString(source.auth.header!)}] = config.${secret}`
+    : `headers.authorization = \`Bearer \${config.${secret}}\``
   return {
     path: `layers/apis/server/utils/${names.dir}.ts`,
     source: names.source,
@@ -245,12 +250,12 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
         .map(entry => importLine(entry.path, [entry.name])),
       importLine('../lib/fetch-client', ['createFetchClient', 'FetchFailure']),
       '',
-      `/** The HTTP client of the "${source.name}" API: it calls the base URL of runtimeConfig.datasources.${names.camel}, sending its secret there and nowhere else. */`,
+      `/** The HTTP client of the "${source.name}" API: it calls the base URL of runtimeConfig.apis.${names.camel}, sending its secret there and nowhere else. */`,
       `const ${names.client} = (): ApiClient => {`,
-      `  const { baseUrl${secret ? `, ${secret}` : ''} } = useRuntimeConfig().datasources.${names.camel}`,
+      `  const config = useRuntimeConfig().apis.${names.camel}`,
       '  const headers: Record<string, string> = { accept: \'application/json\' }',
-      ...(secret ? [`  if (${secret}) ${auth}`] : []),
-      '  const call = createFetchClient({ baseUrl, headers })',
+      ...(secret ? [`  if (config.${secret}) ${auth}`] : []),
+      '  const call = createFetchClient({ baseUrl: config.baseUrl, headers })',
       '  return async (path, request) => {',
       '    try {',
       '      return await call(path, request)',

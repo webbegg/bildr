@@ -1,9 +1,10 @@
 import type { ApiSource } from '../edit/api.ts'
 import type { Model } from '../model/load.ts'
+import { apiNameProblem, apiSourceIdentifiers } from '../edit/generated-names.ts'
 import { API_PATH } from '../model/schemas.ts'
 import type { ApiAction, ApiField, ApiModel, ApiParam, ApiQuery } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
-import { camel, docText, identifier, kebab, pascal, tsString } from './text.ts'
+import { docText, identifier, kebab, tsString } from './text.ts'
 
 /** A generated file before its owner is set (every API file is managed). */
 export type Emitted = Omit<GeneratedFile, 'owner'>
@@ -48,9 +49,6 @@ export const operationsOf = (source: ApiSource): Operation[] => [
   ...source.actions.map((action: ApiAction): Operation => ({ kind: 'action', name: action.name, description: action.description, method: action.method, path: action.path, params: action.params, body: action.body?.model, result: action.result }))
 ]
 
-/** Names the generated files declare at their top; an operation can't take one (its use-case is a function of its name). */
-const TAKEN_IN_FILES = ['z', 'ok', 'err', 'input', 'parsed', 'cause', 'deps', 'repository', 'result', 'http', 'calls', 'answer', 'read', 'itemsAt', 'recording', 'describe', 'expect', 'it', 'query', 'body', 'event', 'unused']
-
 export interface SourceNames {
   /** `catalog`: the folder, the route segment. */
   dir: string
@@ -72,29 +70,33 @@ export interface SourceNames {
   fake: string
 }
 
+/**
+ * The names of a source's generated code. Throws (naming the source's file) for a source or a name the generated code can't take: the
+ * `api_*` edits refuse the same names (edit/generated-names.ts), this is for a hand-written file.
+ */
 export const namesOf = (model: Pick<Model, 'paths'>, source: ApiSource): SourceNames => {
-  const name = pascal(source.name)
+  const ids = apiSourceIdentifiers(source.name)
   const names: SourceNames = {
     dir: source.name,
-    camel: camel(source.name),
-    pascal: name,
+    camel: ids.camel,
+    pascal: ids.pascal,
     source: model.paths[source.id] ?? `.bildr/datasources/${source.name}.json`,
-    port: `${name}Repository`,
+    port: ids.port,
     portFile: `${source.name}-repository`,
-    adapter: `http${name}Repository`,
+    adapter: ids.adapter,
     adapterFile: `${source.name}-repository.http`,
-    error: `${name}Error`,
-    failure: `${name}Failure`,
-    root: `use${name}Api`,
-    status: `${camel(source.name)}ErrorStatus`,
-    client: `${camel(source.name)}Client`,
-    fake: `fake${name}Repository`
+    error: ids.error,
+    failure: ids.failure,
+    root: ids.root,
+    status: ids.status,
+    client: ids.client,
+    fake: ids.fake
   }
-  const taken = new Set([...TAKEN_IN_FILES, names.camel, names.root, names.status, names.client])
+  const problem = apiNameProblem(source)
+  if (problem) throw new Error(`${names.source}: ${problem}`)
   for (const operation of operationsOf(source)) {
     identifier(operation.name, `API "${source.name}", ${operation.kind} "${operation.name}"`)
-    if (taken.has(operation.name)) throw new Error(`API "${source.name}": "${operation.name}" is a name the generated code declares in the same files: pick another name for the ${operation.kind}`)
-    if (operation.params.some(param => param.name === 'body') && operation.body) throw new Error(`API "${source.name}": ${operation.kind} "${operation.name}" sends a body, so no parameter can be named "body"`)
+    if (operation.params.some(param => param.name === 'body') && operation.body) throw new Error(`${names.source}: API "${source.name}": ${operation.kind} "${operation.name}" sends a body, so no parameter can be named "body"`)
   }
   return names
 }
@@ -193,13 +195,16 @@ export const inputType = (fields: InputField[]) => `{ ${fields.map(field => `${f
 /** What a call returns, as a TS type. */
 export const resultType = (operation: Operation) => operation.result ? `${operation.result.model}${operation.result.many ? '[]' : ''}` : 'void'
 
-/** `/products/:id` as a template literal over `target` (`input`): each path parameter encoded. A path the model schema refuses is an error. */
+/**
+ * `/products/:id` as a template literal over `target` (`input`): each path parameter through `segment` (the adapter's helper: encoded, and
+ * never "", "." or "..", which the URL would resolve to another path). A path the model schema refuses is an error.
+ */
 export const pathTemplate = (path: string, target = 'input'): { code: string, dynamic: boolean } => {
   if (!API_PATH.test(path)) throw new Error(`"${path}" is not an API path`)
   const dynamic = path.includes(':')
   if (!dynamic) return { code: tsString(path), dynamic }
   // A path is made of \w, -, ~, ., / and :name: nothing in it needs escaping inside a template literal.
-  return { code: `\`${path.replace(/:([a-z][A-Za-z0-9]*)/g, (_, name: string) => `\${encodeURIComponent(String(${target}.${name}))}`)}\``, dynamic }
+  return { code: `\`${path.replace(/:([a-z][A-Za-z0-9]*)/g, (_, name: string) => `\${segment(${target}.${name})}`)}\``, dynamic }
 }
 
 /** The route file name of an operation: `create-product.post.ts`. */

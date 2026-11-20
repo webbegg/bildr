@@ -18,8 +18,11 @@ export default defineNuxtConfig({
     },
     // Data sources. Values come from NUXT_DATASOURCES_* env vars; see .env.example.
     datasources: {
-      catalog: { baseUrl: 'https://catalog.example.com/v1', apiKey: '' },
       quotes: { baseUrl: 'https://dummyjson.com', apiKey: '' }
+    },
+    // API data sources. Values come from NUXT_APIS_* env vars; see .env.example.
+    apis: {
+      catalog: { baseUrl: 'https://catalog.example.com/v1', apiKey: '' }
     }
   }
 })

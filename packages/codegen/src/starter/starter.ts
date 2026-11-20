@@ -51,8 +51,6 @@ export const starterKit = ({ name, module = 'main', bildrNuxt = BILDR_NUXT_VERSI
   if (!title) throw new Error('Give the project a name')
   if (!ModuleNameSchema.safeParse(module).success) throw new Error(`Module name "${module}": use lowercase letters, digits and dashes (kebab-case)`)
   if ((RESERVED_MODULE_NAMES as readonly string[]).includes(module)) throw new Error(`Module name "${module}" is reserved (Nuxt aliases and the core layer use it)`)
-  // The layer of the API data sources (layers/apis) takes this name; the model's own list is in model/schemas.ts.
-  if (module === 'apis') throw new Error(`Module name "${module}" is reserved (the layer of the API data sources uses it)`)
   if (!(STARTER_DATABASES as readonly string[]).includes(database)) throw new Error(`Database "${String(database)}": use ${STARTER_DATABASES.join(' or ')}`)
 
   const model = initialModel(title, module, database)
