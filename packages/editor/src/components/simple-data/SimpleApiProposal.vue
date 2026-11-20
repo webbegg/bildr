@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 import type { ApiModel } from '@bildr/codegen/model'
 import DataInlineError from '../data/DataInlineError.vue'
 import { attempt } from '../../editor/dataArtifactActions.ts'
-import { clashesOf, planProposal } from '../../editor/simpleApiDraft.ts'
+import { clashesOf, planProposal, renameProblem } from '../../editor/simpleApiDraft.ts'
 import type { Resolution } from '../../editor/simpleApiDraft.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { modelNameOf } from '../../shared/simpleApi.ts'
@@ -12,12 +12,16 @@ import { plainWords } from '../../shared/simpleData.ts'
 /**
  * "Use this answer" (simple data, S4, S6), the button that turns the models an answer or a sample proposes into the API's own: each is set
  * with `api_model_set`, one by one in the order they come (the nested ones first, the root last), and the root's name is handed on
- * (`applied`) for the form to fill in. A proposed model that says what the API's model of that name says is left alone. When the name is
- * taken by a model that says something else, the dialog-less question comes first, for each: replace it, or keep both under a new name (the
- * fields that name it follow). What the module refuses is shown here and stops there: nothing is handed on. `button` is the test hook the
- * button carries (`data-try-use`, `data-op-body-sample-use`).
+ * (`applied`, with how many models were set) for the form to fill in. A proposed model that says what the API's model of that name says is left
+ * alone. When the name is taken by a model that says something else, the dialog-less question comes first, for each: replace it, or keep both
+ * under a new name (the fields that name it follow); a clash the question has no answer for yet (it came up while it was open) keeps both.
+ *
+ * What the module refuses is shown here and nothing is handed on. When it refuses a model after others were set, those stay (the API has
+ * them): the user is told which, that `fills` was not filled in, and can try again. The models are read again, the user's choices are kept,
+ * and what is already there is not set again (nor asked about, nor refused for its new name). `button` is the test hook the button carries
+ * (`data-try-use`, `data-op-body-sample-use`).
  */
-const { datasource, models, existing, button, label = 'Use this answer' } = defineProps<{
+const { datasource, models, existing, button, label = 'Use this answer', fills = 'query' } = defineProps<{
   datasource: string
   /** The proposed models, nested first, the root last; null when there is nothing to use. */
   models: ApiModel[] | null
@@ -25,16 +29,33 @@ const { datasource, models, existing, button, label = 'Use this answer' } = defi
   existing: ApiModel[]
   button: string
   label?: string
+  /** What the models are for, in the words of "The … was not filled in": `query`, `action`, `body of the action`. */
+  fills?: string
 }>()
-const emit = defineEmits<{ applied: [root: string] }>()
+const emit = defineEmits<{ applied: [root: string, added: number] }>()
 const editor = useEditor()
 
+interface Choice { how: 'replace' | 'rename', name: string }
 const asking = ref(false)
 const working = ref(false)
 const error = ref('')
-const choices = ref<Record<string, { how: 'replace' | 'rename', name: string }>>({})
+const choices = ref<Record<string, Choice>>({})
+/** What the user chose in a try that stopped half way, and the models it set before it did. */
+const stopped = ref<{ picked: Record<string, Resolution>, added: string[], failed: string, why: string } | null>(null)
 
-const clashes = computed(() => models ? clashesOf(models, existing) : [])
+/** Keeping both is the safe default: nothing the API has is lost until the user says Replace. */
+const choiceOf = (name: string): Choice => choices.value[name] ?? { how: 'rename', name: `${name}2` }
+const choose = (name: string, how: Choice['how']) => {
+  choices.value[name] = { ...choiceOf(name), how }
+}
+const rename = (name: string, to: string) => {
+  choices.value[name] = { ...choiceOf(name), name: to }
+}
+
+const clashes = computed(() => models ? clashesOf(models, existing, stopped.value?.picked) : [])
+const stoppedText = computed(() => stopped.value
+  ? `Already added to the API: ${stopped.value.added.join(', ')}. Could not add ${stopped.value.failed}: ${stopped.value.why}. The ${fills} was not filled in.`
+  : '')
 
 function start() {
   if (!models || working.value) return
@@ -43,58 +64,61 @@ function start() {
     void apply()
     return
   }
-  // Keeping both is the safe default: nothing the API has is lost until the user says Replace.
-  choices.value = Object.fromEntries(clashes.value.map(name => [name, { how: 'rename' as const, name: `${name}2` }]))
   asking.value = true
 }
 
 function cancel() {
   asking.value = false
   error.value = ''
+  stopped.value = null
+  choices.value = {}
 }
 
-/** The names a clashing model may take instead: Pascal-cased, and not one the API or the proposal already has. */
-function renameProblem(): string {
-  const taken = new Set([...existing.map(model => model.name), ...(models ?? []).map(model => model.name)])
-  const given = new Set<string>()
-  for (const name of clashes.value) {
-    const choice = choices.value[name]
-    if (choice?.how !== 'rename') continue
-    const next = modelNameOf(choice.name)
-    if (!next) return `Give the new name of “${name}”`
-    if (taken.has(next) || given.has(next)) return `“${next}” is taken too: pick another name`
-    given.add(next)
-  }
-  return ''
+/** What is to be done for each model that clashes, under the names the user typed (Pascal-cased), on top of what they chose in a try that stopped. */
+function picked(): Record<string, Resolution> {
+  const asked = asking.value
+    ? clashes.value.map((name): [string, Resolution] => {
+        const choice = choiceOf(name)
+        return [name, choice.how === 'rename' ? { how: 'rename', name: modelNameOf(choice.name) } : { how: 'replace' }]
+      })
+    : []
+  return { ...stopped.value?.picked, ...Object.fromEntries(asked) }
 }
 
 async function apply() {
   if (!models || working.value) return
-  const problem = asking.value ? renameProblem() : ''
+  const chosen = picked()
+  const problem = asking.value ? renameProblem(models, existing, chosen) : ''
   if (problem) {
     error.value = problem
     return
   }
-  const picked: Record<string, Resolution> = Object.fromEntries(asking.value
-    ? clashes.value.map((name) => {
-        const choice = choices.value[name]!
-        return [name, choice.how === 'rename' ? { how: 'rename', name: modelNameOf(choice.name) } : { how: 'replace' }]
-      })
-    : [])
-  const plan = planProposal(models, existing, picked)
+  const plan = planProposal(models, existing, chosen)
   working.value = true
   error.value = ''
+  stopped.value = null
+  const added: string[] = []
   for (const model of plan.models) {
     const done = await attempt(editor, 'api_model_set', { datasource, model }, `Could not set the model ${model.name}`)
     if ('error' in done) {
       working.value = false
-      error.value = plainWords(done.error)
+      const why = plainWords(done.error)
+      if (!added.length) {
+        error.value = why
+        return
+      }
+      stopped.value = { picked: chosen, added, failed: model.name, why }
+      asking.value = false
+      // The models set so far are the API's now: the lists show them before the user decides.
+      await editor.reload()
       return
     }
+    added.push(model.name)
   }
   working.value = false
   asking.value = false
-  emit('applied', plan.root)
+  choices.value = {}
+  emit('applied', plan.root, added.length)
 }
 </script>
 
@@ -125,25 +149,26 @@ async function apply() {
         </p>
         <div class="flex flex-wrap items-center gap-2">
           <EditorButton
-            :variant="choices[name]?.how === 'replace' ? 'primary' : 'soft'"
+            :variant="choiceOf(name).how === 'replace' ? 'primary' : 'soft'"
             label="Replace it"
-            :aria-pressed="choices[name]?.how === 'replace'"
+            :aria-pressed="choiceOf(name).how === 'replace'"
             data-proposal-choice="replace"
-            @click="choices[name]!.how = 'replace'"
+            @click="choose(name, 'replace')"
           />
           <EditorButton
-            :variant="choices[name]?.how === 'rename' ? 'primary' : 'soft'"
+            :variant="choiceOf(name).how === 'rename' ? 'primary' : 'soft'"
             label="Keep both"
-            :aria-pressed="choices[name]?.how === 'rename'"
+            :aria-pressed="choiceOf(name).how === 'rename'"
             data-proposal-choice="rename"
-            @click="choices[name]!.how = 'rename'"
+            @click="choose(name, 'rename')"
           />
           <EditorInput
-            v-if="choices[name]?.how === 'rename'"
-            v-model="choices[name]!.name"
+            v-if="choiceOf(name).how === 'rename'"
+            :model-value="choiceOf(name).name"
             class="w-44"
             :aria-label="`New name for ${name}`"
             data-proposal-rename
+            @update:model-value="rename(name, $event)"
           />
         </div>
       </div>
@@ -163,8 +188,27 @@ async function apply() {
         />
       </div>
     </div>
+    <div
+      v-if="stopped"
+      class="space-y-2"
+    >
+      <DataInlineError
+        icon
+        data-proposal-error
+      >
+        {{ stoppedText }}
+      </DataInlineError>
+      <EditorButton
+        v-if="!asking"
+        icon="i-lucide-rotate-cw"
+        label="Try again"
+        :disabled="working"
+        data-proposal-retry
+        @click="start"
+      />
+    </div>
     <DataInlineError
-      v-if="error"
+      v-else-if="error"
       icon
       data-proposal-error
     >

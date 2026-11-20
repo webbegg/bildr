@@ -121,6 +121,19 @@ describe('creating an API', () => {
     expect(q('[data-artifact-submit]')?.hasAttribute('disabled')).toBe(false)
   })
 
+  it('says under the name what it will be called, as the dialogs of the items do', async () => {
+    await mounted({}, {}, '/data')
+    await click(q('[data-simple-new-api]'))
+    const help = () => text(q('[data-artifact-dialog] [data-form-row="Name"]'))
+    expect(help()).toContain('Any words')
+    await type('data-api-new-name', 'Shop API')
+    expect(help()).toContain('It will be called \u201cshop-api\u201d')
+    await type('data-api-new-name', 'shop')
+    expect(help()).not.toContain('It will be called')
+    await type('data-api-new-name', 'Caf\u00e9 des Pr\u00e9s 2')
+    expect(help()).toContain('It will be called \u201ccafe-des-pres-2\u201d')
+  })
+
   it('makes it with api_create, opens it, and shows the env var of its secret and whether it is set, never a value', async () => {
     const { actions, router } = await mounted({}, {}, '/data')
     await click(q('[data-simple-new-api]'))
@@ -754,6 +767,506 @@ describe('the model editor', () => {
     expect(q('[data-api-item="model:OrderLine"]')).toBeNull()
     await click(q('[data-api-back]'))
     expect(q('[data-api-item="model:OrderLine"]')).not.toBeNull()
+  })
+})
+
+/** The model's answer to a change made by someone else (the disk, an agent): the editor reads the model again. */
+let version = 300
+const changedElsewhere = async (change: () => void, file = '.bildr/datasources/shop-api.json') => {
+  change()
+  FakeEventSource.instances.at(-1)!.send({ type: 'model', version: ++version, files: [file], source: 'disk' })
+  await settle()
+}
+/** The model-set action of the module, but the calls whose turn (1, 2…) is listed are refused. */
+const refusing = (turns: number[], message = 'The API refused the model'): Handlers => {
+  const real = apiModule().api_model_set!
+  let turn = 0
+  return { api_model_set: input => turns.includes(++turn) ? new Failure(422, 'invalid', message) : real(input) }
+}
+const names = (actions: Awaited<ReturnType<typeof mounted>>['actions']) => calls(actions, 'api_model_set').map(call => (call.model as { name: string }).name)
+const tryAndUse = async () => {
+  await click(q('[data-try-run]'))
+  // An action asks before a real write is sent.
+  if (q('[data-confirm-ok]')) await click(q('[data-confirm-ok]'))
+  await click(q('[data-try-use]'))
+}
+
+describe('"Use this answer" when it stops half way', () => {
+  it('says which models were added and that the query was not filled in, reads the models again and offers to try again', async () => {
+    shop()
+    const { actions } = await mounted(LIST, refusing([2]))
+    await open('query:products')
+    await click(q('[data-try-run]'))
+    const before = actions.named('model_get').length
+    await click(q('[data-try-use]'))
+    expect(names(actions)).toEqual(['Maker', 'Gadget'])
+    const said = text(q('[data-proposal-error]'))
+    expect(said).toContain('Already added to the API: Maker')
+    expect(said).toContain('Could not add Gadget: The API refused the model')
+    expect(said).toContain('The query was not filled in')
+    expect(actions.named('model_get').length).toBeGreaterThan(before + 1)
+    expect(await optionLabels(combo('[data-op-result-model]'))).toContain('Maker')
+    expect(combo('[data-op-result-model]').textContent).toContain('Product')
+    expect(q('[data-proposal-retry]')).not.toBeNull()
+    expect(unsaved()).toBe(false)
+  })
+
+  it('names the action when it is an action', async () => {
+    shop()
+    await mounted(LIST, refusing([2]))
+    await open('action:addProduct')
+    await tryAndUse()
+    expect(text(q('[data-proposal-error]'))).toContain('The action was not filled in')
+  })
+
+  it('says only what the module refused when none of the models was added', async () => {
+    shop()
+    const { actions } = await mounted(LIST, refusing([1]))
+    await open('action:addProduct')
+    await tryAndUse()
+    expect(names(actions)).toEqual(['Maker'])
+    expect(text(q('[data-proposal-error]'))).toBe('The API refused the model')
+    expect(q('[data-proposal-retry]')).toBeNull()
+  })
+
+  it('tries again with the models that are not there yet, and fills the query in when they are', async () => {
+    shop()
+    const { actions } = await mounted(LIST, refusing([2]))
+    await open('query:products')
+    await tryAndUse()
+    await click(q('[data-proposal-retry]'))
+    expect(names(actions)).toEqual(['Maker', 'Gadget', 'Gadget'])
+    expect(q('[data-proposal-error]')).toBeNull()
+    expect(source().models.map(model => model.name)).toEqual(['Product', 'Maker', 'Gadget'])
+    expect(combo('[data-op-result-model]').textContent).toContain('Gadget')
+    expect(field('data-op-result-items').value).toBe('items')
+    expect(unsaved()).toBe(true)
+  })
+
+  it('tries again with the user\'s choices: a model kept under a new name is not asked about again, nor refused for its name', async () => {
+    shop()
+    seed('api_model_set', { datasource: ID, model: { name: 'Maker', fields: [{ name: 'title', type: 'text' }] } })
+    seed('api_model_set', { datasource: ID, model: { name: 'Tag', fields: [{ name: 'label', type: 'text' }] } })
+    const proposal = {
+      result: { model: 'Gadget', many: true, itemsPath: 'items' },
+      models: [
+        { name: 'Maker', fields: [{ name: 'name', type: 'text' }] },
+        { name: 'Tag', fields: [{ name: 'value', type: 'text' }] },
+        { name: 'Gadget', fields: [{ name: 'maker', type: 'model', model: 'Maker' }, { name: 'tag', type: 'model', model: 'Tag' }] }
+      ]
+    }
+    const { actions } = await mounted({ ...LIST, proposal }, refusing([2]))
+    await open('query:products')
+    await tryAndUse()
+    expect(qa('[data-proposal-conflict]').map(row => row.getAttribute('data-proposal-conflict'))).toEqual(['Maker', 'Tag'])
+    await click(q('[data-proposal-conflict="Tag"] [data-proposal-choice="replace"]'))
+    await click(q('[data-proposal-apply]'))
+    expect(names(actions)).toEqual(['Maker2', 'Tag'])
+    expect(text(q('[data-proposal-error]'))).toContain('Already added to the API: Maker2')
+    await click(q('[data-proposal-retry]'))
+    expect(qa('[data-proposal-conflict]').map(row => row.getAttribute('data-proposal-conflict'))).toEqual(['Tag'])
+    expect(q('[data-proposal-conflict="Tag"] [data-proposal-choice="replace"]')?.getAttribute('aria-pressed')).toBe('true')
+    await click(q('[data-proposal-apply]'))
+    expect(text(q('[data-proposal-error]'))).toBe('')
+    expect(names(actions)).toEqual(['Maker2', 'Tag', 'Tag', 'Gadget'])
+    const gadget = calls(actions, 'api_model_set').at(-1)!.model as { fields: Array<{ model: string }> }
+    expect(gadget.fields.map(entry => entry.model)).toEqual(['Maker2', 'Tag'])
+    expect(combo('[data-op-result-model]').textContent).toContain('Gadget')
+  })
+
+  it('does not fail on a clash that appears while the question is open: it keeps both, as the others do by default', async () => {
+    shop()
+    seed('api_model_set', { datasource: ID, model: { name: 'Gadget', fields: [{ name: 'sku', type: 'text' }] } })
+    const { actions } = await mounted(LIST)
+    await open('query:products')
+    await tryAndUse()
+    expect(qa('[data-proposal-conflict]').map(row => row.getAttribute('data-proposal-conflict'))).toEqual(['Gadget'])
+    await changedElsewhere(() => {
+      seed('api_model_set', { datasource: ID, model: { name: 'Maker', fields: [{ name: 'title', type: 'text' }] } })
+    })
+    expect(qa('[data-proposal-conflict]').map(row => row.getAttribute('data-proposal-conflict'))).toEqual(['Maker', 'Gadget'])
+    expect(q('[data-proposal-conflict="Maker"] [data-proposal-choice="rename"]')?.getAttribute('aria-pressed')).toBe('true')
+    await click(q('[data-proposal-apply]'))
+    expect(names(actions)).toEqual(['Maker2', 'Gadget2'])
+    expect(text(q('[data-proposal-error]'))).toBe('')
+    expect(combo('[data-op-result-model]').textContent).toContain('Gadget2')
+  })
+
+  it('does not fail either when the new clash is there when Continue is pressed with nothing chosen for it', async () => {
+    shop()
+    seed('api_model_set', { datasource: ID, model: { name: 'Gadget', fields: [{ name: 'sku', type: 'text' }] } })
+    const { actions } = await mounted(LIST)
+    await open('query:products')
+    await tryAndUse()
+    await changedElsewhere(() => {
+      seed('api_model_set', { datasource: ID, model: { name: 'Maker', fields: [{ name: 'title', type: 'text' }] } })
+    })
+    await typeInto(q('[data-proposal-conflict="Gadget"] [data-proposal-rename]'), 'Gadget Two')
+    await click(q('[data-proposal-apply]'))
+    expect(names(actions)).toEqual(['Maker2', 'GadgetTwo'])
+  })
+})
+
+describe('an item that changed elsewhere while it has edits', () => {
+  it('a query says so, waits for the choice, and "Keep my edits" keeps the draft and saves it', async () => {
+    shop()
+    const { actions } = await mounted()
+    await open('query:products')
+    await type('data-op-path', '/mine')
+    await changedElsewhere(() => {
+      source().queries[0]!.path = '/theirs'
+    })
+    expect(text(q('[data-simple-op-changed]'))).toContain('This query changed since you started editing')
+    expect(q('[data-simple-op-save]')?.hasAttribute('disabled')).toBe(true)
+    await click(q('[data-simple-op-keep-mine]'))
+    expect(q('[data-simple-op-changed]')).toBeNull()
+    expect(field('data-op-path').value).toBe('/mine')
+    expect(unsaved()).toBe(true)
+    await save()
+    expect(calls(actions, 'api_query_set')).toEqual([{ datasource: ID, query: { name: 'products', path: '/mine', params: [], result: { model: 'Product', many: true, itemsPath: 'items' } } }])
+    expect(source().queries[0]!.path).toBe('/mine')
+  })
+
+  it('a query: "Load the new version" drops the edits', async () => {
+    shop()
+    await mounted()
+    await open('query:products')
+    await type('data-op-path', '/mine')
+    await changedElsewhere(() => {
+      source().queries[0]!.path = '/theirs'
+    })
+    await click(q('[data-simple-op-load-new]'))
+    expect(field('data-op-path').value).toBe('/theirs')
+    expect(unsaved()).toBe(false)
+    expect(q('[data-simple-op-changed]')).toBeNull()
+  })
+
+  it('an action says so, and "Keep my edits" keeps the draft and saves it', async () => {
+    shop()
+    const { actions } = await mounted()
+    await open('action:addProduct')
+    await choose('data-op-method', 'PUT')
+    await changedElsewhere(() => {
+      source().actions[0]!.path = '/theirs'
+    })
+    expect(text(q('[data-simple-op-changed]'))).toContain('This action changed since you started editing')
+    expect(q('[data-simple-op-save]')?.hasAttribute('disabled')).toBe(true)
+    await click(q('[data-simple-op-keep-mine]'))
+    expect(q('[data-simple-op-changed]')).toBeNull()
+    expect(unsaved()).toBe(true)
+    await save()
+    expect(calls(actions, 'api_action_set')).toEqual([{ datasource: ID, action: { name: 'addProduct', method: 'PUT', path: '/products', params: [], body: { model: 'Product' }, result: { model: 'Product', many: false } } }])
+  })
+
+  it('a model says so, waits for the choice, and "Keep my edits" keeps the fields and saves them', async () => {
+    shop()
+    const { actions } = await mounted()
+    await open('model:Product')
+    await click(q('[data-model-field-add]'))
+    await typeInto(qa('[data-model-field]').at(-1)!.querySelector('[data-model-field-name]'), 'price')
+    await changedElsewhere(() => {
+      source().models[0]!.fields.splice(1, 1)
+    })
+    expect(text(q('[data-simple-model-changed]'))).toContain('This model changed since you started editing')
+    expect(q('[data-simple-model-save]')?.hasAttribute('disabled')).toBe(true)
+    await click(q('[data-simple-model-keep-mine]'))
+    expect(q('[data-simple-model-changed]')).toBeNull()
+    expect(qa('[data-model-field]')).toHaveLength(3)
+    await click(q('[data-simple-model-save]'))
+    expect((calls(actions, 'api_model_set')[0]!.model as { fields: Array<{ name: string }> }).fields.map(entry => entry.name)).toEqual(['id', 'title', 'price'])
+  })
+
+  it('a model: "Load the new version" drops the edits', async () => {
+    shop()
+    await mounted()
+    await open('model:Product')
+    await click(q('[data-model-field-add]'))
+    await typeInto(qa('[data-model-field]').at(-1)!.querySelector('[data-model-field-name]'), 'price')
+    await changedElsewhere(() => {
+      source().models[0]!.fields.splice(1, 1)
+    })
+    await click(q('[data-simple-model-load-new]'))
+    expect(qa('[data-model-field]')).toHaveLength(1)
+    expect(q('[data-simple-model-unsaved]')).toBeNull()
+  })
+})
+
+describe('renaming with edits that are not saved', () => {
+  it('a query keeps its form and its edits, and saves them under the new name', async () => {
+    shop()
+    const { actions } = await mounted()
+    await open('query:products')
+    await type('data-op-path', '/items')
+    await click(q('[data-api-editor-rename]'))
+    await type('data-api-item-name', 'all products')
+    await click(q('[data-artifact-submit]'))
+    expect(calls(actions, 'api_query_rename')).toEqual([{ datasource: ID, query: 'products', name: 'allProducts' }])
+    expect(q('[data-api-editor="query:allProducts"]')).not.toBeNull()
+    expect(text(q('[data-api-editor-title]'))).toBe('allProducts')
+    expect(field('data-op-path').value).toBe('/items')
+    expect(unsaved()).toBe(true)
+    expect(q('[data-simple-op-changed]')).toBeNull()
+    await save()
+    expect(calls(actions, 'api_query_set')).toEqual([{ datasource: ID, query: { name: 'allProducts', path: '/items', params: [], result: { model: 'Product', many: true, itemsPath: 'items' } } }])
+  })
+
+  it('an action keeps its form and its edits, and saves them under the new name', async () => {
+    shop()
+    const { actions } = await mounted()
+    await open('action:addProduct')
+    await choose('data-op-method', 'PUT')
+    await click(q('[data-api-editor-rename]'))
+    await type('data-api-item-name', 'create product')
+    await click(q('[data-artifact-submit]'))
+    expect(q('[data-api-editor="action:createProduct"]')).not.toBeNull()
+    expect(combo('[data-op-method]').textContent).toContain('PUT')
+    expect(unsaved()).toBe(true)
+    expect(q('[data-simple-op-changed]')).toBeNull()
+    await save()
+    expect(calls(actions, 'api_action_set')).toEqual([{ datasource: ID, action: { name: 'createProduct', method: 'PUT', path: '/products', params: [], body: { model: 'Product' }, result: { model: 'Product', many: false } } }])
+  })
+
+  it('a model keeps its form and its edits, and saves them under the new name', async () => {
+    shop()
+    const { actions } = await mounted()
+    await open('model:Product')
+    await click(q('[data-model-field-add]'))
+    await typeInto(qa('[data-model-field]').at(-1)!.querySelector('[data-model-field-name]'), 'price')
+    await click(q('[data-api-editor-rename]'))
+    await type('data-api-item-name', 'Item')
+    await click(q('[data-artifact-submit]'))
+    expect(q('[data-api-editor="model:Item"]')).not.toBeNull()
+    expect(qa('[data-model-field]')).toHaveLength(3)
+    expect(q('[data-simple-model-unsaved]')).not.toBeNull()
+    expect(q('[data-simple-model-changed]')).toBeNull()
+    await click(q('[data-simple-model-save]'))
+    expect(calls(actions, 'api_model_set')).toEqual([{ datasource: ID, model: { name: 'Item', fields: [{ name: 'id', type: 'integer' }, { name: 'title', type: 'text' }, { name: 'price', type: 'text' }] } }])
+  })
+
+  it('the API, from the settings\' Name field, says before Save what its secret\'s variable becomes, and shows it after', async () => {
+    shop({ auth: { type: 'bearer' } })
+    const { actions } = await mounted()
+    const before = source().env.apiKey!
+    expect(before).toBe('NUXT_APIS_SHOP_API_API_KEY')
+    expect(q('[data-api-secret-rename]')).toBeNull()
+    await type('data-api-name', 'Shop Two')
+    expect(text(q('[data-api-secret-rename]'))).toContain('The secret\'s variable becomes NUXT_APIS_SHOP_TWO_API_KEY')
+    expect(text(q('[data-api-secret-var]'))).toBe(before)
+    await type('data-api-name', 'shop-api')
+    expect(q('[data-api-secret-rename]')).toBeNull()
+    await type('data-api-name', 'Shop Two')
+    await click(q('[data-simple-api-save]'))
+    expect(calls(actions, 'api_update')).toEqual([{ datasource: ID, name: 'Shop Two' }])
+    expect(source().name).toBe('shop-two')
+    expect(source().env.apiKey).toBe('NUXT_APIS_SHOP_TWO_API_KEY')
+    expect(text(q('[data-api-secret-var]'))).toBe('NUXT_APIS_SHOP_TWO_API_KEY')
+    expect(q('[data-api-secret-rename]')).toBeNull()
+  })
+
+  it('the API says nothing of a secret when it has none, or when the sign-in is being taken off', async () => {
+    shop()
+    await mounted()
+    await type('data-api-name', 'Shop Two')
+    expect(q('[data-api-secret-rename]')).toBeNull()
+    await click(q('[data-api-signin="bearer"]'))
+    expect(q('[data-api-secret-rename]')).toBeNull()
+  })
+})
+
+describe('the fields of a model', () => {
+  const grow = () => seed('api_model_set', { datasource: ID, model: { name: 'Product', fields: [{ name: 'id', type: 'integer' }, { name: 'title', type: 'text' }, { name: 'price', type: 'number' }] } })
+  const order = () => qa('[data-model-field]').map(row => (row.querySelector('[data-model-field-name]') as HTMLInputElement).value)
+  const row = (at: number) => qa('[data-model-field]')[at]!
+
+  it('moves a field down, and the middle one both ways, and the first can\'t go up nor the last down', async () => {
+    shop()
+    grow()
+    const { actions } = await mounted()
+    await open('model:Product')
+    expect(row(0).querySelector('[data-model-field-up]')?.hasAttribute('disabled')).toBe(true)
+    expect(row(2).querySelector('[data-model-field-down]')?.hasAttribute('disabled')).toBe(true)
+    await click(row(0).querySelector('[data-model-field-down]') as HTMLElement)
+    expect(order()).toEqual(['title', 'id', 'price'])
+    await click(row(1).querySelector('[data-model-field-down]') as HTMLElement)
+    expect(order()).toEqual(['title', 'price', 'id'])
+    await click(row(1).querySelector('[data-model-field-up]') as HTMLElement)
+    expect(order()).toEqual(['price', 'title', 'id'])
+    await click(row(1).querySelector('[data-model-field-down]') as HTMLElement)
+    expect(order()).toEqual(['price', 'id', 'title'])
+    await click(q('[data-simple-model-save]'))
+    expect((calls(actions, 'api_model_set')[0]!.model as { fields: Array<{ name: string }> }).fields.map(entry => entry.name)).toEqual(['price', 'id', 'title'])
+  })
+
+  it('refuses to delete a model another model\'s field holds, in the module\'s words, and keeps it', async () => {
+    seed('api_create', { name: 'Shop API', baseUrl: 'https://api.example.com/v1' })
+    seed('api_model_set', { datasource: ID, model: { name: 'Product', fields: [{ name: 'id', type: 'integer' }] } })
+    seed('api_model_set', { datasource: ID, model: { name: 'Wrapper', fields: [{ name: 'product', type: 'model', model: 'Product' }] } })
+    const { actions } = await mounted()
+    await click(q('[data-api-item="model:Product"] [data-api-delete]'))
+    await click(q('[data-artifact-submit]'))
+    expect(text(q('[data-artifact-error]'))).toBe('Product is used by the model Wrapper')
+    expect(calls(actions, 'api_model_delete')).toEqual([{ datasource: ID, model: 'Product' }])
+    expect(q('[data-api-item="model:Product"]')).not.toBeNull()
+    expect(source().models.map(model => model.name)).toEqual(['Product', 'Wrapper'])
+  })
+})
+
+describe('Try it\'s answer', () => {
+  it('goes when the path changes, and so does Use this answer', async () => {
+    shop()
+    await mounted(LIST)
+    await open('query:products')
+    await click(q('[data-try-run]'))
+    expect(q('[data-try-answer]')).not.toBeNull()
+    expect(q('[data-try-use]')).not.toBeNull()
+    await type('data-op-path', '/products?x=1')
+    expect(q('[data-try-answer]')).toBeNull()
+    expect(q('[data-try-use]')).toBeNull()
+  })
+
+  it('goes when a parameter is named, and when the method changes', async () => {
+    shop()
+    await mounted(LIST)
+    await open('action:addProduct')
+    await click(q('[data-try-run]'))
+    await click(q('[data-confirm-ok]'))
+    expect(q('[data-try-answer]')).not.toBeNull()
+    await click(q('[data-op-param-add]'))
+    expect(q('[data-try-answer]')).not.toBeNull()
+    await typeInto(q('[data-op-param^="query:"] [data-op-param-name]'), 'page')
+    expect(q('[data-try-answer]')).toBeNull()
+    await click(q('[data-try-run]'))
+    await click(q('[data-confirm-ok]'))
+    expect(q('[data-try-answer]')).not.toBeNull()
+    await choose('data-op-method', 'PUT')
+    expect(q('[data-try-answer]')).toBeNull()
+  })
+
+  it('stays when what the call answers is filled in', async () => {
+    shop()
+    await mounted(LIST)
+    await open('query:products')
+    await click(q('[data-try-run]'))
+    await choose('data-op-result-model', 'Product')
+    expect(q('[data-try-answer]')).not.toBeNull()
+  })
+
+  it('goes while a new run is in flight', async () => {
+    shop()
+    let release: (answer: unknown) => void = () => {}
+    let first = true
+    await mounted(() => {
+      if (first) {
+        first = false
+        return LIST
+      }
+      return new Promise((resolve) => {
+        release = resolve
+      })
+    })
+    await open('query:products')
+    await click(q('[data-try-run]'))
+    expect(q('[data-try-answer]')).not.toBeNull()
+    await click(q('[data-try-run]'))
+    expect(q('[data-try-answer]')).toBeNull()
+    expect(q('[data-try-use]')).toBeNull()
+    release({ ...LIST, status: 201 })
+    await settle()
+    expect(text(q('[data-try-status]'))).toContain('201')
+  })
+
+  it('says the first N of M when the list was cut', async () => {
+    shop()
+    const cut = { ...LIST, json: { items: Array.from({ length: 10 }, (_, at) => ({ id: at })), total: 25 }, items: { path: 'items', count: 25 } }
+    await mounted(cut)
+    await open('query:products')
+    await click(q('[data-try-run]'))
+    expect(text(q('[data-try-items]'))).toBe('Found a list at “items”: first 10 of 25 items')
+  })
+
+  it('says the whole count when nothing was cut', async () => {
+    shop()
+    await mounted(LIST)
+    await open('query:products')
+    await click(q('[data-try-run]'))
+    expect(text(q('[data-try-items]'))).toBe('Found a list of 2 items at “items”')
+  })
+})
+
+describe('the body a pasted sample made', () => {
+  const SAMPLE = '{"title":"Lamp","price":3.5}'
+
+  it('is the body Try it sends, without typing it again', async () => {
+    shop()
+    seed('api_action_set', { datasource: ID, action: { name: 'addReview', method: 'POST', path: '/reviews', params: [] } })
+    const { actions } = await mounted({ status: 201, url: 'https://api.example.com/v1/reviews', json: {} })
+    await open('action:addReview')
+    expect(field('data-try-body').value).toBe('')
+    await click(q('[data-op-body-sample-toggle]'))
+    await type('data-op-body-sample', SAMPLE)
+    await click(q('[data-op-body-sample-use]'))
+    expect(field('data-try-body').value).toBe(SAMPLE)
+    await click(q('[data-try-run]'))
+    await click(q('[data-confirm-ok]'))
+    expect(calls(actions, 'api_try')).toEqual([{ datasource: ID, path: '/reviews', method: 'POST', body: { title: 'Lamp', price: 3.5 }, confirm: true }])
+  })
+
+  it('does not replace a body that was typed', async () => {
+    shop()
+    seed('api_action_set', { datasource: ID, action: { name: 'addReview', method: 'POST', path: '/reviews', params: [] } })
+    await mounted()
+    await open('action:addReview')
+    await type('data-try-body', '{"title":"Mine"}')
+    await click(q('[data-op-body-sample-toggle]'))
+    await type('data-op-body-sample', SAMPLE)
+    await click(q('[data-op-body-sample-use]'))
+    expect(field('data-try-body').value).toBe('{"title":"Mine"}')
+  })
+})
+
+describe('the footer after Use this answer', () => {
+  it('says the models were added and that Save keeps the query, and Discard says the models stay', async () => {
+    shop()
+    await mounted(LIST)
+    await open('query:products')
+    expect(q('[data-simple-op-blocked]')).toBeNull()
+    await tryAndUse()
+    expect(text(q('[data-simple-op-blocked]'))).toBe('Models added. Save to keep the query.')
+    expect(q('[data-simple-op-discard]')?.getAttribute('title')).toBe('Drops your edits to this query. The models you added stay.')
+    await click(q('[data-simple-op-discard]'))
+    expect(q('[data-simple-op-blocked]')).toBeNull()
+    expect(source().models.map(model => model.name)).toEqual(['Product', 'Maker', 'Gadget'])
+  })
+
+  it('goes with Save', async () => {
+    shop()
+    await mounted(LIST)
+    await open('query:products')
+    await tryAndUse()
+    await save()
+    expect(q('[data-simple-op-blocked]')).toBeNull()
+    expect(unsaved()).toBe(false)
+  })
+
+  it('says nothing when no model was added (the same model was already there)', async () => {
+    shop()
+    const same = { ...LIST, proposal: { result: { model: 'Product', many: true, itemsPath: 'items' }, models: [{ name: 'Product', fields: [{ name: 'id', type: 'integer' }, { name: 'title', type: 'text' }] }] } }
+    await mounted(same)
+    await open('query:productById')
+    await type('data-try-input="id"', '1')
+    await tryAndUse()
+    expect(q('[data-simple-op-blocked]')).toBeNull()
+  })
+
+  it('says the action for an action, after a model is made from a sample', async () => {
+    shop()
+    seed('api_action_set', { datasource: ID, action: { name: 'addReview', method: 'POST', path: '/reviews', params: [] } })
+    await mounted()
+    await open('action:addReview')
+    await click(q('[data-op-body-sample-toggle]'))
+    await type('data-op-body-sample', '{"stars": 5}')
+    await click(q('[data-op-body-sample-use]'))
+    expect(text(q('[data-simple-op-blocked]'))).toBe('Models added. Save to keep the action.')
   })
 })
 

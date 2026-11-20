@@ -10,7 +10,7 @@ import { settingsChangedOutside, settingsDirty, settingsInput, settingsOf, setti
 import type { Runtime, SignIn } from '../../editor/simpleApiDraft.ts'
 import { useDraftForm } from '../../editor/useDraftForm.ts'
 import { useEditor } from '../../editor/useEditor.ts'
-import { RUNTIMES, SIGN_INS, actionSummary, baseUrlProblem, modelSummary, querySummary, secretVarOf } from '../../shared/simpleApi.ts'
+import { RUNTIMES, SIGN_INS, actionSummary, baseUrlProblem, modelSummary, querySummary, secretVarAfterRename, secretVarOf } from '../../shared/simpleApi.ts'
 import { plainWords } from '../../shared/simpleData.ts'
 
 /**
@@ -61,6 +61,8 @@ async function save() {
 
 const secret = computed(() => secretVarOf(source))
 const secretSet = computed(() => !!secret.value && editor.env.some(entry => entry.name === secret.value && entry.set))
+/** What the secret's variable becomes when the API is renamed and saved (`api_update` renames a variable bildr named), before Save says so. */
+const renamedSecret = computed(() => draft.value.signIn !== 'none' ? secretVarAfterRename(source, draft.value.name) : undefined)
 const note = computed(() => urlProblem.value ? 'Fix the base URL to save.' : problems.value[0] ?? '')
 </script>
 
@@ -189,6 +191,12 @@ const note = computed(() => urlProblem.value ? 'Fix the base URL to save.' : pro
                 data-api-secret-refresh
                 @click="editor.reloadEnv()"
               />
+            </p>
+            <p
+              v-if="renamedSecret"
+              data-api-secret-rename
+            >
+              The secret's variable becomes <code class="font-mono text-[11px] text-toned">{{ renamedSecret }}</code> when you save. Set it in your <code>.env</code> file under that name.
             </p>
           </div>
           <p

@@ -7,9 +7,13 @@
  * POST (cancelled first: the stub sees nothing) and the stub then holds the new post. A model a query uses can't be deleted (the module's
  * words), the settings are edited and saved, and after a reload everything is still there. Every step is checked in `.bildr/datasources/`.
  * The only JSON typed is the sample body an action is tried with: no model file is edited by hand, and no JSON tab is opened.
+ * Every step that writes the API waits for the app to rebuild before the next live call, nothing is read straight after a fill (it waits for
+ * what it expects), and the stub's API file is removed in the `finally`, so a failed run can't leave it for the next one.
  * Shots go to e2e/module/.shots/.
  */
-import { bildr, check, openSimpleData, quiet, run, settled, shot, stubRest, until } from './lib.mjs'
+import { rmSync } from 'node:fs'
+import { join } from 'node:path'
+import { app, bildr, call, check, openSimpleData, quiet, run, settled, shot, stubRest, until } from './lib.mjs'
 
 const FILE = 'datasources/stub-shop.json'
 const ID = 'ds_stub_shop'
@@ -35,6 +39,17 @@ const calm = async () => {
   await settled()
 }
 
+/** What the element says or holds right now, or '' while it is not there (for a wait that polls: `until`). */
+const saysNow = (page, selector) => page.locator(selector).first().innerText({ timeout: 500 }).catch(() => '')
+const holdsNow = (page, selector) => page.locator(selector).first().inputValue({ timeout: 500 }).catch(() => '')
+
+/** The stub API's file and what removes it: the module's own delete when it answers, else the file itself (a run that failed half way). */
+const removeStubApi = async () => {
+  if (bildr(FILE) === undefined) return
+  const answer = await call('datasource_delete', { datasource: ID }).catch(() => undefined)
+  if (!answer?.ok) rmSync(join(app.root, '.bildr', FILE), { force: true })
+}
+
 /** JSON with the keys in order, so two values that say the same compare equal whatever order the file wrote them in. */
 const canon = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : 1)) : item)
 
@@ -58,7 +73,10 @@ await run('simple-api', async ({ page }) => {
     check((await page.locator('[data-api-new-url-error]').innerText()).includes('is not an absolute URL'), 'a base URL that is not one is refused as it is typed, in the module\'s words')
     check(await page.locator('[data-artifact-submit]').isDisabled(), 'and Create is off')
     await page.locator('[data-api-new-url]').fill(stub.url)
-    check(await page.locator('[data-api-new-url-error]').count() === 0 && await page.locator('[data-artifact-submit]').isEnabled(), 'a good base URL clears the refusal')
+    await page.locator('[data-api-new-url-error]').waitFor({ state: 'detached' })
+    await page.locator('[data-artifact-submit]').waitFor()
+    check(await until(() => page.locator('[data-artifact-submit]').isEnabled()), 'a good base URL clears the refusal')
+    check(await until(async () => (await saysNow(page, '[data-artifact-dialog] [data-form-row="Name"]')).includes('It will be called “stub-shop”')), 'the dialog says under the name what it will be called')
     const runtimes = (await page.locator('[data-api-new-runtime]').allInnerTexts()).join(' | ')
     check(runtimes.includes('On the server (can use a secret key)') && runtimes.includes('In the visitor\'s browser (no secret key)'), `it asks where it runs, in plain words (${runtimes.replace(/\s+/g, ' ')})`)
     await page.locator('[data-api-new-signin="bearer"]').click()
@@ -82,6 +100,7 @@ await run('simple-api', async ({ page }) => {
 
     // The settings: no sign-in, saved with Save; only what changed is written.
     await page.locator('[data-api-signin="none"]').click()
+    await page.locator('[data-simple-api-unsaved]').waitFor()
     check((await page.locator('[data-simple-api-unsaved]').innerText()) === 'Unsaved changes' && bildr(FILE).auth?.type === 'bearer', 'a change of the sign-in is unsaved until Save')
     await page.locator('[data-simple-api-save]').click()
     check(await until(() => bildr(FILE)?.auth === undefined), 'Save writes the API with no sign-in')
@@ -108,11 +127,14 @@ await run('simple-api', async ({ page }) => {
     await page.locator('[data-try-use]').click()
     const post = await until(() => bildr(FILE)?.models?.find(model => model.name === 'Post') && bildr(FILE).models.find(model => model.name === 'Post'))
     check(post && post.fields.map(field => `${field.name}:${field.type}`).join() === 'id:integer,title:text,body:text', `Use this answer makes the model Post (${JSON.stringify(post?.fields)})`)
-    check((await page.locator('[data-op-result-model]').innerText()).includes('Post') && await page.locator('[data-op-result-items]').inputValue() === 'items', 'and fills in what the query answers: Post, a list at items')
+    check(await until(async () => (await saysNow(page, '[data-op-result-model]')).includes('Post') && await holdsNow(page, '[data-op-result-items]') === 'items'), 'and fills in what the query answers: Post, a list at items')
+    check(await until(async () => (await saysNow(page, '[data-simple-op-blocked]')) === 'Models added. Save to keep the query.'), 'and the footer says the models were added and that Save keeps the query')
     check(bildr(FILE).queries.length === 0, 'the query itself is not written before Save')
+    await calm()
     await page.locator('[data-simple-op-save]').click()
     const query = await until(() => bildr(FILE)?.queries?.[0])
     check(canon(query) === canon({ name: 'listPosts', path: '/posts', params: [], result: { model: 'Post', many: true, itemsPath: 'items' } }), `Save writes the query (${JSON.stringify(query)})`)
+    await calm()
 
     // A second query: the path makes its parameter.
     await page.locator('[data-api-back]').click()
@@ -121,6 +143,7 @@ await run('simple-api', async ({ page }) => {
     await page.locator('[data-artifact-submit]').click()
     await page.locator('[data-api-editor="query:postById"]').waitFor()
     await page.locator('[data-op-path]').fill('/posts/:id')
+    await page.locator('[data-op-param="path:id"]').waitFor()
     check(await page.locator('[data-op-param="path:id"]').count() === 1, 'a :id in the path makes the parameter id')
     await pick(page, 'data-op-param-type', 'Whole number')
     await page.locator('[data-try-input="id"]').fill('3')
@@ -128,10 +151,11 @@ await run('simple-api', async ({ page }) => {
     await page.locator('[data-try-status]').waitFor()
     check(stub.calls.some(call => call.method === 'GET' && call.path === '/posts/3'), 'Try it filled the parameter into the path')
     await page.locator('[data-try-use]').click()
-    check(await until(async () => (await page.locator('[data-op-result-model]').innerText()).includes('Post')), 'Use this answer takes the model that says the same, and asks nothing')
+    check(await until(async () => (await saysNow(page, '[data-op-result-model]')).includes('Post')), 'Use this answer takes the model that says the same, and asks nothing')
     await page.locator('[data-simple-op-save]').click()
     const byId = await until(() => bildr(FILE)?.queries?.find(entry => entry.name === 'postById'))
     check(canon(byId) === canon({ name: 'postById', path: '/posts/:id', params: [{ name: 'id', in: 'path', type: 'integer' }], result: { model: 'Post', many: false } }), `and Save writes it (${JSON.stringify(byId)})`)
+    await calm()
 
     // An action: its body model from a sample, a clash with Post that keeps both, Try it with the confirmation.
     await page.locator('[data-api-back]').click()
@@ -139,7 +163,7 @@ await run('simple-api', async ({ page }) => {
     await page.locator('[data-api-item-name]').fill('add post')
     await page.locator('[data-artifact-submit]').click()
     await page.locator('[data-api-editor="action:addPost"]').waitFor()
-    check((await page.locator('[data-op-method-hint]').innerText()).includes('Adds something new'), 'a new action is a POST, and says what a POST does')
+    check(await until(async () => (await saysNow(page, '[data-op-method-hint]')).includes('Adds something new')), 'a new action is a POST, and says what a POST does')
     await page.locator('[data-op-path]').fill('/posts')
     await page.locator('[data-op-body-sample-toggle]').click()
     await page.locator('[data-op-body-sample]').fill('{"title": "Hello", "body": "World"}')
@@ -152,11 +176,14 @@ await run('simple-api', async ({ page }) => {
     await page.locator('[data-proposal-apply]').click()
     const fresh = await until(() => bildr(FILE)?.models?.find(model => model.name === 'NewPost'))
     check(fresh?.fields.map(field => field.name).join() === 'title,body' && bildr(FILE).models.find(model => model.name === 'Post').fields.length === 3, 'keeping both makes NewPost and leaves Post as it was')
-    check(await until(async () => (await page.locator('[data-op-body-model]').innerText()).includes('NewPost')), 'and the action\'s body is NewPost')
+    check(await until(async () => (await saysNow(page, '[data-op-body-model]')).includes('NewPost')), 'and the action\'s body is NewPost')
+    check(await until(async () => (await holdsNow(page, '[data-try-body]')) === '{"title": "Hello", "body": "World"}'), 'and Try it\'s body is the sample the model was made from')
+    await calm()
     await pick(page, 'data-op-result-model', 'Post')
     await page.locator('[data-simple-op-save]').click()
     const action = await until(() => bildr(FILE)?.actions?.[0])
     check(canon(action) === canon({ name: 'addPost', method: 'POST', path: '/posts', params: [], body: { model: 'NewPost' }, result: { model: 'Post', many: false } }), `Save writes the action (${JSON.stringify(action)})`)
+    await calm()
 
     const before = stub.posts.size
     await page.locator('[data-try-body]').fill('{"title": "From the editor", "body": "Hi"}')
@@ -197,6 +224,7 @@ await run('simple-api', async ({ page }) => {
     await page.locator('[data-simple-model-save]').click()
     const grown = await until(() => bildr(FILE)?.models?.find(model => model.name === 'NewPost')?.fields.length === 3 && bildr(FILE).models.find(model => model.name === 'NewPost'))
     check(grown?.fields.at(-1)?.name === 'draft' && grown.fields.at(-1).optional === true, `Save writes the field, which may be missing (${JSON.stringify(grown?.fields.at(-1))})`)
+    await calm()
     await page.locator('[data-api-back]').click()
 
     // Reload: everything is there, with no JSON edited.
@@ -205,7 +233,7 @@ await run('simple-api', async ({ page }) => {
     await page.locator(`[data-simple-api-panel="${ID}"]`).waitFor({ timeout: 30_000 })
     const lists = async name => (await page.locator(`[data-api-section="${name}"] [data-api-item]`).evaluateAll(rows => rows.map(row => row.getAttribute('data-api-item')))).join()
     check(await lists('queries') === 'query:listPosts,query:postById' && await lists('actions') === 'action:addPost' && await lists('models') === 'model:Post,model:NewPost', `after a reload the API shows its queries, its action and its models (${await lists('queries')} ${await lists('actions')} ${await lists('models')})`)
-    check(await page.locator('[data-api-baseurl]').inputValue() === stub.url, 'and its base URL')
+    check(await until(async () => (await holdsNow(page, '[data-api-baseurl]')) === stub.url), 'and its base URL')
     await shot(page, 'simple-api-after-reload')
 
     // Delete the API: after asking.
@@ -214,7 +242,10 @@ await run('simple-api', async ({ page }) => {
     await page.locator('[data-artifact-submit]').click()
     check(await until(() => bildr(FILE) === undefined), 'Delete removes the API\'s file')
     check(await until(async () => await page.locator(`[data-simple-api="${ID}"]`).count() === 0), 'and its row')
+    await calm()
   } finally {
+    // A run that failed half way leaves the API: its file would break the next run (the name is taken), so it goes with the stub.
+    await removeStubApi()
     await stub.close()
   }
 })

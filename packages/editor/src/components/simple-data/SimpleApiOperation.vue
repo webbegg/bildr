@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { inferApiModels } from '@bildr/codegen/edit'
 import type { ApiSource } from '@bildr/codegen/edit'
 import type { ApiAction, ApiQuery } from '@bildr/codegen/model'
@@ -23,8 +23,9 @@ import { plainWords } from '../../shared/simpleData.ts'
  * optional. Everything is one draft with one Save (`api_query_set` or `api_action_set`) and one Discard, as the store's form;
  * what the module refuses shows in the footer in the section's words and the edits stay.
  *
- * "Try it" and "Use this answer" (`SimpleApiTry`) fill the answer in from a real call. A query or action that is new is only a name
- * until it is saved; a rename (`name` changes) keeps the form and its edits.
+ * "Try it" and "Use this answer" (`SimpleApiTry`) fill the answer in from a real call. The models "Use this answer" adds are the API's at
+ * once, before the form is saved: the footer says so ("Models added. Save to keep the query.") and Discard says they stay. A query or
+ * action that is new is only a name until it is saved; a rename (`name` changes) keeps the form and its edits.
  */
 const { source, kind, name } = defineProps<{ source: ApiSource, kind: 'query' | 'action', name: string }>()
 const emit = defineEmits<{ back: [], rename: [] }>()
@@ -88,15 +89,30 @@ function setResultModel(value: string) {
 const setBodyModel = (value: string) => {
   draft.value.body = value === NONE ? '' : value
 }
+/** Models the form's own "Use this answer" or sample set since it was last saved or discarded: they are the API's already, the form's edits are not. */
+const added = ref(false)
+watch(dirty, (now) => {
+  if (!now) added.value = false
+})
+const footerNote = computed(() => added.value && dirty.value ? `Models added. Save to keep the ${noun.value}.` : '')
+
 /** "Use this answer": what the call answers is what the answer was. */
-const useResult = (result: { model: string, many: boolean, itemsPath: string }) => {
+const useResult = (result: { model: string, many: boolean, itemsPath: string }, count: number) => {
   draft.value.result = { ...result }
+  if (count) added.value = true
 }
 
 // ── A body from a sample ─────────────────────────────────────────────────
 
 const sampleOpen = ref(false)
 const sample = ref('')
+/** The sample the body's model was made from: Try it sends it as the body, until another is typed. */
+const sampleBody = ref('')
+function useSample(root: string, count: number) {
+  draft.value.body = root
+  sampleBody.value = sample.value.trim()
+  if (count) added.value = true
+}
 /** The models a pasted sample proposes, or why it can't. */
 const proposed = computed(() => {
   const typed = sample.value.trim()
@@ -364,8 +380,9 @@ const methodHint = computed(() => METHODS.find(entry => entry.value === draft.va
               :models="proposed.models"
               :existing="source.models"
               label="Use this sample"
+              fills="body of the action"
               button="data-op-body-sample-use"
-              @applied="draft.body = $event"
+              @applied="useSample"
             />
           </div>
         </section>
@@ -419,6 +436,7 @@ const methodHint = computed(() => METHODS.find(entry => entry.value === draft.va
         <SimpleApiTry
           :source="source"
           :draft="draft"
+          :body-hint="sampleBody"
           @use="useResult"
         />
       </div>
@@ -428,6 +446,8 @@ const methodHint = computed(() => METHODS.find(entry => entry.value === draft.va
       prefix="simple-op"
       inner="mx-auto max-w-2xl px-6"
       :error="error"
+      :note="footerNote"
+      :discard-hint="footerNote ? `Drops your edits to this ${noun}. The models you added stay.` : undefined"
       :dirty="dirty"
       :saving="saving"
       :disabled="!dirty || stale"

@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import DataArtifactDialog from '../data/DataArtifactDialog.vue'
 import { attempt } from '../../editor/dataArtifactActions.ts'
 import { useEditor } from '../../editor/useEditor.ts'
-import { RUNTIMES, SIGN_INS, baseUrlProblem } from '../../shared/simpleApi.ts'
+import { RUNTIMES, SIGN_INS, baseUrlProblem, kebabNameOf } from '../../shared/simpleApi.ts'
 import { plainWords } from '../../shared/simpleData.ts'
 import type { Runtime, SignIn } from '../../editor/simpleApiDraft.ts'
 
@@ -44,6 +44,8 @@ watch(runtime, (now) => {
   if (now === 'browser') signIn.value = 'none'
 })
 
+/** The name the module gives it (kebab-case), said under the field when it is not what was typed, as the item dialogs do. */
+const called = computed(() => kebabNameOf(name.value))
 const urlProblem = computed(() => baseUrlProblem(baseUrl.value))
 const canSubmit = computed(() => !!name.value.trim() && !!baseUrl.value.trim() && !urlProblem.value && (signIn.value !== 'header' || !!header.value.trim()))
 
@@ -82,7 +84,7 @@ async function submit() {
   >
     <EditorFormRow
       label="Name"
-      help="Any words, like “Shop API”"
+      :help="called && called !== name.trim() ? `It will be called “${called}”` : 'Any words, like “Shop API”'"
       stacked
     >
       <EditorInput

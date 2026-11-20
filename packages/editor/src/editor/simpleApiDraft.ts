@@ -261,20 +261,52 @@ export interface ProposalPlan {
 
 export type Resolution = { how: 'replace' } | { how: 'rename', name: string }
 
-/** The proposed models whose name an existing model has, and that say something else (the same model needs nothing). */
-export const clashesOf = (proposed: ApiModel[], existing: ApiModel[]): string[] =>
-  proposed.filter(model => existing.some(entry => entry.name === model.name && !sameJson(entry.fields, model.fields))).map(model => model.name)
+const renamesOf = (choices: Record<string, Resolution>) =>
+  new Map(Object.entries(choices).flatMap(([from, choice]) => choice.how === 'rename' && choice.name ? [[from, choice.name] as const] : []))
+
+/** The proposed models as they would be sent under the user's renames: under their new names, and every field that names a renamed one follows. */
+function renamedProposal(proposed: ApiModel[], choices: Record<string, Resolution>): ApiModel[] {
+  const renamed = renamesOf(choices)
+  return plainCopy(proposed).map((model) => {
+    for (const field of model.fields) if (field.model && renamed.has(field.model)) field.model = renamed.get(field.model)
+    return { ...model, name: renamed.get(model.name) ?? model.name }
+  })
+}
+
+/**
+ * The proposed models whose name an existing model has, and that say something else (the same model needs nothing). `choices` are what the
+ * user chose before (a first try that stopped half way): a model that is there under the new name they gave it, saying what it says, is done,
+ * and so is one whose fields name it.
+ */
+export const clashesOf = (proposed: ApiModel[], existing: ApiModel[], choices: Record<string, Resolution> = {}): string[] =>
+  renamedProposal(proposed, choices).flatMap((model, at) => existing.some(entry => entry.name === model.name && !sameJson(entry.fields, model.fields)) ? [proposed[at]!.name] : [])
+
+/**
+ * Why the names the user gave to clashing models can't be taken (Pascal-cased already): one is empty, or is the name of a proposed model, of
+ * another new name, or of an existing model that says something else. An existing model that says what the renamed one says is the one
+ * already set by an earlier try: that name is fine. Nothing when they can.
+ */
+export function renameProblem(proposed: ApiModel[], existing: ApiModel[], choices: Record<string, Resolution>): string {
+  const renamed = renamedProposal(proposed, choices)
+  const given = new Set<string>()
+  for (const [at, model] of proposed.entries()) {
+    const choice = choices[model.name]
+    if (choice?.how !== 'rename') continue
+    if (!choice.name) return `Give the new name of “${model.name}”`
+    const there = existing.find(entry => entry.name === choice.name)
+    const done = !!there && sameJson(there.fields, renamed[at]!.fields)
+    if ((there && !done) || proposed.some(other => other.name === choice.name) || given.has(choice.name)) return `“${choice.name}” is taken too: pick another name`
+    given.add(choice.name)
+  }
+  return ''
+}
 
 /**
  * The models to send for a proposal, under the user's choices for the models that clash: a model that says what an existing one says is
  * left alone, a replaced one is sent under its name, a renamed one under its new name, and every field that names it follows.
  */
 export function planProposal(proposed: ApiModel[], existing: ApiModel[], choices: Record<string, Resolution>): ProposalPlan {
-  const renamed = new Map(Object.entries(choices).flatMap(([from, choice]) => choice.how === 'rename' ? [[from, choice.name] as const] : []))
-  const models = plainCopy(proposed).map((model) => {
-    for (const field of model.fields) if (field.model && renamed.has(field.model)) field.model = renamed.get(field.model)
-    return { ...model, name: renamed.get(model.name) ?? model.name }
-  }).filter(model => !existing.some(entry => entry.name === model.name && sameJson(entry.fields, model.fields)))
+  const models = renamedProposal(proposed, choices).filter(model => !existing.some(entry => entry.name === model.name && sameJson(entry.fields, model.fields)))
   const root = proposed.at(-1)
-  return { models, root: root ? renamed.get(root.name) ?? root.name : '' }
+  return { models, root: root ? renamesOf(choices).get(root.name) ?? root.name : '' }
 }

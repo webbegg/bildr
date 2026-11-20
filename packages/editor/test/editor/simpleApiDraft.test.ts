@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { ApiSource } from '@bildr/codegen/edit'
 import type { ApiModel } from '@bildr/codegen/model'
-import { clashesOf, newParam, operationDirty, operationDraftOf, paramsOutput, planProposal, queryOutput, settingsInput, settingsRebase, settingsOf, tryParams } from '../../src/editor/simpleApiDraft.ts'
-import { baseUrlProblem, modelNameOf, operationNameOf, pathParamNames } from '../../src/shared/simpleApi.ts'
+import { clashesOf, newParam, operationDirty, operationDraftOf, paramsOutput, planProposal, queryOutput, renameProblem, settingsInput, settingsRebase, settingsOf, tryParams } from '../../src/editor/simpleApiDraft.ts'
+import { baseUrlProblem, listShown, modelNameOf, operationNameOf, pathParamNames, secretVarAfterRename } from '../../src/shared/simpleApi.ts'
 
 /** The API drafts' pure parts (simple data, S4, S6): what each form would write, what counts as an edit, and what using an answer does to the models. */
 
@@ -116,5 +116,67 @@ describe('using a proposed answer', () => {
   it('replaces a clashing model by sending it under its name', () => {
     const plan = planProposal([product], existing, { Product: { how: 'replace' } })
     expect(plan.models).toEqual([product])
+  })
+})
+
+describe('trying again after some of the models were set', () => {
+  const oldMaker: ApiModel = { name: 'Maker', fields: [{ name: 'title', type: 'text' }] }
+  const maker: ApiModel = { name: 'Maker', fields: [{ name: 'name', type: 'text' }] }
+  const gadget: ApiModel = { name: 'Gadget', fields: [{ name: 'maker', type: 'model', model: 'Maker' }] }
+  /** What the first try left: Maker kept as Maker2. */
+  const after: ApiModel[] = [oldMaker, { name: 'Maker2', fields: maker.fields }]
+  const kept = { Maker: { how: 'rename', name: 'Maker2' } } as const
+
+  it('does not ask again about a model that was set under the name the user chose', () => {
+    expect(clashesOf([maker, gadget], after)).toEqual(['Maker'])
+    expect(clashesOf([maker, gadget], after, kept)).toEqual([])
+  })
+
+  it('finds that a model whose fields name a renamed model is the one already set', () => {
+    const done: ApiModel[] = [...after, { name: 'Gadget', fields: [{ name: 'maker', type: 'model', model: 'Maker2' }] }]
+    expect(clashesOf([maker, gadget], done)).toEqual(['Maker', 'Gadget'])
+    expect(clashesOf([maker, gadget], done, kept)).toEqual([])
+    expect(planProposal([maker, gadget], done, kept)).toEqual({ models: [], root: 'Gadget' })
+  })
+
+  it('sends only what is not there yet', () => {
+    const plan = planProposal([maker, gadget], after, kept)
+    expect(plan.models).toEqual([{ name: 'Gadget', fields: [{ name: 'maker', type: 'model', model: 'Maker2' }] }])
+  })
+
+  it('does not call a new name taken when the model that has it says what the proposed one says', () => {
+    expect(renameProblem([maker, gadget], after, kept)).toBe('')
+    expect(renameProblem([maker, gadget], [oldMaker, { name: 'Maker2', fields: [{ name: 'other', type: 'text' }] }], kept)).toBe('“Maker2” is taken too: pick another name')
+  })
+
+  it('still refuses an empty name, a name the proposal has and two models given one name', () => {
+    expect(renameProblem([maker, gadget], [oldMaker], { Maker: { how: 'rename', name: '' } })).toBe('Give the new name of “Maker”')
+    expect(renameProblem([maker, gadget], [oldMaker], { Maker: { how: 'rename', name: 'Gadget' } })).toBe('“Gadget” is taken too: pick another name')
+    expect(renameProblem([maker, gadget], [oldMaker, { name: 'Gadget', fields: [] }], { Maker: { how: 'rename', name: 'Maker2' }, Gadget: { how: 'rename', name: 'Maker2' } })).toBe('“Maker2” is taken too: pick another name')
+    expect(renameProblem([maker, gadget], [oldMaker], { Maker: { how: 'replace' } })).toBe('')
+  })
+})
+
+describe('what Try it says of a list', () => {
+  it('counts what is shown of a list the answer was cut to', () => {
+    const json = { data: { items: [1, 2, 3] }, total: 30 }
+    expect(listShown(json, 'data.items')).toBe(3)
+    expect(listShown([1, 2], '')).toBe(2)
+    expect(listShown(json, 'nothing')).toBeUndefined()
+  })
+})
+
+describe('the secret of an API that is renamed', () => {
+  const signed = { name: 'shop-api', env: { baseUrl: 'NUXT_APIS_SHOP_API_BASE_URL', apiKey: 'NUXT_APIS_SHOP_API_API_KEY' }, auth: { type: 'bearer', secret: 'apiKey' } } as unknown as ApiSource
+
+  it('names the variable the module will give it, from the name as the module makes it', () => {
+    expect(secretVarAfterRename(signed, 'Shop Two')).toBe('NUXT_APIS_SHOP_TWO_API_KEY')
+    expect(secretVarAfterRename(signed, ' shop-api ')).toBeUndefined()
+    expect(secretVarAfterRename(signed, '   ')).toBeUndefined()
+  })
+
+  it('says nothing for a variable the user named, or an API with no secret', () => {
+    expect(secretVarAfterRename({ ...signed, env: { apiKey: 'MY_SECRET' } } as unknown as ApiSource, 'Shop Two')).toBeUndefined()
+    expect(secretVarAfterRename({ ...signed, auth: undefined, env: {} } as unknown as ApiSource, 'Shop Two')).toBeUndefined()
   })
 })

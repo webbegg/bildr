@@ -5,7 +5,8 @@ import { computed } from 'vue'
  * The footer of a draft form (the query Definition, the action Steps): what the module refused (`error`) or what stops Save
  * (`note`), "Unsaved changes", Discard and Save. It sticks to the bottom of the area when the form scrolls, and is at the bottom
  * of it when the form is short. `prefix` is the form's own test hook (`data-<prefix>-footer`, `-error`, `-blocked`, `-unsaved`,
- * `-discard` and `-save`); `inner` is the width and padding of its content, the form's own.
+ * `-discard` and `-save`); `inner` is the width and padding of its content, the form's own. `discardHint` is what Discard's tooltip says
+ * when dropping the edits is not all it does or does not do (what stays).
  */
 const { prefix, inner = 'max-w-2xl px-0.5' } = defineProps<{
   prefix: string
@@ -17,6 +18,7 @@ const { prefix, inner = 'max-w-2xl px-0.5' } = defineProps<{
   /** Save is not offered: nothing changed, the item changed under the draft, or the editor finds a problem. */
   disabled: boolean
   inner?: string
+  discardHint?: string
 }>()
 const emit = defineEmits<{ discard: [], save: [] }>()
 const hook = computed(() => (name: string) => ({ [`data-${prefix}-${name}`]: '' }))
@@ -56,6 +58,7 @@ const hook = computed(() => (name: string) => ({ [`data-${prefix}-${name}`]: '' 
       >Unsaved changes</span>
       <EditorButton
         label="Discard"
+        :title="discardHint"
         :disabled="!dirty || saving"
         v-bind="hook('discard')"
         @click="emit('discard')"

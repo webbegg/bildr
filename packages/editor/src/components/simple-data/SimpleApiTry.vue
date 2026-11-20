@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import type { ApiModel } from '@bildr/codegen/model'
 import type { ApiSource } from '@bildr/codegen/edit'
 import { callAction, errorMessage } from '../../api.ts'
@@ -8,7 +8,7 @@ import SimpleApiProposal from './SimpleApiProposal.vue'
 import { paramsOutput, tryParams } from '../../editor/simpleApiDraft.ts'
 import type { OperationDraft } from '../../editor/simpleApiDraft.ts'
 import { useEditor } from '../../editor/useEditor.ts'
-import { hostOfUrl, typeLabel } from '../../shared/simpleApi.ts'
+import { hostOfUrl, listShown, typeLabel } from '../../shared/simpleApi.ts'
 import { plainWords } from '../../shared/simpleData.ts'
 
 /**
@@ -19,10 +19,19 @@ import { plainWords } from '../../shared/simpleData.ts'
  *
  * It asks for a value for each parameter, by what the form holds now, saved or not. A query only reads, so it is sent at once. An action
  * can change data in the API, so it asks first ("This sends a real POST to <host>: it can change data there") and only then sends, with
- * `confirm: true`; its body is the JSON typed here, and nothing is sent when it is not JSON. A refusal is shown in plain words.
+ * `confirm: true`; its body is the JSON typed here (or the sample the action's body model was made from, `bodyHint`, when nothing is typed),
+ * and nothing is sent when it is not JSON. A refusal is shown in plain words.
+ *
+ * The answer is of the call that was sent: it goes (with "Use this answer") when the path, the method or the parameters change, and while
+ * a new call is on its way, and an answer that comes after that is not shown.
  */
-const { source, draft } = defineProps<{ source: ApiSource, draft: OperationDraft }>()
-const emit = defineEmits<{ use: [result: { model: string, many: boolean, itemsPath: string }] }>()
+const { source, draft, bodyHint = '' } = defineProps<{
+  source: ApiSource
+  draft: OperationDraft
+  /** The sample an action's body model was made from: the body to send, until one is typed. */
+  bodyHint?: string
+}>()
+const emit = defineEmits<{ use: [result: { model: string, many: boolean, itemsPath: string }, added: number] }>()
 const editor = useEditor()
 
 interface Answer {
@@ -44,6 +53,16 @@ const params = computed(() => paramsOutput(draft))
 const isWrite = computed(() => draft.kind === 'action')
 const hasBody = computed(() => isWrite.value && draft.method !== 'DELETE')
 const method = computed(() => draft.kind === 'query' ? 'GET' : draft.method)
+
+/** Tells a call from the next: an answer is shown only while no other call has been made and nothing it was made of has changed. */
+let call = 0
+watch(() => JSON.stringify([draft.path.trim(), method.value, params.value]), () => {
+  call++
+  answer.value = null
+})
+watch(() => bodyHint, (hint, was) => {
+  if (hint && (!body.value.trim() || body.value === was)) body.value = hint
+})
 const shownJson = computed(() => answer.value?.json !== undefined ? JSON.stringify(answer.value.json, null, 2) : answer.value?.text ?? '')
 const ok = computed(() => !!answer.value && answer.value.status >= 200 && answer.value.status < 300)
 
@@ -81,17 +100,20 @@ async function run() {
     danger: true
   })) return
   const given = tryParams(draft, values.value)
+  const mine = ++call
   running.value = true
+  answer.value = null
   try {
-    answer.value = await callAction<Answer>('api_try', {
+    const answered = await callAction<Answer>('api_try', {
       datasource: source.id,
       path: draft.path.trim(),
       ...(isWrite.value ? { method: draft.method, confirm: true } : {}),
       ...(Object.keys(given).length ? { params: given } : {}),
       ...(sent !== undefined ? { body: sent } : {})
     })
+    if (mine === call) answer.value = answered
   } catch (failure) {
-    answer.value = null
+    if (mine !== call) return
     error.value = plainWords(errorMessage(failure))
   } finally {
     running.value = false
@@ -102,12 +124,15 @@ const found = computed(() => {
   const items = answer.value?.items
   if (!items) return ''
   const count = `${items.count} ${items.count === 1 ? 'item' : 'items'}`
+  // The answer shows the first items only: say so when it is not the whole list.
+  const shown = listShown(answer.value?.json, items.path)
+  if (shown !== undefined && shown < items.count) return items.path ? `Found a list at “${items.path}”: first ${shown} of ${count}` : `The answer is a list: first ${shown} of ${count}`
   return items.path ? `Found a list of ${count} at “${items.path}”` : `The answer is a list of ${count}`
 })
 
-const use = (root: string) => {
+const use = (root: string, added: number) => {
   const result = answer.value?.proposal?.result
-  if (result) emit('use', { model: root, many: result.many, itemsPath: result.itemsPath ?? '' })
+  if (result) emit('use', { model: root, many: result.many, itemsPath: result.itemsPath ?? '' }, added)
 }
 </script>
 
@@ -227,6 +252,7 @@ const use = (root: string) => {
         :datasource="source.id"
         :models="answer.proposal.models"
         :existing="source.models"
+        :fills="draft.kind"
         button="data-try-use"
         @applied="use"
       />
