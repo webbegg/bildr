@@ -6,19 +6,23 @@ import { CatalogFailure, invalidAnswer, invalidInput } from '../../../domain/cat
 import type { CatalogRepository } from '../../../domain/catalog/repositories/catalog-repository'
 import type { ApiClient } from '../client'
 
-/** The answer as `schema` reads it, or the failure of an answer that is not what the model says. */
-const read = <T>(schema: ZodType<T>, answer: unknown): T => {
+/** The answer as `schema` reads it, or the failure of an answer that is not what the model says: the failure has no detail, `report` gets it. */
+const read = <T>(schema: ZodType<T>, answer: unknown, report?: (detail: string) => void): T => {
   const parsed = schema.safeParse(answer)
-  if (!parsed.success) throw new CatalogFailure(invalidAnswer(parsed.error.message))
+  if (!parsed.success) {
+    report?.(parsed.error.message)
+    throw new CatalogFailure(invalidAnswer())
+  }
   return parsed.data
 }
 
-/** A path parameter as one segment of the path: encoded, and never empty, "." or ".." (the URL would resolve those to another path). */
+/** A path parameter as one segment of the path: encoded, and never empty, "." or ".." (the URL would resolve those to another path), nor with a "/" or a "\" (that is two segments). */
 const segment = (value: string | number | boolean): string => {
   const text = String(value)
   if (text === '' || text === '.' || text === '..') {
     throw new CatalogFailure(invalidInput(`a path parameter can't be ${text === '' ? 'empty' : `"${text}"`}`))
   }
+  if (/[/\\]/.test(text)) throw new CatalogFailure(invalidInput('a path parameter is one segment of the path: it can\'t hold a "/" or a "\\"'))
   return encodeURIComponent(text)
 }
 
@@ -26,19 +30,19 @@ const segment = (value: string | number | boolean): string => {
 const itemsAt = (answer: unknown, path: string[]): unknown =>
   path.reduce<unknown>((value, key) => typeof value === 'object' && value !== null && Object.hasOwn(value, key) ? (value as Record<string, unknown>)[key] : undefined, answer)
 
-/** CatalogRepository over an ApiClient: builds each path and query, reads the answer where the model says it is, validates it and maps it to the domain. */
-export const httpCatalogRepository = (http: ApiClient): CatalogRepository => ({
+/** CatalogRepository over an ApiClient: builds each path and query, reads the answer where the model says it is, validates it and maps it to the domain. `onInvalidAnswer` gets the detail of an answer that is not valid (the failure has none). */
+export const httpCatalogRepository = (http: ApiClient, onInvalidAnswer?: (detail: string) => void): CatalogRepository => ({
   async products(input) {
     const answer = await http('/products', { method: 'GET', query: { cat: input.category } })
-    return read(z.array(ProductDtoSchema), itemsAt(answer, ['data', 'items'])).map(toProduct)
+    return read(z.array(ProductDtoSchema), itemsAt(answer, ['data', 'items']), onInvalidAnswer).map(toProduct)
   },
   async product(input) {
     const answer = await http(`/products/${segment(input.id)}`, { method: 'GET' })
-    return toProduct(read(ProductDtoSchema, answer))
+    return toProduct(read(ProductDtoSchema, answer, onInvalidAnswer))
   },
   async createProduct(input) {
     const answer = await http('/products', { method: 'POST', body: fromProduct(input.body) })
-    return toProduct(read(ProductDtoSchema, answer))
+    return toProduct(read(ProductDtoSchema, answer, onInvalidAnswer))
   },
   async deleteProduct(input) {
     await http(`/products/${segment(input.id)}`, { method: 'DELETE' })

@@ -11,16 +11,19 @@ import { product } from '../../shared/domain/catalog/use-cases/product'
 import { products } from '../../shared/domain/catalog/use-cases/products'
 import { FetchFailure, createFetchClient } from '../lib/fetch-client'
 
-/** The HTTP client of the "catalog" API: it calls the base URL of runtimeConfig.apis.catalog, sending its secret there and nowhere else. */
+/** The HTTP client of the "catalog" API: it calls the base URL of runtimeConfig.apis.catalog, sending its secret there and nowhere else. Without its secret it refuses the call. */
 const catalogClient = (): ApiClient => {
   const config = useRuntimeConfig().apis.catalog
   const headers: Record<string, string> = { accept: 'application/json' }
   if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`
-  const call = createFetchClient({ baseUrl: config.baseUrl, headers })
+  const call = createFetchClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? '').trim() === '' })
   return async (path, request) => {
     try {
       return await call(path, request)
     } catch (cause) {
+      if (cause instanceof FetchFailure && cause.notConfigured) {
+        throw new CatalogFailure({ type: 'not_configured', message: 'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY' })
+      }
       if (cause instanceof FetchFailure) throw new CatalogFailure(remoteFailed(cause.status, cause.message))
       throw cause
     }
@@ -29,7 +32,8 @@ const catalogClient = (): ApiClient => {
 
 /** The use-cases of the "catalog" API, wired to its HTTP repository. */
 export const useCatalogApi = () => {
-  const repository = httpCatalogRepository(catalogClient())
+  // The detail of an answer that is not what the model says (field paths, expected types) stays in the server log: the error that reaches the browser has none.
+  const repository = httpCatalogRepository(catalogClient(), detail => console.error('The "catalog" API answered something unexpected: ' + detail))
   return {
     products: products({ catalog: repository }),
     product: product({ catalog: repository }),
@@ -42,5 +46,6 @@ export const useCatalogApi = () => {
 export const catalogErrorStatus: ErrorStatusMap = {
   remote_failed: 502,
   invalid_answer: 502,
-  invalid_input: 400
+  invalid_input: 400,
+  not_configured: 503
 }

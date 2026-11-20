@@ -7,14 +7,19 @@ export interface FetchRequest {
   body?: unknown
 }
 
-/** A call that failed. `status` is what the API answered, or 0 when it didn't; `message` finishes "The API …". */
+/**
+ * A call that failed. `status` is what the API answered, or 0 when it didn't; `message` finishes "The API …".
+ * `notConfigured` is a call that was refused before it was sent: the source has auth and its secret is not set.
+ */
 export class FetchFailure extends Error {
   readonly status: number
+  readonly notConfigured: boolean
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, notConfigured = false) {
     super(message)
     this.name = 'FetchFailure'
     this.status = status
+    this.notConfigured = notConfigured
   }
 }
 
@@ -55,12 +60,14 @@ const readCapped = async (response: Response): Promise<string> => {
 /**
  * A client over `fetch` for one API: the path is under `baseUrl` (a path that leaves it, or has a "." or ".." segment the URL would resolve, is refused), a redirect is
  * not followed (it could leave the base URL, with the secret), and an answer is cut off after the timeout and the size cap.
+ * `unconfigured` is a source with auth whose secret is not set: every call is refused before it is sent (never without credentials).
  * It answers the parsed JSON, or undefined for an empty answer.
  */
-export const createFetchClient = ({ baseUrl, headers }: { baseUrl: string, headers: Record<string, string> }) => {
+export const createFetchClient = ({ baseUrl, headers, unconfigured = false }: { baseUrl: string, headers: Record<string, string>, unconfigured?: boolean }) => {
   const base = new URL(baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`)
 
   return async (path: string, { method, query, body }: FetchRequest): Promise<unknown> => {
+    if (unconfigured) throw new FetchFailure(0, 'has no secret set, so it was not called', true)
     const relative = path.replace(/^\//, '')
     // A path parameter ".." (or "%2e%2e") would be resolved by the URL to another path of the API, called with the secret.
     if (relative.split('/').some(segment => /^(?:\.|%2e){1,2}$/i.test(segment))) throw new FetchFailure(0, 'was asked for a path with a "." or ".." segment')

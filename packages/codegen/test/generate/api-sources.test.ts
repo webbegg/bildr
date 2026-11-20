@@ -60,8 +60,10 @@ const APIS_FILES = [
   'layers/apis/test/catalog/create-product.test.ts',
   'layers/apis/test/catalog/delete-product.test.ts',
   'layers/apis/test/catalog/fake-repository.ts',
+  'layers/apis/test/catalog/mappers.mapper.test.ts',
   'layers/apis/test/catalog/product.test.ts',
-  'layers/apis/test/catalog/products.test.ts'
+  'layers/apis/test/catalog/products.test.ts',
+  'layers/apis/test/fetch-client.test.ts'
 ]
 
 describe('generate: server-runtime api sources', () => {
@@ -137,18 +139,23 @@ describe('generate: server-runtime api sources', () => {
 
   it('builds the paths (encoded), the query on its remote key, reads itemsPath and validates the answers', () => {
     const http = read(generated, 'layers/apis/shared/data/catalog/repositories/catalog-repository.http.ts')
-    expect(http).toContain('export const httpCatalogRepository = (http: ApiClient): CatalogRepository => ({')
+    expect(http).toContain('export const httpCatalogRepository = (http: ApiClient, onInvalidAnswer?: (detail: string) => void): CatalogRepository => ({')
     // A query parameter on its remote key, a list read under data.items.
     expect(http).toContain('http(\'/products\', { method: \'GET\', query: { cat: input.category } })')
-    expect(http).toContain('read(z.array(ProductDtoSchema), itemsAt(answer, [\'data\', \'items\'])).map(toProduct)')
+    expect(http).toContain('read(z.array(ProductDtoSchema), itemsAt(answer, [\'data\', \'items\']), onInvalidAnswer).map(toProduct)')
     // A path parameter, encoded, and a single model.
     expect(http).toContain('http(`/products/${segment(input.id)}`, { method: \'GET\' })')
     expect(http).toContain('return encodeURIComponent(text)')
-    expect(http).toContain('return toProduct(read(ProductDtoSchema, answer))')
+    expect(http).toContain('return toProduct(read(ProductDtoSchema, answer, onInvalidAnswer))')
     // A body mapped to the remote, a call with no result.
     expect(http).toContain('{ method: \'POST\', body: fromProduct(input.body) }')
     expect(http).toContain('await http(`/products/${segment(input.id)}`, { method: \'DELETE\' })')
-    expect(http).toContain('invalidAnswer(parsed.error.message)')
+    // The failure has no detail (it reaches the browser): the detail goes to the reporter the composition root gives.
+    expect(http).toContain('report?.(parsed.error.message)')
+    expect(http).toContain('throw new CatalogFailure(invalidAnswer())')
+    expect(http).not.toMatch(/invalidAnswer\(parsed/)
+    // A path parameter is one segment: no "/" or "\\" either.
+    expect(http).toContain('if (/[/\\\\]/.test(text)) throw new CatalogFailure(invalidInput(')
   })
 
   it('has the ApiClient port the repository calls through', () => {
@@ -159,7 +166,7 @@ describe('generate: server-runtime api sources', () => {
     const root = read(generated, 'layers/apis/server/utils/catalog.ts')
     expect(root).toContain('useRuntimeConfig().apis.catalog')
     expect(root).toContain('export const useCatalogApi = () => {')
-    expect(root).toContain('httpCatalogRepository(catalogClient())')
+    expect(root).toContain('httpCatalogRepository(catalogClient(), detail => console.error(')
     expect(root).toContain('export const catalogErrorStatus: ErrorStatusMap = {')
     const client = read(generated, 'layers/apis/server/lib/fetch-client.ts')
     expect(client).toContain('redirect: \'manual\'')
@@ -213,6 +220,123 @@ describe('generate: server-runtime api sources', () => {
     expect(test).toContain('/products/1')
     expect(test).toContain('invalid_answer')
     expect(read(generated, 'layers/apis/test/catalog/products.test.ts')).toContain('invalid_input')
+  })
+})
+
+describe('generate: an invalid upstream answer never reaches the browser (verify R1-001)', () => {
+  const generated = files()
+
+  it('the domain error is generic: no zod message, no field path, no body', () => {
+    const errors = read(generated, 'layers/apis/shared/domain/catalog/errors.ts')
+    expect(errors).toContain('export const invalidAnswer = (): CatalogError => ({ type: \'invalid_answer\', message: \'The "catalog" API answered something unexpected\' })')
+    expect(errors).not.toMatch(/answered something unexpected: /)
+  })
+
+  it('the composition root logs the detail on the server, and the route hands the browser the error as it is', () => {
+    const root = read(generated, 'layers/apis/server/utils/catalog.ts')
+    expect(root).toContain('httpCatalogRepository(catalogClient(), detail => console.error(\'The "catalog" API answered something unexpected: \' + detail))')
+    expect(read(generated, 'layers/apis/server/api/apis/catalog/products.get.ts')).toContain('unwrapOrThrow(await useCatalogApi().products(input), catalogErrorStatus)')
+  })
+
+  it('the generated repository test asserts the generic message and the report', () => {
+    const test = read(generated, 'layers/apis/test/catalog/catalog-repository.http.test.ts')
+    expect(test).toContain('message: \'The "catalog" API answered something unexpected\'')
+    expect(test).toContain('detail => expect(detail.length).toBeGreaterThan(0)')
+  })
+})
+
+describe('generate: an API with auth refuses a call when its secret is not set (verify R3-004)', () => {
+  const generated = files()
+  const root = read(generated, 'layers/apis/server/utils/catalog.ts')
+
+  it('the client is told when the secret is empty, and the root answers a typed not_configured naming the env var (never a value)', () => {
+    expect(root).toContain('createFetchClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? \'\').trim() === \'\' })')
+    expect(root).toContain('if (cause instanceof FetchFailure && cause.notConfigured) {')
+    expect(root).toContain('{ type: \'not_configured\', message: \'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY\' }')
+    expect(root).toContain('  not_configured: 503')
+    expect(read(generated, 'layers/apis/shared/domain/catalog/errors.ts')).toContain('  | { type: \'not_configured\', message: string }')
+  })
+
+  it('a source without auth has none of it', () => {
+    const { auth: _, ...open } = catalog()
+    const noAuth = files({ [CATALOG]: JSON.stringify({ ...open, env: { baseUrl: 'NUXT_APIS_CATALOG_BASE_URL' } }) })
+    expect(read(noAuth, 'layers/apis/server/utils/catalog.ts')).not.toMatch(/not_configured|unconfigured|notConfigured/)
+    expect(read(noAuth, 'layers/apis/shared/domain/catalog/errors.ts')).not.toContain('not_configured')
+  })
+
+  it('names the runtimeConfig key when a hand-written source maps no env var for its secret', () => {
+    const source = { ...catalog(), env: { baseUrl: 'NUXT_APIS_CATALOG_BASE_URL' } }
+    const loaded = loadModel({ ...fixtureModelFiles(), [CATALOG]: JSON.stringify(source) })
+    // Either the load refuses it, or the message names the key: never an empty "set ".
+    if (loaded.ok) expect(read(generate(loaded.model), 'layers/apis/server/utils/catalog.ts')).toContain('set runtimeConfig.apis.catalog.apiKey')
+  })
+
+  it('has a generated unit test of the client: unset secret refused before fetch, dot segments refused', () => {
+    const test = read(generated, 'layers/apis/test/fetch-client.test.ts')
+    expect(test).toContain('unconfigured: true')
+    expect(test).toContain('rejects.toMatchObject({ status: 0, notConfigured: true })')
+    expect(test).toContain('expect(calls).toEqual([])')
+    expect(test).toContain('\'%2e%2e\'')
+  })
+})
+
+describe('generate: the mapper tests reach the optional, nullable and list branches (verify R3-001)', () => {
+  const generated = files()
+  const test = read(generated, 'layers/apis/test/catalog/mappers.mapper.test.ts')
+
+  it('maps a Product with its optional key absent, its nullable null and its list empty', () => {
+    expect(test).toContain('Product: maps to the domain (optional fields absent, nullable fields null, lists empty)')
+    expect(test).toContain([
+      '    expect(toProduct({',
+      '      id: 1,',
+      '      name: \'name 1\',',
+      '      price: 1.5,',
+      '      created_at: \'2024-01-02T03:04:05.000Z\',',
+      '      note: null,',
+      '      categories: []',
+      '    })).toEqual({',
+      '      id: 1,',
+      '      name: \'name 1\',',
+      '      price: 1.5,',
+      '      createdAt: \'2024-01-02T03:04:05.000Z\',',
+      '      note: null,',
+      '      categories: []',
+      '    })'
+    ].join('\n'))
+  })
+
+  it('also maps every field set', () => {
+    expect(test).toContain('Product: maps to the domain (every field has a value)')
+    expect(test).toContain('Category: maps to the domain (every field has a value)')
+    // Category has nothing optional, nullable or a list: one case.
+    expect(test.match(/Category: maps/g)).toHaveLength(1)
+  })
+
+  it('takes a body round trip for the body model and what it nests, and none for the rest', () => {
+    expect(test).toContain('Product: goes back to what the API sent (optional fields absent, nullable fields null, lists empty)')
+    expect(test).toContain('expect(fromProduct(toProduct({')
+    expect(test).toContain('Category: goes back to what the API sent (every field has a value)')
+    expect(test).toContain('import { fromCategory, toCategory } from')
+  })
+
+  it('does not round trip a model that is only read, and has no test file without a model', () => {
+    const shape = { ...catalog(), actions: [], queries: (catalog().queries as unknown[]) }
+    expect(read(files({ [CATALOG]: JSON.stringify(shape) }), 'layers/apis/test/catalog/mappers.mapper.test.ts')).not.toContain('goes back')
+    const ping = { ...catalog(), models: [], queries: [], actions: [{ name: 'ping', method: 'POST', path: '/ping', params: [] }] }
+    expect(paths(files({ [CATALOG]: JSON.stringify(ping) }))).not.toContain('layers/apis/test/catalog/mappers.mapper.test.ts')
+  })
+
+  it('has a null case apart from the absent one when a field is optional and nullable, and an empty list for an optional list', () => {
+    const source = {
+      ...catalog(),
+      models: [{ name: 'Item', fields: [{ name: 'id', type: 'integer' }, { name: 'tag', type: 'text', optional: true, nullable: true }, { name: 'parts', type: 'integer', list: true, optional: true }] }],
+      queries: [{ name: 'items', path: '/items', params: [], result: { model: 'Item', many: true } }],
+      actions: []
+    }
+    const mapper = read(files({ [CATALOG]: JSON.stringify(source) }), 'layers/apis/test/catalog/mappers.mapper.test.ts')
+    expect(mapper).toContain('Item: maps to the domain (optional fields absent)')
+    expect(mapper).toContain('Item: maps to the domain (nullable fields null, lists empty)')
+    expect(mapper).toContain('      tag: null,\n      parts: []')
   })
 })
 

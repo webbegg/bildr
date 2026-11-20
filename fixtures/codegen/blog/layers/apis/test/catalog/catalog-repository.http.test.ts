@@ -67,11 +67,12 @@ describe('httpCatalogRepository', () => {
     ])
   })
 
-  it('products: an answer that is not a list of Product is an invalid_answer', async () => {
+  it('products: an answer that is not a list of Product is an invalid_answer without detail (the detail goes to onInvalidAnswer)', async () => {
+    expect.assertions(2)
     const { http } = recording('unexpected')
-    await expect(httpCatalogRepository(http).products({
+    await expect(httpCatalogRepository(http, detail => expect(detail.length).toBeGreaterThan(0)).products({
       category: 'category 1'
-    })).rejects.toMatchObject({ error: { type: 'invalid_answer' } })
+    })).rejects.toMatchObject({ error: { type: 'invalid_answer', message: 'The "catalog" API answered something unexpected' } })
   })
 
   it('product: GET /products/:id, reads the model and maps it', async () => {
@@ -116,11 +117,12 @@ describe('httpCatalogRepository', () => {
     })
   })
 
-  it('product: an answer that is not Product is an invalid_answer', async () => {
+  it('product: an answer that is not Product is an invalid_answer without detail (the detail goes to onInvalidAnswer)', async () => {
+    expect.assertions(2)
     const { http } = recording('unexpected')
-    await expect(httpCatalogRepository(http).product({
+    await expect(httpCatalogRepository(http, detail => expect(detail.length).toBeGreaterThan(0)).product({
       id: 1
-    })).rejects.toMatchObject({ error: { type: 'invalid_answer' } })
+    })).rejects.toMatchObject({ error: { type: 'invalid_answer', message: 'The "catalog" API answered something unexpected' } })
   })
 
   it('createProduct: POST /products, reads the model and maps it', async () => {
@@ -192,9 +194,10 @@ describe('httpCatalogRepository', () => {
     })
   })
 
-  it('createProduct: an answer that is not Product is an invalid_answer', async () => {
+  it('createProduct: an answer that is not Product is an invalid_answer without detail (the detail goes to onInvalidAnswer)', async () => {
+    expect.assertions(2)
     const { http } = recording('unexpected')
-    await expect(httpCatalogRepository(http).createProduct({
+    await expect(httpCatalogRepository(http, detail => expect(detail.length).toBeGreaterThan(0)).createProduct({
       body: {
         id: 1,
         name: 'name 1',
@@ -209,7 +212,7 @@ describe('httpCatalogRepository', () => {
           }
         ]
       }
-    })).rejects.toMatchObject({ error: { type: 'invalid_answer' } })
+    })).rejects.toMatchObject({ error: { type: 'invalid_answer', message: 'The "catalog" API answered something unexpected' } })
   })
 
   it('deleteProduct: DELETE /products/:id', async () => {

@@ -13,6 +13,7 @@ import { ManifestFileSchema } from '../../src/model/schemas'
 import { planSync } from '../../src/sync/plan'
 import { applyChanges } from '../edit/helpers'
 import { fixtureModelFiles, fixtureRoot } from '../model/fixture'
+import { fixtureSkip } from './fixture-install'
 
 /**
  * Simple data S7 / P2 (verify B1–B4): every API source the `api_*` edits accept generates an app that typechecks, lints and passes
@@ -21,7 +22,8 @@ import { fixtureModelFiles, fixtureRoot } from '../model/fixture'
  */
 const fixtureModules = join(fixtureRoot, 'node_modules')
 const bin = (name: string) => join(fixtureModules, '.bin', name)
-const NEEDS_FIXTURE = existsSync(bin('nuxi')) || process.env.CI ? '' : ' (skipped: run `pnpm --dir fixtures/codegen/blog install` first)'
+// Without the install the suite skips, loudly (a console.warn, once); in CI it runs and fails if the install is missing.
+const NEEDS_FIXTURE = fixtureSkip({ installed: existsSync(bin('nuxi')), ci: !!process.env.CI })
 
 const run = promisify(execFile)
 const hash = (content: string) => createHash('sha256').update(content).digest('hex')

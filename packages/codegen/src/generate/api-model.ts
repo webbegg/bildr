@@ -223,12 +223,47 @@ const SAMPLE: Record<ApiField['type'], (name: string) => string | number | boole
   model: () => ''
 }
 
+/**
+ * How a sample model fills its fields. `full`: every field has a value. `absent`: an optional field is left out, a nullable one is
+ * null, a list is empty. `empty`: a nullable field is null (an optional one too: null is not absent), a list is empty.
+ */
+export type SampleVariant = 'full' | 'absent' | 'empty'
+
 /** A model's value as the API sends it (`remote: true`, remote keys) or as the domain has it (camelCase names). */
-export const sampleModel = (source: ApiSource, name: string, remote: boolean): Record<string, unknown> =>
-  Object.fromEntries(modelOf(source, name).fields.map((field) => {
+export const sampleModel = (source: ApiSource, name: string, remote: boolean, variant: SampleVariant = 'full'): Record<string, unknown> =>
+  Object.fromEntries(modelOf(source, name).fields.flatMap((field): Array<[string, unknown]> => {
+    const key = remote ? remoteKey(field) : field.name
+    if (variant === 'absent' && field.optional) return []
+    if (variant === 'absent' && field.nullable) return [[key, null]]
+    if (variant !== 'full' && field.list) return [[key, []]]
+    if (variant === 'empty' && field.nullable) return [[key, null]]
     const value = field.type === 'model' ? sampleModel(source, field.model!, remote) : SAMPLE[field.type](field.name)
-    return [remote ? remoteKey(field) : field.name, field.list ? [value] : value]
+    return [[key, field.list ? [value] : value]]
   }))
+
+/** The variants of `name`'s sample that differ from each other: `full`, then the ones that leave out, null or empty something. */
+export const sampleVariants = (source: ApiSource, name: string): Array<{ variant: SampleVariant, label: string }> => {
+  const fields = modelOf(source, name).fields
+  // What each variant does to the fields, as the sample above does it.
+  const kinds = (variant: 'absent' | 'empty') => variant === 'absent'
+    ? [
+        ...(fields.some(field => field.optional) ? ['optional fields absent'] : []),
+        ...(fields.some(field => field.nullable && !field.optional) ? ['nullable fields null'] : []),
+        ...(fields.some(field => field.list && !field.nullable && !field.optional) ? ['lists empty'] : [])
+      ].join(', ')
+    : [
+        ...(fields.some(field => field.nullable && !field.list) ? ['nullable fields null'] : []),
+        ...(fields.some(field => field.list) ? ['lists empty'] : [])
+      ].join(', ')
+  const absent = kinds('absent')
+  const empty = kinds('empty')
+  return [
+    { variant: 'full', label: 'every field has a value' },
+    ...(absent ? [{ variant: 'absent' as const, label: absent }] : []),
+    // The same sample as `absent` when no optional field is also nullable or a list.
+    ...(empty && JSON.stringify(sampleModel(source, name, true, 'empty')) !== JSON.stringify(sampleModel(source, name, true, 'absent')) ? [{ variant: 'empty' as const, label: empty }] : [])
+  ]
+}
 
 /** A call's input with a value for every parameter (optional ones too) and the body. */
 export const sampleInput = (source: ApiSource, operation: Operation): Record<string, unknown> => ({

@@ -102,16 +102,18 @@ const entityLines = (name: string, source: ApiSource): Array<string | false> => 
 }
 
 const errorLines = (source: ApiSource, names: SourceNames): string[] => [
-  `/** Every expected failure of the "${source.name}" API: it answered with an error, it answered something unexpected, or the input was not valid. */`,
+  `/** Every expected failure of the "${source.name}" API: it answered with an error, it answered something unexpected, the input was not valid${source.auth ? ', or its secret is not set' : ''}. */`,
   `export type ${names.error} =`,
   '  | { type: \'remote_failed\', message: string, status: number }',
   '  | { type: \'invalid_answer\', message: string }',
   '  | { type: \'invalid_input\', message: string }',
+  ...(source.auth ? ['  | { type: \'not_configured\', message: string }'] : []),
   '',
   `/** \`status\` is what the API answered, or 0 when it didn't answer; \`detail\` finishes "The API …". */`,
   `export const remoteFailed = (status: number, detail: string): ${names.error} => ({ type: 'remote_failed', message: \`The "${source.name}" API \${detail}.\`, status })`,
   '',
-  `export const invalidAnswer = (detail: string): ${names.error} => ({ type: 'invalid_answer', message: \`The "${source.name}" API answered something unexpected: \${detail}\` })`,
+  '/** The answer is not what the model says. The error has no detail: it reaches the browser, and the detail (field paths, what was expected) is for the server log. */',
+  `export const invalidAnswer = (): ${names.error} => ({ type: 'invalid_answer', message: ${tsString(`The "${source.name}" API answered something unexpected`)} })`,
   '',
   `export const invalidInput = (detail: string): ${names.error} => ({ type: 'invalid_input', message: \`The call to the "${source.name}" API is not valid: \${detail}\` })`,
   '',
@@ -302,10 +304,13 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
     '',
     ...(results.length
       ? [
-          '/** The answer as `schema` reads it, or the failure of an answer that is not what the model says. */',
-          'const read = <T>(schema: ZodType<T>, answer: unknown): T => {',
+          '/** The answer as `schema` reads it, or the failure of an answer that is not what the model says: the failure has no detail, `report` gets it. */',
+          'const read = <T>(schema: ZodType<T>, answer: unknown, report?: (detail: string) => void): T => {',
           '  const parsed = schema.safeParse(answer)',
-          `  if (!parsed.success) throw new ${names.failure}(invalidAnswer(parsed.error.message))`,
+          '  if (!parsed.success) {',
+          '    report?.(parsed.error.message)',
+          `    throw new ${names.failure}(invalidAnswer())`,
+          '  }',
           '  return parsed.data',
           '}',
           ''
@@ -313,12 +318,13 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
       : []),
     ...(usesSegment
       ? [
-          '/** A path parameter as one segment of the path: encoded, and never empty, "." or ".." (the URL would resolve those to another path). */',
+          '/** A path parameter as one segment of the path: encoded, and never empty, "." or ".." (the URL would resolve those to another path), nor with a "/" or a "\\" (that is two segments). */',
           'const segment = (value: string | number | boolean): string => {',
           '  const text = String(value)',
           '  if (text === \'\' || text === \'.\' || text === \'..\') {',
           `    throw new ${names.failure}(invalidInput(\`a path parameter can't be \${text === '' ? 'empty' : \`"\${text}"\`}\`))`,
           '  }',
+          `  if (/[/\\\\]/.test(text)) throw new ${names.failure}(invalidInput(${tsString('a path parameter is one segment of the path: it can\'t hold a "/" or a "\\"')}))`,
           '  return encodeURIComponent(text)',
           '}',
           ''
@@ -332,8 +338,8 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
           ''
         ]
       : []),
-    `/** ${names.port} over an ApiClient: builds each path and query, reads the answer where the model says it is, validates it and maps it to the domain. */`,
-    `export const ${names.adapter} = (http: ApiClient): ${names.port} => ({`,
+    `/** ${names.port} over an ApiClient: builds each path and query, reads the answer where the model says it is, validates it and maps it to the domain. \`onInvalidAnswer\` gets the detail of an answer that is not valid (the failure has none). */`,
+    `export const ${names.adapter} = (http: ApiClient${results.length ? ', onInvalidAnswer?: (detail: string) => void' : ''}): ${names.port} => ({`,
     operations.map(operation => adapterMethod(operation)).join(',\n'),
     '})'
   ]
@@ -355,8 +361,8 @@ const adapterMethod = (operation: Operation): string => {
   const names = modelNames(result.model)
   const answer = result.itemsPath ? `itemsAt(answer, [${result.itemsPath.split('.').map(tsString).join(', ')}])` : 'answer'
   const body = result.many
-    ? `    return read(z.array(${names.dtoSchema}), ${answer}).map(${names.to})`
-    : `    return ${names.to}(read(${names.dtoSchema}, ${answer}))`
+    ? `    return read(z.array(${names.dtoSchema}), ${answer}, onInvalidAnswer).map(${names.to})`
+    : `    return ${names.to}(read(${names.dtoSchema}, ${answer}, onInvalidAnswer))`
   return [head, `    const answer = await ${call}`, body, '  }'].join('\n')
 }
 

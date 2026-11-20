@@ -76,11 +76,11 @@
     },
     "layers/apis/server/lib/fetch-client.ts": {
       "owner": "managed",
-      "sha256": "53f0f990bc92518a6c6b480819646e7753bf8d5ca493a5b8feb5400a8049af6b"
+      "sha256": "d1b9970d63591e70f54f6d053e20320e3679ff3f38f2dcc79bdeae5a1d80e480"
     },
     "layers/apis/server/utils/catalog.ts": {
       "owner": "managed",
-      "sha256": "f16093683cc8b7bc8b29e9dc61b5cda2ecc2b00c0ba3f80d97acbc5132cfb108",
+      "sha256": "6e184a2c1ec2ed454c5827731df8b10e37feffaaae56475be051eeafee70c813",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/data/catalog/client.ts": {
@@ -110,7 +110,7 @@
     },
     "layers/apis/shared/data/catalog/repositories/catalog-repository.http.ts": {
       "owner": "managed",
-      "sha256": "3d7f06fd5be4f8e23590526fc4178606e615e8b78075bebba0eec8fbdd109f3d",
+      "sha256": "c318cff7e33acc1438f7d22e208b2540db8544d8fe5e89f6f779c7320d40bd0b",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/data/catalog/validations/category.schema.ts": {
@@ -135,7 +135,7 @@
     },
     "layers/apis/shared/domain/catalog/errors.ts": {
       "owner": "managed",
-      "sha256": "ee1e0fa54fe52f4c9e700d749ee7a4cd81376b5a95f67bb7b13c256425360f8c",
+      "sha256": "0c78d2525e89090b5bbc10a5f68dd31f4322f8f552431baef42df8cc5b941008",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/domain/catalog/repositories/catalog-repository.ts": {
@@ -165,7 +165,7 @@
     },
     "layers/apis/test/catalog/catalog-repository.http.test.ts": {
       "owner": "managed",
-      "sha256": "61e9c7912559b51914943e7d30cfa138683f96ab7ca3f440e40c5a78f22fef9b",
+      "sha256": "861d348a83f28083028a820a735da355c682a3b904b9bed5de8cfe49aafc7839",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/catalog/create-product.test.ts": {
@@ -183,6 +183,11 @@
       "sha256": "339ec4847cf52359841fa4b4562b812ada9875bc73c265ecd4f92393fa875d0c",
       "source": ".bildr/datasources/catalog.json"
     },
+    "layers/apis/test/catalog/mappers.mapper.test.ts": {
+      "owner": "managed",
+      "sha256": "b2cad9bea091f057529920bc0f55e64c9f0cec20c041186080cc267bb19f4ac9",
+      "source": ".bildr/datasources/catalog.json"
+    },
     "layers/apis/test/catalog/product.test.ts": {
       "owner": "managed",
       "sha256": "046f5a9031570d4cb64c3bf2d42f59c5e97094009e13fd14c4114080f9663ce0",
@@ -192,6 +197,10 @@
       "owner": "managed",
       "sha256": "078afd7c8416ccd5876942595fa6541962268c30e1237fcf0260c5fc31f18963",
       "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/test/fetch-client.test.ts": {
+      "owner": "managed",
+      "sha256": "1b2d36f061171949d48a1179f81594dc7e3f84418b55b20f99fbbb2e825f05eb"
     },
     "layers/blog/app/components/blog/PostCard.vue": {
       "owner": "managed",

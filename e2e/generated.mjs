@@ -591,7 +591,8 @@ function catalogStub() {
       }
       const one = /^\/products\/(\d+)$/.exec(url.pathname)
       if (request.method === 'GET' && url.pathname === '/products') return send(200, { data: { items: url.searchParams.get('cat') === 'none' ? [] : [product(1)] } })
-      if (request.method === 'GET' && one) return send(200, product(Number(one[1])))
+      // Product 99 is answered with something the model doesn't say: the app must not pass any of it to the browser.
+      if (request.method === 'GET' && one) return send(200, one[1] === '99' ? { id: 'not-a-number', secret_internal: 'upstream-body' } : product(Number(one[1])))
       if (request.method === 'POST' && url.pathname === '/products') return send(201, { ...JSON.parse(body), id: 7 })
       if (request.method === 'DELETE' && one) return send(204)
       send(404, { message: 'not found' })
@@ -753,6 +754,12 @@ async function smoke(ctx) {
     check(deleted.status === 204 && catalog.calls.some(call => call.method === 'DELETE' && call.path === '/products/3'), `API: DELETE /api/apis/catalog/delete-product?id=3 answers 204 after DELETE /products/3 (${deleted.status})`)
     const refused = await fetch(`${base}/api/apis/catalog/product?id=abc`)
     check(refused.status === 400, `API: a path parameter that is not a number is refused with 400 (${refused.status})`)
+    // An answer that is not the model: a generic 502 for the browser (no field paths, no types, no upstream body), the detail in the server log.
+    const unexpected = await fetch(`${base}/api/apis/catalog/product?id=99`)
+    const unexpectedText = await unexpected.text()
+    check(unexpected.status === 502 && unexpectedText.includes('The \\"catalog\\" API answered something unexpected') && !/\bexpected\b|invalid_type|secret_internal|upstream-body/i.test(unexpectedText), `API: an answer that is not a Product is a generic 502 with no zod detail and no upstream body (${unexpected.status} ${unexpectedText.slice(0, 300)})`)
+    const serverLog = readFileSync(log, 'utf8')
+    check(serverLog.includes('The "catalog" API answered something unexpected: ') && /\bexpected\b/.test(serverLog), 'API: the detail of that answer is in the server log')
 
     const { chromium } = await import(pathToFileURL(PLAYWRIGHT_CORE).href)
     browser = await chromium.launch({ executablePath: CHROMIUM, headless: true })
