@@ -5,6 +5,7 @@ import type { DataSourceFile } from '../model/schemas.ts'
 import { DATABASE_DEPENDENCIES } from '../starter/starter.ts'
 import { camel, defineEdit, fail, kebab, snake } from './core.ts'
 import type { Draft } from './core.ts'
+import { describeUses, usesOf } from './usage.ts'
 
 /**
  * Data sources (`.bildr/datasources/<name>.json`, P3c): where repositories read and
@@ -148,6 +149,9 @@ export const datasourceDelete = defineEdit({
     if (users.length) {
       fail('invalid', `Data source "${source.name}" is used by ${users.length === 1 ? 'the repository' : 'the repositories'} ${users.join(', ')}. Delete their entities first`)
     }
+    // A page that reads one of an API source's queries holds it by id: the usage index is what stops the delete.
+    const readers = usesOf(draft.model, id)
+    if (readers.length) fail('invalid', `Data source "${source.name}" is still used: ${describeUses(readers)}. Change them first`)
     draft.model.datasources.splice(draft.model.datasources.indexOf(source), 1)
     // Without a sqlite data source the project has no app database (V7): its layer is no longer generated.
     return { database: !!hasSqlite(draft) }

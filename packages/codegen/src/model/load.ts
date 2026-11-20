@@ -396,7 +396,25 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       page.uses?.actions?.forEach((use, index) => ref(path, `uses.actions.${index}.action`, 'action', use.action, 'action'))
       page.uses?.state?.forEach((use, index) => ref(path, `uses.state.${index}.state`, 'state', use.state, 'state'))
       const uses = page.uses ?? {}
-      const aliased = [...uses.state ?? [], ...uses.queries ?? [], ...uses.actions ?? [], ...uses.computed ?? []].some(use => use.as === 'layout')
+      const others = [...uses.state ?? [], ...uses.queries ?? [], ...uses.actions ?? [], ...uses.computed ?? []]
+      uses.apis?.forEach((use, index) => {
+        const where = `uses.apis.${index}`
+        if (others.some(other => other.as === use.as) || uses.apis!.slice(0, index).some(other => other.as === use.as)) report(path, `${where}.as`, `The name "${use.as}" is used twice by this page's uses`)
+        ref(path, `${where}.datasource`, 'datasource', use.datasource, 'data source')
+        const source = model.datasources.find(entry => entry.id === use.datasource)
+        if (!source) return
+        if (source.kind !== 'api') return report(path, `${where}.datasource`, `"${use.datasource}" is not an API data source`)
+        const query = source.queries?.find(entry => entry.name === use.query)
+        if (!query) return report(path, `${where}.query`, `The API "${source.name}" has no query "${use.query}" (${source.queries?.map(entry => entry.name).join(', ') || 'none'})`)
+        const label = `The query "${query.name}" of the API "${source.name}"`
+        for (const name of Object.keys(use.args ?? {})) {
+          if (!query.params.some(param => param.name === name)) report(path, `${where}.args.${name}`, `${label} has no parameter "${name}" (${query.params.map(param => param.name).join(', ')})`)
+        }
+        for (const param of query.params) {
+          if ((param.in === 'path' || param.required) && use.args?.[param.name] === undefined) report(path, `${where}.args`, `${label} needs "${param.name}"`)
+        }
+      })
+      const aliased = [...others, ...uses.apis ?? []].some(use => use.as === 'layout')
       checkTree(page.root, 'root', path, aliased ? undefined : null)
     }
   }

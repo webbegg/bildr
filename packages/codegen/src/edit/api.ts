@@ -5,6 +5,10 @@ import { camel, defineEdit, fail, snake } from './core.ts'
 import type { Draft } from './core.ts'
 import { AuthInput, datasourceById, DataSourceRef, envNameOf, sourceName } from './datasources.ts'
 import { apiNameProblem } from './generated-names.ts'
+import { apiMembersResolve } from './api-uses.ts'
+import type { ApiUse } from './api-uses.ts'
+import { checkApiArgs, pageNameProblem } from './queries.ts'
+import { apiQueryUsesOf, apiReadsOf, describeUses } from './usage.ts'
 
 /**
  * API data sources (simple data, SD-2): a remote JSON API with a first-class `baseUrl`, the
@@ -60,6 +64,53 @@ const settle = (source: ApiSource, previous: { name: string, auth?: { secret: st
   if (naming) fail('invalid', naming)
 }
 
+// ── Pages that use the source (SD-6) ─────────────────────────────────────
+
+/** Every page use of a query of `source`, with its page. */
+const pageUsesOf = (draft: Draft, source: ApiSource) =>
+  Object.values(draft.model.modules).flatMap(mod => mod.pages.flatMap(page => (page.uses?.apis ?? []).filter(use => use.datasource === source.id).map(use => ({ page, use }))))
+
+const pageLabel = (page: { id: string, name: string }) => `page "${page.name}" (${page.id})`
+
+/** The source's own name or one of its queries' names changed: the composables its pages call are named from both, so none may meet another name the page declares. */
+const checkPagesNames = (draft: Draft, source: ApiSource) => {
+  for (const page of new Set(pageUsesOf(draft, source).map(entry => entry.page))) {
+    const problem = pageNameProblem(draft, page)
+    if (problem) fail('invalid', problem)
+  }
+}
+
+/** The queries of `source` whose answer the pages read below a row (`product.title`): each read as `where binds "path"`, with the model it starts at. */
+const unresolvedReads = (draft: Draft, source: ApiSource, models: ApiModel[]) =>
+  apiReadsOf(draft.model, use => use.datasource === source.id).reads.flatMap((read) => {
+    const query = source.queries.find(entry => entry.name === read.use.query)
+    if (!query || !read.row || apiMembersResolve(models, query.result.model, read.members)) return []
+    return [{ read, query, key: `${read.page.id}|${read.where}|${read.as}.${read.members.join('.')}` }]
+  })
+
+/** Rule of the entity fields (`entity_field_update`): a field the pages bind by name can't go while they do. A model that no longer has a field some page reads is refused. */
+const checkReadsKept = (draft: Draft, source: ApiSource, before: Set<string>) => {
+  const broken = unresolvedReads(draft, source, source.models).find(entry => !before.has(entry.key))
+  if (!broken) return
+  const { read, query } = broken
+  fail('invalid', `The query "${query.name}" of the API "${source.name}" is read by ${pageLabel(read.page)}: ${read.where} binds "${read.as}.${read.members.join('.')}", which the model no longer has. Change them first`)
+}
+
+/** The page uses of a query's args against its params, as the query is now. */
+const checkUsesFit = (draft: Draft, source: ApiSource, query: ApiQuery) => {
+  const label = `The query "${query.name}" of the API "${source.name}"`
+  for (const { page, use } of pageUsesOf(draft, source).filter(entry => entry.use.query === query.name)) {
+    const passes = (use: ApiUse) => Object.keys(use.args ?? {})
+    for (const name of passes(use)) {
+      if (!query.params.some(param => param.name === name)) fail('invalid', `${label} has no parameter "${name}", but ${pageLabel(page)} passes it as "${use.as}": change it first`)
+    }
+    for (const param of query.params) {
+      if ((param.in === 'path' || param.required) && use.args?.[param.name] === undefined) fail('invalid', `${label} needs "${param.name}", but ${pageLabel(page)} doesn't pass it as "${use.as}": change it first`)
+    }
+    checkApiArgs(source, query, use.args)
+  }
+}
+
 export const apiCreate = defineEdit({
   input: z.object({
     name: z.string().min(1).max(60).describe('Kebab-cased into its name, e.g. "Shop API" → "shop-api"; the id is ds_<name>'),
@@ -105,6 +156,8 @@ export const apiUpdate = defineEdit({
     if (auth === null) delete source.auth
     else if (auth) source.auth = { ...auth, secret: auth.secret ?? source.auth?.secret ?? 'apiKey' }
     settle(source, previous)
+    // The pages hold the source by id, so they follow a rename; what they derive from its name has to stay free.
+    if (source.name !== previous.name) checkPagesNames(draft, source)
     return {}
   }
 })
@@ -134,8 +187,10 @@ export const apiModelSet = defineEdit({
   input: z.object({ datasource: DataSourceRef, model: ApiModelSchema.describe('The whole model: it replaces the one with its name, or is added') }),
   apply: (draft, { datasource: id, model }) => {
     const source = apiById(draft, id)
+    const before = new Set(unresolvedReads(draft, source, source.models).map(entry => entry.key))
     put(source.models, model)
     settle(source)
+    checkReadsKept(draft, source, before)
     return {}
   }
 })
@@ -204,8 +259,18 @@ export const apiQuerySet = defineEdit({
   apply: (draft, { datasource: id, query }) => {
     const source = apiById(draft, id)
     nameTaken(source, query.name, 'query', false)
-    put(source.queries, withoutEmpty({ ...query, params: query.params ?? [] }))
+    const previous = source.queries.find(entry => entry.name === query.name)
+    const before = new Set(unresolvedReads(draft, source, source.models).map(entry => entry.key))
+    const next = withoutEmpty({ ...query, params: query.params ?? [] })
+    put(source.queries, next)
     settle(source)
+    const uses = apiQueryUsesOf(draft.model, id, query.name)
+    // What a page binds is the model's fields, a list or one record: those can't change under it.
+    if (previous && uses.length && (previous.result.model !== next.result.model || previous.result.many !== next.result.many)) {
+      fail('invalid', `The query "${next.name}" of the API "${source.name}" is used by ${describeUses(uses)}: its model and its one/many can't change while they use it. Change them first`)
+    }
+    checkUsesFit(draft, source, next)
+    checkReadsKept(draft, source, before)
     return {}
   }
 })
@@ -230,14 +295,22 @@ const rename = (draft: Draft, id: string, kind: OperationKind, from: string, to:
   if (from === to) return {}
   nameTaken(source, to, kind, true)
   item.name = to
+  if (kind === 'query') {
+    // The pages name the query: they follow it, and the composable they call (named from it) has to stay free of their other names.
+    for (const { use } of pageUsesOf(draft, source)) if (use.query === from) use.query = to
+  }
   settle(source)
+  if (kind === 'query') checkPagesNames(draft, source)
   return {}
 }
 
 const remove = (draft: Draft, id: string, kind: OperationKind, name: string) => {
   const source = apiById(draft, id)
   const items: (ApiQuery | ApiAction)[] = kind === 'query' ? source.queries : source.actions
-  items.splice(items.indexOf(operationOf(source, items, kind, name)), 1)
+  const item = operationOf(source, items, kind, name)
+  const uses = kind === 'query' ? apiQueryUsesOf(draft.model, id, name) : []
+  if (uses.length) fail('invalid', `The query "${name}" of the API "${source.name}" is still used: ${describeUses(uses)}. Change them first`)
+  items.splice(items.indexOf(item), 1)
   return {}
 }
 

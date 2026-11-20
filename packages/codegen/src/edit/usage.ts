@@ -1,5 +1,7 @@
 import type { Model } from '../model/load.ts'
 import type { ActionFile, ComponentFile, EntityFile, ModelNode, PageFile } from '../model/schemas.ts'
+import { apiQueryOf } from './api-uses.ts'
+import type { ApiUse } from './api-uses.ts'
 import { mapNodePaths, mapPaths, rootOf, walkScoped } from './bindings.ts'
 import { treesOf } from './core.ts'
 import { walk } from './tree.ts'
@@ -43,6 +45,8 @@ export interface ArtifactUse {
   node?: string
   /** The name a page uses it under (`uses`) or binds it by (`bind`), or the item name of a List (`list`). */
   as?: string
+  /** An API data source's use: the name of the query of the source the page reads (`uses`), or whose answer it binds (`bind`). */
+  operation?: string
   /** A collection's uses: the id of the query or action of the collection that the page reads or runs. */
   by?: string
   /** The module changes this use along with the artifact (an action's pick of a field, a collection's own action), so it does not stop a delete or a rename. */
@@ -75,14 +79,16 @@ interface Held {
 /** The places that hold any of `ids`, each with the ids it holds: one pass over the trees, however many ids there are. */
 const heldBy = (model: Model, ids: ReadonlySet<string>): Held[] => treesOf(model).flatMap((tree) => {
   const found: Held[] = []
-  const owner = tree.owner as { name: string, uses?: { queries?: Array<{ as: string, query: string }>, actions?: Array<{ as: string, action: string }>, state?: Array<{ as: string, state: string }> }, params?: unknown, properties?: unknown }
+  const owner = tree.owner as { name: string, uses?: { queries?: Array<{ as: string, query: string }>, actions?: Array<{ as: string, action: string }>, state?: Array<{ as: string, state: string }>, apis?: ApiUse[] }, params?: unknown, properties?: unknown }
   const base = { kind: tree.kind, id: tree.file, name: owner.name } as const
-  const aliased = [
+  const aliased: Array<{ as: string, id: string, operation?: string }> = [
     ...(owner.uses?.queries ?? []).map(use => ({ as: use.as, id: use.query })),
+    // An API use holds its data source's id, and says which of its queries.
+    ...(owner.uses?.apis ?? []).map(use => ({ as: use.as, id: use.datasource, operation: use.query })),
     ...(owner.uses?.actions ?? []).map(use => ({ as: use.as, id: use.action })),
     ...(owner.uses?.state ?? []).map(use => ({ as: use.as, id: use.state }))
   ].filter(use => ids.has(use.id))
-  for (const use of aliased) found.push({ use: { ...base, via: 'uses', where: 'uses', as: use.as }, ids: [use.id] })
+  for (const use of aliased) found.push({ use: { ...base, via: 'uses', where: 'uses', as: use.as, ...(use.operation ? { operation: use.operation } : {}) }, ids: [use.id] })
   const held = (value: unknown, use: ArtifactUse) => {
     const hit = mentioned(value, ids)
     if (hit.size) found.push({ use, ids: [...hit] })
@@ -111,7 +117,7 @@ export const refusalLabels = (uses: ArtifactUse[]): string[] => [...new Set(uses
 /** The sentence a refusal gives for one use: `page "index" (pg_index) reads it as "featured"`. */
 export const describeUse = (use: ArtifactUse): string => {
   const what = `${use.kind} "${use.name}" (${use.id})`
-  if (use.via === 'uses') return `${what} uses it${use.as ? ` as "${use.as}"` : ''}`
+  if (use.via === 'uses') return `${what} uses ${use.operation ? `its query "${use.operation}"` : 'it'}${use.as ? ` as "${use.as}"` : ''}`
   if (use.via === 'form') return `${what}: the Form ${use.node} runs it`
   if (use.via === 'interaction') return `${what}: ${use.node} runs it on an interaction`
   if (use.via === 'bind') return `${what}: ${use.where === use.node ? use.node : use.where} binds "${use.as}"`
@@ -148,6 +154,7 @@ const bindsOf = (page: PageFile, as: string, skip?: string): ArtifactUse[] => {
   }
   if (reads((page.uses?.computed ?? []).filter(entry => entry.as !== skip))) uses.push({ ...base, where: 'computed', as })
   if (reads((page.uses?.queries ?? []).map(use => use.args))) uses.push({ ...base, where: 'queries', as })
+  if (reads((page.uses?.apis ?? []).map(use => use.args))) uses.push({ ...base, where: 'apis', as })
   if (reads(page.seo)) uses.push({ ...base, where: 'seo', as })
   walkScoped(page.root, (node, scope) => {
     let bound = false
@@ -174,12 +181,13 @@ export const usesOf = (model: Model, artifactId: string): ArtifactUse[] => {
   for (const tree of treesOf(model)) {
     if (tree.kind !== 'page') continue
     const page = tree.owner as PageFile
-    const aliases = [
-      ...(page.uses?.queries ?? []).filter(use => use.query === artifactId).map(use => use.as),
-      ...(page.uses?.actions ?? []).filter(use => use.action === artifactId).map(use => use.as),
-      ...(page.uses?.state ?? []).filter(use => use.state === artifactId).map(use => use.as)
+    const aliases: Array<{ as: string, operation?: string }> = [
+      ...(page.uses?.queries ?? []).filter(use => use.query === artifactId).map(use => ({ as: use.as })),
+      ...(page.uses?.apis ?? []).filter(use => use.datasource === artifactId).map(use => ({ as: use.as, operation: use.query })),
+      ...(page.uses?.actions ?? []).filter(use => use.action === artifactId).map(use => ({ as: use.as })),
+      ...(page.uses?.state ?? []).filter(use => use.state === artifactId).map(use => ({ as: use.as }))
     ]
-    for (const as of aliases) uses.push(...bindsOf(page, as))
+    for (const { as, operation } of aliases) uses.push(...bindsOf(page, as).map(use => operation ? { ...use, operation } : use))
   }
 
   // The actions that mention it in their input, output, steps, errors or client part.
@@ -194,12 +202,19 @@ export const usesOf = (model: Model, artifactId: string): ArtifactUse[] => {
   return uses
 }
 
+/** Everything that uses query `query` of the API data source `datasource`: the pages that read it, and what binds the names they read it under. */
+export const apiQueryUsesOf = (model: Model, datasource: string, query: string): ArtifactUse[] =>
+  usesOf(model, datasource).filter(use => use.operation === query)
+
 // ── Collections and fields ───────────────────────────────────────────────
 
 /** What a name stands for in a tree: the collection its rows are of, and whether it holds a list of them or one. Null: a name that shadows another. */
 interface Source {
+  /** Empty for the rows of an API query (`api`). */
   entity: string
   many: boolean
+  /** The page use of an API query these rows are the answer of. */
+  api?: ApiUse
 }
 type Env = ReadonlyMap<string, Source | null>
 
@@ -243,7 +258,7 @@ const listOf = (node: ModelNode, env: Env): { as: string, source: Source | null 
 const walkEnv = (node: ModelNode, env: Env, visit: (node: ModelNode, env: Env) => void): void => {
   visit(node, env)
   const list = listOf(node, env)
-  const inner = list ? new Map(env).set(list.as, list.source?.many ? { entity: list.source.entity, many: false } : null) : env
+  const inner = list ? new Map(env).set(list.as, list.source?.many ? { ...list.source, many: false } : null) : env
   for (const child of node.children ?? []) walkEnv(child, inner, visit)
 }
 
@@ -500,3 +515,61 @@ export const stateFieldUsesIndex = (model: Model, stateId: string, only?: string
 
 /** Who uses field `fieldName` of state `stateId`: `stateFieldUsesIndex` for that one field. */
 export const stateFieldUsesOf = (model: Model, stateId: string, fieldName: string): ArtifactUse[] => stateFieldUsesIndex(model, stateId, fieldName).get(fieldName) ?? []
+
+// ── What pages read of an API query's answer ─────────────────────────────
+
+/** One binding of a page that reads below the name of an API query's answer (or an item of its list): `product.address.city` is `members: ['address', 'city']`. */
+export interface ApiRead {
+  page: PageFile
+  use: ApiUse
+  /** The name it starts at: the alias the page reads the query under, or the item name of a List over it. */
+  as: string
+  members: string[]
+  /** It starts at one row (the answer of a `one` query, or an item), not at the list. */
+  row: boolean
+  where: string
+  node?: string
+}
+
+/** A List whose items are the answer of an API query. */
+export interface ApiList {
+  page: PageFile
+  use: ApiUse
+  as: string
+  node: string
+  /** The query answers a list: the only thing a List can repeat over. */
+  many: boolean
+}
+
+/**
+ * Every binding and List of the model's pages that reads the answer of an API query use (`match`: which uses; all by default),
+ * the way the generator resolves the names: the alias of a use, and the item name of a List over a list answer.
+ */
+export const apiReadsOf = (model: Model, match: (use: ApiUse) => boolean = () => true): { reads: ApiRead[], lists: ApiList[] } => {
+  const found: { reads: ApiRead[], lists: ApiList[] } = { reads: [], lists: [] }
+  for (const tree of treesOf(model)) {
+    if (tree.kind !== 'page') continue
+    const page = tree.owner as PageFile
+    const env = new Map<string, Source | null>()
+    for (const use of (page.uses?.apis ?? []).filter(match)) {
+      const answer = apiQueryOf(model.datasources, use)
+      if (answer) env.set(use.as, { entity: '', many: answer.query.result.many, api: use })
+    }
+    if (!env.size) continue
+    const read = (scope: Env, where: string, node?: string) => (path: string): undefined => {
+      const [root, ...members] = path.split('.')
+      const source = scope.get(root!)
+      if (source?.api) found.reads.push({ page, use: source.api, as: root!, members, row: !source.many, where, ...(node ? { node } : {}) })
+      return undefined
+    }
+    mapPaths(page.uses?.computed, read(env, 'computed'))
+    mapPaths(page.uses?.apis?.map(use => use.args), read(env, 'apis'))
+    mapPaths(page.seo, read(env, 'seo'))
+    walkEnv(page.root, env, (node, scope) => {
+      mapNodePaths(node, read(scope, node.id, node.id))
+      const list = listOf(node, scope)
+      if (list?.source?.api) found.lists.push({ page, use: list.source.api, as: list.as, node: node.id, many: list.source.many })
+    })
+  }
+  return found
+}

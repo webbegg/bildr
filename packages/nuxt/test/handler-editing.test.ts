@@ -316,3 +316,38 @@ describe('building a page from scratch (end to end)', () => {
     expect(read('layers/main/app/components/main/Cta.vue')).toContain('Start')
   })
 })
+
+// Simple data P7a (SD-6): a page reads a query of an API data source (`uses.apis`).
+describe('a page that reads an API query', () => {
+  const shop = async () => {
+    const created = await ok('api_create', { name: 'shop', baseUrl: 'https://shop.example.com/v1' })
+    await ok('api_model_set', { datasource: created.datasourceId, model: { name: 'Product', fields: [{ name: 'id', type: 'integer' }, { name: 'title', type: 'text' }] } })
+    await ok('api_query_set', { datasource: created.datasourceId, query: { name: 'products', path: '/products', params: [{ name: 'page', in: 'query', type: 'integer', required: true }], result: { model: 'Product', many: true } } })
+    return created.datasourceId as string
+  }
+
+  it('page_use_add writes uses.apis, page_use_update changes its args, page_use_remove drops it', async () => {
+    const id = await shop()
+    const added = await ok('page_use_add', { page: 'pg_index', as: 'products', api: { datasource: id, query: 'products' }, args: { page: 1 } })
+    expect(added).toMatchObject({ as: 'products', changed: [pagePath] })
+    expect(json(pagePath).uses.apis).toEqual([{ as: 'products', datasource: id, query: 'products', args: { page: 1 } }])
+    await ok('page_use_update', { page: 'pg_index', as: 'products', args: { page: 2 } })
+    expect(json(pagePath).uses.apis[0].args).toEqual({ page: 2 })
+    await ok('page_use_remove', { page: 'pg_index', as: 'products' })
+    expect(json(pagePath).uses?.apis).toBeUndefined()
+  })
+
+  it('refuses what the source can\'t serve with 422 or 404, and a source or query that a page reads can\'t go', async () => {
+    const id = await shop()
+    const missing = await failure('page_use_add', { page: 'pg_index', as: 'products', api: { datasource: id, query: 'products' } }, 422, 'invalid')
+    expect(missing.message).toBe('The query "products" of the API "shop" needs "page"')
+    await failure('page_use_add', { page: 'pg_index', as: 'products', api: { datasource: id, query: 'nope' }, args: {} }, 404, 'not_found')
+    await failure('page_use_add', { page: 'pg_index', as: 'products', api: { datasource: id } }, 400, 'invalid_input')
+    await ok('page_use_add', { page: 'pg_index', as: 'products', api: { datasource: id, query: 'products' }, args: { page: 1 } })
+    const used = 'is still used: page "index" (pg_index) uses its query "products" as "products". Change them first'
+    expect((await failure('api_query_delete', { datasource: id, query: 'products' }, 422, 'invalid')).message).toBe(`The query "products" of the API "shop" ${used}`)
+    expect((await failure('datasource_delete', { datasource: id }, 422, 'invalid')).message).toBe(`Data source "shop" ${used}`)
+    await ok('api_query_rename', { datasource: id, query: 'products', name: 'catalog' })
+    expect(json(pagePath).uses.apis[0].query).toBe('catalog')
+  })
+})

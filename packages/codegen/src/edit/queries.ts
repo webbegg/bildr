@@ -1,10 +1,13 @@
 import { z } from 'zod'
 import { ArtifactIdSchema, CamelNameSchema, CONDITION_OPS, LocalIdSchema, ModuleNameSchema, ParamSchema, ValueSchema } from '../model/schemas.ts'
-import type { EntityFile, ModelNode, PageFile, QueryFile, Value } from '../model/schemas.ts'
+import type { ApiQuery, DataSourceFile, EntityFile, ModelNode, PageFile, QueryFile, Value } from '../model/schemas.ts'
+import { apiParamRequired, apiQueryOf } from './api-uses.ts'
 import { mapNodePaths, mapPaths, rootOf } from './bindings.ts'
 import { camel, defineEdit, fail, isObject, kebab, uniqueName } from './core.ts'
 import type { Draft } from './core.ts'
+import { datasourceById } from './datasources.ts'
 import { entityById, fits, isExpression, keyType, repositoryOf } from './entities.ts'
+import { apiComposableName } from './generated-names.ts'
 import { pascal } from '../generate/text.ts'
 import { loadMoreSize } from '../render/rules.ts'
 import { callableName, checkCallableFree, checkQueryName, composableOf, isUnusable, sentence, spaced, stateComposableOf } from './naming.ts'
@@ -37,10 +40,10 @@ export const moduleOfPage = (draft: Draft, page: PageFile) => {
 
 /** Every alias a page already uses. */
 export const aliasesOf = (page: PageFile): string[] => [
-  ...page.uses?.state ?? [], ...page.uses?.queries ?? [], ...page.uses?.actions ?? [], ...page.uses?.computed ?? []
+  ...page.uses?.state ?? [], ...page.uses?.queries ?? [], ...page.uses?.apis ?? [], ...page.uses?.actions ?? [], ...page.uses?.computed ?? []
 ].map(use => use.as)
 
-export type UseKind = 'state' | 'query' | 'action' | 'computed'
+export type UseKind = 'state' | 'query' | 'api' | 'action' | 'computed'
 
 /** A page use that `page_use_add` or a step makes: the state or the action, with the name the page uses it under. What `addedUses` and `droppedUses` list. */
 export type UseRef = { as: string, state: string } | { as: string, action: string }
@@ -49,7 +52,7 @@ type Declared = Array<{ name: string, by: string }>
 
 /**
  * The names the generated page script declares for a use `as` of `kind` (generate/ui.ts, `pageFile`): the name itself, and what the
- * page derives from it: a state's `set<As>` (what changes it), a query's loading flag `<as>Loading`, an action's `<as>Pending` and
+ * page derives from it: a state's `set<As>` (what changes it), a query's loading flag `<as>Loading` (an API query's `<as>Error` too), an action's `<as>Pending` and
  * `<as>Error`. Each says in `by` what it is, as a refusal shows it.
  */
 const declaredBy = (as: string, kind: UseKind): Declared => {
@@ -57,7 +60,9 @@ const declaredBy = (as: string, kind: UseKind): Declared => {
     ? [[`set${pascal(as)}`, `the "set…" name of the state "${as}"`]]
     : kind === 'query'
       ? [[`${as}Loading`, `the loading flag of "${as}"`]]
-      : kind === 'action' ? [[`${as}Pending`, `the pending flag of "${as}"`], [`${as}Error`, `the error of "${as}"`]] : []
+      : kind === 'api'
+        ? [[`${as}Loading`, `the loading flag of "${as}"`], [`${as}Error`, `the error of "${as}"`]]
+        : kind === 'action' ? [[`${as}Pending`, `the pending flag of "${as}"`], [`${as}Error`, `the error of "${as}"`]] : []
   return [{ name: as, by: `"${as}"` }, ...derived.map(([name, by]) => ({ name, by }))]
 }
 
@@ -85,6 +90,11 @@ const declaredNames = (draft: Draft, page: PageFile): Declared => {
     names.push(...declaredBy(use.as, 'query'))
     const query = mod.queries.find(entry => entry.id === use.query)
     if (query) composable(composableOf(query.name), `the name the query ${query.name} generates`)
+  }
+  for (const use of page.uses?.apis ?? []) {
+    names.push(...declaredBy(use.as, 'api'))
+    const source = draft.model.datasources.find(entry => entry.id === use.datasource)
+    if (source) composable(apiComposableName(source.name, use.query), `the name the query ${use.query} of the API ${source.name} generates`)
   }
   for (const use of page.uses?.actions ?? []) {
     names.push(...declaredBy(use.as, 'action'))
@@ -460,6 +470,7 @@ const boundRoots = (page: PageFile): Set<string> => {
   walk(page.root, node => mapNodePaths(node, collect))
   mapPaths(page.uses?.computed, collect)
   mapPaths(page.uses?.queries?.map(use => use.args), collect)
+  mapPaths(page.uses?.apis?.map(use => use.args), collect)
   mapPaths(page.seo, collect)
   return roots
 }
@@ -501,9 +512,40 @@ const checkArgs = (query: QueryFile, args: Record<string, Value | null>) => {
   for (const name of Object.keys(args)) if (!query.params.some(param => param.name === name)) fail('invalid', `The query ${query.id} has no parameter "${name}" (${query.params.map(param => param.name).join(', ') || 'none'})`)
 }
 
+/**
+ * The API data source `id` and its query `name`: refused when it isn't an API source or has no such query. What a page use of an API
+ * query (`uses.apis`) reads, and what `checkApiArgs` checks its arguments against.
+ */
+const apiQueryIn = (draft: Draft, id: string, name: string) => {
+  const source = datasourceById(draft, id)
+  if (source.kind !== 'api') fail('invalid', `"${source.name}" is not an API data source`)
+  return apiQueryOf(draft.model.datasources, { datasource: id, query: name }) ?? fail('not_found', `No query "${name}" in ${source.name}`)
+}
+
+/**
+ * The arguments a page gives an API query against its parameters: only its own (path and query), each literal of the parameter's type
+ * (a route parameter is text: only a text parameter takes one), and with `complete` every required one present.
+ */
+export const checkApiArgs = (source: DataSourceFile, query: ApiQuery, args: Record<string, Value | null> | undefined, complete = true) => {
+  const label = `The query "${query.name}" of the API "${source.name}"`
+  for (const name of Object.keys(args ?? {})) {
+    if (!query.params.some(param => param.name === name)) fail('invalid', `${label} has no parameter "${name}" (${query.params.map(param => param.name).join(', ') || 'none'})`)
+  }
+  for (const param of query.params) {
+    const value = args?.[param.name]
+    if (value === undefined || value === null) {
+      if (complete && apiParamRequired(param)) fail('invalid', `${label} needs "${param.name}"`)
+      continue
+    }
+    const route = isObject(value) && '$route' in value
+    const literal = !isExpression(value) && !(isObject(value) && 'not' in value)
+    if ((literal && !fits(param.type, value, false)) || (route && param.type !== 'text')) fail('invalid', `${label} takes "${param.name}" as ${param.type}, but the page passes ${JSON.stringify(value)}`)
+  }
+}
+
 /** One use of a page, whatever its kind: the artifact it reads, runs or holds (`id`), the name the page uses it under, and its entry in `page.uses`. */
 interface FoundUse {
-  kind: 'state' | 'query' | 'action'
+  kind: 'state' | 'query' | 'api' | 'action'
   as: string
   id: string
   entry: object
@@ -513,6 +555,7 @@ interface FoundUse {
 const usesOfPage = (page: PageFile): FoundUse[] => [
   ...(page.uses?.state ?? []).map(entry => ({ kind: 'state' as const, as: entry.as, id: entry.state, entry })),
   ...(page.uses?.queries ?? []).map(entry => ({ kind: 'query' as const, as: entry.as, id: entry.query, entry })),
+  ...(page.uses?.apis ?? []).map(entry => ({ kind: 'api' as const, as: entry.as, id: entry.datasource, entry })),
   ...(page.uses?.actions ?? []).map(entry => ({ kind: 'action' as const, as: entry.as, id: entry.action, entry }))
 ]
 
@@ -529,6 +572,9 @@ const removeUse = (page: PageFile, found: FoundUse) => {
   } else if (found.kind === 'query') {
     uses.queries = uses.queries!.filter(entry => entry !== found.entry)
     if (!uses.queries.length) delete uses.queries
+  } else if (found.kind === 'api') {
+    uses.apis = uses.apis!.filter(entry => entry !== found.entry)
+    if (!uses.apis.length) delete uses.apis
   } else {
     uses.actions = uses.actions!.filter(entry => entry !== found.entry)
     if (!uses.actions.length) delete uses.actions
@@ -543,15 +589,33 @@ export const pageUseAdd = defineEdit({
     query: QueryRef.optional().describe('A query of the page\'s module to read'),
     action: ArtifactIdSchema.optional().describe('An action of the page\'s module its forms and buttons can run'),
     state: ArtifactIdSchema.optional().describe('A state of the page\'s module its nodes can bind (as.field) and set (a Set state step); a page uses a state once'),
-    args: z.record(CamelNameSchema, ValueSchema).optional().describe('With a query: its parameters\' values, e.g. { "limit": 6 } or { "slug": { "$route": "slug" } }')
+    api: z.object({
+      datasource: ArtifactIdSchema.describe('An API data source id (kind "api"), e.g. "ds_shop"'),
+      query: CamelNameSchema.describe('The name of one of its queries, e.g. "products"')
+    }).optional().describe('A query of an API data source to read: it answers as <as> (a list, or one record), with <as>Loading and <as>Error'),
+    args: z.record(CamelNameSchema, ValueSchema).optional().describe('With a query: its parameters\' values, e.g. { "limit": 6 } or { "slug": { "$route": "slug" } }; with an API query: its path and query parameters, the required ones included')
   }),
-  apply: (draft, { page: pageId, as, query: queryId, action: actionId, state: stateId, args }) => {
-    const given = ([['state', stateId], ['query', queryId], ['action', actionId]] as const).filter(([, id]) => id !== undefined)
-    if (given.length !== 1) fail('invalid', 'Give one query, action or state to use')
-    const [kind, id] = given[0] as ['state' | 'query' | 'action', string]
+  apply: (draft, { page: pageId, as, query: queryId, action: actionId, state: stateId, api, args }) => {
+    const given = ([['state', stateId], ['query', queryId], ['action', actionId], ['api', api]] as const).filter(([, id]) => id !== undefined)
+    if (given.length !== 1) fail('invalid', 'Give one query, action, state or API query to use')
+    const [kind, given0] = given[0]!
     const { page } = draft.page(pageId)
-    const { mod } = moduleOfPage(draft, page)
     checkAlias(draft, page, as, kind)
+    if (kind === 'api') {
+      const { datasource, query: name } = api!
+      const { source, query } = apiQueryIn(draft, datasource, name)
+      checkApiArgs(source, query, args)
+      // The page calls the query's composable, which can't share a name with anything else the script declares (unless it already calls it).
+      if (!page.uses?.apis?.some(use => use.datasource === datasource && use.query === name)) {
+        const problem = pageNameProblem(draft, page, [{ name: apiComposableName(source.name, name), by: `the name the query ${name} of the API ${source.name} generates` }])
+        if (problem) fail('invalid', problem)
+      }
+      const uses = page.uses ??= {}
+      ;(uses.apis ??= []).push({ as, datasource, query: name, ...(args && Object.keys(args).length ? { args } : {}) })
+      return { as }
+    }
+    const id = given0 as string
+    const { mod } = moduleOfPage(draft, page)
     if (kind !== 'query' && args) fail('invalid', `${kind === 'state' ? 'A state' : 'An action'} use takes no args`)
     const known: Array<{ id: string }> = { state: mod.state, query: mod.queries, action: mod.actions }[kind]
     if (!known.some(entry => entry.id === id)) fail('not_found', `No ${kind} "${id}" in the page's module`)
@@ -570,10 +634,20 @@ export const pageUseUpdate = defineEdit({
   input: z.object({
     page: PageRef,
     as: Alias,
-    args: z.record(CamelNameSchema, ValueSchema.nullable()).describe('The query parameters to set (a value or an expression); null removes one, so its default applies')
+    args: z.record(CamelNameSchema, ValueSchema.nullable()).describe('The query parameters to set (a value or an expression); null removes one, so its default applies (an API query\'s required parameter can\'t be removed)')
   }),
   apply: (draft, { page: pageId, as, args }) => {
     const { page } = draft.page(pageId)
+    const apiUse = page.uses?.apis?.find(entry => entry.as === as)
+    if (apiUse) {
+      const { source, query } = apiQueryIn(draft, apiUse.datasource, apiUse.query)
+      const kept: Record<string, Value> = {}
+      for (const [name, value] of Object.entries({ ...apiUse.args, ...args })) if (value !== null) kept[name] = value
+      checkApiArgs(source, query, { ...kept, ...args })
+      if (Object.keys(kept).length) apiUse.args = kept
+      else delete apiUse.args
+      return {}
+    }
     const use = page.uses?.queries?.find(entry => entry.as === as) ?? fail('not_found', `Page "${page.name}" doesn't read a query as "${as}"`)
     const query = draft.module(moduleOfPage(draft, page).name).queries.find(entry => entry.id === use.query)!
     checkArgs(query, args)
@@ -603,7 +677,7 @@ export const pageUseRemove = defineEdit({
     const { kind, as, id } = found!
     if (boundRoots(page).has(as)) fail('invalid', `The page still binds "${as}": change what reads it first`)
     // What holds it besides a binding: a node that sets the state or runs the action (a Form holds its action in its props).
-    if (kind !== 'query') {
+    if (kind === 'state' || kind === 'action') {
       const holders: string[] = []
       walk(page.root, (node) => {
         if (mentions(node.interactions, id) || (kind === 'action' && mentions(node.props, id))) holders.push(node.id)

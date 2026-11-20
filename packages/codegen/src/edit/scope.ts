@@ -1,5 +1,7 @@
 import type { Model } from '../model/load.ts'
 import type { EntityFile, ModelNode, PageFile, QueryFile, Value } from '../model/schemas.ts'
+import { apiFieldPaths, apiQueryOf, apiRowsOf } from './api-uses.ts'
+import type { ApiRows, ApiUse } from './api-uses.ts'
 
 /**
  * The names a node can bind (`$bind`, `$template`; P5), the way the generator resolves
@@ -17,6 +19,8 @@ export interface ScopeName {
   many: boolean
   /** The entity its records are of, when known. */
   entity?: string
+  /** An API query's answer (`uses.apis`): the source, the query and the model of its rows. `fields` are then the model's, nested ones as `address.city`, a list's `tags.length`. */
+  api?: { datasource: string, query: string, model: string }
 }
 
 const isObject = (value: unknown): value is Record<string, Value> => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -54,6 +58,17 @@ export const queryBehind = (model: Model, page: PageFile, alias: string, seen = 
   return undefined
 }
 
+/** What the API query a page use names answers, when the source and the query exist. */
+const apiRowsFor = (model: Model, use: ApiUse): ApiRows | undefined => {
+  const found = apiQueryOf(model.datasources, use)
+  return found && apiRowsOf(found.source, found.query)
+}
+
+const apiScope = (use: ApiUse, rows: ApiRows | undefined): Pick<ScopeName, 'fields' | 'api'> => ({
+  fields: rows ? apiFieldPaths(rows.models, rows.model) : [],
+  api: { datasource: use.datasource, query: use.query, model: rows?.model ?? '' }
+})
+
 const treeOf = (model: Model, file: string) => {
   for (const mod of Object.values(model.modules)) {
     const page = mod.pages.find(entry => entry.id === file)
@@ -87,12 +102,23 @@ export function bindingScope(model: Model, file: string, nodeId?: string, option
       const root = isObject(items) && typeof items.$bind === 'string' ? items.$bind.split('.')[0]! : undefined
       const query = root ? queryBehind(model, page, root) : undefined
       const entity = query ? entities(model).find(entry => entry.id === query.from) : undefined
+      // A List over an API query's list: each item is one row of its model.
+      const apiUse = root && !query && isObject(items) && items.$bind === root ? page.uses?.apis?.find(entry => entry.as === root) : undefined
+      const rows = apiUse ? apiRowsFor(model, apiUse) : undefined
+      if (apiUse && rows?.many) {
+        scope.push({ name: node.props.as, source: 'item', many: false, ...apiScope(apiUse, rows) })
+        continue
+      }
       scope.push({ name: node.props.as, source: 'item', fields: entity ? entityFieldNames(entity) : [], many: false, ...(entity ? { entity: entity.id } : {}) })
     }
     for (const use of page.uses?.queries ?? []) {
       const query = queryOf(model, use.query)
       const entity = query ? entities(model).find(entry => entry.id === query.from) : undefined
       scope.push({ name: use.as, source: 'query', fields: entity ? entityFieldNames(entity) : [], many: query?.result !== 'one', ...(entity ? { entity: entity.id } : {}) })
+    }
+    for (const use of page.uses?.apis ?? []) {
+      const rows = apiRowsFor(model, use)
+      scope.push({ name: use.as, source: 'query', many: rows?.many ?? true, ...apiScope(use, rows) })
     }
     for (const use of page.uses?.computed ?? []) {
       const query = queryBehind(model, page, use.as)
