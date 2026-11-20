@@ -139,16 +139,14 @@ Adding a sqlite data source later turns the database on: the next sync generates
 
 ## Releasing
 
-`@bildr/codegen`, `@bildr/editor`, `@bildr/nuxt` and `create-bildr` are released together by `.github/workflows/release.yml` when a `v*` tag is pushed. Nothing is published before that.
+`@bildr/codegen`, `@bildr/editor`, `@bildr/nuxt` and `create-bildr` are released together, from your machine:
 
-Once:
+```bash
+npm login                         # once
+pnpm release patch --dry-run      # the whole gate, then packs the tarballs to a temp dir; commits and publishes nothing
+pnpm release patch                # or minor, major, or an explicit x.y.z
+```
 
-1. Create the `bildr` organization on npmjs.com (the `@bildr` scope).
-2. Add an npm automation token as the repository secret `NPM_TOKEN`.
+`pnpm release` needs a clean `main` that matches `origin/main`. It sets the new version in every `packages/*/package.json` (the private `editor-core` too), then runs the CI gate: install, build, lint, typecheck and tests. Only then does it commit `release: v<version>`, tag it, publish to npm (npm asks for your 2FA code) and push `main` and the tag together. A failed check reverts the version bump; a failed publish leaves the commit and tag local and prints how to finish or undo.
 
-Each release:
-
-1. Set the same `version` in every `packages/*/package.json` (the tag check reads all five, the private `editor-core` too), and commit.
-2. `git tag v<version> && git push origin v<version>`.
-
-The workflow refuses a tag that differs from the package versions, runs lint, typecheck and tests, and publishes (without provenance: the repository is private). To look at a package before releasing it: `pnpm --filter <package> pack`, then list the tarball.
+`.github/workflows/release.yml` does the same on a pushed `v*` tag, but GitHub Actions does not run on this repository while it is private, so the tag `pnpm release` pushes starts a run that does not start its jobs. To look at a package before releasing it: `pnpm --filter <package> pack`, then list the tarball.
