@@ -147,6 +147,16 @@ describe('queries and actions', () => {
     expect(p.refuse('api_query_set', { datasource: 'ds_shop_api', query: { name: 'q', path: '/p', result: { model: 'Nope', many: true } } }, 'invalid').message).toMatch(/Unknown model "Nope"/)
   })
 
+  it('itemsPath takes the JSON keys lists sit under: dots between keys like "item-list" or "hydra:member" (verify P4)', () => {
+    const p = ready()
+    for (const itemsPath of ['item-list', 'hydra:member', '@graph', 'data.item-list', '$items']) {
+      p.edit('api_query_set', { datasource: 'ds_shop_api', query: { name: 'products', path: '/products', result: { model: 'Product', many: true, itemsPath } } })
+    }
+    for (const itemsPath of ['', 'a..b', '.a', 'a.', 'a b', 'a/b', 'a[0]']) {
+      expect(p.refuse('api_query_set', { datasource: 'ds_shop_api', query: { name: 'products', path: '/products', result: { model: 'Product', many: true, itemsPath } } }, 'invalid_input').code, itemsPath).toBe('invalid_input')
+    }
+  })
+
   it('api_action_set: methods other than GET, optional body and result', () => {
     const p = ready()
     p.edit('api_action_set', { datasource: 'ds_shop_api', action: { name: 'deleteProduct', method: 'DELETE', path: '/products/:id', params: [{ name: 'id', in: 'path', type: 'integer' }] } })

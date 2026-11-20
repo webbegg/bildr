@@ -132,8 +132,13 @@ export const ApiParamSchema = z.object({
   required: z.boolean().optional(),
   key: RemoteKeySchema.optional()
 })
-/** What a call answers: one model or a list of them, read at `itemsPath` (dots, `data.items`) when the list is wrapped. */
-export const ApiResultSchema = z.object({ model: PascalNameSchema, many: z.boolean(), itemsPath: z.string().regex(PROPERTY_PATH).optional() })
+/**
+ * Where a wrapped list sits in an answer: JSON keys joined by dots (`data.items`, `hydra:member`). The keys
+ * are the ones `detectItems` finds; generated code reads each one as a quoted property, never as code.
+ */
+export const API_ITEMS_PATH = /^[\w$@:-]+(?:\.[\w$@:-]+)*$/
+/** What a call answers: one model or a list of them, read at `itemsPath` when the list is wrapped. */
+export const ApiResultSchema = z.object({ model: PascalNameSchema, many: z.boolean(), itemsPath: z.string().max(200).regex(API_ITEMS_PATH, 'Use JSON keys joined by dots, like "data.items"').optional() })
 export const ApiQuerySchema = z.object({
   name: CamelNameSchema,
   description: z.string().max(500).optional(),
