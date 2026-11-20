@@ -424,7 +424,8 @@ export const ManifestFileSchema = z.object({
  * Nuxt aliases already use (`#app`, `#build`, `#imports`, …) or the core layer's
  * name are refused.
  */
-export const RESERVED_MODULE_NAMES = ['app', 'build', 'components', 'core', 'head', 'imports', 'internal', 'layers', 'nitro', 'shared', 'vue'] as const
+// `apis`: the layer API data sources generate into (simple data SD-5).
+export const RESERVED_MODULE_NAMES = ['apis', 'app', 'build', 'components', 'core', 'head', 'imports', 'internal', 'layers', 'nitro', 'shared', 'vue'] as const
 
 export const ModuleFileSchema = z.object({
   ...schemaField,

@@ -26,6 +26,173 @@
       "owner": "managed",
       "sha256": "9b61bc4d075ce2c53d3dd1eead7facf08b708982fe24c0ebce2f391eb0522812"
     },
+    "layers/apis/app/composables/apis/useCatalogCreateProduct.ts": {
+      "owner": "managed",
+      "sha256": "29fa3252b5628ad0bbfa9be94a74fb2942805c7b8ad254188e18463fd5eefdb4",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/app/composables/apis/useCatalogDeleteProduct.ts": {
+      "owner": "managed",
+      "sha256": "27459eaff251b16da8c8b97d7168a540c3b2993525fbd40cb51b0d0776a5748e",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/app/composables/apis/useCatalogProduct.ts": {
+      "owner": "managed",
+      "sha256": "bed5d3f99dcf8ea7f9a2a3b5bf4ef79dff8ff377750d2f974d6f7460474c6df7",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/app/composables/apis/useCatalogProducts.ts": {
+      "owner": "managed",
+      "sha256": "2a66742d508b9fbb69d99888f4fdc21f56d7418112db0b336225e57aea97b2b4",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/app/data/api-query.ts": {
+      "owner": "managed",
+      "sha256": "10a84ba17a3637bba51b0377a79d807ef225fba6230a4bd6689b8a4c07b88070"
+    },
+    "layers/apis/nuxt.config.ts": {
+      "owner": "managed",
+      "sha256": "fbbc8882288eedd1678c23b360b78420f72ed3636407f4dbf84656ef75b68192"
+    },
+    "layers/apis/server/api/apis/catalog/create-product.post.ts": {
+      "owner": "managed",
+      "sha256": "9a9d30f440596e26c422032acf843e01843d0ee7b66b3bd9b6869091b722a726",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/server/api/apis/catalog/delete-product.delete.ts": {
+      "owner": "managed",
+      "sha256": "f5956483516db04716786f0cdd328415fb1398563958070846c929cf6753ee79",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/server/api/apis/catalog/product.get.ts": {
+      "owner": "managed",
+      "sha256": "a23638ba23034b11c639577d5b9aa862ad9caef0b5145300704022ca137939fd",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/server/api/apis/catalog/products.get.ts": {
+      "owner": "managed",
+      "sha256": "e160261bfc4dfb7af3d9ebbd80a087a6c3eca86ec4d2e683e079cb8c6536cc54",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/server/lib/fetch-client.ts": {
+      "owner": "managed",
+      "sha256": "054a1ca61068f52b985f881932bd697733ef3df750e0e787adb738e802de51d6"
+    },
+    "layers/apis/server/utils/catalog.ts": {
+      "owner": "managed",
+      "sha256": "4ec36a7ec6d67d5e18509a20e2a52e0ce3ff7605af151af1db4addc17fd9760b",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/data/catalog/client.ts": {
+      "owner": "managed",
+      "sha256": "aa4f95e7f9d4a5320cc99e6eeaf4838a1b7360490ad9c23e5222b05a943fba68",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/data/catalog/mappers/category.mapper.ts": {
+      "owner": "managed",
+      "sha256": "867648ed3603ee258dd458dd979bcbde3f266f686dcfa2fe6cca00fda9abf7a7",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/data/catalog/mappers/product.mapper.ts": {
+      "owner": "managed",
+      "sha256": "d903ef5e2ce40474849027ef76475069da8b9208c179bb8339f1cc90696a87a0",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/data/catalog/models/category.dto.ts": {
+      "owner": "managed",
+      "sha256": "eee41a17a8909574cea3d50d371a0bef3743ab92c7b9bec5b9676cd5ba46b8cd",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/data/catalog/models/product.dto.ts": {
+      "owner": "managed",
+      "sha256": "6388c034baed7db06e4df2f55ff966f341099ad2559f615dba863844b84af29e",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/data/catalog/repositories/catalog-repository.http.ts": {
+      "owner": "managed",
+      "sha256": "c6ff88e512b896d365b496d9bf2989881e24d9a9a1beb182b101294b0b63cb22",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/data/catalog/validations/category.schema.ts": {
+      "owner": "managed",
+      "sha256": "5534dc3e73b97febd026bb276e1639bc48c34650eafb444f201b66208ba0bd19",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/data/catalog/validations/product.schema.ts": {
+      "owner": "managed",
+      "sha256": "d42404932fa9ffbe4a757c20c0bf3aa0be435b211833656e5ee60d6fa8b3934d",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/domain/catalog/entities/category.ts": {
+      "owner": "managed",
+      "sha256": "f0145ac79657ae928f0cf2e57960beb5fcf23a6470571d40299c776df5698ff6",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/domain/catalog/entities/product.ts": {
+      "owner": "managed",
+      "sha256": "e5c7ef396b8a46f63efab445e185c0d73a08c3786d918bec23a8e5410e644790",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/domain/catalog/errors.ts": {
+      "owner": "managed",
+      "sha256": "ee1e0fa54fe52f4c9e700d749ee7a4cd81376b5a95f67bb7b13c256425360f8c",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/domain/catalog/repositories/catalog-repository.ts": {
+      "owner": "managed",
+      "sha256": "fe38fcdce8b16f005d28bf885e5c2f7b07142540bc6851f5e2bb7b3467cec5ea",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/domain/catalog/use-cases/create-product.ts": {
+      "owner": "managed",
+      "sha256": "c2ca6fe5bcd254ec0ba68b2dc909f411d48968ac9fedea26e4b267c2cd79c0f1",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/domain/catalog/use-cases/delete-product.ts": {
+      "owner": "managed",
+      "sha256": "ba1e62b88749c27aec386691c115c21d41abafcf48ef0398785252f5677733ae",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/domain/catalog/use-cases/product.ts": {
+      "owner": "managed",
+      "sha256": "ea22af31db75b82c52d3441bb8c438e10c1e9f9f1f8451cdd901f9ed65771164",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/domain/catalog/use-cases/products.ts": {
+      "owner": "managed",
+      "sha256": "dc38d8fcfb59d994eac0c54c791c4a1239be4c992231bd17302ef662f3eebc0e",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/test/catalog/catalog-repository.http.test.ts": {
+      "owner": "managed",
+      "sha256": "61e9c7912559b51914943e7d30cfa138683f96ab7ca3f440e40c5a78f22fef9b",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/test/catalog/create-product.test.ts": {
+      "owner": "managed",
+      "sha256": "153bcfa8948c31e5fe30b4c6e0362ea9a83de0c658664b33fab48df91bee19ab",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/test/catalog/delete-product.test.ts": {
+      "owner": "managed",
+      "sha256": "4709ed8cfcb08d2c3baaeb86b197f460080e509f240afa07cf33a6e08d491ce2",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/test/catalog/fake-repository.ts": {
+      "owner": "managed",
+      "sha256": "339ec4847cf52359841fa4b4562b812ada9875bc73c265ecd4f92393fa875d0c",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/test/catalog/product.test.ts": {
+      "owner": "managed",
+      "sha256": "046f5a9031570d4cb64c3bf2d42f59c5e97094009e13fd14c4114080f9663ce0",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/test/catalog/products.test.ts": {
+      "owner": "managed",
+      "sha256": "078afd7c8416ccd5876942595fa6541962268c30e1237fcf0260c5fc31f18963",
+      "source": ".bildr/datasources/catalog.json"
+    },
     "layers/blog/app/components/blog/PostCard.vue": {
       "owner": "managed",
       "sha256": "f89ea6eba666f96dfd1a00582e7467e79f69b99580b2643985b8efc9a7eaf84e",
@@ -261,7 +428,7 @@
     },
     "layers/core/nuxt.config.ts": {
       "owner": "managed",
-      "sha256": "fb581c3761d5ee4fa155d16f6abdecd7d0cdb45e81c086aa42ea5954120c5804"
+      "sha256": "bbc2e75298354ea4fd3f4b6fc5aafce4e85abaf2a4e277014e6a5da1abe2d135"
     },
     "layers/core/server/plugins/migrate.ts": {
       "owner": "managed",
@@ -325,7 +492,7 @@
     },
     "vitest.config.ts": {
       "owner": "managed",
-      "sha256": "4674c7931927ab4a44cbff7bb70391a8d20424275ef00a7fd6cda29526248a60"
+      "sha256": "74f028acf0ccbcf7ba5f7fbf7dbbd62a3706c54de3c18575d9fdc9723bcd1f4f"
     }
   }
 }

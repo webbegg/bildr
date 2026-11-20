@@ -571,6 +571,35 @@ function quotesStub() {
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve(server)))
 }
 
+/**
+ * A stand-in for the "catalog" API data source (fixtures/codegen/blog/.bildr/datasources/catalog.json): GET /products (a list under
+ * data.items, `cat` filters), GET /products/:id, POST /products, DELETE /products/:id. It records what it was asked, with the
+ * credentials, so the smoke can check what the generated server sent.
+ */
+function catalogStub() {
+  const calls = []
+  const product = id => ({ id, name: 'Stub product', price: 9.5, created_at: '2024-01-02T03:04:05Z', note: null, categories: [{ id: 1, name: 'Stub category' }] })
+  const server = createServer((request, response) => {
+    const url = new URL(request.url, 'http://stub')
+    let body = ''
+    request.on('data', chunk => (body += chunk))
+    request.on('end', () => {
+      calls.push({ method: request.method, path: url.pathname, search: url.search, body: body || undefined, authorization: request.headers.authorization })
+      const send = (status, value) => {
+        response.writeHead(status, value === undefined ? {} : { 'content-type': 'application/json' })
+        response.end(value === undefined ? '' : JSON.stringify(value))
+      }
+      const one = /^\/products\/(\d+)$/.exec(url.pathname)
+      if (request.method === 'GET' && url.pathname === '/products') return send(200, { data: { items: url.searchParams.get('cat') === 'none' ? [] : [product(1)] } })
+      if (request.method === 'GET' && one) return send(200, product(Number(one[1])))
+      if (request.method === 'POST' && url.pathname === '/products') return send(201, { ...JSON.parse(body), id: 7 })
+      if (request.method === 'DELETE' && one) return send(204)
+      send(404, { message: 'not found' })
+    })
+  })
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({ server, calls })))
+}
+
 // API-only smoke (--database none).
 
 /** The REST "api" data source of the api-only fixture, in memory: GET /tasks (offset paging), GET /tasks/:id, POST /tasks. */
@@ -684,6 +713,7 @@ async function smoke(ctx) {
     if (!existsSync(path)) throw new Error(`${label} not found at ${path}; set ${label === 'Chromium' ? 'CHROMIUM' : 'PLAYWRIGHT_CORE'}`)
   }
   const stub = await quotesStub()
+  const catalog = await catalogStub()
   const port = await freePort()
   const base = `http://127.0.0.1:${port}`
   const dbFile = join(ctx.tmp, 'smoke.db')
@@ -691,7 +721,14 @@ async function smoke(ctx) {
   const server = start(process.execPath, ['.output/server/index.mjs'], {
     cwd: ctx.dir,
     log,
-    env: { PORT: String(port), HOST: '127.0.0.1', NUXT_DB_URL: `file:${dbFile}`, NUXT_DATASOURCES_QUOTES_BASE_URL: `http://127.0.0.1:${stub.address().port}` }
+    env: {
+      PORT: String(port),
+      HOST: '127.0.0.1',
+      NUXT_DB_URL: `file:${dbFile}`,
+      NUXT_DATASOURCES_QUOTES_BASE_URL: `http://127.0.0.1:${stub.address().port}`,
+      NUXT_DATASOURCES_CATALOG_BASE_URL: `http://127.0.0.1:${catalog.server.address().port}`,
+      NUXT_DATASOURCES_CATALOG_API_KEY: 'e2e-catalog-key'
+    }
   })
   let browser
   try {
@@ -699,6 +736,23 @@ async function smoke(ctx) {
     const empty = await (await fetch(`${base}/api/blog/posts`)).json().catch(() => undefined)
     check(Array.isArray(empty?.items) && empty.items.length === 0, `the boot plugin migrated the empty database: GET /api/blog/posts → ${JSON.stringify(empty)?.slice(0, 200)}`)
     check(existsSync(dbFile), `the database file was created at ${dbFile}`)
+
+    // The "catalog" API data source (SD-5): the generated route calls the stub through the use-case, the HTTP repository and the server client.
+    const products = await fetch(`${base}/api/apis/catalog/products?category=books`)
+    const listed = await products.json().catch(() => undefined)
+    const expected = { id: 1, name: 'Stub product', price: 9.5, createdAt: '2024-01-02T03:04:05Z', note: null, categories: [{ id: 1, name: 'Stub category' }] }
+    check(products.status === 200 && JSON.stringify(listed) === JSON.stringify([expected]), `API: GET /api/apis/catalog/products maps the stub's list (under data.items) to the entities (${products.status} ${JSON.stringify(listed)?.slice(0, 300)})`)
+    const asked = catalog.calls.find(call => call.method === 'GET' && call.path === '/products')
+    check(asked?.search === '?cat=books' && asked.authorization === 'Bearer e2e-catalog-key', `the catalog API got GET /products?cat=books with the bearer key from the env (${asked?.search} ${asked?.authorization})`)
+    const detail = await (await fetch(`${base}/api/apis/catalog/product?id=5`)).json().catch(() => undefined)
+    check(detail?.id === 5 && detail.name === 'Stub product' && catalog.calls.some(call => call.path === '/products/5'), `API: GET /api/apis/catalog/product?id=5 asks the stub for /products/5 (${JSON.stringify(detail)?.slice(0, 200)})`)
+    const created = await fetch(`${base}/api/apis/catalog/create-product`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...expected, id: 2, createdAt: '2024-01-02T03:04:05.000Z' }) })
+    const sentBody = JSON.parse(catalog.calls.find(call => call.method === 'POST' && call.path === '/products')?.body ?? '{}')
+    check(created.ok && sentBody.created_at === '2024-01-02T03:04:05.000Z' && sentBody.createdAt === undefined, `API: POST /api/apis/catalog/create-product sends the remote keys (${created.status} ${JSON.stringify(sentBody)?.slice(0, 200)})`)
+    const deleted = await fetch(`${base}/api/apis/catalog/delete-product?id=3`, { method: 'DELETE' })
+    check(deleted.status === 204 && catalog.calls.some(call => call.method === 'DELETE' && call.path === '/products/3'), `API: DELETE /api/apis/catalog/delete-product?id=3 answers 204 after DELETE /products/3 (${deleted.status})`)
+    const refused = await fetch(`${base}/api/apis/catalog/product?id=abc`)
+    check(refused.status === 400, `API: a path parameter that is not a number is refused with 400 (${refused.status})`)
 
     const { chromium } = await import(pathToFileURL(PLAYWRIGHT_CORE).href)
     browser = await chromium.launch({ executablePath: CHROMIUM, headless: true })
@@ -771,6 +825,7 @@ async function smoke(ctx) {
     await browser?.close().catch(() => {})
     await stop(server)
     await new Promise(resolve => stub.close(resolve))
+    await new Promise(resolve => catalog.server.close(resolve))
     if (counts.fail) console.log(`server log (${log}):\n${tail(log, 15)}`)
   }
 }
