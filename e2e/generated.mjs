@@ -28,8 +28,10 @@
  *             `modules`, `nuxi typecheck`, `nuxi build` and `vitest run` pass (S2).
  * 5. smoke    the built server on a fresh database; a headless Chromium opens the
  *             list, creates a post through the form, sees it in the list and on
- *             its detail page; the API lists it. Console errors, failed
- *             requests and requests to other origins are FAILs.
+ *             its detail page; the API lists it. The browser-runtime "weather" API
+ *             (a stub on its own port, with CORS) is called from a test page by the
+ *             generated composables, with no bildr route in between. Console errors,
+ *             failed requests and requests to other origins (but that stub) are FAILs.
  *
  * Flags and env:
  * --install          real install instead of the symlink
@@ -553,6 +555,7 @@ async function standalone(ctx) {
   check(without !== config && !modulesLine.includes('@bildr/nuxt'), `@bildr/nuxt removed from nuxt.config.ts modules (${modulesLine})`)
 
   mutate(ctx)
+  if (!API_ONLY) writeWeatherPage(ctx)
   const bin = name => join(ctx.dir, 'node_modules/.bin', name)
   const options = name => ({ cwd: ctx.dir, log: join(ctx.tmp, `${name}.log`), timeout: 15 * MINUTE })
   await checkRun('nuxi typecheck', bin('nuxi'), ['typecheck'], options('typecheck'))
@@ -599,6 +602,75 @@ function catalogStub() {
     })
   })
   return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({ server, calls })))
+}
+
+/**
+ * A stand-in for the "weather" API data source (fixtures/codegen/blog/.bildr/datasources/weather.json), which runs in the browser: GET /forecast?q=
+ * and POST /reports, with CORS headers (the page is another origin) and a preflight answer. It records who asked (the Origin and the
+ * User-Agent: a browser's, not the app server's) and what credentials came with it. "Nowhere" is answered with something the model doesn't say.
+ */
+function weatherStub() {
+  const calls = []
+  const server = createServer((request, response) => {
+    const url = new URL(request.url, 'http://stub')
+    let body = ''
+    request.on('data', chunk => (body += chunk))
+    request.on('end', () => {
+      calls.push({ method: request.method, path: url.pathname, search: url.search, body: body || undefined, origin: request.headers.origin, userAgent: request.headers['user-agent'], authorization: request.headers.authorization, cookie: request.headers.cookie, contentType: request.headers['content-type'] })
+      const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type' }
+      const send = (status, value) => {
+        response.writeHead(status, { ...cors, 'content-type': 'application/json' })
+        response.end(JSON.stringify(value))
+      }
+      if (request.method === 'OPTIONS') {
+        response.writeHead(204, cors)
+        return response.end()
+      }
+      if (request.method === 'GET' && url.pathname === '/forecast') {
+        return url.searchParams.get('q') === 'Nowhere'
+          ? send(200, { city: 42, secret_internal: 'upstream-body' })
+          : send(200, { city: url.searchParams.get('q'), celsius: 21.5, observed_at: '2024-01-02T03:04:05Z' })
+      }
+      if (request.method === 'POST' && url.pathname === '/reports') return send(201, JSON.parse(body))
+      send(404, { message: 'not found' })
+    })
+  })
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({ server, calls })))
+}
+
+/**
+ * A page that calls the generated composables of the "weather" source, written into the generated app before it is built (P7 adds the page
+ * bindings that will do it from the canvas): the forecast of one city, one the stub answers wrongly, and the report action.
+ */
+function writeWeatherPage(ctx) {
+  const path = join(ctx.dir, 'app/pages/e2e-weather.vue')
+  mkdirSync(join(ctx.dir, 'app/pages'), { recursive: true })
+  writeFileSync(path, [
+    '<script setup lang="ts">',
+    '// Written by e2e/generated.mjs: it calls the generated composables of the browser-runtime "weather" API directly.',
+    'const forecast = useWeatherForecast({ city: \'Lisbon\' })',
+    'const nowhere = useWeatherForecast({ city: \'Nowhere\' })',
+    'const report = useWeatherReportForecast()',
+    'const reported = ref(\'\')',
+    'const send = async () => {',
+    '  const result = await report.run({ body: { city: \'Lisbon\', celsius: 3.5, observedAt: \'2024-01-02T03:04:05.000Z\' } })',
+    '  reported.value = result.ok ? `reported ${result.value.city}` : `failed ${result.error}`',
+    '}',
+    '</script>',
+    '',
+    '<template>',
+    '  <main>',
+    '    <p data-test="city">{{ forecast.data.value?.city }}</p>',
+    '    <p data-test="celsius">{{ forecast.data.value?.celsius }}</p>',
+    '    <p data-test="observed">{{ forecast.data.value?.observedAt }}</p>',
+    '    <p data-test="nowhere">{{ nowhere.error.value }}</p>',
+    '    <button type="button" @click="send">Report</button>',
+    '    <p data-test="reported">{{ reported }}</p>',
+    '  </main>',
+    '</template>',
+    ''
+  ].join('\n'))
+  check(existsSync(path), 'a test page calls the generated weather composables (app/pages/e2e-weather.vue)')
 }
 
 // API-only smoke (--database none).
@@ -715,6 +787,8 @@ async function smoke(ctx) {
   }
   const stub = await quotesStub()
   const catalog = await catalogStub()
+  const weather = await weatherStub()
+  const weatherBase = `http://127.0.0.1:${weather.server.address().port}`
   const port = await freePort()
   const base = `http://127.0.0.1:${port}`
   const dbFile = join(ctx.tmp, 'smoke.db')
@@ -728,7 +802,9 @@ async function smoke(ctx) {
       NUXT_DB_URL: `file:${dbFile}`,
       NUXT_DATASOURCES_QUOTES_BASE_URL: `http://127.0.0.1:${stub.address().port}`,
       NUXT_APIS_CATALOG_BASE_URL: `http://127.0.0.1:${catalog.server.address().port}`,
-      NUXT_APIS_CATALOG_API_KEY: 'e2e-catalog-key'
+      NUXT_APIS_CATALOG_API_KEY: 'e2e-catalog-key',
+      // The "weather" API runs in the browser: its base URL reaches the page through runtimeConfig.public.
+      NUXT_PUBLIC_APIS_WEATHER_BASE_URL: weatherBase
     }
   })
   let browser
@@ -771,7 +847,16 @@ async function smoke(ctx) {
     page.on('requestfailed', request => request.failure()?.errorText !== 'net::ERR_ABORTED' && errors.push(`request failed: ${request.method()} ${request.url()} (${request.failure()?.errorText})`))
     // The app must work offline: everything it loads comes from its own server (icons too, see the root nuxt.config `icon`).
     const external = new Set()
-    page.on('request', request => !request.url().startsWith(base) && !request.url().startsWith('data:') && external.add(new URL(request.url()).origin + new URL(request.url()).pathname))
+    // The "weather" stub is the one other origin the page may call (a browser-runtime API); what it asked of it, and of the app's own routes, is kept.
+    const weatherRequests = []
+    const viaServer = []
+    const warnings = []
+    page.on('request', (request) => {
+      if (request.url().startsWith(weatherBase)) weatherRequests.push(`${request.method()} ${request.url()}`)
+      if (request.url().startsWith(`${base}/api/apis/weather`)) viaServer.push(request.url())
+    })
+    page.on('console', message => message.type() === 'warning' && warnings.push(message.text()))
+    page.on('request', request => !request.url().startsWith(base) && !request.url().startsWith(weatherBase) && !request.url().startsWith('data:') && external.add(new URL(request.url()).origin + new URL(request.url()).pathname))
     page.on('response', response => response.status() >= 400 && !response.url().endsWith('/favicon.ico') && errors.push(`HTTP ${response.status()}: ${response.request().method()} ${response.url()}`))
     const visible = async (locator, msg) => check(await locator.first().waitFor({ timeout: UI_TIMEOUT }).then(() => true, () => false), msg)
 
@@ -826,6 +911,28 @@ async function smoke(ctx) {
     await page.goto(`${base}/posts/${post.slug}`)
     await visible(page.getByRole('heading', { name: post.title }), 'detail page by direct URL: the title')
 
+    // The "weather" API data source runs in the browser (SD-5, P3): the page's composable builds the request itself and calls the stub (another
+    // origin, CORS), through the use-case and the HTTP repository. No bildr route is in between, and no credentials go with it.
+    await page.goto(`${base}/e2e-weather`)
+    await visible(page.locator('[data-test="city"]', { hasText: 'Lisbon' }), 'weather page: the forecast of Lisbon, fetched by the browser from the stub')
+    await visible(page.locator('[data-test="celsius"]', { hasText: '21.5' }), 'weather page: the forecast is mapped to the entity (celsius 21.5)')
+    await visible(page.locator('[data-test="observed"]', { hasText: '2024-01-02T03:04:05Z' }), 'weather page: observed_at is read as observedAt')
+    const forecastCall = weather.calls.find(call => call.method === 'GET' && call.path === '/forecast' && call.search === '?q=Lisbon')
+    check(forecastCall?.origin === base && /Chrome/.test(forecastCall.userAgent ?? ''), `weather API: GET /forecast?q=Lisbon came from the browser (Origin ${forecastCall?.origin}, ${forecastCall?.userAgent?.slice(0, 60)})`)
+    check(forecastCall && !forecastCall.authorization && !forecastCall.cookie, 'weather API: the browser call carried no credentials (no authorization, no cookie)')
+    check(viaServer.length === 0 && weatherRequests.some(request => request.startsWith('GET ') && request.endsWith('/forecast?q=Lisbon')), `weather API: the page called the stub itself, no bildr route in between (${viaServer.join(', ') || weatherRequests.join(', ')})`)
+    await page.getByRole('button', { name: 'Report' }).click()
+    await visible(page.locator('[data-test="reported"]', { hasText: 'reported Lisbon' }), 'weather page: the report action ran in the browser and answered the stub\'s echo')
+    const reportedCall = weather.calls.find(call => call.method === 'POST' && call.path === '/reports')
+    check(reportedCall?.origin === base && reportedCall.contentType === 'application/json' && JSON.parse(reportedCall.body ?? '{}').observed_at === '2024-01-02T03:04:05.000Z', `weather API: POST /reports sent the remote keys as JSON from the browser (${reportedCall?.body})`)
+    check(weather.calls.some(call => call.method === 'OPTIONS' && call.path === '/reports'), 'weather API: the browser sent a CORS preflight for the POST')
+    check(viaServer.length === 0, `weather API: still no bildr route called (${viaServer.join(', ') || 'none'})`)
+    // An answer that is not the model: the UI gets the generic error, the detail goes to console.warn.
+    await visible(page.locator('[data-test="nowhere"]', { hasText: 'answered something unexpected' }), 'weather page: an answer that is not a Forecast shows the generic error')
+    const shown = await page.locator('[data-test="nowhere"]').first().textContent()
+    check(shown === 'The "weather" API answered something unexpected' && !/\bexpected\b|invalid_type|secret_internal|upstream-body/i.test(shown), `weather page: the error the UI sees has no zod detail and no upstream body (${shown})`)
+    check(warnings.some(text => text.includes('The "weather" API answered something unexpected: ') && /\bexpected\b/.test(text)), 'weather API: the detail of that answer went to console.warn')
+
     check(errors.length === 0, `no console errors or failed requests${errors.length ? `:\n${errors.map(line => `    | ${line}`).join('\n')}` : ''}`)
     check(external.size === 0, `the app requested no other origins at runtime${external.size ? `:\n${[...external].map(url => `    | ${url}`).join('\n')}` : ''}`)
   } finally {
@@ -833,6 +940,7 @@ async function smoke(ctx) {
     await stop(server)
     await new Promise(resolve => stub.close(resolve))
     await new Promise(resolve => catalog.server.close(resolve))
+    await new Promise(resolve => weather.server.close(resolve))
     if (counts.fail) console.log(`server log (${log}):\n${tail(log, 15)}`)
   }
 }

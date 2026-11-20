@@ -138,9 +138,10 @@ export const LINT_RESTRICTED_FOLDERS: readonly string[] = ['app', 'server', 'inf
 export const API_DECLARED_NAMES: Record<string, string[]> = {
   'the zod and kernel imports of a use-case': ['z', 'ok', 'err', 'KernelResult', 'ZodType'],
   'the error helpers of the domain': ['remoteFailed', 'invalidAnswer', 'invalidInput'],
-  'the locals of the generated functions': ['input', 'parsed', 'cause', 'deps', 'repository', 'result', 'http', 'calls', 'answer', 'read', 'itemsAt', 'segment', 'recording', 'unused', 'methods', 'query', 'body', 'params', 'event', 'signal', 'headers', 'call', 'config', 'secret', 'path', 'request', 'baseUrl', 'fetch', 'text', 'value'],
+  'the locals of the generated functions': ['input', 'parsed', 'cause', 'deps', 'repository', 'result', 'http', 'calls', 'answer', 'read', 'itemsAt', 'segment', 'recording', 'unused', 'methods', 'query', 'body', 'params', 'event', 'signal', 'headers', 'call', 'config', 'secret', 'path', 'request', 'baseUrl', 'fetch', 'text', 'value', 'api'],
   'the vitest imports of the generated tests': ['describe', 'expect', 'it'],
   'the helpers of the server runtime': ['useRuntimeConfig', 'createFetchClient', 'defineEventHandler', 'getValidatedQuery', 'readValidatedBody', 'setResponseStatus', 'unwrapOrThrow', 'useApiQuery', 'useApiAction'],
+  'the helpers of the browser runtime': ['createBrowserClient', 'BrowserFailure', 'valueOrThrow'],
   'the kernel schemas an entity imports': ['IdSchema', 'TimestampSchema'],
   'the types the generated files import': ['ApiClient', 'ApiRequest', 'ErrorStatusMap', 'FetchFailure', 'MaybeRefOrGetter', 'QuerySchema'],
   'a global the generated files use': ['Array', 'Error', 'Object', 'Partial', 'Promise', 'Record', 'String', 'T']

@@ -46,7 +46,7 @@ describe('loadModel on the golden fixture', () => {
     if (!result.ok) return
     const blog = result.model.modules.blog!
     expect(result.model.project.name).toBe('Blog')
-    expect(result.model.datasources.map(ds => ds.name)).toEqual(['catalog', 'main', 'quotes'])
+    expect(result.model.datasources.map(ds => ds.name)).toEqual(['catalog', 'main', 'quotes', 'weather'])
     expect(result.model.layouts.map(layout => layout.name)).toEqual(['main'])
     expect(Object.keys(result.model.modules)).toEqual(['blog'])
     expect(blog.entities.map(entity => entity.name)).toEqual(['Post', 'Quote'])

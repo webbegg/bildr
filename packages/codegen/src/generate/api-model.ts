@@ -10,17 +10,22 @@ import { docText, identifier, kebab, tsString } from './text.ts'
 export type Emitted = Omit<GeneratedFile, 'owner'>
 
 /**
- * What the API emitters (api.ts, api-server.ts, api-tests.ts) share: which sources they generate, the names
+ * What the API emitters (api.ts, api-server.ts, api-browser.ts, api-tests.ts) share: which sources they generate, the names
  * derived from a source and its operations, the type and zod expressions of a field or parameter, and the
  * sample values the generated tests use.
  */
 
-/**
- * The API data sources that run on the server. Sources with `runtime: 'browser'` are not generated yet
- * (their domain and data are the same, but the client calls the API itself: slice P3), so they are skipped here.
- */
+/** Every API data source, whatever its runtime: their domain, data and tests are generated alike. */
+export const apiSources = (model: Pick<Model, 'datasources'>): ApiSource[] =>
+  model.datasources.filter((source): source is ApiSource => source.kind === 'api')
+
+/** The API data sources that run on the server: a composition root, Nitro routes, a secret in the server's runtimeConfig. */
 export const serverApiSources = (model: Pick<Model, 'datasources'>): ApiSource[] =>
-  model.datasources.filter((source): source is ApiSource => source.kind === 'api' && source.runtime === 'server')
+  apiSources(model).filter(source => source.runtime === 'server')
+
+/** The API data sources that run in the browser: a composition in app/, a base URL in runtimeConfig.public, no secret (the model refuses auth for them). */
+export const browserApiSources = (model: Pick<Model, 'datasources'>): ApiSource[] =>
+  apiSources(model).filter(source => source.runtime === 'browser')
 
 /** A source with no query and no action has nothing to call: it generates no code (only its runtimeConfig entry). */
 export const isCallable = (source: ApiSource) => source.queries.length + source.actions.length > 0

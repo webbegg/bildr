@@ -3,9 +3,10 @@ import { apiComposableName } from '../edit/generated-names.ts'
 import type { Model } from '../model/load.ts'
 import type { ApiField } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
-import { descriptionOf, DTO_VALUE, fieldType, inputFields, inputType, isCallable, modelNames, namesOf, nestedModels, operationsOf, pathTemplate, propertyAccess, propertyKey, remoteKey, resultType, serverApiSources, wrapField } from './api-model.ts'
+import { apiSources, browserApiSources, descriptionOf, DTO_VALUE, fieldType, inputFields, inputType, isCallable, modelNames, namesOf, nestedModels, operationsOf, pathTemplate, propertyAccess, propertyKey, remoteKey, resultType, serverApiSources, wrapField } from './api-model.ts'
 import type { Emitted, Operation, SourceNames } from './api-model.ts'
-import { generateApiRuntime } from './api-server.ts'
+import { generateBrowserRuntime } from './api-browser.ts'
+import { generateApiLayer, generateServerRuntime } from './api-server.ts'
 import { apiTestFiles } from './api-tests.ts'
 import { zodField } from './entity.ts'
 import type { KernelName } from './entity.ts'
@@ -13,20 +14,25 @@ import { importLine } from './imports.ts'
 import { docText, file, header, kebab, pascal, tsString } from './text.ts'
 
 /**
- * The clean-architecture layers of the `api` data sources (simple data, SD-5). Every server-runtime source
- * generates into the one layer `layers/apis/`:
+ * The clean-architecture layers of the `api` data sources (simple data, SD-5). Every source, whatever its
+ * runtime, generates into the one layer `layers/apis/`:
  *
  * - domain (`shared/domain/<source>/`): the entities and their zod schemas, the repository port, one use-case
  *   per query and action, the errors. No Nuxt, no fetch.
  * - data (`shared/data/<source>/`): the DTOs the remote sends, their zod schemas, the mappers between both,
  *   the HTTP repository and the `ApiClient` port it calls through.
- * - the server runtime (api-server.ts), the generated tests (api-tests.ts).
+ * - the runtime: the server one (api-server.ts: composition root, Nitro routes, composables) for `runtime: 'server'`, the browser
+ *   one (api-browser.ts: composition in app/, client over fetch, composables) for `runtime: 'browser'`. The domain and the data above
+ *   are the same for both.
+ * - the generated tests (api-tests.ts).
  *
- * Sources with `runtime: 'browser'` generate nothing yet (slice P3). Pure and deterministic.
+ * Pure and deterministic.
  */
 export const generateApis = (model: Model): GeneratedFile[] => {
-  const sources = serverApiSources(model).filter(isCallable)
+  const sources = apiSources(model).filter(isCallable)
   if (!sources.length) return []
+  const servers = serverApiSources(model).filter(isCallable)
+  const browsers = browserApiSources(model).filter(isCallable)
   // A composable is auto-imported by its name: two sources must not generate one name (`a-b` + `c` and `a` + `bC` are both useABC).
   const composables = new Map<string, string>()
   for (const source of sources) {
@@ -39,7 +45,9 @@ export const generateApis = (model: Model): GeneratedFile[] => {
   }
   const files = [
     ...sources.flatMap(source => sourceFiles(model, source)),
-    ...generateApiRuntime(model, sources)
+    ...generateApiLayer(),
+    ...(servers.length ? generateServerRuntime(model, servers) : []),
+    ...(browsers.length ? generateBrowserRuntime(model, browsers) : [])
   ]
   return files.map(entry => ({ ...entry, owner: 'managed' as const })).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
 }
@@ -112,7 +120,10 @@ const errorLines = (source: ApiSource, names: SourceNames): string[] => [
   `/** \`status\` is what the API answered, or 0 when it didn't answer; \`detail\` finishes "The API …". */`,
   `export const remoteFailed = (status: number, detail: string): ${names.error} => ({ type: 'remote_failed', message: \`The "${source.name}" API \${detail}.\`, status })`,
   '',
-  '/** The answer is not what the model says. The error has no detail: it reaches the browser, and the detail (field paths, what was expected) is for the server log. */',
+  // Where the detail of an invalid answer goes: the server log (the error reaches the browser) or, for a source that runs in the page, the console.
+  source.runtime === 'browser'
+    ? '/** The answer is not what the model says. The error has no detail: the UI shows it as it is, and the detail (field paths, what was expected) goes to console.warn. */'
+    : '/** The answer is not what the model says. The error has no detail: it reaches the browser, and the detail (field paths, what was expected) is for the server log. */',
   `export const invalidAnswer = (): ${names.error} => ({ type: 'invalid_answer', message: ${tsString(`The "${source.name}" API answered something unexpected`)} })`,
   '',
   `export const invalidInput = (detail: string): ${names.error} => ({ type: 'invalid_input', message: \`The call to the "${source.name}" API is not valid: \${detail}\` })`,
@@ -298,7 +309,8 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
       ...(answered.includes(name) ? [modelNames(name).to] : []),
       ...(sent.includes(name) ? [modelNames(name).from] : [])
     ])),
-    importLine(`../../../domain/${source.name}/errors`, [names.failure, ...(results.length ? ['invalidAnswer'] : []), ...(usesSegment ? ['invalidInput'] : [])]),
+    // What the file throws: an invalid answer (a source with a result) and a path parameter that is not a segment. A source with neither throws nothing here.
+    (results.length > 0 || usesSegment) && importLine(`../../../domain/${source.name}/errors`, [names.failure, ...(results.length ? ['invalidAnswer'] : []), ...(usesSegment ? ['invalidInput'] : [])]),
     importLine(`../../../domain/${source.name}/repositories/${names.portFile}`, [{ name: names.port, type: true }]),
     importLine('../client', [{ name: 'ApiClient', type: true }]),
     '',

@@ -6,16 +6,18 @@ import { importLine } from './imports.ts'
 import { file, header, identifier, kebab, pascal, tsString } from './text.ts'
 
 /**
- * The server runtime of the `api` data sources (SD-5, P2): the layer's Nuxt config, the client over `fetch`,
+ * The runtime of the `api` data sources (SD-5). What every runtime shares: the layer's Nuxt config and the query
+ * helpers the client composables are built on (`generateApiLayer`). The server runtime (P2): the client over `fetch`,
  * and per source its composition root (the only place where the use-cases meet the HTTP repository), one Nitro
- * route per query and action, and one client composable each. Sources with `runtime: 'browser'` are not
- * here: they have no server route (slice P3).
+ * route per query and action, and one client composable each (`generateServerRuntime`). The browser runtime is in
+ * api-browser.ts: it has no server route, and its composables come from `composableFile` below.
  */
-export const generateApiRuntime = (model: Model, sources: ApiSource[]): Emitted[] => [
-  layerConfigFile(),
+export const generateApiLayer = (): Emitted[] => [layerConfigFile(), queryHelpersFile()]
+
+/** The server runtime of `sources`, which all have `runtime: 'server'`. */
+export const generateServerRuntime = (model: Model, sources: ApiSource[]): Emitted[] => [
   fetchClientFile(),
   fetchClientTestFile(),
-  queryHelpersFile(),
   ...sources.flatMap((source) => {
     const names = namesOf(model, source)
     return [
@@ -353,8 +355,13 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
       '',
       `/** The use-cases of the "${source.name}" API, wired to its HTTP repository. */`,
       `export const ${names.root} = () => {`,
-      '  // The detail of an answer that is not what the model says (field paths, expected types) stays in the server log: the error that reaches the browser has none.',
-      `  const repository = ${names.adapter}(${names.client}(), detail => console.error(${tsString(`The "${source.name}" API answered something unexpected: `)} + detail))`,
+      // A source whose operations answer nothing has no invalid answer to report: its repository takes no reporter.
+      ...(operations.some(operation => operation.result)
+        ? [
+            '  // The detail of an answer that is not what the model says (field paths, expected types) stays in the server log: the error that reaches the browser has none.',
+            `  const repository = ${names.adapter}(${names.client}(), detail => console.error(${tsString(`The "${source.name}" API answered something unexpected: `)} + detail))`
+          ]
+        : [`  const repository = ${names.adapter}(${names.client}())`]),
       '  return {',
       operations.map(operation => `    ${operation.name}: ${operation.name}({ ${names.camel}: repository })`).join(',\n'),
       '  }',
@@ -414,8 +421,13 @@ const routeFileOf = (source: ApiSource, names: SourceNames, operation: Operation
 
 // ── Composables ────────────────────────────────────────────────────────
 
-/** `app/composables/apis/use<S><Op>.ts`: a query is reactive data over the query client, an action an async `run`. */
-const composableFile = (source: ApiSource, names: SourceNames, operation: Operation): Emitted => {
+/**
+ * `app/composables/apis/use<S><Op>.ts`: a query is reactive data over the query client, an action an async `run`. The public signature is
+ * the same for both runtimes; only what is called differs: a server source calls its Nitro route, a browser one the use-case itself
+ * (through the composition of app/data/<s>.ts), which answers a Result that `valueOrThrow` turns into the value or the error the UI sees.
+ */
+export const composableFile = (source: ApiSource, names: SourceNames, operation: Operation, runtime: ApiSource['runtime'] = 'server'): Emitted => {
+  const browser = runtime === 'browser'
   const fields = inputFields(operation)
   const params = paramsOf(fields)
   const body = fields.find(field => field.model)
@@ -432,8 +444,31 @@ const composableFile = (source: ApiSource, names: SourceNames, operation: Operat
     ...(operation.kind === 'query' && fields.length ? ['import type { MaybeRefOrGetter } from \'vue\''] : []),
     ...(operation.result ? [importLine(`../../../shared/domain/${names.dir}/entities/${modelNames(operation.result.model).file}`, [{ name: operation.result.model, type: true }])] : []),
     ...(fields.length ? [importLine(`../../../shared/domain/${names.dir}/use-cases/${kebab(operation.name)}`, [{ name: input, type: true }])] : []),
-    importLine('../../data/api-query', [operation.kind === 'query' ? 'useApiQuery' : 'useApiAction'])
+    importLine('../../data/api-query', [operation.kind === 'query' ? 'useApiQuery' : 'useApiAction']),
+    ...(browser ? [importLine('../../data/browser-client', ['valueOrThrow']), importLine(`../../data/${names.dir}`, [names.root])] : [])
   )
+  // The local the browser composables hold the composed use-cases in.
+  const use = 'api'
+  if (operation.kind === 'query' && browser) {
+    return {
+      path: `layers/apis/app/composables/apis/${name}.ts`,
+      source: names.source,
+      content: file([
+        header(names.source),
+        ...imports,
+        '',
+        `/** ${label}: \`data\`, \`pending\` and \`error\` are refs${fields.length ? '; it fetches again when the input changes' : ''}. It calls the API from the page, through the use-case. */`,
+        `export const ${name} = (${fields.length ? `input: MaybeRefOrGetter<${input}>${optionalInput ? ' = {}' : ''}` : ''}) => {`,
+        `  const ${use} = ${names.root}()`,
+        `  return useApiQuery<${fields.length ? input : 'undefined'}, ${result}>({`,
+        `    key: ['apis', ${tsString(names.dir)}, ${tsString(operation.name)}],`,
+        `    input${fields.length ? '' : ': undefined'},`,
+        `    fetch: async ${fields.length ? 'query' : '()'} => valueOrThrow(await ${use}.${operation.name}(${fields.length ? 'query' : ''}))`,
+        '  })',
+        '}'
+      ])
+    }
+  }
   if (operation.kind === 'query') {
     const fetch = `$fetch<${result}>(${url}, { ${fields.length ? 'query, ' : ''}signal })`
     return {
@@ -450,6 +485,28 @@ const composableFile = (source: ApiSource, names: SourceNames, operation: Operat
         `    input${fields.length ? '' : ': undefined'},`,
         `    fetch: (${fields.length ? 'query' : '_input'}, signal) => ${fetch}`,
         '  })'
+      ])
+    }
+  }
+  if (browser) {
+    const generics = operation.result ? `<${fields.length ? input : 'undefined'}, ${result}>` : ''
+    const parameter = fields.length ? (operation.result ? 'input' : `input: ${input}`) : ''
+    const call = `valueOrThrow(await ${use}.${operation.name}(${fields.length ? 'input' : ''}))`
+    return {
+      path: `layers/apis/app/composables/apis/${name}.ts`,
+      source: names.source,
+      content: file([
+        header(names.source),
+        ...imports,
+        '',
+        `/** ${label}: \`run(${fields.length ? 'input' : ''})\` calls the API from the page, through the use-case, refetches the queries of the source and answers a Result. */`,
+        `export const ${name} = () => {`,
+        `  const ${use} = ${names.root}()`,
+        `  return useApiAction${generics}(`,
+        operation.result ? `    async ${parameter || '()'} => ${call},` : `    async (${parameter}) => {\n      ${call}\n    },`,
+        `    ['apis', ${tsString(names.dir)}]`,
+        '  )',
+        '}'
       ])
     }
   }

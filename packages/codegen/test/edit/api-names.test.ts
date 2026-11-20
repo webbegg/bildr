@@ -210,6 +210,14 @@ describe('what the generator declares is in the reserved lists (drift guard)', (
     p.edit('api_query_set', { datasource: 'ds_wide', query: { name: 'thing', path: '/things/:id/parts/:part', params: [{ name: 'id', in: 'path', type: 'text' }, { name: 'part', in: 'path', type: 'integer' }], result: { model: 'Thing', many: false } } })
     p.edit('api_action_set', { datasource: 'ds_wide', action: { name: 'saveThing', method: 'PUT', path: '/things/:id', params: [{ name: 'id', in: 'path', type: 'text' }], body: { model: 'Thing' }, result: { model: 'Thing', many: false } } })
     p.edit('api_action_set', { datasource: 'ds_wide', action: { name: 'ping', method: 'POST', path: '/ping', params: [] } })
+    // A source that runs in the browser (P3): its composition and composables declare names of their own.
+    p.edit('api_create', { name: 'far', baseUrl: 'https://far.example.com/v1', runtime: 'browser' })
+    p.edit('api_model_set', { datasource: 'ds_far', model: { name: 'Tag', fields: [{ name: 'label', type: 'text' }] } })
+    p.edit('api_model_set', { datasource: 'ds_far', model: { name: 'Thing', fields: [{ name: 'id', type: 'text' }, { name: 'when', type: 'datetime', optional: true }, { name: 'tags', type: 'model', model: 'Tag', list: true, nullable: true }] } })
+    p.edit('api_query_set', { datasource: 'ds_far', query: { name: 'things', path: '/things', params: [{ name: 'q', in: 'query', type: 'text' }], result: { model: 'Thing', many: true } } })
+    p.edit('api_query_set', { datasource: 'ds_far', query: { name: 'thing', path: '/things/:id', params: [{ name: 'id', in: 'path', type: 'text' }], result: { model: 'Thing', many: false } } })
+    p.edit('api_action_set', { datasource: 'ds_far', action: { name: 'saveThing', method: 'PUT', path: '/things/:id', params: [{ name: 'id', in: 'path', type: 'text' }], body: { model: 'Thing' }, result: { model: 'Thing', many: false } } })
+    p.edit('api_action_set', { datasource: 'ds_far', action: { name: 'ping', method: 'POST', path: '/ping', params: [] } })
     return p.model()
   }
 
@@ -233,6 +241,16 @@ describe('what the generator declares is in the reserved lists (drift guard)', (
     return { declared, used }
   }
 
+  it.each(['createBrowserClient', 'valueOrThrow'])('a query named %s (the browser composition and composables import it) is refused', (name) => {
+    const message = shop({ runtime: 'browser' }).refuse('api_query_set', { datasource: 'ds_shop', query: items(name) }, 'invalid').message
+    expect(message).toContain(`the query "${name}" would be named ${name}, which is already declared or imported by the generated files (the helpers of the browser runtime)`)
+  })
+
+  it('a model named BrowserFailure (the browser composition imports it) is refused', () => {
+    const message = shop({ runtime: 'browser' }).refuse('api_model_set', { datasource: 'ds_shop', model: { name: 'BrowserFailure', fields: [{ name: 'id', type: 'integer' }] } }, 'invalid').message
+    expect(message).toContain('the type of the model BrowserFailure would be named BrowserFailure, which is already declared or imported by the generated files (the helpers of the browser runtime)')
+  })
+
   it('every name an API file declares or imports, and every type it uses, is derived from the model or in the fixed lists', () => {
     // The golden blog's catalog API plus a source that uses every kind of operation, parameter and field.
     const model = wide()
@@ -244,7 +262,8 @@ describe('what the generator declares is in the reserved lists (drift guard)', (
       for (const claim of apiNameClaims(source as ApiSource)) known.add(claim.name)
       for (const name of Object.values(apiSourceIdentifiers(source.name))) known.add(name)
     }
-    const shared = new Set(['layers/apis/server/lib/fetch-client.ts', 'layers/apis/app/data/api-query.ts', 'layers/apis/nuxt.config.ts'])
+    const shared = new Set(['layers/apis/server/lib/fetch-client.ts', 'layers/apis/app/data/api-query.ts', 'layers/apis/app/data/browser-client.ts', 'layers/apis/test/browser-client.test.ts', 'layers/apis/nuxt.config.ts'])
+    expect(files.map(file => file.path)).toEqual(expect.arrayContaining(['layers/apis/app/data/far.ts', 'layers/apis/app/data/browser-client.ts', 'layers/apis/app/composables/apis/useFarThings.ts']))
     const missing: string[] = []
     for (const file of files.filter(entry => !shared.has(entry.path))) {
       const { declared, used } = namesIn(file.content)

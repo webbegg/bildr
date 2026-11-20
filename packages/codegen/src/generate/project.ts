@@ -3,7 +3,7 @@ import type { Theme } from '../design/theme.ts'
 import type { Model } from '../model/load.ts'
 import type { DataSourceFile } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
-import { isCallable, serverApiSources } from './api-model.ts'
+import { apiSources, browserApiSources, isCallable, serverApiSources } from './api-model.ts'
 import { camel, file, header, tsString } from './text.ts'
 
 /**
@@ -18,7 +18,7 @@ export const generateProject = (model: Model): GeneratedFile[] => {
 
 /** The root vitest config: unit and API projects, with every layer alias mirrored (vitest doesn't read nuxt.config). */
 const vitestConfigFile = (model: Model): GeneratedFile => {
-  const apiTests = serverApiSources(model).some(isCallable) ? ', \'layers/apis/test/**/*.test.ts\'' : ''
+  const apiTests = apiSources(model).some(isCallable) ? ', \'layers/apis/test/**/*.test.ts\'' : ''
   return {
     path: 'vitest.config.ts',
     owner: 'managed',
@@ -94,10 +94,12 @@ const nuxtConfigFile = (model: Model): GeneratedFile => {
   const sqlite = model.datasources.filter(source => source.kind === 'sqlite')
   // The app database is optional (V7): none for an API-only project, at most one.
   if (sqlite.length > 1) throw new Error(`The project can have at most one sqlite data source (the app database), found ${sqlite.length}`)
-  // REST sources under `datasources`, API sources that run on the server under `apis` (a browser one reads runtimeConfig.public: slice P3).
-  // Apart, so a source with no auth or another secret can't change the type `useRemote` reads the REST ones through.
+  // REST sources under `datasources`, API sources that run on the server under `apis`, the ones that run in the browser under `public.apis`
+  // (the page reads only runtimeConfig.public, and never a secret). Apart, so a source with no auth or another secret can't change the type
+  // `useRemote` reads the REST ones through.
   const rest = model.datasources.filter(source => source.kind === 'rest')
   const apis = serverApiSources(model)
+  const browserApis = browserApiSources(model)
   return {
     path: 'layers/core/nuxt.config.ts',
     owner: 'managed',
@@ -125,15 +127,15 @@ const nuxtConfigFile = (model: Model): GeneratedFile => {
           ]
         : []),
       '    // Data sources. Values come from NUXT_DATASOURCES_* env vars; see .env.example.',
-      `${rest.length
-        ? ['    datasources: {', rest.map(sourceLine).join(',\n'), '    }'].join('\n')
-        : '    datasources: {}'}${apis.length ? ',' : ''}`,
-      ...(apis.length
-        ? [
-            '    // API data sources. Values come from NUXT_APIS_* env vars; see .env.example.',
-            ['    apis: {', apis.map(sourceLine).join(',\n'), '    }'].join('\n')
-          ]
-        : []),
+      [
+        rest.length ? ['    datasources: {', rest.map(sourceLine).join(',\n'), '    }'].join('\n') : '    datasources: {}',
+        ...(apis.length
+          ? [['    // API data sources. Values come from NUXT_APIS_* env vars; see .env.example.', '    apis: {', apis.map(sourceLine).join(',\n'), '    }'].join('\n')]
+          : []),
+        ...(browserApis.length
+          ? [['    // API data sources that run in the browser: only their base URL, from NUXT_PUBLIC_APIS_* env vars (never a secret); see .env.example.', '    public: {', '      apis: {', browserApis.map(source => `  ${sourceLine(source)}`).join(',\n'), '      }', '    }'].join('\n')]
+          : [])
+      ].join(',\n'),
       '  }',
       '})'
     ])

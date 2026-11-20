@@ -23,6 +23,12 @@ export default defineNuxtConfig({
     // API data sources. Values come from NUXT_APIS_* env vars; see .env.example.
     apis: {
       catalog: { baseUrl: 'https://catalog.example.com/v1', apiKey: '' }
+    },
+    // API data sources that run in the browser: only their base URL, from NUXT_PUBLIC_APIS_* env vars (never a secret); see .env.example.
+    public: {
+      apis: {
+        weather: { baseUrl: 'https://weather.example.com/v1' }
+      }
     }
   }
 })

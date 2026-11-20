@@ -113,6 +113,25 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
     session.edit('api_query_set', { datasource: 'ds_blog', query: { name: 'post', path: '/posts/:id/reviews/:review', params: [{ name: 'id', in: 'path', type: 'text' }, { name: 'review', in: 'path', type: 'text' }], result: { model: 'Post', many: false } } })
     session.edit('api_action_set', { datasource: 'ds_blog', action: { name: 'savePost', method: 'PUT', path: '/posts/:id', params: [{ name: 'id', in: 'path', type: 'text' }], body: { model: 'Post' }, result: { model: 'Post', many: false } } })
   }],
+  // P3: the browser runtime: composables over a browser client and the use-case, no route, no auth, no root.
+  ['a server API source whose only operation answers nothing (no reporter, nothing thrown by its repository)', (session) => {
+    session.edit('api_create', { name: 'tick', baseUrl: 'https://tick.example.com' })
+    session.edit('api_action_set', { datasource: 'ds_tick', action: { name: 'pulse', method: 'POST', path: '/pulse', params: [] } })
+  }],
+  ['a browser API source: path and query parameters, a body, no result, a dashed name', (session) => {
+    session.edit('api_create', { name: 'open-data', baseUrl: 'https://open.example.com/v1', runtime: 'browser' })
+    session.edit('api_model_set', { datasource: 'ds_open_data', model: { name: 'Tag', fields: [{ name: 'label', type: 'text' }] } })
+    session.edit('api_model_set', { datasource: 'ds_open_data', model: { name: 'Entry', fields: [{ name: 'id', type: 'text' }, { name: 'at', type: 'datetime', key: 'created-at' }, { name: 'score', type: 'number', optional: true }, { name: 'note', type: 'text', nullable: true }, { name: 'tags', type: 'model', model: 'Tag', list: true }] } })
+    session.edit('api_query_set', { datasource: 'ds_open_data', query: { name: 'entries', path: '/entries', params: [{ name: 'tag', in: 'query', type: 'text' }, { name: 'page', in: 'query', type: 'integer', required: true }], result: { model: 'Entry', many: true, itemsPath: 'data.items' } } })
+    session.edit('api_query_set', { datasource: 'ds_open_data', query: { name: 'entry', path: '/entries/:id', params: [{ name: 'id', in: 'path', type: 'text' }], result: { model: 'Entry', many: false } } })
+    session.edit('api_query_set', { datasource: 'ds_open_data', query: items('everything', 'Entry') })
+    session.edit('api_action_set', { datasource: 'ds_open_data', action: { name: 'saveEntry', method: 'PUT', path: '/entries/:id', params: [{ name: 'id', in: 'path', type: 'text' }], body: { model: 'Entry' }, result: { model: 'Entry', many: false } } })
+    session.edit('api_action_set', { datasource: 'ds_open_data', action: { name: 'removeEntry', method: 'DELETE', path: '/entries/:id', params: [{ name: 'id', in: 'path', type: 'text' }] } })
+    session.edit('api_action_set', { datasource: 'ds_open_data', action: { name: 'ping', method: 'POST', path: '/ping', params: [] } })
+    // A source whose operations answer nothing: its repository has no reporter for an invalid answer to give.
+    session.edit('api_create', { name: 'beat', baseUrl: 'https://beat.example.com', runtime: 'browser' })
+    session.edit('api_action_set', { datasource: 'ds_beat', action: { name: 'pulse', method: 'POST', path: '/pulse', params: [] } })
+  }],
   ['a list under keys that are not identifiers', (session) => {
     session.edit('api_create', { name: 'hydra', baseUrl: 'https://hydra.example.com' })
     session.edit('api_model_set', { datasource: 'ds_hydra', model: ITEM })
