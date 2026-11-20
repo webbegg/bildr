@@ -82,7 +82,7 @@ export const actionCreate = defineEdit({
           { kind: 'load', as: 'existing', repository: repository.id, op: 'get', args: { id: { $input: 'id' } }, orError: notFound, errorData: { id: { $input: 'id' } } },
           { kind: 'repository', repository: repository.id, op: 'update', id: { $input: 'id' }, from: { $var: 'existing' } }
         ],
-        // Nothing to show ahead of the server (the generated composable has an empty onMutate); only a listed entity has a collection to refresh.
+        // Nothing to show ahead of the server (no client.optimistic, so the generated composable calls the route directly); only a listed entity has a collection to refresh.
         client: { invalidates: listed ? [entityId] : [] }
       }
     } else if (template === 'delete') {
