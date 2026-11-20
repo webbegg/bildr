@@ -129,7 +129,7 @@ export const actionUpdate = defineEdit({
     action: ActionRef,
     label: z.string().min(1).max(100).optional(),
     description: z.string().max(500).nullable().optional().describe('The business rule in words (the use-case\'s doc comment); null removes it'),
-    input: ActionFileSchema.shape.input.optional().describe('Replaces the input whole: { entity, pick } (the body, validated against the entity) or { params: [{ name, type, from }] } (route parameters; only uuid ones generate yet)'),
+    input: ActionFileSchema.shape.input.optional().describe('Replaces the input whole: { entity, pick } (the body, validated against the entity) or { params: [{ name, type, from }] } (route parameters; only uuid ones generate yet); not both: an action takes a body or route parameters'),
     steps: ActionFileSchema.shape.steps.optional().describe('Replaces the steps whole: validate, assert, load, return, repository (last). call and custom are not generated yet and are refused'),
     http: HttpPart.optional().describe('Method and/or path; the one you leave out stays'),
     errors: ActionFileSchema.shape.errors.optional().describe('Replaces the declared errors whole; steps may only name the ones declared'),
