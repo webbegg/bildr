@@ -14,6 +14,15 @@ const recording = (answer: unknown) => {
 }
 
 describe('httpCatalogRepository', () => {
+  it('products: refuses a header parameter with a line break, without calling the API', async () => {
+    const { http, calls } = recording(undefined)
+    await expect(httpCatalogRepository(http).products({ ...{
+      category: 'category 1',
+      locale: 'locale 1'
+    }, locale: 'a\r\nX-Evil: 1' })).rejects.toMatchObject({ error: { type: 'invalid_input' } })
+    expect(calls).toEqual([])
+  })
+
   it('products: GET /products, reads the list under data.items and maps it', async () => {
     const { http, calls } = recording({
       data: {
@@ -36,7 +45,8 @@ describe('httpCatalogRepository', () => {
       }
     })
     const result = await httpCatalogRepository(http).products({
-      category: 'category 1'
+      category: 'category 1',
+      locale: 'locale 1'
     })
     expect(calls).toEqual([
       {
@@ -45,6 +55,10 @@ describe('httpCatalogRepository', () => {
           method: 'GET',
           query: {
             cat: 'category 1'
+          },
+          headers: {
+            'X-Api-Version': '2',
+            'Accept-Language': 'locale 1'
           }
         }
       }
@@ -71,7 +85,8 @@ describe('httpCatalogRepository', () => {
     expect.assertions(2)
     const { http } = recording('unexpected')
     await expect(httpCatalogRepository(http, detail => expect(detail.length).toBeGreaterThan(0)).products({
-      category: 'category 1'
+      category: 'category 1',
+      locale: 'locale 1'
     })).rejects.toMatchObject({ error: { type: 'invalid_answer', message: 'The "catalog" API answered something unexpected' } })
   })
 

@@ -30,6 +30,9 @@ describe('httpWeatherRepository', () => {
           method: 'GET',
           query: {
             q: 'city 1'
+          },
+          headers: {
+            'X-Units': 'metric'
           }
         }
       }

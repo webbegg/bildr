@@ -4,7 +4,7 @@ import type { Product } from '../entities/product'
 /** What the "catalog" API offers: one method per query and action. A failure is thrown as CatalogFailure. */
 export interface CatalogRepository {
   /** Query "products": The products, newest first, optionally of one category (GET /products). */
-  products(input: { category?: string }): Promise<Product[]>
+  products(input: { category?: string, locale?: string }): Promise<Product[]>
   /** Query "product" (GET /products/:id). */
   product(input: { id: number }): Promise<Product>
   /** Action "createProduct" (POST /products). */

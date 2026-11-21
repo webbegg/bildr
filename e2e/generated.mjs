@@ -590,7 +590,7 @@ function catalogStub() {
     let body = ''
     request.on('data', chunk => (body += chunk))
     request.on('end', () => {
-      calls.push({ method: request.method, path: url.pathname, search: url.search, body: body || undefined, authorization: request.headers.authorization })
+      calls.push({ method: request.method, path: url.pathname, search: url.search, body: body || undefined, authorization: request.headers.authorization, version: request.headers['x-api-version'], language: request.headers['accept-language'] })
       const send = (status, value) => {
         response.writeHead(status, value === undefined ? {} : { 'content-type': 'application/json' })
         response.end(value === undefined ? '' : JSON.stringify(value))
@@ -621,8 +621,9 @@ function weatherStub() {
     let body = ''
     request.on('data', chunk => (body += chunk))
     request.on('end', () => {
-      calls.push({ method: request.method, path: url.pathname, search: url.search, body: body || undefined, origin: request.headers.origin, userAgent: request.headers['user-agent'], authorization: request.headers.authorization, cookie: request.headers.cookie, contentType: request.headers['content-type'] })
-      const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type' }
+      calls.push({ method: request.method, path: url.pathname, search: url.search, body: body || undefined, origin: request.headers.origin, userAgent: request.headers['user-agent'], authorization: request.headers.authorization, cookie: request.headers.cookie, contentType: request.headers['content-type'], units: request.headers['x-units'] })
+      // The forecast query sends a fixed header (api-calls R2): a browser asks first whether it may.
+      const cors = { 'access-control-allow-origin': '*', 'access-control-allow-methods': 'GET, POST, OPTIONS', 'access-control-allow-headers': 'content-type, x-units' }
       const send = (status, value) => {
         response.writeHead(status, { ...cors, 'content-type': 'application/json' })
         response.end(JSON.stringify(value))
@@ -823,6 +824,10 @@ async function smoke(ctx) {
     check(products.status === 200 && JSON.stringify(listed) === JSON.stringify([expected]), `API: GET /api/apis/catalog/products maps the stub's list (under data.items) to the entities (${products.status} ${JSON.stringify(listed)?.slice(0, 300)})`)
     const asked = catalog.calls.find(call => call.method === 'GET' && call.path === '/products')
     check(asked?.search === '?cat=books' && asked.authorization === 'Bearer e2e-catalog-key', `the catalog API got GET /products?cat=books with the bearer key from the env (${asked?.search} ${asked?.authorization})`)
+    // api-calls R2: the query's fixed header, and its header parameter from the route's query string.
+    await fetch(`${base}/api/apis/catalog/products?category=books&locale=pt-PT`)
+    const withLocale = catalog.calls.findLast(call => call.method === 'GET' && call.path === '/products')
+    check(withLocale?.version === '2' && withLocale.language === 'pt-PT' && withLocale.search === '?cat=books', `the catalog API got the fixed header X-Api-Version and Accept-Language from the locale parameter, not in the query (${withLocale?.version} ${withLocale?.language} ${withLocale?.search})`)
     const detail = await (await fetch(`${base}/api/apis/catalog/product?id=5`)).json().catch(() => undefined)
     check(detail?.id === 5 && detail.name === 'Stub product' && catalog.calls.some(call => call.path === '/products/5'), `API: GET /api/apis/catalog/product?id=5 asks the stub for /products/5 (${JSON.stringify(detail)?.slice(0, 200)})`)
     const created = await fetch(`${base}/api/apis/catalog/create-product`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...expected, id: 2, createdAt: '2024-01-02T03:04:05.000Z' }) })
@@ -936,6 +941,7 @@ async function smoke(ctx) {
     const forecastCall = weather.calls.find(call => call.method === 'GET' && call.path === '/forecast' && call.search === '?q=Lisbon')
     check(forecastCall?.origin === base && /Chrome/.test(forecastCall.userAgent ?? ''), `weather API: GET /forecast?q=Lisbon came from the browser (Origin ${forecastCall?.origin}, ${forecastCall?.userAgent?.slice(0, 60)})`)
     check(forecastCall && !forecastCall.authorization && !forecastCall.cookie, 'weather API: the browser call carried no credentials (no authorization, no cookie)')
+    check(forecastCall?.units === 'metric', `weather API: the browser call sent the query's fixed header X-Units (${forecastCall?.units})`)
     check(viaServer.length === 0 && weatherRequests.some(request => request.startsWith('GET ') && request.endsWith('/forecast?q=Lisbon')), `weather API: the page called the stub itself, no bildr route in between (${viaServer.join(', ') || weatherRequests.join(', ')})`)
     await page.goto(`${base}/e2e-weather`)
     await page.getByRole('button', { name: 'Report' }).click()

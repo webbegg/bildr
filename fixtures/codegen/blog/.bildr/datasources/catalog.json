@@ -78,6 +78,18 @@
           "in": "query",
           "type": "text",
           "key": "cat"
+        },
+        {
+          "name": "locale",
+          "in": "header",
+          "type": "text",
+          "key": "Accept-Language"
+        }
+      ],
+      "headers": [
+        {
+          "name": "X-Api-Version",
+          "value": "2"
         }
       ],
       "result": {

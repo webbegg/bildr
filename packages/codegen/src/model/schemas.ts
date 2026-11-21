@@ -124,9 +124,11 @@ export const ApiFieldSchema = z.object({
   key: RemoteKeySchema.optional()
 })
 export const ApiModelSchema = z.object({ name: PascalNameSchema, fields: z.array(ApiFieldSchema).min(1) })
+/** Where a parameter goes: a `:name` of the path, the query string, or a header (`key` is the header's name, else the parameter's). */
+export const API_PARAM_PLACES = ['path', 'query', 'header'] as const
 export const ApiParamSchema = z.object({
   name: CamelNameSchema,
-  in: z.enum(['path', 'query']),
+  in: z.enum(API_PARAM_PLACES),
   type: z.enum(API_PARAM_TYPES),
   /** A query parameter the call can't go without (path parameters always are). */
   required: z.boolean().optional(),
@@ -139,11 +141,14 @@ export const ApiParamSchema = z.object({
 export const API_ITEMS_PATH = /^[\w$@:-]+(?:\.[\w$@:-]+)*$/
 /** What a call answers: one model or a list of them, read at `itemsPath` when the list is wrapped. */
 export const ApiResultSchema = z.object({ model: PascalNameSchema, many: z.boolean(), itemsPath: z.string().max(200).regex(API_ITEMS_PATH, 'Use JSON keys joined by dots, like "data.items"').optional() })
+/** A header a call always sends, with the same value (`X-Api-Version: 2`): never the sign-in nor a secret (`apiHeaderProblem`). */
+export const ApiHeaderSchema = z.object({ name: z.string().max(64), value: z.string().max(500) })
 export const ApiQuerySchema = z.object({
   name: CamelNameSchema,
   description: z.string().max(500).optional(),
   path: z.string().max(300),
   params: z.array(ApiParamSchema),
+  headers: z.array(ApiHeaderSchema).optional(),
   result: ApiResultSchema
 })
 export const ApiActionSchema = z.object({
@@ -152,6 +157,7 @@ export const ApiActionSchema = z.object({
   method: z.enum(API_ACTION_METHODS),
   path: z.string().max(300),
   params: z.array(ApiParamSchema),
+  headers: z.array(ApiHeaderSchema).optional(),
   /** The JSON body the action sends. */
   body: z.object({ model: PascalNameSchema }).optional(),
   /** What it answers; none for an empty answer (204). */
@@ -161,6 +167,7 @@ export const ApiActionSchema = z.object({
 export type ApiField = z.infer<typeof ApiFieldSchema>
 export type ApiModel = z.infer<typeof ApiModelSchema>
 export type ApiParam = z.infer<typeof ApiParamSchema>
+export type ApiHeader = z.infer<typeof ApiHeaderSchema>
 export type ApiQuery = z.infer<typeof ApiQuerySchema>
 export type ApiAction = z.infer<typeof ApiActionSchema>
 
@@ -189,6 +196,58 @@ const pathProblem = (path: string, params: ApiParam[]): string | undefined => {
 }
 
 const duplicateOf = (names: string[]) => names.find((name, index) => names.indexOf(name) !== index)
+
+// ── Headers of a call (api-calls R2) ─────────────────────────────────────
+
+export const MAX_CALL_HEADERS = 20
+const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/
+/** One line of visible ASCII and spaces: what every client sends as is (no line break could start another header). */
+const HEADER_VALUE = /^[\x20-\x7E]*$/
+const SIGN_IN_HEADERS = new Set(['authorization', 'proxy-authorization'])
+/** Headers the app's clients send themselves (accept is the call's to change), or that a browser refuses to let a page set. */
+const OWN_HEADERS = new Set(['cookie', 'cookie2', 'host', 'content-type', 'content-length', 'connection', 'keep-alive', 'transfer-encoding', 'te', 'trailer', 'upgrade', 'expect', 'origin', 'referer', 'date', 'via'])
+/** A header name that says it holds a secret: a key, a token, a password, a session. */
+const SECRET_NAME = /(?:^|-)(?:api-?key|key|token|secret|password|passwd|pwd|session|credentials?|signature|auth)(?:-|$)/i
+/** A value that is a sign-in (`Bearer …`), or long enough and mixed enough to be a key. */
+const secretValue = (value: string) =>
+  /^(?:bearer|basic|token|digest)\s/i.test(value) || (value.length >= 24 && /^[\w\-+/=.~]+$/.test(value) && /[A-Za-z]/.test(value) && /\d/.test(value))
+
+/**
+ * Why a call can't send the header `name` (with the fixed `value`; undefined when a parameter fills it), or undefined when it can. The
+ * source's sign-in is the only place a secret lives: a header named like it (Authorization, or the source's own key header) is refused,
+ * and so is a fixed value that looks like a secret. Names the clients set themselves, or a browser refuses, are refused too.
+ */
+export const apiHeaderProblem = (name: string, value: string | undefined, auth: ApiParts['auth']): string | undefined => {
+  if (!HEADER_NAME.test(name)) return 'Use a header name like "X-Api-Version"'
+  const lower = name.toLowerCase()
+  if (SIGN_IN_HEADERS.has(lower) || (auth?.type === 'header' && auth.header?.toLowerCase() === lower)) return `"${name}" is the API's sign-in: set it in the API's settings, where its secret stays in env`
+  if (OWN_HEADERS.has(lower) || lower.startsWith('sec-') || lower.startsWith('proxy-')) return `A call can't send "${name}": the app sends it itself, or the browser refuses it`
+  if (value === undefined) return undefined
+  const line = apiHeaderValueProblem(name, value)
+  if (line) return line
+  if (!value.trim()) return `"${name}": give it a value, or remove it`
+  if (SECRET_NAME.test(name) || secretValue(value.trim())) return `"${name}" looks like a secret: put it in the API's sign-in, where it stays in env`
+  return undefined
+}
+
+/** Why `value` can't be sent in the header `name`: it is not one line of plain text (a line break would start another header). */
+export const apiHeaderValueProblem = (name: string, value: string): string | undefined =>
+  HEADER_VALUE.test(value) ? undefined : `"${name}": a header value is one line of plain text`
+
+/** The header a parameter in a header fills: its key, else its name. */
+export const headerNameOf = (param: ApiParam): string => param.key ?? param.name
+
+/** The first problem of the headers a call sends: its fixed ones and its header parameters. */
+const headersProblem = (headers: ApiHeader[], params: ApiParam[], auth: ApiParts['auth']): string | undefined => {
+  const sent = [...headers.map(header => ({ name: header.name, value: header.value as string | undefined })), ...params.filter(param => param.in === 'header').map(param => ({ name: headerNameOf(param), value: undefined }))]
+  if (sent.length > MAX_CALL_HEADERS) return `A call sends at most ${MAX_CALL_HEADERS} headers`
+  for (const header of sent) {
+    const problem = apiHeaderProblem(header.name, header.value, auth)
+    if (problem) return problem
+  }
+  const twice = duplicateOf(sent.map(header => header.name.toLowerCase()))
+  return twice ? `Two headers are named "${twice}"` : undefined
+}
 
 /** Why `value` can't be a base URL: REST `defaults.baseUrl` and API `baseUrl` share the rule. */
 export const urlProblem = (value: string): string | undefined => {
@@ -284,8 +343,10 @@ export const apiProblems = (source: ApiParts): ApiProblem[] => {
     if (path) problems.push({ path: [...where, 'path'], message: `${op.name}: ${path}` })
     const param = duplicateOf(op.params.map(item => item.name))
     if (param) problems.push({ path: [...where, 'params'], message: `${op.name}: Two parameters are named "${param}"` })
-    const sent = duplicateOf(op.params.map(item => `${item.in}:${item.key ?? item.name}`))
+    const sent = duplicateOf(op.params.filter(item => item.in !== 'header').map(item => `${item.in}:${item.key ?? item.name}`))
     if (sent && !param) problems.push({ path: [...where, 'params'], message: `${op.name}: Two parameters send the key "${sent.slice(sent.indexOf(':') + 1)}"` })
+    const headers = headersProblem(op.headers ?? [], op.params, source.auth)
+    if (headers) problems.push({ path: [...where, 'headers'], message: `${op.name}: ${headers}` })
     const result = 'result' in op ? op.result : undefined
     if (result && !result.many && result.itemsPath !== undefined) problems.push({ path: [...where, 'result'], message: `${op.name}: Only a list result reads its items at an itemsPath` })
     const refs = [('result' in op ? op.result?.model : undefined), ('body' in op ? op.body?.model : undefined)]

@@ -5,7 +5,8 @@ import { catalogErrorStatus, useCatalogApi } from '../../../utils/catalog'
 
 /** The parameters of "products", read from the query string (everything arrives as text). */
 const QuerySchema = z.object({
-  category: z.string().optional()
+  category: z.string().optional(),
+  locale: z.string().optional()
 })
 
 export default defineEventHandler(async (event) => {

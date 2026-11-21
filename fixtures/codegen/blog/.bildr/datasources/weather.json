@@ -42,6 +42,12 @@
           "key": "q"
         }
       ],
+      "headers": [
+        {
+          "name": "X-Units",
+          "value": "metric"
+        }
+      ],
       "result": {
         "model": "Forecast",
         "many": false

@@ -1,4 +1,5 @@
 import type { ApiSource } from '../edit/api.ts'
+import { headerNameOf } from '../model/schemas.ts'
 import { inputFields, modelNames, nestedModels, operationsOf, remoteKey, sampleAnswer, sampleInput, sampleModel, sampleVariants } from './api-model.ts'
 import type { Emitted, Operation, SourceNames } from './api-model.ts'
 import { importLine } from './imports.ts'
@@ -51,6 +52,9 @@ const samplePath = (operation: Operation, input: Record<string, unknown>) =>
 const expectedRequest = (source: ApiSource, operation: Operation, input: Record<string, unknown>) => ({
   method: operation.method,
   ...(operation.params.some(param => param.in === 'query') ? { query: Object.fromEntries(operation.params.filter(param => param.in === 'query').map(param => [remoteKey(param), input[param.name]])) } : {}),
+  ...(operation.headers.length || operation.params.some(param => param.in === 'header')
+    ? { headers: Object.fromEntries([...operation.headers.map(fixed => [fixed.name, fixed.value]), ...operation.params.filter(param => param.in === 'header').map(param => [headerNameOf(param), input[param.name]])]) }
+    : {}),
   ...(operation.body ? { body: sampleModel(source, operation.body, true) } : {})
 })
 
@@ -75,7 +79,18 @@ const repositoryTestLines = (source: ApiSource, names: SourceNames, operations: 
     const sent = literal([{ path: samplePath(operation, input), request: expectedRequest(source, operation, input) }], '    ')
     // A text path parameter is one segment: "..", "." or "" would make the URL call another path of the API (with its secret), and a "/" or a "\\" is two segments.
     const texts = operation.params.filter(param => param.in === 'path' && param.type === 'text')
+    // A text header parameter is one line: a line break would start another header.
+    const headerTexts = operation.params.filter(param => param.in === 'header' && param.type === 'text')
     return [
+      ...(headerTexts.length
+        ? [[
+            `  it(${tsString(`${operation.name}: refuses a header parameter with a line break, without calling the API`)}, async () => {`,
+            '    const { http, calls } = recording(undefined)',
+            ...headerTexts.map(param => `    await expect(${names.adapter}(http).${operation.name}({ ...${literal(input, '    ')}, ${param.name}: 'a\\r\\nX-Evil: 1' })).rejects.toMatchObject({ error: { type: 'invalid_input' } })`),
+            '    expect(calls).toEqual([])',
+            '  })'
+          ]]
+        : []),
       ...(texts.length
         ? [[
             `  it(${tsString(`${operation.name}: refuses a path parameter that is not one segment ("", ".", "..", with a "/" or a "\\"), without calling the API`)}, async () => {`,

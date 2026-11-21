@@ -26,6 +26,12 @@ const segment = (value: string | number | boolean): string => {
   return encodeURIComponent(text)
 }
 
+/** A parameter sent in a header: one line of plain text (a line break would start another header), or undefined, which is not sent. */
+const headerValue = (value: string | undefined): string | undefined => {
+  if (value !== undefined && !/^[\x20-\x7E]*$/.test(value)) throw new CatalogFailure(invalidInput('a header parameter is one line of plain text'))
+  return value
+}
+
 /** The value under `path` (property names) of the answer: undefined where the answer has no such property. */
 const itemsAt = (answer: unknown, path: string[]): unknown =>
   path.reduce<unknown>((value, key) => typeof value === 'object' && value !== null && Object.hasOwn(value, key) ? (value as Record<string, unknown>)[key] : undefined, answer)
@@ -33,7 +39,7 @@ const itemsAt = (answer: unknown, path: string[]): unknown =>
 /** CatalogRepository over an ApiClient: builds each path and query, reads the answer where the model says it is, validates it and maps it to the domain. `onInvalidAnswer` gets the detail of an answer that is not valid (the failure has none). */
 export const httpCatalogRepository = (http: ApiClient, onInvalidAnswer?: (detail: string) => void): CatalogRepository => ({
   async products(input) {
-    const answer = await http('/products', { method: 'GET', query: { cat: input.category } })
+    const answer = await http('/products', { method: 'GET', query: { cat: input.category }, headers: { 'X-Api-Version': '2', 'Accept-Language': headerValue(input.locale) } })
     return read(z.array(ProductDtoSchema), itemsAt(answer, ['data', 'items']), onInvalidAnswer).map(toProduct)
   },
   async product(input) {
