@@ -26,7 +26,7 @@ describe('apiChoices', () => {
 
   it('has nothing without a model, and reads a choice back from its id', () => {
     expect(apiChoices(null)).toEqual([])
-    expect(apiChoiceOf(model, 'api:ds_catalog:products')?.params.map(param => param.name)).toEqual(['category'])
+    expect(apiChoiceOf(model, 'api:ds_catalog:products')?.params.map(param => param.name)).toEqual(['category', 'locale'])
     expect(apiChoiceOf(model, 'api:ds_catalog:nope')).toBeUndefined()
     expect(apiChoiceOf(model, 'posts')).toBeUndefined()
   })

@@ -45,7 +45,7 @@ describe('the page\'s API uses', () => {
     await select('n_page')
     const options = sourceOptions()
     expect(options.filter(([id]) => id.startsWith('api:'))).toEqual([
-      ['api:ds_catalog:products', 'catalog · products (category)'],
+      ['api:ds_catalog:products', 'catalog · products (category, locale)'],
       ['api:ds_catalog:product', 'catalog · product (id)'],
       ['api:ds_weather:forecast', 'weather · forecast (city)']
     ])

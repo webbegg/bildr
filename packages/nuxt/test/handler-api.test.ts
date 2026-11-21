@@ -17,7 +17,7 @@ let dir: string
 let handle: ReturnType<typeof createBildrHandler>
 let server: Server
 let base: string
-let seen: { method?: string, url?: string, authorization?: string | string[], body?: string }[]
+let seen: { method?: string, url?: string, authorization?: string | string[], body?: string, headers: Record<string, string | string[] | undefined> }[]
 
 const PRODUCTS = [
   { id: 1, title: 'Lamp', unit_price: 9.5, tags: ['home'], stock: null },
@@ -30,7 +30,7 @@ beforeAll(async () => {
     request.on('data', chunk => chunks.push(chunk as Buffer))
     request.on('end', () => {
       const body = Buffer.concat(chunks).toString('utf8')
-      seen.push({ method: request.method, url: request.url, authorization: request.headers.authorization ?? request.headers['x-api-key'], body })
+      seen.push({ method: request.method, url: request.url, authorization: request.headers.authorization ?? request.headers['x-api-key'], body, headers: request.headers })
       const json = (status: number, value: unknown) => {
         response.writeHead(status, { 'content-type': 'application/json' })
         response.end(JSON.stringify(value))
@@ -226,6 +226,47 @@ describe('api_try: what the answer was like (api-calls T1)', () => {
     expect(tried.headers).not.toHaveProperty('x-api-key')
     expect(tried.headers['x-echo']).toBe('key=•••')
     expect(JSON.stringify(tried)).not.toContain(SECRET)
+  })
+})
+
+describe('api_try: the headers of a call (api-calls R2)', () => {
+  const withHeaders = async () => {
+    await apiSource({ auth: { type: 'bearer' } })
+    writeFileSync(join(dir, '.env'), `NUXT_APIS_STUB_API_KEY="${SECRET}"\n`)
+    await ok('api_model_set', { datasource: 'ds_stub', model: { name: 'Product', fields: [{ name: 'id', type: 'integer' }] } })
+    await ok('api_query_set', {
+      datasource: 'ds_stub',
+      query: {
+        name: 'listProducts', path: '/products',
+        headers: [{ name: 'X-Api-Version', value: '2' }],
+        params: [{ name: 'locale', in: 'header', type: 'text', key: 'Accept-Language' }, { name: 'tenant', in: 'header', type: 'text', key: 'X-Tenant', required: true }],
+        result: { model: 'Product', many: true, itemsPath: 'data' }
+      }
+    })
+  }
+
+  it('sends a saved query\'s fixed headers and its header parameters, by their header name, none in the query string', async () => {
+    await withHeaders()
+    const tried = await ok('api_try', { datasource: 'ds_stub', query: 'listProducts', params: { tenant: 'acme', locale: 'es' } })
+    expect(tried.url).toBe(`${base}/products`)
+    expect(seen[0]!.headers).toMatchObject({ 'x-api-version': '2', 'accept-language': 'es', 'x-tenant': 'acme', 'authorization': `Bearer ${SECRET}` })
+    expect((await failure('api_try', { datasource: 'ds_stub', query: 'listProducts' }, 400, 'invalid_input')).message).toBe('Give the header parameter "tenant"')
+  })
+
+  it('sends the headers given for a call by path, and the source\'s sign-in over them', async () => {
+    await withHeaders()
+    await ok('api_try', { datasource: 'ds_stub', path: '/products', headers: { 'X-Api-Version': '3', 'Accept': 'application/vnd.api+json' } })
+    expect(seen[0]!.headers).toMatchObject({ 'x-api-version': '3', 'accept': 'application/vnd.api+json', 'authorization': `Bearer ${SECRET}` })
+  })
+
+  it('refuses a header that is the sign-in, or that can\'t be sent, and calls nothing', async () => {
+    await withHeaders()
+    expect((await failure('api_try', { datasource: 'ds_stub', path: '/products', headers: { authorization: 'Bearer mine' } }, 400, 'invalid_input')).message)
+      .toBe('"authorization" is the API\'s sign-in: set it in the API\'s settings, where its secret stays in env')
+    expect((await failure('api_try', { datasource: 'ds_stub', path: '/products', headers: { 'X-Note': 'a\r\nX-Evil: 1' } }, 400, 'invalid_input')).message).toBe('"X-Note": a header value is one line of plain text')
+    expect((await failure('api_try', { datasource: 'ds_stub', query: 'listProducts', params: { tenant: 'a\r\nX-Evil: 1' } }, 400, 'invalid_input')).message).toBe('"X-Tenant": a header value is one line of plain text')
+    expect((await failure('api_try', { datasource: 'ds_stub', query: 'listProducts', params: { tenant: 'a' }, headers: { 'X-More': '1' } }, 400, 'invalid_input')).message).toBe('listProducts sends its own headers: drop headers')
+    expect(seen).toEqual([])
   })
 })
 

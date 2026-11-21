@@ -1,9 +1,9 @@
 import { z } from 'zod'
 import { datasourceEnvVars, detectItems, inferApiModels, inferFields, isApiSource, remoteUrl } from '@bildr/codegen/edit'
 import { redact } from '@bildr/codegen/env'
-import { ArtifactIdSchema, CamelNameSchema, loadModel, PascalNameSchema, REPOSITORY_OPERATIONS } from '@bildr/codegen/model'
+import { apiHeaderProblem, apiHeaderValueProblem, ArtifactIdSchema, CamelNameSchema, headerNameOf, loadModel, MAX_CALL_HEADERS, PascalNameSchema, REPOSITORY_OPERATIONS } from '@bildr/codegen/model'
 import type { ApiSource, InferredField } from '@bildr/codegen/edit'
-import type { ApiParam, ApiQuery, DataSourceFile, Model } from '@bildr/codegen/model'
+import type { ApiHeader, ApiParam, ApiQuery, DataSourceFile, Model } from '@bildr/codegen/model'
 import { readModelFiles } from '../node/project.ts'
 import { authHeaders, envSource, fetchJson, fetchRemote, readDotEnv, RemoteError, resolveSettings } from '../node/remote.ts'
 import { ActionError, defineAction } from './define.ts'
@@ -201,6 +201,8 @@ interface Call {
   path: string
   /** The saved operation's parameters; none for a call by path. */
   params: ApiParam[] | undefined
+  /** The saved operation's fixed headers; none for a call by path. */
+  headers: ApiHeader[] | undefined
   label: string
   expected: Expected
   saved: boolean
@@ -222,9 +224,9 @@ const callOf = (source: ApiSource, input: { path?: string, query?: string, actio
     const op = (query ?? action)!
     const method = action?.method ?? 'GET'
     if (input.method && input.method !== method) throw new ActionError('invalid_input', `${op.name} is a ${method}: drop the method`)
-    return { method, path: op.path, params: op.params, label: op.name, expected: op.result, saved: true }
+    return { method, path: op.path, params: op.params, headers: op.headers ?? [], label: op.name, expected: op.result, saved: true }
   }
-  return { method: input.method ?? 'GET', path: input.path!, params: undefined, label: input.path!, expected: undefined, saved: false }
+  return { method: input.method ?? 'GET', path: input.path!, params: undefined, headers: undefined, label: input.path!, expected: undefined, saved: false }
 }
 
 const scalar = (value: string | number | boolean) => String(value)
@@ -246,6 +248,7 @@ const fillPath = (call: Call, given: Record<string, string | number | boolean>):
     }
     for (const param of call.params) {
       const value = valueOf(param.name)
+      if (param.in === 'header') continue
       if (param.in === 'path') fill(param.name, value)
       else if (value !== undefined) query.set(param.key ?? param.name, scalar(value))
       else if (param.required) throw new ActionError('invalid_input', `Give the query parameter "${param.name}"`)
@@ -257,6 +260,39 @@ const fillPath = (call: Call, given: Record<string, string | number | boolean>):
   }
   const sent = query.toString()
   return `${filled}${sent ? `${search ? `?${search}&` : '?'}${sent}` : search ? `?${search}` : ''}`
+}
+
+/**
+ * The headers a call sends besides the source's (api-calls R2): a saved operation's fixed ones and its header parameters (from `given`, by
+ * name), or the ones given for a call by path. Each is one the model would take (never the sign-in), its value one line.
+ */
+const callHeaders = (call: Call, given: Record<string, string | number | boolean>, headers: Record<string, string> | undefined, source: ApiSource): Record<string, string> => {
+  if (call.saved && headers !== undefined) throw new ActionError('invalid_input', `${call.label} sends its own headers: drop headers`)
+  const sent: [string, string | undefined][] = call.saved
+    ? [
+        ...call.headers!.map((header): [string, string] => [header.name, header.value]),
+        ...call.params!.filter(param => param.in === 'header').map((param): [string, string | undefined] => {
+          const value = Object.hasOwn(given, param.name) ? given[param.name] : undefined
+          if (value === undefined && param.required) throw new ActionError('invalid_input', `Give the header parameter "${param.name}"`)
+          return [headerNameOf(param), value === undefined ? undefined : scalar(value)]
+        })
+      ]
+    : Object.entries(headers ?? {})
+  const out: Record<string, string> = {}
+  for (const [name, value] of sent) {
+    if (value === undefined) continue
+    const problem = apiHeaderProblem(name, undefined, source.auth) ?? apiHeaderValueProblem(name, value)
+    if (problem) throw new ActionError('invalid_input', problem)
+    out[name.toLowerCase()] = value
+  }
+  return out
+}
+
+/** The call's headers under the source's (its sign-in wins); the call's own `accept` is kept. */
+const withOwn = (own: Record<string, string>, call: Record<string, string>): Record<string, string> => {
+  const sent = { ...call }
+  for (const [name, value] of Object.entries(own)) if (name !== 'accept' || !('accept' in sent)) sent[name] = value
+  return sent
 }
 
 const getAt = (json: unknown, path: string): unknown => path.split('.').reduce<unknown>((value, key) => isObject(value) ? value[key] : undefined, json)
@@ -289,7 +325,7 @@ const modelNameOf = (path: string): string => {
 
 const apiTry = defineAction({
   name: 'api_try',
-  description: `Send one call of an API data source, as the generated app would, and propose the models of its answer. Give one of: path (relative to the data source's base URL, e.g. "/products/:id"; :name is filled from params, the other params go in the query string), query (a saved query's name) or action (a saved action's name; its params go by their remote key). Saved operations use their own method; for a path, method is GET unless set. GET only unless confirm: true: a POST, PUT, PATCH or DELETE could change the API's data, so it is refused without confirm. body is the JSON a write sends. Calls go through the editor's remote guards: under the base URL only, redirects off it (and any redirect of a write) refused, at most 10 s and 1 MB; the auth secret comes from the env (not sent for a browser-runtime source) and is never returned. Returns status, url, durationMs, size (bytes of the answer), headers (the answer's, lower-cased; cookies, authorization and the source's key header left out, the secret masked), json (a list cut to its first ${SAMPLE_ITEMS} items) or text, items { path, count } when the answer holds a list, and proposal { result: { model, many, itemsPath? }, models } to use with api_model_set (one call per model, in the listed order: nested models first, the root last) and api_query_set / api_action_set; model names the proposed root model.`,
+  description: `Send one call of an API data source, as the generated app would, and propose the models of its answer. Give one of: path (relative to the data source's base URL, e.g. "/products/:id"; :name is filled from params, the other params go in the query string), query (a saved query's name) or action (a saved action's name; its params go by their remote key). Saved operations use their own method; for a path, method is GET unless set. GET only unless confirm: true: a POST, PUT, PATCH or DELETE could change the API's data, so it is refused without confirm. body is the JSON a write sends. headers (for a path) are sent too, never the sign-in; a saved operation sends its own fixed headers and its header params (in: "header", by name in params). Calls go through the editor's remote guards: under the base URL only, redirects off it (and any redirect of a write) refused, at most 10 s and 1 MB; the auth secret comes from the env (not sent for a browser-runtime source) and is never returned. Returns status, url, durationMs, size (bytes of the answer), headers (the answer's, lower-cased; cookies, authorization and the source's key header left out, the secret masked), json (a list cut to its first ${SAMPLE_ITEMS} items) or text, items { path, count } when the answer holds a list, and proposal { result: { model, many, itemsPath? }, models } to use with api_model_set (one call per model, in the listed order: nested models first, the root last) and api_query_set / api_action_set; model names the proposed root model.`,
   input: z.object({
     datasource: ArtifactIdSchema.describe('An API data source id, e.g. "ds_shop"'),
     path: PathInput.optional(),
@@ -298,6 +334,7 @@ const apiTry = defineAction({
     method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE']).optional().describe('For a path (default GET); a saved operation has its own'),
     params: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])).optional().describe('Parameter values, by name'),
     body: z.union([z.record(z.string(), z.unknown()), z.array(z.unknown())]).optional().describe('The JSON body of a write'),
+    headers: z.record(z.string(), z.string()).refine(value => Object.keys(value).length <= MAX_CALL_HEADERS, `At most ${MAX_CALL_HEADERS} headers`).optional().describe('For a path: the headers to send (never the sign-in, which comes from the source). A saved operation sends its own'),
     confirm: z.boolean().optional().describe('true to send a write (POST, PUT, PATCH, DELETE)'),
     model: PascalNameSchema.optional().describe('The name for the proposed root model (default: the saved result\'s, else from the path)')
   }).refine(input => [input.path, input.query, input.action].filter(value => value !== undefined).length === 1, 'Give one of path, query or action'),
@@ -310,6 +347,7 @@ const apiTry = defineAction({
     if (call.method !== 'GET' && input.confirm !== true) {
       throw new ActionError('forbidden', `api_try sends a ${call.method}: it could change the API's data. Pass confirm: true to send it`)
     }
+    const given = callHeaders(call, input.params ?? {}, input.headers, source)
     const settings = resolveSettings(root, source)
     const target = remoteUrl(settings.baseUrl ?? '', fillPath(call, input.params ?? {}))
     if (!target.ok) throw new ActionError('invalid_input', target.message)
@@ -320,7 +358,7 @@ const apiTry = defineAction({
     let answer
     const started = performance.now()
     try {
-      answer = await fetchRemote(target.url, { baseUrl: settings.baseUrl!, headers, method: call.method, body: input.body })
+      answer = await fetchRemote(target.url, { baseUrl: settings.baseUrl!, headers: withOwn(headers, given), method: call.method, body: input.body })
     } catch (error) {
       if (error instanceof RemoteError) throw new ActionError('upstream', secrets.length ? redact(error.message, secrets) : error.message)
       throw error

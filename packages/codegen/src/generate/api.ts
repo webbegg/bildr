@@ -1,6 +1,7 @@
 import type { ApiSource } from '../edit/api.ts'
 import { apiComposableName } from '../edit/generated-names.ts'
 import type { Model } from '../model/load.ts'
+import { headerNameOf } from '../model/schemas.ts'
 import type { ApiField } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
 import { apiSources, browserApiSources, descriptionOf, DTO_VALUE, fieldType, inputFields, inputType, isCallable, modelNames, namesOf, nestedModels, operationsOf, pathTemplate, propertyAccess, propertyKey, remoteKey, resultType, serverApiSources, wrapField } from './api-model.ts'
@@ -281,10 +282,11 @@ const mapperLines = (name: string, source: ApiSource): string[] => {
 }
 
 const clientLines = (): string[] => [
-  '/** One call to the API: the method, the query string (a value left undefined is not sent) and the JSON body. */',
+  '/** One call to the API: the method, the query string and the headers (a value left undefined is not sent) and the JSON body. */',
   'export interface ApiRequest {',
   '  method: \'GET\' | \'POST\' | \'PUT\' | \'PATCH\' | \'DELETE\'',
   '  query?: Record<string, string | number | boolean | undefined>',
+  '  headers?: Record<string, string | number | boolean | undefined>',
   '  body?: unknown',
   '}',
   '',
@@ -299,6 +301,7 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
   const usesList = results.some(operation => operation.result!.many)
   const usesPath = results.some(operation => operation.result!.itemsPath)
   const usesSegment = operations.some(operation => pathTemplate(operation.path).dynamic)
+  const usesHeaderText = operations.some(operation => operation.params.some(param => param.in === 'header' && param.type === 'text'))
   const unique = (names: Array<string | undefined>) => [...new Set(names.filter((name): name is string => !!name))].sort()
   const answered = unique(operations.map(operation => operation.result?.model))
   const sent = unique(operations.map(operation => operation.body))
@@ -309,8 +312,9 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
       ...(answered.includes(name) ? [modelNames(name).to] : []),
       ...(sent.includes(name) ? [modelNames(name).from] : [])
     ])),
-    // What the file throws: an invalid answer (a source with a result) and a path parameter that is not a segment. A source with neither throws nothing here.
-    (results.length > 0 || usesSegment) && importLine(`../../../domain/${source.name}/errors`, [names.failure, ...(results.length ? ['invalidAnswer'] : []), ...(usesSegment ? ['invalidInput'] : [])]),
+    // What the file throws: an invalid answer (a source with a result), and a path parameter that is not a segment or a header one that is not
+    // one line. A source with none of them throws nothing here.
+    (results.length > 0 || usesSegment || usesHeaderText) && importLine(`../../../domain/${source.name}/errors`, [names.failure, ...(results.length ? ['invalidAnswer'] : []), ...(usesSegment || usesHeaderText ? ['invalidInput'] : [])]),
     importLine(`../../../domain/${source.name}/repositories/${names.portFile}`, [{ name: names.port, type: true }]),
     importLine('../client', [{ name: 'ApiClient', type: true }]),
     '',
@@ -342,6 +346,16 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
           ''
         ]
       : []),
+    ...(usesHeaderText
+      ? [
+          '/** A parameter sent in a header: one line of plain text (a line break would start another header), or undefined, which is not sent. */',
+          'const headerValue = (value: string | undefined): string | undefined => {',
+          `  if (value !== undefined && !/^[\\x20-\\x7E]*$/.test(value)) throw new ${names.failure}(invalidInput(${tsString('a header parameter is one line of plain text')}))`,
+          '  return value',
+          '}',
+          ''
+        ]
+      : []),
     ...(usesPath
       ? [
           '/** The value under `path` (property names) of the answer: undefined where the answer has no such property. */',
@@ -361,9 +375,14 @@ const adapterMethod = (operation: Operation): string => {
   const fields = inputFields(operation)
   const path = tsPath(operation)
   const query = operation.params.filter(param => param.in === 'query')
+  const headers = [
+    ...operation.headers.map(fixed => `${propertyKey(fixed.name)}: ${tsString(fixed.value)}`),
+    ...operation.params.filter(param => param.in === 'header').map(param => `${propertyKey(headerNameOf(param))}: ${param.type === 'text' ? `headerValue(input.${param.name})` : `input.${param.name}`}`)
+  ]
   const request = [
     `method: ${tsString(operation.method)}`,
     ...(query.length ? [`query: { ${query.map(param => `${propertyKey(remoteKey(param))}: input.${param.name}`).join(', ')} }`] : []),
+    ...(headers.length ? [`headers: { ${headers.join(', ')} }`] : []),
     ...(operation.body ? [`body: ${modelNames(operation.body).from}(input.body)`] : [])
   ]
   const call = `http(${path}, { ${request.join(', ')} })`

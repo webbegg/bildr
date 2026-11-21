@@ -2,7 +2,7 @@ import type { ApiSource } from '../edit/api.ts'
 import type { Model } from '../model/load.ts'
 import { apiNameProblem, apiSourceIdentifiers } from '../edit/generated-names.ts'
 import { API_PATH } from '../model/schemas.ts'
-import type { ApiAction, ApiField, ApiModel, ApiParam, ApiQuery } from '../model/schemas.ts'
+import type { ApiAction, ApiField, ApiHeader, ApiModel, ApiParam, ApiQuery } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
 import { docText, identifier, kebab, tsString } from './text.ts'
 
@@ -40,6 +40,8 @@ export interface Operation {
   method: 'GET' | ApiAction['method']
   path: string
   params: ApiParam[]
+  /** The headers it always sends, with their value. */
+  headers: ApiHeader[]
   /** The model the body is (actions only). */
   body?: string
   result?: ApiResult
@@ -50,8 +52,8 @@ export const descriptionOf = (operation: Operation): string | undefined =>
   operation.description ? docText(operation.description).replace(/[.\s]+$/, '') || undefined : undefined
 
 export const operationsOf = (source: ApiSource): Operation[] => [
-  ...source.queries.map((query: ApiQuery): Operation => ({ kind: 'query', name: query.name, description: query.description, method: 'GET', path: query.path, params: query.params, result: query.result })),
-  ...source.actions.map((action: ApiAction): Operation => ({ kind: 'action', name: action.name, description: action.description, method: action.method, path: action.path, params: action.params, body: action.body?.model, result: action.result }))
+  ...source.queries.map((query: ApiQuery): Operation => ({ kind: 'query', name: query.name, description: query.description, method: 'GET', path: query.path, params: query.params, headers: query.headers ?? [], result: query.result })),
+  ...source.actions.map((action: ApiAction): Operation => ({ kind: 'action', name: action.name, description: action.description, method: action.method, path: action.path, params: action.params, headers: action.headers ?? [], body: action.body?.model, result: action.result }))
 ]
 
 export interface SourceNames {
@@ -179,10 +181,10 @@ const PARAM_TS: Record<ApiParam['type'], string> = { text: 'string', integer: 'n
 const PARAM_ZOD: Record<ApiParam['type'], string> = { text: 'z.string()', integer: 'z.number().int()', number: 'z.number()', boolean: 'z.boolean()' }
 const PARAM_QUERY: Record<ApiParam['type'], string> = { text: 'z.string()', integer: 'z.coerce.number().int()', number: 'z.coerce.number()', boolean: 'z.stringbool()' }
 
-/** A call's input: its parameters (a path parameter is always required), then the body. */
+/** A call's input: its parameters (a path parameter is always required; a query or header one when it says so), then the body. */
 export const inputFields = (operation: Operation): InputField[] => [
   ...operation.params.map((param): InputField => {
-    const optional = param.in === 'query' && !param.required
+    const optional = param.in !== 'path' && !param.required
     return {
       name: identifier(param.name, `parameter "${param.name}" of "${operation.name}"`),
       ts: PARAM_TS[param.type],

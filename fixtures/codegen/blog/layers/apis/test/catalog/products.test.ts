@@ -23,7 +23,8 @@ describe('products', () => {
       }
     ] })
     const result = await products({ catalog: repository })({
-      category: 'category 1'
+      category: 'category 1',
+      locale: 'locale 1'
     })
     expect(result).toEqual({ ok: true, value: [
       {
@@ -50,7 +51,8 @@ describe('products', () => {
       }
     })
     const result = await products({ catalog: repository })({
-      category: 'category 1'
+      category: 'category 1',
+      locale: 'locale 1'
     })
     expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: 'remote_failed', status: 503 }) })
   })

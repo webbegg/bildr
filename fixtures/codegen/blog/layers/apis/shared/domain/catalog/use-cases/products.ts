@@ -7,7 +7,8 @@ import { type CatalogError, CatalogFailure, invalidInput } from '../errors'
 import type { CatalogRepository } from '../repositories/catalog-repository'
 
 export const ProductsInputSchema = z.object({
-  category: z.string().optional()
+  category: z.string().optional(),
+  locale: z.string().optional()
 })
 export type ProductsInput = z.infer<typeof ProductsInputSchema>
 

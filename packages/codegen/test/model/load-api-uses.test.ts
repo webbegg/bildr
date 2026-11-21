@@ -43,7 +43,7 @@ describe('uses.apis', () => {
     expect(problems(withApis([{ ...products, datasource: 'ds_nope' }]))).toEqual([`${IDX}: uses.apis.0.datasource: Unknown data source "ds_nope"`])
     expect(problems(withApis([{ ...products, datasource: 'ds_main' }]))).toEqual([`${IDX}: uses.apis.0.datasource: "ds_main" is not an API data source`])
     expect(problems(withApis([{ ...products, query: 'nope' }]))).toEqual([`${IDX}: uses.apis.0.query: The API "catalog" has no query "nope" (products, product)`])
-    expect(problems(withApis([{ ...products, args: { nope: 1 } }]))).toEqual([`${IDX}: uses.apis.0.args.nope: The query "products" of the API "catalog" has no parameter "nope" (category)`])
+    expect(problems(withApis([{ ...products, args: { nope: 1 } }]))).toEqual([`${IDX}: uses.apis.0.args.nope: The query "products" of the API "catalog" has no parameter "nope" (category, locale)`])
     // A path parameter is always required, a query parameter when it says so.
     expect(problems(withApis([{ as: 'one', datasource: 'ds_catalog', query: 'product' }]))).toEqual([`${IDX}: uses.apis.0.args: The query "product" of the API "catalog" needs "id"`])
     expect(problems(withApis([{ as: 'city', datasource: 'ds_weather', query: 'forecast' }]))).toEqual([`${IDX}: uses.apis.0.args: The query "forecast" of the API "weather" needs "city"`])

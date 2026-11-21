@@ -19,7 +19,7 @@ const read = <T>(schema: ZodType<T>, answer: unknown, report?: (detail: string) 
 /** WeatherRepository over an ApiClient: builds each path and query, reads the answer where the model says it is, validates it and maps it to the domain. `onInvalidAnswer` gets the detail of an answer that is not valid (the failure has none). */
 export const httpWeatherRepository = (http: ApiClient, onInvalidAnswer?: (detail: string) => void): WeatherRepository => ({
   async forecast(input) {
-    const answer = await http('/forecast', { method: 'GET', query: { q: input.city } })
+    const answer = await http('/forecast', { method: 'GET', query: { q: input.city }, headers: { 'X-Units': 'metric' } })
     return toForecast(read(ForecastDtoSchema, answer, onInvalidAnswer))
   },
   async reportForecast(input) {

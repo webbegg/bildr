@@ -154,12 +154,12 @@ describe('generate: server-runtime api sources', () => {
   it('has a port with one method per query and action, and one use-case each that validates its input', () => {
     const port = read(generated, 'layers/apis/shared/domain/catalog/repositories/catalog-repository.ts')
     expect(port).toContain('export interface CatalogRepository {')
-    expect(port).toContain('  products(input: { category?: string }): Promise<Product[]>')
+    expect(port).toContain('  products(input: { category?: string, locale?: string }): Promise<Product[]>')
     expect(port).toContain('  product(input: { id: number }): Promise<Product>')
     expect(port).toContain('  createProduct(input: { body: Product }): Promise<Product>')
     expect(port).toContain('  deleteProduct(input: { id: number }): Promise<void>')
     const useCase = read(generated, 'layers/apis/shared/domain/catalog/use-cases/products.ts')
-    expect(useCase).toContain('export const ProductsInputSchema = z.object({\n  category: z.string().optional()\n})')
+    expect(useCase).toContain('export const ProductsInputSchema = z.object({\n  category: z.string().optional(),\n  locale: z.string().optional()\n})')
     expect(useCase).toContain('export const products = (deps: ProductsDeps) =>')
     expect(useCase).toContain('Promise<KernelResult<Product[], CatalogError>>')
     expect(useCase).toContain('ProductsInputSchema.safeParse(input)')
@@ -174,7 +174,7 @@ describe('generate: server-runtime api sources', () => {
     const http = read(generated, 'layers/apis/shared/data/catalog/repositories/catalog-repository.http.ts')
     expect(http).toContain('export const httpCatalogRepository = (http: ApiClient, onInvalidAnswer?: (detail: string) => void): CatalogRepository => ({')
     // A query parameter on its remote key, a list read under data.items.
-    expect(http).toContain('http(\'/products\', { method: \'GET\', query: { cat: input.category } })')
+    expect(http).toContain('http(\'/products\', { method: \'GET\', query: { cat: input.category }, headers: { \'X-Api-Version\': \'2\', \'Accept-Language\': headerValue(input.locale) } })')
     expect(http).toContain('read(z.array(ProductDtoSchema), itemsAt(answer, [\'data\', \'items\']), onInvalidAnswer).map(toProduct)')
     // A path parameter, encoded, and a single model.
     expect(http).toContain('http(`/products/${segment(input.id)}`, { method: \'GET\' })')

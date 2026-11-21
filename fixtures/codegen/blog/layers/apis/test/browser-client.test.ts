@@ -25,7 +25,24 @@ describe('createBrowserClient', () => {
       const call = createBrowserClient({ baseUrl: 'https://api.example.com/v1' })
       await expect(call('/things', { method: 'GET', query: { q: 'a b', skip: undefined } })).resolves.toEqual({ ok: true })
       expect(calls.map(entry => entry.url)).toEqual(['https://api.example.com/v1/things?q=a+b'])
-      expect(calls[0]!.init).toMatchObject({ method: 'GET', redirect: 'manual', credentials: 'omit', headers: { accept: 'application/json' } })
+      expect(calls[0]!.init).toMatchObject({ method: 'GET', redirect: 'manual', credentials: 'omit' })
+      expect(Object.fromEntries(new Headers(calls[0]!.init.headers))).toEqual({ accept: 'application/json' })
+    })
+  })
+
+  it('sends the call\'s own headers, its accept instead of the JSON one, and none left undefined', async () => {
+    await withFetch(json, async (calls) => {
+      const call = createBrowserClient({ baseUrl: 'https://api.example.com/v1' })
+      await call('/things', { method: 'GET', headers: { 'X-Api-Version': 2, Accept: 'application/vnd.api+json', 'Accept-Language': undefined } })
+      expect(Object.fromEntries(new Headers(calls[0]!.init.headers))).toEqual({ accept: 'application/vnd.api+json', 'x-api-version': '2' })
+    })
+  })
+
+  it('refuses a header it can\'t send, without calling the API', async () => {
+    await withFetch(json, async (calls) => {
+      const call = createBrowserClient({ baseUrl: 'https://api.example.com/v1' })
+      await expect(call('/things', { method: 'GET', headers: { 'X-Note': 'a\r\nX-Evil: 1' } })).rejects.toMatchObject({ name: 'BrowserFailure', status: 0 })
+      expect(calls).toEqual([])
     })
   })
 
@@ -34,7 +51,8 @@ describe('createBrowserClient', () => {
       const call = createBrowserClient({ baseUrl: 'https://api.example.com/v1/' })
       await call('/things', { method: 'POST', body: { name: 'a' } })
       expect(calls[0]!.url).toBe('https://api.example.com/v1/things')
-      expect(calls[0]!.init).toMatchObject({ method: 'POST', body: '{"name":"a"}', headers: { accept: 'application/json', 'content-type': 'application/json' } })
+      expect(calls[0]!.init).toMatchObject({ method: 'POST', body: '{"name":"a"}' })
+      expect(Object.fromEntries(new Headers(calls[0]!.init.headers))).toEqual({ accept: 'application/json', 'content-type': 'application/json' })
     })
   })
 
