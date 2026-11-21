@@ -162,15 +162,21 @@ await run('simple-api', async ({ page, browser }) => {
     await page.locator('[data-op-param="path:id"]').waitFor()
     check(await page.locator('[data-op-param="path:id"]').count() === 1, 'a :id in the path makes the parameter id')
     await pick(page, 'data-op-param-type', 'Whole number')
+    // api-calls R2: a fixed header, sent by Try it and saved with the query.
+    await page.locator('[data-op-header-add]').click()
+    await page.locator('[data-op-header] [data-op-header-name]').fill('X-Api-Version')
+    await page.locator('[data-op-header] [data-op-header-value]').fill('2')
     await page.locator('[data-try-input="id"]').fill('3')
+    check((await page.locator('[data-try-request]').innerText()).includes('X-Api-Version'), 'the request to send shows the header')
     await page.locator('[data-try-run]').click()
     await page.locator('[data-try-status]').waitFor()
     check(stub.calls.some(call => call.method === 'GET' && call.path === '/posts/3'), 'Try it filled the parameter into the path')
+    check(stub.calls.some(call => call.path === '/posts/3' && call.headers?.['x-api-version'] === '2'), 'and sent the header')
     await page.locator('[data-try-use]').click()
     check(await until(async () => (await saysNow(page, '[data-op-result-model]')).includes('Post')), 'Use this answer takes the model that says the same, and asks nothing')
     await page.locator('[data-simple-op-save]').click()
     const byId = await until(() => bildr(FILE)?.queries?.find(entry => entry.name === 'postById'))
-    check(canon(byId) === canon({ name: 'postById', path: '/posts/:id', params: [{ name: 'id', in: 'path', type: 'integer' }], result: { model: 'Post', many: false } }), `and Save writes it (${JSON.stringify(byId)})`)
+    check(canon(byId) === canon({ name: 'postById', path: '/posts/:id', params: [{ name: 'id', in: 'path', type: 'integer' }], headers: [{ name: 'X-Api-Version', value: '2' }], result: { model: 'Post', many: false } }), `and Save writes it, with its header (${JSON.stringify(byId)})`)
     await calm()
 
     // An action: its body model from a sample, a clash with Post that keeps both, Try it with the confirmation.

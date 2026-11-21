@@ -1,4 +1,5 @@
-import type { ApiParam } from '@bildr/codegen/model'
+import { apiHeaderProblem } from '@bildr/codegen/model'
+import type { ApiHeader, ApiParam } from '@bildr/codegen/model'
 
 /**
  * A request pasted into the path of an API query or action (api-calls R1, S3): a full URL under the API's base URL, or a cURL command,
@@ -29,6 +30,8 @@ export interface PastedRequest {
   /** Under the base URL, without query or fragment: `/products`. */
   path: string
   query: PastedParam[]
+  /** A cURL command's headers a call can send (api-calls R2): never a sign-in, a secret, or one the app sends itself. */
+  headers?: ApiHeader[]
   /** The body to try: JSON pretty-printed, or the text as it was. */
   body?: string
   /** What was left out, and why, in the editor's words. */
@@ -181,13 +184,17 @@ function readCurl(words: string[], baseUrl: string, signInHeader?: string): Past
   let json = false
   const data: string[] = []
   const signIn: string[] = []
-  const extra: string[] = []
+  const headers: ApiHeader[] = []
+  const refused: string[] = []
   const headerOf = (line: string) => {
-    const name = line.split(':')[0]!.trim()
+    const split = line.indexOf(':')
+    const name = (split === -1 ? line : line.slice(0, split)).trim()
+    const value = split === -1 ? '' : line.slice(split + 1).trim()
     const lower = name.toLowerCase()
     if (!name || OWN_HEADERS.has(lower)) return
     if (lower === 'authorization' || lower === 'cookie' || lower === 'proxy-authorization' || (signInHeader && lower === signInHeader.toLowerCase())) signIn.push(name)
-    else extra.push(name)
+    else if (apiHeaderProblem(name, value, undefined)) refused.push(name)
+    else headers.push({ name, value })
   }
   for (let at = 1; at < words.length; at++) {
     const word = words[at]!
@@ -239,8 +246,8 @@ function readCurl(words: string[], baseUrl: string, signInHeader?: string): Past
   }
   const query = paramsOf(entries, notes)
   if (signIn.length) notes.push(`Left out the sign-in (${[...new Set(signIn)].join(', ')}): the API's sign-in sends its secret, so it never sits in the model.`)
-  if (extra.length) notes.push(`Left out the ${extra.length === 1 ? 'header' : 'headers'} ${quoted(extra)}: this editor doesn't send extra headers yet.`)
-  return { ok: true, request: { from: 'curl', method: resolved, path, query, ...(body !== undefined ? { body } : {}), notes } }
+  if (refused.length) notes.push(`Left out the ${refused.length === 1 ? 'header' : 'headers'} ${quoted(refused)}: a secret belongs in the API's sign-in, and the app sends some headers itself.`)
+  return { ok: true, request: { from: 'curl', method: resolved, path, query, ...(headers.length ? { headers } : {}), ...(body !== undefined ? { body } : {}), notes } }
 }
 
 // ── Reading a paste ──────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
-import type { ApiAction, ApiField, ApiModel, ApiParam, ApiQuery } from '@bildr/codegen/model'
+import { apiHeaderProblem } from '@bildr/codegen/model'
+import type { ApiAction, ApiField, ApiHeader, ApiModel, ApiParam, ApiQuery } from '@bildr/codegen/model'
 import type { ApiSource } from '@bildr/codegen/edit'
 import { pathParamNames } from '../shared/simpleApi.ts'
 import type { PastedRequest } from '../shared/requestPaste.ts'
@@ -80,6 +81,23 @@ export interface ParamDraft {
   remote: string
 }
 
+/**
+ * A header the call sends (api-calls R2): always the same `value`, or the value of a parameter of the call (`param`, its name for the page
+ * and for Try it), which the module keeps as a parameter `in: "header"` keyed by the header's name.
+ */
+export interface HeaderDraft {
+  key: string
+  /** The header's name, as the API spells it: `X-Api-Version`. */
+  name: string
+  from: 'value' | 'param'
+  value: string
+  param: string
+  /** Of a header filled from a parameter: the call can't go without it. */
+  required: boolean
+  /** Of a header filled from a parameter: its type, kept as it was saved (text for a new one). */
+  type: ParamType
+}
+
 export interface ResultDraft {
   model: string
   many: boolean
@@ -96,6 +114,8 @@ export interface OperationDraft {
   pathTypes: Record<string, ParamType>
   /** The query parameters. */
   params: ParamDraft[]
+  /** The headers it sends: fixed ones and ones filled from a parameter. */
+  headers: HeaderDraft[]
   /** What it answers. An action may answer nothing (null). */
   result: ResultDraft | null
   /** The model of an action's body, or ''. */
@@ -104,6 +124,12 @@ export interface OperationDraft {
 
 let rows = 0
 export const newParam = (): ParamDraft => ({ key: `p_${++rows}`, name: '', type: 'text', required: false, remote: '' })
+export const newHeader = (): HeaderDraft => ({ key: `h_${++rows}`, name: '', from: 'value', value: '', param: '', required: false, type: 'text' })
+
+const headerDraftsOf = (headers: ApiHeader[], params: ApiParam[]): HeaderDraft[] => [
+  ...headers.map(header => ({ ...newHeader(), name: header.name, value: header.value })),
+  ...params.filter(param => param.in === 'header').map(param => ({ ...newHeader(), name: param.key ?? param.name, from: 'param' as const, param: param.name, required: param.required ?? false, type: param.type }))
+]
 
 const resultDraftOf = (result: ApiQuery['result'] | undefined): ResultDraft | null => result ? { model: result.model, many: result.many, itemsPath: result.itemsPath ?? '' } : null
 
@@ -116,12 +142,13 @@ export function operationDraftOf(kind: 'query' | 'action', stored: ApiQuery | Ap
     path: stored?.path ?? '/',
     pathTypes: Object.fromEntries(params.filter(param => param.in === 'path').map(param => [param.name, param.type])),
     params: params.filter(param => param.in === 'query').map(param => ({ key: `p_${++rows}`, name: param.name, type: param.type, required: param.required ?? false, remote: param.key ?? '' })),
+    headers: headerDraftsOf(stored?.headers ?? [], params),
     result: stored ? resultDraftOf(stored.result) : kind === 'query' ? { model: '', many: false, itemsPath: '' } : null,
     body: stored && 'body' in stored ? stored.body?.model ?? '' : ''
   }
 }
 
-/** The path parameters of the draft's path, then its query parameters: what the module is sent. */
+/** The path parameters of the draft's path, then its query parameters, then the ones that fill a header: what the module is sent. */
 export function paramsOutput(draft: OperationDraft): ApiParam[] {
   return [
     ...pathParamNames(draft.path).map((name): ApiParam => ({ name, in: 'path', type: draft.pathTypes[name] ?? 'text' })),
@@ -131,30 +158,47 @@ export function paramsOutput(draft: OperationDraft): ApiParam[] {
       type: param.type,
       ...(param.required ? { required: true } : {}),
       ...(param.remote.trim() ? { key: param.remote.trim() } : {})
+    })),
+    ...draft.headers.filter(header => header.from === 'param' && header.param.trim()).map((header): ApiParam => ({
+      name: header.param.trim(),
+      in: 'header',
+      type: header.type,
+      ...(header.required ? { required: true } : {}),
+      ...(header.name.trim() && header.name.trim() !== header.param.trim() ? { key: header.name.trim() } : {})
     }))
   ]
 }
+
+/** The headers the draft always sends, with their value. */
+export const headersOutput = (draft: OperationDraft): ApiHeader[] =>
+  draft.headers.filter(header => header.from === 'value' && header.name.trim()).map(header => ({ name: header.name.trim(), value: header.value.trim() }))
 
 const resultOutput = (result: ResultDraft | null): ApiQuery['result'] | undefined => result?.model
   ? { model: result.model, many: result.many, ...(result.many && result.itemsPath.trim() ? { itemsPath: result.itemsPath.trim() } : {}) }
   : undefined
 
 /** The query the draft is, named `name`. */
-export const queryOutput = (name: string, draft: OperationDraft): ApiQuery => ({
-  name,
-  path: draft.path.trim(),
-  params: paramsOutput(draft),
-  result: resultOutput(draft.result) ?? { model: '', many: false }
-})
+export const queryOutput = (name: string, draft: OperationDraft): ApiQuery => {
+  const headers = headersOutput(draft)
+  return {
+    name,
+    path: draft.path.trim(),
+    params: paramsOutput(draft),
+    ...(headers.length ? { headers } : {}),
+    result: resultOutput(draft.result) ?? { model: '', many: false }
+  }
+}
 
 /** The action the draft is, named `name`. */
 export const actionOutput = (name: string, draft: OperationDraft): ApiAction => {
   const result = resultOutput(draft.result)
+  const headers = headersOutput(draft)
   return {
     name,
     method: draft.method,
     path: draft.path.trim(),
     params: paramsOutput(draft),
+    ...(headers.length ? { headers } : {}),
     ...(draft.body ? { body: { model: draft.body } } : {}),
     ...(result ? { result } : {})
   }
@@ -171,12 +215,33 @@ export const operationChangedOutside = (base: ApiQuery | ApiAction | null, store
 /** "Keep my edits": the user's draft stays as it is, and replaces the new version when it is saved. */
 export const operationRebase = (draft: OperationDraft): OperationDraft => draft
 
-/** What stops a query or an action from being saved, before the module is asked. */
-export function operationProblems(draft: OperationDraft): string[] {
+/** The module's words with its straight quotes as the editor's: `"X-Key"` → “X-Key”. */
+const curly = (text: string) => text.replace(/"([^"]*)"/g, '“$1”')
+
+/** Why the module would refuse a header row (`apiHeaderProblem`, in the editor's quotes); nothing for a good one or one with no name yet. */
+export const headerProblem = (header: HeaderDraft, auth?: ApiSource['auth']): string | undefined => {
+  if (!header.name.trim()) return undefined
+  const problem = apiHeaderProblem(header.name.trim(), header.from === 'value' ? header.value.trim() : undefined, auth)
+  return problem ? curly(problem) : undefined
+}
+
+/**
+ * What stops a query or an action from being saved, before the module is asked. `auth` is the API's sign-in: a header named like it is
+ * refused, as the module refuses it (`headerProblem`).
+ */
+export function operationProblems(draft: OperationDraft, auth?: ApiSource['auth']): string[] {
   const problems: string[] = []
   if (!draft.path.trim().startsWith('/')) problems.push('The path starts with “/”, like “/products/:id”')
   if (draft.kind === 'query' && !draft.result?.model) problems.push('Choose what the answer looks like: pick a model, or use “Try it” to find one')
   if (draft.params.some(param => !param.name.trim())) problems.push('Give every parameter a name, or remove it')
+  for (const header of draft.headers) {
+    const problem = headerProblem(header, auth)
+    if (problem) problems.push(problem)
+  }
+  if (draft.headers.some(header => !header.name.trim() && (header.value.trim() || header.param.trim()))) problems.push('Give every header a name, or remove it')
+  for (const header of draft.headers) {
+    if (header.from === 'param' && header.name.trim() && !header.param.trim()) problems.push(`Give the parameter that fills “${header.name.trim()}” a name`)
+  }
   return problems
 }
 
@@ -185,9 +250,20 @@ export function tryParams(draft: OperationDraft, values: Record<string, string |
   const sent: Record<string, string | number | boolean> = {}
   for (const param of paramsOutput(draft)) {
     const value = values[param.name]
-    if (value === undefined || value === '') continue
+    if (param.in === 'header' || value === undefined || value === '') continue
     const key = param.in === 'path' ? param.name : param.key ?? param.name
     sent[key] = param.type === 'boolean' ? value === true || value === 'true' : param.type === 'integer' || param.type === 'number' ? Number(value) : String(value)
+  }
+  return sent
+}
+
+/** The headers `api_try` sends for the draft, by header name: the fixed ones, and the ones filled from a parameter that has a value in `values`. */
+export function tryHeaders(draft: OperationDraft, values: Record<string, string | boolean>): Record<string, string> {
+  const sent: Record<string, string> = {}
+  for (const header of headersOutput(draft)) sent[header.name] = header.value
+  for (const param of paramsOutput(draft)) {
+    const value = values[param.name]
+    if (param.in === 'header' && value !== undefined && value !== '') sent[param.key ?? param.name] = String(value)
   }
   return sent
 }
@@ -240,6 +316,12 @@ export function applyPastedRequest(draft: OperationDraft, request: PastedRequest
     if (pasted.value !== '') values[row.name.trim()] = row.type === 'boolean' ? pasted.value === 'true' : pasted.value
   }
   if (request.query.length) parts.push(count(request.query.length, 'query parameter', 'query parameters'))
+  for (const pasted of request.headers ?? []) {
+    const row = draft.headers.find(header => header.from === 'value' && header.name.trim().toLowerCase() === pasted.name.toLowerCase())
+    if (row) row.value = pasted.value
+    else draft.headers.push({ ...newHeader(), name: pasted.name, value: pasted.value })
+  }
+  if (request.headers?.length) parts.push(count(request.headers.length, 'header', 'headers'))
   const body = draft.kind === 'action' && fits && request.body !== undefined ? request.body : undefined
   if (body !== undefined) parts.push('the body to try')
   const listed = parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`

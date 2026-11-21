@@ -1155,7 +1155,9 @@ describe('pasting a request into the path (api-calls R1)', () => {
     const note = text(q('[data-op-paste-note]'))
     expect(note).toContain('Filled in from the cURL command')
     expect(note).toContain('Left out the sign-in (X-Api-Key)')
-    expect(note).toContain('Left out the header “X-Trace”')
+    // Since R2 a header that is not a sign-in is kept, as a fixed header of the action.
+    expect(note).toContain('1 header')
+    expect(inputOf('[data-op-header] [data-op-header-name]').value).toBe('X-Trace')
     expect(document.body.innerHTML).not.toContain('k-1')
     await click(q('[data-op-paste-dismiss]'))
     expect(q('[data-op-paste-note]')).toBeNull()
@@ -1322,6 +1324,62 @@ describe('Try it\'s answer', () => {
     await open('query:products')
     await click(q('[data-try-run]'))
     expect(text(q('[data-try-items]'))).toBe('Found a list of 2 items at “items”')
+  })
+})
+
+describe('the headers a call sends (api-calls R2)', () => {
+  const headerRow = (at: number) => qa('[data-op-header]')[at]!
+
+  it('adds a fixed header and one filled from a parameter, and saves them as the module keeps them', async () => {
+    shop()
+    const { actions } = await mounted()
+    await open('query:products')
+    expect(text(q('[data-op-headers]'))).toContain('None yet')
+    await click(q('[data-op-header-add]'))
+    await typeInto(headerRow(0).querySelector('[data-op-header-name]'), 'X-Api-Version')
+    await typeInto(headerRow(0).querySelector('[data-op-header-value]'), '2')
+    await click(q('[data-op-header-add]'))
+    await typeInto(headerRow(1).querySelector('[data-op-header-name]'), 'X-Tenant')
+    await selectOption(comboOf(headerRow(1).querySelector('[data-op-header-from]')), 'From a parameter')
+    expect(headerRow(1).querySelector('[data-op-header-value]')).toBeNull()
+    await typeInto(headerRow(1).querySelector('[data-op-header-param]'), 'tenant')
+    await click(headerRow(1).querySelector('[data-op-header-required]'))
+    await save()
+    expect(calls(actions, 'api_query_set')[0]!.query).toEqual({
+      name: 'products',
+      path: '/products',
+      params: [{ name: 'tenant', in: 'header', type: 'text', required: true, key: 'X-Tenant' }],
+      headers: [{ name: 'X-Api-Version', value: '2' }],
+      result: { model: 'Product', many: true, itemsPath: 'items' }
+    })
+    expect(unsaved()).toBe(false)
+    expect(qa('[data-op-header]')).toHaveLength(2)
+  })
+
+  it('says at once that the sign-in or a secret can\'t be a header, and does not save', async () => {
+    shop({ auth: { type: 'header', header: 'X-Shop-Key' } })
+    const { actions } = await mounted()
+    await open('query:products')
+    await click(q('[data-op-header-add]'))
+    await typeInto(headerRow(0).querySelector('[data-op-header-name]'), 'x-shop-key')
+    await typeInto(headerRow(0).querySelector('[data-op-header-value]'), 'abc')
+    expect(text(headerRow(0).querySelector('[data-op-header-problem]'))).toBe('“x-shop-key” is the API\'s sign-in: set it in the API\'s settings, where its secret stays in env')
+    await typeInto(headerRow(0).querySelector('[data-op-header-name]'), 'X-Token')
+    expect(text(headerRow(0).querySelector('[data-op-header-problem]'))).toContain('looks like a secret')
+    await save()
+    expect(calls(actions, 'api_query_set')).toEqual([])
+    expect(text(q('[data-simple-op-error]'))).toContain('looks like a secret')
+  })
+
+  it('asks Try it for the value of a header parameter, and sends the headers as headers', async () => {
+    shop()
+    seed('api_query_set', { datasource: ID, query: { name: 'products', path: '/products', params: [{ name: 'tenant', in: 'header', type: 'text', key: 'X-Tenant' }], headers: [{ name: 'X-Api-Version', value: '2' }], result: { model: 'Product', many: true, itemsPath: 'items' } } })
+    const { actions } = await mounted(LIST)
+    await open('query:products')
+    await type('data-try-input="tenant"', 'acme')
+    expect(text(q('[data-try-request]'))).toContain('X-Tenant')
+    await click(q('[data-try-run]'))
+    expect(calls(actions, 'api_try')[0]).toEqual({ datasource: ID, path: '/products', headers: { 'X-Api-Version': '2', 'X-Tenant': 'acme' } })
   })
 })
 

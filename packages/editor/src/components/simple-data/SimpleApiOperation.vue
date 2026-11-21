@@ -11,8 +11,8 @@ import SimpleApiTry from './SimpleApiTry.vue'
 import { attempt } from '../../editor/dataArtifactActions.ts'
 import { readPastedRequest } from '../../shared/requestPaste.ts'
 import { loadTryValues, storeTryValues } from '../../editor/tryRequest.ts'
-import { actionOutput, applyPastedRequest, newParam, operationChangedOutside, operationDirty, operationDraftOf, operationProblems, operationRebase, paramsOutput, queryOutput } from '../../editor/simpleApiDraft.ts'
-import type { Method, OperationDraft, ParamType } from '../../editor/simpleApiDraft.ts'
+import { actionOutput, applyPastedRequest, headerProblem, newHeader, newParam, operationChangedOutside, operationDirty, operationDraftOf, operationProblems, operationRebase, paramsOutput, queryOutput } from '../../editor/simpleApiDraft.ts'
+import type { HeaderDraft, Method, OperationDraft, ParamType } from '../../editor/simpleApiDraft.ts'
 import { useDraftForm } from '../../editor/useDraftForm.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { METHODS, PARAM_TYPES, sampleModelName } from '../../shared/simpleApi.ts'
@@ -55,7 +55,7 @@ const pathParams = computed(() => paramsOutput(draft.value).filter(param => para
 
 async function save() {
   if (stale.value || !dirty.value || saving.value) return
-  const problems = operationProblems(draft.value)
+  const problems = operationProblems(draft.value, source.auth)
   if (problems.length) {
     error.value = problems.join('. ')
     return
@@ -82,6 +82,18 @@ const setPathType = (param: string, type: ParamType) => {
 const removeParam = (key: string) => {
   draft.value.params = draft.value.params.filter(param => param.key !== key)
 }
+
+// ── Headers (api-calls R2) ─────────────────────────────────────────────────
+
+const HEADER_FROM = [{ value: 'value', label: 'Fixed value' }, { value: 'param', label: 'From a parameter' }]
+const removeHeader = (key: string) => {
+  draft.value.headers = draft.value.headers.filter(header => header.key !== key)
+}
+const setHeaderFrom = (header: HeaderDraft, from: string) => {
+  header.from = from === 'param' ? 'param' : 'value'
+}
+/** Where the API's sign-in goes, said next to the headers: it is set in the API's settings, never here. */
+const signInHeader = computed(() => !source.auth ? '' : source.auth.type === 'bearer' ? 'Authorization' : source.auth.header ?? '')
 
 // ── What it answers and what it sends ────────────────────────────────────
 
@@ -411,6 +423,106 @@ const methodHint = computed(() => METHODS.find(entry => entry.value === draft.va
                   class="size-4 shrink-0"
                 />
                 Add parameter
+              </button>
+            </section>
+
+            <section data-op-headers>
+              <h3 class="flex h-9 items-center text-[12px] font-[550] text-highlighted">
+                Headers
+              </h3>
+              <p
+                v-if="!draft.headers.length"
+                class="pb-2 text-[12px] leading-4 text-muted"
+              >
+                None yet. Add the ones the API asks for, like a version.{{ signInHeader ? ` The sign-in (${signInHeader}) is sent on its own, from the API's settings.` : '' }}
+              </p>
+              <div
+                v-else
+                class="grid grid-cols-[minmax(0,1fr)_9.5rem_minmax(0,1fr)_4.5rem_1.5rem] items-center gap-x-2 gap-y-1.5 pb-1"
+              >
+                <span class="ps-1.5 text-[11px] text-dimmed">Name</span>
+                <span class="text-[11px] text-dimmed">Value</span>
+                <span />
+                <span class="text-[11px] text-dimmed">Needed</span>
+                <span />
+                <template
+                  v-for="header in draft.headers"
+                  :key="header.key"
+                >
+                  <div
+                    class="contents"
+                    :data-op-header="header.key"
+                  >
+                    <EditorInput
+                      v-model="header.name"
+                      placeholder="Name, e.g. X-Api-Version"
+                      :aria-label="`Name of ${header.name || 'the header'}`"
+                      data-op-header-name
+                    />
+                    <EditorSelect
+                      :model-value="header.from"
+                      :items="HEADER_FROM"
+                      :aria-label="`Where ${header.name || 'the header'} takes its value`"
+                      data-op-header-from
+                      @update:model-value="setHeaderFrom(header, $event)"
+                    />
+                    <EditorInput
+                      v-if="header.from === 'value'"
+                      v-model="header.value"
+                      placeholder="Value, e.g. 2"
+                      :aria-label="`Value of ${header.name || 'the header'}`"
+                      data-op-header-value
+                    />
+                    <EditorInput
+                      v-else
+                      v-model="header.param"
+                      placeholder="Parameter, e.g. tenant"
+                      :aria-label="`The parameter that fills ${header.name || 'the header'}`"
+                      data-op-header-param
+                    />
+                    <input
+                      v-if="header.from === 'param'"
+                      type="checkbox"
+                      :class="CHECKBOX"
+                      :checked="header.required"
+                      :aria-label="`${header.name || 'The header'} is needed`"
+                      data-op-header-required
+                      @change="header.required = ($event.target as HTMLInputElement).checked"
+                    >
+                    <span
+                      v-else
+                      class="text-[11px] text-dimmed"
+                    >Always</span>
+                    <EditorButton
+                      icon="i-lucide-minus"
+                      variant="ghost"
+                      size="xs"
+                      :aria-label="`Remove ${header.name || 'the header'}`"
+                      data-op-header-remove
+                      @click="removeHeader(header.key)"
+                    />
+                    <DataInlineError
+                      v-if="headerProblem(header, source.auth)"
+                      class="col-span-5"
+                      data-op-header-problem
+                    >
+                      {{ headerProblem(header, source.auth) }}
+                    </DataInlineError>
+                  </div>
+                </template>
+              </div>
+              <button
+                type="button"
+                class="mt-1 flex h-9 w-full items-center gap-1.5 rounded-lg ps-2 text-left text-[12px] text-muted hover:bg-white/4 hover:text-toned"
+                aria-label="Add header"
+                data-op-header-add
+                @click="draft.headers.push(newHeader())"
+              >
+                <UIcon
+                  name="i-lucide-plus"
+                  class="size-4 shrink-0"
+                />
+                Add header
               </button>
             </section>
 

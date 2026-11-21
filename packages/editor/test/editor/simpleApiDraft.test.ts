@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { ApiSource } from '@bildr/codegen/edit'
 import type { ApiModel } from '@bildr/codegen/model'
 import { readPastedRequest } from '../../src/shared/requestPaste.ts'
-import { applyPastedRequest, clashesOf, newParam, operationDirty, operationDraftOf, paramsOutput, planProposal, queryOutput, renameProblem, settingsInput, settingsRebase, settingsOf, tryParams } from '../../src/editor/simpleApiDraft.ts'
+import { actionOutput, applyPastedRequest, clashesOf, newHeader, newParam, operationDirty, operationDraftOf, operationProblems, paramsOutput, planProposal, queryOutput, renameProblem, settingsInput, settingsRebase, settingsOf, tryHeaders, tryParams } from '../../src/editor/simpleApiDraft.ts'
 import { baseUrlProblem, listShown, modelNameOf, operationNameOf, pathParamNames, secretVarAfterRename } from '../../src/shared/simpleApi.ts'
 
 /** The API drafts' pure parts (simple data, S4, S6): what each form would write, what counts as an edit, and what using an answer does to the models. */
@@ -81,6 +81,63 @@ describe('the operation draft', () => {
     const flag = operationDraftOf('query', null)
     flag.params = [{ ...newParam(), name: 'draft', type: 'boolean' }]
     expect(tryParams(flag, { draft: true })).toEqual({ draft: true })
+  })
+})
+
+describe('the headers of an operation (api-calls R2)', () => {
+  const stored = {
+    name: 'products',
+    path: '/products',
+    params: [{ name: 'lang', in: 'query', type: 'text' }, { name: 'tenant', in: 'header', type: 'text', key: 'X-Tenant', required: true }],
+    headers: [{ name: 'X-Api-Version', value: '2' }],
+    result: { model: 'Product', many: true }
+  } as never
+
+  it('round-trips the fixed headers and the header parameters as rows, with no edits', () => {
+    const draft = operationDraftOf('query', stored)
+    expect(draft.headers.map(row => `${row.name}:${row.from}:${row.from === 'value' ? row.value : row.param}`)).toEqual(['X-Api-Version:value:2', 'X-Tenant:param:tenant'])
+    expect(operationDirty(draft, stored)).toBe(false)
+    expect(queryOutput('products', draft)).toEqual(stored)
+  })
+
+  it('writes a fixed row in headers and a parameter row as a header parameter, keyed by the header name', () => {
+    const draft = operationDraftOf('action', null)
+    draft.path = '/orders'
+    draft.headers = [{ ...newHeader(), name: ' X-Channel ', value: 'web' }, { ...newHeader(), name: 'Accept-Language', from: 'param', param: 'locale' }, newHeader()]
+    expect(actionOutput('add', draft)).toEqual({
+      name: 'add',
+      method: 'POST',
+      path: '/orders',
+      params: [{ name: 'locale', in: 'header', type: 'text', key: 'Accept-Language' }],
+      headers: [{ name: 'X-Channel', value: 'web' }]
+    })
+  })
+
+  it('says what the module would refuse before it is asked: the sign-in, a secret, a row without its name or parameter', () => {
+    const draft = operationDraftOf('query', stored)
+    draft.headers.push({ ...newHeader(), name: 'Authorization', value: 'Bearer x' }, { ...newHeader(), name: 'X-Api-Key', value: 'abc' }, { ...newHeader(), value: 'x' }, { ...newHeader(), name: 'X-User', from: 'param' })
+    expect(operationProblems(draft, { type: 'header', secret: 'apiKey', header: 'X-Shop-Key' })).toEqual([
+      '“Authorization” is the API\'s sign-in: set it in the API\'s settings, where its secret stays in env',
+      '“X-Api-Key” looks like a secret: put it in the API\'s sign-in, where it stays in env',
+      'Give every header a name, or remove it',
+      'Give the parameter that fills “X-User” a name'
+    ])
+  })
+
+  it('sends the header values to api_try as headers, by header name, never as parameters', () => {
+    const draft = operationDraftOf('query', stored)
+    expect(tryParams(draft, { lang: 'en', tenant: 'acme' })).toEqual({ lang: 'en' })
+    expect(tryHeaders(draft, { lang: 'en', tenant: 'acme' })).toEqual({ 'X-Api-Version': '2', 'X-Tenant': 'acme' })
+    expect(tryHeaders(draft, {})).toEqual({ 'X-Api-Version': '2' })
+  })
+
+  it('takes a pasted cURL command\'s headers as fixed rows, a header it has already getting the pasted value', () => {
+    const draft = operationDraftOf('query', stored)
+    const read = readPastedRequest(`curl https://api.example.com/v1/products -H 'X-Api-Version: 3' -H 'X-Trace: on'`, 'https://api.example.com/v1')
+    if (!read?.ok) throw new Error('not read')
+    const applied = applyPastedRequest(draft, read.request)
+    expect(queryOutput('products', draft).headers).toEqual([{ name: 'X-Api-Version', value: '3' }, { name: 'X-Trace', value: 'on' }])
+    expect(applied.filled).toBe('Filled in from the cURL command: the path and 2 headers.')
   })
 })
 

@@ -80,9 +80,16 @@ describe('a pasted cURL command', () => {
       method: 'POST',
       path: '/products',
       query: [{ name: 'draft', key: 'draft', type: 'boolean', value: 'true' }],
+      headers: [{ name: 'X-Trace', value: 'abc' }],
       body: '{\n  "title": "Lamp",\n  "price": 3.5\n}',
-      notes: ['Left out the header “X-Trace”: this editor doesn\'t send extra headers yet.']
+      notes: []
     })
+  })
+
+  it('keeps the headers a call can send (api-calls R2), and leaves out one that looks like a secret or that a call can\'t send', () => {
+    const read = ok(`curl ${BASE}/items -H 'X-Api-Version: 2' -H 'X-Auth-Token: abc' -H 'X-Client: sk_live_4eC39HqLyjWDarjtT1zdp7dc' -H 'Origin: https://x.com' -H 'X-Note: a b'`)
+    expect(read.headers).toEqual([{ name: 'X-Api-Version', value: '2' }, { name: 'X-Note', value: 'a b' }])
+    expect(read.notes).toEqual(['Left out the headers “X-Auth-Token”, “X-Client” and “Origin”: a secret belongs in the API\'s sign-in, and the app sends some headers itself.'])
   })
 
   it('is a POST when it has data and no method, and a GET with -G, the data going in the query', () => {

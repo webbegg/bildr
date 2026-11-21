@@ -1,7 +1,7 @@
 import type { ApiSource } from '@bildr/codegen/edit'
 import { looksSecret } from '../shared/requestPaste.ts'
 import { pathParamNames } from '../shared/simpleApi.ts'
-import { paramsOutput, tryParams } from './simpleApiDraft.ts'
+import { paramsOutput, tryHeaders, tryParams } from './simpleApiDraft.ts'
 import type { OperationDraft } from './simpleApiDraft.ts'
 
 /**
@@ -56,8 +56,12 @@ export function resolvedRequest(source: Source, draft: OperationDraft, values: R
   const tail = query.toString()
   const url = `${source.baseUrl.trim().replace(/\/+$/, '')}${filled}${tail ? `${search ? `?${search}&` : '?'}${tail}` : search ? `?${search}` : ''}`
   const sends = draft.kind === 'action' && draft.method !== 'DELETE' && body.trim() !== ''
-  const headers: RequestHeader[] = [{ name: 'Accept', value: 'application/json' }]
+  // The call's own headers (api-calls R2): its accept is sent instead of the JSON one; the sign-in comes last, over them.
+  const own = Object.entries(tryHeaders(draft, values)).map(([name, value]): RequestHeader => ({ name, value }))
+  const accept = own.find(header => header.name.toLowerCase() === 'accept')
+  const headers: RequestHeader[] = [accept ?? { name: 'Accept', value: 'application/json' }]
   if (sends) headers.push({ name: 'Content-Type', value: 'application/json' })
+  headers.push(...own.filter(header => header !== accept))
   const signIn = !source.auth ? 'none' : source.runtime === 'browser' ? 'browser' : 'sent'
   if (signIn === 'sent' && source.auth) {
     headers.push(source.auth.type === 'bearer' ? { name: 'Authorization', value: `Bearer ${MASK}`, masked: true } : { name: source.auth.header ?? 'X-Api-Key', value: MASK, masked: true })
