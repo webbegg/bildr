@@ -28,6 +28,11 @@ describe('nextVersion', () => {
 describe('releaseSteps', () => {
   const labels = (dryRun: boolean) => releaseSteps('0.2.0', { dryRun }).map(s => s.label)
 
+  it('runs the tests on a few workers, so a many-core machine does not run out of memory', () => {
+    const test = releaseSteps('0.2.0', { dryRun: true }).find(step => step.label === 'test')
+    expect(test?.args).toEqual(['run', 'test', '--maxWorkers=3'])
+  })
+
   it('runs every check before it commits, publishes or pushes', () => {
     const steps = labels(false)
     const firstWrite = steps.indexOf('commit')
