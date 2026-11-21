@@ -486,9 +486,9 @@ describe('Try it', () => {
     expect(calls(actions, 'api_try')).toEqual([{ datasource: ID, path: '/products/:id', params: { id: 7 } }])
     expect(text(q('[data-try-status]'))).toContain('200')
     expect(text(q('[data-try-url]'))).toBe('https://api.example.com/v1/products')
-    expect(q('[data-try-json]')?.tagName).toBe('DETAILS')
-    expect(q('[data-try-json]')?.hasAttribute('open')).toBe(false)
-    expect(q('[data-try-json] pre')?.textContent).toContain('Lamp')
+    expect(q('[data-answer-row="items"]')).not.toBeNull()
+    await click(answerTab('Raw'))
+    expect(q('[data-answer-raw]')?.textContent).toContain('Lamp')
     expect(text(q('[data-try-items]'))).toContain('2 items')
     expect(text(q('[data-try-items]'))).toContain('items')
     expect(q('[data-try-use]')).not.toBeNull()
@@ -1322,6 +1322,79 @@ describe('Try it\'s answer', () => {
     await open('query:products')
     await click(q('[data-try-run]'))
     expect(text(q('[data-try-items]'))).toBe('Found a list of 2 items at “items”')
+  })
+})
+
+/** A tab of Try it's answer: Tree, Raw or Headers. */
+const answerTab = (label: string) => q(`[data-answer-tabs] button[aria-label="${label}"]`)
+
+describe('Try it\'s answer viewer (api-calls T2)', () => {
+  const NESTED = {
+    status: 200,
+    url: 'https://api.example.com/v1/products',
+    json: { meta: { total: 2 }, others: [{ x: 1 }], data: { items: [{ id: 1, title: 'Lamp' }, { id: 2, title: 'Desk' }] } },
+    items: { path: 'others', count: 1 },
+    headers: { 'content-type': 'application/json', 'x-request-id': 'r-1' },
+    durationMs: 12,
+    size: 140
+  }
+
+  it('shows the answer as a tree, open on the way to the recommended list, with Raw and Headers beside it', async () => {
+    shop()
+    await mounted(NESTED)
+    await open('query:products')
+    await click(q('[data-try-run]'))
+    expect(answerTab('Tree')?.getAttribute('aria-pressed')).toBe('true')
+    expect(qa('[data-answer-row]').map(row => row.getAttribute('data-answer-row'))).toEqual(['meta', 'others', 'others.0', 'data'])
+    expect(text(q('[data-answer-row="others"] [data-answer-recommended]'))).toBe('Recommended')
+    expect(q('[data-answer-row="data"] [data-answer-recommended]')).toBeNull()
+    await click(q('[data-answer-row="data"] [data-answer-toggle]'))
+    expect(text(q('[data-answer-row="data.items"]'))).toContain('2 items')
+    expect(q('[data-answer-row="data.items"] [data-answer-use-list]')).not.toBeNull()
+    await click(answerTab('Raw'))
+    expect(q('[data-answer-raw]')?.textContent).toContain('"Lamp"')
+    expect(q('[data-answer-row]')).toBeNull()
+    await click(answerTab('Headers'))
+    expect(text(q('[data-answer-header="x-request-id"]'))).toBe('r-1')
+  })
+
+  it('takes the list a query answers from a click on one: it answers a list, and that is where the list is', async () => {
+    shop()
+    const { actions } = await mounted(NESTED)
+    await open('query:productById')
+    await type('data-try-input="id"', '1')
+    await click(q('[data-try-run]'))
+    await click(q('[data-answer-row="data"] [data-answer-toggle]'))
+    await click(q('[data-answer-row="data.items"] [data-answer-use-list]'))
+    expect(field('data-op-result-items').value).toBe('data.items')
+    expect(q('[data-op-result-many]')?.getAttribute('aria-checked') ?? q('[data-op-result-many] [role="switch"]')?.getAttribute('aria-checked')).toBe('true')
+    expect(text(q('[data-answer-row="data.items"] [data-answer-current]'))).toBe('The list')
+    expect(q('[data-answer-row="data.items"] [data-answer-use-list]')).toBeNull()
+    expect(unsaved()).toBe(true)
+    expect(calls(actions, 'api_query_set')).toEqual([])
+    await save()
+    expect(calls(actions, 'api_query_set')[0]!.query).toMatchObject({ name: 'productById', result: { model: 'Product', many: true, itemsPath: 'data.items' } })
+  })
+
+  it('offers no list to an action that answers nothing, and no Headers tab when the answer has none', async () => {
+    shop()
+    seed('api_action_set', { datasource: ID, action: { name: 'ping', method: 'POST', path: '/ping', params: [] } })
+    await mounted({ ...NESTED, headers: undefined })
+    await open('action:ping')
+    await click(q('[data-try-run]'))
+    await click(q('[data-confirm-ok]'))
+    expect(q('[data-answer-row="others"]')).not.toBeNull()
+    expect(q('[data-answer-use-list]')).toBeNull()
+    expect(answerTab('Headers')).toBeNull()
+  })
+
+  it('shows an answer that is not JSON as it is, with no tree', async () => {
+    shop()
+    await mounted({ status: 500, url: 'https://api.example.com/v1/products', text: 'Server error', headers: {} })
+    await open('query:products')
+    await click(q('[data-try-run]'))
+    expect(answerTab('Tree')).toBeNull()
+    expect(q('[data-answer-raw]')?.textContent).toBe('Server error')
   })
 })
 

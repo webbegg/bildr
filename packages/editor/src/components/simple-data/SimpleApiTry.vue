@@ -5,6 +5,7 @@ import type { ApiSource } from '@bildr/codegen/edit'
 import { callAction, errorMessage } from '../../api.ts'
 import DataInlineError from '../data/DataInlineError.vue'
 import SimpleApiProposal from './SimpleApiProposal.vue'
+import SimpleApiAnswer from './SimpleApiAnswer.vue'
 import SimpleApiRequestPreview from './SimpleApiRequestPreview.vue'
 import { durationLabel, resolvedRequest, sizeLabel } from '../../editor/tryRequest.ts'
 import { paramsOutput, tryParams } from '../../editor/simpleApiDraft.ts'
@@ -25,7 +26,8 @@ import { plainWords } from '../../shared/simpleData.ts'
  * and nothing is sent when it is not JSON. A refusal is shown in plain words.
  *
  * The values and the body are the editor's (`v-model:values`, `v-model:body`), so a request pasted into the path can fill them in.
- * Above Try it is the request as it will be sent (`SimpleApiRequestPreview`); the answer says how long it took and how big it was.
+ * Above Try it is the request as it will be sent (`SimpleApiRequestPreview`); the answer says how long it took and how big it was, and
+ * shows itself as a tree, raw or its headers (`SimpleApiAnswer`), where a click on a list makes it where the operation's list is (`pick`).
  *
  * The answer is of the call that was sent: it goes (with "Use this answer") when the path, the method or the parameters change, and while
  * a new call is on its way, and an answer that comes after that is not shown.
@@ -36,7 +38,7 @@ const { source, draft, bodyHint = '' } = defineProps<{
   /** The sample an action's body model was made from: the body to send, until one is typed. */
   bodyHint?: string
 }>()
-const emit = defineEmits<{ use: [result: { model: string, many: boolean, itemsPath: string }, added: number] }>()
+const emit = defineEmits<{ use: [result: { model: string, many: boolean, itemsPath: string }, added: number], pick: [itemsPath: string] }>()
 const editor = useEditor()
 
 interface Answer {
@@ -72,7 +74,6 @@ watch(() => JSON.stringify([draft.path.trim(), method.value, params.value]), () 
 watch(() => bodyHint, (hint, was) => {
   if (hint && (!body.value.trim() || body.value === was)) body.value = hint
 })
-const shownJson = computed(() => answer.value?.json !== undefined ? JSON.stringify(answer.value.json, null, 2) : answer.value?.text ?? '')
 const ok = computed(() => !!answer.value && answer.value.status >= 200 && answer.value.status < 300)
 
 /** What the call can't go without: a path parameter, a required query parameter. */
@@ -261,12 +262,14 @@ const use = (root: string, added: number) => {
       >
         {{ found }}
       </p>
-      <details data-try-json>
-        <summary class="cursor-pointer text-[12px] text-muted">
-          {{ answer.json !== undefined ? 'The answer' : 'What it said' }}
-        </summary>
-        <pre class="mt-2 max-h-72 overflow-auto rounded-md bg-black/20 p-2 font-mono text-[11px] leading-4 text-toned">{{ shownJson }}</pre>
-      </details>
+      <SimpleApiAnswer
+        :json="answer.json"
+        :text="answer.text"
+        :headers="answer.headers"
+        :current="draft.result?.many ? draft.result.itemsPath.trim() : null"
+        :pickable="!!draft.result"
+        @pick="emit('pick', $event)"
+      />
       <SimpleApiProposal
         v-if="answer.proposal"
         :datasource="source.id"
