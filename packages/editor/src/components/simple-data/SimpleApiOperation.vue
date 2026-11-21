@@ -4,11 +4,13 @@ import { inferApiModels } from '@bildr/codegen/edit'
 import type { ApiSource } from '@bildr/codegen/edit'
 import type { ApiAction, ApiQuery } from '@bildr/codegen/model'
 import DataDraftFooter from '../data/DataDraftFooter.vue'
+import DataInlineError from '../data/DataInlineError.vue'
 import DataStaleNotice from '../data/DataStaleNotice.vue'
 import SimpleApiProposal from './SimpleApiProposal.vue'
 import SimpleApiTry from './SimpleApiTry.vue'
 import { attempt } from '../../editor/dataArtifactActions.ts'
-import { actionOutput, newParam, operationChangedOutside, operationDirty, operationDraftOf, operationProblems, operationRebase, paramsOutput, queryOutput } from '../../editor/simpleApiDraft.ts'
+import { readPastedRequest } from '../../shared/requestPaste.ts'
+import { actionOutput, applyPastedRequest, newParam, operationChangedOutside, operationDirty, operationDraftOf, operationProblems, operationRebase, paramsOutput, queryOutput } from '../../editor/simpleApiDraft.ts'
 import type { Method, OperationDraft, ParamType } from '../../editor/simpleApiDraft.ts'
 import { useDraftForm } from '../../editor/useDraftForm.ts'
 import { useEditor } from '../../editor/useEditor.ts'
@@ -26,6 +28,11 @@ import { plainWords } from '../../shared/simpleData.ts'
  * "Try it" and "Use this answer" (`SimpleApiTry`) fill the answer in from a real call. The models "Use this answer" adds are the API's at
  * once, before the form is saved: the footer says so ("Models added. Save to keep the query.") and Discard says they stay. A query or
  * action that is new is only a name until it is saved; a rename (`name` changes) keeps the form and its edits.
+ *
+ * The form is in two columns when there is room (api-calls R1): the definition, and Try it beside it, each scrolling on its own; one
+ * column, Try it last, when there is not. A full URL or a cURL command pasted into the path fills the form in (`readPastedRequest`,
+ * `applyPastedRequest`): the path, an action's method, the query parameters, and Try it's values and body. What it left out shows under
+ * the path; a URL off the base URL is refused there, and the path stays as it was.
  */
 const { source, kind, name } = defineProps<{ source: ApiSource, kind: 'query' | 'action', name: string }>()
 const emit = defineEmits<{ back: [], rename: [] }>()
@@ -127,6 +134,37 @@ const proposed = computed(() => {
   return models.length ? { models, problem: '' } : { models: null, problem: 'The sample needs an object with fields, like {"title": "Lamp"}' }
 })
 const hasBody = computed(() => kind === 'action' && draft.value.method !== 'DELETE')
+
+// ── Try it's values, and a request pasted into the path ─────────────────────────────
+
+const tryValues = ref<Record<string, string | boolean>>({})
+const tryBody = ref('')
+const pasted = ref<{ filled: string, notes: string[] } | null>(null)
+const pasteError = ref('')
+
+function onPathPaste(event: ClipboardEvent) {
+  const text = event.clipboardData?.getData('text/plain') ?? ''
+  const read = readPastedRequest(text, source.baseUrl, source.auth?.type === 'header' ? source.auth.header : undefined)
+  if (!read) return
+  event.preventDefault()
+  if (!read.ok) {
+    pasteError.value = read.problem
+    pasted.value = null
+    return
+  }
+  const applied = applyPastedRequest(draft.value, read.request)
+  tryValues.value = { ...tryValues.value, ...applied.values }
+  if (applied.body !== undefined) tryBody.value = applied.body
+  pasteError.value = ''
+  pasted.value = { filled: applied.filled, notes: applied.notes }
+}
+watch(() => draft.value.path, () => {
+  pasteError.value = ''
+})
+// Saved or discarded: what the paste filled in is the form's no more.
+watch(dirty, (now) => {
+  if (!now) pasted.value = null
+})
 const methodHint = computed(() => METHODS.find(entry => entry.value === draft.value.method)?.description ?? '')
 </script>
 
@@ -163,282 +201,336 @@ const methodHint = computed(() => METHODS.find(entry => entry.value === draft.va
       />
     </div>
 
-    <div class="min-h-0 flex-1 overflow-y-auto">
-      <div class="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
-        <DataStaleNotice
-          v-if="stale"
-          prefix="simple-op"
-          :title="`This ${noun} changed since you started editing`"
-          :description="`Your edits are still here. Load the new version to drop them, or keep them: your version replaces the new one when you save.`"
-          @load-new="discard"
-          @keep-mine="keepMine"
-        />
-
-        <section class="space-y-4">
-          <EditorFormRow
-            v-if="kind === 'action'"
-            label="Method"
-            stacked
-          >
-            <div class="flex w-full items-center gap-3">
-              <EditorSelect
-                :model-value="draft.method"
-                :items="METHODS.map(entry => ({ value: entry.value, label: entry.label }))"
-                class="w-32"
-                aria-label="Method"
-                data-op-method
-                @update:model-value="draft.method = $event as Method"
-              />
-              <span
-                class="text-[12px] text-muted"
-                data-op-method-hint
-              >{{ draft.method }}: {{ methodHint }}</span>
-            </div>
-          </EditorFormRow>
-          <div>
-            <EditorFormRow
-              label="Path"
-              stacked
-            >
-              <EditorInput
-                v-model="draft.path"
-                placeholder="/products/:id"
-                aria-label="Path"
-                mono
-                data-op-path
-              />
-            </EditorFormRow>
-            <p
-              class="mt-1 text-[12px] leading-4 text-dimmed"
-              data-op-path-help
-            >
-              What comes after the base URL, like “/products/:id”. A word after a colon, like “:id”, is a parameter that is filled in when it runs.
-            </p>
-          </div>
-        </section>
-
-        <section>
-          <h3 class="flex h-9 items-center text-[12px] font-[550] text-highlighted">
-            Parameters
-          </h3>
-          <p
-            v-if="!pathParams.length && !draft.params.length"
-            class="pb-2 text-[12px] leading-4 text-muted"
-          >
-            None yet. Parameters from the path appear on their own; add the others, like a page size, below.
-          </p>
-          <div
-            v-else
-            class="grid grid-cols-[minmax(0,1fr)_9.5rem_4.5rem_minmax(0,1fr)_1.5rem] items-center gap-x-2 gap-y-1.5 pb-1"
-          >
-            <span class="ps-1.5 text-[11px] text-dimmed">Name</span>
-            <span class="text-[11px] text-dimmed">Type</span>
-            <span class="text-[11px] text-dimmed">Needed</span>
-            <span class="text-[11px] text-dimmed">Called in the API</span>
-            <span />
-            <template
-              v-for="param in pathParams"
-              :key="`path:${param.name}`"
-            >
-              <div
-                class="contents"
-                :data-op-param="`path:${param.name}`"
-                :data-op-param-in="'path'"
-              >
-                <span
-                  class="truncate ps-1.5 font-mono text-[12px] text-toned"
-                  data-op-param-name
-                >{{ param.name }}</span>
-                <EditorSelect
-                  :model-value="param.type"
-                  :items="PARAM_TYPES"
-                  :aria-label="`Type of ${param.name}`"
-                  data-op-param-type
-                  @update:model-value="setPathType(param.name, $event as ParamType)"
-                />
-                <span class="text-[11px] text-dimmed">Always</span>
-                <span class="truncate text-[11px] text-dimmed">From the path</span>
-                <span />
-              </div>
-            </template>
-            <template
-              v-for="param in draft.params"
-              :key="param.key"
-            >
-              <div
-                class="contents"
-                :data-op-param="`query:${param.key}`"
-                :data-op-param-in="'query'"
-              >
-                <EditorInput
-                  v-model="param.name"
-                  placeholder="Name, e.g. Page size"
-                  :aria-label="`Name of ${param.name || 'the parameter'}`"
-                  data-op-param-name
-                />
-                <EditorSelect
-                  :model-value="param.type"
-                  :items="PARAM_TYPES"
-                  :aria-label="`Type of ${param.name || 'the parameter'}`"
-                  data-op-param-type
-                  @update:model-value="param.type = $event as ParamType"
-                />
-                <input
-                  type="checkbox"
-                  :class="CHECKBOX"
-                  :checked="param.required"
-                  :aria-label="`${param.name || 'The parameter'} is needed`"
-                  data-op-param-required
-                  @change="param.required = ($event.target as HTMLInputElement).checked"
-                >
-                <EditorInput
-                  v-model="param.remote"
-                  placeholder="Same name"
-                  :aria-label="`The name the API gives ${param.name || 'the parameter'}`"
-                  data-op-param-remote
-                />
-                <EditorButton
-                  icon="i-lucide-minus"
-                  variant="ghost"
-                  size="xs"
-                  :aria-label="`Remove ${param.name || 'the parameter'}`"
-                  data-op-param-remove
-                  @click="removeParam(param.key)"
-                />
-              </div>
-            </template>
-          </div>
-          <button
-            type="button"
-            class="mt-1 flex h-9 w-full items-center gap-1.5 rounded-lg ps-2 text-left text-[12px] text-muted hover:bg-white/4 hover:text-toned"
-            aria-label="Add parameter"
-            data-op-param-add
-            @click="draft.params.push(newParam())"
-          >
-            <UIcon
-              name="i-lucide-plus"
-              class="size-4 shrink-0"
-            />
-            Add parameter
-          </button>
-        </section>
-
-        <section
-          v-if="hasBody"
-          class="space-y-3"
+    <div class="@container min-h-0 flex-1 overflow-y-auto @4xl:overflow-hidden">
+      <div class="@4xl:grid @4xl:h-full @4xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div
+          class="min-w-0 @4xl:overflow-y-auto"
+          data-op-definition
         >
-          <h3 class="flex h-9 items-center text-[12px] font-[550] text-highlighted">
-            What it sends
-          </h3>
-          <EditorFormRow
-            label="Model of the body"
-            help="The shape of the JSON this action sends"
-            stacked
-          >
-            <EditorSelect
-              :model-value="draft.body || NONE"
-              :items="bodyItems"
-              aria-label="Model of the body"
-              data-op-body-model
-              @update:model-value="setBodyModel"
+          <div class="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
+            <DataStaleNotice
+              v-if="stale"
+              prefix="simple-op"
+              :title="`This ${noun} changed since you started editing`"
+              :description="`Your edits are still here. Load the new version to drop them, or keep them: your version replaces the new one when you save.`"
+              @load-new="discard"
+              @keep-mine="keepMine"
             />
-          </EditorFormRow>
-          <button
-            type="button"
-            class="flex items-center gap-1.5 text-[12px] text-muted hover:text-toned"
-            data-op-body-sample-toggle
-            @click="sampleOpen = !sampleOpen"
-          >
-            <UIcon
-              :name="sampleOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
-              class="size-4 shrink-0"
-            />
-            Make the model from a sample
-          </button>
-          <div
-            v-if="sampleOpen"
-            class="space-y-2"
-          >
-            <EditorTextarea
-              v-model="sample"
-              mono
-              :rows="4"
-              placeholder="{&quot;title&quot;: &quot;Lamp&quot;, &quot;price&quot;: 3.5}"
-              aria-label="A sample of the body"
-              data-op-body-sample
-            />
-            <p
-              v-if="proposed.problem"
-              class="text-[12px] leading-4 text-error"
-              role="alert"
-              data-op-body-sample-error
+
+            <section class="space-y-4">
+              <EditorFormRow
+                v-if="kind === 'action'"
+                label="Method"
+                stacked
+              >
+                <div class="flex w-full items-center gap-3">
+                  <EditorSelect
+                    :model-value="draft.method"
+                    :items="METHODS.map(entry => ({ value: entry.value, label: entry.label }))"
+                    class="w-32"
+                    aria-label="Method"
+                    data-op-method
+                    @update:model-value="draft.method = $event as Method"
+                  />
+                  <span
+                    class="text-[12px] text-muted"
+                    data-op-method-hint
+                  >{{ draft.method }}: {{ methodHint }}</span>
+                </div>
+              </EditorFormRow>
+              <div>
+                <EditorFormRow
+                  label="Path"
+                  stacked
+                >
+                  <EditorInput
+                    v-model="draft.path"
+                    placeholder="/products/:id"
+                    aria-label="Path"
+                    mono
+                    data-op-path
+                    @paste="onPathPaste"
+                  />
+                </EditorFormRow>
+                <p
+                  class="mt-1 text-[12px] leading-4 text-dimmed"
+                  data-op-path-help
+                >
+                  What comes after the base URL, like “/products/:id”. A word after a colon, like “:id”, is a parameter that is filled in when it runs.
+                  Paste a full URL or a cURL command to fill in the path, its parameters and Try it.
+                </p>
+                <DataInlineError
+                  v-if="pasteError"
+                  icon
+                  class="mt-2"
+                  data-op-paste-error
+                >
+                  {{ pasteError }}
+                </DataInlineError>
+                <div
+                  v-if="pasted"
+                  class="mt-2 flex items-start gap-2 rounded-lg bg-white/4 px-3 py-2 text-[12px] leading-4 text-toned"
+                  role="status"
+                  data-op-paste-note
+                >
+                  <UIcon
+                    name="i-lucide-clipboard-check"
+                    class="mt-px size-4 shrink-0 text-success"
+                  />
+                  <div class="min-w-0 flex-1 space-y-1">
+                    <p>{{ pasted.filled }}</p>
+                    <p
+                      v-for="note in pasted.notes"
+                      :key="note"
+                      class="text-muted"
+                    >
+                      {{ note }}
+                    </p>
+                  </div>
+                  <EditorButton
+                    icon="i-lucide-x"
+                    variant="ghost"
+                    size="xs"
+                    aria-label="Dismiss"
+                    data-op-paste-dismiss
+                    @click="pasted = null"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section>
+              <h3 class="flex h-9 items-center text-[12px] font-[550] text-highlighted">
+                Parameters
+              </h3>
+              <p
+                v-if="!pathParams.length && !draft.params.length"
+                class="pb-2 text-[12px] leading-4 text-muted"
+              >
+                None yet. Parameters from the path appear on their own; add the others, like a page size, below.
+              </p>
+              <div
+                v-else
+                class="grid grid-cols-[minmax(0,1fr)_9.5rem_4.5rem_minmax(0,1fr)_1.5rem] items-center gap-x-2 gap-y-1.5 pb-1"
+              >
+                <span class="ps-1.5 text-[11px] text-dimmed">Name</span>
+                <span class="text-[11px] text-dimmed">Type</span>
+                <span class="text-[11px] text-dimmed">Needed</span>
+                <span class="text-[11px] text-dimmed">Called in the API</span>
+                <span />
+                <template
+                  v-for="param in pathParams"
+                  :key="`path:${param.name}`"
+                >
+                  <div
+                    class="contents"
+                    :data-op-param="`path:${param.name}`"
+                    :data-op-param-in="'path'"
+                  >
+                    <span
+                      class="truncate ps-1.5 font-mono text-[12px] text-toned"
+                      data-op-param-name
+                    >{{ param.name }}</span>
+                    <EditorSelect
+                      :model-value="param.type"
+                      :items="PARAM_TYPES"
+                      :aria-label="`Type of ${param.name}`"
+                      data-op-param-type
+                      @update:model-value="setPathType(param.name, $event as ParamType)"
+                    />
+                    <span class="text-[11px] text-dimmed">Always</span>
+                    <span class="truncate text-[11px] text-dimmed">From the path</span>
+                    <span />
+                  </div>
+                </template>
+                <template
+                  v-for="param in draft.params"
+                  :key="param.key"
+                >
+                  <div
+                    class="contents"
+                    :data-op-param="`query:${param.key}`"
+                    :data-op-param-in="'query'"
+                  >
+                    <EditorInput
+                      v-model="param.name"
+                      placeholder="Name, e.g. Page size"
+                      :aria-label="`Name of ${param.name || 'the parameter'}`"
+                      data-op-param-name
+                    />
+                    <EditorSelect
+                      :model-value="param.type"
+                      :items="PARAM_TYPES"
+                      :aria-label="`Type of ${param.name || 'the parameter'}`"
+                      data-op-param-type
+                      @update:model-value="param.type = $event as ParamType"
+                    />
+                    <input
+                      type="checkbox"
+                      :class="CHECKBOX"
+                      :checked="param.required"
+                      :aria-label="`${param.name || 'The parameter'} is needed`"
+                      data-op-param-required
+                      @change="param.required = ($event.target as HTMLInputElement).checked"
+                    >
+                    <EditorInput
+                      v-model="param.remote"
+                      placeholder="Same name"
+                      :aria-label="`The name the API gives ${param.name || 'the parameter'}`"
+                      data-op-param-remote
+                    />
+                    <EditorButton
+                      icon="i-lucide-minus"
+                      variant="ghost"
+                      size="xs"
+                      :aria-label="`Remove ${param.name || 'the parameter'}`"
+                      data-op-param-remove
+                      @click="removeParam(param.key)"
+                    />
+                  </div>
+                </template>
+              </div>
+              <button
+                type="button"
+                class="mt-1 flex h-9 w-full items-center gap-1.5 rounded-lg ps-2 text-left text-[12px] text-muted hover:bg-white/4 hover:text-toned"
+                aria-label="Add parameter"
+                data-op-param-add
+                @click="draft.params.push(newParam())"
+              >
+                <UIcon
+                  name="i-lucide-plus"
+                  class="size-4 shrink-0"
+                />
+                Add parameter
+              </button>
+            </section>
+
+            <section
+              v-if="hasBody"
+              class="space-y-3"
             >
-              {{ proposed.problem }}
-            </p>
-            <SimpleApiProposal
-              :datasource="source.id"
-              :models="proposed.models"
-              :existing="source.models"
-              label="Use this sample"
-              fills="body of the action"
-              button="data-op-body-sample-use"
-              @applied="useSample"
+              <h3 class="flex h-9 items-center text-[12px] font-[550] text-highlighted">
+                What it sends
+              </h3>
+              <EditorFormRow
+                label="Model of the body"
+                help="The shape of the JSON this action sends"
+                stacked
+              >
+                <EditorSelect
+                  :model-value="draft.body || NONE"
+                  :items="bodyItems"
+                  aria-label="Model of the body"
+                  data-op-body-model
+                  @update:model-value="setBodyModel"
+                />
+              </EditorFormRow>
+              <button
+                type="button"
+                class="flex items-center gap-1.5 text-[12px] text-muted hover:text-toned"
+                data-op-body-sample-toggle
+                @click="sampleOpen = !sampleOpen"
+              >
+                <UIcon
+                  :name="sampleOpen ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
+                  class="size-4 shrink-0"
+                />
+                Make the model from a sample
+              </button>
+              <div
+                v-if="sampleOpen"
+                class="space-y-2"
+              >
+                <EditorTextarea
+                  v-model="sample"
+                  mono
+                  :rows="4"
+                  placeholder="{&quot;title&quot;: &quot;Lamp&quot;, &quot;price&quot;: 3.5}"
+                  aria-label="A sample of the body"
+                  data-op-body-sample
+                />
+                <p
+                  v-if="proposed.problem"
+                  class="text-[12px] leading-4 text-error"
+                  role="alert"
+                  data-op-body-sample-error
+                >
+                  {{ proposed.problem }}
+                </p>
+                <SimpleApiProposal
+                  :datasource="source.id"
+                  :models="proposed.models"
+                  :existing="source.models"
+                  label="Use this sample"
+                  fills="body of the action"
+                  button="data-op-body-sample-use"
+                  @applied="useSample"
+                />
+              </div>
+            </section>
+
+            <section class="space-y-3">
+              <h3 class="flex h-9 items-center text-[12px] font-[550] text-highlighted">
+                {{ kind === 'query' ? 'What it answers' : 'What it answers, if anything' }}
+              </h3>
+              <EditorFormRow
+                label="Model of the answer"
+                stacked
+              >
+                <EditorSelect
+                  :model-value="resultModel"
+                  :items="resultItems"
+                  placeholder="Choose a model"
+                  aria-label="Model of the answer"
+                  data-op-result-model
+                  @update:model-value="setResultModel"
+                />
+              </EditorFormRow>
+              <template v-if="draft.result?.model">
+                <EditorSwitch
+                  v-model="draft.result.many"
+                  label="It answers a list of them"
+                  aria-label="It answers a list"
+                  data-op-result-many
+                />
+                <EditorFormRow
+                  v-if="draft.result.many"
+                  label="Where the list is"
+                  help="The name of the part of the answer that holds the list, like “data.items”. Leave it empty when the answer is the list itself."
+                  stacked
+                >
+                  <EditorInput
+                    v-model="draft.result.itemsPath"
+                    placeholder="data.items"
+                    aria-label="Where the list is"
+                    data-op-result-items
+                  />
+                </EditorFormRow>
+              </template>
+              <p
+                v-if="!source.models.length"
+                class="text-[12px] leading-4 text-muted"
+              >
+                There are no models yet. Use “Try it” to make one from a real answer, or add one in the API's Models.
+              </p>
+            </section>
+          </div>
+        </div>
+        <div
+          class="min-w-0 border-t border-default @4xl:overflow-y-auto @4xl:border-t-0 @4xl:border-s @4xl:bg-white/2"
+          data-op-test
+        >
+          <div class="mx-auto w-full max-w-2xl px-6 py-6">
+            <SimpleApiTry
+              v-model:values="tryValues"
+              v-model:body="tryBody"
+              :source="source"
+              :draft="draft"
+              :body-hint="sampleBody"
+              @use="useResult"
             />
           </div>
-        </section>
-
-        <section class="space-y-3">
-          <h3 class="flex h-9 items-center text-[12px] font-[550] text-highlighted">
-            {{ kind === 'query' ? 'What it answers' : 'What it answers, if anything' }}
-          </h3>
-          <EditorFormRow
-            label="Model of the answer"
-            stacked
-          >
-            <EditorSelect
-              :model-value="resultModel"
-              :items="resultItems"
-              placeholder="Choose a model"
-              aria-label="Model of the answer"
-              data-op-result-model
-              @update:model-value="setResultModel"
-            />
-          </EditorFormRow>
-          <template v-if="draft.result?.model">
-            <EditorSwitch
-              v-model="draft.result.many"
-              label="It answers a list of them"
-              aria-label="It answers a list"
-              data-op-result-many
-            />
-            <EditorFormRow
-              v-if="draft.result.many"
-              label="Where the list is"
-              help="The name of the part of the answer that holds the list, like “data.items”. Leave it empty when the answer is the list itself."
-              stacked
-            >
-              <EditorInput
-                v-model="draft.result.itemsPath"
-                placeholder="data.items"
-                aria-label="Where the list is"
-                data-op-result-items
-              />
-            </EditorFormRow>
-          </template>
-          <p
-            v-if="!source.models.length"
-            class="text-[12px] leading-4 text-muted"
-          >
-            There are no models yet. Use “Try it” below to make one from a real answer, or add one in the API's Models.
-          </p>
-        </section>
-
-        <SimpleApiTry
-          :source="source"
-          :draft="draft"
-          :body-hint="sampleBody"
-          @use="useResult"
-        />
+        </div>
       </div>
     </div>
 
