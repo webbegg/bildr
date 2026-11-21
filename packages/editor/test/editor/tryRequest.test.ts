@@ -43,6 +43,23 @@ describe('the request as it will be sent', () => {
     expect(resolvedRequest(SOURCE, draft, {}, '{"a":1}').body).toBeUndefined()
   })
 
+  it('sends the call\'s own headers (api-calls R2): its accept instead of the JSON one, a header parameter once it has a value', () => {
+    const draft = operationDraftOf('query', {
+      name: 'products', path: '/products',
+      params: [{ name: 'tenant', in: 'header', type: 'text', key: 'X-Tenant' }],
+      headers: [{ name: 'X-Api-Version', value: '2' }, { name: 'accept', value: 'application/vnd.api+json' }],
+      result: { model: 'Product', many: true }
+    } as never)
+    expect(resolvedRequest(SOURCE, draft, { tenant: 'acme' }, '').headers).toEqual([
+      { name: 'accept', value: 'application/vnd.api+json' },
+      { name: 'X-Api-Version', value: '2' },
+      { name: 'X-Tenant', value: 'acme' },
+      { name: 'Authorization', value: 'Bearer ••••', masked: true }
+    ])
+    expect(resolvedRequest(SOURCE, draft, {}, '').headers.map(header => header.name)).toEqual(['accept', 'X-Api-Version', 'Authorization'])
+    expect(resolvedRequest(SOURCE, draft, { tenant: 'acme' }, '').url).toBe('https://api.example.com/v1/products')
+  })
+
   it('has no sign-in for an API with none, nor for one the browser calls (it has no secret there)', () => {
     expect(resolvedRequest({ ...SOURCE, auth: undefined }, byId(), { id: '1' }, '')).toMatchObject({ headers: [{ name: 'Accept', value: 'application/json' }], signIn: 'none' })
     expect(resolvedRequest({ ...SOURCE, runtime: 'browser' as const }, byId(), { id: '1' }, '')).toMatchObject({ headers: [{ name: 'Accept', value: 'application/json' }], signIn: 'browser' })

@@ -501,7 +501,7 @@ export async function stubRest({ count = 30 } = {}) {
     let raw = ''
     request.on('data', chunk => (raw += chunk))
     request.on('end', () => {
-      calls.push({ method: request.method, path: url.pathname, authorization: request.headers.authorization })
+      calls.push({ method: request.method, path: url.pathname, authorization: request.headers.authorization, headers: request.headers })
       const send = (status, value) => {
         response.writeHead(status, { 'content-type': 'application/json' })
         response.end(value === undefined ? '' : JSON.stringify(value))

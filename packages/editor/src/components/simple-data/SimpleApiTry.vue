@@ -8,7 +8,7 @@ import SimpleApiProposal from './SimpleApiProposal.vue'
 import SimpleApiAnswer from './SimpleApiAnswer.vue'
 import SimpleApiRequestPreview from './SimpleApiRequestPreview.vue'
 import { durationLabel, resolvedRequest, sizeLabel } from '../../editor/tryRequest.ts'
-import { paramsOutput, tryParams } from '../../editor/simpleApiDraft.ts'
+import { paramsOutput, tryHeaders, tryParams } from '../../editor/simpleApiDraft.ts'
 import type { OperationDraft } from '../../editor/simpleApiDraft.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { hostOfUrl, listShown, typeLabel } from '../../shared/simpleApi.ts'
@@ -67,7 +67,7 @@ const request = computed(() => resolvedRequest(source, draft, values.value, body
 
 /** Tells a call from the next: an answer is shown only while no other call has been made and nothing it was made of has changed. */
 let call = 0
-watch(() => JSON.stringify([draft.path.trim(), method.value, params.value]), () => {
+watch(() => JSON.stringify([draft.path.trim(), method.value, params.value, tryHeaders(draft, {})]), () => {
   call++
   answer.value = null
 })
@@ -110,6 +110,7 @@ async function run() {
     danger: true
   })) return
   const given = tryParams(draft, values.value)
+  const headers = tryHeaders(draft, values.value)
   const mine = ++call
   running.value = true
   answer.value = null
@@ -119,6 +120,7 @@ async function run() {
       path: draft.path.trim(),
       ...(isWrite.value ? { method: draft.method, confirm: true } : {}),
       ...(Object.keys(given).length ? { params: given } : {}),
+      ...(Object.keys(headers).length ? { headers } : {}),
       ...(sent !== undefined ? { body: sent } : {})
     })
     if (mine === call) answer.value = answered
