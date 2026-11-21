@@ -175,6 +175,24 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
     session.edit('node_insert', { file: notes, type: 'Heading', props: { text: { $template: '{notes.length} notes' } } })
     session.edit('node_insert', { file: notes, type: 'List', props: { items: { $bind: 'notes' }, as: 'note', hideWhenEmpty: true }, children: [{ type: 'Text', props: { text: { $template: '{note.text}' } } }] })
   }],
+  // Verify P7a B1: args bound to another API answer (undefined until it answers), to the use's own answer, or to a value of another type:
+  // the edits refuse them, or the app still builds.
+  ['an API use whose args read another API answer, itself and a state', (session) => {
+    session.edit('api_create', { name: 'chain', baseUrl: 'https://chain.example.com' })
+    session.edit('api_model_set', { datasource: 'ds_chain', model: { name: 'Item', fields: [{ name: 'id', type: 'integer' }, { name: 'name', type: 'text' }] } })
+    session.edit('api_query_set', { datasource: 'ds_chain', query: { name: 'item', path: '/items/:id', params: [{ name: 'id', in: 'path', type: 'integer' }], result: { model: 'Item', many: false } } })
+    session.edit('api_query_set', { datasource: 'ds_chain', query: { name: 'items', path: '/items', params: [{ name: 'category', in: 'query', type: 'text', required: true }, { name: 'page', in: 'query', type: 'integer' }], result: { model: 'Item', many: true } } })
+    session.edit('page_create', { name: 'chain', path: '/chain' })
+    const page = session.result.pageId as string
+    session.edit('page_use_add', { page, as: 'prefs', state: 'st_preferences' })
+    session.edit('page_use_add', { page, as: 'first', api: { datasource: 'ds_chain', query: 'item' }, args: { id: 1 } })
+    session.maybe('page_use_add', { page, as: 'second', api: { datasource: 'ds_chain', query: 'item' }, args: { id: { $bind: 'first.id' } } })
+    session.maybe('node_insert', { file: page, type: 'Heading', props: { text: { $bind: 'second.name' } } })
+    session.maybe('page_use_add', { page, as: 'me', api: { datasource: 'ds_chain', query: 'item' }, args: { id: { $bind: 'me.id' } } })
+    session.maybe('node_insert', { file: page, type: 'Heading', props: { text: { $bind: 'me.name' } } })
+    session.maybe('page_use_add', { page, as: 'found', api: { datasource: 'ds_chain', query: 'items' }, args: { category: { $bind: 'prefs.showDrafts' }, page: { $bind: 'first.name' } } })
+    session.maybe('node_insert', { file: page, type: 'Heading', props: { text: { $template: '{found.length}' } } })
+  }],
   ['a list under keys that are not identifiers', (session) => {
     session.edit('api_create', { name: 'hydra', baseUrl: 'https://hydra.example.com' })
     session.edit('api_model_set', { datasource: 'ds_hydra', model: ITEM })

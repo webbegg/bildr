@@ -57,6 +57,19 @@ describe('a page that uses an API query', () => {
     expect(content).toContain('<p v-for="item in (products ?? [])" :key="item.id"')
   })
 
+  // A4 (verify): the error line makes the wrapper a v-else, which must not make `hideWhenEmpty` a no-op.
+  it('hides the wrapper of an empty list over an API answer when hideWhenEmpty is set', () => {
+    const p = shop()
+    listPage(p, 'hidden', { as: 'notes', api: { datasource: SHOP, query: 'notes' } }, { hideWhenEmpty: true }, '{item.text}')
+    const content = pageOf(p, 'hidden')
+    expect(content).toContain('<p v-if="notesError" class="text-error">Couldn\'t load this.</p>')
+    expect(content).toMatch(/<div v-else-if="\(notes \?\? \[\]\)\.length"/)
+    // With the loading and empty lines the wrapper is already the last branch.
+    listPage(p, 'shown', { as: 'notes', api: { datasource: SHOP, query: 'notes' } }, { hideWhenEmpty: true, empty: 'None', loading: 'Wait' }, '{item.text}')
+    expect(pageOf(p, 'shown')).toMatch(/<div v-else/)
+    expect(pageOf(p, 'shown')).not.toMatch(/<div v-else-if/)
+  })
+
   it('keys by the index when the model has no id', () => {
     const p = shop()
     listPage(p, 'notes', { as: 'notes', api: { datasource: SHOP, query: 'notes' } }, { loading: 'Loading…' }, '{item.text}')

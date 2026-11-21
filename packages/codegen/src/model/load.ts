@@ -2,6 +2,7 @@ import type { z } from 'zod'
 import { customColorNames } from '../design/theme.ts'
 import { isStyleKeyOf, styleTokenProblem } from '../design/tokens.ts'
 import type { BreakpointBase } from '../design/tokens.ts'
+import { apiArgsProblem, pageNamesProblem } from '../edit/page-uses.ts'
 import { ICON_NAME, nodePropProblems, propValues, STRUCTURAL_PROPS, takesProp, uiStepProblems } from '../render/rules.ts'
 import {
   ActionFileSchema, ComponentFileSchema, DataSourceFileSchema, EntityFileSchema, EXPRESSION_KEYS, FixturesFileSchema, LAYOUT_VARIABLE_KINDS, PATH_EXPRESSIONS, PROPERTY_PATH,
@@ -407,13 +408,23 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
         const query = source.queries?.find(entry => entry.name === use.query)
         if (!query) return report(path, `${where}.query`, `The API "${source.name}" has no query "${use.query}" (${source.queries?.map(entry => entry.name).join(', ') || 'none'})`)
         const label = `The query "${query.name}" of the API "${source.name}"`
+        const before = problems.length
         for (const name of Object.keys(use.args ?? {})) {
           if (!query.params.some(param => param.name === name)) report(path, `${where}.args.${name}`, `${label} has no parameter "${name}" (${query.params.map(param => param.name).join(', ')})`)
         }
         for (const param of query.params) {
           if ((param.in === 'path' || param.required) && use.args?.[param.name] === undefined) report(path, `${where}.args`, `${label} needs "${param.name}"`)
         }
+        // The rest is what the edits check: a value of the parameter's type, a null for a required one, what a binding reads.
+        if (problems.length !== before) return
+        const typed = apiArgsProblem(source, query, use.args, { page, states: mod.state, as: use.as })
+        if (typed) report(path, `${where}.args`, typed)
       })
+      // What the page's script declares from its API uses (`<as>Loading`, `<as>Error`, the composable, `route`…) can't meet another name.
+      if (uses.apis?.length && !problems.some(problem => problem.path === path && problem.message.startsWith('uses.apis.') && /\.as: The name/.test(problem.message))) {
+        const clash = pageNamesProblem(model, page)
+        if (clash) report(path, 'uses.apis', clash)
+      }
       const aliased = [...others, ...uses.apis ?? []].some(use => use.as === 'layout')
       checkTree(page.root, 'root', path, aliased ? undefined : null)
     }

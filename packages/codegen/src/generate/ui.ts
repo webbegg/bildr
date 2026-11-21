@@ -639,7 +639,11 @@ const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
   if (loading.length) lines.push(...element('p', [attr('if', `v-if="${loading.join(' || ')}"`), staticAttr('class', 'text-muted')], escapeText(props.loading as string), indent))
   if (errors.length) lines.push(...element('p', [attr('if', `${condition()}="${errors.join(' || ')}"`), staticAttr('class', 'text-error')], API_ERROR_TEXT, indent))
   if (typeof props.empty === 'string') lines.push(...element('p', [attr('if', `${condition()}="!${escapeAttr(items)}.length"`), staticAttr('class', 'text-muted')], escapeText(props.empty), indent))
-  const shownIf: Attr[] = lines.length ? [attr('if', 'v-else')] : props.hideWhenEmpty === true ? [attr('if', `v-if="${escapeAttr(items)}.length"`)] : []
+  // An API list always has its error line, so the wrapper follows it; with `hideWhenEmpty` and no empty message it still hides when empty.
+  const hidden = props.hideWhenEmpty === true && !(typeof props.empty === 'string')
+  const shownIf: Attr[] = lines.length
+    ? [attr('if', errors.length && hidden ? `v-else-if="${escapeAttr(items)}.length"` : 'v-else')]
+    : hidden ? [attr('if', `v-if="${escapeAttr(items)}.length"`)] : []
 
   // A handler in the List's rows reads the item through a parameter: the type of one item is the items' own, which the script has.
   if (env.roots.has(itemParam(as))) fail(env, node, `the item name ${as} would give a handler the parameter ${itemParam(as)}, which the page already names`)

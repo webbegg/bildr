@@ -1,4 +1,5 @@
 import { kebab as fileName, pascal } from '../generate/text.ts'
+import { composableOf, stateComposableOf } from './composable-names.ts'
 import { camel, fail } from './core.ts'
 import type { Draft } from './core.ts'
 import { actionNameProblem, queryNameProblem } from './generated-names.ts'
@@ -69,13 +70,11 @@ export const checkQueryName = (name: string): void => {
   if (problem) fail('invalid', problem)
 }
 
-/** The client composable a query or action named `name` generates. */
-export const composableOf = (name: string): string => `use${pascal(name)}`
+export { composableOf }
 
 // ── State (B1) ───────────────────────────────────────────────────────────
 
-/** The composable a state of `module` generates (generate/client.ts): the module's name comes first, so two modules' states never meet. */
-export const stateComposableOf = (module: string, name: string): string => `use${pascal(module)}${pascal(name)}`
+export { stateComposableOf }
 
 /**
  * What the generated composable of a state declares in its own scope (generate/client.ts, stateComposableFile): the `data` it reads,

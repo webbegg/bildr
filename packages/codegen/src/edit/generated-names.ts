@@ -2,6 +2,7 @@ import { entityNames, moduleContext } from '../generate/context.ts'
 import { camel, kebab, pascal } from '../generate/text.ts'
 import type { Model } from '../model/load.ts'
 import type { ApiSource } from './api.ts'
+import { apiComposableName } from './composable-names.ts'
 import { API_DECLARED_NAMES, BROWSER_SHARED_FILES, composableNameProblem, composableProblem, declaredNameProblem, JS_RESERVED_WORDS, LINT_RESTRICTED_FOLDERS } from './reserved-names.ts'
 
 /**
@@ -62,8 +63,7 @@ export const apiSourceIdentifiers = (sourceName: string) => {
   }
 }
 
-/** The composable a query or an action generates (auto-imported by name, so unique across the app). */
-export const apiComposableName = (sourceName: string, operationName: string) => `use${pascal(sourceName)}${pascal(operationName)}`
+export { apiComposableName }
 
 /** A name the generated files of one API source take, and who takes it. `loose`: it is only a property of an object, so no file can clash with it. */
 export interface ApiNameClaim {

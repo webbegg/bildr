@@ -1,18 +1,17 @@
 import { z } from 'zod'
 import { ArtifactIdSchema, CamelNameSchema, CONDITION_OPS, LocalIdSchema, ModuleNameSchema, ParamSchema, ValueSchema } from '../model/schemas.ts'
 import type { ApiQuery, DataSourceFile, EntityFile, ModelNode, PageFile, QueryFile, Value } from '../model/schemas.ts'
-import { apiParamRequired, apiQueryOf } from './api-uses.ts'
+import { apiQueryOf } from './api-uses.ts'
 import { mapNodePaths, mapPaths, rootOf } from './bindings.ts'
 import { camel, defineEdit, fail, isObject, kebab, uniqueName } from './core.ts'
 import type { Draft } from './core.ts'
 import { datasourceById } from './datasources.ts'
 import { entityById, fits, isExpression, keyType, repositoryOf } from './entities.ts'
-import { apiComposableName } from './generated-names.ts'
-import { pascal } from '../generate/text.ts'
-import { loadMoreSize } from '../render/rules.ts'
-import { callableName, checkCallableFree, checkQueryName, composableOf, isUnusable, sentence, spaced, stateComposableOf } from './naming.ts'
+import { apiComposableName, composableOf } from './composable-names.ts'
+import { callableName, checkCallableFree, checkQueryName, isUnusable, sentence, spaced } from './naming.ts'
+import { aliasesOf, apiArgsProblem, declaredBy, moduleOfPageIn, nodeNames, pageNamesProblem, RESERVED } from './page-uses.ts'
+import type { ApiArgsOptions, Declared, UseKind } from './page-uses.ts'
 import { PageRef } from './pages.ts'
-import { autoImportedNameProblem } from './reserved-names.ts'
 import { walk } from './tree.ts'
 import { describeUses, usesOf as artifactUsesOf } from './usage.ts'
 
@@ -30,92 +29,12 @@ const Alias = CamelNameSchema.describe('The name the page binds the use by, e.g.
 const Order = z.object({ field: CamelNameSchema, direction: z.enum(['asc', 'desc']) })
 const Condition = z.object({ op: z.enum(CONDITION_OPS), field: CamelNameSchema, value: ValueSchema })
 
-/** Names the generated page script declares itself: a use can't take them. */
-export const RESERVED = ['site', 'layout', 'route', 'form', 'props', 'toast', 'set', 'execute']
+export { RESERVED }
 
-export const moduleOfPage = (draft: Draft, page: PageFile) => {
-  const entry = Object.entries(draft.model.modules).find(([, mod]) => mod.pages.includes(page))!
-  return { name: entry[0], mod: entry[1] }
-}
-
-/** Every alias a page already uses. */
-export const aliasesOf = (page: PageFile): string[] => [
-  ...page.uses?.state ?? [], ...page.uses?.queries ?? [], ...page.uses?.apis ?? [], ...page.uses?.actions ?? [], ...page.uses?.computed ?? []
-].map(use => use.as)
-
-export type UseKind = 'state' | 'query' | 'api' | 'action' | 'computed'
+export const moduleOfPage = (draft: Draft, page: PageFile) => moduleOfPageIn(draft.model, page)
 
 /** A page use that `page_use_add` or a step makes: the state or the action, with the name the page uses it under. What `addedUses` and `droppedUses` list. */
 export type UseRef = { as: string, state: string } | { as: string, action: string }
-
-type Declared = Array<{ name: string, by: string }>
-
-/**
- * The names the generated page script declares for a use `as` of `kind` (generate/ui.ts, `pageFile`): the name itself, and what the
- * page derives from it: a state's `set<As>` (what changes it), a query's loading flag `<as>Loading` (an API query's `<as>Error` too), an action's `<as>Pending` and
- * `<as>Error`. Each says in `by` what it is, as a refusal shows it.
- */
-const declaredBy = (as: string, kind: UseKind): Declared => {
-  const derived: Array<[string, string]> = kind === 'state'
-    ? [[`set${pascal(as)}`, `the "set…" name of the state "${as}"`]]
-    : kind === 'query'
-      ? [[`${as}Loading`, `the loading flag of "${as}"`]]
-      : kind === 'api'
-        ? [[`${as}Loading`, `the loading flag of "${as}"`], [`${as}Error`, `the error of "${as}"`]]
-        : kind === 'action' ? [[`${as}Pending`, `the pending flag of "${as}"`], [`${as}Error`, `the error of "${as}"`]] : []
-  return [{ name: as, by: `"${as}"` }, ...derived.map(([name, by]) => ({ name, by }))]
-}
-
-/**
- * Every name the page's script declares today: its uses and what they derive, the composables it calls, the handler of each
- * interaction (`on<Node><Event>`) and the counter of each List that loads more (`shown<Node>`).
- */
-const declaredNames = (draft: Draft, page: PageFile): Declared => {
-  const { name: module, mod } = moduleOfPage(draft, page)
-  const names: Declared = []
-  // A composable is called once per use, never declared: two uses of one query call it twice, so it is listed once. Two
-  // different items whose composables share a name still meet.
-  const composables = new Set<string>()
-  const composable = (name: string, by: string) => {
-    if (composables.has(by)) return
-    composables.add(by)
-    names.push({ name, by })
-  }
-  for (const use of page.uses?.state ?? []) {
-    names.push(...declaredBy(use.as, 'state'))
-    const state = mod.state.find(entry => entry.id === use.state)
-    if (state) composable(stateComposableOf(module, state.name), `the name the state ${state.name} generates`)
-  }
-  for (const use of page.uses?.queries ?? []) {
-    names.push(...declaredBy(use.as, 'query'))
-    const query = mod.queries.find(entry => entry.id === use.query)
-    if (query) composable(composableOf(query.name), `the name the query ${query.name} generates`)
-  }
-  for (const use of page.uses?.apis ?? []) {
-    names.push(...declaredBy(use.as, 'api'))
-    const source = draft.model.datasources.find(entry => entry.id === use.datasource)
-    if (source) composable(apiComposableName(source.name, use.query), `the name the query ${use.query} of the API ${source.name} generates`)
-  }
-  for (const use of page.uses?.actions ?? []) {
-    names.push(...declaredBy(use.as, 'action'))
-    const action = mod.actions.find(entry => entry.id === use.action)
-    if (action) composable(composableOf(action.name), `the name the action ${action.name} generates`)
-  }
-  for (const use of page.uses?.computed ?? []) names.push(...declaredBy(use.as, 'computed'))
-  names.push(...nodeNames(page))
-  return names
-}
-
-/** The names the page's script declares for its nodes: the handler of each interaction (`on<Node><Event>`) and the counter of each List that loads more (`shown<Node>`). */
-const nodeNames = (page: PageFile): Declared => {
-  const names: Declared = []
-  walk(page.root, (node) => {
-    const id = pascal(node.id.replace(/^n_/, ''))
-    for (const interaction of node.interactions ?? []) names.push({ name: `on${id}${pascal(interaction.on)}`, by: `the handler of ${node.id}'s ${interaction.on}` })
-    if (node.type === 'List' && loadMoreSize(node.props?.loadMore) !== undefined) names.push({ name: `shown${id}`, by: `the counter of ${node.id}` })
-  })
-  return names
-}
 
 /** The names the page's script declares for its nodes (the handlers and the load-more counters), for the editor to leave out when it offers a name. */
 export const pageNodeNames = (page: PageFile): string[] => nodeNames(page).map(entry => entry.name)
@@ -124,22 +43,7 @@ export const pageNodeNames = (page: PageFile): string[] => nodeNames(page).map(e
  * Why the page's script can't declare `added` next to what it has: a name it uses itself, one Vue or Nuxt provides, or one declared
  * twice. Without `added`, the same for what it has. Undefined when it can.
  */
-export const pageNameProblem = (draft: Draft, page: PageFile, added: Declared = []): string | undefined => {
-  const seen = new Map<string, string>()
-  const have = declaredNames(draft, page)
-  // With names to add, only they are looked at: what the page has is not theirs to refuse for.
-  if (added.length) for (const { name, by } of have) seen.set(name, by)
-  for (const { name, by } of added.length ? added : have) {
-    if (RESERVED.includes(name)) return `${by === `"${name}"` ? `"${name}"` : `${by} would be "${name}", which`} is a name the page's script uses itself: pick another`
-    // Only the name a page gives a use shadows what Vue and Nuxt provide; what the page derives from it (`createError`) the script never calls.
-    const auto = by === `"${name}"` ? autoImportedNameProblem(name) : undefined
-    if (auto) return auto
-    const other = seen.get(name)
-    if (other) return `The page's script would declare "${name}" twice: as ${other} and as ${by}`
-    seen.set(name, by)
-  }
-  return undefined
-}
+export const pageNameProblem = (draft: Draft, page: PageFile, added: Declared = []): string | undefined => pageNamesProblem(draft.model, page, added)
 
 /** Why a page can't use `as` as the name of a use of `kind`, together with the names it derives, or undefined when it can. */
 const aliasProblem = (draft: Draft, page: PageFile, as: string, kind: UseKind): string | undefined =>
@@ -523,24 +427,13 @@ const apiQueryIn = (draft: Draft, id: string, name: string) => {
 }
 
 /**
- * The arguments a page gives an API query against its parameters: only its own (path and query), each literal of the parameter's type
- * (a route parameter is text: only a text parameter takes one), and with `complete` every required one present.
+ * The arguments a page gives an API query against its parameters (`apiArgsProblem`): only its own (path and query), each value of the
+ * parameter's type as the generated TypeScript sees it, and with `complete` every required one present. Given the page, what a value
+ * reads is checked too.
  */
-export const checkApiArgs = (source: DataSourceFile, query: ApiQuery, args: Record<string, Value | null> | undefined, complete = true) => {
-  const label = `The query "${query.name}" of the API "${source.name}"`
-  for (const name of Object.keys(args ?? {})) {
-    if (!query.params.some(param => param.name === name)) fail('invalid', `${label} has no parameter "${name}" (${query.params.map(param => param.name).join(', ') || 'none'})`)
-  }
-  for (const param of query.params) {
-    const value = args?.[param.name]
-    if (value === undefined || value === null) {
-      if (complete && apiParamRequired(param)) fail('invalid', `${label} needs "${param.name}"`)
-      continue
-    }
-    const route = isObject(value) && '$route' in value
-    const literal = !isExpression(value) && !(isObject(value) && 'not' in value)
-    if ((literal && !fits(param.type, value, false)) || (route && param.type !== 'text')) fail('invalid', `${label} takes "${param.name}" as ${param.type}, but the page passes ${JSON.stringify(value)}`)
-  }
+export const checkApiArgs = (source: DataSourceFile, query: ApiQuery, args: Record<string, Value | null> | undefined, options: ApiArgsOptions = {}) => {
+  const problem = apiArgsProblem(source, query, args, options)
+  if (problem) fail('invalid', problem)
 }
 
 /** One use of a page, whatever its kind: the artifact it reads, runs or holds (`id`), the name the page uses it under, and its entry in `page.uses`. */
@@ -604,7 +497,7 @@ export const pageUseAdd = defineEdit({
     if (kind === 'api') {
       const { datasource, query: name } = api!
       const { source, query } = apiQueryIn(draft, datasource, name)
-      checkApiArgs(source, query, args)
+      checkApiArgs(source, query, args, { page, states: moduleOfPage(draft, page).mod.state, as })
       // The page calls the query's composable, which can't share a name with anything else the script declares (unless it already calls it).
       if (!page.uses?.apis?.some(use => use.datasource === datasource && use.query === name)) {
         const problem = pageNameProblem(draft, page, [{ name: apiComposableName(source.name, name), by: `the name the query ${name} of the API ${source.name} generates` }])
@@ -643,7 +536,7 @@ export const pageUseUpdate = defineEdit({
       const { source, query } = apiQueryIn(draft, apiUse.datasource, apiUse.query)
       const kept: Record<string, Value> = {}
       for (const [name, value] of Object.entries({ ...apiUse.args, ...args })) if (value !== null) kept[name] = value
-      checkApiArgs(source, query, { ...kept, ...args })
+      checkApiArgs(source, query, { ...kept, ...args }, { page, states: moduleOfPage(draft, page).mod.state, as })
       if (Object.keys(kept).length) apiUse.args = kept
       else delete apiUse.args
       return {}

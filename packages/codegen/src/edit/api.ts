@@ -7,7 +7,8 @@ import { AuthInput, datasourceById, DataSourceRef, envNameOf, sourceName } from 
 import { apiNameProblem } from './generated-names.ts'
 import { apiMembersResolve } from './api-uses.ts'
 import type { ApiUse } from './api-uses.ts'
-import { checkApiArgs, pageNameProblem } from './queries.ts'
+import { apiArgsProblem, moduleOfPageIn } from './page-uses.ts'
+import { pageNameProblem } from './queries.ts'
 import { apiQueryUsesOf, apiReadsOf, describeUses } from './usage.ts'
 
 /**
@@ -76,7 +77,7 @@ const pageLabel = (page: { id: string, name: string }) => `page "${page.name}" (
 const checkPagesNames = (draft: Draft, source: ApiSource) => {
   for (const page of new Set(pageUsesOf(draft, source).map(entry => entry.page))) {
     const problem = pageNameProblem(draft, page)
-    if (problem) fail('invalid', problem)
+    if (problem) fail('invalid', `${problem}, on ${pageLabel(page)}: change it first`)
   }
 }
 
@@ -107,7 +108,8 @@ const checkUsesFit = (draft: Draft, source: ApiSource, query: ApiQuery) => {
     for (const param of query.params) {
       if ((param.in === 'path' || param.required) && use.args?.[param.name] === undefined) fail('invalid', `${label} needs "${param.name}", but ${pageLabel(page)} doesn't pass it as "${use.as}": change it first`)
     }
-    checkApiArgs(source, query, use.args)
+    const problem = apiArgsProblem(source, query, use.args, { page, states: moduleOfPageIn(draft.model, page).mod.state, as: use.as })
+    if (problem) fail('invalid', `${problem} (${pageLabel(page)}, as "${use.as}"): change it first`)
   }
 }
 

@@ -55,10 +55,47 @@ describe('uses.apis', () => {
     expect(problems(withApis([{ ...products, as: 'preferences' }]))[0]).toMatch(/uses.apis.0.as: The name "preferences" is used twice/)
   })
 
-  it('an alias named layout reads as the page\'s own: a layout binding stays allowed in the tree', () => {
-    const files = withApis([{ ...products, as: 'layout' }], (page) => {
-      page.root.children[0].children[0].props = { level: 1, text: { $bind: 'layout.title' } }
-    })
-    expect(problems(files)).toEqual([])
+  // A2 (verify): the edits refuse these aliases (`pageNameProblem`), so a hand-written file does too, with the same words.
+  it('refuses an alias the page script declares itself or derives from another use', () => {
+    const names = (as: string, more: Use[] = []) => problems(withApis([{ ...products, as }, ...more]))
+    expect(names('layout')).toEqual([`${IDX}: uses.apis: "layout" is a name the page's script uses itself: pick another`])
+    expect(names('route')).toEqual([`${IDX}: uses.apis: "route" is a name the page's script uses itself: pick another`])
+    expect(names('catalogueLoading', [{ ...products, as: 'catalogue' }])[0]).toMatch(/^.*uses.apis: The page's script would declare "catalogueLoading" twice/)
+    expect(names('catalogueError', [{ ...products, as: 'catalogue' }])[0]).toMatch(/would declare "catalogueError" twice/)
+    expect(names('useCatalogProducts')).toEqual([`${IDX}: uses.apis: The page's script would declare "useCatalogProducts" twice: as "useCatalogProducts" and as the name the query products of the API catalog generates`])
+  })
+
+  // A1 (verify): the arguments follow the rules of the edits: a value of the parameter's type, a route parameter only for text, no null for a required one.
+  it('refuses args the generated call would not compile', () => {
+    const one = (args: Use) => problems(withApis([{ as: 'one', datasource: 'ds_catalog', query: 'product', args }]))
+    expect(one({ id: 'abc' })).toEqual([`${IDX}: uses.apis.0.args: The query "product" of the API "catalog" takes "id" as integer, but the page passes "abc"`])
+    expect(one({ id: { $route: 'slug' } })).toEqual([`${IDX}: uses.apis.0.args: The query "product" of the API "catalog" takes "id" as integer, but the page passes {"$route":"slug"}`])
+    expect(one({ id: null })).toEqual([`${IDX}: uses.apis.0.args: The query "product" of the API "catalog" needs "id"`])
+    expect(one({ id: 3 })).toEqual([])
+    // What a value reads: its own answer, another answer, a name the page doesn't have.
+    expect(one({ id: { $bind: 'one.id' } })[0]).toMatch(/"id" reads "one", the answer of this very use/)
+    expect(one({ id: { $bind: 'nope.id' } })[0]).toMatch(/"id" reads "nope", which doesn't refer to anything this page uses/)
+    expect(one({ id: { $bind: 'preferences.showDrafts' } })[0]).toMatch(/takes "id" as integer, but "preferences.showDrafts" is boolean/)
+  })
+
+  it('refuses a nullable state field into a parameter unless a fallback covers it', () => {
+    const nullable = (args: Use) => {
+      const files = withApis([{ as: 'one', datasource: 'ds_catalog', query: 'product', args }])
+      const state = JSON.parse(files['.bildr/modules/blog/state/preferences.json']!)
+      state.fields.push({ id: 'fld_note', name: 'note', type: 'integer', nullable: true })
+      files['.bildr/modules/blog/state/preferences.json'] = JSON.stringify(state)
+      return problems(files)
+    }
+    expect(nullable({ id: { $bind: 'preferences.note' } })[0]).toMatch(/"id" reads "preferences.note", which can be null/)
+    expect(nullable({ id: { $bind: 'preferences.note', fallback: 1 } })).toEqual([])
+  })
+
+  it('refuses two uses that read each other\'s answers', () => {
+    const cycle = problems(withApis([
+      { as: 'a', datasource: 'ds_catalog', query: 'product', args: { id: { $bind: 'b.id' } } },
+      { as: 'b', datasource: 'ds_catalog', query: 'product', args: { id: { $bind: 'a.id' } } }
+    ]))
+    expect(cycle).toHaveLength(2)
+    expect(cycle.every(problem => /the answer of another API query/.test(problem))).toBe(true)
   })
 })
