@@ -253,6 +253,14 @@ describe('api_try: the headers of a call (api-calls R2)', () => {
     expect((await failure('api_try', { datasource: 'ds_stub', query: 'listProducts' }, 400, 'invalid_input')).message).toBe('Give the header parameter "tenant"')
   })
 
+  it('takes an empty header parameter as not given, as the editor does (review R3-006)', async () => {
+    await withHeaders()
+    expect((await failure('api_try', { datasource: 'ds_stub', query: 'listProducts', params: { tenant: '' } }, 400, 'invalid_input')).message).toBe('Give the header parameter "tenant"')
+    await ok('api_try', { datasource: 'ds_stub', query: 'listProducts', params: { tenant: 'acme', locale: '' } })
+    // Node's fetch sends its own `accept-language: *`; the call's empty one is not sent over it.
+    expect(seen.at(-1)!.headers['accept-language']).toBe('*')
+  })
+
   it('sends the headers given for a call by path, and the source\'s sign-in over them', async () => {
     await withHeaders()
     await ok('api_try', { datasource: 'ds_stub', path: '/products', headers: { 'X-Api-Version': '3', 'Accept': 'application/vnd.api+json' } })

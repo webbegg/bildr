@@ -208,8 +208,12 @@ const SIGN_IN_HEADERS = new Set(['authorization', 'proxy-authorization'])
 const OWN_HEADERS = new Set(['cookie', 'cookie2', 'host', 'content-type', 'content-length', 'connection', 'keep-alive', 'transfer-encoding', 'te', 'trailer', 'upgrade', 'expect', 'origin', 'referer', 'date', 'via', 'x-http-method-override', 'x-http-method', 'x-method-override'])
 /** A header name that says it holds a secret: a key, a token, a password, a session, a sign-in. */
 const SECRET_NAME = /(?:^|-)(?:api-?key|key|token|secret|password|passwd|pwd|session|credentials?|signature|auth|authorization|authentication)(?:-|$)/i
-/** A word long enough and mixed enough to be a key. */
+/**
+ * A word long enough and mixed enough to be a key: mixed case (`sk_live_4eC39…`), or one long run of letters and digits (a hex token). A
+ * lowercase word made of short parts, like `application/vnd.github.v3+json` or `my-app-version-2024`, is a name, not a key.
+ */
 const keyLike = (word: string) => word.length >= 24 && /^[\w\-+/=.~]+$/.test(word) && /[A-Za-z]/.test(word) && /\d/.test(word)
+  && ((/[a-z]/.test(word) && /[A-Z]/.test(word)) || Math.max(...word.split(/[^A-Za-z0-9]+/).map(part => part.length)) >= 20)
 /** A value that is a sign-in (`Bearer …`), or that holds a key-like word anywhere (`ApiKey sk_live_…`). */
 const secretValue = (value: string) => /^(?:bearer|basic|token|digest)\s/i.test(value) || value.split(/[\s,;]+/).some(keyLike)
 

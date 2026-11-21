@@ -92,6 +92,14 @@ describe('a pasted cURL command', () => {
     expect(read.notes).toEqual(['Left out the headers “X-Auth-Token”, “X-Client” and “Origin”: a secret belongs in the API\'s sign-in, and the app sends some headers itself.'])
   })
 
+  it('keeps an Accept that is not the JSON one, and skips a header with no value without calling it a secret (review R3-002, R3-008)', () => {
+    expect(ok(`curl ${BASE}/items -H 'Accept: application/vnd.api+json'`).headers).toEqual([{ name: 'Accept', value: 'application/vnd.api+json' }])
+    expect(ok(`curl ${BASE}/items -H 'Accept: application/json' -H 'accept: */*'`).headers ?? []).toEqual([])
+    const empty = ok(`curl ${BASE}/items -H 'X-Empty:'`)
+    expect(empty.headers ?? []).toEqual([])
+    expect(empty.notes).toEqual([])
+  })
+
   it('leaves out a key after a scheme word, and a header that says it signs in (verify B1)', () => {
     const read = ok(`curl ${BASE}/items -H 'X-Client: Key sk_live_4eC39HqLyjWDarjtT1zdp7dc' -H 'X-Authorization: abc123secret'`)
     expect(read.headers ?? []).toEqual([])
