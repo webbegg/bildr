@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { clearTryValues, durationLabel, loadTryValues, resolvedRequest, sizeLabel, storeTryValues } from '../../src/editor/tryRequest.ts'
-import { newParam, operationDraftOf } from '../../src/editor/simpleApiDraft.ts'
+import { newHeader, newParam, operationDraftOf } from '../../src/editor/simpleApiDraft.ts'
 
 /**
  * Try it's request and answer (api-calls T1, S5): the request as it will be sent, before it is (the method, the full URL, the headers with
@@ -93,6 +93,13 @@ describe('the values to try with, kept in this browser', () => {
     expect(loadTryValues(key).body).toBe('{"title":"Lamp","nested":[{"x":1}]}')
     storeTryValues(key, draft, { values: {}, body: '{"a":{"client_secret":"s"}}' })
     expect(loadTryValues(key).body).toBe('')
+  })
+
+  it('never keep the value of a header parameter whose header says it holds a secret (verify advisory: X-Session)', () => {
+    const draft = byId()
+    draft.headers.push({ ...newHeader(), name: 'X-Session', from: 'param', param: 'sess' }, { ...newHeader(), name: 'X-Authorization', from: 'param', param: 'who' })
+    storeTryValues(key, draft, { values: { id: '7', sess: 's1', who: 'w1' }, body: '' })
+    expect(loadTryValues(key)).toEqual({ values: { id: '7' }, body: '' })
   })
 
   it('are none when what is kept is not what was stored', () => {

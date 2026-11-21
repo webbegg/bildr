@@ -92,6 +92,13 @@ describe('a pasted cURL command', () => {
     expect(read.notes).toEqual(['Left out the headers “X-Auth-Token”, “X-Client” and “Origin”: a secret belongs in the API\'s sign-in, and the app sends some headers itself.'])
   })
 
+  it('leaves out a key after a scheme word, and a header that says it signs in (verify B1)', () => {
+    const read = ok(`curl ${BASE}/items -H 'X-Client: Key sk_live_4eC39HqLyjWDarjtT1zdp7dc' -H 'X-Authorization: abc123secret'`)
+    expect(read.headers ?? []).toEqual([])
+    expect(read.notes[0]).toContain('“X-Client” and “X-Authorization”')
+    expect(read.notes.join(' ')).not.toContain('sk_live')
+  })
+
   it('is a POST when it has data and no method, and a GET with -G, the data going in the query', () => {
     expect(ok(`curl ${BASE}/items -d '{"a":1}'`)).toMatchObject({ method: 'POST', body: '{\n  "a": 1\n}' })
     expect(ok(`curl -G ${BASE}/search --data-urlencode 'q=red lamp' -d limit=5`)).toMatchObject({
