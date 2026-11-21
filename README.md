@@ -23,7 +23,7 @@ pnpm dev          # nuxt dev
 The editor is a Vue and Nuxt UI single-page app (`@bildr/editor`) that `@bildr/nuxt` serves while `nuxt dev` runs. Its screens:
 
 - **Design**: pages, layers, components and layouts on a canvas with device frames, an inspector for props and styles, the theme and the design library, and the variant board. Edits are live in the running app.
-- **Data**: data sources, entities and their fields, repositories and their endpoints, State, and the rows the app reads. Records are read-only here.
+- **Data**: the simple section for State (page and app state) and APIs (remote sources with a base URL, queries, actions and models). **Advanced data** (`/data/advanced`) keeps the full workspace: data sources, entities and their fields, repositories and their endpoints, State, and the rows the app reads. Records are read-only there.
 - **Model**: the `.bildr/` files as they are, with their validation problems.
 - **View code**: the generated files and which ones you changed.
 - **Health**: the project's checks (typecheck, lint, tests, build) and their results.
@@ -41,12 +41,19 @@ What the app remembers, what a control does and which list a page shows are set 
 4. **Make a List depend on a condition.** Select the List and set Items to "Depends on a condition": If a State's Toggle field is on (or off), Then one query, Otherwise another. A State with no Toggle field has nothing to depend on: add one in Data. The page keeps this as a computed value, and editing the source edits it.
 5. **Preview it.** Turn on Interact in the Design toolbar. The canvas holds each State field's default and applies Set state when you click, so the toggle switches the list. Reset state puts the values back. They are also dropped when preview ends or the editor reloads, and a field's value starts again at its new default when you change that default in Data.
 
+## Connect an API
+
+1. **Add the API.** In Data, the APIs section has a "+". Give it a name and a base URL, choose where it runs ("On the server (can use a secret key)" or "In the visitor's browser (no secret key)") and how it signs in. The secret is never typed into the editor: the panel names the env var to set in `.env` and says whether it is set.
+2. **Add a query.** In the API's Queries, "+" opens the query editor: its path (`/products/:id` suggests the `id` parameter) and its query parameters. Try it calls the API and shows the answer; Use this answer adds the models it proposes and fills in the result. Save keeps the query.
+3. **Add an action.** Actions work the same way, with a method and a body model (from a model or a pasted sample). Try it asks before it sends a real write.
+4. **Show it on a page.** Select a List in Design and pick the query in Items ("<API> · <query>"). A route parameter of the same name fills its parameter; others ask for a value or a State field. The canvas shows sample rows; the app shows the real answer, with loading, error and empty states. The query's row in Data then says where it is used.
+
 ## What a project holds
 
 ```text
 .bildr/
   bildr.json, theme.json, manifest.json
-  datasources/        # sqlite, rest or memory sources
+  datasources/        # sqlite, rest, memory or api sources
   layouts/
   modules/<module>/   # module.json, entities/, repositories/, queries/, actions/,
                       # state/, components/, pages/, fixtures/
@@ -132,6 +139,8 @@ Entities, repositories, queries, actions and pages are the same model either way
 A `memory` data source (`{ "kind": "memory", "env": {} }`, no settings) keeps its rows in the server process: one store per entity, seeded at boot from `.bildr/modules/<module>/fixtures/<entity>.json` and lost when the server stops. It needs no database and no API, so it suits prototypes and data the app owns but needn't keep. Its repositories have every operation and finders.
 
 The editor's data actions (`datasource_*`, `entity_*`, `entity_field_*`) write these files. `entity_create` writes an entity with its repository, the queries `q_<plural>` and `q_<entity>_by_id`, the action `act_create_<entity>` and, for a memory source, its fixtures. `datasource_preview` and `repository_endpoint_test` GET a REST source's endpoints (under its base URL only, 10 s and 1 MB at most) and propose fields. `env_status` says which env vars the data sources need and whether each is set, never their values. Secrets are env vars only: you set them in `.env`.
+
+An `api` data source owns its operations: a `baseUrl`, `models` (fields, nested models, remote keys), `queries` (GET, path and query params, a `one` or `many` result with an `itemsPath`) and `actions` (POST, PUT, PATCH or DELETE with a body model). `runtime: "server"` calls it from the app's server (it may use a secret: `auth` bearer or header, read from `NUXT_APIS_<NAME>_*`); `runtime: "browser"` calls it from the visitor's browser with `runtimeConfig.public.apis.<name>.baseUrl` and no secret. Either way bildr generates it into `layers/apis/` in two layers: the domain (entities, the repository port, use-cases, errors) and the data side (DTOs, validations, mappers, the HTTP repository), plus `use<Api><Query>` composables. The `api_*` actions edit it; `api_try` runs a query (or, with `confirm`, an action) under the base URL and proposes models from the answer. A page uses a query through `uses.apis`, and its Lists and bindings read the answer like any query.
 
 A REST repository can list, get, create, update and delete. Each operation beyond `list` names its endpoint in `rest`, for example `"get": { "path": "/tasks/:id" }` or `"create": { "path": "/tasks" }`. The default methods are GET, POST, PUT and DELETE, and `method` overrides them. `fieldMap` maps fields both ways.
 
