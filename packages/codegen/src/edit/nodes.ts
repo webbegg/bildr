@@ -5,6 +5,7 @@ import type { ComponentFile, LayoutFile, ModelNode, PageFile, Value } from '../m
 import { takesProp } from '../render/rules.ts'
 import { defineEdit, fail, rootName } from './core.ts'
 import type { Draft, Tree } from './core.ts'
+import { apiItemsProblem } from './page-uses.ts'
 import { useAction } from './queries.ts'
 import { INTERNAL_TYPES, isContainerType, isNodeType, LINK_PROPS, paletteEntry } from './palette.ts'
 import { cloneWithNewIds, containsNode, findNode, findParent, insertChild, subtreeIds, walk } from './tree.ts'
@@ -133,6 +134,15 @@ export const removeNode = (tree: Tree, node: ModelNode): void => {
 }
 
 /** A page's Form that runs an action makes the page use it (in the same change set, so nothing stays behind when the edit is refused). */
+/** A List of a page repeats only over the whole answer of an API query that answers a list (`apiItemsProblem`): checked for `node` and the nodes below it. */
+const checkApiLists = (draft: Draft, tree: Tree, node: ModelNode): void => {
+  if (tree.kind !== 'page') return
+  walk(node, (item) => {
+    const problem = item.type === 'List' ? apiItemsProblem(draft.model, tree.owner as PageFile, item.props?.items) : undefined
+    if (problem) fail('invalid', problem)
+  })
+}
+
 const wireForms = (draft: Draft, tree: Tree, node: ModelNode): void => {
   if (tree.kind !== 'page') return
   walk(node, (entry) => {
@@ -196,6 +206,7 @@ export const nodeInsert = defineEdit({
     for (const [i, node] of nodes.entries()) {
       insertChild(containerIn(tree, parentId ?? tree.root.id, node.type), node, index === undefined ? undefined : index + i)
       wireForms(draft, tree, node)
+      checkApiLists(draft, tree, node)
     }
     const nodeIds = nodes.map(node => node.id)
     return specs ? { nodeId: nodeIds[0], nodeIds } : { nodeId: nodeIds[0] }
@@ -210,6 +221,7 @@ export const nodeUpdateProps = defineEdit({
     checkProps(node.type, props)
     setProps(node, props)
     wireForms(draft, tree, node)
+    if (props.items !== undefined) checkApiLists(draft, tree, node)
     return {}
   }
 })

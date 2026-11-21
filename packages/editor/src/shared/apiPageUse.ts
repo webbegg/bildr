@@ -50,11 +50,26 @@ export const apiChoices = (model: Model | null | undefined, options: { many?: bo
 export const apiChoiceOf = (model: Model | null | undefined, id: string): ApiChoice | undefined =>
   id.startsWith(PREFIX) ? apiChoices(model).find(choice => choice.id === id) : undefined
 
-/** The route parameters of the page are text: a query parameter of the same name (and of a text type) reads the route. */
+/**
+ * The route parameters of the page are text: a query parameter of the same name reads the route (a number parameter gets it converted by the
+ * generated page; only a true-or-false one can't).
+ */
 export const apiAutoArgs = (page: Pick<PageFile, 'path'>, params: ApiParam[]): Record<string, Value> => {
   const route = routeParams(page)
-  return Object.fromEntries(params.filter(param => param.type === 'text' && route.includes(param.name)).map(param => [param.name, { $route: param.name }]))
+  return Object.fromEntries(params.filter(param => param.type !== 'boolean' && route.includes(param.name)).map(param => [param.name, { $route: param.name }]))
 }
+
+/** Whether two values of a use's arguments are the same (the same keys, whatever their order, and the same values). */
+const sameValue = (a: unknown, b: unknown): boolean => {
+  if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) return a === b
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  const keys = Object.keys(a)
+  return keys.length === Object.keys(b).length && keys.every(key => sameValue((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
+}
+
+/** The page's use of the same query of the same API with the same arguments, if it has one: a List can read it instead of a use of its own. */
+export const apiUseLike = (page: Pick<PageFile, 'uses'>, choice: Pick<ApiChoice, 'datasource' | 'query'>, args: Record<string, Value>): ApiUse | undefined =>
+  page.uses?.apis?.find(use => use.datasource === choice.datasource && use.query === choice.query && sameValue(use.args ?? {}, args))
 
 /** The required parameters (a path parameter always, a query parameter when it says so) that `args` gives no value. */
 export const apiMissingArgs = (params: ApiParam[], args: Record<string, Value | undefined>): ApiParam[] =>

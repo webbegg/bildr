@@ -193,6 +193,30 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
     session.maybe('page_use_add', { page, as: 'found', api: { datasource: 'ds_chain', query: 'items' }, args: { category: { $bind: 'prefs.showDrafts' }, page: { $bind: 'first.name' } } })
     session.maybe('node_insert', { file: page, type: 'Heading', props: { text: { $template: '{found.length}' } } })
   }],
+  // Review P7 (W2, W4, S1, S3): args read from a state field and a template (the state is declared before the call), a route number
+  // converted for an integer, a row whose id is optional (keyed by position), a list with an empty text and no loading text.
+  ['API args from a state field, a template and a route number, a list keyed by position, an empty text with no loading text', (session) => {
+    session.edit('api_create', { name: 'store', baseUrl: 'https://store.example.com/v1' })
+    session.edit('api_model_set', { datasource: 'ds_store', model: { name: 'Thing', fields: [{ name: 'id', type: 'integer' }, { name: 'name', type: 'text' }] } })
+    session.edit('api_model_set', { datasource: 'ds_store', model: { name: 'Maybe', fields: [{ name: 'id', type: 'integer', optional: true }, { name: 'name', type: 'text' }] } })
+    session.edit('api_query_set', { datasource: 'ds_store', query: { name: 'things', path: '/things', params: [{ name: 'category', in: 'query', type: 'text' }, { name: 'page', in: 'query', type: 'integer', required: true }], result: { model: 'Thing', many: true } } })
+    session.edit('api_query_set', { datasource: 'ds_store', query: { name: 'thing', path: '/things/:id', params: [{ name: 'id', in: 'path', type: 'integer' }, { name: 'ratio', in: 'query', type: 'number' }], result: { model: 'Thing', many: false } } })
+    session.edit('api_query_set', { datasource: 'ds_store', query: { name: 'maybes', path: '/maybes', params: [], result: { model: 'Maybe', many: true } } })
+    session.edit('state_create', { name: 'filters', fields: [{ name: 'category', type: 'text', default: 'books' }, { name: 'page', type: 'integer', default: 1 }] })
+    session.edit('page_create', { name: 'filtered', path: '/filtered', layout: 'lay_main' })
+    const filtered = session.result.pageId as string
+    session.edit('page_use_add', { page: filtered, as: 'filters', state: 'st_filters' })
+    session.edit('page_use_add', { page: filtered, as: 'found', api: { datasource: 'ds_store', query: 'things' }, args: { category: { $template: 'all-{filters.category}' }, page: { $bind: 'filters.page' } } })
+    session.edit('page_use_add', { page: filtered, as: 'maybes', api: { datasource: 'ds_store', query: 'maybes' } })
+    session.edit('node_insert', { file: filtered, type: 'List', props: { items: { $bind: 'found' }, as: 'thing', empty: 'Nothing here.' }, children: [{ type: 'Text', props: { text: { $template: '{thing.name}' } } }] })
+    session.edit('node_insert', { file: filtered, type: 'List', props: { items: { $bind: 'maybes' }, as: 'maybe', empty: 'None.' }, children: [{ type: 'Text', props: { text: { $template: '{maybe.name}' } } }] })
+    session.edit('page_create', { name: 'thing-detail', path: '/things/:id/:ratio', layout: 'lay_main' })
+    const detail = session.result.pageId as string
+    const root = session.result.nodeId as string
+    session.edit('page_use_add', { page: detail, as: 'one', api: { datasource: 'ds_store', query: 'thing' }, args: { id: { $route: 'id' }, ratio: { $route: 'ratio' } } })
+    session.edit('node_update_props', { file: detail, nodeId: root, props: { when: { $bind: 'one' }, loading: 'Loading…', empty: 'No thing.' } })
+    session.edit('node_insert', { file: detail, parentId: root, type: 'Heading', props: { text: { $bind: 'one.name' } } })
+  }],
   ['a list under keys that are not identifiers', (session) => {
     session.edit('api_create', { name: 'hydra', baseUrl: 'https://hydra.example.com' })
     session.edit('api_model_set', { datasource: 'ds_hydra', model: ITEM })

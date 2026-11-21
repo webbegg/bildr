@@ -5,7 +5,7 @@ import { takeRefusal } from '../editor/dataArtifactActions.ts'
 import { STUCK, compensate, dropStateUse, withStateUse } from '../editor/stateUse.ts'
 import { useEditor } from '../editor/useEditor.ts'
 import type { Editor } from '../editor/useEditor.ts'
-import { apiAutoArgs, apiChoiceOf, apiMissingArgs } from '../shared/apiPageUse.ts'
+import { apiAutoArgs, apiChoiceOf, apiMissingArgs, apiUseLike } from '../shared/apiPageUse.ts'
 import { isExpression } from '../shared/bindings.ts'
 import { branchChoices, computedInput, computedValues, conditionChoices, conditionOf, conditionSentence } from '../shared/listSource.ts'
 import type { ConditionChoice, ConditionDraft } from '../shared/listSource.ts'
@@ -75,6 +75,12 @@ export function useListCondition(node: () => ModelNode) {
     const items = node().props?.items
     return isExpression(items) && typeof items.$bind === 'string' ? items.$bind.split('.')[0]! : ''
   })
+  /** The page's API use the List's items are bound to as they are (the whole answer), when they are. */
+  const apiRoot = () => {
+    const items = node().props?.items
+    const alias = isExpression(items) && typeof items.$bind === 'string' && !items.$bind.includes('.') ? items.$bind : ''
+    return alias && page.value?.uses?.apis?.some(use => use.as === alias) ? alias : undefined
+  }
   /** The condition the List's items are bound to, when they are bound to a computed value the panel can read. */
   const condition = computed(() => (page.value && itemsRoot.value ? conditionOf(page.value, itemsRoot.value) : undefined))
   /** The condition as the form shows it: the written one, or the one being made. */
@@ -112,6 +118,7 @@ export function useListCondition(node: () => ModelNode) {
     const file = onPage.id
     const nodeId = node().id
     const mine = slot.value
+    const wasApi = apiRoot()
     mine.failure = ''
     mine.busy = true
     try {
@@ -140,6 +147,8 @@ export function useListCondition(node: () => ModelNode) {
       // Moved to another State: the one it read is no longer needed by this condition.
       const before = existing?.path.split('.')[0]
       if (before && before !== next.path.split('.')[0] && onPage.uses?.state?.some(use => use.as === before)) await dropStateUse(editor, file, before)
+      // The List no longer reads the API query it did: its use goes when nothing else on the page reads it.
+      if (wasApi && !existing) await dropStateUse(editor, file, wasApi)
     } finally {
       mine.busy = false
     }
@@ -172,6 +181,7 @@ export function useListCondition(node: () => ModelNode) {
     const nodeId = node().id
     const mine = slot.value
     const before = condition.value?.as
+    const wasApi = apiRoot()
     mine.failure = ''
     if (value === 'cond') {
       if (!form.value) mine.draft = { path: '', off: false, then: model.value && branchChoices(model.value, onPage).some(choice => choice.alias === itemsRoot.value) ? itemsRoot.value : '', else: '' }
@@ -184,6 +194,8 @@ export function useListCondition(node: () => ModelNode) {
       ? await design.edit('query_create_for_list', { page: file, entity: value.slice(4), nodeId })
       : await design.setProps(nodeId, { items: { $bind: value } })
     if (done && before) await dropComputed(file, mine, before)
+    // The List no longer reads the API query it did: its use goes when nothing else on the page reads it (the module refuses while it does).
+    if (done && wasApi && wasApi !== value) await dropStateUse(editor, file, wasApi)
   }
 
   // ── An API query as the List's source ────────────────────────────────
@@ -206,7 +218,10 @@ export function useListCondition(node: () => ModelNode) {
     else await bindApi(id, args, before)
   }
 
-  /** Adds the page's use of the query and binds the List to it; the use is taken off again when the List refuses. */
+  /**
+   * Binds the List to the page's use of the query: the one it already has with the same values, or a new one (`page_use_add`, taken off
+   * again when the List refuses). The use the List read before goes when nothing else on the page reads it.
+   */
   async function bindApi(id: string, args: Record<string, Value>, before: string | undefined) {
     const onPage = page.value
     const choice = apiChoiceOf(model.value, id)
@@ -215,11 +230,13 @@ export function useListCondition(node: () => ModelNode) {
     const file = onPage.id
     const list = node()
     const mine = slot.value
+    const wasApi = apiRoot()
+    const like = apiUseLike(onPage, choice, args)
     mine.failure = ''
     mine.busy = true
     try {
-      const as = freeAlias(onPage, choice.query, 'api')
-      if (!await design.edit('page_use_add', { page: file, as, api: { datasource: choice.datasource, query: choice.query }, ...(Object.keys(args).length ? { args } : {}) })) {
+      const as = like?.as ?? freeAlias(onPage, choice.query, 'api')
+      if (!like && !await design.edit('page_use_add', { page: file, as, api: { datasource: choice.datasource, query: choice.query }, ...(Object.keys(args).length ? { args } : {}) })) {
         showRefusal(mine, `${choice.label} could not be used`)
         return
       }
@@ -227,12 +244,13 @@ export function useListCondition(node: () => ModelNode) {
       const own = typeof list.props?.as === 'string' && list.props.as !== 'item'
       const name = `${choice.model.charAt(0).toLowerCase()}${choice.model.slice(1)}`
       if (!await design.setProps(list.id, { items: { $bind: as }, ...(own ? {} : { as: name }) })) {
-        await compensate(editor, () => editor.run('page_use_remove', { page: file, as }), `The use of ${choice.label} could not be taken off again`)
+        if (!like) await compensate(editor, () => editor.run('page_use_remove', { page: file, as }), `The use of ${choice.label} could not be taken off again`)
         showRefusal(mine, 'The change was refused')
         return
       }
       mine.api = null
       if (before) await dropComputed(file, mine, before)
+      if (wasApi && wasApi !== as) await dropStateUse(editor, file, wasApi)
     } finally {
       mine.busy = false
     }

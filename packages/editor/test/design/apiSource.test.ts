@@ -32,6 +32,16 @@ const requireCategory = (model: Model = world.model) => {
   source.queries!.find(query => query.name === 'products')!.params[0]!.required = true
 }
 
+/** The preferences state gets fields of other types, one that can be empty, one that can be null and a text one that always has a value. */
+const stateFields = () => {
+  world.model.modules.blog!.state[0]!.fields.push(
+    { id: 'fld_tag', name: 'tag', type: 'text', default: 'new' },
+    { id: 'fld_note', name: 'note', type: 'text' },
+    { id: 'fld_maybe', name: 'maybe', type: 'text', nullable: true, default: '' },
+    { id: 'fld_count', name: 'count', type: 'integer', default: 1 }
+  )
+}
+
 describe('the Items select', () => {
   it('offers each API query that answers many rows as "<API> · <query>", after the page\'s own lists', async () => {
     withPlainList()
@@ -122,12 +132,82 @@ describe('the Items select', () => {
   })
 })
 
+describe('the uses a List leaves and takes (S2)', () => {
+  /** The shop page reads its posts too, and its List of products holds nothing (a List of another collection's rows can't hold what reads a product). */
+  const plainShop = () => {
+    const shop = page('pg_shop_catalog')
+    shop.uses!.queries = [{ as: 'all', query: 'q_all_posts' }]
+    find(shop.root, 'n_products')!.children = []
+  }
+  /** A second List of the shop page, bound to `items`. */
+  const second = (items: string) => {
+    plainShop()
+    page('pg_shop_catalog').root.children!.push({ id: 'n_second', type: 'List', props: { items: { $bind: items }, as: 'item' } })
+  }
+
+  it('reuses the page\'s use of the same query with the same values instead of adding another', async () => {
+    second('all')
+    const { actions } = await open(edits(), 'pg_shop_catalog')
+    await select('n_second')
+    await choose('list-items', 'api:ds_catalog:products')
+    expect(writes(actions)).toEqual(['node_update_props'])
+    expect(actions.named('node_update_props')[0]!.input).toMatchObject({ nodeId: 'n_second', props: { items: { $bind: 'products' } } })
+    expect(page('pg_shop_catalog').uses!.apis).toHaveLength(1)
+    expect(value('list-items')).toBe('products')
+  })
+
+  it('adds another use when the values differ', async () => {
+    second('all')
+    page('pg_shop_catalog').uses!.apis![0]!.args = { category: 'books' }
+    const { actions } = await open(edits(), 'pg_shop_catalog')
+    await select('n_second')
+    await choose('list-items', 'api:ds_catalog:products')
+    expect(actions.named('page_use_add')[0]!.input).toMatchObject({ as: 'products2' })
+  })
+
+  it('takes the use off when the List moves to another source and nothing else on the page reads it', async () => {
+    plainShop()
+    const { actions } = await open(edits(), 'pg_shop_catalog')
+    await select('n_products')
+    await choose('list-items', 'all')
+    expect(writes(actions)).toEqual(['node_update_props', 'page_use_remove'])
+    expect(actions.named('page_use_remove')[0]!.input).toEqual({ page: 'pg_shop_catalog', as: 'products' })
+    expect(page('pg_shop_catalog').uses!.apis).toBeUndefined()
+    expect(byTestId('design-error')).toBeNull()
+  })
+
+  it('keeps the use while another node of the page reads it, and says nothing of the module\'s refusal', async () => {
+    second('products')
+    const { actions } = await open(edits(), 'pg_shop_catalog')
+    await select('n_products')
+    await choose('list-items', 'all')
+    expect(writes(actions)).toEqual(['node_update_props', 'page_use_remove'])
+    expect(page('pg_shop_catalog').uses!.apis).toHaveLength(1)
+    expect(byTestId('design-error')).toBeNull()
+    expect(text(byTestId('list-condition-error'))).toBe('')
+  })
+
+  it('takes the old use off too when the List moves to the same query with other values', async () => {
+    plainShop()
+    page('pg_shop_catalog').uses!.apis![0]!.args = { category: 'books' }
+    const { actions } = await open(edits(), 'pg_shop_catalog')
+    await select('n_products')
+    await choose('list-items', 'api:ds_catalog:products')
+    expect(writes(actions)).toEqual(['page_use_add', 'node_update_props', 'page_use_remove'])
+    expect(actions.named('page_use_remove')[0]!.input).toEqual({ page: 'pg_shop_catalog', as: 'products' })
+    expect(page('pg_shop_catalog').uses!.apis!.map(use => use.as)).toEqual(['products2'])
+  })
+})
+
 describe('a query that needs a value', () => {
   it('takes a route parameter of the page by itself, in the one page_use_add', async () => {
     requireCategory()
+    const shop = page('pg_shop_catalog')
+    // The page's own `products` reads the category typed, so a second List reading the query with the route's category is another use.
+    shop.uses!.apis![0]!.args = { category: 'books' }
+    shop.root.children!.push({ id: 'n_second', type: 'List', props: { items: { $bind: 'products' }, as: 'item' } })
     const { actions } = await open(edits(), 'pg_shop_catalog')
-    // The page already lists `products`; a second List reads the same query with the route's category.
-    await select('n_products')
+    await select('n_second')
     await choose('list-items', 'api:ds_catalog:products')
     expect(actions.named('page_use_add')[0]!.input).toEqual({ page: 'pg_shop_catalog', as: 'products2', api: { datasource: 'ds_catalog', query: 'products' }, args: { category: { $route: 'category' } } })
     expect(byTestId('list-api-pending')).toBeNull()
@@ -155,15 +235,37 @@ describe('a query that needs a value', () => {
   it('lets the user choose a value of a State the page uses instead of typing one', async () => {
     withPlainList()
     requireCategory()
+    stateFields()
     const { actions } = await open(edits(), 'pg_index')
     await select('n_plain')
     await choose('list-items', 'api:ds_catalog:products')
     const from = byTestId('list-api-arg-category-from') as HTMLSelectElement
-    expect([...from.options].map(option => option.value)).toContain('bind:preferences.showDrafts')
-    await choose('list-api-arg-category-from', 'bind:preferences.showDrafts')
+    expect([...from.options].map(option => option.value)).toContain('bind:preferences.tag')
+    await choose('list-api-arg-category-from', 'bind:preferences.tag')
     byTestId('list-api-add')!.click()
     await settle()
-    expect(actions.named('page_use_add')[0]!.input).toMatchObject({ args: { category: { $bind: 'preferences.showDrafts' } } })
+    expect(actions.named('page_use_add')[0]!.input).toMatchObject({ args: { category: { $bind: 'preferences.tag' } } })
+  })
+
+  it('offers only the fields the parameter takes: its type, never one that can be null, and a required one only a field that is never empty', async () => {
+    withPlainList()
+    requireCategory()
+    stateFields()
+    await open(edits(), 'pg_index')
+    await select('n_plain')
+    await choose('list-items', 'api:ds_catalog:products')
+    const offered = () => [...(byTestId('list-api-arg-category-from') as HTMLSelectElement).options].map(option => option.value).filter(option => option.startsWith('bind:'))
+    // `showDrafts` is true or false, `count` a number, `maybe` can be null, `note` can be empty and the parameter is required.
+    expect(offered()).toEqual(['bind:preferences.tag'])
+  })
+
+  it('offers a field that can be empty to a parameter that can be left out', async () => {
+    stateFields()
+    page('pg_shop_catalog').uses!.state = [{ as: 'preferences', state: 'st_preferences' }]
+    await open(edits(), 'pg_shop_catalog')
+    await select('n_products')
+    const offered = [...(byTestId('source-products-arg-category-from') as HTMLSelectElement).options].map(option => option.value).filter(option => option.startsWith('bind:'))
+    expect(offered).toEqual(['bind:preferences.tag', 'bind:preferences.note'])
   })
 
   it('forgets what was asked when the user cancels', async () => {

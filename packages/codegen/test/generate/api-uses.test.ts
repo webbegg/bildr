@@ -131,13 +131,13 @@ describe('a page that uses an API query', () => {
     expect(content).toContain('@click="onButton1Click(item)"')
   })
 
-  it('shows the error line without a loading text too, ahead of the empty text', () => {
+  it('shows the error line without a loading text too, ahead of the empty text, which waits for the answer', () => {
     const p = shop()
     listPage(p, 'plain', PRODUCTS, { empty: 'Nothing here.' })
     const content = pageOf(p, 'plain')
-    expect(content).toContain('<p v-if="productsError" class="text-error">Couldn\'t load this.</p>')
+    expect(content).toContain('<template v-if="productsLoading" />')
+    expect(content).toContain('<p v-else-if="productsError" class="text-error">Couldn\'t load this.</p>')
     expect(content).toContain('<p v-else-if="!(products ?? []).length" class="text-muted">Nothing here.</p>')
-    expect(content).not.toContain('productsLoading')
   })
 
   it('declares only what the template reads, and nothing for an unused use', () => {

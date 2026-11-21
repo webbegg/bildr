@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { bindingPaths } from '@bildr/codegen/edit'
+import { apiParamAcceptsStateField } from '@bildr/codegen/edit'
 import type { Value } from '@bildr/codegen/model'
 import { FIELD, FIELD_RING } from '../editorUi.ts'
 import { isExpression } from '../shared/bindings.ts'
@@ -10,8 +10,9 @@ import { useDesign } from './store.ts'
 
 /**
  * The value a page gives one parameter of an API query (simple data P7b): a value typed (text, a number, true or false), or one the page
- * already has: a route parameter of the same page (text parameters only: the module refuses it for another type) or a field of a State
- * it uses. A value it has shows as a chip with a way back to typing (a required parameter can't be left without one, so it has none).
+ * already has: a route parameter of the same page (not for a true-or-false parameter: the generated page converts it for a number) or a field
+ * of a State it uses that the parameter takes (its type fits, never one that can be null, and for a required parameter never one that can be
+ * empty: what the module accepts, `apiParamAcceptsStateField`). A value it has shows as a chip with a way back to typing (a required parameter can't be left without one, so it has none).
  * It only says what the user chose (`commit`: the value, or null to remove it); the owner writes it (`page_use_update`, or keeps it in a
  * draft until `page_use_add` has what it needs).
  */
@@ -21,8 +22,16 @@ const emit = defineEmits<{ commit: [value: Value | null] }>()
 const design = useDesign()
 const field = `${FIELD} ${FIELD_RING} w-full min-w-0 px-2 text-default`
 
-const routes = computed(() => (props.param.type === 'text' && design.page.value ? routeParams(design.page.value) : []))
-const fields = computed(() => bindingPaths(design.scopeOf().filter(entry => entry.source === 'state'), { leaves: true }))
+const routes = computed(() => (props.param.type !== 'boolean' && design.page.value ? routeParams(design.page.value) : []))
+/** `<alias>.<field>` of each field of a State of the page (one record) the parameter takes. */
+const fields = computed(() => {
+  const page = design.page.value
+  const mod = Object.values(design.model.value?.modules ?? {}).find(entry => entry.pages.some(item => item.id === page?.id))
+  return (page?.uses?.state ?? []).flatMap((use) => {
+    const state = mod?.state.find(entry => entry.id === use.state)
+    return state?.shape === 'many' ? [] : (state?.fields ?? []).filter(field => apiParamAcceptsStateField(props.param, field)).map(field => `${use.as}.${field.name}`)
+  })
+})
 
 /** What the "from" select shows for the value held: `route:<name>`, `bind:<path>`, or empty for a value typed. */
 const from = computed(() => {
@@ -31,6 +40,8 @@ const from = computed(() => {
   if (typeof value.$route === 'string') return `route:${value.$route}`
   return typeof value.$bind === 'string' ? `bind:${value.$bind}` : ''
 })
+/** What the select offers: the fields the parameter takes, and the one it reads now even when it isn't one (the module wrote it, the select shows it). */
+const bindOptions = computed(() => (from.value.startsWith('bind:') && !fields.value.includes(from.value.slice(5)) ? [...fields.value, from.value.slice(5)] : fields.value))
 const bound = computed(() => isExpression(props.value))
 const textOf = (value: Value | undefined) => value === undefined || value === null || isExpression(value) ? '' : String(value)
 
@@ -89,7 +100,7 @@ const commitTyped = (text: string) => {
       />
     </div>
     <select
-      v-if="routes.length || fields.length || bound"
+      v-if="routes.length || bindOptions.length || bound"
       :data-testid="`${testId}-from`"
       :class="field"
       :aria-label="`Where ${param.name} comes from`"
@@ -110,7 +121,7 @@ const commitTyped = (text: string) => {
         The route’s {{ name }}
       </option>
       <option
-        v-for="path in fields"
+        v-for="path in bindOptions"
         :key="`bind:${path}`"
         :value="`bind:${path}`"
       >

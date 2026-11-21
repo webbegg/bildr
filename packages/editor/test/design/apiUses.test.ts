@@ -92,6 +92,20 @@ describe('the page\'s API uses', () => {
     expect(actions.named('page_use_add').at(-1)!.input).toEqual({ page: 'pg_weather', as: 'forecast', api: { datasource: 'ds_weather', query: 'forecast' }, args: { city: { $route: 'city' } } })
   })
 
+  it('takes the route\'s parameter for an integer parameter too, and shows it as what it reads', async () => {
+    page('pg_index').path = '/things/:id'
+    const { actions } = await open(edits(), 'pg_index')
+    await select('n_page')
+    await choose('use-add-source', 'api:ds_catalog:product')
+    expect(byTestId('use-add-arg-id')).toBeNull()
+    await click(byTestId('use-add'))
+    expect(actions.named('page_use_add').at(-1)!.input).toEqual({ page: 'pg_index', as: 'product', api: { datasource: 'ds_catalog', query: 'product' }, args: { id: { $route: 'id' } } })
+    // The use it made reads the route's id: shown as that.
+    expect(text(byTestId('use-arg-product-id'))).toBe('id')
+    const from = byTestId('use-arg-product-id-from') as HTMLSelectElement
+    expect([...from.options].map(option => option.value)).toContain('route:id')
+  })
+
   it('says what the module refuses, and keeps what was chosen', async () => {
     await open({ ...edits(), page_use_add: () => new Failure(422, 'invalid', 'The page already uses the name "products"') }, 'pg_index')
     await select('n_page')

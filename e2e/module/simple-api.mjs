@@ -8,7 +8,7 @@
  * words), the settings are edited and saved, and after a reload everything is still there. Every step is checked in `.bildr/datasources/`.
  * The only JSON typed is the sample body an action is tried with: no model file is edited by hand, and no JSON tab is opened.
  * Every step that writes the API waits for the app to rebuild before the next live call, nothing is read straight after a fill (it waits for
- * what it expects), and the stub's API file is removed in the `finally`, so a failed run can't leave it for the next one.
+ * what it expects), and the page that uses the API (page_delete, when it is still there) and the stub's API file are removed in the `finally`, so a failed run can't leave them for the next one.
  *
  * Use in a page (simple data P7b, SD-A): from the Design view a List's Items offers the query as "stub-shop · listPosts" (only one that
  * answers many rows), picking it adds the page's use and binds the List, and a Text inside it binds `post.title` from the braces menu. The canvas
@@ -55,6 +55,13 @@ const removeStubApi = async () => {
   if (!answer?.ok) rmSync(join(app.root, '.bildr', FILE), { force: true })
 }
 
+/** The page that uses the API, when the run made it and it is still there: the module's own delete, else the file itself. */
+const removeShopPage = async (shop) => {
+  if (!shop || bildr(shop.filePath) === undefined) return
+  const answer = await call('page_delete', { page: shop.pageId }).catch(() => undefined)
+  if (!answer?.ok) rmSync(join(app.root, shop.filePath.startsWith('.bildr/') ? shop.filePath : `.bildr/${shop.filePath}`), { force: true })
+}
+
 /** JSON with the keys in order, so two values that say the same compare equal whatever order the file wrote them in. */
 const canon = value => JSON.stringify(value, (_key, item) => item && typeof item === 'object' && !Array.isArray(item) ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : 1)) : item)
 
@@ -66,6 +73,8 @@ const pick = async (page, hook, label) => {
 
 await run('simple-api', async ({ page, browser }) => {
   const stub = await stubRest({ count: 5 })
+  // The page that uses the API, once it is made: the `finally` takes it off first, or its use would outlive the API it names.
+  let shop
   try {
     await openSimpleData(page)
 
@@ -242,7 +251,7 @@ await run('simple-api', async ({ page, browser }) => {
     await shot(page, 'simple-api-after-reload')
 
     // Use the query on a page from the Design view: a List of its own, and a Text in it.
-    const shop = await newPage('shop')
+    shop = await newPage('shop')
     const listId = (await editApp('node_insert', { file: shop.pageId, parentId: shop.nodeId, type: 'List', props: {} })).nodeId
     const textId = (await editApp('node_insert', { file: shop.pageId, parentId: listId, type: 'Text', props: { text: 'Title: ' } })).nodeId
     const shopFile = () => bildr(shop.filePath)
@@ -323,7 +332,9 @@ await run('simple-api', async ({ page, browser }) => {
     check(await until(async () => await page.locator(`[data-simple-api="${ID}"]`).count() === 0), 'and its row')
     await calm()
   } finally {
-    // A run that failed half way leaves the API: its file would break the next run (the name is taken), so it goes with the stub.
+    // A run that failed half way leaves the API (its file would break the next run: the name is taken) and the page that uses it (its use
+    // would name an API that is gone, and the model would no longer load): the page goes first, then the API, then the stub.
+    await removeShopPage(shop)
     await removeStubApi()
     await stub.close()
   }

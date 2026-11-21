@@ -65,11 +65,11 @@ describe('uses.apis', () => {
     expect(names('useCatalogProducts')).toEqual([`${IDX}: uses.apis: The page's script would declare "useCatalogProducts" twice: as "useCatalogProducts" and as the name the query products of the API catalog generates`])
   })
 
-  // A1 (verify): the arguments follow the rules of the edits: a value of the parameter's type, a route parameter only for text, no null for a required one.
+  // A1 (verify): the arguments follow the rules of the edits: a value of the parameter's type, a route parameter for text and numbers (not true or false), no null for a required one.
   it('refuses args the generated call would not compile', () => {
     const one = (args: Use) => problems(withApis([{ as: 'one', datasource: 'ds_catalog', query: 'product', args }]))
     expect(one({ id: 'abc' })).toEqual([`${IDX}: uses.apis.0.args: The query "product" of the API "catalog" takes "id" as integer, but the page passes "abc"`])
-    expect(one({ id: { $route: 'slug' } })).toEqual([`${IDX}: uses.apis.0.args: The query "product" of the API "catalog" takes "id" as integer, but the page passes {"$route":"slug"}`])
+    expect(one({ id: { $route: 'slug' } })).toEqual([])
     expect(one({ id: null })).toEqual([`${IDX}: uses.apis.0.args: The query "product" of the API "catalog" needs "id"`])
     expect(one({ id: 3 })).toEqual([])
     // What a value reads: its own answer, another answer, a name the page doesn't have.

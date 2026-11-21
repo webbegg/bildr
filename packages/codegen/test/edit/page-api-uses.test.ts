@@ -62,7 +62,7 @@ describe('page_use_add with an API query', () => {
     expect(refuse({ api: { datasource: SHOP, query: 'products' } })).toBe('The query "products" of the API "shop" needs "page"')
     expect(refuse({ api: { datasource: SHOP, query: 'products' }, args: { page: 1, nope: 2 } })).toBe('The query "products" of the API "shop" has no parameter "nope" (category, page)')
     expect(refuse({ api: { datasource: SHOP, query: 'products' }, args: { page: 'one' } })).toBe('The query "products" of the API "shop" takes "page" as integer, but the page passes "one"')
-    expect(refuse({ api: { datasource: SHOP, query: 'product' }, args: { id: { $route: 'slug' } } })).toMatch(/takes "id" as integer, but the page passes/)
+    expect(refuse({ api: { datasource: SHOP, query: 'product' }, args: { id: { not: true } } })).toMatch(/takes "id" as integer, but the page passes/)
     expect(refuse({ api: { datasource: SHOP, query: 'notes' }, query: 'q_all_posts' })).toBe('Give one query, action, state or API query to use')
     expect(refuse({ api: { datasource: SHOP, query: 'notes' }, state: 'st_preferences' })).toBe('Give one query, action, state or API query to use')
     expect(refuse({ api: { datasource: SHOP, query: 'notes' }, as: 'site' })).toMatch(/"site" is a name the page's script uses itself/)
@@ -80,7 +80,7 @@ describe('page_use_add with an API query', () => {
     expect(p.refuse('page_use_add', { page: 'pg_index', as: 'featured', api: { datasource: SHOP, query: 'notes' } }, 'invalid').message).toBe('The page already uses the name "featured"')
   })
 
-  it('accepts a route parameter for a text parameter, never for a number', () => {
+  it('accepts a route parameter for a text parameter (a number one is converted: see page-api-uses-review)', () => {
     const p = shop()
     p.edit('page_use_add', { page: 'pg_post_detail', as: 'cat', api: { datasource: SHOP, query: 'products' }, args: { page: 1, category: { $route: 'slug' } } })
     expect(p.json('.bildr/modules/blog/pages/post-detail.json').uses.apis[0].args).toEqual({ page: 1, category: { $route: 'slug' } })
@@ -134,14 +134,13 @@ describe('bindingScope over API uses', () => {
     expect(bindingPaths(scope)).toContain('first.address.city')
   })
 
-  it('has the item only inside its List, and no fields when the List repeats something that is not a list answer', () => {
+  it('has the item only inside its List', () => {
     const p = listed()
     expect(bindingScope(p.model(), 'pg_index', 'n_h1').some(entry => entry.name === 'product')).toBe(false)
     const one = shop()
     one.edit('page_use_add', { page: 'pg_index', as: 'first', api: { datasource: SHOP, query: 'product' }, args: { id: 1 } })
-    listOver(one, 'first', 'row')
-    const scope = bindingScope(one.model(), 'pg_index', 'n_quote')
-    expect(scope.find(entry => entry.name === 'row')).toMatchObject({ source: 'item', fields: [] })
+    // A List can't repeat over one record (the module refuses it, see page-api-uses-review): it has no item named after it.
+    expect(bindingScope(one.model(), 'pg_index', 'n_quote').some(entry => entry.name === 'row')).toBe(false)
   })
 })
 

@@ -531,22 +531,13 @@ export interface ApiRead {
   node?: string
 }
 
-/** A List whose items are the answer of an API query. */
-export interface ApiList {
-  page: PageFile
-  use: ApiUse
-  as: string
-  node: string
-  /** The query answers a list: the only thing a List can repeat over. */
-  many: boolean
-}
-
 /**
- * Every binding and List of the model's pages that reads the answer of an API query use (`match`: which uses; all by default),
- * the way the generator resolves the names: the alias of a use, and the item name of a List over a list answer.
+ * Every binding of the model's pages that reads the answer of an API query use (`match`: which uses; all by default), the way the
+ * generator resolves the names: the alias of a use, and the item name of a List over a list answer. (That a List repeats only over a
+ * list answer is `apiItemsProblem`'s: an edit refuses it when it is written, and a query's one/many can't change under a use.)
  */
-export const apiReadsOf = (model: Model, match: (use: ApiUse) => boolean = () => true): { reads: ApiRead[], lists: ApiList[] } => {
-  const found: { reads: ApiRead[], lists: ApiList[] } = { reads: [], lists: [] }
+export const apiReadsOf = (model: Model, match: (use: ApiUse) => boolean = () => true): { reads: ApiRead[] } => {
+  const found: { reads: ApiRead[] } = { reads: [] }
   for (const tree of treesOf(model)) {
     if (tree.kind !== 'page') continue
     const page = tree.owner as PageFile
@@ -565,11 +556,7 @@ export const apiReadsOf = (model: Model, match: (use: ApiUse) => boolean = () =>
     mapPaths(page.uses?.computed, read(env, 'computed'))
     mapPaths(page.uses?.apis?.map(use => use.args), read(env, 'apis'))
     mapPaths(page.seo, read(env, 'seo'))
-    walkEnv(page.root, env, (node, scope) => {
-      mapNodePaths(node, read(scope, node.id, node.id))
-      const list = listOf(node, scope)
-      if (list?.source?.api) found.lists.push({ page, use: list.source.api, as: list.as, node: node.id, many: list.source.many })
-    })
+    walkEnv(page.root, env, (node, scope) => mapNodePaths(node, read(scope, node.id, node.id)))
   }
   return found
 }

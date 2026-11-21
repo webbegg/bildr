@@ -221,6 +221,12 @@ const errorsOf = (env: Env, value: Value | undefined) => {
 /** What a List or a guarded Page shows when an API query failed. */
 const API_ERROR_TEXT = 'Couldn\'t load this.'
 
+/** A row is keyed by its `id` only when the model has one that is always there: a required, non-null, single text or number. Any other `id` leaves the position. */
+const keyedById = (model: { fields: Array<{ name: string, type: string, optional?: boolean, nullable?: boolean, list?: boolean }> } | undefined): boolean => {
+  const id = model?.fields.find(field => field.name === 'id')
+  return !!id && !id.optional && !id.nullable && !id.list && ['text', 'integer', 'number'].includes(id.type)
+}
+
 /**
  * An API query's answer (`uses.apis`): `data` of the composable, which is undefined until it answers. A list reads as empty then
  * (`(<as> ?? [])`), a one result with `?.`; its loading flag is `<as>Loading` and its error `<as>Error`.
@@ -632,11 +638,17 @@ const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
   const props = node.props ?? {}
   const as = typeof props.as === 'string' ? identifier(props.as, where(env, node)) : fail(env, node, 'a List needs `as`, the item name')
   const items = expression(env, node, props.items, 'template')
-  const loading = typeof props.loading === 'string' ? loadingOf(env, props.items) : []
   const errors = errorsOf(env, props.items)
+  // An API list with an empty text but no loading text still holds its place while the query is pending: the empty text is for an answer that came back empty.
+  const waits = typeof props.loading === 'string' || (errors.length > 0 && typeof props.empty === 'string')
+  const loading = waits ? loadingOf(env, props.items) : []
   const lines: string[] = []
   const condition = () => lines.length ? 'v-else-if' : 'v-if'
-  if (loading.length) lines.push(...element('p', [attr('if', `v-if="${loading.join(' || ')}"`), staticAttr('class', 'text-muted')], escapeText(props.loading as string), indent))
+  if (loading.length) {
+    lines.push(...typeof props.loading === 'string'
+      ? element('p', [attr('if', `v-if="${loading.join(' || ')}"`), staticAttr('class', 'text-muted')], escapeText(props.loading), indent)
+      : element('template', [attr('if', `v-if="${loading.join(' || ')}"`)], undefined, indent))
+  }
   if (errors.length) lines.push(...element('p', [attr('if', `${condition()}="${errors.join(' || ')}"`), staticAttr('class', 'text-error')], API_ERROR_TEXT, indent))
   if (typeof props.empty === 'string') lines.push(...element('p', [attr('if', `${condition()}="!${escapeAttr(items)}.length"`), staticAttr('class', 'text-muted')], escapeText(props.empty), indent))
   // An API list always has its error line, so the wrapper follows it; with `hideWhenEmpty` and no empty message it still hides when empty.
@@ -1111,7 +1123,7 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
   })
   for (const { as, source, query } of apis) {
     const rows = apiRowsOf(source, query)
-    env.roots.set(as, apiRoot(env, as, rows.many, !!rows.models.find(model => model.name === rows.model)?.fields.some(field => field.name === 'id')))
+    env.roots.set(as, apiRoot(env, as, rows.many, keyedById(rows.models.find(model => model.name === rows.model))))
   }
   const actions = (uses.actions ?? []).map(entry => ({ ...entry, file: actionById(env, undefined, entry.action) }))
   for (const { as, action } of actions) {
@@ -1178,8 +1190,12 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
   const writeCalls = () => {
     for (const { as, query, source, args } of [...apis].reverse()) {
       if (calls.has(as) || !env.used.has(`api:${as}`)) continue
-      const given = query.params.flatMap(param => args?.[param.name] === undefined ? [] : [{ name: param.name, value: args[param.name]! }])
-      const object = given.map(({ name, value }) => `${name}: ${expression(env, undefined, value, 'script')}`).join(', ')
+      const given = query.params.flatMap(param => args?.[param.name] === undefined ? [] : [{ name: param.name, value: args[param.name]!, type: param.type }])
+      // A route value is text: a number parameter gets it converted (one that isn't a number is NaN, which the use-case refuses: the page shows the error line).
+      const object = given.map(({ name, value, type }) => {
+        const code = expression(env, undefined, value, 'script')
+        return `${name}: ${isObject(value) && typeof value.$route === 'string' && (type === 'integer' || type === 'number') ? `Number(${code})` : code}`
+      }).join(', ')
       // A literal stays constant; anything the page computes is read again when it changes.
       calls.set(as, `${apiComposableName(source.name, query.name)}(${!given.length ? '' : given.some(({ value }) => isObject(value)) ? `() => ({ ${object} })` : `{ ${object} }`})`)
     }

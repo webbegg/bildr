@@ -2,7 +2,7 @@ import type { Model, ModuleModel } from '../model/load.ts'
 import type { ApiQuery, DataSourceFile, PageFile, StateFile, Value } from '../model/schemas.ts'
 import { pascal } from '../generate/text.ts'
 import { loadMoreSize } from '../render/rules.ts'
-import { apiParamRequired } from './api-uses.ts'
+import { apiParamRequired, apiQueryOf } from './api-uses.ts'
 import { mapPaths, rootOf } from './bindings.ts'
 import { apiComposableName, composableOf, stateComposableOf } from './composable-names.ts'
 import { autoImportedNameProblem } from './reserved-names.ts'
@@ -152,7 +152,8 @@ export interface ApiArgsOptions {
 
 /**
  * Why `args` can't be the arguments of `query` (of the API source `source`) on a page, or undefined when the generated call compiles:
- * only the query's own parameters, each literal of the parameter's type, a route parameter only for text, every required one present
+ * only the query's own parameters, each literal of the parameter's type, a route parameter for text, integer or number (a route
+ * value is text: the generated call converts it to a number, and one that isn't a number is refused by the use-case), every required one present
  * (`complete`) and, with `page`, each value it reads one the page has and the generated TypeScript accepts. A value bound to a state field
  * has the field's type, which is undefined when the field has neither a default nor a requirement and null when it is nullable: a
  * `fallback` covers both. The answer of an API query is undefined until it loads, and a use reading another (or itself) could loop:
@@ -174,7 +175,7 @@ export const apiArgsProblem = (source: DataSourceFile, query: ApiQuery, args: Re
       if (!literalFits(param.type, value)) return wrong(`the page passes ${JSON.stringify(value)}`)
       continue
     }
-    if ('$route' in value && param.type !== 'text') return wrong(`the page passes ${JSON.stringify(value)}`)
+    if ('$route' in value && param.type === 'boolean') return wrong(`the page passes ${JSON.stringify(value)}`)
     if (typeof value.$template === 'string' && param.type !== 'text') return wrong(`the page passes text built from ${JSON.stringify(value.$template)}`)
     if ('not' in value && param.type !== 'boolean') return wrong('the page passes a true-or-false value')
     if (!options.page) continue
@@ -219,7 +220,35 @@ const boundProblem = (page: PageFile, states: StateFile[], as: string | undefine
   if (!kindFits(param.type, KIND_OF_FIELD[field.type])) return `${label} takes "${param.name}" as ${param.type}, but "${path}" is ${field.type}`
   if (fallback !== undefined && fallback !== null) return undefined
   if (field.nullable) return `${label}: "${param.name}" reads "${path}", which can be null: give it a fallback ({ "$bind": "${path}", "fallback": … })`
-  const empty = field.default === undefined && !field.required
-  if (empty && apiParamRequired(param)) return `${label}: "${param.name}" is required but "${path}" can be empty: give the state field a default, or the value a fallback ({ "$bind": "${path}", "fallback": … })`
+  if (stateFieldEmpty(field) && apiParamRequired(param)) return `${label}: "${param.name}" is required but "${path}" can be empty: give the state field a default, or the value a fallback ({ "$bind": "${path}", "fallback": … })`
+  return undefined
+}
+
+/** A state field that is undefined until something sets it: no default, and not required (a required one has its default). */
+const stateFieldEmpty = (field: StateFile['fields'][number]): boolean => field.default === undefined && !field.required
+
+/**
+ * Whether a state field can fill `param` as a plain `{ "$bind": "<state>.<field>" }`, with no fallback: its type fits the parameter, it
+ * is never null, and it is never undefined for a required parameter. What `apiArgsProblem` accepts for such a value, so the editor
+ * offers only fields the module takes.
+ */
+export const apiParamAcceptsStateField = (param: ApiQuery['params'][number], field: StateFile['fields'][number]): boolean =>
+  kindFits(param.type, KIND_OF_FIELD[field.type]) && !field.nullable && !(stateFieldEmpty(field) && apiParamRequired(param))
+
+// ── What a List repeats over ─────────────────────────────────────────────
+
+/**
+ * Why a List can't repeat over `items` (its `items` value) on `page`, or undefined: it repeats only over the whole answer of an API
+ * query that answers a list. One record (`first`) and a field of an answer (`first.tags`, `products.tags`) are refused; what is not an
+ * API answer is the generator's and the scope's to judge.
+ */
+export const apiItemsProblem = (model: Model, page: PageFile, items: Value | undefined): string | undefined => {
+  if (!isObject(items) || typeof items.$bind !== 'string') return undefined
+  const [root, ...members] = items.$bind.split('.')
+  const use = page.uses?.apis?.find(entry => entry.as === root)
+  if (!use) return undefined
+  if (members.length) return `"${items.$bind}" is a field of an API answer: a List repeats over the whole answer of a query that answers a list`
+  const found = apiQueryOf(model.datasources, use)
+  if (found && !found.query.result.many) return `"${root}" is one record, not a list: the query "${found.query.name}" of the API "${found.source.name}" answers one. A List repeats over a query that answers a list`
   return undefined
 }

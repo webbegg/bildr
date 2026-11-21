@@ -43,9 +43,13 @@ describe('apiAutoArgs', () => {
     expect(apiAutoArgs(page('index'), choice.params)).toEqual({})
   })
 
-  it('gives a route parameter only to a text parameter (the module refuses it for another type)', () => {
+  it('gives a route parameter to a text, integer or number parameter, never a true-or-false one (the module refuses that)', () => {
     const choice = apiChoiceOf(model, 'api:ds_catalog:product')!
-    expect(apiAutoArgs({ ...page('index'), path: '/things/:id' }, choice.params)).toEqual({})
+    expect(apiAutoArgs({ ...page('index'), path: '/things/:id' }, choice.params)).toEqual({ id: { $route: 'id' } })
+    const params = [
+      { name: 'id', in: 'path', type: 'integer' }, { name: 'ratio', in: 'query', type: 'number' }, { name: 'flag', in: 'query', type: 'boolean' }
+    ] as typeof choice.params
+    expect(apiAutoArgs({ ...page('index'), path: '/things/:id/:ratio/:flag' }, params)).toEqual({ id: { $route: 'id' }, ratio: { $route: 'ratio' } })
   })
 })
 
