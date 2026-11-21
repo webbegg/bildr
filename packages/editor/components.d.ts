@@ -155,6 +155,7 @@ declare module 'vue' {
     RawFileEditor: typeof import('./src/components/RawFileEditor.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SimpleApiAnswer: typeof import('./src/components/simple-data/SimpleApiAnswer.vue')['default']
     SimpleApiCreate: typeof import('./src/components/simple-data/SimpleApiCreate.vue')['default']
     SimpleApiItemDialog: typeof import('./src/components/simple-data/SimpleApiItemDialog.vue')['default']
     SimpleApiList: typeof import('./src/components/simple-data/SimpleApiList.vue')['default']

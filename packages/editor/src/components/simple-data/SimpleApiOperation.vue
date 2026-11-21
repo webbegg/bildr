@@ -109,6 +109,10 @@ const useResult = (result: { model: string, many: boolean, itemsPath: string }, 
   draft.value.result = { ...result }
   if (count) added.value = true
 }
+/** A list clicked in Try it's answer: the operation answers a list, and that is where it is. */
+const usePickedList = (itemsPath: string) => {
+  if (draft.value.result) draft.value.result = { ...draft.value.result, many: true, itemsPath }
+}
 
 // ── A body from a sample ─────────────────────────────────────────────────
 
@@ -533,6 +537,7 @@ const methodHint = computed(() => METHODS.find(entry => entry.value === draft.va
               :draft="draft"
               :body-hint="sampleBody"
               @use="useResult"
+              @pick="usePickedList"
             />
           </div>
         </div>
