@@ -24,10 +24,17 @@ const NODE_PACKAGES = ['codegen', 'nuxt', 'create-bildr'] as const
 const PUBLISHED = [...NODE_PACKAGES, 'editor'] as const
 
 describe('publishable packages', () => {
+  // `pnpm release` writes the new version before it runs the tests, so they read it, not pin it.
+  it('all share one x.y.z version', () => {
+    const versions = new Set([...PUBLISHED, 'editor-core'].map(dir => read(`packages/${dir}/package.json`).version))
+    expect(versions.size).toBe(1)
+    expect([...versions][0]).toMatch(/^\d+\.\d+\.\d+$/)
+  })
+
   it.each(PUBLISHED)('%s has the npm metadata and ships only dist', (dir) => {
     const pkg = read(`packages/${dir}/package.json`)
     expect(pkg.private).toBeUndefined()
-    expect(pkg.version).toBe('0.1.0')
+    expect(pkg.version).toBe(read('packages/nuxt/package.json').version)
     expect(pkg.license).toBe('MIT')
     expect(pkg.description).toBeTruthy()
     expect(pkg.repository).toEqual({ type: 'git', url: 'git+https://github.com/webbegg/bildr.git', directory: `packages/${dir}` })

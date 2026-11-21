@@ -72,9 +72,9 @@ describe('createProject', () => {
 
   it('depends on the published @bildr/nuxt of the same version when it runs from the built package', () => {
     const own = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }
-    expect(own.version).toBe('0.1.0')
+    expect(own.version).toMatch(/^\d+\.\d+\.\d+$/)
     // dist/create.js is where the published bin's module lives; package.json is one level up from it, as from src/.
-    expect(defaultBildrNuxt(new URL('../dist/create.js', import.meta.url).href)).toBe('^0.1.0')
+    expect(defaultBildrNuxt(new URL('../dist/create.js', import.meta.url).href)).toBe(`^${own.version}`)
     // From this checkout's sources: the local package, so tests and e2e install it unpublished.
     expect(defaultBildrNuxt(new URL('../src/create.ts', import.meta.url).href)).toBe(`link:${fileURLToPath(new URL('../../nuxt', import.meta.url)).replace(/\/$/, '')}`)
   })
