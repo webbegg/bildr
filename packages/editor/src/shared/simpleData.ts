@@ -20,6 +20,8 @@ const PLAIN: Array<[RegExp, string | ((...found: string[]) => string)]> = [
   [/, which the app also names use[A-Za-z0-9]+/g, ''],
   [/`?([^`\s]+)`? would generate use[A-Za-z0-9]+, which [^:]+:/g, (_all, name) => `“${name}” is already used by the app:`],
   [/, like "[a-z]+[A-Z][A-Za-z0-9]*"/g, ''],
+  // A page's use of a query names the node that reads it by its id: the user knows it as the thing on the page.
+  [/: n_[A-Za-z0-9_]+ binds /g, ': something on it reads '],
   // The things the section has no word for: it calls them what the user sees.
   [/already taken by the collection ([^:]+):/g, (_all, name) => `already taken by the data “${name}”:`],
   [/\bStates\b/g, 'Stores'],

@@ -28,7 +28,8 @@ describe('a List\'s source', () => {
     const { actions } = await open(behaviourModule(), 'pg_index')
     await select('n_list')
     // `posts` is a condition (B4): it is the "Depends on a condition" entry, not a name.
-    expect(options('list-items')).toEqual(['featured', 'all', 'quotes', 'cond', 'new:ent_post', 'new:ent_quote'])
+    // After them, each API query that answers many rows (simple data P7b).
+    expect(options('list-items')).toEqual(['featured', 'all', 'quotes', 'cond', 'new:ent_post', 'new:ent_quote', 'api:ds_catalog:products'])
     expect((byTestId('list-items') as HTMLSelectElement).value).toBe('cond')
 
     await choose('list-items', 'all')

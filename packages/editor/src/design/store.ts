@@ -14,6 +14,7 @@ import type { CanvasFile } from '../canvas/render.ts'
 import type { CanvasMode } from '../canvas/protocol.ts'
 import type { ModelProblem } from '../types.ts'
 import type { Row } from '@bildr/codegen/query'
+import { apiUseRows } from '../shared/apiPageUse.ts'
 import { designData, detailField, routeParams } from './data.ts'
 import { createLiveRows } from './liveRows.ts'
 import { applySetState, previewIsEmpty, prunePreviewState } from './previewState.ts'
@@ -153,6 +154,8 @@ export const createDesign = () => {
     return [...new Set((page.value?.uses?.queries ?? []).flatMap(use => queries.find(query => query.id === use.query)?.from ?? []))]
   })
   const rowsOf = createLiveRows(model, neededEntities)
+  /** The page reads an API query: the canvas shows a sample of its rows (`designData`), never the API's own. */
+  const apiSampled = computed(() => (page.value?.uses?.apis ?? []).some(use => !!apiUseRows(model.value, use)))
   /** The record picked on a detail page (its key value), until another is picked. */
   const recordKey = ref<string | null>(null)
   /** A detail page: the entity its record comes from and the field (and route parameter) that picks it. */
@@ -612,7 +615,7 @@ export const createDesign = () => {
   }
 
   return {
-    page, rowsOf, detail, records, record, pickRecord, result, loading, error, errorCode, errorField, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
+    page, rowsOf, apiSampled, detail, records, record, pickRecord, result, loading, error, errorCode, errorField, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
     selectedIds, selectedId, selected, selectedParent, hoveredId, dragging, dragCancels, device, devices, deviceChoice, mode, history, clipboard,
     component, variantId, variant, inspected, breadcrumbs, nameOf, dark, selectVariant, override, commitStyle,
     isContainer, scopeOf, pendingInsert, confirmInsert, pendingForm, confirmForm, formActions, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,

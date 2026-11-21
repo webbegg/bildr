@@ -9,11 +9,16 @@
  * The only JSON typed is the sample body an action is tried with: no model file is edited by hand, and no JSON tab is opened.
  * Every step that writes the API waits for the app to rebuild before the next live call, nothing is read straight after a fill (it waits for
  * what it expects), and the stub's API file is removed in the `finally`, so a failed run can't leave it for the next one.
+ *
+ * Use in a page (simple data P7b, SD-A): from the Design view a List's Items offers the query as "stub-shop · listPosts" (only one that
+ * answers many rows), picking it adds the page's use and binds the List, and a Text inside it binds `post.title` from the braces menu. The canvas
+ * shows three sample rows built from the model's fields, says "Sample data" and makes no call to the API; the generated app renders the
+ * stub's five posts. In the Data section the query's row says which page uses it, and its Delete says so and is refused, naming the page.
  * Shots go to e2e/module/.shots/.
  */
 import { rmSync } from 'node:fs'
 import { join } from 'node:path'
-import { app, bildr, call, check, openSimpleData, quiet, run, settled, shot, stubRest, until } from './lib.mjs'
+import { action as editApp, app, appShows, bildr, call, canvas, check, editorUrl, newPage, openEditor, openSimpleData, quiet, run, settled, shot, stubRest, until } from './lib.mjs'
 
 const FILE = 'datasources/stub-shop.json'
 const ID = 'ds_stub_shop'
@@ -59,7 +64,7 @@ const pick = async (page, hook, label) => {
   await page.getByRole('option', { name: label }).first().click()
 }
 
-await run('simple-api', async ({ page }) => {
+await run('simple-api', async ({ page, browser }) => {
   const stub = await stubRest({ count: 5 })
   try {
     await openSimpleData(page)
@@ -235,6 +240,80 @@ await run('simple-api', async ({ page }) => {
     check(await lists('queries') === 'query:listPosts,query:postById' && await lists('actions') === 'action:addPost' && await lists('models') === 'model:Post,model:NewPost', `after a reload the API shows its queries, its action and its models (${await lists('queries')} ${await lists('actions')} ${await lists('models')})`)
     check(await until(async () => (await holdsNow(page, '[data-api-baseurl]')) === stub.url), 'and its base URL')
     await shot(page, 'simple-api-after-reload')
+
+    // Use the query on a page from the Design view: a List of its own, and a Text in it.
+    const shop = await newPage('shop')
+    const listId = (await editApp('node_insert', { file: shop.pageId, parentId: shop.nodeId, type: 'List', props: {} })).nodeId
+    const textId = (await editApp('node_insert', { file: shop.pageId, parentId: listId, type: 'Text', props: { text: 'Title: ' } })).nodeId
+    const shopFile = () => bildr(shop.filePath)
+    await calm()
+    const apiCalls = () => stub.calls.filter(entry => entry.method === 'GET' && entry.path === '/posts').length
+    const callsBefore = apiCalls()
+    await openEditor(page, shop.pageId)
+    await page.getByRole('tab', { name: 'Layers' }).click()
+    await page.locator(`[data-layer-id="${listId}"]`).first().click()
+    const items = page.locator('[data-testid="list-items"]')
+    await items.waitFor()
+    const offered = (await items.locator('option').allInnerTexts()).map(label => label.trim())
+    check(offered.includes('stub-shop · listPosts') && !offered.some(label => label.includes('postById')), `the Items list offers the query that answers many rows as "stub-shop · listPosts", and not the one that answers one (${offered.join(' | ')})`)
+    await items.selectOption(`api:${ID}:listPosts`)
+    const bound = await until(() => shopFile().uses?.apis?.length && shopFile())
+    check(JSON.stringify(bound?.uses.apis) === JSON.stringify([{ as: 'listPosts', datasource: ID, query: 'listPosts' }]), `picking it adds the page's use of the query (${JSON.stringify(bound?.uses?.apis)})`)
+    const boundList = await until(() => shopFile().root.children?.find(node => node.id === listId)?.props?.items && shopFile().root.children.find(node => node.id === listId))
+    check(JSON.stringify(boundList?.props.items) === JSON.stringify({ $bind: 'listPosts' }) && boundList.props.as === 'post', `and binds the List's items and item name (${JSON.stringify(boundList?.props)})`)
+    check(await until(async () => await items.inputValue() === 'listPosts'), 'the select then shows the List\'s source')
+    check(await page.locator('[data-testid="api-source"]').count() === 1 && await page.locator('[data-testid="source-listPosts-sort-field"], [data-testid="source-listPosts-limit"]').count() === 0, 'the source says which query it is and has no sort, filter or limit')
+    const sourceWords = await page.locator('[data-testid="list-source"]').innerText()
+    check(!JARGON.test(sourceWords) && !/\buse[A-Z][A-Za-z0-9]+/.test(sourceWords), `the List's source is in plain words (${sourceWords.replace(/\s+/g, ' ')})`)
+    await page.locator(`[data-layer-id="${textId}"]`).first().click()
+    const textField = page.locator('[data-prop-row="text"] input, [data-prop-row="text"] textarea').first()
+    await textField.click()
+    await textField.press('End')
+    await page.locator('[data-prop-row="text"] [data-variable-picker]').click()
+    const picked = page.getByRole('menuitem', { name: /post\.title/ })
+    check(await picked.count() > 0 && await page.getByRole('menuitem', { name: /post\.body/ }).count() > 0, 'the braces menu offers the fields of the query\'s model: post.title, post.body')
+    await picked.first().click()
+    const templated = await until(() => JSON.stringify(shopFile().root.children?.find(node => node.id === listId)?.children?.[0]?.props?.text) === JSON.stringify({ $template: 'Title: {post.title}' }))
+    check(templated, 'and binds the Text to post.title')
+
+    // The canvas shows sample rows from the model's fields, says so, and asks the API for nothing.
+    const rowsOnCanvas = async () => (await canvas(page).locator('[data-node-type="Text"]').allInnerTexts()).filter(text => text.includes('Title: title')).length
+    check(await until(async () => await rowsOnCanvas() >= 3, 30_000), `the canvas shows three sample rows (${await rowsOnCanvas()})`)
+    const badge = page.locator('[data-testid="data-badge"]')
+    check(await until(async () => (await badge.innerText().catch(() => '')).trim() === 'Sample data'), `the data badge says Sample data (${await badge.innerText().catch(() => '')})`)
+    check((await badge.getAttribute('title'))?.includes('a sample built from the fields of its model') === true, 'and says why')
+    await shot(page, 'simple-api-canvas-sample')
+    check(apiCalls() === callsBefore, 'the canvas made no call to the API')
+
+    // The generated app renders the API's rows.
+    const rendered = await appShows(browser, shop.path, 'Title: Post 5', 180_000)
+    check(rendered.html.includes('Title: Post 1') && rendered.html.includes('Title: Post 5') && !rendered.html.includes('Title: Post 6'), 'the generated page renders the stub\'s five posts')
+    check(apiCalls() > callsBefore, 'which the app\'s server read from the stub')
+
+    // Used in: the query's row names the page, the Delete says so and is refused, naming it.
+    await page.goto(editorUrl(`/data?item=api:${ID}`))
+    await page.locator(`[data-simple-api-panel="${ID}"]`).waitFor()
+    const used = page.locator('[data-api-item="query:listPosts"] [data-api-used]')
+    await used.waitFor()
+    check((await used.innerText()).trim() === `Used in ${shop.name}`, `the query's row says which page uses it (${await used.innerText()})`)
+    check(await page.locator('[data-api-item="query:postById"] [data-api-used]').count() === 0, 'and a query no page uses says nothing')
+    await shot(page, 'simple-api-used-in')
+    await page.locator('[data-api-item="query:listPosts"] [data-api-delete]').click()
+    await page.locator('[data-artifact-dialog="delete"]').waitFor()
+    check((await page.locator('[data-api-item-delete-used]').innerText()).includes(`Used in ${shop.name}`), 'its Delete says which page uses it')
+    await page.locator('[data-artifact-submit]').click()
+    await page.locator('[data-artifact-error]').waitFor()
+    const kept = await page.locator('[data-artifact-error]').innerText()
+    check(kept.includes('still used') && kept.includes(`page "${shop.name}"`) && !/pg_/.test(kept), `and the module refuses it, naming the page (${kept})`)
+    check(bildr(FILE).queries.some(entry => entry.name === 'listPosts'), 'the query is still there')
+    await plain(page, 'a refused delete of a query a page uses')
+    await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+    // The page goes, and with it the use that kept the query.
+    await editApp('page_delete', { page: shop.pageId })
+    await calm()
+    await page.reload()
+    await page.locator('[data-api-item="query:listPosts"]').waitFor({ timeout: 30_000 })
+    check(await page.locator('[data-api-item="query:listPosts"] [data-api-used]').count() === 0, 'once the page is gone the row says nothing again')
 
     // Delete the API: after asking.
     await page.locator('[data-simple-api-delete]').click()

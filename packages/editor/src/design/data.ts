@@ -2,6 +2,7 @@ import type { Model as ProjectModel, PageFile, QueryFile, Value } from '@bildr/c
 import { evaluateQuery } from '@bildr/codegen/query'
 import type { Row } from '@bildr/codegen/query'
 import { evaluate, MISSING } from '../canvas/render.ts'
+import { apiSample, apiUseRows } from '../shared/apiPageUse.ts'
 import { stateById } from '../shared/stateModel.ts'
 import type { StatePreview } from './previewState.ts'
 
@@ -15,7 +16,8 @@ import type { StatePreview } from './previewState.ts'
  * row is its defaults with the values set in the preview over them (`state`, by
  * state id: B5), so a computed value follows what the preview set. `site` is
  * the project and `$route` the route parameters of the record picked on a
- * detail page. Anything else stays missing and renders as a placeholder.
+ * detail page. An API query's use (`uses.apis`, simple data P7b) shows a sample made of its model's fields (`apiSample`): the canvas
+ * makes no call to the API. Anything else stays missing and renders as a placeholder.
  */
 
 export interface DataInput {
@@ -76,6 +78,10 @@ export function designData(model: ProjectModel, page: PageFile | undefined, inpu
     const rows = input.rows?.[query.from] ?? fixtures.find(entry => entry.entity === query.from)?.rows ?? []
     const args = Object.fromEntries(Object.entries(use.args ?? {}).map(([name, value]) => [name, argument(value, data, route)]))
     data[use.as] = evaluateQuery(query, rows, args).value
+  }
+  for (const use of page.uses.apis ?? []) {
+    const rows = apiUseRows(model, use)
+    if (rows) data[use.as] = apiSample(rows)
   }
   for (const use of page.uses.state ?? []) {
     const state = stateById(model, use.state)

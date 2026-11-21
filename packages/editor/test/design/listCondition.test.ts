@@ -39,7 +39,7 @@ describe('the golden blog\'s posts', () => {
     await open(behaviourModule(), 'pg_index')
     await select('n_list')
     expect(value('list-items')).toBe('cond')
-    expect(options('list-items')).toEqual(['featured', 'all', 'quotes', 'cond', 'new:ent_post', 'new:ent_quote'])
+    expect(options('list-items')).toEqual(['featured', 'all', 'quotes', 'cond', 'new:ent_post', 'new:ent_quote', 'api:ds_catalog:products'])
     expect(text(byTestId('list-condition-summary'))).toBe('If showDrafts is on: Then All posts, Otherwise Featured posts')
     expect(value('list-condition-if')).toBe('preferences.showDrafts')
     expect(value('list-condition-not')).toBe('on')

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { byTestId, click, Failure, settle } from '../helpers.ts'
 import { liveRows } from '../../src/design/liveRows.ts'
-import { choose, FakeEventSource, fromCanvas, open, sent, setupHarness } from './harness.ts'
+import { choose, FakeEventSource, fromCanvas, open, sent, setupHarness, world } from './harness.ts'
 
 /**
  * Canvas data (P5, V4, Q12): the Design screen computes `data` for the canvas from
@@ -141,5 +141,48 @@ describe('a detail page shows one picked record', () => {
   it('has no picker on a page without a route parameter', async () => {
     await open({}, 'pg_index', app)
     expect(byTestId('record-picker')).toBeNull()
+  })
+})
+
+describe('the canvas shows an API query as sample rows (simple data P7b, B4)', () => {
+  const rows = () => lastData().products as Array<Record<string, unknown>>
+
+  it('makes three sample rows of a list from the fields of its model, and calls no API', async () => {
+    const { actions } = await open({}, 'pg_shop_catalog', app)
+    expect(rows()).toHaveLength(3)
+    expect(rows()[0]).toMatchObject({ id: 0, name: 'name', price: 0, inStock: false })
+    expect(rows()[0]!.categories).toEqual([{ id: 0, name: 'name' }, { id: 0, name: 'name' }, { id: 0, name: 'name' }])
+    // Nothing is asked of the API, nor of the app's server route for it (`/api/apis/…`): only the first page's own rows were read.
+    expect(actions.appCalls.filter(call => call.includes('apis') || call.includes('catalog'))).toEqual([])
+  })
+
+  it('makes one record of a query that answers one', async () => {
+    await open({}, 'pg_weather', app)
+    expect(lastData().report).toEqual({ city: 'city', celsius: 0, observedAt: '2026-01-01T00:00:00.000Z' })
+  })
+
+  it('says in the badge that the data is a sample, and why', async () => {
+    await open({}, 'pg_shop_catalog', app)
+    expect(badge()?.dataset.state).toBe('fixtures')
+    expect(badge()?.textContent?.trim()).toBe('Sample data')
+    expect(badge()?.title).toContain('built from the fields of its model')
+    expect(badge()?.title).toContain('no calls')
+    expect(byTestId('data-refresh')).toBeNull()
+  })
+
+  it('is a sample next to the rows of the app when the page also reads those', async () => {
+    const index = world.model.modules.blog!.pages.find(page => page.name === 'index')!
+    index.uses!.apis = [{ as: 'catalog', datasource: 'ds_catalog', query: 'products' }]
+    await open({}, 'pg_index', app)
+    expect(badge()?.dataset.state).toBe('partial')
+    expect(badge()?.textContent?.trim()).toBe('Live + Sample data')
+    expect(Array.isArray(lastData().catalog)).toBe(true)
+  })
+
+  it('shows nothing it can\'t derive: a query the model no longer has stays missing', async () => {
+    const page = world.model.modules.blog!.pages.find(entry => entry.name === 'shop-catalog')!
+    page.uses!.apis![0]!.query = 'gone'
+    await open({}, 'pg_shop_catalog', app)
+    expect(lastData().products).toBeUndefined()
   })
 })

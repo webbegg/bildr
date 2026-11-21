@@ -4,8 +4,10 @@ import type { ModelNode, QueryFile, Value } from '@bildr/codegen/model'
 import { CONDITION_OPS } from '@bildr/codegen/model'
 import { entityFieldNames, queryBehind } from '@bildr/codegen/edit'
 import { FIELD, FIELD_RING } from '../editorUi.ts'
+import { apiChoiceId, apiChoiceOf, apiChoices, apiUseRows } from '../shared/apiPageUse.ts'
 import { isExpression } from '../shared/bindings.ts'
 import { computedValues } from '../shared/listSource.ts'
+import ApiArgInput from './ApiArgInput.vue'
 import ListConditionForm from './ListConditionForm.vue'
 import { useDesign } from './store.ts'
 import { useListCondition } from './useListCondition.ts'
@@ -22,6 +24,11 @@ import { useListCondition } from './useListCondition.ts'
  * the List's `items` bind (`useListCondition` reads and writes it, `ListConditionForm` is its form). Each branch's query keeps its own
  * sort, filter and limit below, named by the branch (Then, Otherwise): the two lists are different queries, and what they show is
  * theirs to set, so the condition only chooses between them.
+ *
+ * An API query (simple data P7b) is offered for each one that answers many rows, "<API> · <query>", and a page's use of one is among the
+ * lists like any other. Its settings are its parameters, the page's arguments (`page_use_update`); it has no sort, filter or limit,
+ * which a collection's query has (an API's rows come as the API gives them). A query that needs a value the page can't give by itself
+ * asks for it first (`list-api-pending`), and is written when the value is there.
  */
 
 const props = defineProps<{ node: ModelNode }>()
@@ -31,7 +38,7 @@ const small = `${FIELD} ${FIELD_RING} min-w-0 px-1.5 text-default disabled:opaci
 
 const page = computed(() => design.page.value)
 const model = computed(() => design.model.value)
-const { itemsRoot, condition, form, summary, ifOptions, thenOptions, elseOptions, branchOf, changeCondition, pickSource, busy, failure, formKey } = useListCondition(() => props.node)
+const { itemsRoot, condition, form, summary, ifOptions, thenOptions, elseOptions, branchOf, changeCondition, pickSource, pendingApi, setApiArg, confirmApi, cancelApi, busy, failure, formKey } = useListCondition(() => props.node)
 
 /** What the Items select shows: a condition, written or being made, is one entry. */
 const sourceValue = computed(() => (form.value ? 'cond' : itemsRoot.value))
@@ -42,8 +49,11 @@ const aliases = computed<string[]>(() => {
   const inModel = model.value
   if (!onPage || !inModel) return []
   const many = (alias: string) => queryBehind(inModel, onPage, alias)?.result === 'many'
-  return [...(onPage.uses?.queries ?? []).map(use => use.as), ...computedValues(onPage).map(use => use.as)].filter(many)
+  const apis = (onPage.uses?.apis ?? []).filter(use => apiUseRows(inModel, use)?.many).map(use => use.as)
+  return [...[...(onPage.uses?.queries ?? []).map(use => use.as), ...computedValues(onPage).map(use => use.as)].filter(many), ...apis]
 })
+/** The API queries a List can repeat over, each to be used on the page when picked. */
+const apiOptions = computed(() => apiChoices(model.value, { many: true }))
 const entities = computed(() => {
   const onPage = page.value
   const inModel = model.value
@@ -78,6 +88,18 @@ const sources = computed<Source[]>(() => {
     return query ? [{ alias, query, args: use.args ?? {} }] : []
   })
 })
+
+/** The API query behind the List's items, when it reads one: its use, its choice and the parameters with the page's arguments. */
+const apiSource = computed(() => {
+  const onPage = page.value
+  const use = onPage?.uses?.apis?.find(entry => entry.as === itemsRoot.value)
+  const choice = use ? apiChoiceOf(model.value, apiChoiceId(use.datasource, use.query)) : undefined
+  if (!use || !choice) return null
+  return { alias: use.as, choice, params: choice.params.map(param => ({ param, value: use.args?.[param.name], required: param.in === 'path' || param.required === true })) }
+})
+const setApiParam = (alias: string, name: string, value: Value | null) => {
+  if (page.value) return design.edit('page_use_update', { page: page.value.id, as: alias, args: { [name]: value } })
+}
 
 const fieldsOf = (query: QueryFile) => {
   const entity = Object.values(model.value?.modules ?? {}).flatMap(mod => mod.entities).find(entry => entry.id === query.from)
@@ -193,6 +215,13 @@ const filterValue = (source: Source, event: Event) => editFilter(source, 'value'
         >
           New from {{ entity.name }}…
         </option>
+        <option
+          v-for="choice in apiOptions"
+          :key="choice.id"
+          :value="choice.id"
+        >
+          {{ choice.label }}
+        </option>
       </select>
     </EditorRow>
 
@@ -215,6 +244,78 @@ const filterValue = (source: Source, event: Event) => editFilter(source, 'value'
     >
       {{ failure }}
     </p>
+
+    <div
+      v-if="pendingApi"
+      class="flex flex-col gap-1.5 rounded-lg bg-elevated/60 p-2 text-[12px]"
+      data-testid="list-api-pending"
+    >
+      <div class="font-[550] text-highlighted">
+        {{ pendingApi.choice.label }} <span class="font-normal text-dimmed">needs a value</span>
+      </div>
+      <label
+        v-for="param in pendingApi.required"
+        :key="param.name"
+        class="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-2 text-dimmed"
+      >
+        <span class="pt-1">{{ param.name }}</span>
+        <ApiArgInput
+          :param="param"
+          :value="pendingApi.args[param.name]"
+          :test-id="`list-api-arg-${param.name}`"
+          :required="false"
+          @commit="setApiArg(param.name, $event)"
+        />
+      </label>
+      <div class="flex gap-1">
+        <EditorButton
+          data-testid="list-api-add"
+          label="Use it"
+          size="xs"
+          variant="soft"
+          :disabled="pendingApi.missing.length > 0 || busy"
+          @click="confirmApi"
+        />
+        <EditorButton
+          data-testid="list-api-cancel"
+          label="Cancel"
+          size="xs"
+          variant="ghost"
+          @click="cancelApi"
+        />
+      </div>
+    </div>
+
+    <div
+      v-if="apiSource"
+      class="flex flex-col gap-1.5 rounded-lg bg-elevated/60 p-2 text-[12px]"
+      data-testid="api-source"
+      :data-alias="apiSource.alias"
+    >
+      <div class="font-[550] text-highlighted">
+        {{ apiSource.choice.label }} <span class="font-normal text-dimmed">as {{ apiSource.alias }}</span>
+      </div>
+      <p
+        v-if="!apiSource.params.length"
+        class="text-dimmed"
+      >
+        It takes no values: the List shows what it answers.
+      </p>
+      <label
+        v-for="entry in apiSource.params"
+        :key="entry.param.name"
+        class="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-2 text-dimmed"
+      >
+        <span class="pt-1">{{ entry.param.name }}</span>
+        <ApiArgInput
+          :param="entry.param"
+          :value="entry.value"
+          :required="entry.required"
+          :test-id="`source-${apiSource.alias}-arg-${entry.param.name}`"
+          @commit="setApiParam(apiSource.alias, entry.param.name, $event)"
+        />
+      </label>
+    </div>
 
     <div
       v-for="source in sources"

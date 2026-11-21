@@ -1313,3 +1313,46 @@ describe('the words of the API screens', () => {
     }
   })
 })
+
+describe('the pages that use a query (simple data P7b, B5)', () => {
+  /** Two pages read `products` of the API; nothing reads `productById`. */
+  const used = () => {
+    shop()
+    seed('page_use_add', { page: 'pg_index', as: 'shopProducts', api: { datasource: ID, query: 'products' } })
+    seed('page_use_add', { page: 'pg_new_post', as: 'shopItems', api: { datasource: ID, query: 'products' } })
+  }
+
+  it('shows under a query the pages that read it, and nothing under one no page reads', async () => {
+    used()
+    await mounted()
+    expect(text(q('[data-api-item="query:products"]'))).toContain('Used in index, posts-new')
+    expect(q('[data-api-item="query:products"] [data-api-used]')).not.toBeNull()
+    expect(q('[data-api-item="query:productById"] [data-api-used]')).toBeNull()
+    expect(q('[data-api-item="action:addProduct"] [data-api-used]')).toBeNull()
+  })
+
+  it('says in the Delete dialog which pages read the query, and the refusal names them too', async () => {
+    used()
+    const { actions } = await mounted()
+    await click(q('[data-api-item="query:products"] [data-api-delete]'))
+    expect(text(q('[data-api-item-delete-used]'))).toContain('Used in index, posts-new')
+    await click(q('[data-artifact-submit]'))
+    expect(calls(actions, 'api_query_delete')).toEqual([{ datasource: ID, query: 'products' }])
+    const refusal = text(q('[data-artifact-error]'))
+    expect(refusal).toContain('still used')
+    expect(refusal).toContain('page "index"')
+    expect(refusal).toContain('page "posts-new"')
+    // The ids of the module's words are not the user's.
+    expect(refusal).not.toMatch(/pg_/)
+    expect(q('[data-api-item="query:products"]')).not.toBeNull()
+  })
+
+  it('deletes a query no page reads without a note', async () => {
+    used()
+    await mounted()
+    await click(q('[data-api-item="query:productById"] [data-api-delete]'))
+    expect(q('[data-api-item-delete-used]')).toBeNull()
+    await click(q('[data-artifact-submit]'))
+    expect(q('[data-api-item="query:productById"]')).toBeNull()
+  })
+})

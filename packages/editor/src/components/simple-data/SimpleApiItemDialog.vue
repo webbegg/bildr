@@ -4,6 +4,7 @@ import type { ApiSource } from '@bildr/codegen/edit'
 import DataArtifactDialog from '../data/DataArtifactDialog.vue'
 import { attempt } from '../../editor/dataArtifactActions.ts'
 import { useEditor } from '../../editor/useEditor.ts'
+import { apiQueryPages, usedInPagesWords } from '../../shared/apiPageUse.ts'
 import { modelNameOf, operationNameOf } from '../../shared/simpleApi.ts'
 import { plainWords } from '../../shared/simpleData.ts'
 
@@ -60,6 +61,9 @@ const taken = computed(() => {
   return [...source.queries, ...source.actions].some(item => item.name === name) ? `A query or an action is already named “${name}”` : ''
 })
 
+/** The pages that read the query being deleted: the module refuses while any does, and the dialog says so before it is asked. */
+const usedBy = computed(() => (shown.value?.mode === 'delete' && shown.value.kind === 'query' ? apiQueryPages(editor.model, source.id, shown.value.name) : []))
+
 const title = computed(() => {
   const now = shown.value
   if (!now) return ''
@@ -111,13 +115,21 @@ async function submit() {
     :can-submit="canSubmit"
     @submit="submit"
   >
-    <p
-      v-if="shown?.mode === 'delete'"
-      class="text-[12px] leading-4 text-muted"
-      data-api-item-delete-note
-    >
-      {{ shown.kind === 'api' ? 'The API' : `The ${noun}` }} “{{ shown.name }}” will be removed.
-    </p>
+    <template v-if="shown?.mode === 'delete'">
+      <p
+        class="text-[12px] leading-4 text-muted"
+        data-api-item-delete-note
+      >
+        {{ shown.kind === 'api' ? 'The API' : `The ${noun}` }} “{{ shown.name }}” will be removed.
+      </p>
+      <p
+        v-if="usedBy.length"
+        class="mt-2 text-[12px] leading-4 text-muted"
+        data-api-item-delete-used
+      >
+        {{ usedInPagesWords(usedBy) }}. A query that pages use can't be deleted: take it off those pages first.
+      </p>
+    </template>
     <template v-else>
       <EditorFormRow
         label="Name"

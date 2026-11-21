@@ -74,6 +74,17 @@ describe('the names the page\'s script declares for what is in it (B7)', () => {
     expect(freeAlias(shown, 'onFormClick', 'computed')).toBe('onFormClick')
   })
 
+  it('leaves out the names an API query\'s use derives: its …Loading and …Error, and counts the page\'s API uses as taken', () => {
+    const shown = page()
+    shown.uses = { apis: [{ as: 'products', datasource: 'ds_catalog', query: 'products' }] }
+    expect(freeAlias(shown, 'products', 'api')).toBe('products2')
+    expect(freeAlias(shown, 'productsLoading', 'computed')).toBe('productsLoading2')
+    expect(freeAlias(shown, 'productsError', 'computed')).toBe('productsError2')
+    // A name that would collide with what a new API use derives is not offered either.
+    shown.uses = { queries: [{ as: 'productsError', query: 'q_all_posts' }] }
+    expect(freeAlias(shown, 'products', 'api')).toBe('products2')
+  })
+
   it('leaves out the counter of a List that loads more, `shown<Node>`', () => {
     const shown = page()
     shown.root.children = [{ id: 'n_feed', type: 'List', props: { items: { $bind: 'x' }, as: 'post', loadMore: 5 } }]

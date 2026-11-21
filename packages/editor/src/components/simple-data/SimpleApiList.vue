@@ -9,6 +9,8 @@ export interface ApiListRow {
   name: string
   /** What the row says of the item in a line (`GET /products`, `3 fields`). */
   note: string
+  /** For a query: where pages use it ("Used in shop, weather"), from the module's usage; empty when no page does. */
+  used?: string
 }
 const { kind, title, rows, empty } = defineProps<{ kind: 'query' | 'action' | 'model', title: string, rows: ApiListRow[], empty: string }>()
 const emit = defineEmits<{ open: [name: string], create: [], rename: [name: string], remove: [name: string] }>()
@@ -55,6 +57,12 @@ const emit = defineEmits<{ open: [name: string], create: [], rename: [name: stri
           <span class="min-w-0 flex-1">
             <span class="block truncate text-[13px] text-toned">{{ row.name }}</span>
             <span class="block truncate font-mono text-[11px] text-dimmed">{{ row.note }}</span>
+            <span
+              v-if="row.used"
+              class="block truncate text-[11px] text-dimmed"
+              :title="row.used"
+              data-api-used
+            >{{ row.used }}</span>
           </span>
         </button>
         <EditorButton

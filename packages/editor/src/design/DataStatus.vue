@@ -6,18 +6,28 @@ import { useDesign } from './store.ts'
  * Where the canvas's data comes from (Q12), in the Data workspace's words: "Live" when the rows are the
  * app's, "Sample data" when the app could not answer (or lists nothing) and the
  * collection's sample rows stand in, "Live + Sample data" when it is a mix; a Refresh button
- * reads the app again. On a detail page, the record picker chooses which record
+ * reads the app again. A page that reads an API query (simple data P7b) shows a sample of its rows, made of its model's fields, never the API's:
+ * the badge then says Sample data (Live + Sample data next to the app's own rows) and its title says why. On a detail page, the record picker chooses which record
  * the page shows (its route parameter).
  */
 
 const design = useDesign()
-const state = computed(() => design.rowsOf.state.value)
+/** The app's rows: live, sample, or a mix; null when the page reads none. */
+const rows = computed(() => design.rowsOf.state.value)
+const sampled = computed(() => design.apiSampled.value)
+/** What the badge says: the rows' state, with the API's sample in it. */
+const state = computed(() => {
+  if (!sampled.value) return rows.value
+  return rows.value === 'live' || rows.value === 'partial' ? 'partial' : 'fixtures'
+})
+const API_SAMPLE = 'The rows of an API query are a sample built from the fields of its model: the canvas makes no calls to the API.'
 const LABELS = { live: 'Live', fixtures: 'Sample data', partial: 'Live + Sample data' } as const
 const names = (ids: string[]) => ids.map(id => Object.values(design.model.value?.modules ?? {}).flatMap(entry => entry.entities).find(entity => entity.id === id)?.plural ?? id)
 const title = computed(() => {
   if (state.value === 'live') return 'The canvas shows the rows of the running app'
   const why = design.rowsOf.fixtureEntities.value.map(id => `${names([id])[0]} ${design.rowsOf.reasons.value[id] ?? 'has no rows from the app'}`)
-  return `The canvas shows the Sample data where the app's rows could not be read: ${why.join('; ')}. Start the app (nuxt dev) and refresh.`
+  const app = rows.value && rows.value !== 'live' ? `The canvas shows the Sample data where the app's rows could not be read: ${why.join('; ')}. Start the app (nuxt dev) and refresh.` : ''
+  return [app, sampled.value ? API_SAMPLE : ''].filter(Boolean).join(' ')
 })
 const label = (key: string): string => {
   const detail = design.detail.value
@@ -58,6 +68,7 @@ const pick = (event: Event) => design.pickRecord((event.target as HTMLSelectElem
         :class="state === 'live' ? 'bg-success/10 text-success' : state === 'partial' ? 'bg-warning/10 text-warning' : 'bg-elevated text-muted'"
       >{{ LABELS[state] }}</span>
       <UButton
+        v-if="rows"
         data-testid="data-refresh"
         icon="i-lucide-refresh-cw"
         aria-label="Refresh the data"

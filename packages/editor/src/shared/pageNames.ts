@@ -15,7 +15,7 @@ import { routeParams } from './interactionValues.ts'
  * module, which is the last word on them.
  */
 
-export type UseKind = 'state' | 'query' | 'action' | 'computed'
+export type UseKind = 'state' | 'query' | 'api' | 'action' | 'computed'
 
 const capital = (name: string): string => name.charAt(0).toUpperCase() + name.slice(1)
 
@@ -23,6 +23,7 @@ const capital = (name: string): string => name.charAt(0).toUpperCase() + name.sl
 const declaredBy = (as: string, kind: UseKind): string[] => {
   if (kind === 'state') return [as, `set${capital(as)}`]
   if (kind === 'query') return [as, `${as}Loading`]
+  if (kind === 'api') return [as, `${as}Loading`, `${as}Error`]
   if (kind === 'action') return [as, `${as}Pending`, `${as}Error`]
   return [as]
 }
@@ -38,6 +39,7 @@ const takenBy = (page: PageFile): Set<string> => new Set([
   ...pageNodeNames(page),
   ...(page.uses?.state ?? []).flatMap(use => declaredBy(use.as, 'state')),
   ...(page.uses?.queries ?? []).flatMap(use => declaredBy(use.as, 'query')),
+  ...(page.uses?.apis ?? []).flatMap(use => declaredBy(use.as, 'api')),
   ...(page.uses?.actions ?? []).flatMap(use => declaredBy(use.as, 'action')),
   ...(page.uses?.computed ?? []).flatMap(use => declaredBy(use.as, 'computed')),
   ...itemNames(page.root),

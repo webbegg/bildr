@@ -6,6 +6,7 @@ import DataStaleNotice from '../data/DataStaleNotice.vue'
 import SimpleApiList from './SimpleApiList.vue'
 import type { ItemKind } from './SimpleApiItemDialog.vue'
 import { attempt } from '../../editor/dataArtifactActions.ts'
+import { apiQueryPages, usedInPagesWords } from '../../shared/apiPageUse.ts'
 import { settingsChangedOutside, settingsDirty, settingsInput, settingsOf, settingsProblems, settingsRebase } from '../../editor/simpleApiDraft.ts'
 import type { Runtime, SignIn } from '../../editor/simpleApiDraft.ts'
 import { useDraftForm } from '../../editor/useDraftForm.ts'
@@ -64,6 +65,12 @@ const secretSet = computed(() => !!secret.value && editor.env.some(entry => entr
 /** What the secret's variable becomes when the API is renamed and saved (`api_update` renames a variable bildr named), before Save says so. */
 const renamedSecret = computed(() => draft.value.signIn !== 'none' ? secretVarAfterRename(source, draft.value.name) : undefined)
 const note = computed(() => urlProblem.value ? 'Fix the base URL to save.' : problems.value[0] ?? '')
+
+/** Each query with where pages use it (the module's usage): pages that read it are what stops it from being deleted. */
+const queryRows = computed(() => source.queries.map((query) => {
+  const pages = apiQueryPages(editor.model, source.id, query.name)
+  return { name: query.name, note: querySummary(query), ...(pages.length ? { used: usedInPagesWords(pages) } : {}) }
+}))
 </script>
 
 <template>
@@ -210,7 +217,7 @@ const note = computed(() => urlProblem.value ? 'Fix the base URL to save.' : pro
         <SimpleApiList
           kind="query"
           title="Queries"
-          :rows="source.queries.map(query => ({ name: query.name, note: querySummary(query) }))"
+          :rows="queryRows"
           empty="No queries yet. A query reads data from the API, like the list of products."
           @open="emit('open', 'query', $event)"
           @create="emit('create', 'query')"

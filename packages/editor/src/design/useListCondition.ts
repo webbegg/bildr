@@ -1,10 +1,11 @@
 import { computed, reactive } from 'vue'
-import type { ModelNode } from '@bildr/codegen/model'
+import type { ModelNode, Value } from '@bildr/codegen/model'
 import { computedUsesOf, queryBehind } from '@bildr/codegen/edit'
 import { takeRefusal } from '../editor/dataArtifactActions.ts'
 import { STUCK, compensate, dropStateUse, withStateUse } from '../editor/stateUse.ts'
 import { useEditor } from '../editor/useEditor.ts'
 import type { Editor } from '../editor/useEditor.ts'
+import { apiAutoArgs, apiChoiceOf, apiMissingArgs } from '../shared/apiPageUse.ts'
 import { isExpression } from '../shared/bindings.ts'
 import { branchChoices, computedInput, computedValues, conditionChoices, conditionOf, conditionSentence } from '../shared/listSource.ts'
 import type { ConditionChoice, ConditionDraft } from '../shared/listSource.ts'
@@ -24,6 +25,11 @@ import { useDesign } from './store.ts'
  * that List for the editing session, as the Interactions' drafts are (`useInteractionDraft`): the panel can show another List and come
  * back to it, and a write that finishes after another List was selected lands on the List it was made for, never on the one shown now.
  * A write names the page, the List and its draft when it starts and uses only those.
+ *
+ * **An API query** (simple data P7b) is another entry of the Items select, "<API> · <query>": picking it adds the page's use of it
+ * (`page_use_add`, under a free name made of the query's) and binds the List's items and item name (`node_update_props`), as
+ * `query_create_for_list` does for a collection; the use goes again when the List is refused. A required parameter the page can't fill by
+ * itself (a route parameter of the same name it does) is asked for first, in `pendingApi`, and nothing is written until it is given.
  */
 
 /** What is held for one List: its unfinished condition, the refusal it shows, whether a write of it is in flight. */
@@ -35,6 +41,8 @@ interface Slot {
   key: number
   /** The computed value a write made and could not take back: a retry writes it again instead of making another. */
   orphan: string | null
+  /** An API query picked that still needs values (`apiChoiceId`) and what it has so far: nothing is written until it has them. */
+  api: { id: string, args: Record<string, Value> } | null
 }
 
 const held = new WeakMap<Editor, Map<string, Slot>>()
@@ -49,7 +57,7 @@ function slotOf(editor: Editor, file: string, nodeId: string): Slot {
   const key = `${file}\u0000${nodeId}`
   let slot = slots.get(key)
   if (!slot) {
-    slot = reactive<Slot>({ draft: null, failure: '', busy: false, key: 0, orphan: null })
+    slot = reactive<Slot>({ draft: null, failure: '', busy: false, key: 0, orphan: null, api: null })
     slots.set(key, slot)
   }
   return slot
@@ -170,14 +178,85 @@ export function useListCondition(node: () => ModelNode) {
       return
     }
     mine.draft = null
+    mine.api = null
+    if (value.startsWith('api:')) return pickApi(value, before)
     const done = value.startsWith('new:')
       ? await design.edit('query_create_for_list', { page: file, entity: value.slice(4), nodeId })
       : await design.setProps(nodeId, { items: { $bind: value } })
     if (done && before) await dropComputed(file, mine, before)
   }
 
+  // ── An API query as the List's source ────────────────────────────────
+
+  /** An API query picked that waits for the values it needs: its choice, what it has so far, the required parameters and the ones still missing. */
+  const pendingApi = computed(() => {
+    const waiting = slot.value.api
+    const choice = waiting ? apiChoiceOf(model.value, waiting.id) : undefined
+    if (!waiting || !choice) return null
+    return { choice, args: waiting.args, required: choice.params.filter(param => param.in === 'path' || param.required === true), missing: apiMissingArgs(choice.params, waiting.args) }
+  })
+
+  /** Picks an API query: written at once when the page can give every value it needs, else asked for first. */
+  async function pickApi(id: string, before: string | undefined) {
+    const onPage = page.value
+    const choice = apiChoiceOf(model.value, id)
+    if (!onPage || !choice) return
+    const args = apiAutoArgs(onPage, choice.params)
+    if (apiMissingArgs(choice.params, args).length) slot.value.api = { id, args }
+    else await bindApi(id, args, before)
+  }
+
+  /** Adds the page's use of the query and binds the List to it; the use is taken off again when the List refuses. */
+  async function bindApi(id: string, args: Record<string, Value>, before: string | undefined) {
+    const onPage = page.value
+    const choice = apiChoiceOf(model.value, id)
+    if (!onPage || !choice) return
+    // What the write is for, taken now (see `writeCondition`).
+    const file = onPage.id
+    const list = node()
+    const mine = slot.value
+    mine.failure = ''
+    mine.busy = true
+    try {
+      const as = freeAlias(onPage, choice.query, 'api')
+      if (!await design.edit('page_use_add', { page: file, as, api: { datasource: choice.datasource, query: choice.query }, ...(Object.keys(args).length ? { args } : {}) })) {
+        showRefusal(mine, `${choice.label} could not be used`)
+        return
+      }
+      // The palette's List starts with the item name "item": the model's name suits it better.
+      const own = typeof list.props?.as === 'string' && list.props.as !== 'item'
+      const name = `${choice.model.charAt(0).toLowerCase()}${choice.model.slice(1)}`
+      if (!await design.setProps(list.id, { items: { $bind: as }, ...(own ? {} : { as: name }) })) {
+        await compensate(editor, () => editor.run('page_use_remove', { page: file, as }), `The use of ${choice.label} could not be taken off again`)
+        showRefusal(mine, 'The change was refused')
+        return
+      }
+      mine.api = null
+      if (before) await dropComputed(file, mine, before)
+    } finally {
+      mine.busy = false
+    }
+  }
+
+  /** A value for a parameter the picked query waits for (null: none). */
+  function setApiArg(name: string, value: Value | null) {
+    const waiting = slot.value.api
+    if (!waiting) return
+    const args = { ...waiting.args }
+    if (value === null) Reflect.deleteProperty(args, name)
+    else args[name] = value
+    slot.value.api = { ...waiting, args }
+  }
+  const confirmApi = () => {
+    const waiting = slot.value.api
+    if (waiting && !slot.value.busy && !pendingApi.value?.missing.length) void bindApi(waiting.id, waiting.args, condition.value?.as)
+  }
+  const cancelApi = () => {
+    slot.value.api = null
+  }
+
   return {
-    itemsRoot, condition, form, summary, choices, ifOptions, thenOptions, elseOptions, branchOf, changeCondition, pickSource,
+    itemsRoot, condition, form, summary, choices, ifOptions, thenOptions, elseOptions, branchOf, changeCondition, pickSource, pendingApi, setApiArg, confirmApi, cancelApi,
     busy: computed(() => slot.value.busy),
     failure: computed(() => slot.value.failure),
     formKey: computed(() => slot.value.key)

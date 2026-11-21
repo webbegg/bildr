@@ -14,7 +14,8 @@ describe('plainWords', () => {
     ['The name "x" clashes with the query Blog X (q_x), which the app also names useBlogX: pick another', 'The name "x" clashes with the query Blog X: pick another'],
     ['`show` would generate useBlogShow, which Nuxt already provides: pick another name', '“show” is already used by the app: pick another name'],
     ['"1x" can\'t be a field name: start with a letter, like "showDrafts"', '"1x" can\'t be a field name: start with a letter'],
-    ['The model has a bad entity and a bad data source', 'The model has a bad data and a bad API']
+    ['The model has a bad entity and a bad data source', 'The model has a bad data and a bad API'],
+    ['The query "listPosts" of the API "shop" is still used: page "index" (pg_index) uses its query "listPosts" as "posts"; page "index" (pg_index): n_list_1 binds "posts". Change them first', 'The query "listPosts" of the API "shop" is still used: page "index" uses its query "listPosts" as "posts"; page "index": something on it reads "posts". Change them first']
   ])('says %j its way', (said, plain) => {
     expect(plainWords(said)).toBe(plain)
     expect(plainWords(said)).not.toMatch(JARGON)
