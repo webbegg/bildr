@@ -1,0 +1,65 @@
+{
+  "$schema": "https://bildr.dev/schema/page.v1.json",
+  "id": "pg_shop_catalog",
+  "name": "shop-catalog",
+  "path": "/catalog/:category",
+  "layout": "lay_main",
+  "uses": {
+    "apis": [
+      {
+        "as": "products",
+        "datasource": "ds_catalog",
+        "query": "products",
+        "args": {
+          "category": {
+            "$route": "category"
+          }
+        }
+      }
+    ]
+  },
+  "root": {
+    "id": "n_catalog",
+    "type": "Page",
+    "style": {
+      "gap": "4"
+    },
+    "children": [
+      {
+        "id": "n_catalog_title",
+        "type": "Heading",
+        "props": {
+          "text": "Catalog",
+          "level": 2
+        }
+      },
+      {
+        "id": "n_products",
+        "type": "List",
+        "props": {
+          "as": "product",
+          "items": {
+            "$bind": "products"
+          },
+          "loading": "Loading…",
+          "empty": "No products."
+        },
+        "style": {
+          "gap": "3",
+          "items": "start"
+        },
+        "children": [
+          {
+            "id": "n_product",
+            "type": "Text",
+            "props": {
+              "text": {
+                "$template": "{product.name} costs {product.price}"
+              }
+            }
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,6 +1,8 @@
 import { customColorNames } from '../design/theme.ts'
 import { displayFallback, orderedStyleTokens, parseStyleKey, styleClasses, styleInline, styleTokenProblem } from '../design/tokens.ts'
 import type { BreakpointBase } from '../design/tokens.ts'
+import { apiQueryOf, apiRowsOf } from '../edit/api-uses.ts'
+import { apiComposableName } from '../edit/generated-names.ts'
 import type { Model } from '../model/load.ts'
 import type { ActionFile, ComponentFile, EntityFile, LayoutFile, ModelNode, PageFile, PropertyDef, QueryFile, Value } from '../model/schemas.ts'
 import {
@@ -38,6 +40,10 @@ interface Root {
   resolve: (members: string[], ctx: Ctx) => string
   /** The loading flags of the data behind this root (queries), for loading texts. */
   loading?: () => string[]
+  /** The error flags of the data behind this root (API queries), for the error line. */
+  errors?: () => string[]
+  /** An API query's answer: whether the rows of its model have an `id` (the key of a List over them). */
+  api?: { hasId: boolean }
 }
 
 interface Env {
@@ -132,10 +138,11 @@ const refRoot = (name: string, onUse: () => void, optional?: Env['optional'], lo
 const itemParam = (as: string) => `${as}Item`
 
 /** The item name of a List: itself in the template, the handler's parameter in the script (which the handler being built notes). */
-const itemRoot = (env: Env, as: string): Root => ({
+const itemRoot = (env: Env, as: string, optionalMembers = false): Root => ({
   resolve: (members, ctx) => {
     if (ctx === 'script') env.track.items?.add(as)
-    return [ctx === 'script' ? itemParam(as) : as, ...members].join('.')
+    // A row of an API query's answer: a nested model can be missing (optional), so what is read below the row's own fields reads with `?.`.
+    return [ctx === 'script' ? itemParam(as) : as, ...members].reduce((code, member, index) => index === 0 ? member : `${code}${optionalMembers && index > 1 ? '?.' : '.'}${member}`)
   }
 })
 
@@ -204,6 +211,41 @@ const loadingOf = (env: Env, value: Value | undefined) => {
   const root = bindRoot(value)
   return root ? env.roots.get(root)?.loading?.() ?? [] : []
 }
+
+/** The error flags of what a `$bind` value reads (API queries only). */
+const errorsOf = (env: Env, value: Value | undefined) => {
+  const root = bindRoot(value)
+  return root ? env.roots.get(root)?.errors?.() ?? [] : []
+}
+
+/** What a List or a guarded Page shows when an API query failed. */
+const API_ERROR_TEXT = 'Couldn\'t load this.'
+
+/**
+ * An API query's answer (`uses.apis`): `data` of the composable, which is undefined until it answers. A list reads as empty then
+ * (`(<as> ?? [])`), a one result with `?.`; its loading flag is `<as>Loading` and its error `<as>Error`.
+ */
+const apiRoot = (env: Env, as: string, many: boolean, hasId: boolean): Root => ({
+  resolve: (members, ctx) => {
+    use(env, `api:${as}`, 'data')
+    if (ctx === 'template') {
+      if (many) return [`(${as} ?? [])`, ...members].join('.')
+      return [as, ...members].join('?.')
+    }
+    env.optional.used.add(as)
+    const chain = env.optional.guarded.has(as) ? '.' : '?.'
+    return `${as}.value${members.map((member, index) => `${many || index === 0 ? chain : '?.'}${member}`).join('')}`
+  },
+  loading: () => {
+    use(env, `api:${as}`, 'loading')
+    return [`${as}Loading`]
+  },
+  errors: () => {
+    use(env, `api:${as}`, 'error')
+    return [`${as}Error`]
+  },
+  api: { hasId }
+})
 
 // ── Markup helpers ──────────────────────────────────────────────────────
 
@@ -504,8 +546,10 @@ const link = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
 const guarded = (env: Env, node: ModelNode, tag: string, attrs: Attr[], inner: string[], indent: string) => {
   const when = expression(env, node, node.props!.when, 'template')
   const loading = loadingOf(env, node.props!.when)
+  const errors = errorsOf(env, node.props!.when)
   const lines: string[] = []
   if (typeof node.props?.loading === 'string' && loading.length) lines.push(...element('p', [attr('if', `v-if="${loading.join(' || ')}"`), staticAttr('class', 'text-muted')], escapeText(node.props.loading), indent))
+  if (errors.length) lines.push(...element('p', [attr('if', `${lines.length ? 'v-else-if' : 'v-if'}="${errors.join(' || ')}"`), staticAttr('class', 'text-error')], API_ERROR_TEXT, indent))
   lines.push(...element(tag, [attr('if', `${lines.length ? 'v-else-if' : 'v-if'}="${escapeAttr(when)}"`), ...attrs], inner, indent))
   if (typeof node.props?.empty === 'string') lines.push(...element('p', [attr('if', 'v-else'), staticAttr('class', 'text-muted')], escapeText(node.props.empty), indent))
   return lines
@@ -589,9 +633,11 @@ const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
   const as = typeof props.as === 'string' ? identifier(props.as, where(env, node)) : fail(env, node, 'a List needs `as`, the item name')
   const items = expression(env, node, props.items, 'template')
   const loading = typeof props.loading === 'string' ? loadingOf(env, props.items) : []
+  const errors = errorsOf(env, props.items)
   const lines: string[] = []
   const condition = () => lines.length ? 'v-else-if' : 'v-if'
   if (loading.length) lines.push(...element('p', [attr('if', `v-if="${loading.join(' || ')}"`), staticAttr('class', 'text-muted')], escapeText(props.loading as string), indent))
+  if (errors.length) lines.push(...element('p', [attr('if', `${condition()}="${errors.join(' || ')}"`), staticAttr('class', 'text-error')], API_ERROR_TEXT, indent))
   if (typeof props.empty === 'string') lines.push(...element('p', [attr('if', `${condition()}="!${escapeAttr(items)}.length"`), staticAttr('class', 'text-muted')], escapeText(props.empty), indent))
   const shownIf: Attr[] = lines.length ? [attr('if', 'v-else')] : props.hideWhenEmpty === true ? [attr('if', `v-if="${escapeAttr(items)}.length"`)] : []
 
@@ -606,12 +652,21 @@ const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
     if (outer.size) fail(env, node, `a handler can't read the items of a List over ${[...outer].join(', ')}: its row type is only known in the template`)
     return `NonNullable<typeof ${code}>[number]`
   }
-  const itemEnv: Env = { ...env, roots: new Map(env.roots).set(as, itemRoot(env, as)), items: new Map(env.items).set(as, itemType) }
+  // Over an API query's list, the rows are its model's: keyed by `id` when the model has one, by their position otherwise.
+  const api = bindRoot(props.items) === undefined ? undefined : env.roots.get(bindRoot(props.items)!)?.api
+  const rows = api && isObject(props.items) && props.items.$bind === bindRoot(props.items) ? api : undefined
+  const position = `${as}Index`
+  if (api && !rows?.hasId && env.roots.has(position)) fail(env, node, `the position name ${position} is already a name the page uses`)
+  const itemEnv: Env = { ...env, roots: new Map(env.roots).set(as, itemRoot(env, as, !!rows)), items: new Map(env.items).set(as, itemType) }
   // `loadMore`: the first n records, and a button that shows n more (state of this node, so one per List).
   const more = loadMoreSize(props.loadMore)
   const shown = more ? identifier(`shown${pascal(node.id.replace(/^n_/, ''))}`, where(env, node)) : undefined
   if (more) env.handlers.push([`const ${shown} = ref(${more})`])
-  const repeat = [attr('for', `v-for="${as} in ${escapeAttr(shown ? `${items}.slice(0, ${shown})` : items)}"`), attr('key', `:key="${as}.id"`)]
+  const byPosition = api && !rows?.hasId
+  const repeat = [
+    attr('for', `v-for="${byPosition ? `(${as}, ${position})` : as} in ${escapeAttr(shown ? `${items}.slice(0, ${shown})` : items)}"`),
+    attr('key', `:key="${byPosition ? position : `${as}.id`}"`)
+  ]
   const kids = node.children ?? []
   const inStack = childrenInStack(node.type, props)
   const inner = kids.length === 1
@@ -1046,6 +1101,14 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
       return [`${as}Loading`]
     }))
   }
+  const apis = (uses.apis ?? []).map((entry) => {
+    const found = apiQueryOf(context.model.datasources, entry) ?? fail(env, undefined, `unknown API query ${entry.query} of ${entry.datasource}`)
+    return { ...entry, ...found }
+  })
+  for (const { as, source, query } of apis) {
+    const rows = apiRowsOf(source, query)
+    env.roots.set(as, apiRoot(env, as, rows.many, !!rows.models.find(model => model.name === rows.model)?.fields.some(field => field.name === 'id')))
+  }
   const actions = (uses.actions ?? []).map(entry => ({ ...entry, file: actionById(env, undefined, entry.action) }))
   for (const { as, action } of actions) {
     actionAliases.set(action, as)
@@ -1093,15 +1156,34 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
     : undefined
   // A computed value the template binds is declared, and so is one only another computed value reads: writing a line can use more.
   const written = new Map<string, string>()
-  for (let more = true; more;) {
-    more = false
-    for (const entry of computedEntries) {
-      if (written.has(entry.as) || !env.used.has(`computed:${entry.as}`)) continue
-      writing = entry.as
-      written.set(entry.as, `const ${entry.as} = computed(() => ${expression(env, undefined, entry.if, 'script')} ? ${expression(env, undefined, entry.then, 'script')} : ${expression(env, undefined, entry.else, 'script')})`)
-      writing = undefined
-      more = true
+  const writeComputed = () => {
+    for (let more = true; more;) {
+      more = false
+      for (const entry of computedEntries) {
+        if (written.has(entry.as) || !env.used.has(`computed:${entry.as}`)) continue
+        writing = entry.as
+        written.set(entry.as, `const ${entry.as} = computed(() => ${expression(env, undefined, entry.if, 'script')} ? ${expression(env, undefined, entry.then, 'script')} : ${expression(env, undefined, entry.else, 'script')})`)
+        writing = undefined
+        more = true
+      }
     }
+  }
+  // The call of each API query the page reads: its arguments are read here, before the declarations, so what they read is declared too.
+  // A use reads only the uses above it, so the last is written first; a computed value an argument reads is written by the next round.
+  const calls = new Map<string, string>()
+  const writeCalls = () => {
+    for (const { as, query, source, args } of [...apis].reverse()) {
+      if (calls.has(as) || !env.used.has(`api:${as}`)) continue
+      const given = query.params.flatMap(param => args?.[param.name] === undefined ? [] : [{ name: param.name, value: args[param.name]! }])
+      const object = given.map(({ name, value }) => `${name}: ${expression(env, undefined, value, 'script')}`).join(', ')
+      // A literal stays constant; anything the page computes is read again when it changes.
+      calls.set(as, `${apiComposableName(source.name, query.name)}(${!given.length ? '' : given.some(({ value }) => isObject(value)) ? `() => ({ ${object} })` : `{ ${object} }`})`)
+    }
+  }
+  for (let size = -1; size !== calls.size + written.size;) {
+    size = calls.size + written.size
+    writeCalls()
+    writeComputed()
   }
   // In dependency order: what a line reads is declared above it.
   const computedLines: string[] = []
@@ -1135,6 +1217,12 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
     })
     while (argList.length && argList[argList.length - 1] === undefined) argList.pop()
     declarations.push(`const { ${names.join(', ')} } = ${composable}(${argList.map(arg => arg ?? 'undefined').join(', ')})`)
+  }
+  for (const { as } of apis) {
+    const parts = env.used.get(`api:${as}`)
+    if (!parts) continue
+    const names = [parts.has('data') && `data: ${as}`, parts.has('loading') && `pending: ${as}Loading`, parts.has('error') && `error: ${as}Error`].filter(Boolean)
+    declarations.push(`const { ${names.join(', ')} } = ${calls.get(as)!}`)
   }
   for (const { as, file } of actions) {
     const parts = env.used.get(`action:${as}`)

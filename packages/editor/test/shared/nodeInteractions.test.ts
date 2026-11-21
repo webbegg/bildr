@@ -212,7 +212,7 @@ describe('what a step can name', () => {
   it('offers the states and actions of the page\'s module, used by the page or not, and every page', () => {
     expect(statesFor(TOGGLE).map(state => state.id)).toEqual(['st_preferences'])
     expect(actionsFor(TOGGLE).map(action => action.id)).toEqual(['act_create_post', 'act_publish_post'])
-    expect(pagesFor(TOGGLE).map(page => page.id).sort()).toEqual(['pg_index', 'pg_new_post', 'pg_post_detail'])
+    expect(pagesFor(TOGGLE).map(page => page.id).sort()).toEqual(['pg_index', 'pg_new_post', 'pg_post_detail', 'pg_shop_catalog', 'pg_weather'])
   })
 
   it('offers no state to a layout or a component: they have none to use', () => {

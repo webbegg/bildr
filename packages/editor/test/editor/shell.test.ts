@@ -81,6 +81,13 @@ describe('the toolbar', () => {
     opened.mockRestore()
   })
 
+  it('opens the golden pages that use API queries (P7a), selecting and rendering them like any page', async () => {
+    for (const page of ['pg_shop_catalog', 'pg_weather']) {
+      await open({}, page)
+      expect(sent('bildr:render').at(-1)?.file.id).toBe(page)
+    }
+  })
+
   it('disables Preview on a detail page with no record', async () => {
     world.model.modules.blog!.fixtures = []
     await open({}, 'pg_post_detail')
@@ -162,7 +169,7 @@ describe('the sidebar', () => {
     await open()
     await sidebarTab('Pages')
     const rows = qa('[data-page-id]')
-    expect(rows.map(row => row.getAttribute('data-page-id'))).toEqual(['pg_index', 'pg_new_post', 'pg_post_detail'])
+    expect(rows.map(row => row.getAttribute('data-page-id'))).toEqual(['pg_index', 'pg_new_post', 'pg_post_detail', 'pg_shop_catalog', 'pg_weather'])
     expect(q('[data-page-id="pg_index"]')?.textContent).toContain('Home')
     expect(q('[data-page-id="pg_new_post"]')?.textContent).toContain('/posts/new')
     expect(q('[data-page-id="pg_post_detail"]')?.textContent).toContain('/posts/:slug')

@@ -133,7 +133,7 @@ describe('the prop sections', () => {
     await selectOption(propSelect('level'), '3')
     await select('n_read_more')
     // The pages are named as the sidebar names them: Home, or the path.
-    expect(await optionLabels(propSelect('to'))).toEqual(['None', 'Home', '/posts/new', '/posts/:slug'])
+    expect(await optionLabels(propSelect('to'))).toEqual(['None', 'Home', '/posts/new', '/posts/:slug', '/catalog/:category · shop-catalog', '/weather/:city · weather'])
     document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await settle()
     await selectOption(propSelect('to'), 'Home')

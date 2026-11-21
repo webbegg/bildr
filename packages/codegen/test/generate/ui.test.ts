@@ -17,9 +17,11 @@ const fixtureModel = (): Model => {
 const UI_FILES = [
   'layers/blog/app/components/blog/PostCard.vue',
   'layers/blog/app/components/blog/Tip.vue',
+  'layers/blog/app/pages/catalog/[category].vue',
   'layers/blog/app/pages/index.vue',
   'layers/blog/app/pages/posts/[slug].vue',
   'layers/blog/app/pages/posts/new.vue',
+  'layers/blog/app/pages/weather/[city].vue',
   'layers/core/app/layouts/main.vue'
 ]
 

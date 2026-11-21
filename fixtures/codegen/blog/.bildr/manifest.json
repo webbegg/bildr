@@ -360,6 +360,11 @@
       "sha256": "cffb30adcc63e1b5cd42da706b1f25a7446ec59b9fd9b9a2cde92c7d67d70671",
       "source": ".bildr/modules/blog/entities/quote.json"
     },
+    "layers/blog/app/pages/catalog/[category].vue": {
+      "owner": "managed",
+      "sha256": "d85eb899dad46e9cef03e86c449209dbf65e690273981a42e8482c1d166bde84",
+      "source": ".bildr/modules/blog/pages/shop-catalog.json"
+    },
     "layers/blog/app/pages/index.vue": {
       "owner": "managed",
       "sha256": "4359dd75375a75471008e417f0f8447e4ef767d961d1c01221680c5f08162468",
@@ -374,6 +379,11 @@
       "owner": "managed",
       "sha256": "32972c90abf236a2997118a1aee2458ecf21a5882225660737c73210dc3ba416",
       "source": ".bildr/modules/blog/pages/new-post.json"
+    },
+    "layers/blog/app/pages/weather/[city].vue": {
+      "owner": "managed",
+      "sha256": "93b0da1caa9e6617525a12f9a325f24eec3f64b6c9a9fb09cbf292a3b8254c74",
+      "source": ".bildr/modules/blog/pages/weather.json"
     },
     "layers/blog/nuxt.config.ts": {
       "owner": "managed",

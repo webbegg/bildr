@@ -44,7 +44,7 @@ describe('layout files', () => {
     const copy = p.edit('layout_duplicate', { layout: 'lay_main' })
     expect(copy).toMatchObject({ layoutId: 'lay_site_shell_copy', filePath: '.bildr/layouts/site-shell-copy.json' })
     expect(p.json('.bildr/layouts/site-shell-copy.json').variables.map((variable: Json) => variable.id)).toEqual(['prop_title_2'])
-    expect(p.refuse('layout_delete', { layout: 'lay_main' }, 'invalid').message).toBe('Layout "site-shell" is used by 3 pages: pg_index, pg_new_post, pg_post_detail. Give them another layout first')
+    expect(p.refuse('layout_delete', { layout: 'lay_main' }, 'invalid').message).toBe('Layout "site-shell" is used by 5 pages: pg_index, pg_new_post, pg_post_detail, pg_shop_catalog, pg_weather. Give them another layout first')
     expect(p.edit('layout_delete', { layout: copy.layoutId }).changes).toEqual([{ path: '.bildr/layouts/site-shell-copy.json', content: null }])
   })
 })

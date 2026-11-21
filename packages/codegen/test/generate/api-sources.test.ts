@@ -12,8 +12,14 @@ import { fixtureModelFiles } from '../model/fixture'
  * parameter (remote key `cat`) and an itemsPath, a query with a path parameter, a POST action with a body and a
  * result, and a DELETE action with no result. The "weather" source runs in the browser (P3): see the browser group below.
  */
+const PAGES_OF = {
+  '.bildr/datasources/catalog.json': '.bildr/modules/blog/pages/shop-catalog.json',
+  '.bildr/datasources/weather.json': '.bildr/modules/blog/pages/weather.json'
+}
 const files = (overrides: Record<string, string | null> = {}) => {
   const input = { ...fixtureModelFiles() }
+  // The golden pages that use a source (P7a) go when a test changes or drops the source: they would not load against it.
+  for (const [source, page] of Object.entries(PAGES_OF)) if (source in overrides) Reflect.deleteProperty(input, page)
   for (const [path, content] of Object.entries(overrides)) {
     if (content === null) Reflect.deleteProperty(input, path)
     else input[path] = content

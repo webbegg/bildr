@@ -33,9 +33,10 @@ describe('uses.apis', () => {
     expect(problems(withApis([products]))).toEqual([])
   })
 
-  it('a page without apis is untouched', () => {
+  it('a page without apis is untouched, and the golden pages that use them are loaded', () => {
     const result = loadModel(fixtureModelFiles())
-    expect(result.ok && result.model.modules.blog!.pages.every(page => page.uses?.apis === undefined)).toBe(true)
+    expect(result.ok && result.model.modules.blog!.pages.filter(page => page.uses?.apis === undefined).map(page => page.id)).toEqual(['pg_index', 'pg_new_post', 'pg_post_detail'])
+    expect(result.ok && result.model.modules.blog!.pages.filter(page => page.uses?.apis).map(page => `${page.id}:${page.uses!.apis![0]!.datasource}`)).toEqual(['pg_shop_catalog:ds_catalog', 'pg_weather:ds_weather'])
   })
 
   it('names the source, the query, the args and the alias when they are wrong', () => {

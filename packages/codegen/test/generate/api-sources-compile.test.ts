@@ -32,11 +32,17 @@ const hash = (content: string) => createHash('sha256').update(content).digest('h
 class Session {
   files = fixtureModelFiles()
 
+  /** What the last edit answered (a created page's `pageId` and `nodeId`). */
+  result: Record<string, unknown> = {}
+
   /** An edit that must succeed. */
   edit(name: EditName, input: unknown) {
     const outcome = applyEdit(this.files, name, input)
     expect(outcome.ok, `${name} ${JSON.stringify(input)}: ${JSON.stringify(outcome)}`).toBe(true)
-    if (outcome.ok) this.files = applyChanges(this.files, outcome.changes)
+    if (outcome.ok) {
+      this.files = applyChanges(this.files, outcome.changes)
+      this.result = outcome.result as Record<string, unknown>
+    }
     return this
   }
 
@@ -131,6 +137,43 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
     // A source whose operations answer nothing: its repository has no reporter for an invalid answer to give.
     session.edit('api_create', { name: 'beat', baseUrl: 'https://beat.example.com', runtime: 'browser' })
     session.edit('api_action_set', { datasource: 'ds_beat', action: { name: 'pulse', method: 'POST', path: '/pulse', params: [] } })
+  }],
+  // P7a: pages that use API queries: the call with its args, the list keyed by id or by position, a one result, the error line.
+  ['pages that use API queries: lists keyed by id and by position, a one result, args from the route and literals', (session) => {
+    session.edit('api_create', { name: 'shop', baseUrl: 'https://shop.example.com/v1' })
+    session.edit('api_model_set', { datasource: 'ds_shop', model: { name: 'Person', fields: [{ name: 'name', type: 'text' }] } })
+    session.edit('api_model_set', { datasource: 'ds_shop', model: { name: 'Item', fields: [{ name: 'id', type: 'integer' }, { name: 'name', type: 'text' }, { name: 'owner', type: 'model', model: 'Person', optional: true }, { name: 'tags', type: 'text', list: true }] } })
+    session.edit('api_model_set', { datasource: 'ds_shop', model: { name: 'Note', fields: [{ name: 'text', type: 'text' }] } })
+    session.edit('api_query_set', { datasource: 'ds_shop', query: { name: 'items', path: '/items', params: [{ name: 'category', in: 'query', type: 'text', required: true }, { name: 'page', in: 'query', type: 'integer' }], result: { model: 'Item', many: true } } })
+    session.edit('api_query_set', { datasource: 'ds_shop', query: { name: 'item', path: '/items/:id', params: [{ name: 'id', in: 'path', type: 'integer' }], result: { model: 'Item', many: false } } })
+    session.edit('api_query_set', { datasource: 'ds_shop', query: items('notes', 'Note') })
+    // A list by id, from a route parameter and a literal; a row's handler takes the row typed from the data.
+    session.edit('page_create', { name: 'shop-items', path: '/shop/:category', layout: 'lay_main' })
+    const listing = session.result.pageId as string
+    session.edit('page_use_add', { page: listing, as: 'found', api: { datasource: 'ds_shop', query: 'items' }, args: { category: { $route: 'category' }, page: 2 } })
+    session.edit('node_insert', {
+      file: listing,
+      type: 'List',
+      props: { items: { $bind: 'found' }, as: 'row', loading: 'Loading…', empty: 'Nothing here.' },
+      children: [
+        { type: 'Text', props: { text: { $template: '{row.name} by {row.owner.name}, {row.tags.length} tags' } } },
+        { type: 'Button', props: { text: 'Open' }, interactions: [{ on: 'click', do: [{ kind: 'navigate', to: { page: 'pg_post_detail', params: { slug: { $bind: 'row.name' } } } }] }] }
+      ]
+    })
+    // A one result: a guarded Page, read with optional chaining.
+    session.edit('page_create', { name: 'shop-item', path: '/shop-item', layout: 'lay_main' })
+    const detail = session.result.pageId as string
+    const root = session.result.nodeId as string
+    session.edit('page_use_add', { page: detail, as: 'first', api: { datasource: 'ds_shop', query: 'item' }, args: { id: 1 } })
+    session.edit('node_update_props', { file: detail, nodeId: root, props: { when: { $bind: 'first' }, loading: 'Loading…', empty: 'No item.' } })
+    session.edit('node_insert', { file: detail, parentId: root, type: 'Heading', props: { text: { $bind: 'first.name' } } })
+    session.edit('node_insert', { file: detail, parentId: root, type: 'Text', props: { text: { $template: 'Owner {first.owner.name}' } } })
+    // Rows with no id are keyed by their position; the list's length is bound too.
+    session.edit('page_create', { name: 'shop-notes', path: '/shop-notes' })
+    const notes = session.result.pageId as string
+    session.edit('page_use_add', { page: notes, as: 'notes', api: { datasource: 'ds_shop', query: 'notes' } })
+    session.edit('node_insert', { file: notes, type: 'Heading', props: { text: { $template: '{notes.length} notes' } } })
+    session.edit('node_insert', { file: notes, type: 'List', props: { items: { $bind: 'notes' }, as: 'note', hideWhenEmpty: true }, children: [{ type: 'Text', props: { text: { $template: '{note.text}' } } }] })
   }],
   ['a list under keys that are not identifiers', (session) => {
     session.edit('api_create', { name: 'hydra', baseUrl: 'https://hydra.example.com' })

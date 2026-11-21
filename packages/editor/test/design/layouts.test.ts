@@ -22,7 +22,7 @@ describe('Layouts section', () => {
     await sidebarTab('Assets')
     expect([...document.body.querySelectorAll('[data-layout-id]')].map(row => row.getAttribute('data-layout-id'))).toEqual([MAIN])
     expect(layoutRow(MAIN)!.textContent).toContain('main')
-    expect(layoutRow(MAIN)!.querySelector('[data-layout-pages]')?.getAttribute('data-layout-pages')).toBe('3')
+    expect(layoutRow(MAIN)!.querySelector('[data-layout-pages]')?.getAttribute('data-layout-pages')).toBe('5')
     await click(layoutRow(MAIN)!.querySelector('button'))
     expect(sent('bildr:render').at(-1)?.file.id).toBe(MAIN)
   })
@@ -97,7 +97,7 @@ describe('Slots and variables of a layout', () => {
     await open({}, MAIN)
     expect(pick('[data-layout-page-content]')).toBeNull()
     await select('n_main')
-    expect(pick('[data-layout-page-content]')?.textContent).toContain('3 pages now')
+    expect(pick('[data-layout-page-content]')?.textContent).toContain('5 pages now')
   })
 
   it('makes a container a slot named Slot, renames a slot and removes one', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { apiQueryUsesOf, bindingPaths, bindingScope, usesOf } from '../../src/edit/index'
-import { findNode, IDX, project } from './helpers'
+import { IDX, project } from './helpers'
 
 /** Simple data P7a (SD-6): a page uses an API query (`uses.apis`), and every edit that touches the source keeps the page consistent. */
 
@@ -28,14 +28,11 @@ const shop = () => {
   return p
 }
 
-/**
- * The project with `props` merged into the props of nodes of the index page, written straight into its file: the generator (generate/ui.ts) doesn't
- * resolve a name from `uses.apis` yet (a later part of P7), so an edit can't bind one, but the model and every edit must already cope with a page that does.
- */
-const bound = (p: ReturnType<typeof shop>, props: Record<string, Record<string, unknown>>) => {
-  const page = p.json(IDX)
-  for (const [nodeId, values] of Object.entries(props)) Object.assign(findNode(page.root, nodeId)!.props, values)
-  return project({ ...p.files, [IDX]: JSON.stringify(page) })
+/** The index page's quotes List repeats `items` as `as`, its text reading `text` (`{as.title}`): plain edits, the generator checks each. */
+const listOver = (p: ReturnType<typeof shop>, items: string, as: string, text = `{${as}.title}`) => {
+  p.edit('node_update_props', { file: 'pg_index', nodeId: 'n_quote', props: { text: 'Quote' } })
+  p.edit('node_update_props', { file: 'pg_index', nodeId: 'n_quotes', props: { items: { $bind: items }, as } })
+  p.edit('node_update_props', { file: 'pg_index', nodeId: 'n_quote', props: { text: { $template: text } } })
 }
 
 const useProducts = (p: ReturnType<typeof shop>, as = 'products') =>
@@ -105,11 +102,11 @@ describe('page_use_update and page_use_remove on an API use', () => {
   it('removes the use and its empty list, refused while the page binds the name', () => {
     const p = shop()
     useProducts(p)
-    const q = bound(p, { n_h1: { text: { $template: '{products.length} products' } } })
-    expect(q.refuse('page_use_remove', { page: 'pg_index', as: 'products' }, 'invalid').message).toBe('The page still binds "products": change what reads it first')
-    q.edit('node_update_props', { file: 'pg_index', nodeId: 'n_h1', props: { text: 'Posts' } })
-    q.edit('page_use_remove', { page: 'pg_index', as: 'products' })
-    expect(q.json(IDX).uses.apis).toBeUndefined()
+    p.edit('node_update_props', { file: 'pg_index', nodeId: 'n_h1', props: { text: { $template: '{products.length} products' } } })
+    expect(p.refuse('page_use_remove', { page: 'pg_index', as: 'products' }, 'invalid').message).toBe('The page still binds "products": change what reads it first')
+    p.edit('node_update_props', { file: 'pg_index', nodeId: 'n_h1', props: { text: 'Posts' } })
+    p.edit('page_use_remove', { page: 'pg_index', as: 'products' })
+    expect(p.json(IDX).uses.apis).toBeUndefined()
   })
 })
 
@@ -117,7 +114,8 @@ describe('bindingScope over API uses', () => {
   const listed = () => {
     const p = shop()
     useProducts(p)
-    return bound(p, { n_quotes: { items: { $bind: 'products' }, as: 'product' } })
+    listOver(p, 'products', 'product')
+    return p
   }
 
   it('exposes a list as a list, with the fields of its model (nested ones, a list field\'s length) on its item', () => {
@@ -141,7 +139,8 @@ describe('bindingScope over API uses', () => {
     expect(bindingScope(p.model(), 'pg_index', 'n_h1').some(entry => entry.name === 'product')).toBe(false)
     const one = shop()
     one.edit('page_use_add', { page: 'pg_index', as: 'first', api: { datasource: SHOP, query: 'product' }, args: { id: 1 } })
-    const scope = bindingScope(bound(one, { n_quotes: { items: { $bind: 'first' }, as: 'row' } }).model(), 'pg_index', 'n_quote')
+    listOver(one, 'first', 'row')
+    const scope = bindingScope(one.model(), 'pg_index', 'n_quote')
     expect(scope.find(entry => entry.name === 'row')).toMatchObject({ source: 'item', fields: [] })
   })
 })
@@ -151,7 +150,8 @@ describe('usage of API queries', () => {
     const p = shop()
     useProducts(p)
     p.edit('page_use_add', { page: 'pg_index', as: 'notes', api: { datasource: SHOP, query: 'notes' } })
-    const model = bound(p, { n_h1: { text: { $template: '{products.length} products' } } }).model()
+    p.edit('node_update_props', { file: 'pg_index', nodeId: 'n_h1', props: { text: { $template: '{products.length} products' } } })
+    const model = p.model()
     expect(apiQueryUsesOf(model, SHOP, 'products')).toEqual([
       { kind: 'page', id: 'pg_index', name: 'index', via: 'uses', where: 'uses', as: 'products', operation: 'products' },
       { kind: 'page', id: 'pg_index', name: 'index', via: 'bind', where: 'n_h1', node: 'n_h1', as: 'products', operation: 'products' }
@@ -205,13 +205,13 @@ describe('what the source\'s edits do to pages that use it', () => {
   it('api_model_set keeps the bound fields: it refuses to drop one a node reads, and lets others go', () => {
     const p = shop()
     useProducts(p)
-    const q = bound(p, { n_quotes: { items: { $bind: 'products' }, as: 'product' }, n_quote: { text: { $template: '{product.title} in {product.address.city}' } } })
+    listOver(p, 'products', 'product', '{product.title} in {product.address.city}')
     const product = (fields: Array<Record<string, unknown>>) => ({ datasource: SHOP, model: { name: 'Product', fields } })
     const keep = [{ name: 'id', type: 'integer' }, { name: 'title', type: 'text' }, { name: 'price', type: 'number' }, { name: 'address', type: 'model', model: 'Address' }]
-    expect(q.refuse('api_model_set', product(keep.filter(field => field.name !== 'title')), 'invalid').message)
+    expect(p.refuse('api_model_set', product(keep.filter(field => field.name !== 'title')), 'invalid').message)
       .toBe('The query "products" of the API "shop" is read by page "index" (pg_index): n_quote binds "product.title", which the model no longer has. Change them first')
-    expect(q.refuse('api_model_set', { datasource: SHOP, model: { name: 'Address', fields: [{ name: 'town', type: 'text' }] } }, 'invalid').message).toMatch(/binds "product.address.city"/)
-    q.edit('api_model_set', product(keep))
+    expect(p.refuse('api_model_set', { datasource: SHOP, model: { name: 'Address', fields: [{ name: 'town', type: 'text' }] } }, 'invalid').message).toMatch(/binds "product.address.city"/)
+    p.edit('api_model_set', product(keep))
   })
 
   it('api_query_set refuses to change what a page binds (one or many, the model) or the params it passes', () => {

@@ -28,10 +28,13 @@
  *             `modules`, `nuxi typecheck`, `nuxi build` and `vitest run` pass (S2).
  * 5. smoke    the built server on a fresh database; a headless Chromium opens the
  *             list, creates a post through the form, sees it in the list and on
- *             its detail page; the API lists it. The browser-runtime "weather" API
- *             (a stub on its own port, with CORS) is called from a test page by the
- *             generated composables, with no bildr route in between. Console errors,
- *             failed requests and requests to other origins (but that stub) are FAILs.
+ *             its detail page; the API lists it. The golden pages that use API queries
+ *             (P7a) render the stubs' data: "catalog" (server runtime, through the bildr
+ *             route) at /catalog/:category, and "weather" (browser runtime, a stub on its
+ *             own port with CORS, called by the page with no bildr route in between) at
+ *             /weather/:city; each shows its error line when the stub fails. Console
+ *             errors, failed requests and requests to other origins (but that stub) are
+ *             FAILs, except the failures of the page that tests the server error line.
  *
  * Flags and env:
  * --install          real install instead of the symlink
@@ -593,6 +596,8 @@ function catalogStub() {
         response.end(value === undefined ? '' : JSON.stringify(value))
       }
       const one = /^\/products\/(\d+)$/.exec(url.pathname)
+      // `cat=broken` is a failing remote: the page that lists it shows its error line.
+      if (request.method === 'GET' && url.pathname === '/products' && url.searchParams.get('cat') === 'broken') return send(500, { message: 'boom' })
       if (request.method === 'GET' && url.pathname === '/products') return send(200, { data: { items: url.searchParams.get('cat') === 'none' ? [] : [product(1)] } })
       // Product 99 is answered with something the model doesn't say: the app must not pass any of it to the browser.
       if (request.method === 'GET' && one) return send(200, one[1] === '99' ? { id: 'not-a-number', secret_internal: 'upstream-body' } : product(Number(one[1])))
@@ -639,8 +644,9 @@ function weatherStub() {
 }
 
 /**
- * A page that calls the generated composables of the "weather" source, written into the generated app before it is built (P7 adds the page
- * bindings that will do it from the canvas): the forecast of one city, one the stub answers wrongly, and the report action.
+ * A page that calls the generated composables of the "weather" source, written into the generated app before it is built. The golden
+ * "weather" page (fixtures/codegen/blog) covers the query from the canvas; what a page can't use yet stays here: the report action, and the
+ * error message a query's composable gives (the page's error line has a fixed text).
  */
 function writeWeatherPage(ctx) {
   const path = join(ctx.dir, 'app/pages/e2e-weather.vue')
@@ -648,7 +654,6 @@ function writeWeatherPage(ctx) {
   writeFileSync(path, [
     '<script setup lang="ts">',
     '// Written by e2e/generated.mjs: it calls the generated composables of the browser-runtime "weather" API directly.',
-    'const forecast = useWeatherForecast({ city: \'Lisbon\' })',
     'const nowhere = useWeatherForecast({ city: \'Nowhere\' })',
     'const report = useWeatherReportForecast()',
     'const reported = ref(\'\')',
@@ -660,9 +665,6 @@ function writeWeatherPage(ctx) {
     '',
     '<template>',
     '  <main>',
-    '    <p data-test="city">{{ forecast.data.value?.city }}</p>',
-    '    <p data-test="celsius">{{ forecast.data.value?.celsius }}</p>',
-    '    <p data-test="observed">{{ forecast.data.value?.observedAt }}</p>',
     '    <p data-test="nowhere">{{ nowhere.error.value }}</p>',
     '    <button type="button" @click="send">Report</button>',
     '    <p data-test="reported">{{ reported }}</p>',
@@ -670,7 +672,7 @@ function writeWeatherPage(ctx) {
     '</template>',
     ''
   ].join('\n'))
-  check(existsSync(path), 'a test page calls the generated weather composables (app/pages/e2e-weather.vue)')
+  check(existsSync(path), 'a test page calls the generated weather report action and a failing query (app/pages/e2e-weather.vue)')
 }
 
 // API-only smoke (--database none).
@@ -911,16 +913,31 @@ async function smoke(ctx) {
     await page.goto(`${base}/posts/${post.slug}`)
     await visible(page.getByRole('heading', { name: post.title }), 'detail page by direct URL: the title')
 
+    // The golden "shop-catalog" page lists the server API's products (P7a): the page's composable asks the bildr route, which asks the stub.
+    await page.goto(`${base}/catalog/books`)
+    await visible(page.getByText('Stub product costs 9.5'), 'catalog page (/catalog/books): the stub\'s product, mapped, through the bildr route')
+    check(catalog.calls.some(call => call.method === 'GET' && call.path === '/products' && call.search === '?cat=books'), 'catalog page: the stub was asked GET /products?cat=books (the category of the route)')
+    await page.goto(`${base}/catalog/none`)
+    await visible(page.getByText('No products.'), 'catalog page (/catalog/none): the empty text when the stub has no products')
+    // A failing remote: the route answers an error, the page shows its error line (after the query client's retries). Those failed requests are expected.
+    const failuresFrom = errors.length
+    await page.goto(`${base}/catalog/broken`)
+    await visible(page.getByText('Couldn\'t load this.'), 'catalog page (/catalog/broken): a failing API shows the error line')
+    check(!(await page.content()).includes('boom'), 'catalog page: nothing of the remote\'s answer reaches the page')
+    errors.push(...errors.splice(failuresFrom).filter(line => !/apis\/catalog\/products\?category=broken|status of 50\d/.test(line)))
+
     // The "weather" API data source runs in the browser (SD-5, P3): the page's composable builds the request itself and calls the stub (another
     // origin, CORS), through the use-case and the HTTP repository. No bildr route is in between, and no credentials go with it.
-    await page.goto(`${base}/e2e-weather`)
-    await visible(page.locator('[data-test="city"]', { hasText: 'Lisbon' }), 'weather page: the forecast of Lisbon, fetched by the browser from the stub')
-    await visible(page.locator('[data-test="celsius"]', { hasText: '21.5' }), 'weather page: the forecast is mapped to the entity (celsius 21.5)')
-    await visible(page.locator('[data-test="observed"]', { hasText: '2024-01-02T03:04:05Z' }), 'weather page: observed_at is read as observedAt')
+    // The golden "weather" page uses the query as a one result, with the city from the route.
+    await page.goto(`${base}/weather/Lisbon`)
+    await visible(page.getByRole('heading', { name: 'Lisbon' }), 'weather page (/weather/Lisbon): the forecast of Lisbon, fetched by the browser from the stub')
+    await visible(page.getByText('21.5 degrees'), 'weather page: the forecast is mapped to the entity (celsius 21.5)')
+    await visible(page.getByText('Observed 2024-01-02T03:04:05Z'), 'weather page: observed_at is read as observedAt')
     const forecastCall = weather.calls.find(call => call.method === 'GET' && call.path === '/forecast' && call.search === '?q=Lisbon')
     check(forecastCall?.origin === base && /Chrome/.test(forecastCall.userAgent ?? ''), `weather API: GET /forecast?q=Lisbon came from the browser (Origin ${forecastCall?.origin}, ${forecastCall?.userAgent?.slice(0, 60)})`)
     check(forecastCall && !forecastCall.authorization && !forecastCall.cookie, 'weather API: the browser call carried no credentials (no authorization, no cookie)')
     check(viaServer.length === 0 && weatherRequests.some(request => request.startsWith('GET ') && request.endsWith('/forecast?q=Lisbon')), `weather API: the page called the stub itself, no bildr route in between (${viaServer.join(', ') || weatherRequests.join(', ')})`)
+    await page.goto(`${base}/e2e-weather`)
     await page.getByRole('button', { name: 'Report' }).click()
     await visible(page.locator('[data-test="reported"]', { hasText: 'reported Lisbon' }), 'weather page: the report action ran in the browser and answered the stub\'s echo')
     const reportedCall = weather.calls.find(call => call.method === 'POST' && call.path === '/reports')
@@ -932,6 +949,10 @@ async function smoke(ctx) {
     const shown = await page.locator('[data-test="nowhere"]').first().textContent()
     check(shown === 'The "weather" API answered something unexpected' && !/\bexpected\b|invalid_type|secret_internal|upstream-body/i.test(shown), `weather page: the error the UI sees has no zod detail and no upstream body (${shown})`)
     check(warnings.some(text => text.includes('The "weather" API answered something unexpected: ') && /\bexpected\b/.test(text)), 'weather API: the detail of that answer went to console.warn')
+    // The same wrong answer on the golden page: its error line, nothing of the answer.
+    await page.goto(`${base}/weather/Nowhere`)
+    await visible(page.getByText('Couldn\'t load this.'), 'weather page (/weather/Nowhere): an answer that is not a Forecast shows the error line')
+    check(!(await page.content()).includes('upstream-body'), 'weather page: nothing of the wrong answer reaches the page')
 
     check(errors.length === 0, `no console errors or failed requests${errors.length ? `:\n${errors.map(line => `    | ${line}`).join('\n')}` : ''}`)
     check(external.size === 0, `the app requested no other origins at runtime${external.size ? `:\n${[...external].map(url => `    | ${url}`).join('\n')}` : ''}`)

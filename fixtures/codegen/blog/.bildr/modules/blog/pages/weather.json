@@ -1,0 +1,65 @@
+{
+  "$schema": "https://bildr.dev/schema/page.v1.json",
+  "id": "pg_weather",
+  "name": "weather",
+  "path": "/weather/:city",
+  "layout": "lay_main",
+  "uses": {
+    "apis": [
+      {
+        "as": "report",
+        "datasource": "ds_weather",
+        "query": "forecast",
+        "args": {
+          "city": {
+            "$route": "city"
+          }
+        }
+      }
+    ]
+  },
+  "root": {
+    "id": "n_forecast",
+    "type": "Page",
+    "props": {
+      "when": {
+        "$bind": "report"
+      },
+      "loading": "Loading…",
+      "empty": "No forecast."
+    },
+    "style": {
+      "gap": "4"
+    },
+    "children": [
+      {
+        "id": "n_forecast_city",
+        "type": "Heading",
+        "props": {
+          "text": {
+            "$bind": "report.city"
+          },
+          "level": 2
+        }
+      },
+      {
+        "id": "n_forecast_celsius",
+        "type": "Text",
+        "props": {
+          "text": {
+            "$template": "{report.celsius} degrees"
+          }
+        }
+      },
+      {
+        "id": "n_forecast_observed",
+        "type": "Text",
+        "props": {
+          "text": {
+            "$template": "Observed {report.observedAt}"
+          }
+        }
+      }
+    ]
+  }
+}
