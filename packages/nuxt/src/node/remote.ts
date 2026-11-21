@@ -80,7 +80,7 @@ export interface FetchOptions {
   maxBytes?: number
 }
 
-const readCapped = async (response: Response, maxBytes: number): Promise<string> => {
+const readCapped = async (response: Response, maxBytes: number): Promise<{ text: string, size: number }> => {
   const declared = Number(response.headers.get('content-length'))
   const tooBig = () => new RemoteError(`The data source answered more than ${maxBytes / 1_000_000} MB: not read`)
   if (declared > maxBytes) {
@@ -88,7 +88,7 @@ const readCapped = async (response: Response, maxBytes: number): Promise<string>
     throw tooBig()
   }
   const reader = response.body?.getReader()
-  if (!reader) return ''
+  if (!reader) return { text: '', size: 0 }
   const chunks: Uint8Array[] = []
   let size = 0
   for (;;) {
@@ -101,11 +101,17 @@ const readCapped = async (response: Response, maxBytes: number): Promise<string>
     }
     chunks.push(value)
   }
-  return Buffer.concat(chunks).toString('utf8')
+  return { text: Buffer.concat(chunks).toString('utf8'), size }
+}
+
+/** How a data source answered besides its body: the bytes it sent and its headers (names lower-cased, as sent: nothing is left out here). */
+export interface AnswerMeta {
+  size: number
+  headers: Record<string, string>
 }
 
 /** What a data source answered: its JSON, or its text when the body isn't JSON (also an empty one). */
-export type RemoteAnswer = { status: number, json: unknown } | { status: number, text: string }
+export type RemoteAnswer = ({ status: number, json: unknown } | { status: number, text: string }) & AnswerMeta
 
 /**
  * Sends `method` to `url` (under `baseUrl`), with `body` as JSON when given. Redirects are followed by hand,
@@ -128,11 +134,12 @@ export const fetchRemote = async (url: string, { baseUrl, headers, method = 'GET
         target = next.href
         continue
       }
-      const text = await readCapped(response, maxBytes)
+      const { text, size } = await readCapped(response, maxBytes)
+      const meta: AnswerMeta = { size, headers: Object.fromEntries(response.headers) }
       try {
-        return { status: response.status, json: JSON.parse(text) as unknown }
+        return { status: response.status, json: JSON.parse(text) as unknown, ...meta }
       } catch {
-        return { status: response.status, text }
+        return { status: response.status, text, ...meta }
       }
     }
   } catch (error) {
@@ -146,5 +153,5 @@ export const fetchRemote = async (url: string, { baseUrl, headers, method = 'GET
 export const fetchJson = async (url: string, options: Omit<FetchOptions, 'method' | 'body'>): Promise<{ status: number, json: unknown }> => {
   const answer = await fetchRemote(url, options)
   if ('text' in answer) throw new RemoteError(`The data source answered ${answer.status} without JSON`)
-  return answer
+  return { status: answer.status, json: answer.json }
 }

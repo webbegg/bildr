@@ -49,6 +49,19 @@ beforeAll(async () => {
         response.writeHead(302, { location: '/v1/echo' })
         return response.end()
       }
+      if (url.pathname === '/v1/headers') {
+        response.writeHead(200, {
+          'content-type': 'application/json',
+          'x-request-id': 'r-1',
+          'set-cookie': ['session=abc; HttpOnly', 'other=def'],
+          'authorization': `Bearer ${auth ?? ''}`,
+          'proxy-authorization': 'Basic xyz',
+          'x-api-key': String(auth ?? ''),
+          'x-echo': `key=${auth ?? ''}`,
+          'x-long': 'v'.repeat(3000)
+        })
+        return response.end('{"ok":true}')
+      }
       if (url.pathname === '/v1/text') {
         response.writeHead(200, { 'content-type': 'text/plain' })
         return response.end(`hello ${auth ?? ''}`)
@@ -74,6 +87,9 @@ beforeEach(() => {
 afterEach(() => rmSync(root, { recursive: true, force: true }))
 
 type Json = Record<string, any> // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/** What every answer also says: how long it took, how big it was, its headers (api-calls T1). */
+const META = { durationMs: expect.any(Number), size: expect.any(Number), headers: expect.any(Object) }
 
 const act = (name: string, body: unknown = {}) => handle(new Request(`http://localhost:3000/__bildr/api/actions/${name}`, {
   method: 'POST',
@@ -155,7 +171,7 @@ describe('api_try: a GET', () => {
 
   it('answers text for a non-JSON body, with no proposal', async () => {
     await apiSource()
-    expect(await ok('api_try', { datasource: 'ds_stub', path: '/text' })).toEqual({ status: 200, url: `${base}/text`, text: 'hello ' })
+    expect(await ok('api_try', { datasource: 'ds_stub', path: '/text' })).toEqual({ status: 200, url: `${base}/text`, text: 'hello ', ...META })
   })
 
   it('reads the base URL from the env var when it is set (it wins over the model)', async () => {
@@ -178,6 +194,38 @@ describe('api_try: a GET', () => {
     await ok('api_query_set', { datasource: 'ds_stub', query: { name: 'byToString', path: '/items/:toString', params: [{ name: 'toString', in: 'path', type: 'text' }], result: { model: 'Product', many: false } } })
     expect((await failure('api_try', { datasource: 'ds_stub', query: 'byToString' }, 400, 'invalid_input')).message).toBe('Give the path parameter "toString"')
     expect(seen).toEqual([])
+  })
+})
+
+describe('api_try: what the answer was like (api-calls T1)', () => {
+  it('says how long it took and how big the answer was, in bytes', async () => {
+    await apiSource()
+    const text = await ok('api_try', { datasource: 'ds_stub', path: '/text' })
+    expect(text.size).toBe(6)
+    expect(Number.isInteger(text.durationMs) && text.durationMs >= 0 && text.durationMs < 10_000).toBe(true)
+    const json = await ok('api_try', { datasource: 'ds_stub', path: '/headers' })
+    expect(json.size).toBe('{"ok":true}'.length)
+  })
+
+  it('gives the answer\'s headers, lower-cased, without the cookies and sign-ins it sets, and cut when long', async () => {
+    await apiSource()
+    const { headers } = await ok('api_try', { datasource: 'ds_stub', path: '/headers' })
+    expect(headers['content-type']).toBe('application/json')
+    expect(headers['x-request-id']).toBe('r-1')
+    expect(headers).not.toHaveProperty('set-cookie')
+    expect(headers).not.toHaveProperty('authorization')
+    expect(headers).not.toHaveProperty('proxy-authorization')
+    expect(headers['x-long']).toBe(`${'v'.repeat(500)}…`)
+  })
+
+  it('never gives back the secret in a header: the API\'s own key header is left out, and the secret is masked in any other', async () => {
+    await apiSource({ auth: { type: 'header', header: 'X-Api-Key' } })
+    writeFileSync(join(dir, '.env'), `NUXT_APIS_STUB_API_KEY="${SECRET}"\n`)
+    const tried = await ok('api_try', { datasource: 'ds_stub', path: '/headers' })
+    expect(seen[0]!.authorization).toBe(SECRET)
+    expect(tried.headers).not.toHaveProperty('x-api-key')
+    expect(tried.headers['x-echo']).toBe('key=•••')
+    expect(JSON.stringify(tried)).not.toContain(SECRET)
   })
 })
 
@@ -243,7 +291,7 @@ describe('api_try: secrets', () => {
     expect(text.text).toBe('hello Bearer •••')
     expect(JSON.stringify(text)).not.toContain(SECRET)
     const missing = await ok('api_try', { datasource: 'ds_stub', path: `/${SECRET}/x` })
-    expect(missing).toEqual({ status: 404, url: `${base}/•••/x`, json: { error: 'not found' } })
+    expect(missing).toEqual({ status: 404, url: `${base}/•••/x`, json: { error: 'not found' }, ...META })
   })
 
   it('tries a browser source without auth: the secret is never sent', async () => {

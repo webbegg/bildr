@@ -5,6 +5,8 @@ import type { ApiSource } from '@bildr/codegen/edit'
 import { callAction, errorMessage } from '../../api.ts'
 import DataInlineError from '../data/DataInlineError.vue'
 import SimpleApiProposal from './SimpleApiProposal.vue'
+import SimpleApiRequestPreview from './SimpleApiRequestPreview.vue'
+import { durationLabel, resolvedRequest, sizeLabel } from '../../editor/tryRequest.ts'
 import { paramsOutput, tryParams } from '../../editor/simpleApiDraft.ts'
 import type { OperationDraft } from '../../editor/simpleApiDraft.ts'
 import { useEditor } from '../../editor/useEditor.ts'
@@ -23,6 +25,7 @@ import { plainWords } from '../../shared/simpleData.ts'
  * and nothing is sent when it is not JSON. A refusal is shown in plain words.
  *
  * The values and the body are the editor's (`v-model:values`, `v-model:body`), so a request pasted into the path can fill them in.
+ * Above Try it is the request as it will be sent (`SimpleApiRequestPreview`); the answer says how long it took and how big it was.
  *
  * The answer is of the call that was sent: it goes (with "Use this answer") when the path, the method or the parameters change, and while
  * a new call is on its way, and an answer that comes after that is not shown.
@@ -41,6 +44,9 @@ interface Answer {
   url: string
   json?: unknown
   text?: string
+  durationMs?: number
+  size?: number
+  headers?: Record<string, string>
   items?: { path: string, count: number }
   proposal?: { result: { model: string, many: boolean, itemsPath?: string }, models: ApiModel[] }
 }
@@ -55,6 +61,7 @@ const params = computed(() => paramsOutput(draft))
 const isWrite = computed(() => draft.kind === 'action')
 const hasBody = computed(() => isWrite.value && draft.method !== 'DELETE')
 const method = computed(() => draft.kind === 'query' ? 'GET' : draft.method)
+const request = computed(() => resolvedRequest(source, draft, values.value, body.value))
 
 /** Tells a call from the next: an answer is shown only while no other call has been made and nothing it was made of has changed. */
 let call = 0
@@ -202,6 +209,7 @@ const use = (root: string, added: number) => {
         data-try-body
       />
     </EditorFormRow>
+    <SimpleApiRequestPreview :request="request" />
     <div class="flex items-center gap-2">
       <EditorButton
         variant="primary"
@@ -231,6 +239,16 @@ const use = (root: string, added: number) => {
           :class="ok ? 'bg-success/12 text-success' : 'bg-error/12 text-error'"
           data-try-status
         >Status {{ answer.status }}</span>
+        <span
+          v-if="answer.durationMs !== undefined"
+          class="text-dimmed"
+          data-try-time
+        >{{ durationLabel(answer.durationMs) }}</span>
+        <span
+          v-if="answer.size !== undefined"
+          class="text-dimmed"
+          data-try-size
+        >{{ sizeLabel(answer.size) }}</span>
         <code
           class="min-w-0 truncate font-mono text-[11px] text-dimmed"
           data-try-url

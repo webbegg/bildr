@@ -116,7 +116,7 @@ const typeOf = (value: string): ApiParam['type'] =>
 
 const SECRET_WORDS = new Set(['key', 'token', 'secret', 'password', 'passwd', 'pwd', 'signature', 'sig', 'apikey', 'auth', 'credential', 'credentials'])
 /** A query key whose value is a secret: `api_key`, `access_token`, `apiKey`, `client_secret`. */
-const looksSecret = (key: string): boolean => {
+export const looksSecret = (key: string): boolean => {
   const words = wordsOf(key).map(word => word.toLowerCase())
   return words.length > 0 && (SECRET_WORDS.has(words.at(-1)!) || SECRET_WORDS.has(words.join('')))
 }
