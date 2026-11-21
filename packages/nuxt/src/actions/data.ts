@@ -272,7 +272,8 @@ const callHeaders = (call: Call, given: Record<string, string | number | boolean
     ? [
         ...call.headers!.map((header): [string, string] => [header.name, header.value]),
         ...call.params!.filter(param => param.in === 'header').map((param): [string, string | undefined] => {
-          const value = Object.hasOwn(given, param.name) ? given[param.name] : undefined
+          // An empty value is not given, as in the editor: no header is sent with nothing in it.
+          const value = Object.hasOwn(given, param.name) && given[param.name] !== '' ? given[param.name] : undefined
           if (value === undefined && param.required) throw new ActionError('invalid_input', `Give the header parameter "${param.name}"`)
           return [headerNameOf(param), value === undefined ? undefined : scalar(value)]
         })

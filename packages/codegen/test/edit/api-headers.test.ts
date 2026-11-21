@@ -61,6 +61,10 @@ describe('a header of a call', () => {
     // Plain values with spaces stay allowed.
     expect(apiHeaderProblem('Accept-Language', 'en-US,en;q=0.9', undefined)).toBeUndefined()
     expect(apiHeaderProblem('X-Client', 'bildr app 2', undefined)).toBeUndefined()
+    // review R3-001: a versioned media type or a lowercase id is not a key; a long run of hex is.
+    expect(apiHeaderProblem('Accept', 'application/vnd.github.v3+json', undefined)).toBeUndefined()
+    expect(apiHeaderProblem('X-Client', 'my-application-version-2024', undefined)).toBeUndefined()
+    expect(apiHeaderProblem('X-Client', 'ghp0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2', undefined)).toMatch(/looks like a secret/)
     // Filled from a parameter, the value is the page's, not the model's.
     expect(apiHeaderProblem('X-Auth-Token', undefined, undefined)).toBeUndefined()
   })

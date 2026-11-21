@@ -174,8 +174,9 @@ const notUnder = (baseUrl: string) => ({ ok: false as const, problem: `That URL 
 /** Flags that take a value this reading has no use for (it is skipped with them). */
 const SKIPPED_WITH_VALUE = new Set(['-o', '--output', '-A', '--user-agent', '-e', '--referer', '-m', '--max-time', '--connect-timeout', '-w', '--write-out', '--retry', '-x', '--proxy', '--cacert', '--cert', '--key', '-K', '--config', '-c', '--cookie-jar', '--resolve', '-T', '--upload-file'])
 const DATA = new Set(['-d', '--data', '--data-raw', '--data-binary', '--data-ascii', '--data-urlencode'])
-/** Headers the generated app sets itself: nothing to keep, nothing to say. */
-const OWN_HEADERS = new Set(['content-type', 'accept', 'user-agent', 'accept-encoding', 'content-length', 'host', 'connection'])
+/** Headers the generated app sets itself: nothing to keep, nothing to say. An Accept other than JSON is the call's (it is kept). */
+const SENT_BY_THE_APP = new Set(['content-type', 'user-agent', 'accept-encoding', 'content-length', 'host', 'connection'])
+const JSON_ACCEPT = /^(?:application\/json|\*\/\*)$/i
 
 function readCurl(words: string[], baseUrl: string, signInHeader?: string): PasteRead {
   let method: PastedMethod | undefined
@@ -191,7 +192,8 @@ function readCurl(words: string[], baseUrl: string, signInHeader?: string): Past
     const name = (split === -1 ? line : line.slice(0, split)).trim()
     const value = split === -1 ? '' : line.slice(split + 1).trim()
     const lower = name.toLowerCase()
-    if (!name || OWN_HEADERS.has(lower)) return
+    // curl's `-H 'X-Name:'` removes a header: nothing to keep.
+    if (!name || !value || SENT_BY_THE_APP.has(lower) || (lower === 'accept' && JSON_ACCEPT.test(value))) return
     if (lower === 'authorization' || lower === 'cookie' || lower === 'proxy-authorization' || (signInHeader && lower === signInHeader.toLowerCase())) signIn.push(name)
     else if (apiHeaderProblem(name, value, undefined)) refused.push(name)
     else headers.push({ name, value })
