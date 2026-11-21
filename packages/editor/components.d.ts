@@ -163,6 +163,7 @@ declare module 'vue' {
     SimpleApiOverview: typeof import('./src/components/simple-data/SimpleApiOverview.vue')['default']
     SimpleApiPanel: typeof import('./src/components/simple-data/SimpleApiPanel.vue')['default']
     SimpleApiProposal: typeof import('./src/components/simple-data/SimpleApiProposal.vue')['default']
+    SimpleApiRequestPreview: typeof import('./src/components/simple-data/SimpleApiRequestPreview.vue')['default']
     SimpleApiTry: typeof import('./src/components/simple-data/SimpleApiTry.vue')['default']
     SimpleDataList: typeof import('./src/components/simple-data/SimpleDataList.vue')['default']
     SimpleStoreCreate: typeof import('./src/components/simple-data/SimpleStoreCreate.vue')['default']

@@ -10,6 +10,7 @@ import SimpleApiProposal from './SimpleApiProposal.vue'
 import SimpleApiTry from './SimpleApiTry.vue'
 import { attempt } from '../../editor/dataArtifactActions.ts'
 import { readPastedRequest } from '../../shared/requestPaste.ts'
+import { loadTryValues, storeTryValues } from '../../editor/tryRequest.ts'
 import { actionOutput, applyPastedRequest, newParam, operationChangedOutside, operationDirty, operationDraftOf, operationProblems, operationRebase, paramsOutput, queryOutput } from '../../editor/simpleApiDraft.ts'
 import type { Method, OperationDraft, ParamType } from '../../editor/simpleApiDraft.ts'
 import { useDraftForm } from '../../editor/useDraftForm.ts'
@@ -137,8 +138,12 @@ const hasBody = computed(() => kind === 'action' && draft.value.method !== 'DELE
 
 // ── Try it's values, and a request pasted into the path ─────────────────────────────
 
-const tryValues = ref<Record<string, string | boolean>>({})
-const tryBody = ref('')
+// Kept in this browser per operation (never in the project, never a secret: `storeTryValues`), so they are there when it is opened again.
+const tryKey = () => ({ datasource: source.id, kind, name })
+const kept = loadTryValues(tryKey())
+const tryValues = ref<Record<string, string | boolean>>(kept.values)
+const tryBody = ref(kept.body)
+watch([tryValues, tryBody, () => name], () => storeTryValues(tryKey(), draft.value, { values: tryValues.value, body: tryBody.value }), { deep: true })
 const pasted = ref<{ filled: string, notes: string[] } | null>(null)
 const pasteError = ref('')
 

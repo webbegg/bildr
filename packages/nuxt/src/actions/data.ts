@@ -172,6 +172,26 @@ const envStatus = defineAction({
 // ── api_try (simple data): one call of an API data source ───────────────────
 
 const MAX_TEXT = 10_000
+const MAX_HEADER_VALUE = 500
+const MAX_HEADERS = 60
+/** Headers that carry a sign-in or a session: never given back, whatever their value. */
+const HIDDEN_HEADERS = new Set(['set-cookie', 'set-cookie2', 'cookie', 'authorization', 'proxy-authorization'])
+
+/**
+ * The headers of an answer as the editor may show them (api-calls T1): without the sign-ins and sessions (`HIDDEN_HEADERS`, and the
+ * header the source sends its key in, should the API echo it), the secret masked in any other, each value cut to its first 500
+ * characters, at most 60 of them.
+ */
+const shownHeaders = (headers: Record<string, string>, source: ApiSource, secrets: string[]): Record<string, string> => {
+  const ownKey = source.auth?.type === 'header' ? source.auth.header?.toLowerCase() : undefined
+  const shown: Record<string, string> = {}
+  for (const [name, value] of Object.entries(headers).slice(0, MAX_HEADERS)) {
+    if (HIDDEN_HEADERS.has(name) || name === ownKey) continue
+    const clean = secrets.length ? redact(value, secrets) : value
+    shown[name] = clean.length > MAX_HEADER_VALUE ? `${clean.slice(0, MAX_HEADER_VALUE)}…` : clean
+  }
+  return shown
+}
 
 /** What a saved query or action answers, or nothing for a call by path. */
 type Expected = ApiQuery['result'] | undefined
@@ -269,7 +289,7 @@ const modelNameOf = (path: string): string => {
 
 const apiTry = defineAction({
   name: 'api_try',
-  description: `Send one call of an API data source, as the generated app would, and propose the models of its answer. Give one of: path (relative to the data source's base URL, e.g. "/products/:id"; :name is filled from params, the other params go in the query string), query (a saved query's name) or action (a saved action's name; its params go by their remote key). Saved operations use their own method; for a path, method is GET unless set. GET only unless confirm: true: a POST, PUT, PATCH or DELETE could change the API's data, so it is refused without confirm. body is the JSON a write sends. Calls go through the editor's remote guards: under the base URL only, redirects off it (and any redirect of a write) refused, at most 10 s and 1 MB; the auth secret comes from the env (not sent for a browser-runtime source) and is never returned. Returns status, url, json (a list cut to its first ${SAMPLE_ITEMS} items) or text, items { path, count } when the answer holds a list, and proposal { result: { model, many, itemsPath? }, models } to use with api_model_set (one call per model, in the listed order: nested models first, the root last) and api_query_set / api_action_set; model names the proposed root model.`,
+  description: `Send one call of an API data source, as the generated app would, and propose the models of its answer. Give one of: path (relative to the data source's base URL, e.g. "/products/:id"; :name is filled from params, the other params go in the query string), query (a saved query's name) or action (a saved action's name; its params go by their remote key). Saved operations use their own method; for a path, method is GET unless set. GET only unless confirm: true: a POST, PUT, PATCH or DELETE could change the API's data, so it is refused without confirm. body is the JSON a write sends. Calls go through the editor's remote guards: under the base URL only, redirects off it (and any redirect of a write) refused, at most 10 s and 1 MB; the auth secret comes from the env (not sent for a browser-runtime source) and is never returned. Returns status, url, durationMs, size (bytes of the answer), headers (the answer's, lower-cased; cookies, authorization and the source's key header left out, the secret masked), json (a list cut to its first ${SAMPLE_ITEMS} items) or text, items { path, count } when the answer holds a list, and proposal { result: { model, many, itemsPath? }, models } to use with api_model_set (one call per model, in the listed order: nested models first, the root last) and api_query_set / api_action_set; model names the proposed root model.`,
   input: z.object({
     datasource: ArtifactIdSchema.describe('An API data source id, e.g. "ds_shop"'),
     path: PathInput.optional(),
@@ -298,13 +318,15 @@ const apiTry = defineAction({
     const clean = <T>(value: T): T => secrets.length ? redactValue(value, secrets) as T : value
     const url = redact(target.url, secrets)
     let answer
+    const started = performance.now()
     try {
       answer = await fetchRemote(target.url, { baseUrl: settings.baseUrl!, headers, method: call.method, body: input.body })
     } catch (error) {
       if (error instanceof RemoteError) throw new ActionError('upstream', secrets.length ? redact(error.message, secrets) : error.message)
       throw error
     }
-    if ('text' in answer) return { status: answer.status, url, text: clean(answer.text).slice(0, MAX_TEXT) }
+    const meta = { durationMs: Math.round(performance.now() - started), size: answer.size, headers: shownHeaders(answer.headers, source, secrets) }
+    if ('text' in answer) return { status: answer.status, url, text: clean(answer.text).slice(0, MAX_TEXT), ...meta }
     const json = clean(answer.json)
     const found = itemsOf(json, call)
     // An error answer (4xx, 5xx) is not a model to propose.
@@ -314,7 +336,8 @@ const apiTry = defineAction({
       url,
       json: found ? trimmedAt(json, found.path, SAMPLE_ITEMS) : json,
       ...(found ? { items: { path: found.path, count: found.items.length } } : {}),
-      ...(models.length ? { proposal: { result: { model: models.at(-1)!.name, many: found !== null, ...(found?.path ? { itemsPath: found.path } : {}) }, models } } : {})
+      ...(models.length ? { proposal: { result: { model: models.at(-1)!.name, many: found !== null, ...(found?.path ? { itemsPath: found.path } : {}) }, models } } : {}),
+      ...meta
     }
   }
 })

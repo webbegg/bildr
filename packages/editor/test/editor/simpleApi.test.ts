@@ -4,6 +4,7 @@ import type { EditName } from '@bildr/codegen/edit'
 import { loadModel, serializeModel } from '@bildr/codegen/model'
 import { Failure, click, mockActions, mountWithApp, settle, typeInto } from '../helpers.ts'
 import { takeStart } from '../../src/editor/views.ts'
+import { clearTryValues } from '../../src/editor/tryRequest.ts'
 import SimpleDataView from '../../src/views/SimpleDataView.vue'
 import { FakeEventSource, baseHandlers, combo, inputOf, optionLabels, selectOption, setupHarness, toggle, world } from '../design/harness.ts'
 import type { Handlers } from '../design/harness.ts'
@@ -19,6 +20,7 @@ setupHarness()
 
 afterEach(() => {
   takeStart()
+  clearTryValues()
 })
 
 const seed = (name: EditName, input: Record<string, unknown>) => {
@@ -1191,6 +1193,53 @@ describe('the editor\'s two columns (api-calls R1)', () => {
     expect(definition?.querySelector('[data-api-try]')).toBeNull()
     expect(test?.querySelector('[data-api-try]')).not.toBeNull()
     expect(definition?.parentElement).toBe(test?.parentElement)
+  })
+})
+
+describe('Try it shows the request and how the answer was (api-calls T1)', () => {
+  it('shows the request as it will be sent, following the values, with the sign-in masked', async () => {
+    shop({ auth: { type: 'bearer' } })
+    await mounted(LIST)
+    await open('query:productById')
+    expect(text(q('[data-try-request-method]'))).toBe('GET')
+    expect(text(q('[data-try-request-url]'))).toBe('https://api.example.com/v1/products/:id')
+    expect(text(q('[data-try-request-missing]'))).toContain('id')
+    await type('data-try-input="id"', '7')
+    expect(text(q('[data-try-request-url]'))).toBe('https://api.example.com/v1/products/7')
+    expect(q('[data-try-request-missing]')).toBeNull()
+    expect(text(q('[data-try-request-header="Authorization"]'))).toContain('Bearer ••••')
+    expect(text(q('[data-try-request-signin]'))).toContain('from the env')
+  })
+
+  it('shows the body an action sends', async () => {
+    shop()
+    await mounted()
+    await open('action:addProduct')
+    await type('data-try-body', '{"title":"Lamp"}')
+    expect(text(q('[data-try-request-method]'))).toBe('POST')
+    expect(text(q('[data-try-request-header="Content-Type"]'))).toContain('application/json')
+    expect(text(q('[data-try-request-body]'))).toBe('{"title":"Lamp"}')
+  })
+
+  it('says how long the answer took and how big it was', async () => {
+    shop()
+    await mounted({ ...LIST, durationMs: 87, size: 1234, headers: { 'content-type': 'application/json' } })
+    await open('query:products')
+    await click(q('[data-try-run]'))
+    expect(text(q('[data-try-time]'))).toBe('87 ms')
+    expect(text(q('[data-try-size]'))).toBe('1.2 KB')
+  })
+
+  it('keeps the values to try with when the query is closed and opened again, writing nothing to the project', async () => {
+    shop()
+    const { actions } = await mounted(LIST)
+    await open('query:productById')
+    await type('data-try-input="id"', '7')
+    await click(q('[data-api-back]'))
+    expect(q('[data-confirm-ok]')).toBeNull()
+    await open('query:productById')
+    expect(field('data-try-input="id"').value).toBe('7')
+    expect(calls(actions, 'api_query_set')).toEqual([])
   })
 })
 
