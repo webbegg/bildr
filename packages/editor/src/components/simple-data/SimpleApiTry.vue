@@ -22,6 +22,8 @@ import { plainWords } from '../../shared/simpleData.ts'
  * `confirm: true`; its body is the JSON typed here (or the sample the action's body model was made from, `bodyHint`, when nothing is typed),
  * and nothing is sent when it is not JSON. A refusal is shown in plain words.
  *
+ * The values and the body are the editor's (`v-model:values`, `v-model:body`), so a request pasted into the path can fill them in.
+ *
  * The answer is of the call that was sent: it goes (with "Use this answer") when the path, the method or the parameters change, and while
  * a new call is on its way, and an answer that comes after that is not shown.
  */
@@ -43,8 +45,8 @@ interface Answer {
   proposal?: { result: { model: string, many: boolean, itemsPath?: string }, models: ApiModel[] }
 }
 
-const values = ref<Record<string, string | boolean>>({})
-const body = ref('')
+const values = defineModel<Record<string, string | boolean>>('values', { default: () => ({}) })
+const body = defineModel<string>('body', { default: '' })
 const running = ref(false)
 const error = ref('')
 const answer = shallowRef<Answer | null>(null)

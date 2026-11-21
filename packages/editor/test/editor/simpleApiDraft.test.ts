@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { ApiSource } from '@bildr/codegen/edit'
 import type { ApiModel } from '@bildr/codegen/model'
-import { clashesOf, newParam, operationDirty, operationDraftOf, paramsOutput, planProposal, queryOutput, renameProblem, settingsInput, settingsRebase, settingsOf, tryParams } from '../../src/editor/simpleApiDraft.ts'
+import { readPastedRequest } from '../../src/shared/requestPaste.ts'
+import { applyPastedRequest, clashesOf, newParam, operationDirty, operationDraftOf, paramsOutput, planProposal, queryOutput, renameProblem, settingsInput, settingsRebase, settingsOf, tryParams } from '../../src/editor/simpleApiDraft.ts'
 import { baseUrlProblem, listShown, modelNameOf, operationNameOf, pathParamNames, secretVarAfterRename } from '../../src/shared/simpleApi.ts'
 
 /** The API drafts' pure parts (simple data, S4, S6): what each form would write, what counts as an edit, and what using an answer does to the models. */
@@ -80,6 +81,55 @@ describe('the operation draft', () => {
     const flag = operationDraftOf('query', null)
     flag.params = [{ ...newParam(), name: 'draft', type: 'boolean' }]
     expect(tryParams(flag, { draft: true })).toEqual({ draft: true })
+  })
+})
+
+describe('a request pasted into the path', () => {
+  const stored = { name: 'products', path: '/products', params: [{ name: 'lang', in: 'query', type: 'text', key: 'l' }], result: { model: 'Product', many: true } } as never
+  const read = (text: string) => {
+    const result = readPastedRequest(text, 'https://api.example.com/v1')
+    if (!result?.ok) throw new Error('not read')
+    return result.request
+  }
+
+  it('sets the path, adds a query parameter per new key (its remote key when the name differs) and gives each its value to try', () => {
+    const draft = operationDraftOf('query', stored)
+    const applied = applyPastedRequest(draft, read('https://api.example.com/v1/items/:id?per_page=20&l=fr&lang=de'))
+    expect(draft.path).toBe('/items/:id')
+    expect(paramsOutput(draft)).toEqual([
+      { name: 'id', in: 'path', type: 'text' },
+      { name: 'lang', in: 'query', type: 'text', key: 'l' },
+      { name: 'perPage', in: 'query', type: 'integer', key: 'per_page' },
+      { name: 'lang2', in: 'query', type: 'text', key: 'lang' }
+    ])
+    expect(applied.values).toEqual({ perPage: '20', lang: 'fr', lang2: 'de' })
+    expect(applied.filled).toBe('Filled in from the URL: the path and 3 query parameters.')
+    expect(applied.notes).toEqual([])
+  })
+
+  it('sets an action\'s method and gives its body to try', () => {
+    const draft = operationDraftOf('action', null)
+    const applied = applyPastedRequest(draft, read(`curl -X PUT https://api.example.com/v1/items/1 -d '{"a":1}'`))
+    expect(draft.method).toBe('PUT')
+    expect(draft.path).toBe('/items/1')
+    expect(applied.body).toBe('{\n  "a": 1\n}')
+    expect(applied.filled).toBe('Filled in from the cURL command: the method, the path and the body to try.')
+  })
+
+  it('keeps the method when it is not one the query or action can have, and says so', () => {
+    const action = operationDraftOf('action', null)
+    expect(applyPastedRequest(action, read('https://api.example.com/v1/items')).notes).toEqual(['It is a GET: it only reads, so make it a query. Only its path and parameters were used.'])
+    expect(action.method).toBe('POST')
+    const query = operationDraftOf('query', null)
+    const applied = applyPastedRequest(query, read(`curl -X DELETE https://api.example.com/v1/items/1`))
+    expect(applied.notes).toEqual(['It is a DELETE: it can change data, so make it an action. Only its path and parameters were used.'])
+    expect(applied.body).toBeUndefined()
+    expect(query.path).toBe('/items/1')
+  })
+
+  it('gives a yes / no parameter its value as a yes or a no', () => {
+    const draft = operationDraftOf('query', null)
+    expect(applyPastedRequest(draft, read('https://api.example.com/v1/items?draft=true')).values).toEqual({ draft: true })
   })
 })
 

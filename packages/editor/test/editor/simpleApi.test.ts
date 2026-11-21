@@ -1111,6 +1111,89 @@ describe('the fields of a model', () => {
   })
 })
 
+/** Pastes `text` into `target` as the browser does: a paste event with the text on its clipboard data. */
+/** The input (or textarea) of an element: itself, or the one inside it. */
+const ownInput = (element: Element | null) => (element?.matches('input, textarea') ? element : element?.querySelector('input, textarea')) as HTMLInputElement
+const paste = async (target: Element | null, text: string) => {
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  Object.defineProperty(event, 'clipboardData', { value: { getData: (kind: string) => kind === 'text/plain' || kind === 'text' ? text : '' } })
+  target!.dispatchEvent(event)
+  await settle()
+  return event
+}
+
+describe('pasting a request into the path (api-calls R1)', () => {
+  it('fills the path and the query parameters from a full URL, with the values ready in Try it', async () => {
+    shop()
+    const { actions } = await mounted(LIST)
+    await open('query:products')
+    const event = await paste(field('data-op-path'), 'https://api.example.com/v1/catalog?per_page=20&q=lamp')
+    expect(event.defaultPrevented).toBe(true)
+    expect(field('data-op-path').value).toBe('/catalog')
+    const rows = qa('[data-op-param^="query:"]')
+    expect(rows.map(row => ownInput(row.querySelector('[data-op-param-name]')).value)).toEqual(['perPage', 'q'])
+    expect(ownInput(rows[0]!.querySelector('[data-op-param-remote]')).value).toBe('per_page')
+    expect(comboOf(rows[0]!.querySelector('[data-op-param-type]')).textContent).toContain('Whole number')
+    expect(text(q('[data-op-paste-note]'))).toContain('Filled in from the URL: the path and 2 query parameters.')
+    expect(field('data-try-input="perPage"').value).toBe('20')
+    expect(field('data-try-input="q"').value).toBe('lamp')
+    await click(q('[data-try-run]'))
+    expect(calls(actions, 'api_try')).toEqual([{ datasource: ID, path: '/catalog', params: { per_page: 20, q: 'lamp' } }])
+    expect(unsaved()).toBe(true)
+  })
+
+  it('fills an action\'s method, path and body to try from a cURL command, and says what it left out', async () => {
+    shop({ auth: { type: 'header', header: 'X-Api-Key' } })
+    await mounted()
+    await open('action:addProduct')
+    await paste(field('data-op-path'), `curl -X PUT 'https://api.example.com/v1/products/9' -H 'X-Api-Key: k-1' -H 'X-Trace: t' --data-raw '{"title":"Desk"}'`)
+    expect(field('data-op-path').value).toBe('/products/9')
+    expect(combo('[data-op-method]').textContent).toContain('PUT')
+    expect(field('data-try-body').value).toBe('{\n  "title": "Desk"\n}')
+    const note = text(q('[data-op-paste-note]'))
+    expect(note).toContain('Filled in from the cURL command')
+    expect(note).toContain('Left out the sign-in (X-Api-Key)')
+    expect(note).toContain('Left out the header “X-Trace”')
+    expect(document.body.innerHTML).not.toContain('k-1')
+    await click(q('[data-op-paste-dismiss]'))
+    expect(q('[data-op-paste-note]')).toBeNull()
+  })
+
+  it('refuses a URL that is not under the API\'s base URL, and leaves the path as it was', async () => {
+    shop()
+    await mounted()
+    await open('query:products')
+    await paste(field('data-op-path'), 'https://elsewhere.example.com/products')
+    expect(field('data-op-path').value).toBe('/products')
+    expect(text(q('[data-op-paste-error]'))).toBe('That URL is not under the API\'s base URL, https://api.example.com/v1')
+    expect(unsaved()).toBe(false)
+  })
+
+  it('lets a path or words paste as usual, and says the path takes a URL or a cURL command', async () => {
+    shop()
+    await mounted()
+    await open('query:products')
+    const event = await paste(field('data-op-path'), '/products/:id')
+    expect(event.defaultPrevented).toBe(false)
+    expect(q('[data-op-paste-note]')).toBeNull()
+    expect(text(q('[data-op-path-help]'))).toContain('Paste a full URL or a cURL command')
+  })
+})
+
+describe('the editor\'s two columns (api-calls R1)', () => {
+  it('has the definition and Try it side by side: Try it is in its own column', async () => {
+    shop()
+    await mounted()
+    await open('query:products')
+    const definition = q('[data-op-definition]')
+    const test = q('[data-op-test]')
+    expect(definition?.querySelector('[data-op-path]')).not.toBeNull()
+    expect(definition?.querySelector('[data-api-try]')).toBeNull()
+    expect(test?.querySelector('[data-api-try]')).not.toBeNull()
+    expect(definition?.parentElement).toBe(test?.parentElement)
+  })
+})
+
 describe('Try it\'s answer', () => {
   it('goes when the path changes, and so does Use this answer', async () => {
     shop()

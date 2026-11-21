@@ -1,6 +1,7 @@
 import type { ApiAction, ApiField, ApiModel, ApiParam, ApiQuery } from '@bildr/codegen/model'
 import type { ApiSource } from '@bildr/codegen/edit'
 import { pathParamNames } from '../shared/simpleApi.ts'
+import type { PastedRequest } from '../shared/requestPaste.ts'
 import { plainCopy, sameJson } from './draftJson.ts'
 
 /**
@@ -189,6 +190,65 @@ export function tryParams(draft: OperationDraft, values: Record<string, string |
     sent[key] = param.type === 'boolean' ? value === true || value === 'true' : param.type === 'integer' || param.type === 'number' ? Number(value) : String(value)
   }
   return sent
+}
+
+/** What pasting a request into the path did besides the draft: the values to try, the body to try, and what to tell the user. */
+export interface PasteApplied {
+  /** A test value for each query parameter the paste gave one, by the parameter's name in the draft. */
+  values: Record<string, string | boolean>
+  /** An action's body to try. */
+  body?: string
+  /** What was filled in, in one sentence. */
+  filled: string
+  /** What was left out, and why. */
+  notes: string[]
+}
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/**
+ * Fills the draft in from a pasted request (`readPastedRequest`): its path; its method, when it is one the draft can have (a GET is a
+ * query, a write is an action: the other kind is said, not taken); a query parameter for each key the draft has no parameter for (one
+ * the API calls by that key is the same parameter), named so as not to meet another; and the values and the body to try them with.
+ */
+export function applyPastedRequest(draft: OperationDraft, request: PastedRequest): PasteApplied {
+  const notes: string[] = []
+  const parts: string[] = []
+  const fits = draft.kind === 'query' ? request.method === 'GET' : request.method !== 'GET'
+  if (draft.kind === 'action' && fits) {
+    draft.method = request.method as Method
+    parts.push('the method')
+  }
+  if (!fits) {
+    notes.push(request.method === 'GET'
+      ? 'It is a GET: it only reads, so make it a query. Only its path and parameters were used.'
+      : `It is a ${request.method}: it can change data, so make it an action. Only its path and parameters were used.`)
+  }
+  draft.path = request.path
+  parts.push('the path')
+  const taken = new Set([...pathParamNames(draft.path), ...draft.params.map(param => param.name.trim())])
+  const values: Record<string, string | boolean> = {}
+  for (const pasted of request.query) {
+    let row = draft.params.find(param => (param.remote.trim() || param.name.trim()) === pasted.key)
+    if (!row) {
+      let name = pasted.name
+      for (let n = 2; taken.has(name); n++) name = `${pasted.name}${n}`
+      taken.add(name)
+      row = { ...newParam(), name, type: pasted.type, remote: name === pasted.key ? '' : pasted.key }
+      draft.params.push(row)
+    }
+    if (pasted.value !== '') values[row.name.trim()] = row.type === 'boolean' ? pasted.value === 'true' : pasted.value
+  }
+  if (request.query.length) parts.push(count(request.query.length, 'query parameter', 'query parameters'))
+  const body = draft.kind === 'action' && fits && request.body !== undefined ? request.body : undefined
+  if (body !== undefined) parts.push('the body to try')
+  const listed = parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`
+  return {
+    values,
+    ...(body !== undefined ? { body } : {}),
+    filled: `Filled in from the ${request.from === 'url' ? 'URL' : 'cURL command'}: ${listed}.`,
+    notes: [...notes, ...request.notes]
+  }
 }
 
 // ── Models ───────────────────────────────────────────────────────────────
