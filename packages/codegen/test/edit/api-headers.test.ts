@@ -24,6 +24,10 @@ describe('a header of a call', () => {
     expect(apiHeaderProblem('Accept-Language', undefined, auth)).toBeUndefined()
   })
 
+  it('never overrides the method (verify advisory: a GET that a server would run as a DELETE)', () => {
+    for (const name of ['X-HTTP-Method-Override', 'x-http-method', 'X-Method-Override']) expect(apiHeaderProblem(name, 'DELETE', undefined)).toMatch(/can't send/)
+  })
+
   it('is never the sign-in, whatever its case', () => {
     expect(apiHeaderProblem('authorization', 'x', undefined)).toBe('"authorization" is the API\'s sign-in: set it in the API\'s settings, where its secret stays in env')
     expect(apiHeaderProblem('x-shop-key', undefined, auth)).toBe('"x-shop-key" is the API\'s sign-in: set it in the API\'s settings, where its secret stays in env')
@@ -49,6 +53,14 @@ describe('a header of a call', () => {
     expect(apiHeaderProblem('X-Auth-Token', 'abc', undefined)).toMatch(/looks like a secret/)
     expect(apiHeaderProblem('X-Client', 'Bearer abc', undefined)).toMatch(/looks like a secret/)
     expect(apiHeaderProblem('X-Client', 'sk_live_4eC39HqLyjWDarjtT1zdp7dc', undefined)).toMatch(/looks like a secret/)
+    // verify B1: a key after any scheme word, and names that say they sign in.
+    expect(apiHeaderProblem('X-Client', 'ApiKey sk_live_4eC39HqLyjWDarjtT1zdp7dc', undefined)).toMatch(/looks like a secret/)
+    expect(apiHeaderProblem('X-Client', 'Key sk_live_4eC39HqLyjWDarjtT1zdp7dc', undefined)).toMatch(/looks like a secret/)
+    expect(apiHeaderProblem('X-Authorization', 'abc123secret', undefined)).toMatch(/looks like a secret/)
+    expect(apiHeaderProblem('X-Authentication', 'abc', undefined)).toMatch(/looks like a secret/)
+    // Plain values with spaces stay allowed.
+    expect(apiHeaderProblem('Accept-Language', 'en-US,en;q=0.9', undefined)).toBeUndefined()
+    expect(apiHeaderProblem('X-Client', 'bildr app 2', undefined)).toBeUndefined()
     // Filled from a parameter, the value is the page's, not the model's.
     expect(apiHeaderProblem('X-Auth-Token', undefined, undefined)).toBeUndefined()
   })
