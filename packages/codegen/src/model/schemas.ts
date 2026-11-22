@@ -122,6 +122,9 @@ export const ApiFieldSchema = z.object({
   model: PascalNameSchema.optional(),
   options: SelectOptionsSchema.optional(),
   currency: CurrencySchema.optional(),
+  /** For text and number types: a text's shortest and longest length, a number's lowest and highest value. Checked on what the app sends, not on answers. */
+  min: z.number().optional(),
+  max: z.number().optional(),
   /** A list of values (or of models). */
   list: z.boolean().optional(),
   /** The key may be missing. */
@@ -276,6 +279,24 @@ export const urlProblem = (value: string): string | undefined => {
 }
 
 /** The model cycle through `models`, if any: each model is walked once (depth-first, three colours). */
+/** The types an API model field's min/max fit: a text's length, a number's range (as an entity field's). */
+export const API_RANGE_TYPES: ReadonlySet<string> = new Set(['text', 'integer', 'number', 'money', 'percent'])
+
+/** The problems of an API model field's min and max, in the editor's words (`Contact.name` is `where`). */
+export const apiRangeProblems = (field: Pick<ApiField, 'type' | 'min' | 'max'>, where: string): string[] => {
+  const { min, max } = field
+  if (min === undefined && max === undefined) return []
+  if (!API_RANGE_TYPES.has(field.type)) return [`${where}: a "${field.type}" field takes no min or max`]
+  const problems: string[] = []
+  if (field.type === 'text') {
+    const bounds = [min, max].filter((bound): bound is number => bound !== undefined)
+    if (bounds.some(bound => !Number.isInteger(bound))) problems.push(`${where}: a text's min and max are lengths: use whole numbers`)
+    else if (bounds.some(bound => bound < 0)) problems.push(`${where}: a text's min and max are lengths: use 0 or more`)
+  }
+  if (min !== undefined && max !== undefined && min > max) problems.push(`${where}: its min (${min}) is over its max (${max})`)
+  return problems
+}
+
 const modelCycle = (models: ApiModel[]): string[] | undefined => {
   const byName = new Map(models.map(model => [model.name, model]))
   const done = new Set<string>()
@@ -341,6 +362,7 @@ export const apiProblems = (source: ApiParts): ApiProblem[] => {
       if (field.type !== 'model' && field.model) problems.push({ path: where, message: `${model.name}.${field.name}: Only a "model" field names a model` })
       if (field.model && !known.has(field.model)) problems.push({ path: where, message: `${model.name}.${field.name}: Unknown model "${field.model}"` })
       for (const message of valueSettingsProblems(field, `${model.name}.${field.name}`)) problems.push({ path: where, message })
+      for (const message of apiRangeProblems(field, `${model.name}.${field.name}`)) problems.push({ path: where, message })
     })
   })
   // A model can't contain itself: the generated types and checks would never end.

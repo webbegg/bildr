@@ -227,7 +227,19 @@ export const routeFile = (operation: Operation) => `${kebab(operation.name)}.${o
 // ── Sample values (generated tests) ────────────────────────────────────
 
 /** A value of a field (not a model) its check takes: a select's first option. */
-const sampleValue = (field: ValueField) => field.type === 'select' ? field.options?.[0] ?? '' : VALUE_TYPES[field.type].sample(field.name)
+const sampleValue = (field: ValueField) => withinRange(field, field.type === 'select' ? field.options?.[0] ?? '' : VALUE_TYPES[field.type].sample(field.name))
+
+/** A sample moved within the field's min/max, so a generated test that sends it passes the model's check: a text padded or cut, a number clamped. */
+const withinRange = (field: ValueField, sample: string | number | boolean): string | number | boolean => {
+  const { min, max } = field
+  if (typeof sample === 'string' && field.type === 'text') {
+    const padded = min !== undefined && sample.length < min ? sample.padEnd(min, 'x') : sample
+    return max !== undefined ? padded.slice(0, max) : padded
+  }
+  if (typeof sample !== 'number') return sample
+  const low = min === undefined ? sample : Math.max(sample, field.type === 'integer' ? Math.ceil(min) : min)
+  return max === undefined ? low : Math.min(low, field.type === 'integer' ? Math.floor(max) : max)
+}
 
 /**
  * How a sample model fills its fields. `full`: every field has a value. `absent`: an optional field is left out, a nullable one is

@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, useTemplateRef } from 'vue'
+import { computed, nextTick, ref, useTemplateRef } from 'vue'
 import type { ApiSource } from '@bildr/codegen/edit'
 import type { ApiModel } from '@bildr/codegen/model'
 import SimpleApiPaneBar from './SimpleApiPaneBar.vue'
 import DataStaleNotice from '../data/DataStaleNotice.vue'
 import { attempt } from '../../editor/dataArtifactActions.ts'
-import { modelChangedOutside, modelDirty, modelDraftOf, modelOutput, modelProblems, moveField, newField, setFieldType } from '../../editor/simpleApiDraft.ts'
+import { modelChangedOutside, modelDirty, modelDraftOf, modelOutput, modelProblems, moveField, newField, setFieldType, takesRange } from '../../editor/simpleApiDraft.ts'
 import type { FieldDraft, ModelDraft } from '../../editor/simpleApiDraft.ts'
 import { useDraftForm } from '../../editor/useDraftForm.ts'
 import { useEditor } from '../../editor/useEditor.ts'
@@ -38,6 +38,17 @@ const { draft, error, saving, dirty, stale, discard, keepMine } = useDraftForm<A
 /** The models a field may hold: every one but this. */
 const others = computed(() => source.models.filter(model => model.name !== name).map(model => ({ value: model.name, label: model.name })))
 const label = (field: { name: string }) => field.name.trim() || 'new field'
+
+/** The fields whose limits line is open; a field with a min or max always shows it. */
+const limitsOpen = ref(new Set<string>())
+const showsLimits = (field: FieldDraft) => takesRange(field.type) && (limitsOpen.value.has(field.key) || field.min.trim() !== '' || field.max.trim() !== '')
+function toggleLimits(field: FieldDraft) {
+  const open = new Set(limitsOpen.value)
+  if (open.has(field.key)) open.delete(field.key)
+  else open.add(field.key)
+  limitsOpen.value = open
+  if (open.has(field.key)) void nextTick(() => root.value?.querySelector<HTMLInputElement>(`[data-model-field="${field.key}"] [data-model-field-min]`)?.focus())
+}
 
 async function save() {
   if (stale.value || !dirty.value || saving.value) return
@@ -72,7 +83,7 @@ const remove = (key: string) => {
 }
 
 const CHECKBOX = 'size-3.5 cursor-pointer scheme-dark accent-(--ui-primary)'
-const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_3rem_3.5rem_4rem_minmax(0,1fr)_5.5rem]'
+const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_3rem_3.5rem_4rem_minmax(0,1fr)_7rem]'
 </script>
 
 <template>
@@ -206,7 +217,18 @@ const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_3rem_3.5rem_4rem_minmax(0,1fr)_
                 :aria-label="`The name the API gives ${label(field)}`"
                 data-model-field-remote
               />
-              <span class="flex w-[5.5rem] items-center justify-end gap-0.5">
+              <span class="flex w-[7rem] items-center justify-end gap-0.5">
+                <EditorButton
+                  v-if="takesRange(field.type)"
+                  icon="i-lucide-ruler"
+                  variant="ghost"
+                  size="xs"
+                  :aria-label="`Limits of ${label(field)}`"
+                  :aria-pressed="showsLimits(field)"
+                  :class="showsLimits(field) ? 'text-highlighted' : ''"
+                  data-model-field-limits
+                  @click="toggleLimits(field)"
+                />
                 <EditorButton
                   icon="i-lucide-arrow-up"
                   variant="ghost"
@@ -234,6 +256,31 @@ const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_3rem_3.5rem_4rem_minmax(0,1fr)_
                   @click="remove(field.key)"
                 />
               </span>
+            </div>
+            <div
+              v-if="showsLimits(field)"
+              class="mt-1 flex items-center gap-2 ps-1.5"
+              data-model-field-range
+            >
+              <span class="shrink-0 text-[11px] text-dimmed">{{ field.type === 'text' ? 'Length' : 'Value' }}</span>
+              <EditorInput
+                v-model="field.min"
+                placeholder="Min"
+                inputmode="decimal"
+                :aria-label="`${field.type === 'text' ? 'Shortest length' : 'Lowest value'} of ${label(field)}`"
+                class="w-20"
+                data-model-field-min
+              />
+              <span class="text-[11px] text-dimmed">to</span>
+              <EditorInput
+                v-model="field.max"
+                placeholder="Max"
+                inputmode="decimal"
+                :aria-label="`${field.type === 'text' ? 'Longest length' : 'Highest value'} of ${label(field)}`"
+                class="w-20"
+                data-model-field-max
+              />
+              <span class="min-w-0 truncate text-[11px] text-dimmed">Checked on what the app sends</span>
             </div>
             <div
               v-if="field.type === 'model'"
