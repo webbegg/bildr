@@ -2,6 +2,7 @@ import type { EntityFile } from '../model/schemas.ts'
 import { allFields, datasourceOf, entityNames, isWritable, repositoryOf } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
 import { importLine } from './imports.ts'
+import { VALUE_TYPES } from '../model/field-types.ts'
 import { file, header, pascal, regexLiteral, tsLiteral, tsString } from './text.ts'
 
 /** Kernel schemas a field expression uses, so callers can import them. */
@@ -16,16 +17,13 @@ export const zodField = (field: Field, kernel: Set<KernelName>): string => {
   } else if (field.type === 'datetime') {
     kernel.add('TimestampSchema')
     expression = 'TimestampSchema'
+  } else if (field.type === 'select') {
+    expression = `z.enum([${(field.options ?? []).map(tsString).join(', ')}])`
+  } else if (field.type === 'image') {
+    // An entity's image has always been any text (a path like /img/a.png too): its stored rows keep loading.
+    expression = 'z.string()'
   } else {
-    expression = {
-      text: 'z.string()',
-      image: 'z.string()',
-      integer: 'z.number().int()',
-      number: 'z.number()',
-      boolean: 'z.boolean()',
-      date: 'z.iso.date()',
-      uuid: 'z.uuid()'
-    }[field.type]
+    expression = VALUE_TYPES[field.type].zod
   }
   if (field.min !== undefined) expression += `.min(${field.min})`
   if (field.max !== undefined) expression += `.max(${field.max})`

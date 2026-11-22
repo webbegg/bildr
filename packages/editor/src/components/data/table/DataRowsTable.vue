@@ -46,7 +46,10 @@ const { fields, rows, loaded, sort = null, sortable = true, openable = true, ope
 }>()
 const emit = defineEmits<{ sort: [key: string], toggle: [id: string], open: [id: string], select: [id: string, on: boolean], selectAll: [on: boolean], remove: [id: string] }>()
 
-const WIDTHS: Record<FieldType, string> = { text: 'min-w-56', uuid: 'min-w-56', integer: 'min-w-32', number: 'min-w-32', boolean: 'min-w-28', date: 'min-w-36', datetime: 'min-w-36', image: 'min-w-28' }
+const WIDTHS: Record<FieldType, string> = {
+  text: 'min-w-56', uuid: 'min-w-56', integer: 'min-w-32', number: 'min-w-32', boolean: 'min-w-28', date: 'min-w-36', datetime: 'min-w-36', image: 'min-w-28',
+  email: 'min-w-56', url: 'min-w-56', phone: 'min-w-36', color: 'min-w-28', select: 'min-w-32', money: 'min-w-32', percent: 'min-w-28'
+}
 const PLACEHOLDERS: Partial<Record<FieldType, string>> = { date: 'YYYY-MM-DD', datetime: '2026-01-15T09:30:00Z' }
 
 /** The row's id in the table: `rows` may be sorted, so the position in the loaded rows is looked up for a row without an id. */

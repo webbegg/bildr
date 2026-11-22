@@ -1,5 +1,6 @@
 import { bindingScope } from '@bildr/codegen/edit'
 import type { ScopeName } from '@bildr/codegen/edit'
+import { VALUE_TYPES } from '@bildr/codegen/model'
 import type { EntityFile, Model, PageFile, PropertyDef } from '@bildr/codegen/model'
 import type { FieldType } from './dataModel.ts'
 import { stateOfAlias } from './stateModel.ts'
@@ -20,8 +21,8 @@ import { stateOfAlias } from './stateModel.ts'
 /** The kinds of plain value the generated code tells apart. */
 export type Prim = 'string' | 'number' | 'boolean'
 
-const PRIMS: Record<FieldType, Prim> = { text: 'string', image: 'string', date: 'string', datetime: 'string', uuid: 'string', integer: 'number', number: 'number', boolean: 'boolean' }
-export const primOf = (type: FieldType): Prim => PRIMS[type]
+/** The catalogue's TS type of a field type: a SaaS text type is a string, money and a percent are numbers. */
+export const primOf = (type: FieldType): Prim => VALUE_TYPES[type].ts
 
 /** What a place takes: the kinds of plain value, and whether a value that may be empty (`null`) or unset passes. */
 export interface Expect {

@@ -125,6 +125,21 @@ describe('generateUi follows the canvas render rules', () => {
     expect(() => generated(model, 'posts/new.vue')).toThrow(/inputType must be one of/)
   })
 
+  it('gives a SaaS field its browser input: email, url and tel for text types, a number with a step for money and a percent (field types S3)', () => {
+    const model = fixtureModel()
+    const title = model.modules.blog!.entities.find(entity => entity.id === 'ent_post')!.fields.find(field => field.id === 'fld_title')!
+    const inputOf = (type: typeof title.type) => {
+      title.type = type
+      return generated(model, 'posts/new.vue').match(/<UInput v-model[^>]*name="title"[^>]*>/)?.[0]
+    }
+    expect(inputOf('email')).toContain('type="email"')
+    expect(inputOf('url')).toContain('type="url"')
+    expect(inputOf('phone')).toContain('type="tel"')
+    expect(inputOf('color')).not.toContain('type=')
+    expect(inputOf('money')).toMatch(/v-model\.number="form\.title".*type="number" step="0\.01"/)
+    expect(inputOf('percent')).toMatch(/type="number" step="any"/)
+  })
+
   it('lays a List out by its `layout` (list-layout)', () => {
     const list = (layout?: string): ModelNode => ({ id: 'n_x', type: 'List', props: { items: { $bind: 'quotes' }, as: 'q', ...(layout ? { layout } : {}) }, children: [{ id: 'n_y', type: 'Container' }] })
     expect(indexWith(list())).toContain('    <div class="flex flex-col self-stretch">\n      <div v-for="q in quotes" :key="q.id" class="flex flex-col self-stretch" />')

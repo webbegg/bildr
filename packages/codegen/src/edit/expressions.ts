@@ -1,5 +1,6 @@
 import { allFields } from '../generate/context.ts'
 import type { Field } from '../generate/context.ts'
+import { VALUE_TYPES } from '../model/field-types.ts'
 import { PROPERTY_PATH } from '../model/schemas.ts'
 import type { EntityFile, ModelNode, PropertyDef, StateFile, Value } from '../model/schemas.ts'
 import { fail, isObject } from './core.ts'
@@ -188,17 +189,15 @@ export interface Typed {
   undef?: boolean
 }
 
-const PRIM_OF: Record<Field['type'], Prim> = { text: 'string', image: 'string', date: 'string', datetime: 'string', uuid: 'string', integer: 'number', number: 'number', boolean: 'boolean' }
-
-/** The plain kind a field type is in the generated code. */
-export const primOf = (type: Field['type']): Prim => PRIM_OF[type]
+/** The plain kind a field type is in the generated code (the catalogue's TS type). */
+export const primOf = (type: Field['type']): Prim => VALUE_TYPES[type].ts
 
 export const PRIM_WORDS: Record<Prim, string> = { string: 'text', number: 'a number', boolean: 'true or false' }
 
 const plain = (prim: Prim, flags: { null?: boolean, undef?: boolean } = {}): Typed => ({ shape: 'value', prims: [prim], ...flags })
 
 /** A field as the generated schema types it (`zodField`): nullable gives null, and a field that is neither required, nullable nor defaulted may be unset. */
-const fieldTyped = (field: Field): Typed => plain(PRIM_OF[field.type], { null: !!field.nullable, undef: !field.required && !field.nullable && field.default === undefined })
+const fieldTyped = (field: Field): Typed => plain(primOf(field.type), { null: !!field.nullable, undef: !field.required && !field.nullable && field.default === undefined })
 
 const rowTyped = (members: Record<string, Typed>, entity?: string): Typed => ({ shape: 'row', prims: [], members, ...(entity ? { entity } : {}) })
 const listTyped = (entity: string): Typed => ({ shape: 'list', prims: [], entity, members: { length: plain('number') } })
@@ -303,7 +302,7 @@ export const typeOfValue = (context: ExpressionContext, value: Value | undefined
   if (value.$form !== undefined && context.form) {
     const { entity, fields } = formOf(context.draft, context.form)
     // The form's values start as the field's default or an empty one: never null or unset.
-    const members = Object.fromEntries(fields.map(field => [field.name, plain(PRIM_OF[field.type])]))
+    const members = Object.fromEntries(fields.map(field => [field.name, plain(primOf(field.type))]))
     if (value.$form === true) return rowTyped(members, entity?.id)
     return typeof value.$form === 'string' ? members[value.$form] : undefined
   }

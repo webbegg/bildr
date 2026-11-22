@@ -1,6 +1,7 @@
 import type { Model } from '../model/load.ts'
 import type { ActionFile, EntityFile, RepositoryFile, Value } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
+import { isBasicType, sampleOf } from '../model/field-types.ts'
 import { allFields, datasourceOf, entityById, entityNames, moduleContext, repositoryOf } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
 import { importLine } from './imports.ts'
@@ -585,6 +586,7 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
 const sampleId = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
 const sampleValue = (field: Field): Value => {
   if (field.name === 'id' || field.type === 'uuid') return sampleId(1)
+  if (!isBasicType(field.type)) return sampleOf(field)
   if (field.type === 'integer' || field.type === 'number') return 1
   if (field.type === 'boolean') return true
   if (field.type === 'datetime') return '2026-01-01T00:00:00.000Z'

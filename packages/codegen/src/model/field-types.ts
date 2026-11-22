@@ -55,6 +55,30 @@ export type ValueType = keyof typeof VALUE_TYPES
 /** The value types of an API model's field, in picker order. */
 export const API_VALUE_TYPES = ['text', 'email', 'url', 'phone', 'integer', 'number', 'money', 'percent', 'boolean', 'select', 'datetime', 'date', 'image', 'color', 'uuid'] as const satisfies readonly ValueType[]
 
+/** The basic types: what a parameter, an error's data or a value from an expression is typed as. */
+export type BasicType = 'text' | 'integer' | 'number' | 'boolean' | 'datetime' | 'date' | 'image' | 'uuid'
+
+/** The basic type a value of `type` is (field types S3): a SaaS text type is text, money and a percent are numbers. */
+export const basicTypeOf = (type: ValueType): BasicType => {
+  switch (type) {
+    case 'email':
+    case 'url':
+    case 'phone':
+    case 'color':
+    case 'select': return 'text'
+    case 'money':
+    case 'percent': return 'number'
+    default: return type
+  }
+}
+
+/** Whether `type` is a basic type (no check of its own beyond its kind), not a SaaS one. */
+export const isBasicType = (type: ValueType): type is BasicType => basicTypeOf(type) === type
+
+/** A value a field of `type` takes in a generated test: the catalogue's sample, a select's first option. */
+export const sampleOf = (field: { type: ValueType, name: string, options?: readonly string[] }): string | number | boolean =>
+  field.type === 'select' ? field.options?.[0] ?? '' : VALUE_TYPES[field.type].sample(field.name)
+
 /** What a field needs to say about its value type. */
 export interface ValueSettings {
   type: string

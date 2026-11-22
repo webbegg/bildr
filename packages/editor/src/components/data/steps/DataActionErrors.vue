@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { addError, renameError } from '../../../editor/stepDraft.ts'
 import type { DraftError, StepProblem, StepsDraft } from '../../../editor/stepDraft.ts'
-import { fieldTypeItems } from '../../../shared/dataModel.ts'
-import type { FieldType } from '../../../shared/dataModel.ts'
+import type { BasicType } from '@bildr/codegen/model'
+import { basicTypeItems } from '../../../shared/dataModel.ts'
 
 /**
  * The errors an action declares (S10, D10c), below its steps: a refuse or a load names one by its name, so they are edited
@@ -105,10 +105,10 @@ const editData = (index: number, at: number, patch: Partial<DraftError['data'][n
         />
         <EditorSelect
           :model-value="entry.type"
-          :items="fieldTypeItems"
+          :items="basicTypeItems"
           :aria-label="`Type of ${entry.name}`"
           data-error-data-type
-          @update:model-value="editData(index, at, { type: $event as FieldType })"
+          @update:model-value="editData(index, at, { type: $event as BasicType })"
         />
         <EditorButton
           icon="i-lucide-x"

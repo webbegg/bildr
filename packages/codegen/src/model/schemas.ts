@@ -105,6 +105,11 @@ export const API_FIELD_TYPES = [...API_VALUE_TYPES, 'model'] as const
 export const API_PARAM_TYPES = ['text', 'integer', 'number', 'boolean'] as const
 export const API_ACTION_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const
 
+/** For `type: "select"`: the values the field can take. */
+const SelectOptionsSchema = z.array(z.string().min(1).max(64)).max(100)
+/** For `type: "money"`: its ISO 4217 currency code (`EUR`). */
+const CurrencySchema = z.string().regex(CURRENCY_PATTERN, 'Use a currency code like "EUR"')
+
 /** The remote JSON key of a field or parameter, when it isn't its name (`created_at`). */
 const RemoteKeySchema = z.string().min(1).max(64)
 /** A path under the base URL: `/` then segments, `:name` for a path parameter; no `..`, query or fragment. */
@@ -115,10 +120,8 @@ export const ApiFieldSchema = z.object({
   type: z.enum(API_FIELD_TYPES),
   /** For `type: "model"`: the model of the value. */
   model: PascalNameSchema.optional(),
-  /** For `type: "select"`: the values the field can take. */
-  options: z.array(z.string().min(1).max(64)).max(100).optional(),
-  /** For `type: "money"`: its ISO 4217 currency code (`EUR`). */
-  currency: z.string().regex(CURRENCY_PATTERN, 'Use a currency code like "EUR"').optional(),
+  options: SelectOptionsSchema.optional(),
+  currency: CurrencySchema.optional(),
   /** A list of values (or of models). */
   list: z.boolean().optional(),
   /** The key may be missing. */
@@ -513,12 +516,17 @@ export const ModuleFileSchema = z.object({
   dependsOn: z.array(ModuleNameSchema)
 })
 
+/** The basic value types: a query or action parameter's and an error's data (no settings to give). */
 export const FIELD_TYPES = ['text', 'integer', 'number', 'boolean', 'datetime', 'date', 'image', 'uuid'] as const
+/** The types of an entity's or a store's field (field types S3): the catalogue's, as an API model's. */
+export const ENTITY_FIELD_TYPES = API_VALUE_TYPES
 
 export const FieldSchema = z.object({
   id: ArtifactIdSchema,
   name: CamelNameSchema,
-  type: z.enum(FIELD_TYPES),
+  type: z.enum(ENTITY_FIELD_TYPES),
+  options: SelectOptionsSchema.optional(),
+  currency: CurrencySchema.optional(),
   required: z.boolean().optional(),
   unique: z.boolean().optional(),
   nullable: z.boolean().optional(),
@@ -528,6 +536,11 @@ export const FieldSchema = z.object({
   max: z.number().optional(),
   pattern: z.string().optional(),
   patternMessage: z.string().optional()
+}).superRefine((field, context) => {
+  for (const message of valueSettingsProblems(field, field.name)) context.addIssue({ code: 'custom', path: ['type'], message })
+  if (field.type === 'select' && (field.min !== undefined || field.max !== undefined || field.pattern !== undefined)) {
+    context.addIssue({ code: 'custom', path: ['type'], message: `${field.name}: A "select" field takes no min, max or pattern (its options say what it takes)` })
+  }
 })
 
 export const EntityFileSchema = z.object({

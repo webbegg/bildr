@@ -50,7 +50,14 @@ const TYPE_LABELS: Record<Field['type'], string> = {
   date: 'a date like 2026-01-15',
   datetime: 'a date and time like 2026-01-15T09:30:00Z',
   image: 'text (an image address)',
-  uuid: 'a uuid'
+  uuid: 'a uuid',
+  email: 'an email address like ana@example.com',
+  url: 'a web address that starts with http:// or https://',
+  phone: 'a phone number like +34 600 123 456',
+  color: 'a hex color like #336699',
+  money: 'an amount (a number)',
+  percent: 'a percentage (a number)',
+  select: 'one of its options'
 }
 
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`
@@ -58,12 +65,12 @@ const plural = (count: number, word: string) => `${count} ${word}${count === 1 ?
 /** Why `value` can't be stored for `field` (as a sentence), or undefined when it can. */
 const valueProblem = (field: Field, value: Value): string | undefined => {
   if (value === null) return field.required && !field.nullable && field.default === undefined ? `${field.name} is required` : undefined
-  if (!fits(field.type, value, true)) return `${field.name} must be ${TYPE_LABELS[field.type]}`
+  if (!fits(field.type, value, true, field.options)) return `${field.name} must be ${field.type === 'select' ? `one of ${(field.options ?? []).join(', ')}` : TYPE_LABELS[field.type]}`
   const text = typeof value === 'string'
   if (field.type === 'text' || field.type === 'image') {
     if (text && field.min !== undefined && value.length < field.min) return `${field.name} must be at least ${plural(field.min, 'character')}`
     if (text && field.max !== undefined && value.length > field.max) return `${field.name} must be at most ${plural(field.max, 'character')}`
-  } else if (field.type === 'integer' || field.type === 'number') {
+  } else if (field.type === 'integer' || field.type === 'number' || field.type === 'money' || field.type === 'percent') {
     if (typeof value === 'number' && field.min !== undefined && value < field.min) return `${field.name} must be at least ${field.min}`
     if (typeof value === 'number' && field.max !== undefined && value > field.max) return `${field.name} must be at most ${field.max}`
   }
@@ -109,9 +116,13 @@ const blankOf = (field: Field): Value => {
   switch (field.type) {
     case 'integer':
     case 'number':
+    case 'money':
+    case 'percent':
       return Math.min(Math.max(0, field.min ?? 0), field.max ?? Infinity)
     case 'boolean':
       return false
+    case 'select':
+      return field.options?.[0] ?? ''
     case 'date':
       return fixtureSource.now().slice(0, 10)
     case 'datetime':
@@ -142,7 +153,11 @@ const freeBlank = (field: Field, rows: Row[]): Value => {
         return n === 1 ? 'untitled' : `untitled-${n}`
       case 'integer':
       case 'number':
+      case 'money':
+      case 'percent':
         return Number(blank) + n
+      case 'select':
+        return field.options?.[n]
       case 'date':
         return new Date(Date.parse(`${String(blank)}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
       case 'datetime':
