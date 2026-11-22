@@ -114,21 +114,33 @@ const isImage = (key: string, value: string) => {
   }
 }
 
+/** `http://` or `https://` and a host, as the generated `z.url({ protocol: /^https?$/ })` takes it (not `https:/a.com` or `http:a.com`). */
+const HTTP_URL_START = /^https?:\/\/[^\s/?#]+/i
 const isHttpUrl = (value: string) => {
+  if (!HTTP_URL_START.test(value)) return false
   try {
-    const url = new URL(value)
-    return (url.protocol === 'http:' || url.protocol === 'https:') && value.startsWith(url.protocol)
+    return ['http:', 'https:'].includes(new URL(value).protocol)
   } catch {
     return false
   }
 }
 
-/** The SaaS type of an API field whose values are all text, when every value passes its check (field types S2): else text. */
-const textTypeOf = (values: string[]): ApiField['type'] => {
-  if (!values.length) return 'text'
-  if (values.every(value => EMAIL_PATTERN.test(value))) return 'email'
-  if (values.every(isHttpUrl)) return 'url'
-  if (values.every(value => COLOR_PATTERN.test(value))) return 'color'
+const COLOR_KEY = /colou?r|tint|hex|shade|background|foreground|fill|stroke/i
+/** Hex colors: a key that says so, or a hex letter in a value (`#123` alone is more likely an issue number). */
+const areColors = (key: string, values: string[]) =>
+  values.every(value => COLOR_PATTERN.test(value)) && (COLOR_KEY.test(key) || values.some(value => /[a-f]/i.test(value)))
+
+/**
+ * The SaaS type of an API field whose values are text (or image URLs), when every value passes its generated check (field types S2):
+ * email, url, image or color, else text. An empty value fails every one of those checks, so a field with one stays text; an `id` stays
+ * text too, so a List keeps keying its rows by it.
+ */
+const textTypeOf = (key: string, type: 'text' | 'image', present: string[], all: unknown[]): ApiField['type'] => {
+  if (!present.length || present.length < all.length || /^id$/i.test(key)) return 'text'
+  if (type === 'image') return present.every(isHttpUrl) ? 'image' : 'text'
+  if (present.every(value => EMAIL_PATTERN.test(value))) return 'email'
+  if (present.every(isHttpUrl)) return 'url'
+  if (areColors(key, present)) return 'color'
   return 'text'
 }
 
@@ -194,7 +206,7 @@ const modelName = (raw: string): string => {
  * Proposes the models of an API answer, in the order `api_model_set` takes them one by one:
  * nested models first, the root model last. `sample` is one object or an array of them (up to 20
  * are read). Fields are camelCase with the remote `key` when it differs; the type comes from
- * the values (an image URL is text); a nested object is a model, a list of objects or scalars
+ * the values (an email, a url, an image or a color when every value passes its check); a nested object is a model, a list of objects or scalars
  * a list; null makes a field `nullable`, a key missing in some items `optional`. Each nested
  * object gets a model of its own (named from its key, made unique), so a model never holds
  * itself. Nothing for a sample with no object.
@@ -265,7 +277,7 @@ export const inferApiModels = (sample: unknown, rootName: string): ApiModel[] =>
     const present = values.filter(value => value !== '')
     const type = typeOf(key, present)
     if (!type) return undefined
-    return { type: type === 'text' ? textTypeOf(present as string[]) : type }
+    return { type: type === 'text' || type === 'image' ? textTypeOf(key, type, present as string[], values) : type }
   }
 
   build(rootName, objects, undefined, 0)
