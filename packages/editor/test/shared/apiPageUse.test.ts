@@ -95,6 +95,11 @@ describe('apiSample', () => {
     expect(apiSample(rows('forecast', 'ds_weather'))).toEqual({ city: 'city', celsius: 0, observedAt: '2026-01-01T00:00:00.000Z' })
   })
 
+  it('gives money and a percent a number and a select its first option (field types S2)', () => {
+    const deal = { models: [{ name: 'Deal', fields: [{ name: 'amount', type: 'money' as const, currency: 'EUR' }, { name: 'off', type: 'percent' as const }, { name: 'stage', type: 'select' as const, options: ['open', 'won'] }, { name: 'mail', type: 'email' as const }] }], model: 'Deal', many: false }
+    expect(apiSample(deal)).toEqual({ amount: 0, off: 0, stage: 'open', mail: 'mail' })
+  })
+
   it('stops where a model contains itself', () => {
     const looping = { models: [{ name: 'Node', fields: [{ name: 'label', type: 'text' as const }, { name: 'child', type: 'model' as const, model: 'Node' }] }], model: 'Node', many: false }
     const sample = apiSample(looping) as { child: { child: unknown } }

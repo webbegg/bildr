@@ -10,7 +10,8 @@ describe('inferApiModels', () => {
   it('turns an object into a model: camelCase names, the remote key when it differs, types from values', () => {
     const models = inferApiModels({
       id: 7, full_name: 'Ada', score: 9.5, active: true, born: '1815-12-10', seen: '2026-01-01T10:00:00Z',
-      ref: '6f1c2d3e-4b5a-4c6d-8e7f-000000000001', avatar: 'https://x.example.com/a.png'
+      ref: '6f1c2d3e-4b5a-4c6d-8e7f-000000000001', avatar: 'https://x.example.com/a.png',
+      mail: 'ada@example.com', site: 'https://ada.example.com/about', tint: '#33aa99', label: 'a #1 pick'
     }, 'product')
     expect(models).toEqual([{
       name: 'Product',
@@ -22,10 +23,20 @@ describe('inferApiModels', () => {
         { name: 'born', type: 'date' },
         { name: 'seen', type: 'datetime' },
         { name: 'ref', type: 'uuid' },
-        { name: 'avatar', type: 'text' }
+        // Field types S2: what a SaaS type's check takes is that type.
+        { name: 'avatar', type: 'image' },
+        { name: 'mail', type: 'email' },
+        { name: 'site', type: 'url' },
+        { name: 'tint', type: 'color' },
+        { name: 'label', type: 'text' }
       ]
     }])
     expect(valid(models)).toEqual([])
+  })
+
+  it('keeps text when one of the values does not fit a SaaS type (field types S2)', () => {
+    const models = inferApiModels([{ mail: 'ada@example.com', site: 'https://x.example.com' }, { mail: 'not an email', site: 'ftp://x.example.com' }], 'person')
+    expect(models[0]!.fields).toEqual([{ name: 'mail', type: 'text' }, { name: 'site', type: 'text' }])
   })
 
   it('reads up to 20 items of an array: nullable on null, optional on a missing key', () => {

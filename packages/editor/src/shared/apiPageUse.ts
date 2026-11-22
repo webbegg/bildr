@@ -95,7 +95,10 @@ const sampleValue = (models: ApiModel[], field: ApiModel['fields'][number], dept
   const one = (): unknown => {
     switch (field.type) {
       case 'integer':
-      case 'number': return 0
+      case 'number':
+      case 'money':
+      case 'percent': return 0
+      case 'select': return field.options?.[0] ?? field.name
       case 'boolean': return false
       case 'datetime': return '2026-01-01T00:00:00.000Z'
       case 'date': return '2026-01-01'

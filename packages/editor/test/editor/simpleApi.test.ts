@@ -764,6 +764,58 @@ describe('the model editor', () => {
     expect(q('[data-simple-model-unsaved]')).toBeNull()
   })
 
+  it('offers every field type, SaaS types included, in the type picker (field types S2)', async () => {
+    shop()
+    await mounted()
+    await open('model:Product')
+    expect(await optionLabels(comboOf(qa('[data-model-field]')[0]!.querySelector('[data-model-field-type]')))).toEqual([
+      'Text', 'Email', 'Link', 'Phone', 'Whole number', 'Number', 'Money', 'Percent', 'Yes / no', 'One of a list', 'Date and time', 'Date', 'Image', 'Color', 'Unique id', 'Another model'
+    ])
+  })
+
+  it('asks a select for its options and money for its currency, and saves them (field types S2)', async () => {
+    shop()
+    const { actions } = await mounted()
+    await open('model:Product')
+    const [first, second] = qa('[data-model-field]')
+    await selectOption(comboOf(first!.querySelector('[data-model-field-type]')), 'Money')
+    expect(text(first!.querySelector('[data-model-field-currency]'))).toContain('EUR')
+    await selectOption(comboOf(first!.querySelector('[data-model-field-currency]')), 'USD')
+    await selectOption(comboOf(second!.querySelector('[data-model-field-type]')), 'One of a list')
+    await typeInto(second!.querySelector('[data-model-field-options]'), 'draft, live , ,archived')
+    await click(q('[data-simple-model-save]'))
+    expect(calls(actions, 'api_model_set')).toEqual([{
+      datasource: ID,
+      model: { name: 'Product', fields: [{ name: 'id', type: 'money', currency: 'USD' }, { name: 'title', type: 'select', options: ['draft', 'live', 'archived'] }] }
+    }])
+  })
+
+  it('drops a select\'s options and money\'s currency when the type changes, and shows the saved ones (field types S2)', async () => {
+    shop()
+    seed('api_model_set', { datasource: ID, model: { name: 'Deal', fields: [{ name: 'stage', type: 'select', options: ['open', 'won'] }, { name: 'amount', type: 'money', currency: 'GBP' }] } })
+    const { actions } = await mounted()
+    await open('model:Deal')
+    const [stage, amount] = qa('[data-model-field]')
+    expect((stage!.querySelector('[data-model-field-options]') as HTMLInputElement).value).toBe('open, won')
+    expect(text(amount!.querySelector('[data-model-field-currency]'))).toContain('GBP')
+    await selectOption(comboOf(stage!.querySelector('[data-model-field-type]')), 'Text')
+    await selectOption(comboOf(amount!.querySelector('[data-model-field-type]')), 'Number')
+    expect(q('[data-model-field-options]')).toBeNull()
+    expect(q('[data-model-field-currency]')).toBeNull()
+    await click(q('[data-simple-model-save]'))
+    expect(calls(actions, 'api_model_set')).toEqual([{ datasource: ID, model: { name: 'Deal', fields: [{ name: 'stage', type: 'text' }, { name: 'amount', type: 'number' }] } }])
+  })
+
+  it('does not save a select with no options (field types S2)', async () => {
+    shop()
+    const { actions } = await mounted()
+    await open('model:Product')
+    await selectOption(comboOf(qa('[data-model-field]')[1]!.querySelector('[data-model-field-type]')), 'One of a list')
+    await click(q('[data-simple-model-save]'))
+    expect(text(q('[data-simple-model-error]'))).toBe('List the options of each field that is one of a list')
+    expect(calls(actions, 'api_model_set')).toEqual([])
+  })
+
   it('reorders the fields', async () => {
     shop()
     const { actions } = await mounted()

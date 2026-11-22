@@ -5,11 +5,11 @@ import type { ApiModel } from '@bildr/codegen/model'
 import SimpleApiPaneBar from './SimpleApiPaneBar.vue'
 import DataStaleNotice from '../data/DataStaleNotice.vue'
 import { attempt } from '../../editor/dataArtifactActions.ts'
-import { modelChangedOutside, modelDirty, modelDraftOf, modelOutput, modelProblems, moveField, newField } from '../../editor/simpleApiDraft.ts'
+import { modelChangedOutside, modelDirty, modelDraftOf, modelOutput, modelProblems, moveField, newField, setFieldType } from '../../editor/simpleApiDraft.ts'
 import type { FieldDraft, ModelDraft } from '../../editor/simpleApiDraft.ts'
 import { useDraftForm } from '../../editor/useDraftForm.ts'
 import { useEditor } from '../../editor/useEditor.ts'
-import { FIELD_TYPES } from '../../shared/simpleApi.ts'
+import { CURRENCIES, FIELD_TYPES } from '../../shared/simpleApi.ts'
 import { plainWords } from '../../shared/simpleData.ts'
 
 /**
@@ -65,11 +65,8 @@ async function add() {
 const move = (index: number, by: -1 | 1) => {
   draft.value.fields = moveField(draft.value, index, index + by)
 }
-/** A field that is not a model holds no model. */
-const setType = (field: FieldDraft, type: FieldDraft['type']) => {
-  field.type = type
-  if (type !== 'model') field.model = ''
-}
+/** The currencies offered to a money field: the common ones, and the one it has when it is another. */
+const currencies = (field: FieldDraft) => field.currency && !CURRENCIES.includes(field.currency) ? [field.currency, ...CURRENCIES] : CURRENCIES
 const remove = (key: string) => {
   draft.value.fields = draft.value.fields.filter(field => field.key !== key)
 }
@@ -177,7 +174,7 @@ const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_3rem_3.5rem_4rem_minmax(0,1fr)_
                 :items="FIELD_TYPES"
                 :aria-label="`Type of ${label(field)}`"
                 data-model-field-type
-                @update:model-value="setType(field, $event as FieldDraft['type'])"
+                @update:model-value="setFieldType(field, $event as FieldDraft['type'])"
               />
               <input
                 type="checkbox"
@@ -251,6 +248,33 @@ const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_3rem_3.5rem_4rem_minmax(0,1fr)_
                 class="max-w-56"
                 data-model-field-model
                 @update:model-value="field.model = $event"
+              />
+            </div>
+            <div
+              v-else-if="field.type === 'select'"
+              class="mt-1 flex items-center gap-2 ps-1.5"
+            >
+              <span class="shrink-0 text-[11px] text-dimmed">Options</span>
+              <EditorInput
+                v-model="field.options"
+                placeholder="Separated by commas, e.g. draft, live, archived"
+                :aria-label="`Options of ${label(field)}`"
+                class="max-w-md"
+                data-model-field-options
+              />
+            </div>
+            <div
+              v-else-if="field.type === 'money'"
+              class="mt-1 flex items-center gap-2 ps-1.5"
+            >
+              <span class="shrink-0 text-[11px] text-dimmed">Currency</span>
+              <EditorSelect
+                :model-value="field.currency"
+                :items="currencies(field)"
+                :aria-label="`Currency of ${label(field)}`"
+                class="max-w-28"
+                data-model-field-currency
+                @update:model-value="field.currency = $event"
               />
             </div>
           </div>

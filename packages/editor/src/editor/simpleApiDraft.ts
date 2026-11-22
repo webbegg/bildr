@@ -341,6 +341,10 @@ export interface FieldDraft {
   type: ApiField['type']
   /** For a field of type model: the model of its value. */
   model: string
+  /** For a select: its options, separated by commas (`draft, live`). */
+  options: string
+  /** For money: its currency code. */
+  currency: string
   list: boolean
   optional: boolean
   nullable: boolean
@@ -351,12 +355,23 @@ export interface ModelDraft {
   fields: FieldDraft[]
 }
 
-export const newField = (): FieldDraft => ({ key: `f_${++rows}`, name: '', type: 'text', model: '', list: false, optional: false, nullable: false, remote: '' })
+export const newField = (): FieldDraft => ({ key: `f_${++rows}`, name: '', type: 'text', model: '', options: '', currency: '', list: false, optional: false, nullable: false, remote: '' })
+
+/** A select's options as the draft writes them: trimmed, with no empty one. */
+const optionsOf = (field: FieldDraft) => field.options.split(',').map(option => option.trim()).filter(Boolean)
+
+/** A field's new type: a model, a select's options and money's currency go with the type that has them; money starts in euros. */
+export function setFieldType(field: FieldDraft, type: FieldDraft['type']) {
+  field.type = type
+  if (type !== 'model') field.model = ''
+  if (type !== 'select') field.options = ''
+  field.currency = type === 'money' ? field.currency || 'EUR' : ''
+}
 
 /** The draft of a saved model, or the one of a new model (`stored` null): one empty field to start with. */
 export const modelDraftOf = (stored: ApiModel | null): ModelDraft => ({
   fields: stored
-    ? stored.fields.map(field => ({ key: `f_${++rows}`, name: field.name, type: field.type, model: field.model ?? '', list: field.list ?? false, optional: field.optional ?? false, nullable: field.nullable ?? false, remote: field.key ?? '' }))
+    ? stored.fields.map(field => ({ key: `f_${++rows}`, name: field.name, type: field.type, model: field.model ?? '', options: (field.options ?? []).join(', '), currency: field.currency ?? '', list: field.list ?? false, optional: field.optional ?? false, nullable: field.nullable ?? false, remote: field.key ?? '' }))
     : [newField()]
 })
 
@@ -367,6 +382,8 @@ export const modelOutput = (name: string, draft: ModelDraft): ApiModel => ({
     name: field.name.trim(),
     type: field.type,
     ...(field.type === 'model' && field.model ? { model: field.model } : {}),
+    ...(field.type === 'select' ? { options: optionsOf(field) } : {}),
+    ...(field.type === 'money' && field.currency ? { currency: field.currency } : {}),
     ...(field.list ? { list: true } : {}),
     ...(field.optional ? { optional: true } : {}),
     ...(field.nullable ? { nullable: true } : {}),
@@ -381,6 +398,7 @@ export function modelProblems(draft: ModelDraft): string[] {
   const problems: string[] = []
   if (!draft.fields.some(field => field.name.trim())) problems.push('A model needs at least one field')
   if (draft.fields.some(field => field.type === 'model' && !field.model)) problems.push('Choose the model of each field that holds another model')
+  if (draft.fields.some(field => field.type === 'select' && field.name.trim() && !optionsOf(field).length)) problems.push('List the options of each field that is one of a list')
   return problems
 }
 
