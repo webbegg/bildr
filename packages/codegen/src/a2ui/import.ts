@@ -182,7 +182,12 @@ export const fromA2ui = (components: readonly A2uiComponent[], options: FromA2ui
   }
 
   /** A project component: its values by property id, each slot a SlotFill of the components it lists. */
-  const instance = (component: A2uiComponent, file: ComponentFile, scopes: string[]): ModelNode => {
+  const instance = (component: A2uiComponent, file: ComponentFile, scopes: string[]): ModelNode | undefined => {
+    const missing = file.properties.filter(property => property.required && property.kind !== 'slot' && component[property.name] === undefined)
+    if (missing.length) {
+      warn(component.id, `${file.name} needs ${missing.map(property => property.name).join(', ')}: left out`)
+      return undefined
+    }
     const values: Record<string, Value> = {}
     const fills: ModelNode[] = []
     for (const property of file.properties) {
@@ -194,6 +199,10 @@ export const fromA2ui = (components: readonly A2uiComponent[], options: FromA2ui
         continue
       }
       const converted = value(given, scopes, component.id)
+      if (property.kind === 'select' && typeof converted === 'string' && !(property.options ?? []).includes(converted)) {
+        warn(component.id, `${property.name}: "${converted}" is not one of its options (${(property.options ?? []).join(', ')}): left out`)
+        continue
+      }
       if (converted !== undefined) values[property.id] = converted
     }
     const known = new Set(['id', 'component', '@catalogId', ...file.properties.map(property => property.name)])

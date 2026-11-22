@@ -5,6 +5,7 @@ import { LocalIdSchema } from '../model/schemas.ts'
 import type { ModelNode, PageFile } from '../model/schemas.ts'
 import { defineEdit, EditError, fail } from './core.ts'
 import type { Draft, Tree } from './core.ts'
+import { contains } from './instances.ts'
 import { addInteraction } from './interactions.ts'
 import { FileRef, nodeInsert } from './nodes.ts'
 import type { NodeSpec } from './nodes.ts'
@@ -32,11 +33,17 @@ const split = (node: ModelNode, path: number[] = [], out: Array<{ path: number[]
 
 const at = (root: ModelNode, path: number[]): ModelNode => path.reduce((node, index) => node.children![index]!, root)
 
-/** The trees' components an Instance may name, and the actions a page's clicks may run. */
+/**
+ * The components an Instance may name (in a component's tree, none that is it or contains it: that would be a cycle), the
+ * names left out for that, and the actions a page's clicks may run.
+ */
 const vocabulary = (draft: Draft, tree: Tree) => {
   const modules = tree.module ? [draft.model.modules[tree.module]!] : Object.values(draft.model.modules)
+  const cyclic = (id: string) => tree.kind === 'component' && (id === tree.file || contains(draft, id, tree.file))
+  const all = modules.flatMap(mod => mod.components)
   return {
-    components: modules.flatMap(mod => mod.components),
+    components: all.filter(component => !cyclic(component.id)),
+    cyclic: new Set(all.filter(component => cyclic(component.id)).map(component => component.name)),
     actions: tree.kind === 'page' ? modules.flatMap(mod => mod.actions.map(action => action.id)) : []
   }
 }
@@ -53,7 +60,13 @@ export const nodeInsertA2ui = defineEdit({
     const errors = checkSurface(surface)
     if (errors.length) fail('invalid', `Not a valid A2UI surface: ${errors.slice(0, 3).map(error => error.message).join('; ')}`)
     const tree = draft.tree(file)
-    const { root, warnings } = fromA2ui(surface, vocabulary(draft, tree))
+    const { cyclic, ...known } = vocabulary(draft, tree)
+    const { root, warnings: mapped } = fromA2ui(surface, known)
+    const byId = new Map(surface.map(component => [component.id, component.component]))
+    const warnings = mapped.map((warning) => {
+      const name = byId.get(warning.componentId)
+      return name && cyclic.has(name) ? { ...warning, message: `${name} cannot contain itself: left out` } : warning
+    })
     const { spec, interactions } = split(root)
     const { nodeId } = nodeInsert.apply(draft, { file, parentId, index, exact: true, ...spec }) as { nodeId: string }
     const inserted = findNode(tree.root, nodeId)!

@@ -182,7 +182,7 @@ export const instanceDetach = defineEdit({
 // ── Replace with ─────────────────────────────────────────────────────────
 
 /** Whether component `id`'s tree has an Instance of `target`, directly or through other components. */
-const contains = (draft: Draft, id: string, target: string, seen = new Set<string>()): boolean => {
+export const contains = (draft: Draft, id: string, target: string, seen = new Set<string>()): boolean => {
   if (seen.has(id)) return false
   seen.add(id)
   const component = draft.components().find(entry => entry.id === id)
