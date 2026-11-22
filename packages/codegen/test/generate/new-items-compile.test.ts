@@ -226,10 +226,10 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
       { name: 'discount', type: 'percent' },
       { name: 'stage', type: 'select', options: ['lead', 'won', 'it\'s lost'], required: true }
     ] })
-    // Optional and not nullable does not typecheck on a SQLite entity whatever the type (a separate bug): these are nullable.
-    for (const field of ['fld_site', 'fld_phone', 'fld_tint', 'fld_discount']) session.edit('entity_field_update', { entity: 'ent_deal', field, nullable: true })
+    // Optional fields are either: not nullable (an empty column reads as unset) or nullable.
     session.edit('entity_field_add', { entity: 'ent_deal', name: 'size', type: 'select', options: ['s', 'm'], nullable: true })
-    session.fixtureRow('.bildr/modules/blog/fixtures/deal.json', 'ent_deal', { id: '6f1c2d3e-4b5a-4c6d-8e7f-000000000009', mail: 'ana@example.com', site: 'https://ana.example.com', phone: '+34 600 123 456', tint: '#336699', price: 9.99, discount: 25, stage: 'won', size: null })
+    session.edit('entity_field_add', { entity: 'ent_deal', name: 'note', type: 'text' })
+    session.fixtureRow('.bildr/modules/blog/fixtures/deal.json', 'ent_deal', { id: '6f1c2d3e-4b5a-4c6d-8e7f-000000000009', mail: 'ana@example.com', site: 'https://ana.example.com', phone: '+34 600 123 456', price: 9.99, stage: 'won', size: null })
     session.edit('action_create', { entity: 'ent_deal', template: 'update', name: 'editDeal' })
     session.edit('action_create', { entity: 'ent_deal', template: 'delete', name: 'removeDeal' })
     session.edit('query_create', { entity: 'ent_deal', result: 'many', name: 'openDeals' })
