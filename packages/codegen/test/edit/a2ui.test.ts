@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DETAIL, findNode, project } from './helpers'
+import { DETAIL, findNode, IDX, project } from './helpers'
 import type { Json } from './helpers'
 
 // node_insert_a2ui: an A2UI v1.0 surface (Basic Catalog and the project's components) inserted as nodes of a tree.
@@ -32,6 +32,41 @@ describe('node_insert_a2ui', () => {
     expect(button.interactions).toBeUndefined()
     expect(result.warnings).toContainEqual({ componentId: 'go', message: expect.stringContaining('click left out') })
     expect(p.json(DETAIL).uses.actions).toEqual([{ as: 'publish', action: 'act_publish_post' }])
+  })
+
+  it('takes back what a refused click made the page use', () => {
+    const p = project()
+    const before = p.json(IDX).uses
+    const result = p.edit('node_insert_a2ui', { file: 'pg_index', components: surface({ action: { event: { name: 'act_publish_post' } } }) })
+    expect(result.warnings).toContainEqual({ componentId: 'go', message: expect.stringContaining('click left out') })
+    expect(p.json(IDX).uses).toEqual(before)
+  })
+
+  it('inserts a project component as an Instance of it', () => {
+    const p = project()
+    const result = p.edit('node_insert_a2ui', { file: 'pg_index', components: [{ id: 'root', component: 'Tip', title: 'Heads up', tone: 'muted', icon: 'i-lucide-info', size: 'xl' }] })
+    expect(findNode(p.json(IDX).root, result.nodeId)).toMatchObject({ type: 'Instance', props: { component: 'cmp_tip', values: { prop_title: 'Heads up', prop_tone: 'muted', prop_icon: 'i-lucide-info' } } })
+    expect(result.warnings).toEqual([{ componentId: 'root', message: 'Tip has no size: left out' }])
+  })
+
+  it('leaves out a select value that is not one of its options, instead of refusing the edit', () => {
+    const p = project()
+    const result = p.edit('node_insert_a2ui', { file: 'pg_index', components: [{ id: 'root', component: 'Tip', title: 'Heads up', tone: 'info' }] })
+    expect(findNode(p.json(IDX).root, result.nodeId)!.props.values).toEqual({ prop_title: 'Heads up' })
+    expect(result.warnings).toEqual([{ componentId: 'root', message: 'tone: "info" is not one of its options (muted, elevated): left out' }])
+  })
+
+  it('leaves out a component that would contain itself', () => {
+    const p = project()
+    const result = p.edit('node_insert_a2ui', { file: 'cmp_tip', components: [{ id: 'root', component: 'Column', children: ['self'] }, { id: 'self', component: 'Tip', title: 'Again' }] })
+    expect(result.warnings).toEqual([{ componentId: 'self', message: 'Tip cannot contain itself: left out' }])
+    expect(JSON.stringify(p.json('.bildr/modules/blog/components/tip.json').root)).not.toContain('Instance')
+  })
+
+  it('runs no action from a component: its events are left out', () => {
+    const p = project()
+    const result = p.edit('node_insert_a2ui', { file: 'cmp_tip', components: surface(publish) })
+    expect(result.warnings).toContainEqual({ componentId: 'go', message: 'Event "act_publish_post" is not an action of the page: left out' })
   })
 
   it('refuses a surface a renderer would refuse', () => {

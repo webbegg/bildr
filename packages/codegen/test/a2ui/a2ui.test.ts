@@ -168,6 +168,12 @@ describe('fromA2ui', () => {
     expect(warnings.map(warning => warning.componentId)).not.toContain('n_card')
   })
 
+  it('leaves out, with a warning, a project component missing a required value', () => {
+    const { root, warnings } = fromA2ui([{ id: 'root', component: 'Column', children: ['tip'] }, { id: 'tip', component: 'Tip', tone: 'info' }], { components })
+    expect(root.children).toEqual([])
+    expect(warnings).toEqual([{ componentId: 'tip', message: 'Tip needs title: left out' }])
+  })
+
   it('turns a List template back into a List whose item paths are bound to its `as`', () => {
     const { root } = fromA2ui([
       { id: 'root', component: 'List', children: { path: '/quotes', componentId: 'quote' } },
