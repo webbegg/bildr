@@ -90,6 +90,34 @@ describe('an entity\'s SaaS field types (field types S3)', () => {
   })
 })
 
+describe('conditions and Set state steps on SaaS fields (verify B1-B3)', () => {
+  const withQuery = () => edit(withDeals(), 'query_create', { entity: 'ent_deal', result: 'many', name: 'openDeals' })
+  const where = (files: Record<string, string>, input: Record<string, unknown>) => refusal(files, 'query_update', { query: 'q_open_deals', inPlace: true, ...input })
+
+  it('takes a literal condition on a select when it is one of its options, and refuses another', () => {
+    expect(where(withQuery(), { where: { op: 'eq', field: 'stage', value: 'won' } })).toBe('applied')
+    expect(where(withQuery(), { where: { op: 'in', field: 'stage', value: ['lead', 'won'] } })).toBe('applied')
+    expect(where(withQuery(), { where: { op: 'eq', field: 'stage', value: 'gone' } })).toContain('"gone" doesn\'t fit stage')
+  })
+
+  it('compares a SaaS field with a parameter of its basic type: text for an email or a select, a number for money', () => {
+    expect(where(withQuery(), { params: [{ name: 'who', type: 'text' }], where: { op: 'eq', field: 'mail', value: { $param: 'who' } } })).toBe('applied')
+    expect(where(withQuery(), { params: [{ name: 'at', type: 'text' }], where: { op: 'eq', field: 'stage', value: { $param: 'at' } } })).toBe('applied')
+    expect(where(withQuery(), { params: [{ name: 'over', type: 'number' }], where: { op: 'gt', field: 'price', value: { $param: 'over' } } })).toBe('applied')
+    expect(where(withQuery(), { params: [{ name: 'over', type: 'text' }], where: { op: 'gt', field: 'price', value: { $param: 'over' } } })).toContain('the parameter "over" is text but price is money')
+  })
+
+  it('sets a store\'s select to one of its options, never to another value or an expression', () => {
+    let files = edit(fixtureModelFiles(), 'state_create', { name: 'picks', fields: [{ name: 'stage', type: 'select', options: ['open', 'won'], default: 'open' }, { name: 'label', type: 'text', default: 'x' }] })
+    files = edit(files, 'page_use_add', { page: 'pg_index', as: 'picks', state: 'st_picks' })
+    files = edit(files, 'node_insert', { file: 'pg_index', parentId: 'n_head', type: 'Button', props: { text: 'Go' } })
+    const step = (value: unknown) => refusal(files, 'node_interaction_add', { file: 'pg_index', nodeId: 'n_button_1', on: 'click', do: [{ kind: 'setState', state: 'st_picks', field: 'stage', value }] })
+    expect(step('won')).toBe('applied')
+    expect(step('lost')).toContain('"lost" doesn\'t fit picks.stage')
+    expect(step({ $bind: 'picks.label' })).toContain('picks.stage is one of open, won: set it to one of them')
+  })
+})
+
 describe('a store\'s SaaS field types (field types S3)', () => {
   it('takes a select with a default among its options and money with its currency', () => {
     const files = edit(fixtureModelFiles(), 'state_create', { name: 'filters', fields: [{ name: 'stage', type: 'select', options: ['open', 'won'], default: 'open' }, { name: 'budget', type: 'money', currency: 'USD', default: 10 }] })

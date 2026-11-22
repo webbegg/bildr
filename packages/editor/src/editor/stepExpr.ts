@@ -1,3 +1,4 @@
+import { valueKindOf } from '../shared/dataModel.ts'
 import type { FieldType } from '../shared/dataModel.ts'
 import { isObject } from '../model.ts'
 
@@ -51,7 +52,8 @@ export function exprOf(value: unknown): Expr {
  * A literal typed in a box of a field of `type`: a number for a number field, true or false for a toggle, else the text. Text
  * that is not what the type needs stays text, so the editor can name the problem (`literalProblem`) instead of losing it.
  */
-export function literalOf(type: FieldType | undefined, text: string): string | number | boolean {
+export function literalOf(fieldType: FieldType | undefined, text: string): string | number | boolean {
+  const type = valueKindOf(fieldType)
   const typed = text.trim()
   if (type === 'integer') return /^[+-]?\d+$/.test(typed) ? Number(typed) : text
   if (type === 'number') return typed !== '' && Number.isFinite(Number(typed)) ? Number(typed) : text
@@ -60,11 +62,14 @@ export function literalOf(type: FieldType | undefined, text: string): string | n
 }
 
 /** What a new literal of `type` starts as. */
-export const defaultLiteral = (type: FieldType | undefined): string | number | boolean =>
-  type === 'integer' || type === 'number' ? 0 : type === 'boolean' ? false : ''
+export const defaultLiteral = (fieldType: FieldType | undefined): string | number | boolean => {
+  const type = valueKindOf(fieldType)
+  return type === 'integer' || type === 'number' ? 0 : type === 'boolean' ? false : ''
+}
 
 /** Why a literal is not a value of `type` (what it should be), or undefined. */
-export function literalProblem(type: FieldType | undefined, value: string | number | boolean): string | undefined {
+export function literalProblem(fieldType: FieldType | undefined, value: string | number | boolean): string | undefined {
+  const type = valueKindOf(fieldType)
   if (type === 'integer') return typeof value === 'number' && Number.isInteger(value) ? undefined : 'a whole number'
   if (type === 'number') return typeof value === 'number' ? undefined : 'a number'
   if (type === 'boolean') return typeof value === 'boolean' ? undefined : 'true or false'

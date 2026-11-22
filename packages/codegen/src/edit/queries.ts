@@ -6,7 +6,8 @@ import { mapNodePaths, mapPaths, rootOf } from './bindings.ts'
 import { camel, defineEdit, fail, isObject, kebab, uniqueName } from './core.ts'
 import type { Draft } from './core.ts'
 import { datasourceById } from './datasources.ts'
-import { entityById, fits, isExpression, keyType, repositoryOf } from './entities.ts'
+import { basicTypeOf } from '../model/field-types.ts'
+import { entityById, fits, fitsField, isExpression, keyType, repositoryOf } from './entities.ts'
 import { apiComposableName, composableOf } from './composable-names.ts'
 import { callableName, checkCallableFree, checkQueryName, isUnusable, sentence, spaced } from './naming.ts'
 import { aliasesOf, apiArgsProblem, declaredBy, moduleOfPageIn, nodeNames, pageNamesProblem, RESERVED } from './page-uses.ts'
@@ -101,9 +102,12 @@ const checkParam = (query: QueryFile, value: Value | null | undefined, where: st
 
 const NUMERIC = ['integer', 'number']
 
-/** What a query condition or ordering may name has this type: the entity's key, a timestamp, or the field's own. */
-const typeOfField = (entity: EntityFile, name: string): string | undefined =>
-  name === 'id' ? keyType(entity) : (name === 'createdAt' || name === 'updatedAt') && entity.timestamps ? 'datetime' : entity.fields.find(field => field.name === name)?.type
+/** What a query condition or ordering may name has this type: the entity's key, a timestamp, or the field's own (a select with its options). */
+const fieldTypeOf = (entity: EntityFile, name: string): Pick<EntityFile['fields'][number], 'type' | 'options'> | undefined => {
+  if (name === 'id') return { type: keyType(entity) }
+  if ((name === 'createdAt' || name === 'updatedAt') && entity.timestamps) return { type: 'datetime' }
+  return entity.fields.find(field => field.name === name)
+}
 
 const checkParams = (params: QueryFile['params']) => {
   const seen = new Set<string>()
@@ -121,16 +125,19 @@ const checkParams = (params: QueryFile['params']) => {
  * so its edits, which name the page use they are for, keep the looser check they always had.)
  */
 const checkCondition = (query: QueryFile, entity: EntityFile, where: NonNullable<QueryFile['where']>, lenient: boolean) => {
-  const type = typeOfField(entity, where.field) ?? fail('invalid', `where: ${entity.name} has no field "${where.field}" (${fieldNames(entity).join(', ')})`)
+  const field = fieldTypeOf(entity, where.field) ?? fail('invalid', `where: ${entity.name} has no field "${where.field}" (${fieldNames(entity).join(', ')})`)
+  const type = field.type
   const value = where.value
   checkParam(query, value, 'where')
   if (lenient) return
   if (isObject(value) && typeof value.$param === 'string') {
     const param = query.params.find(entry => entry.name === value.$param)!
-    if (param.type !== type && !(NUMERIC.includes(param.type) && NUMERIC.includes(type))) fail('invalid', `where: the parameter "${param.name}" is ${param.type} but ${where.field} is ${type}`)
+    // A parameter has a basic type: text for an email or a select, a number for money (verify B2).
+    const basic = basicTypeOf(type)
+    if (param.type !== basic && !(NUMERIC.includes(param.type) && NUMERIC.includes(basic))) fail('invalid', `where: the parameter "${param.name}" is ${param.type} but ${where.field} is ${type}`)
   } else if (!isExpression(value)) {
     const values = where.op === 'in' && Array.isArray(value) ? value : [value]
-    const bad = values.findIndex(item => !fits(type as never, item as Value, true))
+    const bad = values.findIndex(item => !fitsField(field, item as Value, true))
     if (bad !== -1) fail('invalid', `where: ${JSON.stringify(values[bad])} doesn't fit ${where.field} (${type})`)
   }
 }
