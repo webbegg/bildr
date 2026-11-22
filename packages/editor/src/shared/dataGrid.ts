@@ -47,6 +47,18 @@ export const cellEditText = (value: unknown): string => value === null || value 
  * what emptying means for the field, its default, null, or nothing); numbers are read, and what is not a number is sent as it is so the module says "must be a number"; dates, date-times
  * and uuids are trimmed, empty is none.
  */
+/** The choice that empties an optional select (the dropdown's items can't be empty text). */
+export const NO_CHOICE = '\u0000none'
+
+/** What a select's sample value is chosen from: its options, with None first when the field is optional. */
+export function selectChoices(field: DataField): Array<{ label: string, value: string }> {
+  const options = (field.options ?? []).map(option => ({ label: option, value: option }))
+  return field.required ? options : [{ label: 'None', value: NO_CHOICE }, ...options]
+}
+
+/** The value a choice saves: the option, or none for None. */
+export const choiceValue = (choice: string): string | null => choice === NO_CHOICE ? null : choice
+
 export function cellValue(field: DataField, text: string): string | number | null {
   const trimmed = text.trim()
   switch (valueKindOf(field.type)) {

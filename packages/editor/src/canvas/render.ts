@@ -61,6 +61,8 @@ export interface RenderInput {
   listShown?: Record<string, number>
   /** Page id → route path, so links to a page point at it (the canvas's router sits on the current page's path, which makes those links active). */
   paths?: Record<string, string>
+  /** Action id → field id → options: the select fields of the entity a Form running that action edits, so their Inputs are dropdowns. */
+  formSelects?: Record<string, Record<string, string[]>>
 }
 
 export interface PlanElement {
@@ -322,8 +324,9 @@ interface Frame {
   layoutSlots?: Map<string, { name: string, fill?: () => PlanChild[] }>
   /** Component slots by node id, with the instance's fill. */
   componentSlots?: Map<string, { fill?: () => PlanChild[] }>
-  /** Entity field names a Form edits, by field id (unknown without the entity: the id's name part). */
   depth: number
+  /** The options of the select fields the enclosing Form edits, by field id. */
+  formSelects?: Record<string, string[]>
 }
 
 interface Options {
@@ -508,6 +511,14 @@ const renderNode = (frame: Frame, original: ModelNode, options: Options = {}): P
       const field = fieldName(props.field)
       const multiline = props.multiline === true
       const label = typeof props.label === 'string' ? props.label : field.charAt(0).toUpperCase() + field.slice(1)
+      const choices = typeof props.field === 'string' ? frame.formSelects?.[props.field] : undefined
+      if (choices) {
+        // A select field: a dropdown of its options, as the generated form has it.
+        const selectAttrs: Record<string, unknown> = { name: field, items: [...choices] }
+        if (props.placeholder !== undefined) selectAttrs.placeholder = textOf(props.placeholder, frame.scope)
+        const select: PlanElement = { tag: NODE_ELEMENTS.InputSelect, class: INPUT_CONTROL_CLASS, attrs: selectAttrs, children: [], ...(options.copy ? { copy: true } : {}) }
+        return [base(frame, node, options, NODE_ELEMENTS.Input, styleOf(frame, node, { fallback: fallbackOf(node, options) }), { attrs: { label, name: field }, children: [select] })]
+      }
       const controlAttrs: Record<string, unknown> = { name: field }
       if (!multiline && typeof props.inputType === 'string' && props.inputType !== 'text') controlAttrs.type = props.inputType
       if (props.placeholder !== undefined) controlAttrs.placeholder = textOf(props.placeholder, frame.scope)
@@ -523,7 +534,11 @@ const renderNode = (frame: Frame, original: ModelNode, options: Options = {}): P
       return [base(frame, node, options, NODE_ELEMENTS.Checkbox, styleOf(frame, node, { fallback: fallbackOf(node, options) }), { attrs })]
     }
     case 'Form':
-      return [base(frame, node, options, NODE_ELEMENTS.Form, styleOf(frame, node, { display: displayOf(node.type), fallback: fallbackOf(node, options) }), { children: renderChildren(frame, node, options) })]
+    {
+      const selects = typeof props.action === 'string' ? frame.input.formSelects?.[props.action] : undefined
+      const inner = selects ? { ...frame, formSelects: selects } : frame
+      return [base(frame, node, options, NODE_ELEMENTS.Form, styleOf(frame, node, { display: displayOf(node.type), fallback: fallbackOf(node, options) }), { children: renderChildren(inner, node, options) })]
+    }
     case 'List':
       return list(frame, node, options)
     case 'Instance':

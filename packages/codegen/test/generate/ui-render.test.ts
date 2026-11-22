@@ -140,6 +140,18 @@ describe('generateUi follows the canvas render rules', () => {
     expect(inputOf('percent')).toMatch(/type="number" step="any"/)
   })
 
+  it('gives a select field a dropdown of its options, with the Input\'s placeholder (select inputs)', () => {
+    const model = fixtureModel()
+    const title = model.modules.blog!.entities.find(entity => entity.id === 'ent_post')!.fields.find(field => field.id === 'fld_title')!
+    Object.assign(title, { type: 'select', options: ['draft', 'it\'s live'], min: undefined, max: undefined })
+    const form = pageOf(model, 'posts-new').root.children!.find(node => node.type === 'Form')!
+    const input = form.children!.find(node => node.props?.field === 'fld_title')!
+    input.props = { ...input.props, placeholder: 'Pick one' }
+    expect(generated(model, 'posts/new.vue')).toContain('<USelect v-model="form.title" name="title" required :items="[\'draft\', \'it\\\'s live\']" placeholder="Pick one" class="w-full" />')
+    input.props = { ...input.props, multiline: true }
+    expect(() => generated(model, 'posts/new.vue')).toThrow(/a select field's input is a dropdown: it has no multiline or inputType/)
+  })
+
   it('lays a List out by its `layout` (list-layout)', () => {
     const list = (layout?: string): ModelNode => ({ id: 'n_x', type: 'List', props: { items: { $bind: 'quotes' }, as: 'q', ...(layout ? { layout } : {}) }, children: [{ id: 'n_y', type: 'Container' }] })
     expect(indexWith(list())).toContain('    <div class="flex flex-col self-stretch">\n      <div v-for="q in quotes" :key="q.id" class="flex flex-col self-stretch" />')

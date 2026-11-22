@@ -592,6 +592,7 @@ const input = (env: Env, node: ModelNode, extra: Attr[], indent: string, options
   const field = fieldOf(env, node)
   const props = node.props ?? {}
   const label = typeof props.label === 'string' ? props.label : pascal(field.name)
+  if (field.type === 'select') return selectInput(env, node, field, label, extra, indent, options)
   const numeric = VALUE_TYPES[field.type].family === 'number'
   const textual = field.type in TEXT_INPUT_TYPES
   if (!numeric && !textual) return fail(env, node, `a ${field.type} field has no input yet`)
@@ -613,6 +614,19 @@ const input = (env: Env, node: ModelNode, extra: Attr[], indent: string, options
   if (multiline && typeof props.rows === 'number') attrs.push(boundAttr('rows', String(props.rows)))
   attrs.push(staticAttr('class', INPUT_CONTROL_CLASS))
   const control = element(multiline ? NODE_ELEMENTS.InputMultiline : NODE_ELEMENTS.InputControl, attrs, undefined, `${indent}  `)
+  return element(NODE_ELEMENTS.Input, [...extra, staticAttr('label', label), staticAttr('name', field.name), ...(field.required ? [attr('attr', 'required')] : []), ...styleAttrs(env, node, { fallback: fallbackOf(node, options) })], control, indent)
+}
+
+/** A select field's Input: a dropdown of its options, labelled as any Input. */
+const selectInput = (env: Env, node: ModelNode, field: Field, label: string, extra: Attr[], indent: string, options: RenderOptions) => {
+  const props = node.props ?? {}
+  if (props.multiline !== undefined || props.inputType !== undefined) return fail(env, node, 'a select field\'s input is a dropdown: it has no multiline or inputType')
+  const attrs: Attr[] = [attr('model', `v-model="form.${field.name}"`), staticAttr('name', field.name)]
+  if (field.required) attrs.push(attr('attr', 'required'))
+  attrs.push(boundAttr('items', `[${(field.options ?? []).map(option => tsString(option)).join(', ')}]`))
+  if (props.placeholder !== undefined) attrs.push(valueAttr(env, node, 'placeholder', props.placeholder))
+  attrs.push(staticAttr('class', INPUT_CONTROL_CLASS))
+  const control = element(NODE_ELEMENTS.InputSelect, attrs, undefined, `${indent}  `)
   return element(NODE_ELEMENTS.Input, [...extra, staticAttr('label', label), staticAttr('name', field.name), ...(field.required ? [attr('attr', 'required')] : []), ...styleAttrs(env, node, { fallback: fallbackOf(node, options) })], control, indent)
 }
 

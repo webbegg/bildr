@@ -430,6 +430,7 @@ function renderMessage(key: string | null): RenderMessage | null {
     breakpointBase: editor.breakpointBase,
     data: editor.data,
     paths: editor.pagePaths,
+    ...(Object.keys(editor.formSelects).length ? { formSelects: editor.formSelects } : {}),
     ...(isPage && editor.pagePaths[file.id] ? { path: editor.pagePaths[file.id] } : {}),
     ...(editor.componentId ? { variant: shown } : {}),
     view

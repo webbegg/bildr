@@ -85,6 +85,18 @@ describe('canvas render parity with the generated app', () => {
     expect(canvas(page('posts-new'), { site, createPost: { pending: false, error: null } })).toEqual(normalized(generated))
   })
 
+  it('new post page: a select field\'s Input is a dropdown on both sides (select inputs)', () => {
+    const changed = model()
+    const title = changed.modules.blog!.entities.find(entity => entity.id === 'ent_post')!.fields.find(field => field.id === 'fld_title')!
+    Object.assign(title, { type: 'select', options: ['draft', 'live'], min: undefined, max: undefined })
+    const newPage = loadSfc(generateUi(changed).find(file => file.path === 'layers/blog/app/pages/posts/new.vue')!.content)
+    const generated = normalized(renderGeneratedPage(app, newPage, { site, form: { title: 'draft', slug: '', body: '', published: false }, createPostPending: false, createPostError: null }))
+    const formSelects = { act_create_post: { fld_title: ['draft', 'live'] } }
+    const rendered = normalized(planElements(renderPlan({ file: page('posts-new'), components: blog.components, layouts: fixture.layouts, data: { site, createPost: { pending: false, error: null } }, formSelects })))
+    expect(rendered).toEqual(generated)
+    expect(rendered).toContain('USelect: w-full')
+  })
+
   it.each([
     ['default', undefined],
     ['compact', { id: 'var_compact', label: 'compact' }],

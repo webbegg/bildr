@@ -143,6 +143,15 @@ export const createDesign = () => {
   })
   /** Page id → route path, which the canvas links its page links to. */
   const pagePaths = computed<Record<string, string>>(() => Object.fromEntries(Object.values(model.value?.modules ?? {}).flatMap(entry => entry.pages.map(page => [page.id, page.path]))))
+  /** Action id → field id → options: the select fields of each action's entity, which a Form running it shows as dropdowns. */
+  const formSelects = computed<Record<string, Record<string, string[]>>>(() => {
+    const modules = Object.values(model.value?.modules ?? {})
+    const entities = new Map(modules.flatMap(entry => entry.entities).map(entity => [entity.id, entity]))
+    return Object.fromEntries(modules.flatMap(entry => entry.actions).flatMap((action) => {
+      const selects = (entities.get(action.input.entity ?? '')?.fields ?? []).filter(field => field.type === 'select')
+      return selects.length ? [[action.id, Object.fromEntries(selects.map(field => [field.id, field.options ?? []]))]] : []
+    }))
+  })
   const fileKind = computed(() => files.value.find(entry => entry.id === fileId.value)?.kind ?? null)
   const page = computed<PageFile | undefined>(() => fileKind.value === 'page' ? file.value as PageFile : undefined)
 
@@ -615,7 +624,7 @@ export const createDesign = () => {
   }
 
   return {
-    page, rowsOf, apiSampled, detail, records, record, pickRecord, result, loading, error, errorCode, errorField, regenerated, model, problems, pagePaths, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
+    page, rowsOf, apiSampled, detail, records, record, pickRecord, result, loading, error, errorCode, errorField, regenerated, model, problems, pagePaths, formSelects, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
     selectedIds, selectedId, selected, selectedParent, hoveredId, dragging, dragCancels, device, devices, deviceChoice, mode, history, clipboard,
     component, variantId, variant, inspected, breadcrumbs, nameOf, dark, selectVariant, override, commitStyle,
     isContainer, scopeOf, pendingInsert, confirmInsert, pendingForm, confirmForm, formActions, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,

@@ -19,6 +19,8 @@ import type { BoardVariant, CanvasFile } from './render.ts'
  * - `paths`: page id → route path, so page links point at their pages, and
  *   `path`: the route of the file being edited (a page's path), where the
  *   canvas's router sits: links to it are active, as in the app;
+ * - `formSelects`: action id → field id → options, so a Form's Input of a
+ *   select field renders as its dropdown;
  * - `variant`: the variant a variant-board frame shows;
  * - `view`: the page, or the token sheet (P4c).
  *
@@ -60,6 +62,7 @@ export interface RenderMessage {
   breakpointBase?: BreakpointBase
   data: Record<string, unknown>
   paths?: Record<string, string>
+  formSelects?: Record<string, Record<string, string[]>>
   path?: string
   variant?: BoardVariant
   view: CanvasView

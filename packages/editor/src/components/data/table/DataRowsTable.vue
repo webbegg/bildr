@@ -3,7 +3,7 @@ import { computed, nextTick, reactive, ref, useTemplateRef, watch } from 'vue'
 import type { Row } from '@bildr/codegen/query'
 import { fieldLabel } from '../../../shared/dataModel.ts'
 import type { DataField, FieldType } from '../../../shared/dataModel.ts'
-import { cellEditText, cellValue, moveCell } from '../../../shared/dataGrid.ts'
+import { NO_CHOICE, cellEditText, cellValue, choiceValue, moveCell, selectChoices } from '../../../shared/dataGrid.ts'
 import type { CellMove, CellPos } from '../../../shared/dataGrid.ts'
 import { rowId } from '../../../shared/dataTable.ts'
 import type { TableSort } from '../../../shared/dataTable.ts'
@@ -174,6 +174,22 @@ async function commit(): Promise<boolean> {
   }
   focusInput()
   return false
+}
+
+/** A select cell's choice: saved at once (None empties an optional one), the cell keeps the keyboard. */
+async function choose(choice: string) {
+  if (!editing.value) return
+  editing.value.text = cellEditText(choiceValue(choice))
+  if (await commit()) focusCell(active.value)
+}
+
+/** The dropdown closed: without a choice (Escape, a click away) the cell is given back as it was. */
+function onSelectOpen(open: boolean) {
+  if (open) return
+  void nextTick(() => {
+    const current = editing.value
+    if (current && !pending.has(cellKey(current.id, current.name)) && current.refused === null) cancel()
+  })
 }
 
 function cancel() {
@@ -348,6 +364,18 @@ function onCellKey(event: KeyboardEvent, row: number, col: number) {
                 :class="row[field.name] === true ? 'translate-x-3' : 'translate-x-0'"
               />
             </button>
+            <EditorSelect
+              v-else-if="editable && field.type === 'select' && isEditing(idOf(row), field.name)"
+              :model-value="editing!.text === '' ? NO_CHOICE : editing!.text"
+              :items="selectChoices(field)"
+              :disabled="pending.has(cellKey(idOf(row), field.name))"
+              :aria-label="field.label"
+              default-open
+              data-cell-select
+              @update:model-value="choose"
+              @update:open="onSelectOpen"
+              @click.stop
+            />
             <input
               v-else-if="editable && isEditing(idOf(row), field.name)"
               v-model="editing!.text"
