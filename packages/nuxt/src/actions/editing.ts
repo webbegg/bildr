@@ -128,6 +128,12 @@ const DESCRIPTIONS: Record<EditName, string> = {
     'Returns: as.'
   ].join('\n'),
   page_computed_remove: 'Remove a computed value from a page. Refused while a node or another computed value binds it, listing them.',
+  node_insert_a2ui: [
+    `Insert an A2UI v1.0 surface (components: its flat component list, one with id "root") as one node of a tree, at index of parentId (default: the end of the root). ${TREE}`,
+    'Basic Catalog components become nodes (Column, Row, Card, Text with a Markdown heading as a Heading, Image, Button, List with a child template, TextField bound to /form/<field id> as an Input, CheckBox); a project component\'s name becomes an Instance of it. Paths become bindings, a List template\'s relative paths its item. New node ids, no palette defaults.',
+    'A Button event naming an action of the page runs it on click (the event context is its args), checked as node_interaction_add checks it. What has no bildr counterpart, and a click the page can\'t run, is left out and listed in warnings; a surface with bad ids, dangling references or no root is refused (invalid).',
+    'Returns: nodeId and warnings ({ componentId, message }).'
+  ].join('\n'),
   node_interaction_update: [
     `Change the event (on) and/or the steps (do, replacing them whole) of the interaction at index of a node, under the rules of node_interaction_add. ${TREE}`,
     'Seen: expectedOn is the event the caller saw at that index (the editor always sends it); when the interaction there is another, it changed since it was opened and nothing is written (invalid). An index with no interaction is not_found.',

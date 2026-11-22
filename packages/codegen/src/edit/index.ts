@@ -19,6 +19,7 @@ import { apiActionDelete, apiActionRename, apiActionSet, apiCreate, apiModelDele
 import { actionCreate, actionDelete, actionRename, actionUpdate } from './actions.ts'
 import { pageUseAdd, pageUseRemove, pageUseUpdate, queryCreate, queryCreateForList, queryDelete, queryRename, queryUpdate } from './queries.ts'
 import { nodeInteractionAdd, nodeInteractionRemove, nodeInteractionUpdate } from './interactions.ts'
+import { nodeInsertA2ui } from './a2ui.ts'
 import { pageComputedRemove, pageComputedSet } from './computed.ts'
 import { stateCreate, stateDelete, stateRename, stateUpdate } from './state.ts'
 import { entityCreate, entityDelete, entityFieldAdd, entityFieldMove, entityFieldRemove, entityFieldUpdate, entityUpdate } from './entities.ts'
@@ -143,7 +144,9 @@ export const EDITS = {
   node_interaction_remove: nodeInteractionRemove,
   // Computed values (B1): "if … then … else …", a List's source.
   page_computed_set: pageComputedSet,
-  page_computed_remove: pageComputedRemove
+  page_computed_remove: pageComputedRemove,
+  // A2UI (spike): an agent's A2UI v1.0 surface inserted as nodes.
+  node_insert_a2ui: nodeInsertA2ui
 } satisfies Record<string, EditDef>
 
 export type EditName = keyof typeof EDITS
