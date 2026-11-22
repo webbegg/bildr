@@ -85,8 +85,8 @@ const STORE_ALIKE = new Set<ApiField['type']>(['text', 'integer', 'number', 'boo
 
 /**
  * The zod expression of an entity field: the same scalars the entities of the other data sources use. A datetime, and a SaaS type
- * (email, money, select…), takes what the DTO takes, so an entity fetched from the API is a valid body to send back. Its min/max
- * (a text's length, a number's range) are checked here, on what the app sends, and not on the DTO: an answer out of range still loads.
+ * (email, money, select…), takes what the DTO takes. Its min/max (a text's length, a number's range) are checked here, on what the
+ * app sends, and not on the DTO: an answer out of range still loads, but sending it back as it is is refused.
  */
 const entityField = (field: ApiField, kernel: Set<KernelName>): string => {
   const base = field.type === 'model'

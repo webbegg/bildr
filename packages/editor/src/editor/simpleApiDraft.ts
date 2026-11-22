@@ -367,7 +367,7 @@ const optionsOf = (field: FieldDraft) => parseOptions(field.options)
 /** Whether a field of `type` takes a min and a max: a text's length, a number's range. */
 export const takesRange = (type: FieldDraft['type']): boolean => API_RANGE_TYPES.has(type)
 
-const NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)$/
+const NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i
 /** A typed min or max: none when empty, NaN when it is not a number. */
 const boundOf = (typed: string): number | undefined => typed.trim() === '' ? undefined : NUMBER.test(typed.trim()) ? Number(typed.trim()) : Number.NaN
 const rangeOf = (field: FieldDraft) => takesRange(field.type) ? { min: boundOf(field.min), max: boundOf(field.max) } : { min: undefined, max: undefined }
