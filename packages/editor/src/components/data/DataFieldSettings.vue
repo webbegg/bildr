@@ -34,7 +34,7 @@ const hookOf = (part: string) => ({ [`data-${hook}-${part}`]: name ?? '' })
     <EditorInput
       :model-value="options"
       :commit="commit"
-      placeholder="Separated by commas, e.g. draft, live, archived"
+      placeholder="Separated by commas, e.g. draft, live, &quot;on hold, waiting&quot;"
       :aria-label="`Options of ${label}`"
       class="min-w-0 flex-1"
       v-bind="hookOf('options')"
