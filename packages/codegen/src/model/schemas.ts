@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ThemeSchema } from '../design/theme.ts'
 import { BREAKPOINT_BASES } from '../design/tokens.ts'
+import { API_VALUE_TYPES, CURRENCY_PATTERN, valueSettingsProblems } from './field-types.ts'
 
 /**
  * The `.bildr/` model: one JSON file per artifact. The editor writes these
@@ -100,7 +101,7 @@ export const DATASOURCE_KINDS = ['sqlite', 'rest', 'memory', 'api'] as const
  * where the generated calls run: on the server (the secret stays there) or in the browser.
  */
 export const API_RUNTIMES = ['server', 'browser'] as const
-export const API_VALUE_TYPES = ['text', 'integer', 'number', 'boolean', 'datetime', 'date', 'uuid'] as const
+export { API_VALUE_TYPES }
 export const API_FIELD_TYPES = [...API_VALUE_TYPES, 'model'] as const
 export const API_PARAM_TYPES = ['text', 'integer', 'number', 'boolean'] as const
 export const API_ACTION_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const
@@ -115,6 +116,10 @@ export const ApiFieldSchema = z.object({
   type: z.enum(API_FIELD_TYPES),
   /** For `type: "model"`: the model of the value. */
   model: PascalNameSchema.optional(),
+  /** For `type: "select"`: the values the field can take. */
+  options: z.array(z.string().min(1).max(64)).max(100).optional(),
+  /** For `type: "money"`: its ISO 4217 currency code (`EUR`). */
+  currency: z.string().regex(CURRENCY_PATTERN, 'Use a currency code like "EUR"').optional(),
   /** A list of values (or of models). */
   list: z.boolean().optional(),
   /** The key may be missing. */
@@ -333,6 +338,7 @@ export const apiProblems = (source: ApiParts): ApiProblem[] => {
       if (field.type === 'model' && !field.model) problems.push({ path: where, message: `${model.name}.${field.name} is a "model" field: name its model` })
       if (field.type !== 'model' && field.model) problems.push({ path: where, message: `${model.name}.${field.name}: Only a "model" field names a model` })
       if (field.model && !known.has(field.model)) problems.push({ path: where, message: `${model.name}.${field.name}: Unknown model "${field.model}"` })
+      for (const message of valueSettingsProblems(field, `${model.name}.${field.name}`)) problems.push({ path: where, message })
     })
   })
   // A model can't contain itself: the generated types and checks would never end.

@@ -217,6 +217,28 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
     session.edit('node_update_props', { file: detail, nodeId: root, props: { when: { $bind: 'one' }, loading: 'Loading…', empty: 'No thing.' } })
     session.edit('node_insert', { file: detail, parentId: root, type: 'Heading', props: { text: { $bind: 'one.name' } } })
   }],
+  // Field types S1: every SaaS type, optional, nullable and in a list, read and sent back, on a page.
+  ['a model of every SaaS field type, read, sent back and shown on a page', (session) => {
+    session.edit('api_create', { name: 'crm', baseUrl: 'https://crm.example.com' })
+    session.edit('api_model_set', { datasource: 'ds_crm', model: { name: 'Contact', fields: [
+      { name: 'id', type: 'integer' },
+      { name: 'mail', type: 'email' },
+      { name: 'site', type: 'url', optional: true },
+      { name: 'avatar', type: 'image', nullable: true },
+      { name: 'phone', type: 'phone' },
+      { name: 'tint', type: 'color' },
+      { name: 'price', type: 'money', currency: 'EUR' },
+      { name: 'discount', type: 'percent', optional: true, nullable: true },
+      { name: 'status', type: 'select', options: ['draft', 'live', 'it\'s off'] },
+      { name: 'tags', type: 'select', options: ['a', 'b'], list: true, optional: true }
+    ] } })
+    session.edit('api_query_set', { datasource: 'ds_crm', query: items('contacts', 'Contact') })
+    session.edit('api_action_set', { datasource: 'ds_crm', action: { name: 'saveContact', method: 'PUT', path: '/contacts/:id', params: [{ name: 'id', in: 'path', type: 'integer' }], body: { model: 'Contact' }, result: { model: 'Contact', many: false } } })
+    session.edit('page_create', { name: 'contacts', path: '/contacts' })
+    const page = session.result.pageId as string
+    session.edit('page_use_add', { page, as: 'contacts', api: { datasource: 'ds_crm', query: 'contacts' } })
+    session.edit('node_insert', { file: page, type: 'List', props: { items: { $bind: 'contacts' }, as: 'contact' }, children: [{ type: 'Text', props: { text: { $template: '{contact.mail} {contact.price} {contact.status}' } } }] })
+  }],
   ['a list under keys that are not identifiers', (session) => {
     session.edit('api_create', { name: 'hydra', baseUrl: 'https://hydra.example.com' })
     session.edit('api_model_set', { datasource: 'ds_hydra', model: ITEM })

@@ -1,6 +1,7 @@
 import type { ApiSource } from '../edit/api.ts'
 import type { Model } from '../model/load.ts'
 import { apiNameProblem, apiSourceIdentifiers } from '../edit/generated-names.ts'
+import { VALUE_TYPES } from '../model/field-types.ts'
 import { API_PATH } from '../model/schemas.ts'
 import type { ApiAction, ApiField, ApiHeader, ApiModel, ApiParam, ApiQuery } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
@@ -140,28 +141,34 @@ export const nestedModels = (model: ApiModel): string[] => [...new Set(model.fie
 
 // ── Types and zod expressions ──────────────────────────────────────────
 
-const TS_VALUE: Record<ApiField['type'], string> = { text: 'string', integer: 'number', number: 'number', boolean: 'boolean', datetime: 'string', date: 'string', uuid: 'string', model: 'string' }
+type ValueField = ApiField & { type: Exclude<ApiField['type'], 'model'> }
+
+/** The TS type of a field's value with no list: a select is the union of its options (field types S1). */
+const valueType = (field: ValueField): string =>
+  field.type === 'select' ? (field.options ?? []).map(tsString).join(' | ') : VALUE_TYPES[field.type].ts
 
 /** The TS type of a field's value, with `list` and `nullable` applied (`optional` is the property's `?`). */
 export const fieldType = (field: ApiField, modelType: (name: string) => string): string => {
-  const base = field.type === 'model' ? modelType(field.model!) : TS_VALUE[field.type]
-  return `${field.list ? `${base}[]` : base}${field.nullable ? ' | null' : ''}`
+  const base = field.type === 'model' ? modelType(field.model!) : valueType(field as ValueField)
+  const list = field.type === 'select' ? `Array<${base}>` : `${base}[]`
+  return `${field.list ? list : base}${field.nullable ? ' | null' : ''}`
 }
+
+/** What a field says of its value in a doc comment, when its type does not say it all: money's currency. */
+export const fieldNote = (field: ApiField): string | undefined =>
+  field.type === 'money' && field.currency ? `Money, in ${field.currency}.` : undefined
 
 /** The zod expression of a field's value over `base`: list, then nullable, then optional. */
 export const wrapField = (field: ApiField, base: string): string =>
   `${field.list ? `z.array(${base})` : base}${field.nullable ? '.nullable()' : ''}${field.optional ? '.optional()' : ''}`
 
-/** What a remote value is checked as: dates are strings the remote may write with an offset. */
-export const DTO_VALUE: Record<ApiField['type'], string> = {
-  text: 'z.string()',
-  integer: 'z.number().int()',
-  number: 'z.number()',
-  boolean: 'z.boolean()',
-  datetime: 'z.iso.datetime({ offset: true })',
-  date: 'z.iso.date()',
-  uuid: 'z.uuid()',
-  model: ''
+/**
+ * What a remote value of a field (not a model) is checked as (`VALUE_TYPES`): dates are strings the remote may write with an offset,
+ * a select is one of its options.
+ */
+export const dtoValue = (field: ApiField): string => {
+  if (field.type === 'model') throw new Error(`${field.name} is a model field`)
+  return field.type === 'select' ? `z.enum([${(field.options ?? []).map(tsString).join(', ')}])` : VALUE_TYPES[field.type].zod
 }
 
 /** One value of a call's input: a parameter, or the body. */
@@ -219,16 +226,8 @@ export const routeFile = (operation: Operation) => `${kebab(operation.name)}.${o
 
 // ── Sample values (generated tests) ────────────────────────────────────
 
-const SAMPLE: Record<ApiField['type'], (name: string) => string | number | boolean> = {
-  text: name => `${name} 1`,
-  integer: () => 1,
-  number: () => 1.5,
-  boolean: () => true,
-  datetime: () => '2024-01-02T03:04:05.000Z',
-  date: () => '2024-01-02',
-  uuid: () => '00000000-0000-4000-8000-000000000001',
-  model: () => ''
-}
+/** A value of a field (not a model) its check takes: a select's first option. */
+const sampleValue = (field: ValueField) => field.type === 'select' ? field.options?.[0] ?? '' : VALUE_TYPES[field.type].sample(field.name)
 
 /**
  * How a sample model fills its fields. `full`: every field has a value. `absent`: an optional field is left out, a nullable one is
@@ -244,7 +243,7 @@ export const sampleModel = (source: ApiSource, name: string, remote: boolean, va
     if (variant === 'absent' && field.nullable) return [[key, null]]
     if (variant !== 'full' && field.list) return [[key, []]]
     if (variant === 'empty' && field.nullable) return [[key, null]]
-    const value = field.type === 'model' ? sampleModel(source, field.model!, remote) : SAMPLE[field.type](field.name)
+    const value = field.type === 'model' ? sampleModel(source, field.model!, remote) : sampleValue(field as ValueField)
     return [[key, field.list ? [value] : value]]
   }))
 
@@ -274,7 +273,7 @@ export const sampleVariants = (source: ApiSource, name: string): Array<{ variant
 
 /** A call's input with a value for every parameter (optional ones too) and the body. */
 export const sampleInput = (source: ApiSource, operation: Operation): Record<string, unknown> => ({
-  ...Object.fromEntries(operation.params.map(param => [param.name, SAMPLE[param.type](param.name)])),
+  ...Object.fromEntries(operation.params.map(param => [param.name, VALUE_TYPES[param.type].sample(param.name)])),
   ...(operation.body ? { body: sampleModel(source, operation.body, false) } : {})
 })
 
