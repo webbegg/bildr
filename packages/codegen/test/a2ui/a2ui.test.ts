@@ -76,6 +76,12 @@ describe('toA2ui', () => {
     expect(all.get('n_go_label')).toEqual({ id: 'n_go_label', component: 'Text', text: 'Publish' })
   })
 
+  it('writes the one argument of a runAction as the event context', () => {
+    const { message, lost } = toA2ui(page('pg_post_detail').root, { surfaceId: 's', components })
+    expect(byId(message).get('n_publish')).toMatchObject({ action: { event: { name: 'act_publish_post', context: { id: { '@path': '/post/id' } } } } })
+    expect(lost).toContainEqual({ nodeId: 'n_publish', kind: 'interaction', detail: 'click: toast' })
+  })
+
   it('renames ids A2UI refuses and keeps them unique', () => {
     const tree: ModelNode = { id: 'n_page', type: 'Page', children: [{ id: 'n-a', type: 'Text', props: { text: 'a' } }, { id: 'n_a', type: 'Text', props: { text: 'b' } }] }
     const ids = [...byId(toA2ui(tree, { surfaceId: 's' }).message).keys()]
@@ -140,6 +146,26 @@ describe('fromA2ui', () => {
     const { root, warnings } = fromA2ui(contactCard, { actions: [] })
     expect(root.children?.[0]?.children?.at(-1)?.interactions).toBeUndefined()
     expect(warnings).toContainEqual({ componentId: 'save', message: 'Event "act_save_contact" is not an action of the page: left out' })
+  })
+
+  it('turns an event context into the args of the runAction step', () => {
+    const { root } = fromA2ui([
+      { id: 'root', component: 'Button', child: 'label', action: { event: { name: 'act_publish_post', context: { id: { '@path': '/post/id' } } } } },
+      { id: 'label', component: 'Text', text: 'Publish' }
+    ], { actions: ['act_publish_post'] })
+    expect(root.interactions).toEqual([{ on: 'click', do: [{ kind: 'runAction', action: 'act_publish_post', args: { id: { $bind: 'post.id' } } }] }])
+  })
+
+  it('turns a project component back into an Instance, its slot into a SlotFill', () => {
+    const { message } = toA2ui(page('pg_index').root, { surfaceId: 's', components })
+    const { root, warnings } = fromA2ui(message.createSurface.components, { components })
+    const find = (node: ModelNode, id: string): ModelNode | undefined => node.id === id ? node : (node.children ?? []).map(child => find(child, id)).find(Boolean)
+    expect(find(root, 'n_card')).toMatchObject({
+      type: 'Instance',
+      props: { component: 'cmp_post_card', values: { prop_post: { $bind: 'item' } } },
+      children: [{ type: 'SlotFill', props: { slot: 'prop_actions' }, children: [{ id: 'n_read_more', type: 'Link' }] }]
+    })
+    expect(warnings.map(warning => warning.componentId)).not.toContain('n_card')
   })
 
   it('turns a List template back into a List whose item paths are bound to its `as`', () => {

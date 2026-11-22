@@ -1,4 +1,4 @@
-import type { ModelNode, Value } from '../model/schemas.ts'
+import type { ComponentFile, ModelNode, Value } from '../model/schemas.ts'
 import { isCall, isPath } from './wire.ts'
 import type { A2uiComponent } from './wire.ts'
 
@@ -6,8 +6,9 @@ import type { A2uiComponent } from './wire.ts'
  * An A2UI v1.0 surface (Basic Catalog) as a bildr tree: the flat list is nested
  * from `root`, paths become `$bind` dot paths, a List template becomes a List
  * with `as`, and a Button event becomes a runAction step when it names one of
- * the page's actions. Components bildr has no node for are left out with a
- * warning. Ids are kept (a caller inserting the tree gives it fresh ones).
+ * the page's actions (its context the step's args). A project component (by
+ * name) becomes an Instance, its slots SlotFills. Components bildr has no node
+ * for are left out with a warning. Ids are kept (a caller inserting the tree gives it fresh ones).
  */
 
 export interface A2uiImportWarning {
@@ -18,6 +19,8 @@ export interface A2uiImportWarning {
 export interface FromA2uiOptions {
   /** The action ids an event may name (`act_publish_post`); other events are left out. */
   actions?: readonly string[]
+  /** The project's components: a surface component of one's name becomes an Instance of it. */
+  components?: readonly ComponentFile[]
 }
 
 export interface FromA2uiResult {
@@ -33,6 +36,7 @@ export const fromA2ui = (components: readonly A2uiComponent[], options: FromA2ui
   const byId = new Map(components.map(component => [component.id, component]))
   const warnings: A2uiImportWarning[] = []
   const actions = new Set(options.actions ?? [])
+  const projectComponents = new Map((options.components ?? []).map(component => [component.name, component]))
   const warn = (componentId: string, message: string) => warnings.push({ componentId, message })
   const visiting = new Set<string>()
 
@@ -151,9 +155,12 @@ export const fromA2ui = (components: readonly A2uiComponent[], options: FromA2ui
           if (bound?.startsWith('/form/')) return node(id, 'Checkbox', props({ label: value(component.label, scopes, id), field: bound.slice('/form/'.length) }))
           return node(id, 'Checkbox', props({ label: value(component.label, scopes, id), value: value(component.value, scopes, id) }))
         }
-        default:
+        default: {
+          const file = projectComponents.get(component.component)
+          if (file) return instance(component, file, scopes)
           warn(id, `${component.component} has no bildr node type: left out`)
           return undefined
+        }
       }
     } finally {
       visiting.delete(id)
@@ -174,6 +181,33 @@ export const fromA2ui = (components: readonly A2uiComponent[], options: FromA2ui
     return built
   }
 
+  /** A project component: its values by property id, each slot a SlotFill of the components it lists. */
+  const instance = (component: A2uiComponent, file: ComponentFile, scopes: string[]): ModelNode => {
+    const values: Record<string, Value> = {}
+    const fills: ModelNode[] = []
+    for (const property of file.properties) {
+      const given = component[property.name]
+      if (given === undefined) continue
+      if (property.kind === 'slot') {
+        if (!Array.isArray(given)) warn(component.id, `${property.name}: only a list of ids fills a slot: left out`)
+        else fills.push(node(`${component.id}_${property.name}`, 'SlotFill', { slot: property.id }, { children: childList(given, scopes) }))
+        continue
+      }
+      const converted = value(given, scopes, component.id)
+      if (converted !== undefined) values[property.id] = converted
+    }
+    const known = new Set(['id', 'component', '@catalogId', ...file.properties.map(property => property.name)])
+    const unknown = Object.keys(component).filter(key => !known.has(key))
+    if (unknown.length) warn(component.id, `${file.name} has no ${unknown.join(', ')}: left out`)
+    return node(component.id, 'Instance', { component: file.id, values }, fills.length ? { children: fills } : {})
+  }
+
+  /** An event context as the args of a runAction step. */
+  const args = (context: Record<string, unknown> | undefined, scopes: string[], componentId: string): Record<string, Value> | undefined => {
+    if (!context || !Object.keys(context).length) return undefined
+    return props(Object.fromEntries(Object.entries(context).map(([key, entry]) => [key, value(entry, scopes, componentId)])))
+  }
+
   const button = (component: A2uiComponent, scopes: string[]): ModelNode => {
     const id = component.id
     const text = label(component.child, scopes, id)
@@ -187,8 +221,10 @@ export const fromA2ui = (components: readonly A2uiComponent[], options: FromA2ui
       return node(id, 'Link', props({ text, to: { page: action.event.context.page } }))
     }
     const built = node(id, 'Button', props({ text }))
-    if (typeof name === 'string' && actions.has(name)) built.interactions = [{ on: 'click', do: [{ kind: 'runAction', action: name }] }]
-    else if (typeof name === 'string') warn(id, `Event "${name}" is not an action of the page: left out`)
+    if (typeof name === 'string' && actions.has(name)) {
+      const given = args(action?.event?.context, scopes, id)
+      built.interactions = [{ on: 'click', do: [{ kind: 'runAction', action: name, ...(given ? { args: given } : {}) }] }]
+    } else if (typeof name === 'string') warn(id, `Event "${name}" is not an action of the page: left out`)
     else if (action) warn(id, 'Only an event or openUrl becomes a bildr interaction: left out')
     return built
   }
