@@ -2,7 +2,7 @@
 import { computed, nextTick, useTemplateRef } from 'vue'
 import type { ApiSource } from '@bildr/codegen/edit'
 import type { ApiModel } from '@bildr/codegen/model'
-import DataDraftFooter from '../data/DataDraftFooter.vue'
+import SimpleApiPaneBar from './SimpleApiPaneBar.vue'
 import DataStaleNotice from '../data/DataStaleNotice.vue'
 import { attempt } from '../../editor/dataArtifactActions.ts'
 import { modelChangedOutside, modelDirty, modelDraftOf, modelOutput, modelProblems, moveField, newField } from '../../editor/simpleApiDraft.ts'
@@ -16,7 +16,7 @@ import { plainWords } from '../../shared/simpleData.ts'
  * The editor of a model of an API (simple data, S6): the shape of what the API answers or takes, as a table of fields (name, type, whether
  * it is a list, whether it may be missing, whether it may be empty, and the key the API calls it) that can be added to, removed from and
  * reordered, in one draft with one Save (`api_model_set`) and one Discard. A field may hold another model (not this one: the module
- * refuses a model that holds itself). What the module refuses shows in the footer, in the section's words, and the edits stay. A model
+ * refuses a model that holds itself). Save and Discard are in the header (`SimpleApiPaneBar`); what the module refuses shows under it, in the section's words, and the edits stay. A model
  * that is new is only a name until it is saved; a rename (`name` changes) keeps the form and its edits.
  */
 const { source, name } = defineProps<{ source: ApiSource, name: string }>()
@@ -84,7 +84,15 @@ const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_3rem_3.5rem_4rem_minmax(0,1fr)_
     class="flex min-h-0 flex-1 flex-col"
     :data-api-editor="`model:${name}`"
   >
-    <div class="flex h-11 shrink-0 items-center gap-2 border-b border-default ps-4 pe-3">
+    <SimpleApiPaneBar
+      prefix="simple-model"
+      :error="error"
+      :dirty="dirty"
+      :saving="saving"
+      :disabled="!dirty || stale"
+      @discard="discard"
+      @save="save"
+    >
       <EditorButton
         variant="ghost"
         icon="i-lucide-arrow-left"
@@ -101,19 +109,21 @@ const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_3rem_3.5rem_4rem_minmax(0,1fr)_
         {{ name }}
       </h3>
       <span class="shrink-0 text-[11px] text-dimmed">Model</span>
-      <span class="flex-1" />
-      <EditorButton
-        v-if="stored()"
-        variant="ghost"
-        icon="i-lucide-pencil"
-        label="Rename"
-        data-api-editor-rename
-        @click="emit('rename')"
-      />
-    </div>
+      <template #actions>
+        <EditorButton
+          v-if="stored()"
+          variant="ghost"
+          icon="i-lucide-pencil"
+          label="Rename"
+          class="shrink-0"
+          data-api-editor-rename
+          @click="emit('rename')"
+        />
+      </template>
+    </SimpleApiPaneBar>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
-      <div class="mx-auto w-full max-w-3xl space-y-6 px-6 py-6">
+      <div class="w-full max-w-3xl space-y-6 px-8 py-6">
         <DataStaleNotice
           v-if="stale"
           prefix="simple-model"
@@ -260,16 +270,5 @@ const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_3rem_3.5rem_4rem_minmax(0,1fr)_
         </section>
       </div>
     </div>
-
-    <DataDraftFooter
-      prefix="simple-model"
-      inner="mx-auto max-w-3xl px-6"
-      :error="error"
-      :dirty="dirty"
-      :saving="saving"
-      :disabled="!dirty || stale"
-      @discard="discard"
-      @save="save"
-    />
   </div>
 </template>

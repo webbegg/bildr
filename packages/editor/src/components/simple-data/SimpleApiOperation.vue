@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { inferApiModels } from '@bildr/codegen/edit'
 import type { ApiSource } from '@bildr/codegen/edit'
 import type { ApiAction, ApiQuery } from '@bildr/codegen/model'
-import DataDraftFooter from '../data/DataDraftFooter.vue'
+import SimpleApiPaneBar from './SimpleApiPaneBar.vue'
 import DataInlineError from '../data/DataInlineError.vue'
 import DataStaleNotice from '../data/DataStaleNotice.vue'
 import SimpleApiProposal from './SimpleApiProposal.vue'
@@ -24,10 +24,10 @@ import { plainWords } from '../../shared/simpleData.ts'
  * needed, the key the API calls it), what it answers (a model, one or a list, and where a wrapped list sits in the answer) and, for an
  * action, its method (with what each does), the model of its body (picked, or made from a sample the user pastes) and that its answer is
  * optional. Everything is one draft with one Save (`api_query_set` or `api_action_set`) and one Discard, as the store's form;
- * what the module refuses shows in the footer in the section's words and the edits stay.
+ * what the module refuses shows under the header (`SimpleApiPaneBar`, with Save and Discard) in the section's words and the edits stay.
  *
  * "Try it" and "Use this answer" (`SimpleApiTry`) fill the answer in from a real call. The models "Use this answer" adds are the API's at
- * once, before the form is saved: the footer says so ("Models added. Save to keep the query.") and Discard says they stay. A query or
+ * once, before the form is saved: the header says so ("Models added. Save to keep the query.") and Discard says they stay. A query or
  * action that is new is only a name until it is saved; a rename (`name` changes) keeps the form and its edits.
  *
  * The form is in two columns when there is room (api-calls R1): the definition, and Try it beside it, each scrolling on its own; one
@@ -114,7 +114,7 @@ const added = ref(false)
 watch(dirty, (now) => {
   if (!now) added.value = false
 })
-const footerNote = computed(() => added.value && dirty.value ? `Models added. Save to keep the ${noun.value}.` : '')
+const saveNote = computed(() => added.value && dirty.value ? `Models added. Save to keep the ${noun.value}.` : '')
 
 /** "Use this answer": what the call answers is what the answer was. */
 const useResult = (result: { model: string, many: boolean, itemsPath: string }, count: number) => {
@@ -194,7 +194,17 @@ const methodHint = computed(() => METHODS.find(entry => entry.value === draft.va
     class="flex min-h-0 flex-1 flex-col"
     :data-api-editor="`${kind}:${name}`"
   >
-    <div class="flex h-11 shrink-0 items-center gap-2 border-b border-default ps-4 pe-3">
+    <SimpleApiPaneBar
+      prefix="simple-op"
+      :error="error"
+      :note="saveNote"
+      :discard-hint="saveNote ? `Drops your edits to this ${noun}. The models you added stay.` : undefined"
+      :dirty="dirty"
+      :saving="saving"
+      :disabled="!dirty || stale"
+      @discard="discard"
+      @save="save"
+    >
       <EditorButton
         variant="ghost"
         icon="i-lucide-arrow-left"
@@ -211,16 +221,18 @@ const methodHint = computed(() => METHODS.find(entry => entry.value === draft.va
         {{ name }}
       </h3>
       <span class="shrink-0 text-[11px] text-dimmed">{{ kind === 'query' ? 'Query' : 'Action' }}</span>
-      <span class="flex-1" />
-      <EditorButton
-        v-if="stored()"
-        variant="ghost"
-        icon="i-lucide-pencil"
-        label="Rename"
-        data-api-editor-rename
-        @click="emit('rename')"
-      />
-    </div>
+      <template #actions>
+        <EditorButton
+          v-if="stored()"
+          variant="ghost"
+          icon="i-lucide-pencil"
+          label="Rename"
+          class="shrink-0"
+          data-api-editor-rename
+          @click="emit('rename')"
+        />
+      </template>
+    </SimpleApiPaneBar>
 
     <div class="@container min-h-0 flex-1 overflow-y-auto @4xl:overflow-hidden">
       <div class="@4xl:grid @4xl:h-full @4xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
@@ -655,18 +667,5 @@ const methodHint = computed(() => METHODS.find(entry => entry.value === draft.va
         </div>
       </div>
     </div>
-
-    <DataDraftFooter
-      prefix="simple-op"
-      inner="mx-auto max-w-2xl px-6"
-      :error="error"
-      :note="footerNote"
-      :discard-hint="footerNote ? `Drops your edits to this ${noun}. The models you added stay.` : undefined"
-      :dirty="dirty"
-      :saving="saving"
-      :disabled="!dirty || stale"
-      @discard="discard"
-      @save="save"
-    />
   </div>
 </template>
