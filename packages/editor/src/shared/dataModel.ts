@@ -1,3 +1,4 @@
+import { ENTITY_FIELD_TYPES } from '@bildr/codegen/model'
 import type { BasicType, DataSourceFile, EntityFile, Model, ModuleModel, PageFile, RepositoryFile } from '@bildr/codegen/model'
 import type { Row } from '@bildr/codegen/query'
 import { stateLabel } from './stateModel.ts'
@@ -30,6 +31,10 @@ export interface DataField {
   /** `name` spaced out: the model has no labels, so the Data view reads one from the name. */
   label: string
   type: FieldType
+  /** A select's options. */
+  options?: string[]
+  /** Money's currency code. */
+  currency?: string
   required: boolean
   /** Set by the app, not a client: its sample values can't be edited. */
   readonly?: boolean
@@ -131,9 +136,10 @@ export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
 const typeItem = (type: FieldType) => ({ label: FIELD_TYPE_LABELS[type], value: type, icon: FIELD_TYPE_ICONS[type] })
 /** The basic types: what an action error's data takes. */
 export const basicTypeItems = (['text', 'integer', 'number', 'boolean', 'datetime', 'date', 'image', 'uuid'] satisfies BasicType[]).map(typeItem)
-/** The types an entity's or a store's field picker offers (the SaaS ones come with their settings' editors, field types S3b). */
-const PICKED_TYPES: FieldType[] = ['text', 'integer', 'number', 'boolean', 'datetime', 'date', 'image', 'uuid']
-export const fieldTypeItems = PICKED_TYPES.map(type => ({ label: FIELD_TYPE_LABELS[type], value: type, icon: FIELD_TYPE_ICONS[type] }))
+/** The types an entity's or a store's field picker offers (field types S3b): the catalogue's, in its order. */
+export const fieldTypeItems = ENTITY_FIELD_TYPES.map(typeItem)
+/** The ones with no setting to give (not a select's options nor money's currency): where a form has no place to give them. */
+export const plainTypeItems = fieldTypeItems.filter(item => item.value !== 'select' && item.value !== 'money')
 
 type RestConfig = {
   list?: { method?: EndpointMethod, path: string, itemsPath?: string, totalPath?: string }
@@ -176,6 +182,8 @@ const collectionOf = (model: Model, folder: string, mod: ModuleModel, entity: En
       name: field.name,
       label: fieldLabel(field.name),
       type: field.type,
+      ...(field.options ? { options: field.options } : {}),
+      ...(field.currency ? { currency: field.currency } : {}),
       required: field.required === true,
       readonly: field.readonly === true,
       ...(remote ? { remote: rest?.fieldMap?.[field.name] ?? field.name } : {})

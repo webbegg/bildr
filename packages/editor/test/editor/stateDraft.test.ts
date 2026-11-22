@@ -318,3 +318,50 @@ describe('fieldOfRefusal', () => {
     expect(fieldOfRefusal({ name: 'nothing' }, fields)).toBeNull()
   })
 })
+
+describe('a store field\'s SaaS type (field types S3b)', () => {
+  const deals = (): StateFile => ({
+    ...state(),
+    fields: [
+      { id: 'fld_stage', name: 'stage', type: 'select', options: ['open', 'won'], default: 'open' },
+      { id: 'fld_budget', name: 'budget', type: 'money', currency: 'USD', default: 100 }
+    ]
+  })
+
+  it('holds a select\'s options as one text and money\'s currency, and sends them back untouched', () => {
+    const draft = draftOf(deals())
+    expect(draft.fields.map(field => [field.options, field.currency])).toEqual([['open, won', ''], ['', 'USD']])
+    draft.fields[1]!.default = '250.5'
+    expect(changesOf(draft, deals()).fields).toEqual([
+      { id: 'fld_stage', name: 'stage', type: 'select', options: ['open', 'won'], default: 'open' },
+      { id: 'fld_budget', name: 'budget', type: 'money', currency: 'USD', default: 250.5 }
+    ])
+  })
+
+  it('sends the options as typed, trimmed and without empty ones, and refuses a select with none', () => {
+    const draft = draftOf(deals())
+    draft.fields[0]!.options = ' open , won,, lost '
+    expect(changesOf(draft, deals()).fields![0]).toEqual({ id: 'fld_stage', name: 'stage', type: 'select', options: ['open', 'won', 'lost'], default: 'open' })
+    draft.fields[0]!.options = ' , '
+    expect(changesOf(draft, deals()).problems).toEqual(['stage: list its options'])
+  })
+
+  it('gives money a currency (EUR first) and drops the options and the currency when the type changes', () => {
+    const draft = draftOf(deals())
+    setFieldType(draft.fields[0]!, 'money')
+    expect([draft.fields[0]!.options, draft.fields[0]!.currency]).toEqual(['', 'EUR'])
+    setFieldType(draft.fields[1]!, 'percent')
+    expect(draft.fields[1]!.currency).toBe('')
+    draft.fields[1]!.default = '12.5'
+    expect(changesOf(draft, deals()).fields).toEqual([
+      { id: 'fld_stage', name: 'stage', type: 'money', currency: 'EUR' },
+      { id: 'fld_budget', name: 'budget', type: 'percent', default: 12.5 }
+    ])
+  })
+
+  it('counts a change of the options or the currency elsewhere as a change under the draft', () => {
+    const stored = deals()
+    stored.fields[0]!.options = ['open', 'won', 'lost']
+    expect(changedOutside(deals(), stored)).toBe(true)
+  })
+})

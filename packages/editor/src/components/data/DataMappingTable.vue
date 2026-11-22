@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { fieldTypeItems } from '../../shared/dataModel.ts'
+import { plainTypeItems } from '../../shared/dataModel.ts'
 import type { FieldType } from '../../shared/dataModel.ts'
 import type { MappingRow } from '../../shared/dataMapping.ts'
 
@@ -93,7 +93,7 @@ function addField() {
             >
               <EditorSelect
                 :model-value="row.type"
-                :items="fieldTypeItems"
+                :items="plainTypeItems"
                 :aria-label="`Type of ${row.remote}`"
                 data-type
                 @update:model-value="row.type = $event as FieldType"

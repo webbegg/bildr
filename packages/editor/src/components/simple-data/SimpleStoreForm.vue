@@ -5,6 +5,7 @@ import type { RefusedField } from '../../api.ts'
 import DataArtifactDelete from '../data/DataArtifactDelete.vue'
 import DataArtifactRename from '../data/DataArtifactRename.vue'
 import DataDraftFooter from '../data/DataDraftFooter.vue'
+import DataFieldSettings from '../data/DataFieldSettings.vue'
 import DataFieldUses from '../data/DataFieldUses.vue'
 import DataInlineError from '../data/DataInlineError.vue'
 import DataStaleNotice from '../data/DataStaleNotice.vue'
@@ -307,6 +308,13 @@ const deleting = ref<{ kind: 'state', id: string } | null>(null)
                   />
                 </span>
               </div>
+              <DataFieldSettings
+                v-model:options="field.options"
+                v-model:currency="field.currency"
+                :type="field.type"
+                :label="label(field)"
+                hook="simple-field"
+              />
               <DataFieldUses
                 v-if="field.id"
                 part="list"

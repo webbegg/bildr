@@ -9,7 +9,7 @@ import { OPS, changedOutside, changesOf, conditionText, draftOf, rebaseDraft, re
 import type { Op, QueryDraft } from '../../editor/queryDraft.ts'
 import { useDraftForm } from '../../editor/useDraftForm.ts'
 import { useEditor } from '../../editor/useEditor.ts'
-import { fieldTypeItems } from '../../shared/dataModel.ts'
+import { basicTypeItems } from '../../shared/dataModel.ts'
 import type { FieldType } from '../../shared/dataModel.ts'
 
 /**
@@ -203,7 +203,7 @@ function setLimitKind(kind: string) {
           />
           <EditorSelect
             :model-value="param.type"
-            :items="fieldTypeItems"
+            :items="basicTypeItems"
             aria-label="Parameter type"
             data-def-param-type
             @update:model-value="param.type = $event as FieldType"

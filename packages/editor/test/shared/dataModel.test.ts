@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { loadModel } from '../../../codegen/src/model/load.ts'
 import type { Model } from '@bildr/codegen/model'
 import { blogModelFiles } from '../canvas/fixture.ts'
-import { collectionsOf, connectionsOf, detailPagesOf, entityProposal, fieldLabel, fieldTypeItems, fixtureRowsOf, restDefaults, sourceNameOf } from '../../src/shared/dataModel.ts'
+import { basicTypeItems, collectionsOf, connectionsOf, detailPagesOf, entityProposal, fieldLabel, fieldTypeItems, fixtureRowsOf, restDefaults, sourceNameOf } from '../../src/shared/dataModel.ts'
 
 /**
  * What the Data view reads of the model (U7): the hosted `Collection`/`Connection` as a read-only
@@ -97,8 +97,10 @@ describe('fieldLabel and the type menu', () => {
   })
 
   it('offers every field type of the model with an icon', () => {
-    expect(fieldTypeItems.map(item => item.value)).toEqual(['text', 'integer', 'number', 'boolean', 'datetime', 'date', 'image', 'uuid'])
+    // Field types S3b: the catalogue's types, in its picker order; an error's data keeps the basic ones.
+    expect(fieldTypeItems.map(item => item.value)).toEqual(['text', 'email', 'url', 'phone', 'integer', 'number', 'money', 'percent', 'boolean', 'select', 'datetime', 'date', 'image', 'color', 'uuid'])
     expect(fieldTypeItems.every(item => item.label && item.icon.startsWith('i-lucide-'))).toBe(true)
+    expect(basicTypeItems.map(item => item.value)).toEqual(['text', 'integer', 'number', 'boolean', 'datetime', 'date', 'image', 'uuid'])
   })
 })
 

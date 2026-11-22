@@ -22,6 +22,10 @@ export interface DraftField {
   id: string
   name: string
   type: FieldType
+  /** A select's options as typed, separated by commas (`open, won`); `''` for another type. */
+  options: string
+  /** Money's currency code; `''` for another type. */
+  currency: string
   required: boolean
   /** The default as typed (`''`: none or empty text); a toggle's is `true` or `false`, a date's `YYYY-MM-DD`, a date and time's `YYYY-MM-DDTHH:MM`. */
   default: string
@@ -62,6 +66,8 @@ const fieldDraftOf = (field: StateField): DraftField => ({
   id: field.id,
   name: field.name,
   type: field.type as FieldType,
+  options: (field.options ?? []).join(', '),
+  currency: field.currency ?? '',
   required: field.required === true,
   default: textOf(field),
   emptyDefault: field.type === 'text' && field.default === ''
@@ -72,7 +78,10 @@ export const draftOf = (state: StateFile): StateDraft => ({ fields: state.fields
 
 let newFieldCount = 0
 /** A field the form adds: a text field with no name and no default, which has no id until it is saved. */
-export const newField = (): DraftField => ({ key: `new_${++newFieldCount}`, id: '', name: '', type: 'text', required: false, default: '', emptyDefault: false })
+export const newField = (): DraftField => ({ key: `new_${++newFieldCount}`, id: '', name: '', type: 'text', options: '', currency: '', required: false, default: '', emptyDefault: false })
+
+/** A select's options as the box has them: trimmed, with no empty one. */
+export const optionsOf = (field: Pick<DraftField, 'options'>): string[] => field.options.split(',').map(option => option.trim()).filter(Boolean)
 
 /** The draft with the field at `from` moved to position `to`. */
 export function moveField(draft: StateDraft, from: number, to: number): StateDraft {
@@ -87,6 +96,9 @@ export function setFieldType(field: DraftField, type: FieldType) {
   field.type = type
   field.default = type === 'boolean' ? 'false' : ''
   field.emptyDefault = false
+  // A select's options and money's currency go with the type that has them; money starts in euros.
+  if (type !== 'select') field.options = ''
+  field.currency = type === 'money' ? field.currency || 'EUR' : ''
 }
 
 /** Types `text` into the default box: a text there is the default, so it is not an empty one any more. */
@@ -113,7 +125,7 @@ export function toggleEmptyDefault(field: DraftField) {
 function valueOfDefault(field: Pick<DraftField, 'type' | 'default' | 'emptyDefault'>): { value: Value } | { none: true } | { problem: string } {
   const typed = field.default.trim()
   if (typed === '') return field.type === 'text' && field.emptyDefault ? { value: '' } : { none: true }
-  if (field.type === 'integer' || field.type === 'number') {
+  if (field.type === 'integer' || field.type === 'number' || field.type === 'money' || field.type === 'percent') {
     const number = NUMBER_TEXT.test(typed) ? Number(typed) : Number.NaN
     // `+ 0` makes minus zero zero: JSON has no minus zero, and it would not be the same default twice.
     if (field.type === 'integer') return Number.isSafeInteger(number) ? { value: number + 0 } : { problem: 'a whole number' }
@@ -136,6 +148,8 @@ const asStored = (before: StateField): Record<string, unknown> => ({
   id: before.id,
   name: before.name,
   type: before.type,
+  ...before.options !== undefined ? { options: before.options } : {},
+  ...before.currency !== undefined ? { currency: before.currency } : {},
   ...before.required ? { required: true } : {},
   ...before.default !== undefined ? { default: before.default } : {}
 })
@@ -164,10 +178,14 @@ function fieldToSend(field: DraftField, base: StateFile, opened: DraftField[], p
   if (before && first && sameJson(field, first)) return asStored(before)
   const name = field.name.trim()
   if (!name && !problems.includes('Name every field')) problems.push('Name every field')
+  const options = optionsOf(field)
+  if (field.type === 'select' && !options.length) problems.push(`${name || '(unnamed)'}: list its options`)
   return {
     ...field.id ? { id: field.id } : {},
     name,
     type: field.type,
+    ...field.type === 'select' ? { options } : {},
+    ...field.type === 'money' && field.currency ? { currency: field.currency } : {},
     ...field.required ? { required: true } : {},
     ...defaultToSend(field, name, before, first, problems)
   }
@@ -187,7 +205,9 @@ export function changesOf(draft: StateDraft, base: StateFile): StateChanges {
 }
 
 /** The part of a field the form edits. */
-const editable = (field: StateField) => ({ id: field.id, name: field.name, type: field.type, required: field.required === true, default: field.default ?? null })
+const editable = (field: StateField) => ({
+  id: field.id, name: field.name, type: field.type, options: field.options ?? null, currency: field.currency ?? null, required: field.required === true, default: field.default ?? null
+})
 
 /**
  * Whether the state as it is stored now differs, in a part the form edits (its fields: their order, names, types, defaults and
