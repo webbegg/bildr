@@ -27,6 +27,8 @@ const HTTP_URL = 'z.url({ protocol: /^https?$/ })'
 export const PHONE_PATTERN = /^\+?[\d\s().-]{5,24}$/
 /** `#rgb`, `#rrggbb` or `#rrggbbaa`. */
 export const COLOR_PATTERN = /^#(?:[\da-fA-F]{3}|[\da-fA-F]{6}|[\da-fA-F]{8})$/
+/** What zod's `z.email()` takes (its default pattern), so a value detected as an email passes the generated check. */
+export const EMAIL_PATTERN = /^(?!\.)(?!.*\.\.)([\w'+\-.]*)[\w+-]@([A-Za-z0-9][A-Za-z0-9-]*\.)+[A-Za-z]{2,}$/
 /** An ISO 4217 currency code: `EUR`, `USD`. */
 export const CURRENCY_PATTERN = /^[A-Z]{3}$/
 

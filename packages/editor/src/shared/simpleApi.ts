@@ -1,5 +1,5 @@
-import { urlProblem } from '@bildr/codegen/model'
-import type { Model } from '@bildr/codegen/model'
+import { API_VALUE_TYPES, VALUE_TYPES, urlProblem } from '@bildr/codegen/model'
+import type { ValueType, Model } from '@bildr/codegen/model'
 import { isApiSource } from '@bildr/codegen/edit'
 import type { ApiSource } from '@bildr/codegen/edit'
 
@@ -37,16 +37,32 @@ export const PARAM_TYPES = [
   { value: 'boolean', label: 'Yes / no' }
 ] as const
 
+const TYPE_ICONS: Record<ValueType, string> = {
+  text: 'i-lucide-type',
+  email: 'i-lucide-at-sign',
+  url: 'i-lucide-link',
+  phone: 'i-lucide-phone',
+  integer: 'i-lucide-hash',
+  number: 'i-lucide-hash',
+  money: 'i-lucide-banknote',
+  percent: 'i-lucide-percent',
+  boolean: 'i-lucide-toggle-left',
+  select: 'i-lucide-list',
+  datetime: 'i-lucide-calendar-clock',
+  date: 'i-lucide-calendar',
+  image: 'i-lucide-image',
+  color: 'i-lucide-palette',
+  uuid: 'i-lucide-fingerprint'
+}
+
+/** The types of a model's field, from the catalogue (field types S2), then another model. */
 export const FIELD_TYPES = [
-  { value: 'text', label: 'Text' },
-  { value: 'integer', label: 'Whole number' },
-  { value: 'number', label: 'Number' },
-  { value: 'boolean', label: 'Yes / no' },
-  { value: 'datetime', label: 'Date and time' },
-  { value: 'date', label: 'Date' },
-  { value: 'uuid', label: 'Unique id' },
-  { value: 'model', label: 'Another model' }
-] as const
+  ...API_VALUE_TYPES.map(type => ({ value: type, label: VALUE_TYPES[type].label, description: VALUE_TYPES[type].description, icon: TYPE_ICONS[type] })),
+  { value: 'model', label: 'Another model', description: 'A value that has fields of its own', icon: 'i-lucide-shapes' }
+]
+
+/** The currencies a money field offers first; one a model names that is not here is offered too. */
+export const CURRENCIES = ['EUR', 'USD', 'GBP', 'JPY', 'CHF', 'CAD', 'AUD', 'MXN', 'BRL', 'ARS', 'COP', 'CLP', 'INR', 'CNY', 'SEK', 'NOK', 'DKK', 'PLN']
 
 /** The label of a type of a parameter or a field. */
 export const typeLabel = (type: string): string => [...PARAM_TYPES, ...FIELD_TYPES].find(entry => entry.value === type)?.label ?? type

@@ -101,7 +101,6 @@ export const DATASOURCE_KINDS = ['sqlite', 'rest', 'memory', 'api'] as const
  * where the generated calls run: on the server (the secret stays there) or in the browser.
  */
 export const API_RUNTIMES = ['server', 'browser'] as const
-export { API_VALUE_TYPES }
 export const API_FIELD_TYPES = [...API_VALUE_TYPES, 'model'] as const
 export const API_PARAM_TYPES = ['text', 'integer', 'number', 'boolean'] as const
 export const API_ACTION_METHODS = ['POST', 'PUT', 'PATCH', 'DELETE'] as const
