@@ -136,6 +136,11 @@ export const drizzleRepositoryFile = (context: ModuleContext, entity: EntityFile
   const taken = new Set([...ADAPTER_NAMES, ...finders.map(field => field.name)])
   const row = freeName(names.variable, 'Row', taken)
   const table = freeName(entity.plural, 'Table', new Set([...taken, row]))
+  // An optional field that is not nullable has a nullable column (empty when unset), but the domain type has no null:
+  // the rows read back turn an empty one into unset.
+  const unsetWhenNull = entity.fields.filter(field => !field.nullable && nullableColumn(field))
+  const fromRow = unsetWhenNull.length ? freeName('fromRow', 'Read', new Set([...taken, row, table])) : undefined
+  const read = (rows: string) => fromRow ? `${rows}.map(${fromRow})` : rows
   const body: string[] = []
   if (has(repository, 'list')) {
     drizzle.add('count')
@@ -146,14 +151,15 @@ export const drizzleRepositoryFile = (context: ModuleContext, entity: EntityFile
       '    return Promise.all([',
       `      db.select().from(${table})${order.length ? `.orderBy(${order.join(', ')})` : ''}.limit(limit).offset(offset),`,
       `      db.select({ value: count() }).from(${table})`,
-      '    ]).then(([items, [total]]) => ({ items, total: total?.value ?? 0 }))',
+      `    ]).then(([items, [total]]) => ({ ${fromRow ? `items: ${read('items')}` : 'items'}, total: total?.value ?? 0 }))`,
       '  }'
     )
   }
   const lookups = [...(has(repository, 'get') ? [{ method: 'get', column: 'id', arg: 'id' }] : []), ...finders.map(field => ({ method: findBy(field), column: field.name, arg: field.name }))]
   for (const lookup of lookups) {
     drizzle.add('eq')
-    body.push(`  async ${lookup.method}(${lookup.arg}) {`, `    return db.select().from(${table}).where(eq(${table}.${lookup.column}, ${lookup.arg})).get()`, '  }')
+    const found = `db.select().from(${table}).where(eq(${table}.${lookup.column}, ${lookup.arg})).get()`
+    body.push(`  async ${lookup.method}(${lookup.arg}) {`, `    return ${fromRow ? `${found}.then(found => found && ${fromRow}(found))` : found}`, '  }')
   }
   if (has(repository, 'create')) {
     body.push(`  async create(${row}: ${names.type}) {`, `    await db.insert(${table}).values(${row})`, `    return ${row}`, '  }')
@@ -166,7 +172,15 @@ export const drizzleRepositoryFile = (context: ModuleContext, entity: EntityFile
     drizzle.add('eq')
     body.push('  async delete(id) {', `    await db.delete(${table}).where(eq(${table}.id, id))`, '  }')
   }
-  const usesType = has(repository, 'create') || has(repository, 'update')
+  const reads = has(repository, 'list') || lookups.length > 0
+  const mapper = fromRow && reads
+    ? [
+        `/** A row as ${names.type} has it: an empty column of an optional field is unset. */`,
+        `const ${fromRow} = (row: typeof ${table}.$inferSelect): ${names.type} => ({ ...row, ${unsetWhenNull.map(field => `${field.name}: row.${field.name} ?? undefined`).join(', ')} })`,
+        ''
+      ]
+    : []
+  const usesType = has(repository, 'create') || has(repository, 'update') || mapper.length > 0
   return {
     path: `layers/${context.name}/server/infrastructure/repositories/${names.file}.drizzle.ts`,
     source: context.source(repository.id),
@@ -178,6 +192,7 @@ export const drizzleRepositoryFile = (context: ModuleContext, entity: EntityFile
       `import type { ${names.port} } from '../../application/ports/${names.portFile}'`,
       `import { ${table === entity.plural ? table : `${entity.plural} as ${table}`} } from '../db/schema'`,
       '',
+      ...mapper,
       `/** ${names.port} over the app database (Drizzle + libSQL). */`,
       `export const drizzle${names.port} = (db: LibSQLDatabase): ${names.port} => ({`,
       joinMethods(body),
