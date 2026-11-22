@@ -242,10 +242,16 @@ await run('simple-api', async ({ page, browser }) => {
     await page.locator('[data-model-field-add]').click()
     await page.locator('[data-model-field]').last().locator('[data-model-field-name]').fill('draft')
     await page.locator('[data-model-field]').last().locator('[data-model-field-optional]').check()
+    // Its limits: the ruler opens a Length line (a text field), whose min and max the model's schema checks on what is sent.
+    check(await page.locator('[data-model-field]').last().locator('[data-model-field-range]').count() === 0, 'a text field shows no limits line until it is asked for')
+    await page.locator('[data-model-field]').last().locator('[data-model-field-limits]').click()
+    await page.locator('[data-model-field]').last().locator('[data-model-field-min]').fill('2')
+    await page.locator('[data-model-field]').last().locator('[data-model-field-max]').fill('40')
     await shot(page, 'simple-api-model')
     await page.locator('[data-simple-model-save]').click()
     const grown = await until(() => bildr(FILE)?.models?.find(model => model.name === 'NewPost')?.fields.length === 3 && bildr(FILE).models.find(model => model.name === 'NewPost'))
     check(grown?.fields.at(-1)?.name === 'draft' && grown.fields.at(-1).optional === true, `Save writes the field, which may be missing (${JSON.stringify(grown?.fields.at(-1))})`)
+    check(grown?.fields.at(-1)?.min === 2 && grown.fields.at(-1).max === 40, `and its length limits, as numbers (${JSON.stringify(grown?.fields.at(-1))})`)
     await calm()
     await page.locator('[data-api-back]').click()
 

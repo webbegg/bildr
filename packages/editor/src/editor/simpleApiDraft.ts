@@ -1,4 +1,4 @@
-import { apiHeaderProblem } from '@bildr/codegen/model'
+import { API_RANGE_TYPES, apiHeaderProblem, apiRangeProblems } from '@bildr/codegen/model'
 import type { ApiAction, ApiField, ApiHeader, ApiModel, ApiParam, ApiQuery } from '@bildr/codegen/model'
 import type { ApiSource } from '@bildr/codegen/edit'
 import { pathParamNames } from '../shared/simpleApi.ts'
@@ -346,6 +346,9 @@ export interface FieldDraft {
   options: string
   /** For money: its currency code. */
   currency: string
+  /** For text and number types: the min and max as typed (a text's length, a number's range); empty for none. */
+  min: string
+  max: string
   list: boolean
   optional: boolean
   nullable: boolean
@@ -356,40 +359,57 @@ export interface ModelDraft {
   fields: FieldDraft[]
 }
 
-export const newField = (): FieldDraft => ({ key: `f_${++rows}`, name: '', type: 'text', model: '', options: '', currency: '', list: false, optional: false, nullable: false, remote: '' })
+export const newField = (): FieldDraft => ({ key: `f_${++rows}`, name: '', type: 'text', model: '', options: '', currency: '', min: '', max: '', list: false, optional: false, nullable: false, remote: '' })
 
 /** A select's options as the draft writes them: trimmed, with no empty one. */
 const optionsOf = (field: FieldDraft) => parseOptions(field.options)
 
-/** A field's new type: a model, a select's options and money's currency go with the type that has them; money starts in euros. */
+/** Whether a field of `type` takes a min and a max: a text's length, a number's range. */
+export const takesRange = (type: FieldDraft['type']): boolean => API_RANGE_TYPES.has(type)
+
+const NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)$/
+/** A typed min or max: none when empty, NaN when it is not a number. */
+const boundOf = (typed: string): number | undefined => typed.trim() === '' ? undefined : NUMBER.test(typed.trim()) ? Number(typed.trim()) : Number.NaN
+const rangeOf = (field: FieldDraft) => takesRange(field.type) ? { min: boundOf(field.min), max: boundOf(field.max) } : { min: undefined, max: undefined }
+
+/** A field's new type: a model, a select's options, money's currency and a min/max go with the type that has them; money starts in euros. */
 export function setFieldType(field: FieldDraft, type: FieldDraft['type']) {
   field.type = type
   if (type !== 'model') field.model = ''
   if (type !== 'select') field.options = ''
+  if (!takesRange(type)) {
+    field.min = ''
+    field.max = ''
+  }
   field.currency = type === 'money' ? field.currency || 'EUR' : ''
 }
 
 /** The draft of a saved model, or the one of a new model (`stored` null): one empty field to start with. */
 export const modelDraftOf = (stored: ApiModel | null): ModelDraft => ({
   fields: stored
-    ? stored.fields.map(field => ({ key: `f_${++rows}`, name: field.name, type: field.type, model: field.model ?? '', options: formatOptions(field.options ?? []), currency: field.currency ?? '', list: field.list ?? false, optional: field.optional ?? false, nullable: field.nullable ?? false, remote: field.key ?? '' }))
+    ? stored.fields.map(field => ({ key: `f_${++rows}`, name: field.name, type: field.type, model: field.model ?? '', options: formatOptions(field.options ?? []), currency: field.currency ?? '', min: field.min === undefined ? '' : String(field.min), max: field.max === undefined ? '' : String(field.max), list: field.list ?? false, optional: field.optional ?? false, nullable: field.nullable ?? false, remote: field.key ?? '' }))
     : [newField()]
 })
 
 /** The model the draft is, named `name`. */
 export const modelOutput = (name: string, draft: ModelDraft): ApiModel => ({
   name,
-  fields: draft.fields.filter(field => field.name.trim()).map((field): ApiField => ({
-    name: field.name.trim(),
-    type: field.type,
-    ...(field.type === 'model' && field.model ? { model: field.model } : {}),
-    ...(field.type === 'select' ? { options: optionsOf(field) } : {}),
-    ...(field.type === 'money' && field.currency ? { currency: field.currency } : {}),
-    ...(field.list ? { list: true } : {}),
-    ...(field.optional ? { optional: true } : {}),
-    ...(field.nullable ? { nullable: true } : {}),
-    ...(field.remote.trim() ? { key: field.remote.trim() } : {})
-  }))
+  fields: draft.fields.filter(field => field.name.trim()).map((field): ApiField => {
+    const { min, max } = rangeOf(field)
+    return {
+      name: field.name.trim(),
+      type: field.type,
+      ...(field.type === 'model' && field.model ? { model: field.model } : {}),
+      ...(field.type === 'select' ? { options: optionsOf(field) } : {}),
+      ...(field.type === 'money' && field.currency ? { currency: field.currency } : {}),
+      ...(min !== undefined && Number.isFinite(min) ? { min } : {}),
+      ...(max !== undefined && Number.isFinite(max) ? { max } : {}),
+      ...(field.list ? { list: true } : {}),
+      ...(field.optional ? { optional: true } : {}),
+      ...(field.nullable ? { nullable: true } : {}),
+      ...(field.remote.trim() ? { key: field.remote.trim() } : {})
+    }
+  })
 })
 
 export const modelDirty = (draft: ModelDraft, base: ApiModel | null): boolean => !sameJson(modelOutput('', draft), modelOutput('', modelDraftOf(base)))
@@ -404,6 +424,12 @@ export function modelProblems(draft: ModelDraft): string[] {
     const options = optionsOf(field)
     const twice = options.find((option, at) => options.indexOf(option) !== at)
     if (twice !== undefined) problems.push(`${field.name.trim()} lists the option "${twice}" twice`)
+  }
+  for (const field of draft.fields.filter(entry => takesRange(entry.type) && entry.name.trim())) {
+    const name = field.name.trim()
+    const { min, max } = rangeOf(field)
+    const typos = [['min', min], ['max', max]].filter(([, bound]) => Number.isNaN(bound)).map(([which]) => `${name}: its ${which} is a number, like 3`)
+    problems.push(...(typos.length ? typos : apiRangeProblems({ type: field.type, min, max }, name)))
   }
   return problems
 }

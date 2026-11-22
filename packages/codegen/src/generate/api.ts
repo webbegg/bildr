@@ -85,7 +85,8 @@ const STORE_ALIKE = new Set<ApiField['type']>(['text', 'integer', 'number', 'boo
 
 /**
  * The zod expression of an entity field: the same scalars the entities of the other data sources use. A datetime, and a SaaS type
- * (email, money, select…), takes what the DTO takes, so an entity fetched from the API is a valid body to send back.
+ * (email, money, select…), takes what the DTO takes, so an entity fetched from the API is a valid body to send back. Its min/max
+ * (a text's length, a number's range) are checked here, on what the app sends, and not on the DTO: an answer out of range still loads.
  */
 const entityField = (field: ApiField, kernel: Set<KernelName>): string => {
   const base = field.type === 'model'
@@ -93,7 +94,8 @@ const entityField = (field: ApiField, kernel: Set<KernelName>): string => {
     : STORE_ALIKE.has(field.type)
       ? zodField({ id: 'fld_api', name: field.name, type: field.type as 'text', required: true }, kernel)
       : dtoValue(field)
-  return wrapField(field, base)
+  const ranged = `${base}${field.min !== undefined ? `.min(${field.min})` : ''}${field.max !== undefined ? `.max(${field.max})` : ''}`
+  return wrapField(field, ranged)
 }
 
 /** `entities/<m>.ts`: the entity type `<Model>` (camelCase fields) and its zod schema. */

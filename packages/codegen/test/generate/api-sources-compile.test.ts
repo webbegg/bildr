@@ -115,7 +115,7 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
   }],
   ['a text path parameter, a datetime sent back, and fields named like reserved words', (session) => {
     session.edit('api_create', { name: 'blog', baseUrl: 'https://blog.example.com/v1', auth: { type: 'header', secret: 'token', header: 'X-Token' } })
-    session.edit('api_model_set', { datasource: 'ds_blog', model: { name: 'Post', fields: [{ name: 'id', type: 'text' }, { name: 'at', type: 'datetime' }, { name: 'delete', type: 'boolean', optional: true }, { name: 'class', type: 'text', key: 'class-name' }] } })
+    session.edit('api_model_set', { datasource: 'ds_blog', model: { name: 'Post', fields: [{ name: 'id', type: 'text' }, { name: 'at', type: 'datetime' }, { name: 'delete', type: 'boolean', optional: true }, { name: 'class', type: 'text', key: 'class-name', min: 12, max: 40 }, { name: 'rank', type: 'integer', min: 3, optional: true }] } })
     session.edit('api_query_set', { datasource: 'ds_blog', query: { name: 'post', path: '/posts/:id/reviews/:review', params: [{ name: 'id', in: 'path', type: 'text' }, { name: 'review', in: 'path', type: 'text' }], result: { model: 'Post', many: false } } })
     session.edit('api_action_set', { datasource: 'ds_blog', action: { name: 'savePost', method: 'PUT', path: '/posts/:id', params: [{ name: 'id', in: 'path', type: 'text' }], body: { model: 'Post' }, result: { model: 'Post', many: false } } })
   }],
