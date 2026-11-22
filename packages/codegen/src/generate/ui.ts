@@ -2,6 +2,9 @@ import { customColorNames } from '../design/theme.ts'
 import { displayFallback, orderedStyleTokens, parseStyleKey, styleClasses, styleInline, styleTokenProblem } from '../design/tokens.ts'
 import type { BreakpointBase } from '../design/tokens.ts'
 import { apiQueryOf, apiRowsOf } from '../edit/api-uses.ts'
+import { valueFormats } from '../edit/formats.ts'
+import type { ValueFormats } from '../edit/formats.ts'
+import { formatCode } from '../render/format.ts'
 import { apiComposableName } from '../edit/generated-names.ts'
 import type { Model } from '../model/load.ts'
 import type { ActionFile, ComponentFile, EntityFile, LayoutFile, ModelNode, PageFile, PropertyDef, QueryFile, Value } from '../model/schemas.ts'
@@ -87,6 +90,8 @@ interface Env {
   items: Map<string, () => string>
   /** Shared by every copy of the env: the item names a handler under construction has read (undefined outside one). */
   track: { items?: Set<string> }
+  /** The money and percent fields the file's nodes show as text, by node id and path (`valueFormats`). */
+  formats: ValueFormats
 }
 
 interface Variant {
@@ -298,12 +303,24 @@ const interpolatedString = (text: string) => tsString(text).replace(/[<>&{}]/g, 
  */
 const staticText = (text: string) => text.includes('\n') ? `{{ ${interpolatedString(text)} }}` : escapeText(text)
 
+/** A bound path shown as text: a money or percent field formatted (`valueFormats`) when it holds a number, else `otherwise`. */
+const shownPath = (env: Env, node: ModelNode, path: string, otherwise: () => string): string | undefined => {
+  const format = env.formats[node.id]?.[path]
+  if (!format) return undefined
+  const code = bindPath(env, node, path, 'template')
+  return `typeof ${code} === 'number' ? ${formatCode(code, format)} : ${otherwise()}`
+}
+
 /** Text content: static text escaped, `$template` interpolated, other values as one interpolation. */
 const textContent = (env: Env, node: ModelNode, value: Value | undefined): string | undefined => {
   if (value === undefined) return undefined
   if (typeof value === 'string') return staticText(value)
   if (isObject(value) && typeof value.$template === 'string') {
-    return templateParts(value.$template).map(part => part.path ? `{{ ${bindPath(env, node, part.path, 'template')} }}` : staticText(part.text)).join('')
+    return templateParts(value.$template).map(part => part.path ? `{{ ${shownPath(env, node, part.path, () => '\'\'') ?? bindPath(env, node, part.path, 'template')} }}` : staticText(part.text)).join('')
+  }
+  if (isObject(value) && typeof value.$bind === 'string') {
+    const shown = shownPath(env, node, value.$bind, () => value.fallback === undefined ? '\'\'' : expression(env, node, value.fallback, 'template'))
+    if (shown) return `{{ ${shown} }}`
   }
   return `{{ ${expression(env, node, value, 'template')} }}`
 }
@@ -869,7 +886,7 @@ const sfc = (source: string, script: string[], template: string[]) => [
 ].join('\n')
 
 const newEnv = (model: Model, file: string, context?: ModuleContext): Env => ({
-  model, context, file, roots: new Map(), used: new Map(), needs: new Set(), handlers: [], variantLines: [], optional: { used: new Set(), guarded: new Set() }, aliases: { actions: new Map(), state: new Map() }, items: new Map(), track: {},
+  model, context, file, roots: new Map(), used: new Map(), needs: new Set(), handlers: [], variantLines: [], optional: { used: new Set(), guarded: new Set() }, aliases: { actions: new Map(), state: new Map() }, items: new Map(), track: {}, formats: {},
   base: model.project.breakpointBase ?? 'mobile', variantExpr: 'props.variant'
 })
 
@@ -920,6 +937,7 @@ const siteRoot = (env: Env) => plainRoot('site', () => env.needs.add('site'))
 const layoutFile = (model: Model, layout: LayoutFile): GeneratedFile => {
   const source = model.paths[layout.id] ?? `.bildr/layouts/${layout.name}.json`
   const env = newEnv(model, source)
+  env.formats = valueFormats(model, layout.id)
   env.roots.set('site', siteRoot(env))
   // Layout variables: the page's values (route meta) over the defaults, read as `layout.<name>`.
   const variables = layout.variables ?? []
@@ -947,6 +965,7 @@ const propertyType = (env: Env, property: PropertyDef) => property.kind === 'sel
 const componentFile = (context: ModuleContext, component: ComponentFile): GeneratedFile => {
   const source = context.source(component.id)
   const env = newEnv(context.model, source, context)
+  env.formats = valueFormats(context.model, component.id)
   const imports: string[] = []
   const props: string[] = []
   const defaults: string[] = []
@@ -1124,6 +1143,7 @@ const queryNames = (env: Env, query: QueryFile) => {
 const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
   const source = context.source(page.id)
   const env = newEnv(context.model, source, context)
+  env.formats = valueFormats(context.model, page.id)
   const uses = page.uses ?? {}
   const { actions: actionAliases, state: stateAliases } = env.aliases
 

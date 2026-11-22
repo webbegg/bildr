@@ -152,6 +152,21 @@ describe('generateUi follows the canvas render rules', () => {
     expect(() => generated(model, 'posts/new.vue')).toThrow(/a select field's input is a dropdown: it has no multiline or inputType/)
   })
 
+  it('formats a money or percent field it shows as text, in en-US (field types: formatting)', () => {
+    const model = fixtureModel()
+    const post = model.modules.blog!.entities.find(entity => entity.id === 'ent_post')!
+    post.fields.push({ id: 'fld_price', name: 'price', type: 'money', currency: 'EUR' }, { id: 'fld_share', name: 'share', type: 'percent' })
+    pageOf(model, 'index').root.children!.push({ id: 'n_prices', type: 'List', props: { items: { $bind: 'posts' }, as: 'p' }, children: [
+      { id: 'n_price', type: 'Text', props: { text: { $bind: 'p.price', fallback: 'Free' } } },
+      { id: 'n_share', type: 'Heading', props: { level: 3, text: { $template: 'Off: {p.share}, by {p.title}' } } }
+    ] })
+    const page = generated(model, 'pages/index.vue')
+    expect(page).toContain('{{ typeof p.price === \'number\' ? new Intl.NumberFormat(\'en-US\', { style: \'currency\', currency: \'EUR\' }).format(p.price) : \'Free\' }}')
+    expect(page).toContain('Off: {{ typeof p.share === \'number\' ? new Intl.NumberFormat(\'en-US\', { style: \'percent\', maximumFractionDigits: 2 }).format(p.share / 100) : \'\' }}, by {{ p.title }}')
+    // A field of another type, and a number that is not a field, read as before.
+    expect(page).not.toContain('format(p.title')
+  })
+
   it('lays a List out by its `layout` (list-layout)', () => {
     const list = (layout?: string): ModelNode => ({ id: 'n_x', type: 'List', props: { items: { $bind: 'quotes' }, as: 'q', ...(layout ? { layout } : {}) }, children: [{ id: 'n_y', type: 'Container' }] })
     expect(indexWith(list())).toContain('    <div class="flex flex-col self-stretch">\n      <div v-for="q in quotes" :key="q.id" class="flex flex-col self-stretch" />')
