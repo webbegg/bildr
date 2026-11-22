@@ -1,6 +1,7 @@
 import type { StateFile, Value } from '@bildr/codegen/model'
 import type { RefusedField } from '../api.ts'
 import type { FieldType } from '../shared/dataModel.ts'
+import { formatOptions, parseOptions } from '../shared/optionList.ts'
 import { sameJson } from './draftJson.ts'
 
 /**
@@ -66,7 +67,7 @@ const fieldDraftOf = (field: StateField): DraftField => ({
   id: field.id,
   name: field.name,
   type: field.type as FieldType,
-  options: (field.options ?? []).join(', '),
+  options: formatOptions(field.options ?? []),
   currency: field.currency ?? '',
   required: field.required === true,
   default: textOf(field),
@@ -80,8 +81,8 @@ let newFieldCount = 0
 /** A field the form adds: a text field with no name and no default, which has no id until it is saved. */
 export const newField = (): DraftField => ({ key: `new_${++newFieldCount}`, id: '', name: '', type: 'text', options: '', currency: '', required: false, default: '', emptyDefault: false })
 
-/** A select's options as the box has them: trimmed, with no empty one. */
-export const optionsOf = (field: Pick<DraftField, 'options'>): string[] => field.options.split(',').map(option => option.trim()).filter(Boolean)
+/** A select's options as the box has them (`parseOptions`: a quoted one may hold a comma). */
+export const optionsOf = (field: Pick<DraftField, 'options'>): string[] => parseOptions(field.options)
 
 /** The draft with the field at `from` moved to position `to`. */
 export function moveField(draft: StateDraft, from: number, to: number): StateDraft {

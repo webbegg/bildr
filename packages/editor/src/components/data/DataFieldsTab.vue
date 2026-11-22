@@ -5,6 +5,7 @@ import { confirmRemoveField, confirmRenameField } from '../../editor/usageWarnin
 import { fieldUsesByName } from '../../shared/dataUsage.ts'
 import { FIELD_TYPE_ICONS, FIELD_TYPE_LABELS, fieldTypeItems } from '../../shared/dataModel.ts'
 import type { DataCollection, DataField, FieldType } from '../../shared/dataModel.ts'
+import { formatOptions, parseOptions } from '../../shared/optionList.ts'
 import DataFieldSettings from './DataFieldSettings.vue'
 import DataFieldUses from './DataFieldUses.vue'
 
@@ -31,7 +32,7 @@ function updateField(id: string, patch: { name?: string, type?: FieldType, optio
 }
 
 /** A select's options as typed in its box: trimmed, with no empty one. */
-const optionsOf = (typed: string) => typed.split(',').map(option => option.trim()).filter(Boolean)
+const optionsOf = parseOptions
 
 /** The fields turned into a select whose options are still to be typed: the type changes with them, never without. */
 const pendingSelects = ref(new Set<string>())
@@ -312,7 +313,7 @@ const editingMapping = ref(false)
         </div>
         <DataFieldSettings
           :type="typeOf(field)"
-          :options="(field.options ?? []).join(', ')"
+          :options="formatOptions(field.options ?? [])"
           :currency="field.currency ?? ''"
           :label="field.name"
           hook="field"

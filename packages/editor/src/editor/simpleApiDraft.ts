@@ -3,6 +3,7 @@ import type { ApiAction, ApiField, ApiHeader, ApiModel, ApiParam, ApiQuery } fro
 import type { ApiSource } from '@bildr/codegen/edit'
 import { pathParamNames } from '../shared/simpleApi.ts'
 import type { PastedRequest } from '../shared/requestPaste.ts'
+import { formatOptions, parseOptions } from '../shared/optionList.ts'
 import { plainCopy, sameJson } from './draftJson.ts'
 
 /**
@@ -358,7 +359,7 @@ export interface ModelDraft {
 export const newField = (): FieldDraft => ({ key: `f_${++rows}`, name: '', type: 'text', model: '', options: '', currency: '', list: false, optional: false, nullable: false, remote: '' })
 
 /** A select's options as the draft writes them: trimmed, with no empty one. */
-const optionsOf = (field: FieldDraft) => field.options.split(',').map(option => option.trim()).filter(Boolean)
+const optionsOf = (field: FieldDraft) => parseOptions(field.options)
 
 /** A field's new type: a model, a select's options and money's currency go with the type that has them; money starts in euros. */
 export function setFieldType(field: FieldDraft, type: FieldDraft['type']) {
@@ -371,7 +372,7 @@ export function setFieldType(field: FieldDraft, type: FieldDraft['type']) {
 /** The draft of a saved model, or the one of a new model (`stored` null): one empty field to start with. */
 export const modelDraftOf = (stored: ApiModel | null): ModelDraft => ({
   fields: stored
-    ? stored.fields.map(field => ({ key: `f_${++rows}`, name: field.name, type: field.type, model: field.model ?? '', options: (field.options ?? []).join(', '), currency: field.currency ?? '', list: field.list ?? false, optional: field.optional ?? false, nullable: field.nullable ?? false, remote: field.key ?? '' }))
+    ? stored.fields.map(field => ({ key: `f_${++rows}`, name: field.name, type: field.type, model: field.model ?? '', options: formatOptions(field.options ?? []), currency: field.currency ?? '', list: field.list ?? false, optional: field.optional ?? false, nullable: field.nullable ?? false, remote: field.key ?? '' }))
     : [newField()]
 })
 

@@ -5,6 +5,7 @@ import { FOCUS_RING } from '../../editorUi.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { bindingLabel, propertyField } from '../../shared/componentEditor.ts'
 import { variableField } from '../../shared/layoutEditor.ts'
+import { formatOptions, parseOptions } from '../../shared/optionList.ts'
 import type { DetailField } from '../../shared/propertyLabels.ts'
 import { detailPatch, propertiesTitle, propertyLabel, takesPlaceholder } from '../../shared/propertyLabels.ts'
 
@@ -95,9 +96,9 @@ function setDefault(property: PropertyDef, value: Value | null) {
   update(property, { default: value })
 }
 
-/** A select's options, typed as a comma list; none removes them. */
+/** A select's options, typed as a comma list (a quoted one may hold a comma); none removes them. */
 function setOptions(property: PropertyDef, raw: string) {
-  const list = raw.split(',').map(entry => entry.trim()).filter(Boolean)
+  const list = parseOptions(raw)
   update(property, { options: list.length ? list : null })
 }
 
@@ -237,10 +238,10 @@ function onDragEnd() {
         <EditorFormRow
           v-if="selected.kind === 'select'"
           label="Options"
-          help="Separated by commas"
+          help="Separated by commas. Put an option with a comma in quotes"
         >
           <EditorInput
-            :model-value="(selected.options ?? []).join(', ')"
+            :model-value="formatOptions(selected.options ?? [])"
             commit="change"
             placeholder="small, medium, large"
             aria-label="Options"
