@@ -94,8 +94,13 @@ describe('the render message', () => {
     const blog = world.model.modules.blog!
     blog.entities.find(entity => entity.id === 'ent_post')!.fields.push({ id: 'fld_price', name: 'price', type: 'money', currency: 'EUR' })
     blog.pages.find(entry => entry.id === 'pg_index')!.root.children!.push({ id: 'n_prices', type: 'List', props: { items: { $bind: 'posts' }, as: 'p' }, children: [{ id: 'n_price', type: 'Text', props: { text: { $bind: 'p.price' } } }] })
+    blog.components.find(component => component.id === 'cmp_post_card')!.root.children!.push({ id: 'n_card_price', type: 'Text', props: { text: { $bind: 'post.price' } } })
     await open()
-    expect(sent('bildr:render').at(-1)!.formats).toEqual({ pg_index: { n_price: { 'p.price': { kind: 'money', currency: 'EUR' } } } })
+    // The page's own nodes, and the components its instances render, each under its file id.
+    expect(sent('bildr:render').at(-1)!.formats).toEqual({
+      pg_index: { n_price: { 'p.price': { kind: 'money', currency: 'EUR' } } },
+      cmp_post_card: { n_card_price: { 'post.price': { kind: 'money', currency: 'EUR' } } }
+    })
   })
 })
 
