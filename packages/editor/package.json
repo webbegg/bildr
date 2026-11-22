@@ -1,6 +1,6 @@
 {
   "name": "@bildr/editor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The bildr editor UI: a Vue + Nuxt UI single-page app that @bildr/nuxt serves at /__bildr during nuxt dev.",
   "license": "MIT",
   "repository": {
