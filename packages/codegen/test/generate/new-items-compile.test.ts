@@ -241,6 +241,11 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
       { name: 'budget', type: 'money', currency: 'USD', default: 100 },
       { name: 'contact', type: 'email' }
     ] })
+    // Formatting: a List of deals shows each price and discount, and the store's budget, as en-US money and percent text.
+    session.edit('page_use_add', { page: 'pg_index', as: 'deals', query: 'q_open_deals' })
+    session.edit('page_use_add', { page: 'pg_index', as: 'filters', state: 'st_deal_filters' })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_page', type: 'List', props: { items: { $bind: 'deals' }, as: 'deal' }, children: [{ type: 'Text', props: { text: { $template: '{deal.price}, {deal.discount} off' } } }] })
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_page', type: 'Text', props: { text: { $bind: 'filters.budget' } } })
   }]
 ]
 
