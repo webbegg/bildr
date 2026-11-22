@@ -35,4 +35,10 @@ describe('an API model field\'s min and max in the editor', () => {
     draft.fields[0]!.min = '1.5'
     expect(modelProblems(draft)).toEqual(['name: a text\'s min and max are lengths: use whole numbers'])
   })
+
+  it('take a stored bound written in exponent form', () => {
+    const draft = modelDraftOf({ name: 'C', fields: [{ name: 'big', type: 'number', min: 1e21, max: 2e21 }] })
+    expect(modelProblems(draft)).toEqual([])
+    expect(modelOutput('C', draft).fields[0]).toEqual({ name: 'big', type: 'number', min: 1e21, max: 2e21 })
+  })
 })

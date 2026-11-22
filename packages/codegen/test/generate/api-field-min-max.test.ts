@@ -56,6 +56,8 @@ describe('an API model field\'s min and max', () => {
     expect(messages([{ name: 'name', type: 'text', min: 5, max: 2 }])).toEqual(['Contact.name: its min (5) is over its max (2)'])
     expect(messages([{ name: 'name', type: 'text', min: -1 }])).toEqual(['Contact.name: a text\'s min and max are lengths: use 0 or more'])
     expect(messages([{ name: 'name', type: 'text', max: 2.5 }])).toEqual(['Contact.name: a text\'s min and max are lengths: use whole numbers'])
+    expect(messages([{ name: 'rank', type: 'integer', min: 5.2, max: 5.8 }])).toEqual(['Contact.rank: no whole number is between its min (5.2) and its max (5.8)'])
+    expect(messages([{ name: 'mail', type: 'email', min: 1 }])).toEqual(['Contact.mail: an "email" field takes no min or max'])
   })
 
   it('give the generated tests samples within them, so a sent sample passes the check', () => {
