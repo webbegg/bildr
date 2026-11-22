@@ -13,6 +13,7 @@ import { FIELD_TYPE_ICONS, FIELD_TYPE_LABELS, fieldTypeItems } from '../../share
 import type { FieldType } from '../../shared/dataModel.ts'
 import { stateFieldUsesByName } from '../../shared/dataUsage.ts'
 import { stateLabel } from '../../shared/stateModel.ts'
+import DataFieldSettings from './DataFieldSettings.vue'
 import DataFieldUses from './DataFieldUses.vue'
 
 /**
@@ -277,6 +278,14 @@ async function remove(field: DraftField) {
                 </span>
               </template>
             </div>
+            <DataFieldSettings
+              v-if="!readOnly"
+              v-model:options="field.options"
+              v-model:currency="field.currency"
+              :type="field.type"
+              :label="label(field)"
+              hook="state"
+            />
             <DataFieldUses
               v-if="field.id"
               part="list"

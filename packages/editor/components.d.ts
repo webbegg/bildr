@@ -30,6 +30,7 @@ declare module 'vue' {
     DataDraftFooter: typeof import('./src/components/data/DataDraftFooter.vue')['default']
     DataEmpty: typeof import('./src/components/data/DataEmpty.vue')['default']
     DataEmptyState: typeof import('./src/components/data/DataEmptyState.vue')['default']
+    DataFieldSettings: typeof import('./src/components/data/DataFieldSettings.vue')['default']
     DataFieldsTab: typeof import('./src/components/data/DataFieldsTab.vue')['default']
     DataFieldUses: typeof import('./src/components/data/DataFieldUses.vue')['default']
     DataFiles: typeof import('./src/components/data/DataFiles.vue')['default']

@@ -4,7 +4,8 @@ import { useEditor } from '../../editor/useEditor.ts'
 import { confirmRemoveField, confirmRenameField } from '../../editor/usageWarnings.ts'
 import { fieldUsesByName } from '../../shared/dataUsage.ts'
 import { FIELD_TYPE_ICONS, FIELD_TYPE_LABELS, fieldTypeItems } from '../../shared/dataModel.ts'
-import type { DataCollection, FieldType } from '../../shared/dataModel.ts'
+import type { DataCollection, DataField, FieldType } from '../../shared/dataModel.ts'
+import DataFieldSettings from './DataFieldSettings.vue'
 import DataFieldUses from './DataFieldUses.vue'
 
 /**
@@ -25,8 +26,32 @@ const mapped = computed(() => collection.kind === 'rest')
 const connection = computed(() => editor.connections.find(entry => entry.id === collection.datasource))
 const ROW = 'flex h-9 items-center gap-1.5 rounded-lg ps-1 pe-1.5'
 
-function updateField(id: string, patch: { name?: string, type?: FieldType }) {
+function updateField(id: string, patch: { name?: string, type?: FieldType, options?: string[], currency?: string }) {
   return editor.run('entity_field_update', { entity: collection.id, field: id, ...patch })
+}
+
+/** A select's options as typed in its box: trimmed, with no empty one. */
+const optionsOf = (typed: string) => typed.split(',').map(option => option.trim()).filter(Boolean)
+
+/** The fields turned into a select whose options are still to be typed: the type changes with them, never without. */
+const pendingSelects = ref(new Set<string>())
+/** The type a row shows: a select while its options are being typed. */
+const typeOf = (field: DataField) => pendingSelects.value.has(field.id) ? 'select' : field.type
+
+/** A new type in place (field types S3b): money starts in euros, a select waits for its options. */
+function changeType(field: DataField, type: FieldType) {
+  pendingSelects.value.delete(field.id)
+  if (type === 'select') pendingSelects.value.add(field.id)
+  else if (type === 'money') updateField(field.id, { type, currency: 'EUR' })
+  else updateField(field.id, { type })
+}
+
+/** The options typed under a select's row: they change a select's options, or make the field the select it is waiting to be. */
+async function commitOptions(field: DataField, typed: string) {
+  const options = optionsOf(typed)
+  if (!options.length) return
+  if (!pendingSelects.value.has(field.id)) return updateField(field.id, { options })
+  if (await updateField(field.id, { type: 'select', options })) pendingSelects.value.delete(field.id)
 }
 
 // Bumped to remount a name field whose edit did not go through, so it shows the saved name again.
@@ -66,11 +91,15 @@ const usesOpen = ref<string | null>(null)
 const adding = ref(false)
 const newName = ref('')
 const newType = ref<FieldType>('text')
+const newOptions = ref('')
+const newCurrency = ref('EUR')
 const nameInput = useTemplateRef<{ focus: () => void }>('nameInput')
 
 async function openAdd() {
   newType.value = 'text'
   newName.value = ''
+  newOptions.value = ''
+  newCurrency.value = 'EUR'
   adding.value = true
   await nextTick()
   nameInput.value?.focus()
@@ -84,7 +113,9 @@ watch(() => collection.id, () => {
 async function addField() {
   const name = newName.value.trim()
   if (!name) return
-  if (await editor.run('entity_field_add', { entity: collection.id, name, type: newType.value })) adding.value = false
+  const type = newType.value
+  const settings = type === 'select' ? { options: optionsOf(newOptions.value) } : type === 'money' ? { currency: newCurrency.value } : {}
+  if (await editor.run('entity_field_add', { entity: collection.id, name, type, ...settings })) adding.value = false
 }
 
 const dragId = ref<string | null>(null)
@@ -236,14 +267,14 @@ const editingMapping = ref(false)
             />
           </span>
           <EditorSelect
-            :model-value="field.type"
+            :model-value="typeOf(field)"
             :items="fieldTypeItems"
             compact
             :aria-label="`Type of ${field.name}`"
-            :ui="{ content: 'min-w-32' }"
-            :title="FIELD_TYPE_LABELS[field.type]"
+            :ui="{ content: 'min-w-40' }"
+            :title="FIELD_TYPE_LABELS[typeOf(field)]"
             data-field-type
-            @update:model-value="updateField(field.id, { type: $event as FieldType })"
+            @update:model-value="changeType(field, $event as FieldType)"
           />
           <EditorInput
             :key="`${field.name}:${nameResets}`"
@@ -279,6 +310,18 @@ const editingMapping = ref(false)
             />
           </button>
         </div>
+        <DataFieldSettings
+          :type="typeOf(field)"
+          :options="(field.options ?? []).join(', ')"
+          :currency="field.currency ?? ''"
+          :label="field.name"
+          hook="field"
+          :name="field.name"
+          commit="change"
+          class="ps-6 pb-1"
+          @update:options="commitOptions(field, $event)"
+          @update:currency="updateField(field.id, { currency: $event })"
+        />
         <DataFieldUses
           part="list"
           :name="field.name"
@@ -310,6 +353,13 @@ const editingMapping = ref(false)
           data-new-field-type
           @update:model-value="newType = $event as FieldType"
         />
+        <DataFieldSettings
+          v-model:options="newOptions"
+          v-model:currency="newCurrency"
+          :type="newType"
+          label="the new field"
+          hook="new-field"
+        />
         <div class="flex justify-end gap-1.5">
           <EditorButton
             label="Cancel"
@@ -322,7 +372,7 @@ const editingMapping = ref(false)
             label="Add field"
             variant="primary"
             size="xs"
-            :disabled="!newName.trim()"
+            :disabled="!newName.trim() || newType === 'select' && !optionsOf(newOptions).length"
           />
         </div>
       </form>

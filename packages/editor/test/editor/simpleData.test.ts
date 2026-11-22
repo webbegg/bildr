@@ -476,6 +476,20 @@ describe('a store\'s form', () => {
     expect(stored().persist).toBe('session')
   })
 
+  it('asks a select for its options and money for its currency, and saves them with the fields (field types S3b)', async () => {
+    const { actions } = await mounted({}, OPEN)
+    await addField('stage', 'One of a list')
+    await typeInto(inputOf(`[data-simple-field="${last().getAttribute('data-simple-field')}"] [data-simple-field-options]`), 'open, won')
+    await typeInto(inputOf(`[data-simple-field="${last().getAttribute('data-simple-field')}"] [data-simple-field-default]`), 'open')
+    await addField('budget', 'Money', '25')
+    expect(text(q(`[data-simple-field="${last().getAttribute('data-simple-field')}"] [data-simple-field-currency]`))).toContain('EUR')
+    await save()
+    expect((calls(actions, 'state_update')[0]!.fields as unknown[]).slice(1)).toEqual([
+      { name: 'stage', type: 'select', options: ['open', 'won'], default: 'open' },
+      { name: 'budget', type: 'money', currency: 'EUR', default: 25 }
+    ])
+  })
+
   it('saves only the persistence when only it changed', async () => {
     const { actions } = await mounted({}, OPEN)
     await click(q('[data-simple-persist="memory"]'))

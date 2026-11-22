@@ -918,6 +918,52 @@ describe('fields', () => {
     expect(inputs(actions, 'entity_field_update').at(-1)).toEqual({ entity: 'ent_post', field: 'fld_slug', type: 'integer' })
   })
 
+  it('adds a select with its options and money with its currency (field types S3b)', async () => {
+    const { actions } = await open({ entity_field_add: ok({ fieldId: 'fld_x' }) })
+    await fieldsTab()
+    await click(q('[aria-label="Add field"]'))
+    await typeInto(q('[data-new-field-label]'), 'Stage')
+    await selectOption(q('[data-new-field-type]'), 'One of a list')
+    await typeInto(q('[data-new-field-options]'), 'draft, live, , archived')
+    q('[data-add-field]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(inputs(actions, 'entity_field_add')).toEqual([{ entity: 'ent_post', name: 'Stage', type: 'select', options: ['draft', 'live', 'archived'] }])
+    await click(q('[aria-label="Add field"]'))
+    await typeInto(q('[data-new-field-label]'), 'Price')
+    await selectOption(q('[data-new-field-type]'), 'Money')
+    expect(text(q('[data-new-field-currency]'))).toContain('EUR')
+    await selectOption(q('[data-new-field-currency]'), 'USD')
+    q('[data-add-field]')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    await settle()
+    expect(inputs(actions, 'entity_field_add').at(-1)).toEqual({ entity: 'ent_post', name: 'Price', type: 'money', currency: 'USD' })
+  })
+
+  it('changes a field to money in euros at once, and to a select once its options are typed (field types S3b)', async () => {
+    addUnusedField()
+    const { actions } = await open({ entity_field_update: ok() })
+    await fieldsTab()
+    await selectOption(row('extra').querySelector('[data-field-type]'), 'Money')
+    expect(inputs(actions, 'entity_field_update')).toEqual([{ entity: 'ent_post', field: 'fld_extra', type: 'money', currency: 'EUR' }])
+    await selectOption(row('extra').querySelector('[data-field-type]'), 'One of a list')
+    expect(inputs(actions, 'entity_field_update')).toHaveLength(1)
+    await typeInto(q('[data-fields-tab] [data-field-options="extra"]'), 'a, b')
+    expect(inputs(actions, 'entity_field_update').at(-1)).toEqual({ entity: 'ent_post', field: 'fld_extra', type: 'select', options: ['a', 'b'] })
+  })
+
+  it('edits a select\'s options and money\'s currency under its row (field types S3b)', async () => {
+    world.model.modules.blog!.entities[0]!.fields.push({ id: 'fld_stage', name: 'stage', type: 'select', options: ['draft', 'live'] }, { id: 'fld_price', name: 'price', type: 'money', currency: 'GBP' })
+    const { actions } = await open({ entity_field_update: ok() })
+    await fieldsTab()
+    const options = q('[data-fields-tab] [data-field-options="stage"]') as HTMLInputElement
+    expect(options.value).toBe('draft, live')
+    await typeInto(options, 'draft, live, gone')
+    expect(inputs(actions, 'entity_field_update')).toEqual([{ entity: 'ent_post', field: 'fld_stage', options: ['draft', 'live', 'gone'] }])
+    const currency = q('[data-fields-tab] [data-field-currency="price"]')!
+    expect(text(currency)).toContain('GBP')
+    await selectOption(currency, 'CHF')
+    expect(inputs(actions, 'entity_field_update').at(-1)).toEqual({ entity: 'ent_post', field: 'fld_price', currency: 'CHF' })
+  })
+
   it('puts a rename the module refuses back and says why, when the editor did not know the field was used', async () => {
     addUnusedField()
     await open({ entity_field_update: () => new Failure(422, 'invalid', 'extra is used by q_post_by_slug: change them first') })
