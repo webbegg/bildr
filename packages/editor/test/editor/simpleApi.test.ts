@@ -813,6 +813,9 @@ describe('the model editor', () => {
     await selectOption(comboOf(qa('[data-model-field]')[1]!.querySelector('[data-model-field-type]')), 'One of a list')
     await click(q('[data-simple-model-save]'))
     expect(text(q('[data-simple-model-error]'))).toBe('List the options of each field that is one of a list')
+    await typeInto(q('[data-model-field-options]'), 'a, b, a')
+    await click(q('[data-simple-model-save]'))
+    expect(text(q('[data-simple-model-error]'))).toBe('title lists the option "a" twice')
     expect(calls(actions, 'api_model_set')).toEqual([])
   })
 

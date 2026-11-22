@@ -34,6 +34,21 @@ describe('inferApiModels', () => {
     expect(valid(models)).toEqual([])
   })
 
+  it('keeps text when an item has an empty value, which a SaaS type\'s check refuses (verify B1)', () => {
+    const models = inferApiModels([
+      { mail: 'ana@example.com', site: 'https://ana.dev', avatar: 'https://x.com/a.png', brand: '#336699' },
+      { mail: '', site: '', avatar: '', brand: '' }
+    ], 'contact')
+    expect(models[0]!.fields.map(field => field.type)).toEqual(['text', 'text', 'text', 'text'])
+  })
+
+  it('proposes a url only for http(s)://, a color only for hex with a letter or a color key, and never types an id as a url (verify A3)', () => {
+    const types = (sample: Record<string, unknown>) => inferApiModels(sample, 'r')[0]!.fields.map(field => `${field.name}:${field.type}`)
+    expect(types({ a: 'http:a.com', b: 'https:/a.com', c: 'https:a.com/x.png', avatar: 'https:/x.com/a.png' })).toEqual(['a:text', 'b:text', 'c:text', 'avatar:text'])
+    expect(types({ ref: '#123', issue: '#456789', tint: '#123', hex: '#33aa99' })).toEqual(['ref:text', 'issue:text', 'tint:color', 'hex:color'])
+    expect(types({ id: 'https://x.org/1' })).toEqual(['id:text'])
+  })
+
   it('keeps text when one of the values does not fit a SaaS type (field types S2)', () => {
     const models = inferApiModels([{ mail: 'ada@example.com', site: 'https://x.example.com' }, { mail: 'not an email', site: 'ftp://x.example.com' }], 'person')
     expect(models[0]!.fields).toEqual([{ name: 'mail', type: 'text' }, { name: 'site', type: 'text' }])
