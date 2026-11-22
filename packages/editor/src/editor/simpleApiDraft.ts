@@ -399,6 +399,11 @@ export function modelProblems(draft: ModelDraft): string[] {
   if (!draft.fields.some(field => field.name.trim())) problems.push('A model needs at least one field')
   if (draft.fields.some(field => field.type === 'model' && !field.model)) problems.push('Choose the model of each field that holds another model')
   if (draft.fields.some(field => field.type === 'select' && field.name.trim() && !optionsOf(field).length)) problems.push('List the options of each field that is one of a list')
+  for (const field of draft.fields.filter(entry => entry.type === 'select' && entry.name.trim())) {
+    const options = optionsOf(field)
+    const twice = options.find((option, at) => options.indexOf(option) !== at)
+    if (twice !== undefined) problems.push(`${field.name.trim()} lists the option "${twice}" twice`)
+  }
   return problems
 }
 
