@@ -1,8 +1,8 @@
 import { computed, inject, ref, shallowRef, watch } from 'vue'
 import type { InjectionKey } from 'vue'
 import { DEFAULT_THEME } from '@bildr/codegen/design'
-import { bindingScope } from '@bildr/codegen/edit'
-import type { ScopeName } from '@bildr/codegen/edit'
+import { bindingScope, valueFormats } from '@bildr/codegen/edit'
+import type { ValueFormats, ScopeName } from '@bildr/codegen/edit'
 import type { BreakpointBase, Theme } from '@bildr/codegen/design'
 import type { ComponentFile, LayoutFile, Model as ProjectModel, ModelNode, PageFile, PropertyDef, Value } from '@bildr/codegen/model'
 import { primaryFrame } from '@bildr/editor-core/frames'
@@ -150,6 +150,17 @@ export const createDesign = () => {
     return Object.fromEntries(modules.flatMap(entry => entry.actions).flatMap((action) => {
       const selects = (entities.get(action.input.entity ?? '')?.fields ?? []).filter(field => field.type === 'select')
       return selects.length ? [[action.id, Object.fromEntries(selects.map(field => [field.id, field.options ?? []]))]] : []
+    }))
+  })
+  /** File id → the money and percent fields its nodes show as text: the open file's, its layout's and every component's (instances render them). */
+  const formats = computed<Record<string, ValueFormats>>(() => {
+    const current = model.value
+    if (!current || !fileId.value) return {}
+    const layout = (file.value as PageFile | null)?.layout
+    const ids = [fileId.value, ...(layout ? [layout] : []), ...components.value.map(component => component.id)]
+    return Object.fromEntries([...new Set(ids)].flatMap((id) => {
+      const found = valueFormats(current, id)
+      return Object.keys(found).length ? [[id, found]] : []
     }))
   })
   const fileKind = computed(() => files.value.find(entry => entry.id === fileId.value)?.kind ?? null)
@@ -624,7 +635,7 @@ export const createDesign = () => {
   }
 
   return {
-    page, rowsOf, apiSampled, detail, records, record, pickRecord, result, loading, error, errorCode, errorField, regenerated, model, problems, pagePaths, formSelects, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
+    page, rowsOf, apiSampled, detail, records, record, pickRecord, result, loading, error, errorCode, errorField, regenerated, model, problems, pagePaths, formSelects, formats, base, theme, components, layouts, files, file, fileId, fileKind, data, catalog,
     selectedIds, selectedId, selected, selectedParent, hoveredId, dragging, dragCancels, device, devices, deviceChoice, mode, history, clipboard,
     component, variantId, variant, inspected, breadcrumbs, nameOf, dark, selectVariant, override, commitStyle,
     isContainer, scopeOf, pendingInsert, confirmInsert, pendingForm, confirmForm, formActions, refresh, edit, dismissError, select, selectNode, openFile, undo, redo, insert, insertComponent, moveNode, dropOnLayer, duplicate, remove, wrap, makeComponent,

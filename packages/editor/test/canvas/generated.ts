@@ -29,7 +29,8 @@ export interface Sfc {
   interactive: boolean
 }
 
-const evaluate = (code: string, scope: Record<string, unknown>): unknown => {
+/** A template expression of the generated app, run over `scope` (globals such as `Intl` included). */
+export const evaluate = (code: string, scope: Record<string, unknown>): unknown => {
   const proxy = new Proxy(scope, {
     has: () => true,
     get: (target, key) => (key === Symbol.unscopables ? undefined : key in target ? target[key as string] : (globalThis as Record<PropertyKey, unknown>)[key])

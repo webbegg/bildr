@@ -4,6 +4,9 @@ import type { ModelNode } from '../../../codegen/src/model/schemas.ts'
 import { CANVAS_LINK, pageNodeId, renderPlan, setsState } from '../../src/canvas/render.ts'
 import type { PlanChild, PlanElement, RenderInput } from '../../src/canvas/render.ts'
 import { blogModelFiles } from './fixture.ts'
+import { evaluate } from './generated.ts'
+import { generateUi } from '../../../codegen/src/generate/ui.ts'
+import { valueFormats } from '../../../codegen/src/edit/formats.ts'
 
 /** What the canvas adds to the generated app's markup: node ids, placeholders for missing data, list copies. */
 
@@ -132,5 +135,30 @@ describe('page links', () => {
     expect(byNode(noPaths, 'n_read_more')[0]!.attrs.to).toBe(CANVAS_LINK)
     const noRow = plan(page('index'), {}, paths)
     expect(byNode(noRow, 'n_read_more')[0]!.attrs.to).toBe(CANVAS_LINK)
+  })
+})
+
+describe('money and percent text (field types: formatting)', () => {
+  it('formats the fields the generated app formats, to the same text', () => {
+    const changed = loadModel(blogModelFiles())
+    if (!changed.ok) throw new Error('fixture')
+    const model = changed.model
+    model.modules.blog!.entities.find(entity => entity.id === 'ent_post')!.fields.push({ id: 'fld_price', name: 'price', type: 'money', currency: 'EUR' }, { id: 'fld_share', name: 'share', type: 'percent' })
+    const index = model.modules.blog!.pages.find(entry => entry.name === 'index')!
+    index.root.children!.push({ id: 'n_prices', type: 'List', props: { items: { $bind: 'posts' }, as: 'p' }, children: [
+      { id: 'n_price', type: 'Text', props: { text: { $bind: 'p.price', fallback: 'Free' } } },
+      { id: 'n_share', type: 'Text', props: { text: { $template: 'Off: {p.share}' } } }
+    ] })
+    const rows = [{ id: 'p1', title: 'Paid', slug: 'paid', price: 1234.5, share: 25 }, { id: 'p2', title: 'Free', slug: 'free', price: null, share: 12.345 }]
+    const rendered = renderPlan({ file: index, components: blog.components, layouts: fixture.layouts, data: { preferences: { showDrafts: true }, all: rows, featured: [], quotes: [] }, formats: { [index.id]: valueFormats(model, index.id) } })
+    const texts = (id: string) => byNode(rendered, id).map(textOf)
+    expect(texts('n_price')).toEqual(['€1,234.50', 'Free'])
+    expect(texts('n_share')).toEqual(['Off: 25%', 'Off: 12.35%'])
+
+    // The generated template's own expressions, run over the same rows, write the same text.
+    const vue = generateUi(model).find(file => file.path.endsWith('pages/index.vue'))!.content
+    const expressionOf = (needle: string) => [...vue.matchAll(/\{\{ (.*?) \}\}/g)].map(match => match[1]!).find(code => code.includes(needle))!
+    expect(rows.map(p => String(evaluate(expressionOf('p.price'), { p })))).toEqual(texts('n_price'))
+    expect(rows.map(p => `Off: ${String(evaluate(expressionOf('p.share'), { p }))}`)).toEqual(texts('n_share'))
   })
 })

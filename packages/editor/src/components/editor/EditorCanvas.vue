@@ -431,6 +431,7 @@ function renderMessage(key: string | null): RenderMessage | null {
     data: editor.data,
     paths: editor.pagePaths,
     ...(Object.keys(editor.formSelects).length ? { formSelects: editor.formSelects } : {}),
+    ...(Object.keys(editor.formats).length ? { formats: editor.formats } : {}),
     ...(isPage && editor.pagePaths[file.id] ? { path: editor.pagePaths[file.id] } : {}),
     ...(editor.componentId ? { variant: shown } : {}),
     view
