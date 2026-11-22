@@ -4,7 +4,7 @@ import type { Model } from '../model/load.ts'
 import { headerNameOf } from '../model/schemas.ts'
 import type { ApiField } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
-import { apiSources, browserApiSources, descriptionOf, DTO_VALUE, fieldType, inputFields, inputType, isCallable, modelNames, namesOf, nestedModels, operationsOf, pathTemplate, propertyAccess, propertyKey, remoteKey, resultType, serverApiSources, wrapField } from './api-model.ts'
+import { apiSources, browserApiSources, descriptionOf, dtoValue, fieldNote, fieldType, inputFields, inputType, isCallable, modelNames, namesOf, nestedModels, operationsOf, pathTemplate, propertyAccess, propertyKey, remoteKey, resultType, serverApiSources, wrapField } from './api-model.ts'
 import type { Emitted, Operation, SourceNames } from './api-model.ts'
 import { generateBrowserRuntime } from './api-browser.ts'
 import { generateApiLayer, generateServerRuntime } from './api-server.ts'
@@ -80,16 +80,19 @@ const modelOf = (source: ApiSource, name: string) => source.models.find(entry =>
 
 // ── Domain ─────────────────────────────────────────────────────────────
 
+/** The types an entity checks as the entities of the other data sources do (`zodField`). */
+const STORE_ALIKE = new Set<ApiField['type']>(['text', 'integer', 'number', 'boolean', 'date', 'uuid'])
+
 /**
- * The zod expression of an entity field: the same scalars the entities of the other data sources use. A datetime takes what the
- * DTO takes (an offset too), so an entity fetched from the API is a valid body to send back.
+ * The zod expression of an entity field: the same scalars the entities of the other data sources use. A datetime, and a SaaS type
+ * (email, money, select…), takes what the DTO takes, so an entity fetched from the API is a valid body to send back.
  */
 const entityField = (field: ApiField, kernel: Set<KernelName>): string => {
   const base = field.type === 'model'
     ? modelNames(field.model!).schema
-    : field.type === 'datetime'
-      ? DTO_VALUE.datetime
-      : zodField({ id: 'fld_api', name: field.name, type: field.type, required: true }, kernel)
+    : STORE_ALIKE.has(field.type)
+      ? zodField({ id: 'fld_api', name: field.name, type: field.type as 'text', required: true }, kernel)
+      : dtoValue(field)
   return wrapField(field, base)
 }
 
@@ -226,7 +229,10 @@ const dtoLines = (name: string, source: ApiSource): string[] => {
     ...(nestedModels(model).length ? [''] : []),
     `/** The JSON of a ${name} as the "${source.name}" API sends it and takes it: its keys, its dates as strings. */`,
     `export interface ${names.dto} {`,
-    model.fields.map(field => `  ${propertyKey(remoteKey(field))}${field.optional ? '?' : ''}: ${fieldType(field, nested => modelNames(nested).dto)}`).join('\n'),
+    model.fields.map((field) => {
+      const note = fieldNote(field)
+      return `${note ? `  /** ${docText(note)} */\n` : ''}  ${propertyKey(remoteKey(field))}${field.optional ? '?' : ''}: ${fieldType(field, nested => modelNames(nested).dto)}`
+    }).join('\n'),
     '}'
   ]
 }
@@ -234,7 +240,7 @@ const dtoLines = (name: string, source: ApiSource): string[] => {
 const dtoSchemaLines = (name: string, source: ApiSource): string[] => {
   const model = modelOf(source, name)
   const names = modelNames(name)
-  const fields = model.fields.map(field => `  ${propertyKey(remoteKey(field))}: ${wrapField(field, field.type === 'model' ? modelNames(field.model!).dtoSchema : DTO_VALUE[field.type])}`)
+  const fields = model.fields.map(field => `  ${propertyKey(remoteKey(field))}: ${wrapField(field, field.type === 'model' ? modelNames(field.model!).dtoSchema : dtoValue(field))}`)
   return [
     'import { z } from \'zod\'',
     ...nestedModels(model).map(nested => importLine(`./${modelNames(nested).file}.schema`, [modelNames(nested).dtoSchema])),
