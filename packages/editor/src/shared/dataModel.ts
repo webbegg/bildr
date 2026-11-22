@@ -1,4 +1,4 @@
-import type { DataSourceFile, EntityFile, Model, ModuleModel, PageFile, RepositoryFile } from '@bildr/codegen/model'
+import type { BasicType, DataSourceFile, EntityFile, Model, ModuleModel, PageFile, RepositoryFile } from '@bildr/codegen/model'
 import type { Row } from '@bildr/codegen/query'
 import { stateLabel } from './stateModel.ts'
 
@@ -100,7 +100,14 @@ export const FIELD_TYPE_LABELS: Record<FieldType, string> = {
   datetime: 'Date & time',
   date: 'Date',
   image: 'Image',
-  uuid: 'UUID'
+  uuid: 'UUID',
+  email: 'Email',
+  url: 'Link',
+  phone: 'Phone',
+  color: 'Color',
+  money: 'Money',
+  percent: 'Percent',
+  select: 'One of a list'
 }
 
 export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
@@ -111,10 +118,22 @@ export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
   datetime: 'i-lucide-calendar-clock',
   date: 'i-lucide-calendar',
   image: 'i-lucide-image',
-  uuid: 'i-lucide-fingerprint'
+  uuid: 'i-lucide-fingerprint',
+  email: 'i-lucide-at-sign',
+  url: 'i-lucide-link',
+  phone: 'i-lucide-phone',
+  color: 'i-lucide-palette',
+  money: 'i-lucide-banknote',
+  percent: 'i-lucide-percent',
+  select: 'i-lucide-list'
 }
 
-export const fieldTypeItems = (Object.keys(FIELD_TYPE_LABELS) as FieldType[]).map(type => ({ label: FIELD_TYPE_LABELS[type], value: type, icon: FIELD_TYPE_ICONS[type] }))
+const typeItem = (type: FieldType) => ({ label: FIELD_TYPE_LABELS[type], value: type, icon: FIELD_TYPE_ICONS[type] })
+/** The basic types: what an action error's data takes. */
+export const basicTypeItems = (['text', 'integer', 'number', 'boolean', 'datetime', 'date', 'image', 'uuid'] satisfies BasicType[]).map(typeItem)
+/** The types an entity's or a store's field picker offers (the SaaS ones come with their settings' editors, field types S3b). */
+const PICKED_TYPES: FieldType[] = ['text', 'integer', 'number', 'boolean', 'datetime', 'date', 'image', 'uuid']
+export const fieldTypeItems = PICKED_TYPES.map(type => ({ label: FIELD_TYPE_LABELS[type], value: type, icon: FIELD_TYPE_ICONS[type] }))
 
 type RestConfig = {
   list?: { method?: EndpointMethod, path: string, itemsPath?: string, totalPath?: string }

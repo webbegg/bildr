@@ -132,7 +132,8 @@ const literalFits = (type: ApiQuery['params'][number]['type'], value: Value): bo
 
 /** What a state field is in TypeScript, as far as a parameter cares: dates, ids and image addresses are text. */
 const KIND_OF_FIELD: Record<StateFile['fields'][number]['type'], 'text' | 'integer' | 'number' | 'boolean'> = {
-  text: 'text', image: 'text', uuid: 'text', date: 'text', datetime: 'text', integer: 'integer', number: 'number', boolean: 'boolean'
+  text: 'text', image: 'text', uuid: 'text', date: 'text', datetime: 'text', integer: 'integer', number: 'number', boolean: 'boolean',
+  email: 'text', url: 'text', phone: 'text', color: 'text', select: 'text', money: 'number', percent: 'number'
 }
 
 /** Whether a value of kind `have` is accepted by a parameter of type `want`: a whole number is a number, nothing else converts. */

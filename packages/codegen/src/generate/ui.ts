@@ -11,6 +11,7 @@ import {
   LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, nodePropProblems, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses, uiStepProblems
 } from '../render/rules.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
+import { VALUE_TYPES } from '../model/field-types.ts'
 import { entityNames, moduleContext } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
 import { camel, identifier, kebab, pascal, propertyPath, tsString } from './text.ts'
@@ -581,6 +582,9 @@ const fieldOf = (env: Env, node: ModelNode): Field => {
   return field ?? fail(env, node, `field ${String(node.props?.field)} is not one of the form's fields`)
 }
 
+/** The fields a text input edits, with the browser input each gets when the page names none (field types S3). */
+const TEXT_INPUT_TYPES = { text: undefined, email: 'email', url: 'url', phone: 'tel', color: undefined } as const
+
 /** The browser `pattern` of a model pattern: anchors dropped (implicit), a trailing `-` in a class escaped (the `v` flag needs it). */
 const htmlPattern = (pattern: string) => pattern.replace(/^\^/, '').replace(/\$$/, '').replace(/(?<!\\)-\]/g, '\\-]')
 
@@ -588,15 +592,20 @@ const input = (env: Env, node: ModelNode, extra: Attr[], indent: string, options
   const field = fieldOf(env, node)
   const props = node.props ?? {}
   const label = typeof props.label === 'string' ? props.label : pascal(field.name)
-  const numeric = field.type === 'integer' || field.type === 'number'
-  if (!numeric && field.type !== 'text') return fail(env, node, `a ${field.type} field has no input yet`)
+  const numeric = VALUE_TYPES[field.type].family === 'number'
+  const textual = field.type in TEXT_INPUT_TYPES
+  if (!numeric && !textual) return fail(env, node, `a ${field.type} field has no input yet`)
   const multiline = props.multiline === true
-  const inputType = props.inputType
+  // A SaaS text type gets its browser input (email, url, tel) unless the page names another.
+  const inputType = props.inputType ?? (multiline ? undefined : TEXT_INPUT_TYPES[field.type as keyof typeof TEXT_INPUT_TYPES])
   if (inputType !== undefined && multiline) return fail(env, node, 'a multiline input has no inputType')
   if (inputType !== undefined && numeric && inputType !== 'number') return fail(env, node, `a ${field.type} field's input has inputType number`)
   const attrs: Attr[] = [attr('model', `v-model${numeric ? '.number' : ''}="form.${field.name}"`), staticAttr('name', field.name)]
   if (field.required) attrs.push(attr('attr', 'required'))
   if (numeric) attrs.push(staticAttr('type', 'number'))
+  // A browser number input takes whole numbers unless told otherwise: money is in cents, a percent any decimal.
+  if (field.type === 'money') attrs.push(staticAttr('step', '0.01'))
+  if (field.type === 'percent') attrs.push(staticAttr('step', 'any'))
   if (!numeric && field.max !== undefined) attrs.push(staticAttr('maxlength', String(field.max)))
   if (field.pattern) attrs.push(staticAttr('pattern', htmlPattern(field.pattern)))
   if (!numeric && typeof inputType === 'string' && inputType !== 'text') attrs.push(staticAttr('type', inputType))
@@ -1254,7 +1263,7 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
   const formLines: string[] = []
   if (env.needs.has('form') && env.form) {
     const initial = env.form.fields.map((field) => {
-      const value = field.default ?? (field.type === 'boolean' ? false : field.type === 'integer' || field.type === 'number' ? 0 : '')
+      const value = field.default ?? (field.type === 'boolean' ? false : VALUE_TYPES[field.type].ts === 'number' ? 0 : '')
       return `${field.name}: ${expression(env, undefined, value as Value, 'script')}`
     })
     formLines.push(`const form = reactive({ ${initial.join(', ')} })`)

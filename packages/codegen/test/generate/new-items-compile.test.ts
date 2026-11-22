@@ -214,6 +214,30 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
     session.edit('page_computed_set', { page: 'pg_index', as: 'heading', if: { not: { $bind: 'preferences.showDrafts' } }, then: 'Featured posts', else: 'All posts' })
     session.edit('node_update_props', { file: 'pg_index', nodeId: 'n_h1', props: { text: { $bind: 'heading' } } })
     session.edit('page_computed_set', { page: 'pg_index', as: 'posts', if: { $bind: 'preferences.showDrafts' }, then: { $bind: 'featured' }, else: { $bind: 'all' } })
+  }],
+  // Field types S3: every SaaS type on a stored entity (its zod, column, repository, actions and their tests) and on a store.
+  ['every SaaS field type, on an entity and a store', (session) => {
+    session.edit('entity_create', { name: 'deal', source: 'ds_main', fields: [
+      { name: 'mail', type: 'email', required: true },
+      { name: 'site', type: 'url' },
+      { name: 'phone', type: 'phone' },
+      { name: 'tint', type: 'color' },
+      { name: 'price', type: 'money', currency: 'EUR', required: true },
+      { name: 'discount', type: 'percent' },
+      { name: 'stage', type: 'select', options: ['lead', 'won', 'it\'s lost'], required: true }
+    ] })
+    // Optional and not nullable does not typecheck on a SQLite entity whatever the type (a separate bug): these are nullable.
+    for (const field of ['fld_site', 'fld_phone', 'fld_tint', 'fld_discount']) session.edit('entity_field_update', { entity: 'ent_deal', field, nullable: true })
+    session.edit('entity_field_add', { entity: 'ent_deal', name: 'size', type: 'select', options: ['s', 'm'], nullable: true })
+    session.fixtureRow('.bildr/modules/blog/fixtures/deal.json', 'ent_deal', { id: '6f1c2d3e-4b5a-4c6d-8e7f-000000000009', mail: 'ana@example.com', site: 'https://ana.example.com', phone: '+34 600 123 456', tint: '#336699', price: 9.99, discount: 25, stage: 'won', size: null })
+    session.edit('action_create', { entity: 'ent_deal', template: 'update', name: 'editDeal' })
+    session.edit('action_create', { entity: 'ent_deal', template: 'delete', name: 'removeDeal' })
+    session.edit('query_create', { entity: 'ent_deal', result: 'many', name: 'openDeals' })
+    session.edit('state_create', { name: 'dealFilters', persist: 'session', fields: [
+      { name: 'stage', type: 'select', options: ['lead', 'won'], default: 'lead' },
+      { name: 'budget', type: 'money', currency: 'USD', default: 100 },
+      { name: 'contact', type: 'email' }
+    ] })
   }]
 ]
 

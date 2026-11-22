@@ -2,13 +2,14 @@ import type { EntityFile, RepositoryFile } from '../model/schemas.ts'
 import { allFields, datasourceOf, entityNames, keyOf } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
 import { importLine } from './imports.ts'
+import { isBasicType, sampleOf, VALUE_TYPES } from '../model/field-types.ts'
 import { docText, file, header, pascal, snake, tsLiteral, tsString } from './text.ts'
 
 const OPERATION_ORDER = ['list', 'get', 'create', 'update', 'delete'] as const
 const has = (repository: RepositoryFile, op: RepositoryFile['operations'][number]) => repository.operations.includes(op)
 const finderFields = (entity: EntityFile, repository: RepositoryFile): Field[] =>
   (repository.finders ?? []).map(finder => allFields(entity).find(field => field.id === finder.by)!).filter(Boolean)
-const tsType = (field: Field) => field.type === 'integer' || field.type === 'number' ? 'number' : field.type === 'boolean' ? 'boolean' : 'string'
+const tsType = (field: Field) => VALUE_TYPES[field.type].ts
 const findBy = (field: Field) => `findBy${pascal(field.name)}`
 
 /** A column is nullable when the field is, or when it is optional without a default. */
@@ -28,9 +29,13 @@ const column = (field: Field, builders: Set<string>, isKey: boolean) => {
   } else if (field.type === 'integer') {
     builders.add('integer')
     expression = `integer(${name})`
-  } else if (field.type === 'number') {
+  } else if (field.type === 'number' || field.type === 'money' || field.type === 'percent') {
     builders.add('real')
     expression = `real(${name})`
+  } else if (field.type === 'select') {
+    // Typed as the union of its options, as the domain schema is (the column stays TEXT: no migration when the options change).
+    builders.add('text')
+    expression = `text(${name}, { enum: [${(field.options ?? []).map(tsString).join(', ')}] })`
   } else {
     builders.add('text')
     expression = `text(${name})`
@@ -345,7 +350,10 @@ export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, r
   }
 }
 
-const sample = (field: Field) => field.type === 'integer' || field.type === 'number' ? 1 : field.type === 'boolean' ? true : field.name
+/** A field's value in a generated adapter test: 1, true or its name for the basic types (as before), the catalogue's sample for a SaaS one. */
+const sample = (field: Field) => !isBasicType(field.type)
+  ? sampleOf(field)
+  : field.type === 'integer' || field.type === 'number' ? 1 : field.type === 'boolean' ? true : field.name
 
 /** A generated adapter test: fields and paging map to the REST source as modeled. */
 export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {

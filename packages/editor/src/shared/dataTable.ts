@@ -48,7 +48,14 @@ const OPS: Record<FieldType, FilterOp[]> = {
   boolean: ['on', 'off'],
   date: ['before', 'after'],
   datetime: ['before', 'after'],
-  image: []
+  image: [],
+  email: ['contains'],
+  url: ['contains'],
+  phone: ['contains'],
+  color: ['contains'],
+  select: ['contains'],
+  money: ['eq', 'gt', 'lt'],
+  percent: ['eq', 'gt', 'lt']
 }
 
 /** The filters the toolbar offers for a field type. */

@@ -1,4 +1,4 @@
-import type { ActionFile, Model } from '@bildr/codegen/model'
+import type { ActionFile, Model, BasicType } from '@bildr/codegen/model'
 import { isObject } from '../model.ts'
 import { entityById } from '../shared/dataModel.ts'
 import type { FieldType } from '../shared/dataModel.ts'
@@ -32,7 +32,8 @@ export interface DraftError {
   status: string
   message: string
   /** The values the error carries: a step that raises it gives each (`errorData`), and `{name}` in the message reads them. */
-  data: Array<{ name: string, type: FieldType }>
+  /** An error's data takes the basic types only (no select options or currency to give). */
+  data: Array<{ name: string, type: BasicType }>
 }
 
 export interface StepsDraft {

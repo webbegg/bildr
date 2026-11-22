@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { ArtifactIdSchema, FIELD_TYPES, ModuleNameSchema, ValueSchema } from '../model/schemas.ts'
+import { ArtifactIdSchema, ENTITY_FIELD_TYPES, ModuleNameSchema, ValueSchema } from '../model/schemas.ts'
+import { CURRENCY_PATTERN, valueSettingsProblems } from '../model/field-types.ts'
 import type { StateFile } from '../model/schemas.ts'
 import { camel, defineEdit, fail, kebab } from './core.ts'
 import type { Draft, FieldRef } from './core.ts'
@@ -21,7 +22,9 @@ const PERSIST = ['memory', 'session', 'localStorage'] as const
 const FieldInput = z.object({
   id: ArtifactIdSchema.optional().describe('state_update: the id of the field this entry is, to keep it when it is renamed. When any entry has an id, an entry without one is a new field; when none has, an entry matches the field of the same name, or is a new one'),
   name: z.string().min(1).max(60).describe('camelCased, e.g. "Show drafts" → "showDrafts"; "id" is the row\'s key'),
-  type: z.enum(FIELD_TYPES),
+  type: z.enum(ENTITY_FIELD_TYPES),
+  options: z.array(z.string().min(1).max(64)).max(100).optional().describe('For type select: its values, one or more, each once; a default is one of them'),
+  currency: z.string().regex(CURRENCY_PATTERN, 'Use a currency code like "EUR"').optional().describe('For type money, required: an ISO 4217 code like "EUR"'),
   required: z.boolean().optional().describe('a required field needs a default: the state starts with its defaults'),
   default: ValueSchema.optional().describe('a literal that fits the type; where the state starts')
 })
@@ -76,8 +79,10 @@ const buildFields = (draft: Draft, given: FieldGiven[], existing: StateFile['fie
     }
     if (match && claimed.has(match.id)) fail('invalid', `Two fields are the field ${match.id}`, ref)
     if (match) claimed.add(match.id)
+    const [settings] = valueSettingsProblems(entry, name)
+    if (settings) fail('invalid', settings, ref)
     if (entry.default === null) fail('invalid', `${name}: a default is a value, not null`, ref)
-    if (entry.default !== undefined && (isExpression(entry.default) || !fits(entry.type, entry.default, !entry.required))) {
+    if (entry.default !== undefined && (isExpression(entry.default) || !fits(entry.type, entry.default, !entry.required, entry.options))) {
       fail('invalid', `${name}: the default ${JSON.stringify(entry.default)} doesn't fit ${entry.type}`, ref)
     }
     if (entry.required && entry.default === undefined) fail('invalid', `${name}: a required field needs a default (the state starts with its defaults)`, ref)
@@ -86,6 +91,8 @@ const buildFields = (draft: Draft, given: FieldGiven[], existing: StateFile['fie
       id: match?.id ?? draft.mint('fld', name),
       name,
       type: entry.type,
+      ...(entry.options !== undefined ? { options: entry.options } : {}),
+      ...(entry.currency !== undefined ? { currency: entry.currency } : {}),
       ...(entry.required ? { required: true } : {}),
       ...kept,
       ...(entry.default !== undefined ? { default: entry.default } : {})

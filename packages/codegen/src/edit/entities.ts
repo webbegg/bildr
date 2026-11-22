@@ -1,5 +1,7 @@
 import { z } from 'zod'
-import { ArtifactIdSchema, FIELD_TYPES, ModuleNameSchema, REST_METHODS, RestEndpointSchema } from '../model/schemas.ts'
+import { ArtifactIdSchema, ENTITY_FIELD_TYPES, ModuleNameSchema, REST_METHODS, RestEndpointSchema } from '../model/schemas.ts'
+import { basicTypeOf, COLOR_PATTERN, CURRENCY_PATTERN, PHONE_PATTERN, valueSettingsProblems } from '../model/field-types.ts'
+import type { BasicType } from '../model/field-types.ts'
 import type { ActionFile, EntityFile, FieldSchema, FixturesFile, QueryFile, RepositoryFile, Value } from '../model/schemas.ts'
 import { camel, defineEdit, fail, kebab, pascal, uniqueName } from './core.ts'
 import type { Draft } from './core.ts'
@@ -25,9 +27,16 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/
 const FieldName = z.string().min(1).max(60).describe('camelCased, e.g. "Published at" → "publishedAt"')
 const RemoteKey = z.string().min(1).max(100).describe('REST sources: the key of the field in the API\'s items, when it differs, e.g. "avatar_url"')
 
+/** A field's settings for its type (field types S3). */
+const TypeSettings = {
+  options: z.array(z.string().min(1).max(64)).max(100).optional().describe('For type select: its values, one or more, each once, e.g. ["draft", "live"]'),
+  currency: z.string().regex(CURRENCY_PATTERN, 'Use a currency code like "EUR"').optional().describe('For type money, required: an ISO 4217 code like "EUR"')
+}
+
 const FieldInput = z.object({
   name: FieldName,
-  type: z.enum(FIELD_TYPES),
+  type: z.enum(ENTITY_FIELD_TYPES),
+  ...TypeSettings,
   required: z.boolean().optional(),
   remote: RemoteKey.optional()
 })
@@ -128,7 +137,7 @@ const fieldName = (given: string) => {
 }
 
 /** The key the entity's queries and actions take: a uuid, or the type of the `id` field its source owns. */
-export const keyType = (entity: EntityFile): Field['type'] => entity.idStrategy === 'uuid' ? 'uuid' : entity.fields.find(field => field.name === 'id')?.type ?? 'text'
+export const keyType = (entity: EntityFile): BasicType => entity.idStrategy === 'uuid' ? 'uuid' : basicTypeOf(entity.fields.find(field => field.name === 'id')?.type ?? 'text')
 
 // ── Values against field types ───────────────────────────────────────────
 
@@ -137,18 +146,32 @@ const UUID = z.uuid()
 const DATE = z.iso.date()
 const DATETIME = z.iso.datetime()
 
-/** Whether a stored value fits a field type, as the generated app's schema reads it (null fits a field that may be empty). */
-export const fits = (type: Field['type'], value: Value, optional: boolean): boolean => {
+const EMAIL = z.email()
+const HTTP_URL = z.url({ protocol: /^https?$/ })
+
+/**
+ * Whether a stored value fits a field type, as the generated app's schema reads it (null fits a field that may be empty). A select's
+ * value is one of its `options`; an image is any text, as it has always been for an entity.
+ */
+export const fits = (type: Field['type'], value: Value, optional: boolean, options?: readonly string[]): boolean => {
   if (value === null) return optional
   if (type === 'integer') return Number.isInteger(value)
-  if (type === 'number') return typeof value === 'number'
+  if (type === 'number' || type === 'money' || type === 'percent') return typeof value === 'number'
   if (type === 'boolean') return typeof value === 'boolean'
   if (typeof value !== 'string') return false
   if (type === 'uuid') return UUID.safeParse(value).success
   if (type === 'date') return DATE.safeParse(value).success
   if (type === 'datetime') return DATETIME.safeParse(value).success
+  if (type === 'email') return EMAIL.safeParse(value).success
+  if (type === 'url') return HTTP_URL.safeParse(value).success
+  if (type === 'phone') return PHONE_PATTERN.test(value)
+  if (type === 'color') return COLOR_PATTERN.test(value)
+  if (type === 'select') return (options ?? []).includes(value)
   return true
 }
+
+/** Whether a value fits `field`, its type and its options. */
+export const fitsField = (field: Pick<Field, 'type' | 'options'>, value: Value, optional: boolean) => fits(field.type, value, optional, field.options)
 
 export const isExpression = (value: unknown) => typeof value === 'object' && value !== null && !Array.isArray(value) && Object.keys(value).some(key => key.startsWith('$'))
 
@@ -161,8 +184,31 @@ const FORMATS: Record<Field['type'], string> = {
   date: 'an ISO date (YYYY-MM-DD)',
   datetime: 'an ISO datetime (YYYY-MM-DDTHH:MM:SSZ)',
   image: 'text (an image address)',
-  uuid: 'a uuid'
+  uuid: 'a uuid',
+  email: 'an email address',
+  url: 'a web address (http:// or https://)',
+  phone: 'a phone number',
+  color: 'a hex color like #336699',
+  money: 'an amount (a number)',
+  percent: 'a percentage (a number)',
+  select: 'one of its options'
 }
+
+/** The options and currency a field input gives, for the type that takes them. */
+const settingsOf = (input: { options?: string[], currency?: string }): Pick<Field, 'options' | 'currency'> => ({
+  ...(input.options !== undefined ? { options: input.options } : {}),
+  ...(input.currency !== undefined ? { currency: input.currency } : {})
+})
+
+/** `field`, refused when its options or currency don't fit its type (a select lists options, money names a currency). */
+export const checkedSettings = <F extends Pick<Field, 'name' | 'type' | 'options' | 'currency'>>(field: F): F => {
+  const [problem] = valueSettingsProblems(field, field.name)
+  if (problem) fail('invalid', problem)
+  return field
+}
+
+/** What a value of `field` has to be, said after "which is not": a select names its options. */
+const formatOf = (field: Pick<Field, 'type' | 'options'>) => field.type === 'select' ? `one of ${(field.options ?? []).join(', ')}` : FORMATS[field.type]
 
 /** The sample rows (by place, from 1) whose value for `field` (as it would be) it can't take; `value` is undefined for a row that has none. */
 const sampleProblems = (draft: Draft, entity: EntityFile, field: Field): Array<{ row: number, value: Value | undefined }> => {
@@ -172,7 +218,7 @@ const sampleProblems = (draft: Draft, entity: EntityFile, field: Field): Array<{
     for (const fixtures of mod.fixtures.filter(entry => entry.entity === entity.id)) {
       fixtures.rows.forEach((row, index) => {
         const value = row[field.name]
-        if (value === undefined ? !optional && field.default === undefined : !fits(field.type, value, optional)) found.push({ row: index + 1, value })
+        if (value === undefined ? !optional && field.default === undefined : !fitsField(field, value, optional)) found.push({ row: index + 1, value })
       })
     }
   }
@@ -185,7 +231,7 @@ const sampleMessage = (field: Field, found: ReturnType<typeof sampleProblems>): 
   const also = more.length ? ` (${more.length} more sample row${more.length === 1 ? '' : 's'} ${more.length === 1 ? 'has' : 'have'} the same problem)` : ''
   const why = first!.value === undefined || first!.value === null
     ? `has no ${field.name}, which the field now requires`
-    : `has ${field.name} ${JSON.stringify(first!.value)}, which is not ${FORMATS[field.type]}`
+    : `has ${field.name} ${JSON.stringify(first!.value)}, which is not ${formatOf(field)}`
   return `Sample row ${first!.row} ${why}: ${first!.value === undefined || first!.value === null ? 'fill it' : 'fix it'} in Sample data first${also}.`
 }
 
@@ -193,12 +239,12 @@ const sampleMessage = (field: Field, found: ReturnType<typeof sampleProblems>): 
 const valueProblems = (draft: Draft, entity: EntityFile, field: Field): string[] => {
   const optional = !field.required || !!field.nullable
   const problems: string[] = []
-  if (field.default !== undefined && !fits(field.type, field.default, optional)) problems.push(`its default ${JSON.stringify(field.default)}`)
+  if (field.default !== undefined && !fitsField(field, field.default, optional)) problems.push(`its default ${JSON.stringify(field.default)}`)
   for (const { row } of sampleProblems(draft, entity, field)) problems.push(`fixtures row ${row}`)
   for (const query of queries(draft).filter(entry => entry.from === entity.id && entry.where?.field === field.name)) {
     const value = query.where!.value
     const values = query.where!.op === 'in' && Array.isArray(value) ? value : [value]
-    if (!isExpression(value) && values.some(item => !fits(field.type, item, true))) problems.push(`the condition of ${query.id}`)
+    if (!isExpression(value) && values.some(item => !fitsField(field, item, true))) problems.push(`the condition of ${query.id}`)
   }
   return problems
 }
@@ -253,7 +299,7 @@ export const entityCreate = defineEdit({
     }
 
     const entityId = draft.mint('ent', name)
-    const fields: Field[] = givenFields.map((field, index) => ({ id: draft.mint('fld', names[index]!), name: names[index]!, type: field.type, ...(field.required ? { required: true } : {}) }))
+    const fields: Field[] = givenFields.map((field, index) => checkedSettings({ id: draft.mint('fld', names[index]!), name: names[index]!, type: field.type, ...settingsOf(field), ...(field.required ? { required: true } : {}) }))
     const entity: EntityFile = { id: entityId, name, plural, idStrategy: external ? 'external' : 'uuid', timestamps: false, fields, relations: [], client: { sync: 'eager' } }
     mod.entities.push(entity)
     const folder = `.bildr/modules/${module}`
@@ -404,16 +450,17 @@ export const entityFieldAdd = defineEdit({
   input: z.object({
     entity: EntityRef,
     name: FieldName,
-    type: z.enum(FIELD_TYPES),
+    type: z.enum(ENTITY_FIELD_TYPES),
+    ...TypeSettings,
     ...FieldOptions,
     remote: RemoteKey.optional(),
     index: z.int().min(0).optional().describe('Its position among the fields (default: the end)')
   }),
-  apply: (draft, { entity: id, name: given, type, required, unique, nullable, remote, index }) => {
+  apply: (draft, { entity: id, name: given, type, options, currency, required, unique, nullable, remote, index }) => {
     const { entity } = entityById(draft, id)
     const name = fieldName(given)
     if (entity.fields.some(field => field.name === name)) fail('invalid', `Entity ${entity.name} already has a field "${name}"`)
-    const field: Field = { id: draft.mint('fld', name), name, type, ...(required ? { required } : {}), ...(unique ? { unique } : {}), ...(nullable ? { nullable } : {}) }
+    const field: Field = checkedSettings({ id: draft.mint('fld', name), name, type, ...settingsOf({ options, currency }), ...(required ? { required } : {}), ...(unique ? { unique } : {}), ...(nullable ? { nullable } : {}) })
     const problems = valueProblems(draft, entity, field)
     if (problems.length) fail('invalid', `${name} would be required but ${listOf(problems)} ${problems.length === 1 ? 'has' : 'have'} no value for it: add it as optional, fill them in, then make it required`)
     entity.fields.splice(index ?? entity.fields.length, 0, field)
@@ -434,24 +481,33 @@ export const entityFieldUpdate = defineEdit({
     entity: EntityRef,
     field: FieldRef,
     name: FieldName.optional().describe('A new name; refused while queries, actions, repositories or pages use the field by name'),
-    type: z.enum(FIELD_TYPES).optional().describe('A new type; refused while its default, the fixtures rows or query conditions hold values it can\'t take'),
+    type: z.enum(ENTITY_FIELD_TYPES).optional().describe('A new type; refused while its default, the fixtures rows or query conditions hold values it can\'t take. A select\'s options and money\'s currency go with the type'),
+    options: TypeSettings.options.describe('For a select: its new values (refused while a sample row, the default or a query condition holds another)'),
+    currency: TypeSettings.currency,
     required: z.boolean().optional(),
     unique: z.boolean().optional(),
     nullable: z.boolean().optional(),
     remote: RemoteKey.optional()
   }),
-  apply: (draft, { entity: id, field: fieldId, name: given, type, required, unique, nullable, remote }) => {
+  apply: (draft, { entity: id, field: fieldId, name: given, type, options, currency, required, unique, nullable, remote }) => {
     const { entity } = entityById(draft, id)
     const field = fieldOf(entity, fieldId)
     const next: Field = { ...field }
-    if (type !== undefined) next.type = type
+    if (type !== undefined) {
+      next.type = type
+      if (type !== 'select') Reflect.deleteProperty(next, 'options')
+      if (type !== 'money') Reflect.deleteProperty(next, 'currency')
+    }
+    if (options !== undefined) next.options = options
+    if (currency !== undefined) next.currency = currency
+    checkedSettings(next)
     for (const [key, value] of [['required', required], ['unique', unique], ['nullable', nullable]] as const) {
       if (value === true) next[key] = true
       else if (value === false) Reflect.deleteProperty(next, key)
     }
     if (type !== undefined && type !== field.type) {
       if (field.name === 'id' && !['text', 'integer', 'number', 'uuid'].includes(type)) fail('invalid', `The key "id" is text, integer, number or uuid, not ${type}`)
-      if ((next.min !== undefined || next.max !== undefined) && !['text', 'integer', 'number'].includes(type)) fail('invalid', `${field.name} has min/max: a ${type} field takes neither (remove them first)`)
+      if ((next.min !== undefined || next.max !== undefined) && !['text', 'integer', 'number', 'money', 'percent'].includes(type)) fail('invalid', `${field.name} has min/max: a ${type} field takes neither (remove them first)`)
       if (next.pattern !== undefined && type !== 'text') fail('invalid', `${field.name} has a pattern: only a text field takes one (remove it first)`)
     }
     const problems = valueProblems(draft, entity, next)
