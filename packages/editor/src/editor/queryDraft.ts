@@ -1,5 +1,6 @@
 import type { QueryFile, Value } from '@bildr/codegen/model'
 import { isObject } from '../model.ts'
+import { valueKindOf } from '../shared/dataModel.ts'
 import type { FieldType } from '../shared/dataModel.ts'
 import { sameJson } from './draftJson.ts'
 import type { QueryField, QueryResultKind } from '../shared/dataArtifacts.ts'
@@ -94,7 +95,8 @@ export function draftOf(query: QueryFile): QueryDraft {
 }
 
 /** A typed value of `type`, or what is wrong with the text. */
-export function valueOfText(type: FieldType | undefined, text: string): { value: Value } | { problem: string } {
+export function valueOfText(fieldType: FieldType | undefined, text: string): { value: Value } | { problem: string } {
+  const type = valueKindOf(fieldType)
   const typed = text.trim()
   if (type === 'integer') return /^[+-]?\d+$/.test(typed) ? { value: Number(typed) } : { problem: 'a whole number' }
   if (type === 'number') return typed !== '' && Number.isFinite(Number(typed)) ? { value: Number(typed) } : { problem: 'a number' }

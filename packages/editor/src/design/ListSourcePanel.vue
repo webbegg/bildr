@@ -6,6 +6,7 @@ import { entityFieldNames, queryBehind } from '@bildr/codegen/edit'
 import { FIELD, FIELD_RING } from '../editorUi.ts'
 import { apiChoiceId, apiChoiceOf, apiChoices, apiUseRows } from '../shared/apiPageUse.ts'
 import { isExpression } from '../shared/bindings.ts'
+import { valueKindOf } from '../shared/dataModel.ts'
 import { computedValues } from '../shared/listSource.ts'
 import ApiArgInput from './ApiArgInput.vue'
 import ListConditionForm from './ListConditionForm.vue'
@@ -153,7 +154,7 @@ const draftOf = (source: Source) => drafts[source.alias] ?? fresh(source)
 const paramValue = (source: Source) => isExpression(source.query.where?.value) && typeof source.query.where.value.$param === 'string'
 const typeOf = (source: Source, name: string) => fieldsOf(source.query).find(entry => entry.name === name)?.type
 const typed = (source: Source, draft: { field: string, value: string }): Value | undefined => {
-  const type = typeOf(source, draft.field)
+  const type = valueKindOf(typeOf(source, draft.field))
   if (type === 'boolean') return draft.value === 'true' ? true : draft.value === 'false' ? false : undefined
   if (type === 'integer' || type === 'number') return draft.value.trim() !== '' && Number.isFinite(Number(draft.value)) ? Number(draft.value) : undefined
   return draft.value === '' ? undefined : draft.value

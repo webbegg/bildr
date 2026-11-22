@@ -1,5 +1,6 @@
 import type { Value } from '@bildr/codegen/model'
 import { boundPaths, isExpression, isReadableBinding, textValue, valueText } from './bindings.ts'
+import { valueKindOf } from './dataModel.ts'
 import type { FieldType } from './dataModel.ts'
 import { isOnly, stateAlias, targetOf, textNames } from './nodeInteractions.ts'
 import type { Env, Stored, StepDraft, Target, TextDraft, ValueDraft } from './nodeInteractions.ts'
@@ -20,7 +21,7 @@ const DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/
 /** A fixed value typed in a box, as the field type holds it, or why it can't be one. `required`: an empty text is no value (a parameter). */
 export function fixedValue(type: FieldType, text: string, required = false): { value: Value } | { problem: string } {
   const typed = text.trim()
-  switch (type) {
+  switch (valueKindOf(type)) {
     case 'boolean': return typed === 'true' ? { value: true } : typed === 'false' ? { value: false } : { problem: 'Choose On or Off' }
     case 'integer': return /^[+-]?\d+$/.test(typed) ? { value: Number(typed) } : { problem: 'Use a whole number' }
     case 'number': return typed !== '' && Number.isFinite(Number(typed)) ? { value: Number(typed) } : { problem: 'Use a number' }

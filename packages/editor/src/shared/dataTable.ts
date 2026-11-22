@@ -1,4 +1,5 @@
 import type { Row } from '@bildr/codegen/query'
+import { valueKindOf } from './dataModel.ts'
 import type { DataField, FieldType } from './dataModel.ts'
 
 /**
@@ -130,7 +131,8 @@ export function nextSort(sort: TableSort | null, key: string): TableSort | null 
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-function compare(type: FieldType, a: Value, b: Value): number {
+function compare(fieldType: FieldType, a: Value, b: Value): number {
+  const type = valueKindOf(fieldType)
   if (type === 'number' || type === 'integer' || type === 'boolean') return Number(a) - Number(b)
   if (type === 'date' || type === 'datetime') return Date.parse(String(a)) - Date.parse(String(b))
   return collator.compare(String(a), String(b))

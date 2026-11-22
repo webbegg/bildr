@@ -1,3 +1,4 @@
+import { valueKindOf } from './dataModel.ts'
 import type { DataField } from './dataModel.ts'
 
 /**
@@ -48,7 +49,7 @@ export const cellEditText = (value: unknown): string => value === null || value 
  */
 export function cellValue(field: DataField, text: string): string | number | null {
   const trimmed = text.trim()
-  switch (field.type) {
+  switch (valueKindOf(field.type)) {
     case 'text':
     case 'image':
       return text === '' && !field.required ? null : text

@@ -133,6 +133,9 @@ export const FIELD_TYPE_ICONS: Record<FieldType, string> = {
   select: 'i-lucide-list'
 }
 
+/** How a value of `type` is typed and ordered (verify B4): money and a percent are numbers; every other type is itself. */
+export const valueKindOf = <T extends FieldType | undefined>(type: T): T | 'number' => type === 'money' || type === 'percent' ? 'number' : type
+
 const typeItem = (type: FieldType) => ({ label: FIELD_TYPE_LABELS[type], value: type, icon: FIELD_TYPE_ICONS[type] })
 /** The basic types: what an action error's data takes. */
 export const basicTypeItems = (['text', 'integer', 'number', 'boolean', 'datetime', 'date', 'image', 'uuid'] satisfies BasicType[]).map(typeItem)

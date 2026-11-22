@@ -155,7 +155,9 @@ const checkSetState = (check: Check, context: ExpressionContext, step: Step, whe
   const field = state.fields.find(entry => entry.name === step.field) ?? fail('invalid', `${where}: the state ${state.name} has no field "${String(step.field)}" (${state.fields.map(entry => entry.name).join(', ')})`)
   const value = step.value
   checkExpression(context, value, `${where} value`)
-  if (!isObject(value) && !fits(field!.type, value!, false)) fail('invalid', `${where}: ${JSON.stringify(value)} doesn't fit ${state.name}.${field!.name} (${field!.type})`)
+  // A select holds one of its options, which the generated setter types as their union: an expression can't be checked against them (verify B3).
+  if (field!.type === 'select' && isObject(value)) fail('invalid', `${where}: ${state.name}.${field!.name} is one of ${(field!.options ?? []).join(', ')}: set it to one of them`)
+  if (!isObject(value) && !fits(field!.type, value!, false, field!.options)) fail('invalid', `${where}: ${JSON.stringify(value)} doesn't fit ${state.name}.${field!.name} (${field!.type})`)
   // What the value is against what the field holds: the setter takes a partial row, so unset passes, null only for a nullable field.
   expectValue(context, value, where, `${state.name}.${field!.name} (${field!.type})`, { prims: [primOf(field!.type)], null: !!field!.nullable, undef: true })
 }
