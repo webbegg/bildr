@@ -1,3 +1,4 @@
+import { COLOR_PATTERN, EMAIL_PATTERN } from '../model/field-types.ts'
 import type { ApiField, ApiModel, FIELD_TYPES } from '../model/schemas.ts'
 
 /**
@@ -111,6 +112,24 @@ const isImage = (key: string, value: string) => {
   } catch {
     return false
   }
+}
+
+const isHttpUrl = (value: string) => {
+  try {
+    const url = new URL(value)
+    return (url.protocol === 'http:' || url.protocol === 'https:') && value.startsWith(url.protocol)
+  } catch {
+    return false
+  }
+}
+
+/** The SaaS type of an API field whose values are all text, when every value passes its check (field types S2): else text. */
+const textTypeOf = (values: string[]): ApiField['type'] => {
+  if (!values.length) return 'text'
+  if (values.every(value => EMAIL_PATTERN.test(value))) return 'email'
+  if (values.every(isHttpUrl)) return 'url'
+  if (values.every(value => COLOR_PATTERN.test(value))) return 'color'
+  return 'text'
 }
 
 const typeOf = (key: string, values: unknown[]): FieldType | undefined => {
@@ -241,12 +260,12 @@ export const inferApiModels = (sample: unknown, rootName: string): ApiModel[] =>
     return scalarOf(key, known)
   }
 
-  const scalarOf = (key: string, values: unknown[]): { type: Exclude<FieldType, 'image'> } | undefined => {
+  const scalarOf = (key: string, values: unknown[]): { type: ApiField['type'] } | undefined => {
     if (values.some(value => Array.isArray(value) || isObject(value))) return undefined
     const present = values.filter(value => value !== '')
     const type = typeOf(key, present)
     if (!type) return undefined
-    return { type: type === 'image' ? 'text' : type }
+    return { type: type === 'text' ? textTypeOf(present as string[]) : type }
   }
 
   build(rootName, objects, undefined, 0)
