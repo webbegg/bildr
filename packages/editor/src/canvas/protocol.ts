@@ -1,7 +1,7 @@
 import type { BreakpointBase, Theme } from '@bildr/codegen/design'
 import type { ComponentFile, LayoutFile, Value } from '@bildr/codegen/model'
 import type { CanvasToEditor as CoreCanvasToEditor, CanvasView, EditorToCanvasCommon } from '@bildr/editor-core/protocol'
-import type { BoardVariant, CanvasFile } from './render.ts'
+import type { BoardVariant, CanvasFile, RenderInput } from './render.ts'
 
 /**
  * The canvas's postMessage protocol (P4a, mapping §6). Every message of
@@ -21,6 +21,8 @@ import type { BoardVariant, CanvasFile } from './render.ts'
  *   canvas's router sits: links to it are active, as in the app;
  * - `formSelects`: action id → field id → options, so a Form's Input of a
  *   select field renders as its dropdown;
+ * - `formats`: file id → node id → bound path → money or percent format, so
+ *   those fields read as the app writes them ("€9.99", "25%");
  * - `variant`: the variant a variant-board frame shows;
  * - `view`: the page, or the token sheet (P4c).
  *
@@ -63,6 +65,7 @@ export interface RenderMessage {
   data: Record<string, unknown>
   paths?: Record<string, string>
   formSelects?: Record<string, Record<string, string[]>>
+  formats?: RenderInput['formats']
   path?: string
   variant?: BoardVariant
   view: CanvasView

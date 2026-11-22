@@ -3,8 +3,10 @@ import type { ComponentFile, LayoutFile, ModelNode, PageFile, PropertyDef, Value
 import {
   animatedProperties, CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, containerTag, DEFAULT_HEADING_LEVEL,
   DEFAULT_TRANSITION, displayOf, fallbackStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, isSafeUrl, LINK_CLASS,
-  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses
+  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses,
+  formatValue
 } from '@bildr/codegen/render'
+import type { ValueFormats } from '@bildr/codegen/render'
 import { INSTANCE_ID_SEPARATOR, layoutNodeId } from './ids.ts'
 import type { PlainValue } from './protocol.ts'
 
@@ -63,6 +65,8 @@ export interface RenderInput {
   paths?: Record<string, string>
   /** Action id → field id → options: the select fields of the entity a Form running that action edits, so their Inputs are dropdowns. */
   formSelects?: Record<string, Record<string, string[]>>
+  /** File id → the money and percent fields its nodes show as text (`valueFormats`), so they read as the generated app writes them. */
+  formats?: Record<string, ValueFormats>
 }
 
 export interface PlanElement {
@@ -156,6 +160,20 @@ const textOf = (value: Value | undefined, scope: Scope): string | undefined => {
   if (value === undefined) return undefined
   const path = isObject(value) && typeof value.$bind === 'string' ? value.$bind : undefined
   return text(evaluate(value, scope), path)
+}
+
+/** A node's text as the generated app writes it: a money or percent field it shows formatted when it holds a number (`valueFormats`). */
+const shownText = (frame: Frame, node: ModelNode, value: Value | undefined): string | undefined => {
+  const formats = frame.formats?.[node.id]
+  if (!formats || !isObject(value)) return textOf(value, frame.scope)
+  const formatted = (path: string): string | undefined => {
+    const format = formats[path]
+    const bound = format ? resolvePath(frame.scope, path) : undefined
+    return format && typeof bound === 'number' ? formatValue(bound, format) : undefined
+  }
+  if (typeof value.$bind === 'string') return formatted(value.$bind) ?? textOf(value, frame.scope)
+  if (typeof value.$template === 'string') return templateParts(value.$template).map(part => part.path ? formatted(part.path) ?? text(resolvePath(frame.scope, part.path), part.path) : part.text).join('')
+  return textOf(value, frame.scope)
 }
 
 /** A static or evaluated string prop, undefined when missing. */
@@ -327,6 +345,8 @@ interface Frame {
   depth: number
   /** The options of the select fields the enclosing Form edits, by field id. */
   formSelects?: Record<string, string[]>
+  /** The formatted paths of the frame's file (`RenderInput.formats`). */
+  formats?: ValueFormats
 }
 
 interface Options {
@@ -476,10 +496,10 @@ const renderNode = (frame: Frame, original: ModelNode, options: Options = {}): P
     }
     case 'Heading': {
       const level = headingLevel(props.level ?? DEFAULT_HEADING_LEVEL) ?? DEFAULT_HEADING_LEVEL
-      return [base(frame, node, options, headingTag(level), styleOf(frame, node, { fallback: fallbackOf(node, options, HEADING_TOKENS[level]) }), { children: textChildren(textOf(props.text, frame.scope)) })]
+      return [base(frame, node, options, headingTag(level), styleOf(frame, node, { fallback: fallbackOf(node, options, HEADING_TOKENS[level]) }), { children: textChildren(shownText(frame, node, props.text)) })]
     }
     case 'Text':
-      return [base(frame, node, options, NODE_ELEMENTS.Text, styleOf(frame, node, { classes: [TEXT_CLASS], fallback: fallbackOf(node, options) }), { children: textChildren(textOf(props.text, frame.scope)) })]
+      return [base(frame, node, options, NODE_ELEMENTS.Text, styleOf(frame, node, { classes: [TEXT_CLASS], fallback: fallbackOf(node, options) }), { children: textChildren(shownText(frame, node, props.text)) })]
     case 'Image': {
       const src = stringOf(props.src, frame.scope)
       const safe = src !== undefined && src !== '' && isSafeUrl(src, 'src')
@@ -492,7 +512,7 @@ const renderNode = (frame: Frame, original: ModelNode, options: Options = {}): P
     case 'Link': {
       const icon = stringOf(props.icon, frame.scope)
       const look = styleOf(frame, node, { classes: [LINK_CLASS, ...(icon ? [LINK_ICON_CLASS] : [])], display: icon ? LINK_ICON_DISPLAY : '', fallback: fallbackOf(node, options) })
-      const content = node.children?.length ? renderChildren(frame, node, options) : textChildren(textOf(props.text, frame.scope))
+      const content = node.children?.length ? renderChildren(frame, node, options) : textChildren(shownText(frame, node, props.text))
       const children: PlanChild[] = icon ? [{ tag: 'UIcon', class: ICON_CLASS, attrs: { name: icon }, children: [], ...(options.copy ? { copy: true } : {}) }, ...content] : content
       return [base(frame, node, options, NODE_ELEMENTS.Link, look, { attrs: linkAttrs(frame, props), children })]
     }
@@ -659,7 +679,8 @@ const instance = (frame: Frame, node: ModelNode, options: Options): PlanElement[
     id: part => `${id}${INSTANCE_ID_SEPARATOR}${part.id}`,
     label: 'Instance',
     componentSlots,
-    depth: frame.depth + 1
+    depth: frame.depth + 1,
+    formats: frame.input.formats?.[component.id]
   }
   return renderNode(inner, component.root, {
     nodeId: id,
@@ -707,15 +728,15 @@ export function renderPlan(input: RenderInput): PlanElement[] {
       scope[property.name] = value === undefined ? (property.kind === 'boolean' ? false : property.kind === 'entity' && property.required ? MISSING : undefined) : value
     }
     const variant = input.variant?.id ? file.variants.find(entry => entry.id === input.variant!.id)?.name ?? 'default' : 'default'
-    const frame: Frame = { input, shell, scope, variant: input.shown?.[file.root.id] ?? variant, id: plain, componentSlots: new Map(), depth: 0 }
+    const frame: Frame = { input, shell, scope, variant: input.shown?.[file.root.id] ?? variant, id: plain, componentSlots: new Map(), depth: 0, formats: input.formats?.[file.id] }
     return renderNode(frame, file.root, { variantRoot: shell.interactive ? { key: file.root.id, component: file, variant, css: shell.css } : undefined })
   }
   if (isLayout(file)) {
     const slots = new Map(file.slots.map(slot => [slot.nodeId, { name: slot.name }]))
-    return renderNode({ input, shell: layoutShell(file), scope: layoutScope(file, {}, data), variant: 'default', id: plain, layoutSlots: slots, depth: 0 }, file.root)
+    return renderNode({ input, shell: layoutShell(file), scope: layoutScope(file, {}, data), variant: 'default', id: plain, layoutSlots: slots, depth: 0, formats: input.formats?.[file.id] }, file.root)
   }
   const page = file
-  const pageFrame: Frame = { input, shell: emptyShell(), scope: computedScope(page, data), variant: 'default', id: plain, depth: 0 }
+  const pageFrame: Frame = { input, shell: emptyShell(), scope: computedScope(page, data), variant: 'default', id: plain, depth: 0, formats: input.formats?.[page.id] }
   const layout = page.layout ? input.layouts.find(entry => entry.id === page.layout) : undefined
   if (!layout) return renderNode(pageFrame, page.root, { pageRoot: true })
   const fills = (page.root.children ?? []).filter(child => child.type === SLOT_FILL)
@@ -738,7 +759,8 @@ export function renderPlan(input: RenderInput): PlanElement[] {
     id: node => layoutNodeId(page.root.id, node.id),
     label: 'Layout',
     layoutSlots: slots,
-    depth: 0
+    depth: 0,
+    formats: input.formats?.[layout.id]
   }
   return renderNode(frame, layout.root)
 }

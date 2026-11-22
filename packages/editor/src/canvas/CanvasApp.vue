@@ -105,7 +105,7 @@ const file = computed<CanvasFile | null>(() => {
 const built = computed<PlanElement[]>(() => {
   const message = render.value
   if (!message || !file.value || message.view !== 'page') return []
-  return renderPlan({ file: file.value, components: message.components, layouts: message.layouts, data: message.data, ...(message.paths ? { paths: message.paths } : {}), ...(message.formSelects ? { formSelects: message.formSelects } : {}), variant: message.variant ?? null, shown: { ...shown, ...pointer }, listShown: { ...listShown } })
+  return renderPlan({ file: file.value, components: message.components, layouts: message.layouts, data: message.data, ...(message.paths ? { paths: message.paths } : {}), ...(message.formSelects ? { formSelects: message.formSelects } : {}), ...(message.formats ? { formats: message.formats } : {}), variant: message.variant ?? null, shown: { ...shown, ...pointer }, listShown: { ...listShown } })
 })
 
 /**

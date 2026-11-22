@@ -89,6 +89,16 @@ describe('the device frames', () => {
   })
 })
 
+describe('the render message', () => {
+  it('sends the money and percent fields the file\'s nodes show, so the canvas formats them (field types: formatting)', async () => {
+    const blog = world.model.modules.blog!
+    blog.entities.find(entity => entity.id === 'ent_post')!.fields.push({ id: 'fld_price', name: 'price', type: 'money', currency: 'EUR' })
+    blog.pages.find(entry => entry.id === 'pg_index')!.root.children!.push({ id: 'n_prices', type: 'List', props: { items: { $bind: 'posts' }, as: 'p' }, children: [{ id: 'n_price', type: 'Text', props: { text: { $bind: 'p.price' } } }] })
+    await open()
+    expect(sent('bildr:render').at(-1)!.formats).toEqual({ pg_index: { n_price: { 'p.price': { kind: 'money', currency: 'EUR' } } } })
+  })
+})
+
 describe('zoom and pan', () => {
   it('fits the frames in the stage until the user zooms or pans, and tells the frames and the floating bar the zoom', async () => {
     // Desktop and Mobile side by side: 1280 + 80 + 390 = 1750 px wide, 800 tall; the stage keeps 48 px + the 28 px bars around them.
