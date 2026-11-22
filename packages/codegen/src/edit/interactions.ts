@@ -326,19 +326,23 @@ const duplicate = (node: ModelNode, on: string, self?: number) => {
   if (index !== -1) fail('invalid', `${node.id} already has a ${on} interaction (index ${index}): change it with node_interaction_update`)
 }
 
+/** Adds `on` → `steps` to `node` of `tree`, checked as `node_interaction_add` checks them (a refusal throws, the draft may be part done). */
+export const addInteraction = (draft: Draft, tree: Tree, node: ModelNode, on: z.infer<typeof Event>, steps: Array<Record<string, unknown>>) => {
+  checkEvent(node, on)
+  duplicate(node, on)
+  const check: Check = { draft, tree, node, on, added: [] }
+  const stored = prepareSteps(check, steps)
+  const list = node.interactions ??= []
+  list.push({ on, do: stored as never })
+  checkPageNames(draft, tree)
+  return { index: list.length - 1, addedUses: check.added }
+}
+
 export const nodeInteractionAdd = defineEdit({
   input: z.object({ file: FileRef, nodeId: LocalIdSchema, on: Event, do: Steps }),
   apply: (draft, { file, nodeId, on, do: steps }) => {
     const tree = draft.tree(file)
-    const node = nodeOf(tree, nodeId)
-    checkEvent(node, on)
-    duplicate(node, on)
-    const check: Check = { draft, tree, node, on, added: [] }
-    const stored = prepareSteps(check, steps)
-    const list = node.interactions ??= []
-    list.push({ on, do: stored as never })
-    checkPageNames(draft, tree)
-    return { index: list.length - 1, addedUses: check.added }
+    return addInteraction(draft, tree, nodeOf(tree, nodeId), on, steps)
   }
 })
 

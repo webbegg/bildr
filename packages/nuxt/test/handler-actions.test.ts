@@ -96,6 +96,8 @@ const NAMES = [
   'state_create', 'state_update', 'state_rename', 'state_delete',
   'node_interaction_add', 'node_interaction_update', 'node_interaction_remove',
   'page_computed_set', 'page_computed_remove',
+  // A2UI spike: an agent's surface inserted as nodes.
+  'node_insert_a2ui',
   // Simple data P1: API data sources.
   'api_create', 'api_update', 'api_model_set', 'api_model_rename', 'api_model_delete',
   'api_query_set', 'api_query_rename', 'api_query_delete', 'api_action_set', 'api_action_rename', 'api_action_delete',
