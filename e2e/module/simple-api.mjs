@@ -144,7 +144,7 @@ await run('simple-api', async ({ page, browser }) => {
     const post = await until(() => bildr(FILE)?.models?.find(model => model.name === 'Post') && bildr(FILE).models.find(model => model.name === 'Post'))
     check(post && post.fields.map(field => `${field.name}:${field.type}`).join() === 'id:integer,title:text,body:text', `Use this answer makes the model Post (${JSON.stringify(post?.fields)})`)
     check(await until(async () => (await saysNow(page, '[data-op-result-model]')).includes('Post') && await holdsNow(page, '[data-op-result-items]') === 'items'), 'and fills in what the query answers: Post, a list at items')
-    check(await until(async () => (await saysNow(page, '[data-simple-op-blocked]')) === 'Models added. Save to keep the query.'), 'and the footer says the models were added and that Save keeps the query')
+    check(await until(async () => (await saysNow(page, '[data-simple-op-blocked]')) === 'Models added. Save to keep the query.'), 'and the header says the models were added and that Save keeps the query')
     check(bildr(FILE).queries.length === 0, 'the query itself is not written before Save')
     await calm()
     await page.locator('[data-simple-op-save]').click()

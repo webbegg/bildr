@@ -1,29 +1,25 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ApiSource } from '@bildr/codegen/edit'
-import DataDraftFooter from '../data/DataDraftFooter.vue'
 import DataStaleNotice from '../data/DataStaleNotice.vue'
-import SimpleApiList from './SimpleApiList.vue'
-import type { ItemKind } from './SimpleApiItemDialog.vue'
+import SimpleApiPaneBar from './SimpleApiPaneBar.vue'
 import { attempt } from '../../editor/dataArtifactActions.ts'
-import { apiQueryPages, usedInPagesWords } from '../../shared/apiPageUse.ts'
 import { settingsChangedOutside, settingsDirty, settingsInput, settingsOf, settingsProblems, settingsRebase } from '../../editor/simpleApiDraft.ts'
 import type { Runtime, SignIn } from '../../editor/simpleApiDraft.ts'
 import { useDraftForm } from '../../editor/useDraftForm.ts'
 import { useEditor } from '../../editor/useEditor.ts'
-import { RUNTIMES, SIGN_INS, actionSummary, baseUrlProblem, modelSummary, querySummary, secretVarAfterRename, secretVarOf } from '../../shared/simpleApi.ts'
+import { RUNTIMES, SIGN_INS, baseUrlProblem, secretVarAfterRename, secretVarOf } from '../../shared/simpleApi.ts'
 import { plainWords } from '../../shared/simpleData.ts'
 
 /**
- * What an API's panel shows when no query, action or model is open (simple data, S4, S5, S6): the API's settings, its name, its base URL,
- * where it runs and how it signs in, as one draft with one Save and one Discard (`useDraftForm`, as a store's form), and under them its three
- * lists, Queries, Actions and Models. Save is one `api_update` with what changed; what the module refuses is shown in the footer in the
+ * What an API's panel shows beside its tree when no query, action or model is open (simple data, S4, S5, S6; api panel P1): the API's
+ * settings, its name, its base URL, where it runs and how it signs in, as one draft with one Save and one Discard in the pane's header
+ * (`useDraftForm`, as a store's form). Save is one `api_update` with what changed; what the module refuses is shown under the header in the
  * section's words, and the edits stay. The base URL is checked as it is typed with the module's own rule. An API that signs in has a secret
  * key that is never typed here: the panel names the env var to set in `.env` and says whether it is set (`env_status`, names only).
  * Unsaved edits make the workspace ask before it moves away, and an API changed elsewhere says so and asks which version to keep.
  */
 const { source } = defineProps<{ source: ApiSource }>()
-const emit = defineEmits<{ open: [kind: ItemKind, name: string], create: [kind: ItemKind], rename: [kind: ItemKind, name: string], remove: [kind: ItemKind, name: string] }>()
 const editor = useEditor()
 
 const { draft, base, error, saving, dirty, stale, discard, keepMine } = useDraftForm<ApiSource, ReturnType<typeof settingsOf>>({
@@ -65,21 +61,33 @@ const secretSet = computed(() => !!secret.value && editor.env.some(entry => entr
 /** What the secret's variable becomes when the API is renamed and saved (`api_update` renames a variable bildr named), before Save says so. */
 const renamedSecret = computed(() => draft.value.signIn !== 'none' ? secretVarAfterRename(source, draft.value.name) : undefined)
 const note = computed(() => urlProblem.value ? 'Fix the base URL to save.' : problems.value[0] ?? '')
-
-/** Each query with where pages use it (the module's usage): pages that read it are what stops it from being deleted. */
-const queryRows = computed(() => source.queries.map((query) => {
-  const pages = apiQueryPages(editor.model, source.id, query.name)
-  return { name: query.name, note: querySummary(query), ...(pages.length ? { used: usedInPagesWords(pages) } : {}) }
-}))
 </script>
 
 <template>
   <div class="flex min-h-0 flex-1 flex-col">
+    <SimpleApiPaneBar
+      prefix="simple-api"
+      :error="error"
+      :note="note"
+      :dirty="dirty"
+      :saving="saving"
+      :disabled="!dirty || stale || !!note"
+      @discard="discard"
+      @save="save"
+    >
+      <UIcon
+        name="i-lucide-settings-2"
+        class="size-4 shrink-0 text-dimmed"
+      />
+      <h3 class="truncate text-[13px] font-[550] text-highlighted">
+        Settings
+      </h3>
+    </SimpleApiPaneBar>
     <div
       class="min-h-0 flex-1 overflow-y-auto"
       data-api-settings
     >
-      <div class="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
+      <div class="w-full max-w-3xl space-y-6 px-8 py-6">
         <DataStaleNotice
           v-if="stale"
           prefix="simple-api"
@@ -130,6 +138,7 @@ const queryRows = computed(() => source.queries.map((query) => {
             <EditorChoiceCards
               :model-value="draft.runtime"
               :items="RUNTIMES"
+              :columns="2"
               label="Where it runs"
               hook="data-api-runtime"
               @update:model-value="setRuntime($event as Runtime)"
@@ -213,50 +222,7 @@ const queryRows = computed(() => source.queries.map((query) => {
             Save to see the name of the variable that holds the secret key.
           </p>
         </section>
-
-        <SimpleApiList
-          kind="query"
-          title="Queries"
-          :rows="queryRows"
-          empty="No queries yet. A query reads data from the API, like the list of products."
-          @open="emit('open', 'query', $event)"
-          @create="emit('create', 'query')"
-          @rename="emit('rename', 'query', $event)"
-          @remove="emit('remove', 'query', $event)"
-        />
-        <SimpleApiList
-          kind="action"
-          title="Actions"
-          :rows="source.actions.map(action => ({ name: action.name, note: actionSummary(action) }))"
-          empty="No actions yet. An action changes data in the API, like adding a product."
-          @open="emit('open', 'action', $event)"
-          @create="emit('create', 'action')"
-          @rename="emit('rename', 'action', $event)"
-          @remove="emit('remove', 'action', $event)"
-        />
-        <SimpleApiList
-          kind="model"
-          title="Models"
-          :rows="source.models.map(model => ({ name: model.name, note: modelSummary(model) }))"
-          empty="No models yet. A model is the shape of what the API answers or takes, like a product with a title and a price."
-          @open="emit('open', 'model', $event)"
-          @create="emit('create', 'model')"
-          @rename="emit('rename', 'model', $event)"
-          @remove="emit('remove', 'model', $event)"
-        />
       </div>
     </div>
-
-    <DataDraftFooter
-      prefix="simple-api"
-      inner="mx-auto max-w-2xl px-6"
-      :error="error"
-      :note="note"
-      :dirty="dirty"
-      :saving="saving"
-      :disabled="!dirty || stale || !!note"
-      @discard="discard"
-      @save="save"
-    />
   </div>
 </template>

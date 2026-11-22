@@ -207,10 +207,61 @@ describe('an API\'s panel', () => {
     expect(qa('[data-api-section="queries"] [data-api-item]').map(row => row.getAttribute('data-api-item'))).toEqual(['query:products', 'query:productById'])
     expect(qa('[data-api-section="actions"] [data-api-item]').map(row => row.getAttribute('data-api-item'))).toEqual(['action:addProduct'])
     expect(qa('[data-api-section="models"] [data-api-item]').map(row => row.getAttribute('data-api-item'))).toEqual(['model:Product'])
-    expect(text(q('[data-api-item="query:productById"]'))).toContain('/products/:id')
+    expect(text(q('[data-api-item="query:productById"] [data-api-method]'))).toBe('GET')
+    expect(text(q('[data-api-item="action:addProduct"] [data-api-method]'))).toBe('POST')
+    expect(q('[data-api-item="query:productById"] [data-api-open]')?.getAttribute('title')).toBe('GET /products/:id')
     expect(q('[data-api-new="query"]')).not.toBeNull()
     expect(q('[data-api-new="action"]')).not.toBeNull()
     expect(q('[data-api-new="model"]')).not.toBeNull()
+  })
+
+  it('keeps its tree of settings, queries, actions and models beside an open editor, with the open one marked (api panel P1)', async () => {
+    shop()
+    await mounted()
+    const current = (selector: string) => q(selector)?.getAttribute('aria-current') ?? null
+    expect(q('[data-api-tree] [data-api-section="queries"]')).not.toBeNull()
+    expect(current('[data-api-settings-open]')).toBe('page')
+    await open('query:products')
+    expect(q('[data-api-editor="query:products"]')).not.toBeNull()
+    expect(q('[data-api-settings]')).toBeNull()
+    expect(current('[data-api-item="query:products"] [data-api-open]')).toBe('page')
+    expect(current('[data-api-settings-open]')).toBeNull()
+    await open('model:Product')
+    expect(q('[data-api-editor="model:Product"]')).not.toBeNull()
+    expect(current('[data-api-item="query:products"] [data-api-open]')).toBeNull()
+    await click(q('[data-api-settings-open]'))
+    expect(q('[data-api-editor]')).toBeNull()
+    expect(q('[data-api-settings]')).not.toBeNull()
+  })
+
+  it('marks a new item in the tree while its editor is open and it is not saved yet (api panel P1)', async () => {
+    shop()
+    await mounted()
+    await click(q('[data-api-new="query"]'))
+    await type('data-api-item-name', 'search items')
+    await click(q('[data-artifact-submit]'))
+    expect(text(q('[data-api-section="queries"] [data-api-pending]'))).toContain('searchItems')
+    expect(q('[data-api-item="query:searchItems"]')).toBeNull()
+  })
+
+  it('has Unsaved changes, Discard and Save in the header of the settings, a query and a model, with no footer (api panel P1)', async () => {
+    shop()
+    await mounted()
+    const inBar = (hook: string) => q(`[data-api-pane-bar] [${hook}]`)
+    expect(inBar('data-simple-api-save')).not.toBeNull()
+    expect(inBar('data-simple-api-discard')).not.toBeNull()
+    await type('data-api-baseurl', 'ftp://api.example.com')
+    expect(text(inBar('data-simple-api-unsaved'))).toBe('Unsaved changes')
+    expect(text(inBar('data-simple-api-blocked'))).toBe('Fix the base URL to save.')
+    await click(q('[data-simple-api-discard]'))
+    expect(q('[data-simple-api-footer]')).toBeNull()
+    await open('query:products')
+    expect(inBar('data-simple-op-save')).not.toBeNull()
+    expect(inBar('data-api-editor-rename')).not.toBeNull()
+    expect(q('[data-simple-op-footer]')).toBeNull()
+    await open('model:Product')
+    expect(inBar('data-simple-model-save')).not.toBeNull()
+    expect(q('[data-simple-model-footer]')).toBeNull()
   })
 
   it('saves only the settings that changed with api_update, and Discard puts the saved ones back', async () => {
@@ -253,7 +304,7 @@ describe('an API\'s panel', () => {
     expect(calls(actions, 'api_update')).toEqual([])
   })
 
-  it('shows what the module refuses in the footer, in plain words, and keeps the edits', async () => {
+  it('shows what the module refuses under the header, in plain words, and keeps the edits', async () => {
     shop()
     const refusal = 'An API that runs in the browser can\'t use a secret: the browser would see it. Run it on the server, or remove the auth'
     await mounted({}, { api_update: () => new Failure(422, 'invalid', refusal) })
@@ -733,7 +784,7 @@ describe('the model editor', () => {
     expect(await optionLabels(comboOf(row.querySelector('[data-model-field-model]')))).toEqual(['Maker'])
   })
 
-  it('shows what the module refuses (a cycle, a duplicate field) in the footer', async () => {
+  it('shows what the module refuses (a cycle, a duplicate field) under the header', async () => {
     shop()
     await mounted()
     await open('model:Product')
@@ -766,9 +817,9 @@ describe('the model editor', () => {
     await typeInto(q('[data-model-field-name]'), 'sku')
     await click(q('[data-simple-model-save]'))
     expect(calls(actions, 'api_model_set')).toEqual([{ datasource: ID, model: { name: 'OrderLine', fields: [{ name: 'sku', type: 'text' }] } }])
-    expect(q('[data-api-item="model:OrderLine"]')).toBeNull()
-    await click(q('[data-api-back]'))
-    expect(q('[data-api-item="model:OrderLine"]')).not.toBeNull()
+    // Saved: it is a row of the tree now, the open one (api panel P1).
+    expect(q('[data-api-section="models"] [data-api-pending]')).toBeNull()
+    expect(q('[data-api-item="model:OrderLine"] [data-api-open]')?.getAttribute('aria-current')).toBe('page')
   })
 })
 
@@ -1487,7 +1538,7 @@ describe('the body a pasted sample made', () => {
   })
 })
 
-describe('the footer after Use this answer', () => {
+describe('the header after Use this answer', () => {
   it('says the models were added and that Save keeps the query, and Discard says the models stay', async () => {
     shop()
     await mounted(LIST)
