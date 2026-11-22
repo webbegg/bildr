@@ -69,6 +69,18 @@ describe('node_insert_a2ui', () => {
     expect(result.warnings).toContainEqual({ componentId: 'go', message: 'Event "act_publish_post" is not an action of the page: left out' })
   })
 
+  it('inserts at index among the parent\'s children', () => {
+    const p = project()
+    const result = p.edit('node_insert_a2ui', { file: 'pg_post_detail', parentId: 'n_actions', index: 0, components: [{ id: 'root', component: 'Text', text: 'First' }] })
+    expect(findNode(p.json(DETAIL).root, 'n_actions')!.children.map((child: Json) => child.id)).toEqual([result.nodeId, 'n_publish', 'n_error'])
+  })
+
+  it('refuses an Instance as the parent: it holds only its slots', () => {
+    const p = project()
+    const outcome = p.refuse('node_insert_a2ui', { file: 'pg_index', parentId: 'n_card', components: [{ id: 'root', component: 'Text', text: 'x' }] }, 'invalid')
+    expect(outcome.message).toContain('An Instance holds only the content of its slots')
+  })
+
   it('refuses a surface a renderer would refuse', () => {
     const p = project()
     const outcome = p.refuse('node_insert_a2ui', { file: 'pg_post_detail', components: [{ id: 'main', component: 'Column', children: ['ghost'] }] }, 'invalid')
