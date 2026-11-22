@@ -1,6 +1,6 @@
 {
   "name": "@bildr/editor-core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "The format-independent core of the bildr visual editor: canvas protocol primitives, geometry, handles, spacing, scale, devices and frames. Pure TypeScript, used by @bildr/editor.",
   "license": "MIT",
