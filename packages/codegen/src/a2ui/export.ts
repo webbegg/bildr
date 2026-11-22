@@ -86,17 +86,21 @@ export const toA2ui = (root: ModelNode, options: ToA2uiOptions): ToA2uiResult =>
     return undefined
   }
 
-  /** The A2UI action of a node's click: a runAction step becomes an event named after the action. */
-  const clickAction = (node: ModelNode, handled: Set<number>): A2uiAction | undefined => {
+  /** The A2UI action of a node's click: a runAction step becomes an event named after the action, its argument the event context. */
+  const clickAction = (node: ModelNode, handled: Set<number>, scopes: string[]): A2uiAction | undefined => {
     const index = (node.interactions ?? []).findIndex(interaction => interaction.on === 'click')
     if (index < 0) return undefined
     const steps = node.interactions![index]!.do
     const run = steps.find(step => step.kind === 'runAction')
     if (!run || typeof run.action !== 'string') return undefined
     handled.add(index)
-    const rest = steps.filter(step => step !== run || run.args !== undefined)
+    // A form's values ({ $form: true }) have no A2UI counterpart; a named argument does.
+    const args = isExpr(run.args) && !('$form' in run.args) ? run.args : undefined
+    const context = args && Object.fromEntries(Object.entries(args).map(([key, value]) => [key, dynamic(value as Value, scopes, node.id, `args.${key}`)]))
+    const kept = context && Object.values(context).every(value => value !== undefined)
+    const rest = steps.filter(step => step !== run || (run.args !== undefined && !kept))
     if (rest.length) lose(node.id, 'interaction', `click: ${rest.map(step => step === run ? 'runAction args' : step.kind).join(', ')}`)
-    return { event: { name: run.action } }
+    return kept ? { event: { name: run.action, context } } : { event: { name: run.action } }
   }
 
   /** The id of one component holding `children`: the only child, or a Column wrapping them. */
@@ -191,7 +195,7 @@ export const toA2ui = (root: ModelNode, options: ToA2uiOptions): ToA2uiResult =>
         const href = take('href')
         component.action = typeof href === 'string'
           ? { functionCall: { '@call': 'openUrl', 'args': { url: href } } }
-          : clickAction(node, handled) ?? { event: { name: node.id } }
+          : clickAction(node, handled, scopes) ?? { event: { name: node.id } }
         break
       }
       case 'Link': {
