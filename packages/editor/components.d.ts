@@ -152,6 +152,7 @@ declare module 'vue' {
     EditorVariantBar: typeof import('./src/components/editor/canvas/EditorVariantBar.vue')['default']
     EditorVariantOverrides: typeof import('./src/components/editor/EditorVariantOverrides.vue')['default']
     ProblemsList: typeof import('./src/components/ProblemsList.vue')['default']
+    PrototypeSwitcher: typeof import('./src/components/PrototypeSwitcher.vue')['default']
     RawFileEditor: typeof import('./src/components/RawFileEditor.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']

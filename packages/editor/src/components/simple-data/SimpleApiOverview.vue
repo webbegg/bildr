@@ -22,7 +22,12 @@ import { plainWords } from '../../shared/simpleData.ts'
  * key that is never typed here: the panel names the env var to set in `.env` and says whether it is set (`env_status`, names only).
  * Unsaved edits make the workspace ask before it moves away, and an API changed elsewhere says so and asks which version to keep.
  */
-const { source } = defineProps<{ source: ApiSource }>()
+// PROTOTYPE (api-panel-layout): `section` shows one part only, for the sidebar variants; `wide` drops the centred column.
+export type OverviewSection = 'all' | 'settings' | 'general' | 'signin' | 'queries' | 'actions' | 'models'
+const { source, section = 'all', wide = false } = defineProps<{ source: ApiSource, section?: OverviewSection, wide?: boolean }>()
+const shows = (part: 'general' | 'signin' | 'queries' | 'actions' | 'models') => section === 'all' || section === part
+  || (section === 'settings' && (part === 'general' || part === 'signin'))
+const column = computed(() => wide ? 'w-full max-w-3xl px-8' : 'mx-auto w-full max-w-2xl px-6')
 const emit = defineEmits<{ open: [kind: ItemKind, name: string], create: [kind: ItemKind], rename: [kind: ItemKind, name: string], remove: [kind: ItemKind, name: string] }>()
 const editor = useEditor()
 
@@ -79,7 +84,18 @@ const queryRows = computed(() => source.queries.map((query) => {
       class="min-h-0 flex-1 overflow-y-auto"
       data-api-settings
     >
-      <div class="mx-auto w-full max-w-2xl space-y-6 px-6 py-6">
+      <div :class="[column, 'space-y-6 py-6']">
+        <header
+          v-if="wide && ['settings', 'general', 'signin'].includes(section)"
+          class="space-y-1"
+        >
+          <h3 class="text-[15px] font-[600] text-highlighted">
+            {{ { all: 'API', settings: 'Settings', general: 'General', signin: 'Sign-in', queries: 'Queries', actions: 'Actions', models: 'Models' }[section] }}
+          </h3>
+          <p class="text-[12px] text-muted">
+            {{ { all: '', settings: 'Where the API lives, where it runs and how it signs in.', general: 'Where the API lives and where its calls run.', signin: 'How your app proves who it is to the API.', queries: 'Queries read data from the API.', actions: 'Actions change data in the API.', models: 'The shapes the API answers with or takes.' }[section] }}
+          </p>
+        </header>
         <DataStaleNotice
           v-if="stale"
           prefix="simple-api"
@@ -89,8 +105,12 @@ const queryRows = computed(() => source.queries.map((query) => {
           @keep-mine="keepMine"
         />
 
-        <section class="space-y-4">
+        <section
+          v-show="shows('general') || shows('signin')"
+          class="space-y-4"
+        >
           <EditorFormRow
+            v-show="shows('general')"
             label="Name"
             stacked
           >
@@ -100,7 +120,7 @@ const queryRows = computed(() => source.queries.map((query) => {
               data-api-name
             />
           </EditorFormRow>
-          <div>
+          <div v-show="shows('general')">
             <EditorFormRow
               label="Base URL"
               help="The address every call starts with"
@@ -124,97 +144,105 @@ const queryRows = computed(() => source.queries.map((query) => {
             </p>
           </div>
           <EditorFormRow
+            v-show="shows('general')"
             label="Where it runs"
             stacked
           >
             <EditorChoiceCards
               :model-value="draft.runtime"
               :items="RUNTIMES"
+              :columns="wide ? 2 : 1"
               label="Where it runs"
               hook="data-api-runtime"
               @update:model-value="setRuntime($event as Runtime)"
             />
           </EditorFormRow>
-          <EditorFormRow
-            label="Sign-in"
-            stacked
-          >
-            <EditorChoiceCards
-              :model-value="draft.signIn"
-              :items="SIGN_INS"
-              label="Sign-in"
-              :disabled="draft.runtime === 'browser'"
-              hook="data-api-signin"
-              @update:model-value="draft.signIn = $event as SignIn"
-            />
-          </EditorFormRow>
-          <p
-            v-if="draft.runtime === 'browser'"
-            class="text-[12px] leading-4 text-muted"
-          >
-            An API that runs in the browser has no secret key, so it can't sign in. Run it on the server to use one.
-          </p>
-          <EditorFormRow
-            v-if="draft.signIn === 'header'"
-            label="Header name"
-            help="The header your API reads the key from"
-            stacked
-          >
-            <EditorInput
-              v-model="draft.header"
-              placeholder="X-Api-Key"
-              aria-label="Header name"
-              data-api-header
-            />
-          </EditorFormRow>
           <div
-            v-if="secret"
-            class="space-y-2 rounded-lg bg-white/4 px-3 py-2.5 text-[12px] leading-4 text-muted"
-            data-api-secret
+            v-show="shows('signin')"
+            class="space-y-4"
           >
-            <p class="flex items-center gap-2">
-              <UIcon
-                name="i-lucide-key-round"
-                class="size-4 shrink-0"
-              />
-              <span>Set the secret key in your <code>.env</code> file, never here. The variable is:</span>
-            </p>
-            <p class="flex items-center gap-2">
-              <code
-                class="min-w-0 truncate font-mono text-[11px] text-toned"
-                :title="secret"
-                data-api-secret-var
-              >{{ secret }}</code>
-              <span
-                class="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-[550]"
-                :class="secretSet ? 'bg-success/12 text-success' : 'bg-white/6 text-dimmed'"
-                data-api-secret-status
-              >{{ secretSet ? 'Set' : 'Not set' }}</span>
-              <EditorButton
-                variant="ghost"
-                size="xs"
-                icon="i-lucide-refresh-cw"
-                label="Check again"
-                data-api-secret-refresh
-                @click="editor.reloadEnv()"
-              />
-            </p>
-            <p
-              v-if="renamedSecret"
-              data-api-secret-rename
+            <EditorFormRow
+              label="Sign-in"
+              stacked
             >
-              The secret's variable becomes <code class="font-mono text-[11px] text-toned">{{ renamedSecret }}</code> when you save. Set it in your <code>.env</code> file under that name.
+              <EditorChoiceCards
+                :model-value="draft.signIn"
+                :items="SIGN_INS"
+                label="Sign-in"
+                :disabled="draft.runtime === 'browser'"
+                hook="data-api-signin"
+                @update:model-value="draft.signIn = $event as SignIn"
+              />
+            </EditorFormRow>
+            <p
+              v-if="draft.runtime === 'browser'"
+              class="text-[12px] leading-4 text-muted"
+            >
+              An API that runs in the browser has no secret key, so it can't sign in. Run it on the server to use one.
+            </p>
+            <EditorFormRow
+              v-if="draft.signIn === 'header'"
+              label="Header name"
+              help="The header your API reads the key from"
+              stacked
+            >
+              <EditorInput
+                v-model="draft.header"
+                placeholder="X-Api-Key"
+                aria-label="Header name"
+                data-api-header
+              />
+            </EditorFormRow>
+            <div
+              v-if="secret"
+              class="space-y-2 rounded-lg bg-white/4 px-3 py-2.5 text-[12px] leading-4 text-muted"
+              data-api-secret
+            >
+              <p class="flex items-center gap-2">
+                <UIcon
+                  name="i-lucide-key-round"
+                  class="size-4 shrink-0"
+                />
+                <span>Set the secret key in your <code>.env</code> file, never here. The variable is:</span>
+              </p>
+              <p class="flex items-center gap-2">
+                <code
+                  class="min-w-0 truncate font-mono text-[11px] text-toned"
+                  :title="secret"
+                  data-api-secret-var
+                >{{ secret }}</code>
+                <span
+                  class="shrink-0 rounded-md px-1.5 py-0.5 text-[11px] font-[550]"
+                  :class="secretSet ? 'bg-success/12 text-success' : 'bg-white/6 text-dimmed'"
+                  data-api-secret-status
+                >{{ secretSet ? 'Set' : 'Not set' }}</span>
+                <EditorButton
+                  variant="ghost"
+                  size="xs"
+                  icon="i-lucide-refresh-cw"
+                  label="Check again"
+                  data-api-secret-refresh
+                  @click="editor.reloadEnv()"
+                />
+              </p>
+              <p
+                v-if="renamedSecret"
+                data-api-secret-rename
+              >
+                The secret's variable becomes <code class="font-mono text-[11px] text-toned">{{ renamedSecret }}</code> when you save. Set it in your <code>.env</code> file under that name.
+              </p>
+            </div>
+            <p
+              v-else-if="draft.signIn !== 'none'"
+              class="text-[12px] leading-4 text-muted"
+            >
+              Save to see the name of the variable that holds the secret key.
             </p>
           </div>
-          <p
-            v-else-if="draft.signIn !== 'none'"
-            class="text-[12px] leading-4 text-muted"
-          >
-            Save to see the name of the variable that holds the secret key.
-          </p>
         </section>
 
         <SimpleApiList
+          v-show="shows('queries')"
           kind="query"
           title="Queries"
           :rows="queryRows"
@@ -225,6 +253,7 @@ const queryRows = computed(() => source.queries.map((query) => {
           @remove="emit('remove', 'query', $event)"
         />
         <SimpleApiList
+          v-show="shows('actions')"
           kind="action"
           title="Actions"
           :rows="source.actions.map(action => ({ name: action.name, note: actionSummary(action) }))"
@@ -235,6 +264,7 @@ const queryRows = computed(() => source.queries.map((query) => {
           @remove="emit('remove', 'action', $event)"
         />
         <SimpleApiList
+          v-show="shows('models')"
           kind="model"
           title="Models"
           :rows="source.models.map(model => ({ name: model.name, note: modelSummary(model) }))"
@@ -248,8 +278,9 @@ const queryRows = computed(() => source.queries.map((query) => {
     </div>
 
     <DataDraftFooter
+      v-show="dirty || shows('general') || shows('signin')"
       prefix="simple-api"
-      inner="mx-auto max-w-2xl px-6"
+      :inner="wide ? 'max-w-3xl px-8' : 'mx-auto max-w-2xl px-6'"
       :error="error"
       :note="note"
       :dirty="dirty"
