@@ -257,7 +257,7 @@ const COLUMNS = 'grid-cols-[minmax(0,1fr)_9.5rem_3rem_3.5rem_4rem_minmax(0,1fr)_
               <span class="shrink-0 text-[11px] text-dimmed">Options</span>
               <EditorInput
                 v-model="field.options"
-                placeholder="Separated by commas, e.g. draft, live, archived"
+                placeholder="Separated by commas, e.g. draft, live, &quot;on hold, waiting&quot;"
                 :aria-label="`Options of ${label(field)}`"
                 class="max-w-md"
                 data-model-field-options
