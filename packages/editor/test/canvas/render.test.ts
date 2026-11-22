@@ -161,4 +161,19 @@ describe('money and percent text (field types: formatting)', () => {
     expect(rows.map(p => String(evaluate(expressionOf('p.price'), { p })))).toEqual(texts('n_price'))
     expect(rows.map(p => `Off: ${String(evaluate(expressionOf('p.share'), { p }))}`)).toEqual(texts('n_share'))
   })
+
+  it('formats a component instance\'s text with the component\'s formats, not the page\'s', () => {
+    const changed = loadModel(blogModelFiles())
+    if (!changed.ok) throw new Error('fixture')
+    const model = changed.model
+    model.modules.blog!.entities.find(entity => entity.id === 'ent_post')!.fields.push({ id: 'fld_price', name: 'price', type: 'money', currency: 'EUR' })
+    const card = model.modules.blog!.components.find(component => component.id === 'cmp_post_card')!
+    card.root.children!.push({ id: 'n_card_price', type: 'Text', props: { text: { $bind: 'post.price' } } })
+    const index = model.modules.blog!.pages.find(entry => entry.name === 'index')!
+    const data = { preferences: { showDrafts: false }, featured: [{ id: 'a', title: 'A', slug: 'a', price: 9.99 }], quotes: [] }
+    const priceOf = (formats: RenderInput['formats']) => textOf(byNode(renderPlan({ file: index, components: model.modules.blog!.components, layouts: fixture.layouts, data, formats }), 'n_card/n_card_price')[0]!)
+    expect(priceOf({ cmp_post_card: valueFormats(model, 'cmp_post_card') })).toBe('€9.99')
+    // The same map under the page's id formats nothing: node ids are per file.
+    expect(priceOf({ [index.id]: valueFormats(model, 'cmp_post_card') })).toBe('9.99')
+  })
 })
