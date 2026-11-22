@@ -230,6 +230,9 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
     session.edit('entity_field_add', { entity: 'ent_deal', name: 'size', type: 'select', options: ['s', 'm'], nullable: true })
     session.edit('entity_field_add', { entity: 'ent_deal', name: 'note', type: 'text' })
     session.fixtureRow('.bildr/modules/blog/fixtures/deal.json', 'ent_deal', { id: '6f1c2d3e-4b5a-4c6d-8e7f-000000000009', mail: 'ana@example.com', site: 'https://ana.example.com', phone: '+34 600 123 456', price: 9.99, stage: 'won', size: null })
+    // A form of the create action: a select's Input is a dropdown of its options (USelect), beside a text type's and money's.
+    session.edit('node_insert', { file: 'pg_index', parentId: 'n_page', type: 'Form', props: { action: 'act_create_deal', fields: ['fld_stage', 'fld_mail', 'fld_price'] } })
+    for (const field of ['fld_stage', 'fld_mail', 'fld_price']) session.edit('node_insert', { file: 'pg_index', parentId: 'n_form_1', type: 'Input', props: { field, ...(field === 'fld_stage' ? { placeholder: 'Pick a stage' } : {}) } })
     session.edit('action_create', { entity: 'ent_deal', template: 'update', name: 'editDeal' })
     session.edit('action_create', { entity: 'ent_deal', template: 'delete', name: 'removeDeal' })
     session.edit('query_create', { entity: 'ent_deal', result: 'many', name: 'openDeals' })

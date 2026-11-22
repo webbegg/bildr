@@ -25,7 +25,9 @@ export const NODE_ELEMENTS = {
   /** The labelled field wrapping an Input's control. */
   Input: 'UFormField',
   InputControl: 'UInput',
-  InputMultiline: 'UTextarea'
+  InputMultiline: 'UTextarea',
+  /** The control of an Input whose field is a select: a dropdown of its options. */
+  InputSelect: 'USelect'
 } as const
 
 /** The tags a Page, Container, Row or List may render as (`props.tag`); the first is the default. */

@@ -7,6 +7,7 @@ import UFormField from '@nuxt/ui/components/FormField.vue'
 import UIcon from '@nuxt/ui/components/Icon.vue'
 import UInput from '@nuxt/ui/components/Input.vue'
 import ULink from '@nuxt/ui/components/Link.vue'
+import USelect from '@nuxt/ui/components/Select.vue'
 import UTextarea from '@nuxt/ui/components/Textarea.vue'
 import type { PlanChild, PlanElement } from './render.ts'
 
@@ -18,7 +19,7 @@ import type { PlanChild, PlanElement } from './render.ts'
  * repetitions, `data-placeholder` on stand-ins for missing data). Gestures
  * are the canvas runtime's (`CanvasApp.vue`), delegated from the document.
  */
-const COMPONENTS: Record<string, Component> = { UButton, UCheckbox, UFormField, UIcon, UInput, ULink, UTextarea }
+const COMPONENTS: Record<string, Component> = { UButton, UCheckbox, UFormField, UIcon, UInput, ULink, USelect, UTextarea }
 
 const renderChild = (child: PlanChild): VNode | string => typeof child === 'string' ? child : h(ModelNode, { element: child, key: undefined })
 

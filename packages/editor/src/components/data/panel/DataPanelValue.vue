@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { cellEditText, cellValue } from '../../../shared/dataGrid.ts'
+import { NO_CHOICE, cellEditText, cellValue, choiceValue, selectChoices } from '../../../shared/dataGrid.ts'
 import { cellText } from '../../../shared/dataTable.ts'
 import type { DataField } from '../../../shared/dataModel.ts'
 import type { CellValue } from '../../../editor/sampleRows.ts'
@@ -42,6 +42,15 @@ async function put(value: CellValue) {
       :disabled="saving"
       :aria-label="field.label"
       @update:model-value="put($event)"
+    />
+    <EditorSelect
+      v-else-if="field.type === 'select'"
+      :model-value="typeof modelValue === 'string' && modelValue !== '' ? modelValue : NO_CHOICE"
+      :items="selectChoices(field)"
+      :disabled="saving"
+      :aria-label="field.label"
+      data-field-select
+      @update:model-value="put(choiceValue($event))"
     />
     <EditorInput
       v-else
