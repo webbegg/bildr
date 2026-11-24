@@ -116,6 +116,13 @@ describe('remove, duplicate, wrap, group', () => {
     expect(actions.named('node_wrap')).toHaveLength(2)
   })
 
+  it('converts the legacy layouts at and under a node to Containers in one action, and says how many (layout-containers T7)', async () => {
+    const { editor, actions, toasts } = await boot({ node_convert: ok({ converted: ['n_head', 'n_about'] }) }, 'pg_index')
+    await editor.convertLayouts('n_page')
+    expect(inputs(actions, 'node_convert')).toEqual([{ file: 'pg_index', nodeId: 'n_page', subtree: true }])
+    expect(toasts.map(toast => toast.title)).toEqual(['Converted 2 layouts to Container'])
+  })
+
   it('grouping a selection that is not siblings notifies and writes nothing', async () => {
     const { editor, actions, toasts } = await boot({ node_wrap: ok({ nodeId: 'n_wrap' }) }, 'pg_index')
     editor.selectedIds = ['n_h1', 'n_about']

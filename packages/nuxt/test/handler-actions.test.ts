@@ -70,7 +70,7 @@ const page = () => JSON.parse(readFileSync(join(dir, pagePath), 'utf8')) as Reco
 const NAMES = [
   'code_view', 'health_get', 'health_run', 'migration_confirm', 'migration_pending_get', 'model_file_delete', 'model_file_put', 'model_get',
   // P3a: the visual editing operations.
-  'node_insert', 'node_update_props', 'node_update_style', 'node_rename', 'node_set_locked', 'node_move', 'node_move_many', 'node_delete', 'node_duplicate', 'node_wrap',
+  'node_insert', 'node_update_props', 'node_update_style', 'node_rename', 'node_set_locked', 'node_move', 'node_move_many', 'node_delete', 'node_duplicate', 'node_wrap', 'node_convert',
   'page_create', 'page_update', 'page_delete',
   'component_create', 'component_rename', 'component_duplicate', 'component_delete', 'component_property_add', 'component_property_update', 'component_property_remove',
   'component_variant_add', 'component_variant_rename', 'component_variant_delete', 'component_variant_set_override', 'component_state_add',
