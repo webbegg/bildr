@@ -5,6 +5,7 @@ import { LocalIdSchema } from '../model/schemas.ts'
 import type { ModelNode, PageFile } from '../model/schemas.ts'
 import { defineEdit, EditError, fail } from './core.ts'
 import type { Draft, Tree } from './core.ts'
+import { normalizeLayout } from './convert.ts'
 import { contains } from './instances.ts'
 import { addInteraction } from './interactions.ts'
 import { FileRef, nodeInsert } from './nodes.ts'
@@ -30,6 +31,8 @@ const split = (node: ModelNode, path: number[] = [], out: Array<{ path: number[]
   const spec: NodeSpec = { ...rest, ...(children?.length ? { children: children.map((child, index) => split(child, [...path, index], out).spec) } : {}) }
   return { spec, interactions: out }
 }
+
+const normalizeTree = (node: ModelNode): ModelNode => ({ ...normalizeLayout(node), ...(node.children ? { children: node.children.map(normalizeTree) } : {}) })
 
 const at = (root: ModelNode, path: number[]): ModelNode => path.reduce((node, index) => node.children![index]!, root)
 
@@ -67,7 +70,8 @@ export const nodeInsertA2ui = defineEdit({
       const name = byId.get(warning.componentId)
       return name && cyclic.has(name) ? { ...warning, message: `${name} cannot contain itself: left out` } : warning
     })
-    const { spec, interactions } = split(root)
+    // New nodes are Containers (layout-containers): fromA2ui's Row, Column and Card go in converted.
+    const { spec, interactions } = split(normalizeTree(root))
     const { nodeId } = nodeInsert.apply(draft, { file, parentId, index, exact: true, ...spec }) as { nodeId: string }
     const inserted = findNode(tree.root, nodeId)!
     const left: A2uiImportWarning[] = []

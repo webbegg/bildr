@@ -29,6 +29,7 @@ const DESCRIPTIONS: Record<EditName, string> = {
   node_delete: `Delete nodes with their children (never the root). In a component or layout, the variant overrides and property bindings on them go too. ${TREE}`,
   node_duplicate: `Duplicate nodes right after themselves, with fresh ids. Returns nodeId and nodeIds (the copies). ${TREE}`,
   node_wrap: `Wrap sibling nodes in a new container where the first was: a Container by default, a preset (Stack, Row, Column or Grid: a Container with the preset's style tokens), or a Card (type). Returns the container nodeId. ${TREE}`,
+  node_convert: `Convert a legacy layout node (Row, Column, Grid or Card), or with subtree: true every one at and under nodeId, into the Container that renders the same: its type's layout becomes explicit style tokens (direction, flexWrap, display; a Card's surface as p, rounded, bg, border, borderColor, overflow and the layer name Card). Ids, children and a component's variant overrides of it are kept. Returns converted (the node ids). ${TREE}`,
   page_create: 'Create a page file in a module (default: the project\'s defaultModule): name is kebab-cased into its route name, the id is pg_<name>, path defaults to /<name>, layout is optional. The page starts with an empty Page root. Returns pageId, filePath and nodeId (the root).',
   page_update: 'Rename (kebab-case) or re-path a page; its file keeps its path.',
   page_delete: 'Delete a page file. Refused while links (to: { page }) or navigate steps target it, and for the last page.',

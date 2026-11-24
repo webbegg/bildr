@@ -484,6 +484,13 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     if (typeof result?.nodeId === 'string') selectedId.value = result.nodeId
   }
 
+  /** Converts the legacy layouts (Row, Column, Grid, Card) at and under a node into Containers (one undo step). */
+  const convertLayouts = async (id: string) => {
+    const result = await runOnPage('node_convert', { nodeId: id, subtree: true })
+    const count = Array.isArray(result?.converted) ? result.converted.length : 0
+    if (count) notify({ title: `Converted ${count} layout${count === 1 ? '' : 's'} to Container`, icon: 'i-lucide-check' })
+  }
+
   /** The selection without the root, if it is siblings (one parent); else a notice and null. */
   const siblingSelection = (what: string): string[] | null => {
     const tree = root()
@@ -1087,7 +1094,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     loading: design.loading, error: design.error, errorCode: design.errorCode, errorField: design.errorField, dismissError: design.dismissError, regenerated: design.regenerated, problems: design.problems, files: design.files, components: design.components, layouts: design.layouts, catalog: design.catalog, dragging: design.dragging, dragCancels: design.dragCancels, canvasMode: design.mode, pagePaths: design.pagePaths, formSelects: design.formSelects, formats: design.formats,
     isContainer: design.isContainer, scopeOf: design.scopeOf, pendingInsert: design.pendingInsert, confirmInsert: design.confirmInsert, pendingForm: design.pendingForm, confirmForm: design.confirmForm, formActions: design.formActions, refreshDataSoon: design.refreshDataSoon, stateValues: design.stateValues, setStateValue: design.setStateValue, resetStateValues: design.resetStateValues, select, selectNode: design.selectNode, start, dispose: design.dispose,
     // Operations.
-    notify, reload, reloadEnv, run, runOnPage, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, layoutFromSelection, createLayoutFromSelection, setPageLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, addState, addInteraction, updateInteraction, removeInteraction, setTransition, previewInteractions, renameVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, group, autoLayout, moveBy, moveSelection,
+    notify, reload, reloadEnv, run, runOnPage, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, layoutFromSelection, createLayoutFromSelection, setPageLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, addState, addInteraction, updateInteraction, removeInteraction, setTransition, previewInteractions, renameVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, convertLayouts, group, autoLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, updateStyles, previewTheme, updateTheme, undo, redo, shortcut
   })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PALETTE } from '../../../codegen/src/edit/palette.ts'
 import { layerName } from '../../src/shared/layers.ts'
-import { insertId, insertSpec, layoutIcon } from '../../src/shared/presets.ts'
+import { insertId, insertSpec, layoutIcon, legacyLayouts } from '../../src/shared/presets.ts'
 
 // layout-containers T5: the editor inserts and wraps with the layout presets, and names a Container by its layout.
 
@@ -23,6 +23,14 @@ describe('insertSpec', () => {
     const ids = PALETTE.map(insertId)
     expect(ids.slice(0, 5)).toEqual(['Stack', 'Row', 'Column', 'Grid', 'Card'])
     expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('legacyLayouts', () => {
+  it('lists the Rows, Columns, Grids and Cards at and under a node, which Convert to Container converts', () => {
+    const tree = { id: 'r', type: 'Row', children: [{ id: 'c', type: 'Container', children: [{ id: 'g', type: 'Grid' }] }, { id: 'k', type: 'Card' }, { id: 't', type: 'Text' }] }
+    expect(legacyLayouts(tree).map(node => node.id)).toEqual(['r', 'g', 'k'])
+    expect(legacyLayouts({ id: 'c', type: 'Container' })).toEqual([])
   })
 })
 

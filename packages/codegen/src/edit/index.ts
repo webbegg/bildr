@@ -3,6 +3,7 @@ import { runEdit } from './core.ts'
 import type { EditDef, EditOutcome } from './core.ts'
 import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeRename, nodeSetLocked, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './nodes.ts'
 import { pageCreate, pageDelete, pageUpdate } from './pages.ts'
+import { nodeConvert } from './convert.ts'
 import {
   componentCreate, componentDelete, componentDuplicate, componentInteractionAdd, componentInteractionRemove, componentInteractionUpdate, componentPropertyAdd,
   componentPropertyRemove, componentPropertyUpdate, componentRename, componentStateAdd, componentTransitionSet, componentVariantAdd, componentVariantDelete,
@@ -49,6 +50,7 @@ export const EDITS = {
   node_delete: nodeDelete,
   node_duplicate: nodeDuplicate,
   node_wrap: nodeWrap,
+  node_convert: nodeConvert,
   page_create: pageCreate,
   page_update: pageUpdate,
   page_delete: pageDelete,

@@ -22,6 +22,14 @@ export const containerName = (node: Pick<ModelNode, 'type' | 'props' | 'style'>)
 }
 
 const LAYOUT_TYPES = ['Container', 'Row', 'Column', 'Grid']
+const LEGACY_TYPES = ['Row', 'Column', 'Grid', 'Card']
+
+/** The Rows, Columns, Grids and Cards at and under `node` (what `node_convert` with subtree converts), in document order. */
+export const legacyLayouts = (node: ModelNode, out: ModelNode[] = []): ModelNode[] => {
+  if (LEGACY_TYPES.includes(node.type)) out.push(node)
+  for (const child of node.children ?? []) legacyLayouts(child, out)
+  return out
+}
 
 /** The layers icon of a layout container: its direction's arrow, or a grid; undefined for other types. */
 export const layoutIcon = (node: Pick<ModelNode, 'type' | 'props' | 'style'>): string | undefined => {

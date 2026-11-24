@@ -10,6 +10,7 @@ import { useEditor } from '../../editor/useEditor.ts'
 import { filterMenuItems } from '../../shared/commands.ts'
 import { replaceChoiceHint, replaceChoices } from '../../shared/componentEditor.ts'
 import { naturalDisplay, visibilityAt, visibilityToggle } from '../../shared/layers.ts'
+import { legacyLayouts } from '../../shared/presets.ts'
 
 const INSTANCE_TYPE = 'Instance'
 
@@ -112,6 +113,7 @@ const items = computed<ContextMenuItem[][]>(() => {
   const sameType = sameTypeNodes(root, id)
   const sameComponent = sameComponentNodes(root, id)
   const hasClip = !!editor.clipboard
+  const legacy = node ? legacyLayouts(node).length : 0
   return [
     [
       { label: 'Add to agent', icon: 'i-lucide-sparkles', disabled: !onPage, onSelect: () => editor.addToAgent() }
@@ -148,7 +150,9 @@ const items = computed<ContextMenuItem[][]>(() => {
         disabled: cannotWrap,
         children: (['Row', 'Column', 'Grid', 'Card'] as const).map(kind => ({ label: kind, onSelect: () => editor.wrap(wrapIds, kind) }))
       },
-      { label: 'Add auto layout', icon: 'i-lucide-layout-panel-left', kbds: ['shift', 'a'], disabled: cannotWrap, onSelect: () => editor.autoLayout() }
+      { label: 'Add auto layout', icon: 'i-lucide-layout-panel-left', kbds: ['shift', 'a'], disabled: cannotWrap, onSelect: () => editor.autoLayout() },
+      // Rows, Columns, Grids and Cards made before every layout was a Container: here and inside.
+      { label: 'Convert to Container', icon: 'i-lucide-refresh-cw', description: legacy ? `${legacy} legacy layout${legacy === 1 ? '' : 's'}` : undefined, disabled: !legacy, onSelect: () => editor.convertLayouts(id) }
     ],
     [
       {

@@ -18,8 +18,9 @@ describe('node_insert_a2ui', () => {
     const p = project()
     const result = p.edit('node_insert_a2ui', { file: 'pg_post_detail', parentId: 'n_actions', components: surface(publish) })
     const inserted = findNode(p.json(DETAIL).root, result.nodeId)!
-    expect(inserted).toMatchObject({ type: 'Column', children: [{ type: 'Heading', props: { level: 2, text: 'Ready?' } }, { type: 'Button', props: { text: 'Publish now' } }] })
-    expect(inserted.id).toMatch(/^n_column_\d+$/)
+    // A2UI's Column goes in as a Container (layout-containers T7).
+    expect(inserted).toMatchObject({ type: 'Container', children: [{ type: 'Heading', props: { level: 2, text: 'Ready?' } }, { type: 'Button', props: { text: 'Publish now' } }] })
+    expect(inserted.id).toMatch(/^n_container_\d+$/)
     expect(inserted.children[1].interactions).toEqual([{ on: 'click', do: [{ kind: 'runAction', action: 'act_publish_post', args: { id: { $bind: 'post.id' } } }] }])
     expect(result.warnings).toEqual([{ componentId: 'volume', message: 'Slider has no bildr node type: left out' }])
     p.model()
