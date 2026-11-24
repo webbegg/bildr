@@ -57,6 +57,8 @@ describe('node_insert with a preset', () => {
     expect(p.refuse('node_insert', { file: 'pg_index', preset: 'Masonry' }, 'invalid').message).toBe('Unknown preset "Masonry": one of Stack, Row, Column, Grid, Card')
     expect(p.refuse('node_insert', { file: 'pg_index', preset: 'Row', type: 'Text' }, 'invalid').message).toBe('The Row preset is a Container, not a Text')
     expect(applyEdit(fixtureModelFiles(), 'node_insert', { file: 'pg_index' })).toMatchObject({ ok: false, code: 'invalid_input' })
+    // exact keeps only the given tokens, and a preset is its tokens (verify B4).
+    expect(p.refuse('node_insert', { file: 'pg_index', preset: 'Row', exact: true }, 'invalid').message).toBe('A preset is its tokens: with exact, give type Container and the tokens')
   })
 })
 

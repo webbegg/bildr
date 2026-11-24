@@ -30,7 +30,8 @@ describe('layout containers on the canvas', () => {
 
 describe('legacy layout containers on the canvas (layout-containers S4)', () => {
   // Taken before the one-container model; the only deliberate change since: a child of a Container or
-  // Card laid out as a row, or of a Column set to a grid, no longer gets the vertical stack's `self-stretch` (T2).
+  // Card laid out as a row (or of a Container laid out as a grid or a block) no longer gets the vertical
+  // stack's `self-stretch` (T2, log L4). Every other type keeps its type's rule, a Column set to a grid too.
   it('render the same classes as before the one-container model', () => {
     const plan = planOf([LEGACY_LAYOUT_TREE])
     expect(outline(plan).join('\n')).toMatchInlineSnapshot(`
@@ -56,7 +57,7 @@ describe('legacy layout containers on the canvas (layout-containers S4)', () => 
           <div n_stack_row> flex gap-2 flex-row self-stretch
             <div n_stack_row_box> flex flex-col
           <div n_stack_grid> flex-col self-stretch grid-cols-2 grid
-            <div n_stack_grid_box> flex flex-col"
+            <div n_stack_grid_box> flex flex-col self-stretch"
     `)
   })
 })

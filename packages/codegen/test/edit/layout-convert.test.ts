@@ -28,7 +28,21 @@ describe('normalizeLayout', () => {
   })
 
   it('refuses a Grid hidden at its base, which no token could keep a grid where it shows again', () => {
-    expect(() => convert({ id: 'a', type: 'Grid', style: { display: 'hidden' } })).toThrow('Show this Grid on its base breakpoint before converting it: it sets display "hidden" there')
+    expect(() => convert({ id: 'a', type: 'Grid', style: { display: 'hidden' } })).toThrow('Show this Grid on its base breakpoint before converting it: it is hidden there (display: hidden)')
+    expect(convert({ id: 'a', type: 'Grid', style: { display: 'flex' } }).style).toEqual({ display: 'flex', direction: 'row' })
+  })
+
+  it('keeps a Grid that turns flex at a breakpoint a row there (verify B2)', () => {
+    expect(convert({ id: 'a', type: 'Grid', style: { 'cols': '2', 'md:display': 'flex' } }).style).toEqual({ 'cols': '2', 'md:display': 'flex', 'display': 'grid', 'direction': 'row' })
+  })
+
+  it('keeps the children stretch where the converted node stacks them differently than its type did (verify B1)', () => {
+    // A Column set to a grid stretched its block children; the Container grid does not, so they get it as a token.
+    const grid = convert({ id: 'a', type: 'Column', style: { display: 'grid', items: 'start' }, children: [{ id: 'b', type: 'Container' }, { id: 'c', type: 'Button' }, { id: 'd', type: 'Container', style: { self: 'end' } }] })
+    expect(grid.children).toEqual([{ id: 'b', type: 'Container', style: { self: 'stretch' } }, { id: 'c', type: 'Button' }, { id: 'd', type: 'Container', style: { self: 'end' } }])
+    // A Row set to a column did not stretch them; the Container column would, so they keep `auto`.
+    const column = convert({ id: 'a', type: 'Row', style: { direction: 'col' }, children: [{ id: 'b', type: 'Container' }] })
+    expect(column.children).toEqual([{ id: 'b', type: 'Container', style: { self: 'auto' } }])
   })
 
   it('turns a Card into a Container named Card with its surface as tokens; its own tokens win', () => {
@@ -57,7 +71,10 @@ const classSets = (tree: ModelNode): string[][] => {
   const page = generateUi(loaded.model).find(file => file.path.endsWith('pages/index.vue'))!.content
   return [...page.matchAll(/ class="([^"]*)"/g)].map(match => match[1]!.split(' ').sort())
 }
-const deep = (node: ModelNode): ModelNode => ({ ...normalizeLayout(node), ...(node.children ? { children: node.children.map(deep) } : {}) })
+const deep = (node: ModelNode): ModelNode => {
+  const converted = normalizeLayout(node)
+  return converted.children ? { ...converted, children: converted.children.map(deep) } : converted
+}
 
 describe('converted layouts render as before', () => {
   it('give every element the classes it had (a converted Grid adds a flex-col, which a grid ignores)', () => {
@@ -105,6 +122,43 @@ describe('node_convert', () => {
     expect(findNode(p.json(CARD).root, nodeId)).toMatchObject({ type: 'Container', style: { direction: 'row', flexWrap: 'wrap' } })
     const override = (p.json(CARD).variants as Json[])[0]!.overrides[nodeId]
     expect(override).toEqual({ style: { flexWrap: 'nowrap' } })
+  })
+})
+
+describe('node_convert and variant overrides (verify B3)', () => {
+  /** The project with a legacy node in the post card and a variant override of it. */
+  const withOverride = (spec: Json, override: Json) => {
+    const p = project()
+    const { nodeId } = p.edit('node_insert', { file: 'cmp_post_card', parentId: (p.json(CARD).root as Json).id, ...spec })
+    const card = p.json(CARD)
+    card.variants[0].overrides[nodeId] = override
+    return { p: project({ ...p.files, [CARD]: `${JSON.stringify(card, null, 2)}\n` }), nodeId }
+  }
+  const overrideOf = (p: ReturnType<typeof project>, nodeId: string) => (p.json(CARD).variants as Json[])[0]!.overrides[nodeId]
+
+  it('turns an unset of a token the legacy type fell back to into that token', () => {
+    const { p, nodeId } = withOverride({ type: 'Row', style: { direction: 'col' } }, { unset: ['direction'] })
+    p.edit('node_convert', { file: 'cmp_post_card', nodeId })
+    expect(overrideOf(p, nodeId)).toEqual({ style: { direction: 'row' } })
+  })
+
+  it('drops a variant wrap where the node own flexWrap token won over it', () => {
+    const { p, nodeId } = withOverride({ type: 'Row', props: { wrap: false }, style: { flexWrap: 'nowrap' } }, { props: { wrap: true } })
+    p.edit('node_convert', { file: 'cmp_post_card', nodeId })
+    expect(overrideOf(p, nodeId)).toBeUndefined()
+  })
+
+  it('turns an unset of a Card padding into the card own p-6', () => {
+    const { p, nodeId } = withOverride({ type: 'Card', style: { p: '2' } }, { unset: ['p', 'gap'] })
+    p.edit('node_convert', { file: 'cmp_post_card', nodeId })
+    expect(overrideOf(p, nodeId)).toEqual({ style: { p: '6' }, unset: ['gap'] })
+  })
+
+  it('refuses a Row whose wrap a component property binds, saying so', () => {
+    const p = project()
+    const { nodeId } = p.edit('node_insert', { file: 'cmp_post_card', parentId: (p.json(CARD).root as Json).id, type: 'Row' })
+    p.edit('component_property_add', { component: 'cmp_post_card', name: 'wraps', kind: 'boolean', bindings: [{ nodeId, prop: 'wrap' }] })
+    expect(p.refuse('node_convert', { file: 'cmp_post_card', nodeId }, 'invalid').message).toBe('The property "wraps" binds the wrap of this Row: unbind it before converting the Row')
   })
 })
 

@@ -135,9 +135,19 @@ export function baseLayout(type: string, props: Record<string, unknown> = {}, st
   return direction === 'col' || direction === 'col-reverse' ? 'col' : 'row'
 }
 
-/** Whether a node lays its children out in a vertical stack (its `baseLayout` is `col`), so their `selfFallback` applies. */
+/** The types whose layout is their tokens (the layout presets' Container, and a Card's stack): their `display` and `direction` say if they stack. */
+const TOKEN_LAID_OUT = ['Container', 'Card']
+
+/**
+ * Whether a node lays its children out in a vertical stack, so their
+ * `selfFallback` applies. A Container's or a Card's `baseLayout` says it; the
+ * other types keep the rule of their type whatever their tokens, so stored
+ * projects render as before (layout-containers S4).
+ */
 export function childrenInStack(type: string, props: Record<string, unknown> = {}, style: Record<string, string> = {}): boolean {
-  return baseLayout(type, props, style) === 'col'
+  if (TOKEN_LAID_OUT.includes(type)) return baseLayout(type, props, style) === 'col'
+  if (type === 'List') return listLayout(props.layout) === 'stack'
+  return type !== 'Row' && STACK_TYPES.includes(type)
 }
 
 /** The types that fill the width of a vertical stack whatever its `items`. */
