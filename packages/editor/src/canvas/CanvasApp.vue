@@ -731,7 +731,7 @@ function onKeyDown(event: KeyboardEvent) {
     { key: event.key, code: event.code, meta, shift: event.shiftKey, alt: event.altKey },
     { focus: 'canvas', textSelected: hasTextSelection(window), hasSelection: selectedIds.value.length > 0 }
   )
-  if (!takes || (!zooms && !armsTool && !SHORTCUT_KEYS.has(event.key) && !editorMeta && !(event.shiftKey && !meta && lower === 'a'))) return
+  if (!takes || (!zooms && !armsTool && !SHORTCUT_KEYS.has(event.key) && !editorMeta && !(event.shiftKey && !meta && (lower === 'a' || event.code === 'KeyA')))) return
   event.preventDefault()
   post(canvasKeyMessage(event))
 }
