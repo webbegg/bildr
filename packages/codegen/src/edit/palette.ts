@@ -20,6 +20,8 @@ export interface PaletteEntry {
    * preset's node is a plain Container with the preset's tokens.
    */
   preset?: string
+  /** The layer name a preset's node gets, when its layout alone wouldn't name it (a Card). */
+  name?: string
   label: string
   description: string
   /** Holds child nodes. */
@@ -33,7 +35,7 @@ export const PALETTE: readonly PaletteEntry[] = [
   { type: 'Container', preset: 'Row', label: 'Row', description: 'A Container that lays out its children horizontally and wraps them (direction: row, flexWrap: wrap).', container: true, props: {}, style: { direction: 'row', flexWrap: 'wrap', gap: '3', items: 'center' } },
   { type: 'Container', preset: 'Column', label: 'Column', description: 'A Container that lays out its children vertically, without padding (direction: col).', container: true, props: {}, style: { direction: 'col', gap: '3', items: 'start' } },
   { type: 'Container', preset: 'Grid', label: 'Grid', description: 'A Container that lays out its children in equal columns (display: grid, cols); a child can span several with colSpan.', container: true, props: {}, style: { display: 'grid', cols: '3', gap: '6' } },
-  { type: 'Card', label: 'Card', description: 'A bordered surface holding other nodes.', container: true, props: {}, style: { gap: '3', items: 'start' } },
+  { type: 'Container', preset: 'Card', name: 'Card', label: 'Card', description: 'A Container on a bordered, rounded surface (p, rounded, bg, border, borderColor, overflow tokens) that stacks its children.', container: true, props: {}, style: { p: '6', gap: '3', items: 'start', rounded: 'lg', bg: 'default', border: '1', borderColor: 'default', overflow: 'hidden' } },
   { type: 'Heading', label: 'Heading', description: 'A title (h1 to h6).', container: false, props: { text: 'Heading', level: 2 }, style: {} },
   { type: 'Text', label: 'Text', description: 'A paragraph of text.', container: false, props: { text: 'Some text' }, style: {} },
   { type: 'Image', label: 'Image', description: 'An image from a URL (or /uploads/…).', container: false, props: { src: 'https://placehold.co/600x400', alt: '' }, style: { w: 'full' } },
@@ -52,7 +54,8 @@ export const PALETTE: readonly PaletteEntry[] = [
 export const LEGACY_LAYOUT_TYPES: readonly PaletteEntry[] = [
   { type: 'Row', label: 'Row', description: 'Legacy: lays out its children horizontally. Insert the preset "Row" instead.', container: true, props: { wrap: true }, style: { gap: '3', items: 'center' } },
   { type: 'Column', label: 'Column', description: 'Legacy: lays out its children vertically. Insert the preset "Column" instead.', container: true, props: {}, style: { gap: '3', items: 'start' } },
-  { type: 'Grid', label: 'Grid', description: 'Legacy: lays out its children in equal columns. Insert the preset "Grid" instead.', container: true, props: {}, style: { cols: '3', gap: '6' } }
+  { type: 'Grid', label: 'Grid', description: 'Legacy: lays out its children in equal columns. Insert the preset "Grid" instead.', container: true, props: {}, style: { cols: '3', gap: '6' } },
+  { type: 'Card', label: 'Card', description: 'Legacy: a bordered surface holding other nodes. Insert the preset "Card" instead.', container: true, props: {}, style: { gap: '3', items: 'start' } }
 ]
 
 /** Types a tree holds that the palette doesn't offer: the root of a page, uses of components and slot content. */

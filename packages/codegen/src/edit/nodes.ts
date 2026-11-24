@@ -118,7 +118,8 @@ export const buildNode = (draft: Draft, spec: NodeSpec, exact = false): ModelNod
   const props = nonEmpty({ ...defaults, ...spec.props })
   const style = nonEmpty({ ...(exact || !entry ? {} : entry.style), ...spec.style })
   const node: ModelNode = { id: draft.nodeId(spec.preset ?? type), type }
-  if (spec.name) node.name = spec.name
+  const name = spec.name ?? (exact ? undefined : entry?.name)
+  if (name) node.name = name
   if (spec.locked) node.locked = true
   if (props) node.props = props
   if (style) node.style = style
