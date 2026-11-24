@@ -13,6 +13,7 @@ import type { PropGroup } from '../../shared/propGroups.ts'
 import { nodeDef, propDefsOf } from '../../shared/nodeProps.ts'
 import type { PropDef } from '../../shared/nodeProps.ts'
 import { sharedStyle } from '../../shared/panel.ts'
+import { isFlattenable } from '../../shared/presets.ts'
 
 /**
  * The right panel, one scrolling view: a sticky head with the element's
@@ -54,6 +55,7 @@ const propDefs = computed(() => (node.value ? propDefsOf(node.value.type) : []))
 const icon = (type: string) => nodeDef(type)?.icon ?? 'i-lucide-file'
 const parent = computed(() => (node.value && editor.page ? findParent(editor.page.root, node.value.id) : undefined))
 const parentType = computed(() => parent.value?.type)
+const flattenable = computed(() => !!node.value && !multi.value && !isRoot.value && isFlattenable(node.value))
 /** The ancestors of the node, from the root down, for the head's breadcrumb. */
 const crumbs = computed(() => (node.value && editor.page ? pathTo(editor.page.root, node.value.id).slice(0, -1).map(id => ({ id, type: findNode(editor.page!.root, id)!.type })) : []))
 const crumbLabel = (crumb: { id: string, type: string }) => {
@@ -257,6 +259,21 @@ function renamePage(field: 'name' | 'path', value: string) {
         <EditorNodeInteractions :node="node" />
       </template>
 
+      <div
+        v-if="flattenable"
+        class="mx-3 my-2 flex items-center gap-2 rounded-lg bg-elevated px-2 py-1.5 text-[11px] text-toned"
+        role="note"
+        data-flatten-hint
+      >
+        <span class="flex-1">This Stack only wraps one element and adds nothing.</span>
+        <button
+          type="button"
+          class="text-primary hover:underline"
+          @click="editor.unwrap(node!.id)"
+        >
+          Flatten
+        </button>
+      </div>
       <EditorStyleFields
         :styles="shared.style"
         :mixed="shared.mixed"

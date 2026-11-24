@@ -88,6 +88,20 @@ export function insertTarget(root: ModelNode, overId: string, point: Point, chil
   return { parentId: over.id, index: children.length, position: 'inside', markId: over.id, horizontal: row }
 }
 
+/**
+ * The grid cell a drop lands in (layout-containers L4: a grid shows the cell,
+ * a stack a line): before a child, its cell (it moves on); after the last one,
+ * the next cell, beside it or at the start of the next row. `mark` is the
+ * child's box, `grid` the grid's content box, `gap` its column and row gaps.
+ */
+export function gridCell(position: 'before' | 'after', mark: Box, grid: Box, gap: Point): Box {
+  if (position === 'before') return mark
+  const beside = mark.x + mark.width + gap.x
+  return beside + mark.width <= grid.x + grid.width + 0.5
+    ? { ...mark, x: beside }
+    : { ...mark, x: grid.x, y: mark.y + mark.height + gap.y }
+}
+
 export function dropTarget(
   root: ModelNode,
   overId: string,

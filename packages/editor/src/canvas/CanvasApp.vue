@@ -19,7 +19,7 @@ import { FRAME_MIN_HEIGHT, viewportUnitRules, wheelPixels, zoomShortcut } from '
 import EditorTokenSheet from '../components/editor/EditorTokenSheet.vue'
 import { toolForKey } from '../editor/tools.ts'
 import ModelNode from './ModelNode.vue'
-import { dropTarget, insertTarget, nearestUnlocked } from './drop.ts'
+import { dropTarget, gridCell, insertTarget, nearestUnlocked } from './drop.ts'
 import type { Box, DropSlot } from './drop.ts'
 import { canvasKeyMessage, isCanvasMessage } from './protocol.ts'
 import { HANDLE_PX, useGestures } from './useGestures.ts'
@@ -366,6 +366,7 @@ const lineStyle = (line: MeasureLine) => line.y1 === line.y2
 // ── Drops and inserts ───────────────────────────────────────────────────
 
 const indicator = ref<Indicator | null>(null)
+const px = (value: string) => Number.parseFloat(value) || 0
 
 const rectOf = (id: string): Box | null => {
   const r = firstCopy(id)?.getBoundingClientRect()
@@ -384,6 +385,15 @@ function indicatorOf(slot: DropSlot): Indicator | null {
   if (!mark) return null
   const box = { top: mark.y + window.scrollY, left: mark.x + window.scrollX, width: mark.width, height: mark.height }
   if (slot.position === 'inside') return { ...box, line: false }
+  // In a grid the drop takes a cell: its outline, not a line (layout-containers L4).
+  const grid = firstCopy(slot.parentId)
+  const css = grid ? getComputedStyle(grid) : undefined
+  if (grid && css?.display.includes('grid')) {
+    const outer = grid.getBoundingClientRect()
+    const content = { x: outer.left + px(css.paddingLeft), y: outer.top + px(css.paddingTop), width: outer.width - px(css.paddingLeft) - px(css.paddingRight), height: outer.height }
+    const cell = gridCell(slot.position, mark, content, { x: px(css.columnGap), y: px(css.rowGap) })
+    return { top: cell.y + window.scrollY, left: cell.x + window.scrollX, width: cell.width, height: cell.height, line: false, cell: true }
+  }
   const end = slot.position === 'after'
   return slot.horizontal
     ? { top: box.top, left: box.left + (end ? box.width : 0) - 1, width: 2, height: box.height, line: true }
@@ -894,6 +904,7 @@ onBeforeUnmount(() => {
           class="pointer-events-none absolute z-50"
           :class="indicator.line ? 'rounded-full bg-(--canvas-accent)' : 'rounded-sm bg-(--canvas-accent)/5 outline-2 -outline-offset-2 outline-(--canvas-accent)'"
           :style="{ top: `${indicator.top}px`, left: `${indicator.left}px`, width: `${indicator.width}px`, height: `${indicator.height}px` }"
+          :data-drop-cell="indicator.cell ? '' : undefined"
           data-drop-indicator
         />
       </template>

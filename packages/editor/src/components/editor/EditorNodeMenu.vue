@@ -10,7 +10,7 @@ import { useEditor } from '../../editor/useEditor.ts'
 import { filterMenuItems } from '../../shared/commands.ts'
 import { replaceChoiceHint, replaceChoices } from '../../shared/componentEditor.ts'
 import { naturalDisplay, visibilityAt, visibilityToggle } from '../../shared/layers.ts'
-import { legacyLayouts } from '../../shared/presets.ts'
+import { isUnwrappable, legacyLayouts } from '../../shared/presets.ts'
 
 const INSTANCE_TYPE = 'Instance'
 
@@ -151,6 +151,7 @@ const items = computed<ContextMenuItem[][]>(() => {
         children: (['Row', 'Column', 'Grid', 'Card'] as const).map(kind => ({ label: kind, onSelect: () => editor.wrap(wrapIds, kind) }))
       },
       { label: 'Add auto layout', icon: 'i-lucide-layout-panel-left', kbds: ['shift', 'a'], disabled: cannotWrap, onSelect: () => editor.autoLayout() },
+      { label: 'Remove wrapper', icon: 'i-lucide-ungroup', kbds: ['meta', 'shift', 'g'], disabled: isRoot || many || !node || !isUnwrappable(node.type), onSelect: () => editor.unwrap(id) },
       // Rows, Columns, Grids and Cards made before every layout was a Container: here and inside.
       { label: 'Convert to Container', icon: 'i-lucide-refresh-cw', description: legacy ? `${legacy} legacy layout${legacy === 1 ? '' : 's'}` : undefined, disabled: !legacy, onSelect: () => editor.convertLayouts(id) }
     ],

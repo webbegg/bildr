@@ -40,7 +40,8 @@ import type { CanvasMode, CanvasToEditor, SpacingOverlay } from './protocol.ts'
  */
 
 export interface Box { top: number, left: number, width: number, height: number }
-export interface Indicator { top: number, left: number, width: number, height: number, line: boolean }
+/** A drop's mark: a line between children, or a box (inside a container; with `cell`, the grid cell it lands in). */
+export interface Indicator { top: number, left: number, width: number, height: number, line: boolean, cell?: boolean }
 
 export interface GesturesContext {
   root: () => ModelNode | undefined

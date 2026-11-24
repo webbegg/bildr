@@ -329,6 +329,25 @@ export const nodeDuplicate = defineEdit({
 
 export const WRAP_TYPES = ['Container', 'Row', 'Column', 'Card', 'Grid'] as const
 
+/**
+ * Remove wrapper (layout-containers L4): a layout container's children take
+ * its place in its parent, in order; the container goes, with its style,
+ * props and interactions (and a component's overrides of it).
+ */
+export const nodeUnwrap = defineEdit({
+  input: z.object({ file: FileRef, nodeId: LocalIdSchema }),
+  apply: (draft, { file, nodeId }) => {
+    const tree = draft.tree(file)
+    const location = located(tree, nodeId, 'unwrapped')
+    const wrapper = location.parent.children![location.index]!
+    if (!(WRAP_TYPES as readonly string[]).includes(wrapper.type)) fail('invalid', `Only a layout container (a Container, Row, Column, Grid or Card) can be unwrapped, not a ${wrapper.type}`)
+    const lifted = (wrapper.children ?? []).map(child => child.id)
+    lifted.forEach((id, i) => moveNode(tree, id, location.parent.id, location.index + 1 + i))
+    removeNode(tree, wrapper)
+    return { nodeIds: lifted }
+  }
+})
+
 export const nodeWrap = defineEdit({
   input: z.object({
     file: FileRef,

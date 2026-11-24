@@ -1,7 +1,7 @@
 import type { z } from 'zod'
 import { runEdit } from './core.ts'
 import type { EditDef, EditOutcome } from './core.ts'
-import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeRename, nodeSetLocked, nodeUpdateProps, nodeUpdateStyle, nodeWrap } from './nodes.ts'
+import { nodeDelete, nodeDuplicate, nodeInsert, nodeMove, nodeMoveMany, nodeRename, nodeSetLocked, nodeUpdateProps, nodeUnwrap, nodeUpdateStyle, nodeWrap } from './nodes.ts'
 import { pageCreate, pageDelete, pageUpdate } from './pages.ts'
 import { nodeConvert } from './convert.ts'
 import {
@@ -50,6 +50,7 @@ export const EDITS = {
   node_delete: nodeDelete,
   node_duplicate: nodeDuplicate,
   node_wrap: nodeWrap,
+  node_unwrap: nodeUnwrap,
   node_convert: nodeConvert,
   page_create: pageCreate,
   page_update: pageUpdate,

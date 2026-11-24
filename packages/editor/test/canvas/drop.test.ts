@@ -1,6 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelNode } from '../../../codegen/src/model/schemas.ts'
-import { dropTarget, insertTarget, nearestUnlocked } from '../../src/canvas/drop.ts'
+import { dropTarget, gridCell, insertTarget, nearestUnlocked } from '../../src/canvas/drop.ts'
+
+describe('gridCell (layout-containers L4)', () => {
+  // Two 100x50 columns 10 apart, in a 210 wide grid at (0, 0).
+  const grid = { x: 0, y: 0, width: 210, height: 110 }
+  const gap = { x: 10, y: 10 }
+  it('is the cell of the child the drop goes before: the drop takes its place', () => {
+    expect(gridCell('before', { x: 110, y: 0, width: 100, height: 50 }, grid, gap)).toEqual({ x: 110, y: 0, width: 100, height: 50 })
+  })
+
+  it('after the last child, the next cell: beside it, or at the start of the next row when the row is full', () => {
+    expect(gridCell('after', { x: 0, y: 0, width: 100, height: 50 }, grid, gap)).toEqual({ x: 110, y: 0, width: 100, height: 50 })
+    expect(gridCell('after', { x: 110, y: 0, width: 100, height: 50 }, grid, gap)).toEqual({ x: 0, y: 60, width: 100, height: 50 })
+  })
+})
 
 /** Where a drag dropped on the canvas goes: a slot of the container under the pointer, by its children's boxes. */
 

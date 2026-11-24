@@ -24,6 +24,17 @@ export const containerName = (node: Pick<ModelNode, 'type' | 'props' | 'style'>)
 const LAYOUT_TYPES = ['Container', 'Row', 'Column', 'Grid']
 const LEGACY_TYPES = ['Row', 'Column', 'Grid', 'Card']
 
+/** Whether `node_unwrap` takes the type: a Container or a legacy layout (not a List, a Form or an instance). */
+export const isUnwrappable = (type: string): boolean => type === 'Container' || LEGACY_TYPES.includes(type)
+
+/**
+ * A Container that wraps one node and adds nothing (no style, props, interactions,
+ * name or lock): a DOM level the inspector hints to flatten (layout-containers L4).
+ */
+export const isFlattenable = (node: ModelNode): boolean =>
+  node.type === 'Container' && node.children?.length === 1 && !Object.keys(node.style ?? {}).length && !Object.keys(node.props ?? {}).length
+  && !node.interactions?.length && !node.name && !node.locked
+
 /** The Rows, Columns, Grids and Cards at and under `node` (what `node_convert` with subtree converts), in document order. */
 export const legacyLayouts = (node: ModelNode, out: ModelNode[] = []): ModelNode[] => {
   if (LEGACY_TYPES.includes(node.type)) out.push(node)
