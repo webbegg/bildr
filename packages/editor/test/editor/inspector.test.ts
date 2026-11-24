@@ -240,6 +240,63 @@ describe('the style sections', () => {
     ])
   })
 
+  describe('layout-containers L5', () => {
+    const nodeIn = async (id: string) => {
+      const { find, indexPage } = await import('../design/harness.ts')
+      return find(indexPage().root, id)!
+    }
+    const writes = (actions: { named: (name: string) => { input: unknown }[] }) => actions.named('node_update_style').map(call => call.input)
+
+    it('positions a node absolute from the Size "+" menu, and makes its parent the positioned one', async () => {
+      const { actions } = await open({ node_update_style: ok() })
+      await select('n_h1')
+      await menuItem(section('Size')!.querySelector('[data-section-action="add"]'), 'Position')
+      await selectOption(styleField('position'), 'Absolute')
+      expect(writes(actions)).toEqual([
+        { file: 'pg_index', nodeIds: ['n_h1'], style: { position: 'absolute' } },
+        { file: 'pg_index', nodeIds: ['n_head'], style: { position: 'relative' } }
+      ])
+    })
+
+    it('pins a positioned node with the picker: a cell pins both axes, Stretch spans one', async () => {
+      Object.assign(await nodeIn('n_h1'), { style: { position: 'absolute', left: '4' } })
+      const { actions } = await open({ node_update_style: ok() })
+      await select('n_h1')
+      expect(q('[data-pin-picker]')!.dataset.pin).toBe('start,')
+      expect(q('[data-style-row="z"]')).not.toBeNull()
+      await click(q('[data-pin-cell="end,start"]'))
+      await click(q('[data-pin-stretch="v"]'))
+      expect(writes(actions)).toEqual([
+        { file: 'pg_index', nodeIds: ['n_h1'], style: { right: '0', left: null, top: '0' } },
+        { file: 'pg_index', nodeIds: ['n_h1'], style: { insetY: '0' } }
+      ])
+    })
+
+    it('stacks a row below a width, as the responsive direction pair', async () => {
+      const { actions } = await open({ node_update_style: ok() })
+      await select('n_head')
+      await menuItem(section('Layout')!.querySelector('[data-section-action="add"]'), 'Stack below')
+      await selectOption(styleField('stackBelow'), 'Below 768px (md)')
+      expect(writes(actions)).toEqual([{ file: 'pg_index', nodeIds: ['n_head'], style: { 'direction': 'col', 'md:direction': 'row' } }])
+    })
+
+    it('turns a grid\'s columns to auto-fit, which shows the minimum column width', async () => {
+      Object.assign(await nodeIn('n_about'), { style: { cols: 'auto-fit' } })
+      const { actions } = await open({ node_update_style: ok() })
+      await select('n_about')
+      expect(q('[data-style-row="colMin"]')).not.toBeNull()
+      await click(q('[data-cols-auto-fit]'))
+      expect(writes(actions)).toEqual([{ file: 'pg_index', nodeIds: ['n_about'], style: { cols: '3' } }])
+    })
+
+    it('warns that Order moves a node on screen only', async () => {
+      Object.assign(await nodeIn('n_h1'), { style: { order: 'last' } })
+      await open()
+      await select('n_h1')
+      expect(q('[data-order-warning]')?.textContent).toContain('screen readers')
+    })
+  })
+
   it('leads Size with how the parent lays the node out: In parent Stack with Align self, Grid with Span too', async () => {
     await open()
     await select('n_h1')

@@ -6,6 +6,7 @@ import type { Side, SpacingBox } from '@bildr/editor-core/spacing'
 import { deviceOf, styleProvenance } from '@bildr/editor-core/styleFields'
 import type { DeviceId, Provenance } from '@bildr/editor-core/styleFields'
 import { isContainerType } from './nodeProps.ts'
+import { stackBelowOf } from './stackBelow.ts'
 
 /**
  * The right panel in Framer's sections, as a row model (the hosted `shared/editor/panel.ts`,
@@ -34,6 +35,9 @@ export type PanelSection = typeof PANEL_SECTIONS[number]
 
 const PADDING = ['p', 'px', 'py', 'pt', 'pr', 'pb', 'pl']
 const MARGIN = ['m', 'mx', 'my', 'mt', 'mr', 'mb', 'ml']
+const PIN_KEYS = ['inset', 'insetX', 'insetY', 'top', 'right', 'bottom', 'left']
+/** The positions that take a node out of the flow (or stick it): the pin and the layer apply. */
+export const PINNED_POSITIONS = ['absolute', 'fixed', 'sticky']
 
 interface RowDef {
   section: PanelSection
@@ -51,6 +55,7 @@ const ROWS = {
   // In parent: first in Size, where the parent's layout uses them.
   self: { section: 'Size', kind: 'core', keys: ['self'], add: { self: 'center' } },
   span: { section: 'Size', kind: 'core', keys: ['colSpan'] },
+  rowSpan: { section: 'Size', kind: 'menu', keys: ['rowSpan'], add: { rowSpan: '2' } },
   width: { section: 'Size', kind: 'core', keys: ['w'] },
   height: { section: 'Size', kind: 'core', keys: ['h'] },
   maxWidth: { section: 'Size', kind: 'menu', keys: ['maxW'], add: { maxW: 'full' } },
@@ -60,19 +65,35 @@ const ROWS = {
   // A stack child's flex (layout-containers L3): its weight among Fill siblings, and whether it shrinks below its size.
   grow: { section: 'Size', kind: 'menu', keys: ['grow', 'basis'], add: { grow: '1' } },
   shrink: { section: 'Size', kind: 'menu', keys: ['shrink'], add: { shrink: '0' } },
+  // layout-containers L5: out of document order (with a warning), and out of the flow: pinned and layered.
+  order: { section: 'Size', kind: 'menu', keys: ['order'], add: { order: 'first' } },
+  position: { section: 'Size', kind: 'menu', keys: ['position'], add: {} },
+  pin: { section: 'Size', kind: 'core', keys: PIN_KEYS },
+  z: { section: 'Size', kind: 'core', keys: ['z'] },
   // Type writes `display`, which Styles owns; it shows the Stack, Grid or None rows.
   type: { section: 'Layout', kind: 'core', keys: [] },
   direction: { section: 'Layout', kind: 'core', keys: ['direction'] },
+  // The responsive direction pair (see `stackBelow.ts`): no keys of its own.
+  stackBelow: { section: 'Layout', kind: 'menu', keys: [], add: {} },
   distribute: { section: 'Layout', kind: 'core', keys: ['justify'] },
   align: { section: 'Layout', kind: 'core', keys: ['items'] },
   wrap: { section: 'Layout', kind: 'core', keys: ['flexWrap'] },
+  content: { section: 'Layout', kind: 'menu', keys: ['content'], add: { content: 'start' } },
   columns: { section: 'Layout', kind: 'core', keys: ['cols'] },
+  colMin: { section: 'Layout', kind: 'core', keys: ['colMin'] },
+  rows: { section: 'Layout', kind: 'menu', keys: ['rows'], add: { rows: '2' } },
+  overlay: { section: 'Layout', kind: 'menu', keys: ['overlay'], add: { overlay: 'stack' } },
   gap: { section: 'Layout', kind: 'core', keys: ['gap'] },
+  // The column and row gaps over Gap, where a grid or a wrapping stack has both.
+  gapX: { section: 'Layout', kind: 'menu', keys: ['gapX'], add: {} },
+  gapY: { section: 'Layout', kind: 'menu', keys: ['gapY'], add: {} },
   // Core on a container, a menu item on a leaf.
   padding: { section: 'Layout', kind: 'core', keys: PADDING, add: { p: '2' } },
   margin: { section: 'Layout', kind: 'menu', keys: MARGIN, add: { m: '0' } },
   // Offered here rather than in Styles: it clips the layout's children.
   overflow: { section: 'Layout', kind: 'menu', keys: ['overflow'], add: { overflow: 'hidden' } },
+  overflowX: { section: 'Layout', kind: 'menu', keys: ['overflowX'], add: { overflowX: 'auto' } },
+  overflowY: { section: 'Layout', kind: 'menu', keys: ['overflowY'], add: { overflowY: 'auto' } },
   visible: { section: 'Styles', kind: 'core', keys: ['display'] },
   opacity: { section: 'Styles', kind: 'core', keys: ['opacity'] },
   fill: { section: 'Styles', kind: 'slot', keys: ['bg'], add: { bg: 'neutral-100' } },
@@ -243,6 +264,8 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
   // Visible and Type manage hiding, the natural display and (for typed stacks) flex, grid or block.
   const managed = ['hidden', node.natural, ...(typed(node.type) ? Object.values(MODE_DISPLAY) : [])]
   const setsDisplay = Object.entries(node.style).some(([key, value]) => baseKey(key) === 'display' && !managed.includes(value))
+  const positioned = PINNED_POSITIONS.includes(valueAt(node.style, 'position', device, base) ?? '')
+  const wraps = valueAt(node.style, 'flexWrap', device, base) === 'wrap'
 
   // Whether a row applies to the node; an optional one is then shown or offered.
   const applies: Record<RowId, boolean> = {
@@ -254,8 +277,22 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
     minHeight: true,
     grow: parent === 'stack' || sets('grow', 'basis'),
     shrink: parent === 'stack' || sets('shrink'),
+    order: parent === 'stack' || sets('order'),
+    position: !node.root,
+    pin: positioned,
+    z: positioned || sets('z'),
     type: !!layout,
     direction: stack || sets('direction'),
+    stackBelow: stack,
+    content: grid || (stack && wraps) || sets('content'),
+    colMin: grid && (valueAt(node.style, 'cols', device, base) === 'auto-fit' || sets('colMin')),
+    rows: grid || sets('rows'),
+    overlay: grid || sets('overlay'),
+    gapX: grid || (stack && wraps) || sets('gapX'),
+    gapY: grid || (stack && wraps) || sets('gapY'),
+    overflowX: true,
+    overflowY: true,
+    rowSpan: parent === 'grid' || sets('rowSpan'),
     distribute: stack || sets('justify'),
     align: stack || sets('items'),
     // A stack's Wrap is beside its Direction; a row of its own only where something else sets it.
@@ -288,7 +325,11 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
     if (def(row).section === 'Typography' && !textual(node)) return 'menu'
     return def(row).kind
   }
-  const valued = (row: RowId) => (row === 'display' ? setsDisplay : sets(...rowKeys(row)))
+  const valued = (row: RowId) => {
+    if (row === 'display') return setsDisplay
+    if (row === 'stackBelow') return stackBelowOf(node.style, base) !== undefined
+    return sets(...rowKeys(row))
+  }
   const has = (row: RowId) => added.includes(row) || rowKeys(row).some(key => mixed.includes(key)) || valued(row)
   const shown = (row: RowId) => applies[row] && (kind(row) !== 'menu' || has(row))
   const removable = (row: RowId) => kind(row) !== 'core' && (rowProvenance(node.style, row, device, base).state === 'set' || (added.includes(row) && !valued(row)))

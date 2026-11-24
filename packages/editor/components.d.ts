@@ -123,6 +123,7 @@ declare module 'vue' {
     EditorPages: typeof import('./src/components/editor/EditorPages.vue')['default']
     EditorPageSwitcher: typeof import('./src/components/editor/sidebar/EditorPageSwitcher.vue')['default']
     EditorPalette: typeof import('./src/components/editor/EditorPalette.vue')['default']
+    EditorPinPicker: typeof import('./src/components/editor/panel/EditorPinPicker.vue')['default']
     EditorPopover: typeof import('./src/components/kit/EditorPopover.vue')['default']
     EditorPropertiesModal: typeof import('./src/components/editor/EditorPropertiesModal.vue')['default']
     EditorPropField: typeof import('./src/components/editor/EditorPropField.vue')['default']
