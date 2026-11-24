@@ -26,6 +26,21 @@ describe('layout containers on the canvas', () => {
     const [root] = planOf([{ id: 'n_c', type: 'Column', props: { tag: 'nav' } }, { id: 'n_g', type: 'Grid', props: { tag: 'section' } }])
     expect((root as PlanElement).children.map(child => (child as PlanElement).tag)).toEqual(['nav', 'section'])
   })
+
+  it('resolves Fill by the parent\'s axis, as the generator does (layout-containers L3)', () => {
+    const fill = { type: 'Text', props: { text: 'a' }, style: { w: 'fill' } }
+    const plan = planOf([
+      { id: 'n_row', type: 'Container', style: { 'direction': 'col', 'md:direction': 'row' }, children: [{ id: 'n_a', ...fill }, { id: 'n_b', ...fill, style: { w: 'fill', grow: '2' } }] },
+      { id: 'n_top', ...fill }
+    ])
+    expect(outline(plan).join('\n')).toMatchInlineSnapshot(`
+      "<section n_page> gap-6 min-h-full flex-col flex
+        <div n_row> flex flex-col md:flex-row self-stretch
+          <p n_a> whitespace-pre-line md:min-w-0 self-stretch md:self-auto md:grow-1 md:basis-[0%]
+          <p n_b> whitespace-pre-line md:min-w-0 self-stretch md:self-auto grow-2 md:basis-[0%]
+        <p n_top> whitespace-pre-line self-stretch"
+    `)
+  })
 })
 
 describe('legacy layout containers on the canvas (layout-containers S4)', () => {

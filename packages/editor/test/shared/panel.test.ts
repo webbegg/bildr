@@ -69,7 +69,7 @@ describe('panel rows', () => {
 
   it('offers each group\'s optional properties in its header "+" menu', () => {
     expect(menus(rows(column))).toEqual({
-      Size: ['maxWidth', 'minWidth', 'maxHeight', 'minHeight'],
+      Size: ['maxWidth', 'minWidth', 'maxHeight', 'minHeight', 'grow', 'shrink'],
       Layout: ['margin', 'overflow'],
       Styles: ['corners', 'display'],
       Typography: ['fontSize', 'fontWeight', 'textAlign', 'textColor', 'letterSpacing', 'lineHeight', 'transform']
@@ -108,7 +108,7 @@ describe('panel rows', () => {
       Styles: ['visible', 'opacity', 'fill−', 'border+', 'shadows+', 'radius', 'corners−'],
       Typography: ['letterSpacing−']
     })
-    expect(menus(sections).Size).toEqual(['minWidth', 'maxHeight', 'minHeight'])
+    expect(menus(sections).Size).toEqual(['minWidth', 'maxHeight', 'minHeight', 'grow', 'shrink'])
     expect(menus(sections).Layout).toEqual(['overflow'])
     expect(menus(sections).Typography).toEqual(['fontSize', 'fontWeight', 'textAlign', 'textColor', 'lineHeight', 'transform'])
   })
@@ -126,7 +126,7 @@ describe('panel rows', () => {
     const style = { minH: '32' }
     const sections = rows({ ...column, style })
     expect(view(sections).Size).toEqual(['self', 'width', 'height', 'minHeight−'])
-    expect(menus(sections).Size).toEqual(['maxWidth', 'minWidth', 'maxHeight'])
+    expect(menus(sections).Size).toEqual(['maxWidth', 'minWidth', 'maxHeight', 'grow', 'shrink'])
     expect(rowProvenance(style, 'height', 'mobile')).toEqual({ state: 'unset' })
     expect(rowProvenance(style, 'minHeight', 'mobile')).toEqual({ state: 'set', key: 'minH', value: '32' })
   })
@@ -148,6 +148,25 @@ describe('panel rows', () => {
   it('gives a container laid out as None (block flow) only its padding: no stack, grid or gap rows', () => {
     expect(view(rows({ type: 'Container', style: { display: 'block' } })).Layout).toEqual(['type', 'padding'])
     expect(view(rows({ type: 'Container', style: { display: 'block', gap: '2' } })).Layout).toEqual(['type', 'gap', 'padding'])
+  })
+
+  it('offers a stack child\'s Grow and Shrink in Size\'s "+" menu (layout-containers L3)', () => {
+    expect(menus(rows(text)).Size).toEqual(expect.arrayContaining(['grow', 'shrink']))
+    expect(view(rows({ ...text, style: { grow: '2' } })).Size).toContain('grow−')
+    expect(menus(rows({ type: 'Text', parentType: 'Grid', style: {} })).Size).not.toContain('grow')
+    expect(menus(rows({ type: 'Page', root: true, style: {} })).Size).not.toContain('grow')
+  })
+
+  it('notes a Fill along the axis of a parent that fits its content, where there is nothing to fill (layout-containers L3)', () => {
+    const size = (node: PanelNode, device: 'mobile' | 'desktop' = 'mobile') => rows(node, device).find(s => s.section === 'Size')!.fillInFit
+    const row = { type: 'Text', parentType: 'Container', style: { w: 'fill' } }
+    expect(size({ ...row, parentStyle: { direction: 'row', w: 'fit' } })).toEqual(['w'])
+    expect(size({ ...row, parentType: 'Row', parentStyle: { w: 'fit' } })).toEqual(['w'])
+    expect(size({ type: 'Text', parentType: 'Container', parentStyle: { h: 'fit' }, style: { h: 'fill' } })).toEqual(['h'])
+    // Across the axis, Fill stretches: no note; nor where the parent has a size of its own.
+    expect(size({ ...row, parentStyle: { w: 'fit' } })).toBeUndefined()
+    expect(size({ ...row, parentStyle: { direction: 'row' } })).toBeUndefined()
+    expect(size({ ...row, parentStyle: { 'direction': 'row', 'w': 'fit', 'md:w': '96' } }, 'desktop')).toBeUndefined()
   })
 
   it('puts Wrap beside Direction on a stack; it is a row of its own only where something else sets it', () => {

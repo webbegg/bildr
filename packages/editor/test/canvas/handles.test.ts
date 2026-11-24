@@ -114,6 +114,36 @@ describe('resize handles', () => {
     expect(handle('e')).toBeNull()
   })
 
+  it('a double-click on a handle makes its axis Fit, an Alt+double-click on a corner makes both Fill (layout-containers L3)', async () => {
+    await select('n_h1')
+    await press(220, 60)
+    await release(220, 60)
+    await press(220, 60)
+    await release(220, 60)
+    expect(sent('bildr:style-commit')).toEqual([{ type: 'bildr:style-commit', nodeId: 'n_h1', style: { w: 'fit' } }])
+    // A third press starts over: one press alone commits nothing.
+    await press(220, 60)
+    await release(220, 60)
+    expect(sent('bildr:style-commit')).toHaveLength(1)
+    const alt = { altKey: true }
+    document.dispatchEvent(pointer('pointerdown', 220, 80, alt))
+    await release(220, 80)
+    document.dispatchEvent(pointer('pointerdown', 220, 80, alt))
+    await release(220, 80)
+    expect(sent('bildr:style-commit').at(-1)).toEqual({ type: 'bildr:style-commit', nodeId: 'n_h1', style: { w: 'fill', h: 'fill' } })
+  })
+
+  it('a press that became a drag is no first click: a quick drag after it is a drag too', async () => {
+    await select('n_h1')
+    await press(220, 60)
+    await move(280, 60)
+    await release(280, 60)
+    await press(220, 60)
+    await move(300, 60)
+    await release(300, 60)
+    expect(sent('bildr:style-commit').map(message => message.style.w)).not.toContain('fit')
+  })
+
   it('dragging the east handle previews a snapped width live, and the release commits it once', async () => {
     await select('n_h1')
     await press(220, 60)

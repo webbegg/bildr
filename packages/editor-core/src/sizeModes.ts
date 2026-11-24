@@ -2,8 +2,9 @@ import { getStyleToken } from '@bildr/codegen/design'
 
 /**
  * Framer's size modes over the size tokens: Fixed (a number on the scale),
- * Fit (`fit`), Fill (`full`) and Relative (a fraction, or `screen`). An unset
- * or `auto` size has no mode.
+ * Fit (`fit`), Fill (`fill`, the intent the parent's axis resolves:
+ * layout-containers L3) and Relative (100% as `full`, a fraction, or
+ * `screen`). An unset or `auto` size has no mode.
  */
 
 export type SizeKey = 'w' | 'h'
@@ -11,7 +12,7 @@ export type SizeMode = 'fixed' | 'fit' | 'fill' | 'relative'
 
 export const SIZE_MODE_LABELS: Record<SizeMode, string> = { fixed: 'Fixed', fit: 'Fit', fill: 'Fill', relative: 'Relative' }
 
-const RELATIVE = ['1/2', '1/3', '2/3', '1/4', '3/4', 'screen']
+const RELATIVE = ['full', '1/2', '1/3', '2/3', '1/4', '3/4', 'screen']
 const isNumber = (value: string) => value.trim() !== '' && !Number.isNaN(Number(value))
 const values = (key: SizeKey) => getStyleToken(key)!.values
 
@@ -20,7 +21,7 @@ export function sizeModeValues(key: SizeKey, mode: SizeMode): string[] {
   const all = values(key)
   if (mode === 'fixed') return all.filter(isNumber)
   if (mode === 'fit') return all.filter(v => v === 'fit')
-  if (mode === 'fill') return all.filter(v => v === 'full')
+  if (mode === 'fill') return all.filter(v => v === 'fill')
   return all.filter(v => RELATIVE.includes(v))
 }
 

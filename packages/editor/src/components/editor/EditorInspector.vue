@@ -266,6 +266,7 @@ function renamePage(field: 'name' | 'path', value: string) {
         :root="isRoot"
         @preview="editor.previewStyle(styleTargets, $event)"
         @update="editor.updateStyle(styleTargets, $event)"
+        @update-parent="parent && editor.updateStyle([parent.id], $event)"
       />
       <EditorSelectionColors />
     </div>

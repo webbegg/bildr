@@ -132,7 +132,18 @@ export function fillSizes(full: Size, half: Size): ResizeDrag['fill'] {
   return fill
 }
 
-/** The fill stop of a size scale, measured as the parent's content size. */
+/**
+ * A double-click on a resize handle (Figma's edge gesture, layout-containers
+ * L3): the axes the handle resizes become Fit, or Fill with Alt, at the
+ * edited breakpoint.
+ */
+export function edgeSizePatch(handle: HandleId, breakpoint: Breakpoint | undefined, alt: boolean): Record<string, string> {
+  const axes = handleAxes(handle)
+  const value = alt ? 'fill' : 'fit'
+  return { ...(axes.x ? { [styleKey('w', breakpoint)]: value } : {}), ...(axes.y ? { [styleKey('h', breakpoint)]: value } : {}) }
+}
+
+/** The 100% stop of a size scale (Relative), measured as the parent's content size. */
 const FILL = 'full'
 
 /**

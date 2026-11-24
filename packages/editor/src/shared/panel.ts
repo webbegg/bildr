@@ -1,6 +1,6 @@
 import { parseStyleKey, styleKey } from '@bildr/codegen/design'
 import type { Breakpoint, BreakpointBase } from '@bildr/codegen/design'
-import { isFlexType } from '@bildr/codegen/render'
+import { baseLayout, FILL, isFlexType } from '@bildr/codegen/render'
 import { spacingSide } from '@bildr/editor-core/spacing'
 import type { Side, SpacingBox } from '@bildr/editor-core/spacing'
 import { deviceOf, styleProvenance } from '@bildr/editor-core/styleFields'
@@ -57,6 +57,9 @@ const ROWS = {
   minWidth: { section: 'Size', kind: 'menu', keys: ['minW'], add: { minW: '0' } },
   maxHeight: { section: 'Size', kind: 'menu', keys: ['maxH'], add: { maxH: 'full' } },
   minHeight: { section: 'Size', kind: 'menu', keys: ['minH'], add: { minH: '0' } },
+  // A stack child's flex (layout-containers L3): its weight among Fill siblings, and whether it shrinks below its size.
+  grow: { section: 'Size', kind: 'menu', keys: ['grow', 'basis'], add: { grow: '1' } },
+  shrink: { section: 'Size', kind: 'menu', keys: ['shrink'], add: { shrink: '0' } },
   // Type writes `display`, which Styles owns; it shows the Stack, Grid or None rows.
   type: { section: 'Layout', kind: 'core', keys: [] },
   direction: { section: 'Layout', kind: 'core', keys: ['direction'] },
@@ -170,6 +173,8 @@ export interface PanelSectionRows {
   section: PanelSection
   /** On Size, for a node with a parent: how the parent lays it out, the "In parent" heading over its rows. */
   inParent?: LayoutType
+  /** On Size: the axes the node Fills along a stack that fits its content there, which leaves nothing to fill (Figma's Fill-in-Hug). */
+  fillInFit?: Array<'w' | 'h'>
   rows: PanelRow[]
   /** No row to show: the section is its title and "+" only. */
   collapsed: boolean
@@ -202,6 +207,23 @@ const parentLayout = (node: PanelNode, device: DeviceId, base: BreakpointBase): 
   return layoutType(node.parentType, node.parentStyle ?? {}, device, base) ?? (isFlexType(node.parentType) ? 'stack' : 'none')
 }
 
+/** The value a token takes at the device, unset as undefined. */
+const valueAt = (style: Record<string, string>, key: string, device: DeviceId, base: BreakpointBase) => {
+  const p = styleProvenance(style, key, device, base)
+  return p.state === 'unset' ? undefined : p.value
+}
+
+/** The axes the node Fills along its stack parent's main axis while the parent fits its content there. */
+const fillInFit = (node: PanelNode, device: DeviceId, base: BreakpointBase): Array<'w' | 'h'> => {
+  if (node.root || !node.parentType) return []
+  const parentStyle = node.parentStyle ?? {}
+  const display = valueAt(parentStyle, 'display', device, base)
+  const direction = valueAt(parentStyle, 'direction', device, base)
+  const axis = baseLayout(node.parentType, {}, { ...(display ? { display } : {}), ...(direction ? { direction } : {}) })
+  const key = axis === 'row' ? 'w' : axis === 'col' ? 'h' : undefined
+  return key && valueAt(node.style, key, device, base) === FILL && valueAt(parentStyle, key, device, base) === 'fit' ? [key] : []
+}
+
 /** Whether a node shows text of its own (or is the page root, whose type styles the page): its typography rows are core. */
 // A Link holds children in the model but shows its own `text` too, so its typography is core (the hosted Link is no container).
 const textual = (node: PanelNode) => !!node.root || ((!isContainerType(node.type) || node.type === 'Link') && node.type !== 'Image')
@@ -230,6 +252,8 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
     minWidth: true,
     maxHeight: true,
     minHeight: true,
+    grow: parent === 'stack' || sets('grow', 'basis'),
+    shrink: parent === 'stack' || sets('shrink'),
     type: !!layout,
     direction: stack || sets('direction'),
     distribute: stack || sets('justify'),
@@ -275,6 +299,7 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
     return {
       section,
       ...(section === 'Size' && parent ? { inParent: parent } : {}),
+      ...(section === 'Size' && fillInFit(node, device, base).length ? { fillInFit: fillInFit(node, device, base) } : {}),
       rows,
       collapsed: rows.length === 0,
       menu: inSection(section).filter(row => applies[row] && kind(row) === 'menu' && !shown(row)).map(id => ({ id })),

@@ -95,6 +95,8 @@ export interface StyleToken {
   /** Tailwind utility prefix; the class is `${prefix}-${value}`, or just the value when empty (`display`, `textTransform`). */
   prefix: string
   values: string[]
+  /** A value rendered as another value's class: Fill (`fill`) where nothing resolves it renders as `full` (see `fillStyle`). */
+  classes?: Record<string, string>
   kind?: 'color'
   /** For colour tokens: the CSS property an inline (hex or theme) colour sets. */
   css?: string
@@ -146,8 +148,9 @@ export const STYLE_TOKENS: StyleToken[] = [
   spacing('pb', 'Padding bottom'),
   spacing('pl', 'Padding left'),
   spacing('gap', 'Gap'),
-  { key: 'w', label: 'Width', group: 'Size', prefix: 'w', values: ['auto', 'full', 'screen', 'fit', '1/2', '1/3', '2/3', '1/4', '3/4', ...FIXED_WIDTHS] },
-  { key: 'h', label: 'Height', group: 'Size', prefix: 'h', values: ['auto', 'full', 'screen', 'fit', ...FIXED_WIDTHS] },
+  // `fill` is the Fill intent, resolved by the parent's axis (`fillStyle` in render/rules.ts); `full` is 100%.
+  { key: 'w', label: 'Width', group: 'Size', prefix: 'w', values: ['auto', 'full', 'screen', 'fit', '1/2', '1/3', '2/3', '1/4', '3/4', ...FIXED_WIDTHS, 'fill'], classes: { fill: 'full' } },
+  { key: 'h', label: 'Height', group: 'Size', prefix: 'h', values: ['auto', 'full', 'screen', 'fit', ...FIXED_WIDTHS, 'fill'], classes: { fill: 'full' } },
   { key: 'minW', label: 'Min width', group: 'Size', prefix: 'min-w', values: ['0', 'full', 'fit', ...FIXED_WIDTHS.slice(1)] },
   { key: 'maxW', label: 'Max width', group: 'Size', prefix: 'max-w', values: ['xs', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', '4xl', '5xl', '6xl', '7xl', 'full', 'prose'] },
   { key: 'minH', label: 'Min height', group: 'Size', prefix: 'min-h', values: ['0', 'full', 'screen', '32', '48', '64', '96'] },
@@ -180,6 +183,11 @@ export const STYLE_TOKENS: StyleToken[] = [
   { key: 'items', label: 'Align items', group: 'Layout', prefix: 'items', values: ['start', 'center', 'end', 'stretch', 'baseline'] },
   { key: 'justify', label: 'Justify content', group: 'Layout', prefix: 'justify', values: ['start', 'center', 'end', 'between', 'around', 'evenly'] },
   { key: 'self', label: 'Align self', group: 'Layout', prefix: 'self', values: ['auto', 'start', 'center', 'end', 'stretch'] },
+  // A stack child's flex: its grow weight, whether it shrinks, its basis (layout-containers L3).
+  { key: 'grow', label: 'Grow', group: 'Layout', prefix: 'grow', values: ['0', '1', '2', '3'] },
+  { key: 'shrink', label: 'Shrink', group: 'Layout', prefix: 'shrink', values: ['0', '1'] },
+  // A zero basis is 0%, as Tailwind's `flex-1`: in a parent of no set size it falls back to the content, so a Fill child never collapses.
+  { key: 'basis', label: 'Basis', group: 'Layout', prefix: 'basis', values: ['0', 'auto'], classes: { 0: '[0%]' } },
   { key: 'cols', label: 'Grid columns', group: 'Layout', prefix: 'grid-cols', values: ['1', '2', '3', '4', '5', '6', '12'] },
   { key: 'colSpan', label: 'Column span', group: 'Layout', prefix: 'col-span', values: ['1', '2', '3', '4', '5', '6', '12', 'full'] },
   // Hide/show per breakpoint: the classes are `hidden`, `md:flex`, ...
@@ -188,7 +196,10 @@ export const STYLE_TOKENS: StyleToken[] = [
 ]
 
 /** The class of a token value: `mt-10`, or `hidden` for a token without a prefix. */
-const tokenClass = (token: StyleToken, value: string) => (token.prefix ? `${token.prefix}-${value}` : value)
+const tokenClass = (token: StyleToken, stored: string) => {
+  const value = token.classes?.[stored] ?? stored
+  return token.prefix ? `${token.prefix}-${value}` : value
+}
 
 /**
  * The display class a template gives a node (`flex` for a stack, `grid` for a
@@ -401,14 +412,16 @@ export function styleInline(style: Record<string, string>): Record<string, strin
 
 /** Every class the registry can produce, breakpoint variants included. */
 export function allTokenClasses(): string[] {
-  return STYLE_TOKENS.flatMap(t => variantsOf(t).flatMap(b => t.values.map(v => styleKey(tokenClass(t, v), b))))
+  return STYLE_TOKENS.flatMap(t => variantsOf(t).flatMap(b => [...new Set(t.values.map(v => styleKey(tokenClass(t, v), b)))]))
 }
 
 /** The contents of `app/assets/css/tokens.css`: one Tailwind `@source inline` per token. */
 export function tokenSafelistCss(): string {
   const variants = `{,${ALL_BREAKPOINTS.map(b => `${b}:`).join(',')}}`
   const lines = STYLE_TOKENS.map((t) => {
-    const values = t.values.length === 1 ? t.values[0] : `{${t.values.join(',')}}`
+    // A value rendered as another's class (`classes`) adds none of its own.
+    const own = t.values.map(v => t.classes?.[v] ?? v).filter((v, i, all) => all.indexOf(v) === i)
+    const values = own.length === 1 ? own[0] : `{${own.join(',')}}`
     return `@source inline("${isResponsiveToken(t) ? variants : ''}${t.prefix ? `${t.prefix}-` : ''}${values}");`
   })
   return [
