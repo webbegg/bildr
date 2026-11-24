@@ -52,7 +52,8 @@ const styleTargets = computed(() => (multi.value ? editor.selectedNodes.map(n =>
 const isRoot = computed(() => !!node.value && !multi.value && node.value.id === editor.page?.root.id)
 const propDefs = computed(() => (node.value ? propDefsOf(node.value.type) : []))
 const icon = (type: string) => nodeDef(type)?.icon ?? 'i-lucide-file'
-const parentType = computed(() => (node.value && editor.page ? findParent(editor.page.root, node.value.id)?.type : undefined))
+const parent = computed(() => (node.value && editor.page ? findParent(editor.page.root, node.value.id) : undefined))
+const parentType = computed(() => parent.value?.type)
 /** The ancestors of the node, from the root down, for the head's breadcrumb. */
 const crumbs = computed(() => (node.value && editor.page ? pathTo(editor.page.root, node.value.id).slice(0, -1).map(id => ({ id, type: findNode(editor.page!.root, id)!.type })) : []))
 const crumbLabel = (crumb: { id: string, type: string }) => {
@@ -261,6 +262,7 @@ function renamePage(field: 'name' | 'path', value: string) {
         :mixed="shared.mixed"
         :type="styleType"
         :parent-type="parentType"
+        :parent-style="parent?.style"
         :root="isRoot"
         @preview="editor.previewStyle(styleTargets, $event)"
         @update="editor.updateStyle(styleTargets, $event)"
