@@ -99,7 +99,7 @@ describe('the toolbar', () => {
     await select('n_h1')
     await click(q('[data-insert-button]'))
     expect(q('[data-insert-panel]')).not.toBeNull()
-    expect(qa('[data-palette-type]').map(row => row.getAttribute('data-palette-type'))).toEqual(expect.arrayContaining(['Container', 'Text', 'Button']))
+    expect(qa('[data-palette-type]').map(row => row.getAttribute('data-palette-type'))).toEqual(expect.arrayContaining(['Stack', 'Row', 'Text', 'Button']))
     await typeInto(q('[data-insert-panel] input'), 'butt')
     expect(qa('[data-palette-type]').map(row => row.getAttribute('data-palette-type'))).toEqual(['Button'])
     q('[data-insert-panel] input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
@@ -346,10 +346,10 @@ describe('the node menu', () => {
     expect(item('Delete')?.hasAttribute('data-disabled')).toBe(false)
   })
 
-  it('wraps in a Container, and hides here with a device-aware style patch', async () => {
+  it('wraps in a Stack (a Container), and hides here with a device-aware style patch', async () => {
     const { actions } = await open({ node_wrap: ok({ nodeId: 'n_container_1' }), node_update_style: ok() })
     await openMenu('n_h1')
-    await click(item('Wrap in Container')!)
+    await click(item('Wrap in Stack')!)
     expect(actions.named('node_wrap').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1', type: 'Container' }])
     await openMenu('n_h1')
     await click(item('Hide here')!)

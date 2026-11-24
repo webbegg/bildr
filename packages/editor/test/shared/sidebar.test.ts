@@ -103,7 +103,7 @@ describe('Select ▸ Same type / Same component', () => {
 
 describe('toolHint', () => {
   it('names an armed insert tool, and says nothing for Move and Hand', () => {
-    expect(toolHint('Container')).toBe('Frame · click to insert · Esc')
+    expect(toolHint('Stack')).toBe('Stack · click to insert · Esc')
     expect(toolHint('Text')).toBe('Text · click to insert · Esc')
     expect(toolHint('move')).toBeNull()
     expect(toolHint('hand')).toBeNull()

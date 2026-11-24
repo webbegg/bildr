@@ -6,6 +6,7 @@ import { useEditor } from '../../editor/useEditor.ts'
 import { insertableComponents } from '../../shared/componentEditor.ts'
 import { DRAG_MIME, instancePayload, insertPayload } from '../../shared/dropTarget.ts'
 import { layoutDragPayload } from '../../shared/layoutEditor.ts'
+import { insertId } from '../../shared/presets.ts'
 import { matches } from '../../shared/sidebar.ts'
 
 /**
@@ -23,7 +24,7 @@ const editor = useEditor()
 const query = ref('')
 const HIDDEN = ['Page', 'Instance', 'SlotFill']
 const builtIn = computed(() => (editor.catalog?.nodeTypes ?? []).filter(entry => entry.insertable !== false && !HIDDEN.includes(entry.type)))
-const shown = computed(() => builtIn.value.filter(c => matches(query.value, c.label, c.type)))
+const shown = computed(() => builtIn.value.filter(c => matches(query.value, c.label, c.type)).map(c => ({ ...c, id: insertId(c) })))
 const own = computed(() => (editor.model ? insertableComponents(editor.model, editor.componentId).filter(c => matches(query.value, c.name)) : []))
 const onPage = computed(() => !editor.componentId && !editor.layoutId)
 const layouts = computed(() => (onPage.value ? editor.layouts.filter(l => matches(query.value, l.name)) : []))
@@ -53,7 +54,7 @@ function useLayout(layoutId: string) {
 function insertFirst() {
   if (own.value[0]) insertInstance(own.value[0].id)
   else if (layouts.value[0]) useLayout(layouts.value[0].id)
-  else if (shown.value[0]) insert(shown.value[0].type)
+  else if (shown.value[0]) insert(shown.value[0].id)
 }
 
 const TILE = 'flex w-full cursor-grab flex-col gap-1 rounded-lg p-1 text-left text-[11px] text-toned hover:bg-white/8 hover:text-highlighted active:cursor-grabbing'
@@ -145,7 +146,7 @@ const TILE = 'flex w-full cursor-grab flex-col gap-1 rounded-lg p-1 text-left te
       </p>
       <UTooltip
         v-for="component in shown"
-        :key="component.type"
+        :key="component.id"
         :text="component.description"
         :content="{ side: 'right' }"
         :delay-duration="500"
@@ -153,15 +154,15 @@ const TILE = 'flex w-full cursor-grab flex-col gap-1 rounded-lg p-1 text-left te
         <button
           type="button"
           draggable="true"
-          :data-palette-type="component.type"
+          :data-palette-type="component.id"
           class="flex w-full cursor-grab items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-toned hover:bg-white/8 hover:text-highlighted active:cursor-grabbing"
           :class="FOCUS_RING"
-          @dragstart="onDragStart($event, insertPayload(component.type))"
+          @dragstart="onDragStart($event, insertPayload(component.id))"
           @dragend="emit('done')"
-          @click="insert(component.type)"
+          @click="insert(component.id)"
         >
           <UIcon
-            :name="nodeIcon(component.type)"
+            :name="nodeIcon(component.id)"
             class="size-4 shrink-0 text-dimmed"
           />
           <span class="truncate">{{ component.label }}</span>

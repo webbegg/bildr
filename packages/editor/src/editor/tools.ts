@@ -5,7 +5,7 @@
  * Move). Letters fire only bare, so they stay clear of the editor shortcuts.
  */
 
-/** `move`, `hand`, or the component type a canvas click inserts. */
+/** `move`, `hand`, or the component a canvas click inserts: a layout preset or a node type (`insertSpec`). */
 export type ToolId = string
 
 export interface InsertTool { id: ToolId, label: string, icon: string, keys: string[] }
@@ -16,7 +16,7 @@ export const HAND_TOOL = 'hand'
 export const INSERT_TOOLS: InsertTool[] = [
   { id: MOVE_TOOL, label: 'Move', icon: 'i-lucide-mouse-pointer-2', keys: ['V'] },
   { id: HAND_TOOL, label: 'Hand', icon: 'i-lucide-hand', keys: ['H'] },
-  { id: 'Container', label: 'Frame', icon: 'i-lucide-frame', keys: ['F', 'A'] },
+  { id: 'Stack', label: 'Stack', icon: 'i-lucide-frame', keys: ['F', 'A'] },
   { id: 'Text', label: 'Text', icon: 'i-lucide-type', keys: ['T'] },
   { id: 'Button', label: 'Button', icon: 'i-lucide-mouse-pointer-click', keys: ['B'] },
   // No letter: `I` opens the Insert panel, as in Framer.

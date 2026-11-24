@@ -19,7 +19,7 @@ import { changed, historyReady } from './history.ts'
 const TREE = 'file is the artifact id of a page, component or layout (pg_*, cmp_*, lay_*), nodeId a node of its tree.'
 
 const DESCRIPTIONS: Record<EditName, string> = {
-  node_insert: `Insert a node (with optional children) into a container of a tree, at index (default: the end of the root). ${TREE} A palette type gets its default props and style (see catalog_get) under the given ones; exact: true keeps only the given ones (a paste). With nodes, inserts several in order. A new node id is n_<type>_<k>. A Form with an action makes the page use that action (same edit). Returns nodeId (and nodeIds with nodes).`,
+  node_insert: `Insert a node (with optional children) into a container of a tree, at index (default: the end of the root). ${TREE} A palette type gets its default props and style (see catalog_get) under the given ones; exact: true keeps only the given ones (a paste). For layout, give a preset (Stack, Row, Column or Grid) instead of a type: the node is a Container with the preset's style tokens (direction, flexWrap, display, cols, gap, items), and every container takes the same tokens; the types Row, Column and Grid are legacy. With nodes, inserts several in order. A new node id is n_<type>_<k>. A Form with an action makes the page use that action (same edit). Returns nodeId (and nodeIds with nodes).`,
   node_update_props: `Set props of a node; null removes one. Only the props its type takes (catalog_get nodeTypes[].props). Setting a Form's action also makes its page use that action, in the same edit (a Form needs an action that takes an entity; any other is refused and nothing changes). ${TREE}`,
   node_update_style: `Set style tokens of a node, e.g. { "mt": "10", "bg": "primary" }; null removes one. breakpoint (one of the project's breakpointBase: sm/md/lg for mobile-first, max-lg/max-md/max-sm for desktop-first) prefixes every key, e.g. breakpoint "md" with { "p": "16" } sets "md:p". With nodeIds the same tokens go to each; with updates each node gets its own. ${TREE}`,
   node_rename: `Give a node a layer name; empty or null removes it. ${TREE}`,
@@ -28,7 +28,7 @@ const DESCRIPTIONS: Record<EditName, string> = {
   node_move_many: `Run several moves in order, all or nothing. ${TREE}`,
   node_delete: `Delete nodes with their children (never the root). In a component or layout, the variant overrides and property bindings on them go too. ${TREE}`,
   node_duplicate: `Duplicate nodes right after themselves, with fresh ids. Returns nodeId and nodeIds (the copies). ${TREE}`,
-  node_wrap: `Wrap sibling nodes in a new container (Container by default; Row, Column, Card or Grid) where the first was. Returns the container nodeId. ${TREE}`,
+  node_wrap: `Wrap sibling nodes in a new container where the first was: a Container by default, a preset (Stack, Row, Column or Grid: a Container with the preset's style tokens), or a Card (type). Returns the container nodeId. ${TREE}`,
   page_create: 'Create a page file in a module (default: the project\'s defaultModule): name is kebab-cased into its route name, the id is pg_<name>, path defaults to /<name>, layout is optional. The page starts with an empty Page root. Returns pageId, filePath and nodeId (the root).',
   page_update: 'Rename (kebab-case) or re-path a page; its file keeps its path.',
   page_delete: 'Delete a page file. Refused while links (to: { page }) or navigate steps target it, and for the last page.',

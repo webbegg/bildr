@@ -6,6 +6,7 @@ import { useEditor } from '../../editor/useEditor.ts'
 import { DRAG_MIME, draggedNodeId, dropPosition, nodeDragType, nodePayload, resolveDrop } from '../../shared/dropTarget.ts'
 import type { DropPosition } from '../../shared/dropTarget.ts'
 import { hiddenBadge, naturalDisplay, visibilityAt, visibilityToggle } from '../../shared/layers.ts'
+import { layoutIcon } from '../../shared/presets.ts'
 
 const INSTANCE_TYPE = 'Instance'
 const SLOT_FILL_TYPE = 'SlotFill'
@@ -37,12 +38,7 @@ const props = withDefaults(defineProps<{ node: ModelNode, depth: number, indent?
 const editor = useEditor()
 const row = useTemplateRef<HTMLElement>('row')
 
-const icon = computed(() => {
-  const { type, style } = props.node
-  if (type === 'Row' || type === 'Column') return (style?.direction ?? (type === 'Row' ? 'row' : 'col')).startsWith('row') ? 'i-lucide-arrow-right' : 'i-lucide-arrow-down'
-  if (type === 'Grid') return 'i-lucide-grid-3x3'
-  return nodeIcon(type)
-})
+const icon = computed(() => layoutIcon(props.node) ?? nodeIcon(props.node.type))
 const isRoot = computed(() => props.depth === 0)
 const name = computed(() => (isRoot.value ? editor.page?.name ?? 'Page' : editor.nodeName(props.node)))
 const preview = computed(() => {

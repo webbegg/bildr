@@ -118,18 +118,26 @@ export function displayOf(type: string, props: Record<string, unknown> = {}): st
   return ''
 }
 
+/** How a node lays out its children at its base breakpoint: a flex row or column, a grid, or block flow. */
+export type BaseLayout = 'row' | 'col' | 'grid' | 'block'
+
 /**
- * Whether a node lays its children out in a vertical stack, so their
- * `selfFallback` applies: its type's layout, as its base `display` and
- * `direction` tokens leave it. A breakpoint token leaves the base stack as it
- * is.
+ * A node's `BaseLayout`: its type's layout, as its base `display` and
+ * `direction` tokens leave it. Breakpoint tokens don't change it. A reversed
+ * direction is still a row or a column.
  */
-export function childrenInStack(type: string, props: Record<string, unknown> = {}, style: Record<string, string> = {}): boolean {
+export function baseLayout(type: string, props: Record<string, unknown> = {}, style: Record<string, string> = {}): BaseLayout {
   // A Card's `display` styles the card; its inner stack is always flex.
   const display = type !== 'Card' && (style.display === 'block' || style.display === 'grid' || style.display === 'flex') ? style.display : displayOf(type, props)
-  if (display !== 'flex') return false
+  if (display === 'grid') return 'grid'
+  if (display !== 'flex') return 'block'
   const direction = style.direction ?? fallbackStyle(type, props).direction
-  return direction === 'col' || direction === 'col-reverse'
+  return direction === 'col' || direction === 'col-reverse' ? 'col' : 'row'
+}
+
+/** Whether a node lays its children out in a vertical stack (its `baseLayout` is `col`), so their `selfFallback` applies. */
+export function childrenInStack(type: string, props: Record<string, unknown> = {}, style: Record<string, string> = {}): boolean {
+  return baseLayout(type, props, style) === 'col'
 }
 
 /** The types that fill the width of a vertical stack whatever its `items`. */

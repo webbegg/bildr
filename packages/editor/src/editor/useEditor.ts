@@ -31,6 +31,7 @@ import type { UseEntry } from '../shared/dataArtifacts.ts'
 import type { PendingMigration } from '../types.ts'
 import { interactionKey, parseInteractionKey } from '../shared/interactionPanel.ts'
 import { layerName } from '../shared/layers.ts'
+import { insertSpec } from '../shared/presets.ts'
 import { createDataView } from './dataView.ts'
 import { carryFile, carryPage, requestView, screenOf, takeStart } from './views.ts'
 import type { DataRequest } from './views.ts'
@@ -102,7 +103,8 @@ export interface PropertiesRequest {
 
 export type EditorView = 'build' | 'data' | 'design' | 'settings'
 export type SidebarPanel = 'pages' | 'layers' | 'assets'
-export type WrapType = 'Container' | 'Row' | 'Column' | 'Card' | 'Grid'
+/** What Wrap in › wraps with: a Container or a Card (types), or a layout preset. */
+export type WrapType = 'Container' | 'Card' | 'Stack' | 'Row' | 'Column' | 'Grid'
 export type InteractionEvent = 'click' | 'mouseenter' | 'mouseleave' | 'appear'
 export type StateKind = 'hover' | 'pressed'
 export type Transition = { type: 'instant' } | { type: 'ease', duration?: number, easing?: string } | { type: 'spring', stiffness?: number, damping?: number }
@@ -385,11 +387,11 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
 
   // ── Edits of a node ─────────────────────────────────────────────────────
 
-  /** Inserts a palette component (at the selection by default, never inside an instance) and selects it. */
-  const insert = async (type: string, target?: DropTarget, props?: Record<string, Value>) => {
+  /** Inserts a palette component, a layout preset or a node type (`insertSpec`), at the selection by default, never inside an instance, and selects it. */
+  const insert = async (id: string, target?: DropTarget, props?: Record<string, Value>) => {
     const tree = root()
     if (!tree) return
-    await design.insert({ type, ...(props ? { props } : {}) }, target ? outsideInstance(tree, target) : undefined)
+    await design.insert({ ...insertSpec(id), ...(props ? { props } : {}) }, target ? outsideInstance(tree, target) : undefined)
   }
 
   /** Inserts an instance of a component (at the selection by default) and selects it; a component never goes into itself. */
@@ -478,7 +480,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   const wrap = async (ids: string | string[], type?: WrapType, style?: Record<string, string>) => {
     const list = typeof ids === 'string' ? [ids] : ids
     if (!list.length || list.includes(root()?.id ?? '')) return
-    const result = await runOnPage('node_wrap', { ...(list.length > 1 ? { nodeIds: list } : { nodeId: list[0] }), ...(type ? { type } : {}), ...(style ? { style } : {}) })
+    const result = await runOnPage('node_wrap', { ...(list.length > 1 ? { nodeIds: list } : { nodeId: list[0] }), ...(type ? insertSpec(type) : {}), ...(style ? { style } : {}) })
     if (typeof result?.nodeId === 'string') selectedId.value = result.nodeId
   }
 

@@ -25,7 +25,7 @@ const blank = () => structuredClone(loaded.model)
 let model = blank()
 const modelGet = () => ({ ok: true, model, files: parsed, database: false })
 const catalog = () => ({
-  nodeTypes: PALETTE.map(entry => ({ type: entry.type, label: entry.label, description: entry.description, container: entry.container, insertable: true, props: [], defaults: { props: entry.props, style: entry.style } })),
+  nodeTypes: PALETTE.map(entry => ({ type: entry.type, ...(entry.preset ? { preset: entry.preset } : {}), label: entry.label, description: entry.description, container: entry.container, insertable: true, props: [], defaults: { props: entry.props, style: entry.style } })),
   styleTokens: [],
   breakpoints: { base: 'mobile', prefixes: ['sm', 'md', 'lg'] },
   colors: [],

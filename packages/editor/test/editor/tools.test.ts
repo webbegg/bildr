@@ -10,8 +10,8 @@ describe('toolForKey', () => {
   it('maps Figma letters to tools, in either case', () => {
     expect(key('v')).toBe('move')
     expect(key('h')).toBe('hand')
-    expect(key('f')).toBe('Container')
-    expect(key('a')).toBe('Container')
+    expect(key('f')).toBe('Stack')
+    expect(key('a')).toBe('Stack')
     expect(key('t')).toBe('Text')
     expect(key('T')).toBe('Text')
     expect(key('b')).toBe('Button')
@@ -59,7 +59,7 @@ describe('pointerMode', () => {
 describe('toolHint', () => {
   it('tells how to use an armed insert tool', () => {
     expect(toolHint('Text')).toBe('Text · click to insert · Esc')
-    expect(toolHint('Container')).toBe('Frame · click to insert · Esc')
+    expect(toolHint('Stack')).toBe('Stack · click to insert · Esc')
   })
 
   it('is null for Move and Hand', () => {
