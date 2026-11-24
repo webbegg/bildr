@@ -54,9 +54,31 @@ describe('node_insert with a preset', () => {
 
   it('refuses an unknown preset, or one whose type is not the given type', () => {
     const p = project()
-    expect(p.refuse('node_insert', { file: 'pg_index', preset: 'Masonry' }, 'invalid').message).toBe('Unknown preset "Masonry": one of Stack, Row, Column, Grid')
+    expect(p.refuse('node_insert', { file: 'pg_index', preset: 'Masonry' }, 'invalid').message).toBe('Unknown preset "Masonry": one of Stack, Row, Column, Grid, Card')
     expect(p.refuse('node_insert', { file: 'pg_index', preset: 'Row', type: 'Text' }, 'invalid').message).toBe('The Row preset is a Container, not a Text')
     expect(applyEdit(fixtureModelFiles(), 'node_insert', { file: 'pg_index' })).toMatchObject({ ok: false, code: 'invalid_input' })
+  })
+})
+
+describe('the Card preset (layout-containers T6)', () => {
+  it('is one Container with the card\'s surface as tokens, named Card in the layers', () => {
+    const p = project()
+    const { nodeId } = p.edit('node_insert', { file: 'pg_index', preset: 'Card' })
+    expect(findNode(p.json(IDX).root, nodeId)).toEqual({
+      id: 'n_card_1', type: 'Container', name: 'Card',
+      style: { p: '6', gap: '3', items: 'start', rounded: 'lg', bg: 'default', border: '1', borderColor: 'default', overflow: 'hidden' }
+    })
+    // A given name wins.
+    const named = p.edit('node_insert', { file: 'pg_index', preset: 'Card', name: 'Price' })
+    expect(findNode(p.json(IDX).root, named.nodeId)!.name).toBe('Price')
+  })
+
+  it('wraps with node_wrap, and the legacy Card type still inserts', () => {
+    const p = project()
+    const { nodeId } = p.edit('node_wrap', { file: 'pg_index', nodeIds: ['n_quotes'], preset: 'Card' })
+    expect(findNode(p.json(IDX).root, nodeId)).toMatchObject({ type: 'Container', name: 'Card', style: { rounded: 'lg' } })
+    const legacy = p.edit('node_insert', { file: 'pg_index', type: 'Card' })
+    expect(findNode(p.json(IDX).root, legacy.nodeId)).toMatchObject({ type: 'Card', style: { gap: '3', items: 'start' } })
   })
 })
 
@@ -78,10 +100,10 @@ describe('catalog_get', () => {
     const types = (outcome.result as Json).nodeTypes as Json[]
     const presets = types.filter(entry => entry.preset)
     expect(presets.map(entry => [entry.preset, entry.type, entry.insertable])).toEqual([
-      ['Stack', 'Container', true], ['Row', 'Container', true], ['Column', 'Container', true], ['Grid', 'Container', true]
+      ['Stack', 'Container', true], ['Row', 'Container', true], ['Column', 'Container', true], ['Grid', 'Container', true], ['Card', 'Container', true]
     ])
     expect(presets.find(entry => entry.preset === 'Row')).toMatchObject({ label: 'Row', defaults: { props: {}, style: { direction: 'row', flexWrap: 'wrap', gap: '3', items: 'center' } } })
-    for (const type of ['Row', 'Column', 'Grid']) {
+    for (const type of ['Row', 'Column', 'Grid', 'Card']) {
       expect(types.find(entry => entry.type === type && !entry.preset)).toMatchObject({ insertable: false, description: expect.stringContaining(`preset "${type}"`) })
     }
   })
