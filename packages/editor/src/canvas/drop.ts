@@ -1,4 +1,5 @@
 import type { ModelNode } from '@bildr/codegen/model'
+import { isContainerType } from '@bildr/codegen/edit'
 
 /**
  * Where something dragged over the canvas drops (P4a): the geometry half of
@@ -23,8 +24,12 @@ export interface DropSlot {
   horizontal: boolean
 }
 
-/** The node types that hold children on the canvas. */
-export const CONTAINER_TYPES = ['Page', 'Container', 'Row', 'Column', 'Grid', 'Card', 'Form', 'List']
+/**
+ * Whether a node takes a drop inside it on the canvas: a container type,
+ * except a Link (inline text) and an Instance or a SlotFill (a drop on an
+ * instance lands after it).
+ */
+const takesDropInside = (type: string): boolean => isContainerType(type) && !['Link', 'Instance', 'SlotFill'].includes(type)
 
 const pathTo = (node: ModelNode, id: string): ModelNode[] | undefined => {
   if (node.id === id) return [node]
@@ -54,7 +59,7 @@ export function insertTarget(root: ModelNode, overId: string, point: Point, chil
   const path = pathTo(root, overId)
   const over = path?.at(-1)
   if (!path || !over) return null
-  if (over !== root && !CONTAINER_TYPES.includes(over.type)) {
+  if (over !== root && !takesDropInside(over.type)) {
     const parent = path.at(-2)!
     const at = (parent.children ?? []).findIndex(child => child.id === over.id)
     return { parentId: parent.id, index: at + 1, position: 'after', markId: over.id, horizontal: false }
@@ -97,7 +102,7 @@ export function dropTarget(
   const path = pathTo(root, id)!
   const node = path.at(-1)!
   const along = (box: Box, row: boolean) => row ? point.x > box.x + box.width / 2 : point.y > box.y + box.height / 2
-  if (CONTAINER_TYPES.includes(node.type) && id !== draggedId) {
+  if (takesDropInside(node.type) && id !== draggedId) {
     const kids = node.children ?? []
     const row = isRow(node.id)
     if (!kids.length) return { parentId: node.id, index: 0, position: 'inside', markId: node.id, horizontal: row }

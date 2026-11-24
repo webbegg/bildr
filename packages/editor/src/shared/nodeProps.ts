@@ -1,5 +1,5 @@
 import type { Value } from '@bildr/codegen/model'
-import { PALETTE } from '@bildr/codegen/edit'
+import { isContainerType, PALETTE } from '@bildr/codegen/edit'
 import { BUTTON_COLORS, BUTTON_SIZES, BUTTON_VARIANTS, CONTAINER_TAGS, INPUT_TYPES, LIST_LAYOUTS } from '@bildr/codegen/render'
 import { nodeIcon } from '../design/icons.ts'
 
@@ -111,10 +111,8 @@ export const BINDABLE: Record<string, string[]> = {
   Image: ['src', 'alt']
 }
 
-const CONTAINER_TYPES = new Set(['Page', 'Instance', 'SlotFill', ...PALETTE.filter(entry => entry.container).map(entry => entry.type)])
-
-/** Whether a node type holds child nodes (the hosted `isContainerType`). */
-export const isContainerType = (type: string): boolean => CONTAINER_TYPES.has(type)
+/** Whether a node type holds child nodes: the model's rule. */
+export { isContainerType }
 
 /** The hosted `getComponent(type)`: the label, icon and props of a node type; undefined for an unknown one. */
 export function nodeDef(type: string): { type: string, label: string, icon: string, container: boolean, props: PropDef[] } | undefined {

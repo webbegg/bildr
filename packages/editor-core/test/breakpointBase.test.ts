@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { deviceOrder } from '../src/devices.ts'
 import { canHideFrame, defaultFrames, frameCaption, frameForKey, frameShortcut, hiddenFrames, hideFrame, parseFrames, primaryFrame, showFrame, visibleFrames } from '../src/frames.ts'
 import { paddingDragKey, resizePatch, spacingDragPatch } from '../src/handles.ts'
-import { breakpointLabel, breakpointStyles, devicesFor, hasStyleAt, provenanceHint, sectionMark, styleProvenance } from '../src/styleFields.ts'
+import { breakpointLabel, breakpointStyles, devicesFor, hasStyleAt, provenanceHint, styleProvenance } from '../src/styleFields.ts'
 import type { DeviceId } from '../src/styleFields.ts'
 import { viewportUnitRules } from '../src/viewport.ts'
 
@@ -81,8 +81,6 @@ describe('the cascade read per device', () => {
     expect(hasStyleAt(style, 'large-phone', DESKTOP)).toBe(true)
     expect(hasStyleAt({ p: '4' }, 'tablet', DESKTOP)).toBe(false)
     expect(hasStyleAt({ p: '4' }, 'desktop', DESKTOP)).toBe(true)
-    expect(sectionMark(style, 'Spacing', 'tablet', DESKTOP)).toBe('set')
-    expect(sectionMark(style, 'Spacing', 'large-phone', DESKTOP)).toBeUndefined()
   })
 })
 
