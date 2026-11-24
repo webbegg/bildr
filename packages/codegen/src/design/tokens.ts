@@ -120,6 +120,11 @@ const MARGIN = [...SPACING, 'auto']
 // Framer's Fixed width and height: `w-64` is 64 × `--spacing`, like the spacing scale.
 const FIXED_WIDTHS = ['0', '4', '8', '12', '16', '20', '24', '32', '40', '48', '56', '64', '72', '80', '96']
 
+const OVERFLOW = ['visible', 'hidden', 'auto', 'scroll', 'clip']
+// Grid auto-fit: `--col-min` (a colMin class) is the minimum column width, and a column is never wider than the grid.
+const AUTO_FIT = '[repeat(auto-fit,minmax(min(var(--col-min,16rem),100%),1fr))]'
+const COL_MINS = ['16', '24', '32', '40', '48', '56', '64', '72', '80', '96']
+
 const SHADES = ['50', '100', '200', '300', '400', '500', '600', '700', '800', '900', '950']
 // Nuxt UI defines no bare `neutral` colour utility, only its shades.
 const SEMANTIC = ['primary', 'secondary', 'success', 'info', 'warning', 'error', 'neutral']
@@ -148,6 +153,9 @@ export const STYLE_TOKENS: StyleToken[] = [
   spacing('pb', 'Padding bottom'),
   spacing('pl', 'Padding left'),
   spacing('gap', 'Gap'),
+  // The gap split into the column gap and the row gap (layout-containers L5): the panel splits it when a stack wraps, or in a grid.
+  { ...spacing('gapX', 'Column gap'), prefix: 'gap-x' },
+  { ...spacing('gapY', 'Row gap'), prefix: 'gap-y' },
   // `fill` is the Fill intent, resolved by the parent's axis (`fillStyle` in render/rules.ts); `full` is 100%.
   { key: 'w', label: 'Width', group: 'Size', prefix: 'w', values: ['auto', 'full', 'screen', 'fit', '1/2', '1/3', '2/3', '1/4', '3/4', ...FIXED_WIDTHS, 'fill'], classes: { fill: 'full' } },
   { key: 'h', label: 'Height', group: 'Size', prefix: 'h', values: ['auto', 'full', 'screen', 'fit', ...FIXED_WIDTHS, 'fill'], classes: { fill: 'full' } },
@@ -182,17 +190,39 @@ export const STYLE_TOKENS: StyleToken[] = [
   { key: 'flexWrap', label: 'Wrap', group: 'Layout', prefix: 'flex', values: ['wrap', 'nowrap'] },
   { key: 'items', label: 'Align items', group: 'Layout', prefix: 'items', values: ['start', 'center', 'end', 'stretch', 'baseline'] },
   { key: 'justify', label: 'Justify content', group: 'Layout', prefix: 'justify', values: ['start', 'center', 'end', 'between', 'around', 'evenly'] },
+  // The alignment of a wrapped stack's lines, or a grid's rows (layout-containers L5).
+  { key: 'content', label: 'Align content', group: 'Layout', prefix: 'content', values: ['start', 'center', 'end', 'between', 'around', 'evenly', 'stretch'] },
   { key: 'self', label: 'Align self', group: 'Layout', prefix: 'self', values: ['auto', 'start', 'center', 'end', 'stretch'] },
   // A stack child's flex: its grow weight, whether it shrinks, its basis (layout-containers L3).
   { key: 'grow', label: 'Grow', group: 'Layout', prefix: 'grow', values: ['0', '1', '2', '3'] },
   { key: 'shrink', label: 'Shrink', group: 'Layout', prefix: 'shrink', values: ['0', '1'] },
   // A zero basis is 0%, as Tailwind's `flex-1`: in a parent of no set size it falls back to the content, so a Fill child never collapses.
   { key: 'basis', label: 'Basis', group: 'Layout', prefix: 'basis', values: ['0', 'auto'], classes: { 0: '[0%]' } },
-  { key: 'cols', label: 'Grid columns', group: 'Layout', prefix: 'grid-cols', values: ['1', '2', '3', '4', '5', '6', '12'] },
+  // A stack child's place out of document order; the panel warns it changes what a screen reader and the keyboard follow.
+  { key: 'order', label: 'Order', group: 'Layout', prefix: 'order', values: ['first', 'last', 'none'] },
+  // `auto-fit`: as many columns of at least `colMin` (16rem when unset, never wider than the grid) as fit.
+  { key: 'cols', label: 'Grid columns', group: 'Layout', prefix: 'grid-cols', values: ['1', '2', '3', '4', '5', '6', '12', 'auto-fit'], classes: { 'auto-fit': AUTO_FIT } },
+  { key: 'colMin', label: 'Min column width', group: 'Layout', prefix: '', values: COL_MINS, classes: Object.fromEntries(COL_MINS.map(value => [value, `[--col-min:calc(var(--spacing)*${value})]`])) },
+  { key: 'rows', label: 'Grid rows', group: 'Layout', prefix: 'grid-rows', values: ['1', '2', '3', '4', '5', '6', 'none'] },
   { key: 'colSpan', label: 'Column span', group: 'Layout', prefix: 'col-span', values: ['1', '2', '3', '4', '5', '6', '12', 'full'] },
+  { key: 'rowSpan', label: 'Row span', group: 'Layout', prefix: 'row-span', values: ['1', '2', '3', '4', '5', '6', 'full'] },
+  // An Overlay: a grid whose children all take its one cell, so it sizes to the largest (layout-containers L5).
+  { key: 'overlay', label: 'Overlay', group: 'Layout', prefix: '', values: ['stack', 'none'], classes: { stack: '*:[grid-area:1/1]', none: '*:[grid-area:auto]' } },
   // Hide/show per breakpoint: the classes are `hidden`, `md:flex`, ...
   { key: 'display', label: 'Display', group: 'Layout', prefix: '', values: ['hidden', 'block', 'flex', 'grid'] },
-  { key: 'overflow', label: 'Overflow', group: 'Layout', prefix: 'overflow', values: ['visible', 'hidden', 'auto', 'scroll', 'clip'] }
+  { key: 'overflow', label: 'Overflow', group: 'Layout', prefix: 'overflow', values: OVERFLOW },
+  { key: 'overflowX', label: 'Overflow X', group: 'Layout', prefix: 'overflow-x', values: OVERFLOW },
+  { key: 'overflowY', label: 'Overflow Y', group: 'Layout', prefix: 'overflow-y', values: OVERFLOW },
+  // Out of the flow (layout-containers L5): pinned by its insets to the nearest positioned ancestor, layered by z.
+  { key: 'position', label: 'Position', group: 'Layout', prefix: '', values: ['static', 'relative', 'absolute', 'fixed', 'sticky'] },
+  { key: 'inset', label: 'Inset', group: 'Layout', prefix: 'inset', values: ['0', 'auto'] },
+  { key: 'insetX', label: 'Inset X', group: 'Layout', prefix: 'inset-x', values: ['0', 'auto'] },
+  { key: 'insetY', label: 'Inset Y', group: 'Layout', prefix: 'inset-y', values: ['0', 'auto'] },
+  { key: 'top', label: 'Top', group: 'Layout', prefix: 'top', values: MARGIN },
+  { key: 'right', label: 'Right', group: 'Layout', prefix: 'right', values: MARGIN },
+  { key: 'bottom', label: 'Bottom', group: 'Layout', prefix: 'bottom', values: MARGIN },
+  { key: 'left', label: 'Left', group: 'Layout', prefix: 'left', values: MARGIN },
+  { key: 'z', label: 'Layer', group: 'Layout', prefix: 'z', values: ['0', '10', '20', '30', '40', '50', 'auto'] }
 ]
 
 /** The class of a token value: `mt-10`, or `hidden` for a token without a prefix. */
@@ -312,7 +342,10 @@ const TOKEN_SIDES: Record<string, string> = {
   m: 'trbl', mx: 'rl', my: 'tb', mt: 't', mr: 'r', mb: 'b', ml: 'l',
   p: 'TRBL', px: 'RL', py: 'TB', pt: 'T', pr: 'R', pb: 'B', pl: 'L',
   border: '1234', borderT: '1', borderR: '2', borderB: '3', borderL: '4',
-  rounded: 'wxyz', roundedTl: 'w', roundedTr: 'x', roundedBr: 'y', roundedBl: 'z'
+  rounded: 'wxyz', roundedTl: 'w', roundedTr: 'x', roundedBr: 'y', roundedBl: 'z',
+  gap: 'XY', gapX: 'X', gapY: 'Y',
+  overflow: 'UV', overflowX: 'U', overflowY: 'V',
+  inset: 'EFGH', insetY: 'EG', insetX: 'FH', top: 'E', right: 'F', bottom: 'G', left: 'H'
 }
 
 const overlap = (a: string, b: string) => [...(TOKEN_SIDES[a] ?? '')].some(side => TOKEN_SIDES[b]?.includes(side))

@@ -46,7 +46,7 @@ describe('desktop-first style keys', () => {
   })
 
   it('safelists the max-* variants of the responsive tokens', () => {
-    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:,max-lg:,max-md:,max-sm:}grid-cols-{1,2,3,4,5,6,12}");')
+    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:,max-lg:,max-md:,max-sm:}col-span-{1,2,3,4,5,6,12,full}");')
     expect(tokenSafelistCss()).toContain('@source inline("bg-{primary,')
     expect(allTokenClasses()).toEqual(expect.arrayContaining(['max-lg:text-center', 'max-md:grid-cols-1', 'max-sm:hidden', 'max-lg:max-w-full']))
     expect(allTokenClasses()).not.toContain('max-lg:bg-primary')

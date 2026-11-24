@@ -1,5 +1,6 @@
 import { z } from 'zod'
-import { ALL_BREAKPOINTS, isStyleTokenKey, styleTokenProblem } from '../design/tokens.ts'
+import { ALL_BREAKPOINTS, convertStyleBase, isStyleTokenKey, styleTokenProblem } from '../design/tokens.ts'
+import type { BreakpointBase } from '../design/tokens.ts'
 import { ArtifactIdSchema, InteractionSchema, LocalIdSchema, ValueSchema } from '../model/schemas.ts'
 import type { ComponentFile, LayoutFile, ModelNode, PageFile, Value } from '../model/schemas.ts'
 import { takesProp } from '../render/rules.ts'
@@ -104,6 +105,12 @@ const entryOf = (spec: NodeSpec): { entry: PaletteEntry | undefined, type: strin
   return { entry, type: entry.type }
 }
 
+/** A palette entry's style in the project's breakpoints: the palette writes mobile-first (the Columns preset). */
+const presetStyle = (entry: PaletteEntry, base: BreakpointBase): Record<string, string> => {
+  const converted = convertStyleBase(entry.style, 'mobile', base)
+  return 'style' in converted ? converted.style : entry.style
+}
+
 /** A new node (and its children) for `spec`, with the palette defaults unless `exact`. */
 export const buildNode = (draft: Draft, spec: NodeSpec, exact = false): ModelNode => {
   if (exact && spec.preset !== undefined) fail('invalid', 'A preset is its tokens: with exact, give type Container and the tokens')
@@ -117,7 +124,7 @@ export const buildNode = (draft: Draft, spec: NodeSpec, exact = false): ModelNod
   // A link takes `to` (a page) or `href` (a URL): a given one replaces the other's default.
   if (LINK_PROPS.some(key => spec.props?.[key] !== undefined)) for (const key of LINK_PROPS) Reflect.deleteProperty(defaults, key)
   const props = nonEmpty({ ...defaults, ...spec.props })
-  const style = nonEmpty({ ...(exact || !entry ? {} : entry.style), ...spec.style })
+  const style = nonEmpty({ ...(exact || !entry ? {} : presetStyle(entry, draft.base)), ...spec.style })
   const node: ModelNode = { id: draft.nodeId(spec.preset ?? type), type }
   const name = spec.name ?? (exact ? undefined : entry?.name)
   if (name) node.name = name
