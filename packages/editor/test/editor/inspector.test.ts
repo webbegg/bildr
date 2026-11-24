@@ -193,6 +193,41 @@ describe('the style sections', () => {
     expect(actions.named('node_update_style').map(call => call.input)).toEqual([{ file: 'pg_index', nodeIds: ['n_head'], style: { gap: '4' } }])
   })
 
+  it('lays out a stack with Stack | Grid | None, Wrap beside Direction and the alignment matrix (layout-containers L2)', async () => {
+    const { actions } = await open({ node_update_style: ok() })
+    const writes = () => actions.named('node_update_style').map(call => call.input.style)
+    // n_head is a Row spaced between, centred across.
+    await select('n_head')
+    const layout = section('Layout')!
+    expect([...layout.querySelectorAll('[data-style-key="type"] button')].map(button => button.textContent?.trim())).toEqual(['Stack', 'Grid', 'None'])
+    const matrix = layout.querySelector<HTMLElement>('[data-align-matrix]')!
+    expect(matrix.dataset).toMatchObject({ main: 'distributed', cross: 'center' })
+    expect([...matrix.querySelectorAll('[aria-pressed="true"]')].map(cell => cell.getAttribute('aria-label'))).toEqual(['Left', 'Center', 'Right'])
+    expect(q('[data-style-row="gap"]')!.hasAttribute('data-gap-spread')).toBe(true)
+    // Spread, a cell only moves the cross axis; Alt stretches it.
+    await click(matrix.querySelector('[data-align-cell="0,2"]'))
+    matrix.querySelector('[data-align-cell="1,0"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true, altKey: true }))
+    await settle()
+    await click(layout.querySelector('[data-style-row="direction"] [data-style-key="flexWrap"]'))
+    await click([...layout.querySelectorAll<HTMLElement>('[data-style-key="type"] button')].find(button => button.textContent?.trim() === 'None')!)
+    expect(writes()).toEqual([{ items: 'end' }, { items: 'stretch' }, { flexWrap: 'wrap' }, { display: 'block' }])
+  })
+
+  it('leads Size with how the parent lays the node out: In parent Stack with Align self, Grid with Span too', async () => {
+    await open()
+    await select('n_h1')
+    const size = () => section('Size')!
+    expect(size().querySelector<HTMLElement>('[data-in-parent]')?.dataset.inParent).toBe('stack')
+    expect(size().querySelector('[data-in-parent]')?.textContent).toContain('Stack')
+    expect(size().querySelector('[data-style-row="self"]')).not.toBeNull()
+    expect(size().querySelector('[data-style-row="colSpan"]')).toBeNull()
+    await select('n_about_text')
+    expect(size().querySelector<HTMLElement>('[data-in-parent]')?.dataset.inParent).toBe('grid')
+    expect(size().querySelector('[data-style-row="colSpan"]')).not.toBeNull()
+    await select('n_page')
+    expect(size().querySelector('[data-in-parent]')).toBeNull()
+  })
+
   it('turns an "Add…" row into a token (Fill: neutral-100) and removes it again from the row', async () => {
     const { actions } = await open({ node_update_style: ok() })
     await select('n_head')

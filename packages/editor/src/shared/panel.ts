@@ -20,6 +20,12 @@ import { isContainerType } from './nodeProps.ts'
  * each added row has its own "−"), and Typography on a node without text of
  * its own (a container or an Image) until a text token is set. The page root
  * shows Layout first.
+ *
+ * Size leads with "In parent" (layout-containers L2): how the parent lays the
+ * node out (Stack, Grid or None) and the rows that depend on it, Align self
+ * in a stack or grid and the column span in a grid. A stack's Wrap sits
+ * beside its Direction, and its Distribute and Align are one alignment
+ * matrix (`alignMatrix.ts`).
  */
 
 export const PANEL_SECTIONS = ['Size', 'Layout', 'Styles', 'Typography'] as const
@@ -42,13 +48,16 @@ interface RowDef {
 }
 
 const ROWS = {
+  // In parent: first in Size, where the parent's layout uses them.
+  self: { section: 'Size', kind: 'core', keys: ['self'], add: { self: 'center' } },
+  span: { section: 'Size', kind: 'core', keys: ['colSpan'] },
   width: { section: 'Size', kind: 'core', keys: ['w'] },
   height: { section: 'Size', kind: 'core', keys: ['h'] },
   maxWidth: { section: 'Size', kind: 'menu', keys: ['maxW'], add: { maxW: 'full' } },
   minWidth: { section: 'Size', kind: 'menu', keys: ['minW'], add: { minW: '0' } },
   maxHeight: { section: 'Size', kind: 'menu', keys: ['maxH'], add: { maxH: 'full' } },
   minHeight: { section: 'Size', kind: 'menu', keys: ['minH'], add: { minH: '0' } },
-  // Type writes `display`, which Styles owns; it shows the Grid or Stack rows.
+  // Type writes `display`, which Styles owns; it shows the Stack, Grid or None rows.
   type: { section: 'Layout', kind: 'core', keys: [] },
   direction: { section: 'Layout', kind: 'core', keys: ['direction'] },
   distribute: { section: 'Layout', kind: 'core', keys: ['justify'] },
@@ -58,9 +67,7 @@ const ROWS = {
   gap: { section: 'Layout', kind: 'core', keys: ['gap'] },
   // Core on a container, a menu item on a leaf.
   padding: { section: 'Layout', kind: 'core', keys: PADDING, add: { p: '2' } },
-  span: { section: 'Layout', kind: 'core', keys: ['colSpan'] },
   margin: { section: 'Layout', kind: 'menu', keys: MARGIN, add: { m: '0' } },
-  self: { section: 'Layout', kind: 'menu', keys: ['self'], add: { self: 'center' } },
   // Offered here rather than in Styles: it clips the layout's children.
   overflow: { section: 'Layout', kind: 'menu', keys: ['overflow'], add: { overflow: 'hidden' } },
   visible: { section: 'Styles', kind: 'core', keys: ['display'] },
@@ -102,30 +109,35 @@ export function panelSection(key: string): PanelSection | undefined {
 
 const breakpointOf = (device: DeviceId, base: BreakpointBase) => deviceOf(device, base).breakpoint
 
-export type LayoutType = 'stack' | 'grid'
+/** The Type row's modes: a flex Stack, a Grid, or None (block flow). */
+export type LayoutType = 'stack' | 'grid' | 'none'
+
+const MODE_DISPLAY: Record<LayoutType, string> = { stack: 'flex', grid: 'grid', none: 'block' }
 
 /** Whether a type has the Type row: the flex stacks and the Grid (a Card lays out an inner stack, a List follows its layout prop). */
 const typed = (type: string) => type === 'Grid' || (isFlexType(type) && type !== 'Card')
 
-/** Stack or Grid at the device (of a `base` project): the `display` token that applies (grid or flex), else the type's own layout. */
+/** Stack, Grid or None at the device (of a `base` project): the `display` token that applies (flex, grid or block), else the type's own layout. */
 export function layoutType(type: string, style: Record<string, string>, device: DeviceId, base: BreakpointBase = 'mobile'): LayoutType | undefined {
   if (!typed(type)) return undefined
   const display = styleProvenance(style, 'display', device, base)
   const value = display.state === 'unset' ? undefined : display.value
-  return value === 'grid' ? 'grid' : value === 'flex' ? 'stack' : type === 'Grid' ? 'grid' : 'stack'
+  const mode = (Object.keys(MODE_DISPLAY) as LayoutType[]).find(m => MODE_DISPLAY[m] === value)
+  return mode ?? (type === 'Grid' ? 'grid' : 'stack')
 }
 
 /**
  * The patch of the Type row at the device: Grid is `display: grid` (with two
- * columns unless some apply), Stack is `display: flex`; an override that the
- * breakpoint below already gives is dropped instead.
+ * columns unless some apply), Stack is `display: flex`, None `display:
+ * block`; an override that the breakpoint below already gives is dropped
+ * instead.
  */
 export function layoutTypeWrite(type: string, style: Record<string, string>, device: DeviceId, next: LayoutType, base: BreakpointBase = 'mobile'): Record<string, string | null> {
   if (layoutType(type, style, device, base) === next) return {}
   const breakpoint = breakpointOf(device, base)
   const key = styleKey('display', breakpoint)
   const below = Object.fromEntries(Object.entries(style).filter(([other]) => other !== key))
-  const patch: Record<string, string | null> = { [key]: layoutType(type, below, device, base) === next ? null : next === 'grid' ? 'grid' : 'flex' }
+  const patch: Record<string, string | null> = { [key]: layoutType(type, below, device, base) === next ? null : MODE_DISPLAY[next] }
   if (next === 'grid' && type !== 'Grid' && styleProvenance(style, 'cols', device, base).state === 'unset') patch[styleKey('cols', breakpoint)] = '2'
   return patch
 }
@@ -156,6 +168,8 @@ export interface PanelMenuItem {
 
 export interface PanelSectionRows {
   section: PanelSection
+  /** On Size, for a node with a parent: how the parent lays it out, the "In parent" heading over its rows. */
+  inParent?: LayoutType
   rows: PanelRow[]
   /** No row to show: the section is its title and "+" only. */
   collapsed: boolean
@@ -181,6 +195,13 @@ const GRID_TYPES = ['Grid', 'List']
 const inGrid = (node: PanelNode, device: DeviceId, base: BreakpointBase): boolean =>
   !!node.parentType && (GRID_TYPES.includes(node.parentType) || layoutType(node.parentType, node.parentStyle ?? {}, device, base) === 'grid')
 
+/** How the node's parent lays it out at the device; undefined without a parent (the page root). */
+const parentLayout = (node: PanelNode, device: DeviceId, base: BreakpointBase): LayoutType | undefined => {
+  if (node.root || !node.parentType) return undefined
+  if (inGrid(node, device, base)) return 'grid'
+  return layoutType(node.parentType, node.parentStyle ?? {}, device, base) ?? (isFlexType(node.parentType) ? 'stack' : 'none')
+}
+
 /** Whether a node shows text of its own (or is the page root, whose type styles the page): its typography rows are core. */
 // A Link holds children in the model but shows its own `text` too, so its typography is core (the hosted Link is no container).
 const textual = (node: PanelNode) => !!node.root || ((!isContainerType(node.type) || node.type === 'Link') && node.type !== 'Image')
@@ -196,8 +217,9 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
   const layout = layoutType(node.type, node.style, device, base)
   const stack = layout ? layout === 'stack' : isFlexType(node.type)
   const grid = layout ? layout === 'grid' : GRID_TYPES.includes(node.type)
-  // Visible and Type manage hiding, the natural display and (for typed stacks) grid or flex.
-  const managed = ['hidden', node.natural, ...(typed(node.type) ? ['grid', 'flex'] : [])]
+  const parent = parentLayout(node, device, base)
+  // Visible and Type manage hiding, the natural display and (for typed stacks) flex, grid or block.
+  const managed = ['hidden', node.natural, ...(typed(node.type) ? Object.values(MODE_DISPLAY) : [])]
   const setsDisplay = Object.entries(node.style).some(([key, value]) => baseKey(key) === 'display' && !managed.includes(value))
 
   // Whether a row applies to the node; an optional one is then shown or offered.
@@ -212,13 +234,14 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
     direction: stack || sets('direction'),
     distribute: stack || sets('justify'),
     align: stack || sets('items'),
-    wrap: stack || sets('flexWrap'),
+    // A stack's Wrap is beside its Direction; a row of its own only where something else sets it.
+    wrap: !stack && sets('flexWrap'),
     columns: grid || (sets('cols') && !stack),
-    gap: container || sets('gap'),
+    gap: (container && layout !== 'none') || sets('gap'),
     padding: true,
-    span: inGrid(node, device, base) || sets('colSpan'),
+    span: parent === 'grid' || sets('colSpan'),
     margin: !node.root,
-    self: !node.root,
+    self: parent === 'stack' || parent === 'grid' || (!node.root && sets('self')),
     overflow: true,
     visible: !node.root,
     opacity: true,
@@ -251,6 +274,7 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
     const rows = inSection(section).filter(shown).map(id => ({ id, slot: kind(id) === 'slot' && !has(id), removable: removable(id) }))
     return {
       section,
+      ...(section === 'Size' && parent ? { inParent: parent } : {}),
       rows,
       collapsed: rows.length === 0,
       menu: inSection(section).filter(row => applies[row] && kind(row) === 'menu' && !shown(row)).map(id => ({ id })),
@@ -281,13 +305,13 @@ export function rowProvenance(style: Record<string, string>, row: RowId, device:
 
 /**
  * The Layout header's "−", Reset layout: the Layout section's tokens set at
- * the device's breakpoint, and the Type row's grid or flex display there
- * (hiding stays the Visible row's).
+ * the device's breakpoint, and the Type row's flex, grid or block display
+ * there (hiding stays the Visible row's).
  */
 export function layoutReset(style: Record<string, string>, device: DeviceId, base: BreakpointBase = 'mobile'): Record<string, null> {
   const set = [...sectionKeys('Layout'), 'display'].flatMap((key) => {
     const p = styleProvenance(style, key, device, base)
-    return p.state === 'set' && (key !== 'display' || ['grid', 'flex'].includes(p.value)) ? [p.key] : []
+    return p.state === 'set' && (key !== 'display' || Object.values(MODE_DISPLAY).includes(p.value)) ? [p.key] : []
   })
   return Object.fromEntries(set.map(key => [key, null]))
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { getStyleToken, isResponsiveToken, styleClasses, styleKey } from '@bildr/codegen/design'
-import { structuralStyle } from '@bildr/codegen/render'
+import { isFlexType, structuralStyle } from '@bildr/codegen/render'
 import { previewFocusedOption } from '@bildr/editor-core/preview'
 import type { SizeKey, SizeMode } from '@bildr/editor-core/sizeModes'
 import { measuredSize, SIZE_MODE_LABELS, sizeMode, sizeModes, sizeModeValue } from '@bildr/editor-core/sizeModes'
@@ -12,6 +12,8 @@ import { styleProvenance } from '@bildr/editor-core/styleFields'
 import { SELECT_BARE_UI } from '../../editorUi.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { naturalDisplay, visibilityAt, visibilityToggle } from '../../shared/layers.ts'
+import type { Distribution } from '../../shared/alignMatrix.ts'
+import { alignState, distributeWrite, DISTRIBUTIONS } from '../../shared/alignMatrix.ts'
 import type { LayoutType, PanelMenuItem, RowId, SplitToken } from '../../shared/panel.ts'
 import { joinSplit, layoutReset, layoutType, layoutTypeWrite, panelRows, rowAdd, rowKeys, rowProvenance, rowReset, SPLIT_KEYS, splitMode } from '../../shared/panel.ts'
 
@@ -35,9 +37,13 @@ import { joinSplit, layoutReset, layoutType, layoutTypeWrite, panelRows, rowAdd,
  * Responsive tokens edit the editor device's breakpoint (Mobile is the base,
  * Tablet `md:`, Desktop `lg:`).
  *
- * Token mappings: Type Stack/Grid is the `display` token (see
- * `layoutTypeWrite`), Distribute is `justify`, Align is `items`, Wrap is
- * `flexWrap` (over a Row's `wrap` prop), Width and Height are `w` and `h` with
+ * Token mappings: Type Stack/Grid/None is the `display` token (see
+ * `layoutTypeWrite`); a stack's Align is the alignment matrix over `justify`
+ * and `items` and its Distribute spreads `justify` (see `alignMatrix.ts`;
+ * spread, the Gap row is dimmed: it is then only the minimum), a grid's Align
+ * is `items`; Wrap, the toggle beside Direction, is
+ * `flexWrap` (over a Row's `wrap` prop); Size leads with "In parent", the
+ * parent's layout over Align self and Span; Width and Height are `w` and `h` with
  * Framer's size modes (see `sizeModes`), Padding and Margin write `p`/`m` or their sides
  * (see `boxWrite`).
  *
@@ -97,6 +103,8 @@ function setField(key: string, next: string | null) {
 const preview = (key: string, value: string | null) => emit('preview', value === null ? null : { [keyAt(key)]: value })
 const atDevice = (patch: Record<string, string>) => Object.fromEntries(Object.entries(patch).map(([key, value]) => [keyAt(key), value]))
 const update = (patch: Record<string, string | null>) => Object.keys(patch).length && emit('update', patch)
+/** Several tokens at the device as one undo step, skipping the ones the device already sets to that value. */
+const setFields = (patch: Record<string, string>) => update(atDevice(Object.fromEntries(Object.entries(patch).filter(([key, value]) => own(key) !== value))))
 
 /** Select content that previews the option under the pointer or keyboard focus (items carry `data-option-value`). */
 const optionPreview = (key: string) => previewFocusedOption(value => preview(key, value))
@@ -228,12 +236,21 @@ const typeProvenance = computed((): Provenance => {
   const p = provenance('display')
   return p.state !== 'unset' && ['grid', 'flex'].includes(p.value) ? p : { state: 'unset' }
 })
-const TYPE_ITEMS = [{ value: 'stack', label: 'Stack' }, { value: 'grid', label: 'Grid' }]
+const LAYOUT_LABELS: Record<LayoutType, string> = { stack: 'Stack', grid: 'Grid', none: 'None' }
+const TYPE_ITEMS = (Object.keys(LAYOUT_LABELS) as LayoutType[]).map(value => ({ value, label: LAYOUT_LABELS[value] }))
 const setType = (next: string) => update(layoutTypeWrite(props.type, props.styles, editor.deviceId, next as LayoutType, editor.breakpointBase))
 
 const direction = computed(() => current('direction') ?? structuralStyle(props.type).direction ?? 'row')
 const DIRECTION_ITEMS = [{ value: 'row', label: 'Horizontal', icon: 'i-lucide-move-horizontal' }, { value: 'col', label: 'Vertical', icon: 'i-lucide-move-vertical' }]
-const DISTRIBUTE_LABELS: Record<string, string> = { start: 'Start', center: 'Center', end: 'End', between: 'Space between', around: 'Space around', evenly: 'Space evenly' }
+// A stack's Align is the matrix over justify and items; Distribute spreads justify.
+const stacked = computed(() => (layout.value ? layout.value === 'stack' : isFlexType(props.type)))
+const alignment = computed(() => alignState(direction.value, current('justify'), current('items')))
+const DISTRIBUTE_LABELS: Record<Distribution, string> = { packed: 'Packed', between: 'Space between', around: 'Space around', evenly: 'Space evenly' }
+const DISTRIBUTE_ITEMS = DISTRIBUTIONS.map(value => ({ value, label: DISTRIBUTE_LABELS[value] }))
+const setDistribution = (next: Distribution) => setFields(distributeWrite(alignment.value, next))
+const distributePreview = previewFocusedOption(value => preview('justify', value === 'packed' ? 'start' : value))
+/** Spread children space themselves: the gap is then only their minimum spacing, as Figma's "Auto". */
+const spread = computed(() => stacked.value && alignment.value.distribution !== 'packed')
 const alignItems = computed(() => {
   const row = direction.value.startsWith('row')
   const [axis, names] = row ? ['horizontal', ['Top', 'Middle', 'Bottom']] : ['vertical', ['Left', 'Center', 'Right']]
@@ -243,6 +260,8 @@ const alignItems = computed(() => {
 // Wrap: without a token, a Row wraps when its `wrap` prop is on; other stacks don't.
 const WRAP_ITEMS = [{ value: 'wrap', label: 'Yes' }, { value: 'nowrap', label: 'No' }]
 const wrapFallback = computed(() => (props.type === 'Row' && editor.selectedNodes.length > 0 && editor.selectedNodes.every(n => n.props?.wrap) ? 'wrap' : 'nowrap'))
+const wraps = computed(() => (current('flexWrap') ?? wrapFallback.value) === 'wrap')
+const wrapSet = computed(() => provenance('flexWrap').state === 'set')
 
 // Styles: Visible reads and writes `display` at the device, like the layers eye.
 const visible = computed(() => !visibilityAt(props.styles, editor.deviceId, editor.breakpointBase).hidden)
@@ -309,7 +328,7 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
 <template>
   <div :data-editing-breakpoint="editor.device.breakpoint ?? 'base'">
     <EditorStyleSection
-      v-for="{ section, rows, menu, reset, collapsed } in sections"
+      v-for="{ section, rows, menu, reset, collapsed, inParent } in sections"
       :key="section"
       :label="section"
       :collapsed="collapsed"
@@ -318,6 +337,14 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
       @add="addRow($event as RowId)"
       @remove="resetLayout"
     >
+      <div
+        v-if="inParent"
+        class="flex h-6 items-center gap-1 text-[11px] text-muted"
+        :data-in-parent="inParent"
+        :title="inParent === 'none' ? 'The parent has no layout: it flows its children as blocks' : undefined"
+      >
+        In parent<span class="text-highlighted">{{ LAYOUT_LABELS[inParent] }}</span>
+      </div>
       <template
         v-for="row in rows"
         :key="row.id"
@@ -402,17 +429,40 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
           data-style-row="direction"
           @reset="resetRow(row.id)"
         >
-          <EditorSegmented
-            dense
-            tooltips
-            :items="DIRECTION_ITEMS"
-            :model-value="own('direction')"
-            :inherited="inherited('direction')"
-            :fallback="direction"
-            aria-label="Direction"
-            data-style-key="direction"
-            @update:model-value="setField('direction', $event)"
-          />
+          <div class="flex min-w-0 flex-1 gap-2">
+            <EditorSegmented
+              class="flex-1"
+              dense
+              tooltips
+              :items="DIRECTION_ITEMS"
+              :model-value="own('direction')"
+              :inherited="inherited('direction')"
+              :fallback="direction"
+              aria-label="Direction"
+              data-style-key="direction"
+              @update:model-value="setField('direction', $event)"
+            />
+            <UTooltip
+              text="Wrap"
+              :delay-duration="500"
+            >
+              <button
+                type="button"
+                class="grid h-[30px] w-8 shrink-0 place-items-center rounded-lg bg-elevated"
+                :class="wraps ? (wrapSet ? 'text-primary' : 'text-highlighted') : 'text-muted hover:text-highlighted'"
+                aria-label="Wrap"
+                :aria-pressed="wraps"
+                data-style-key="flexWrap"
+                :data-mixed="isMixed('flexWrap') || undefined"
+                @click="setField('flexWrap', wraps ? 'nowrap' : 'wrap')"
+              >
+                <UIcon
+                  name="i-lucide-wrap-text"
+                  class="size-3.5"
+                />
+              </button>
+            </UTooltip>
+          </div>
         </EditorRow>
 
         <EditorRow
@@ -426,17 +476,17 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
         >
           <EditorField class="flex-1">
             <USelect
-              :model-value="own('justify')"
-              :items="segments('justify', DISTRIBUTE_LABELS)"
-              :placeholder="ph('justify', DISTRIBUTE_LABELS[inherited('justify') ?? 'start'])"
+              :model-value="isMixed('justify') ? undefined : alignment.distribution"
+              :items="DISTRIBUTE_ITEMS"
+              :placeholder="ph('justify')"
               variant="none"
               size="sm"
               :class="SELECT"
               :ui="SELECT_BARE_UI"
-              :aria-label="token('justify').label"
+              aria-label="Distribute"
               data-style-key="justify"
-              :content="optionPreview('justify')"
-              @update:model-value="setField('justify', $event)"
+              :content="distributePreview"
+              @update:model-value="setDistribution($event as Distribution)"
               @update:open="!$event && preview('justify', null)"
             >
               <template #item-label="{ item: option }">
@@ -455,7 +505,14 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
           data-style-row="items"
           @reset="resetRow(row.id)"
         >
+          <EditorAlignMatrix
+            v-if="stacked"
+            :state="alignment"
+            :mixed="isMixed('justify', 'items')"
+            @write="setFields"
+          />
           <EditorSegmented
+            v-else
             dense
             tooltips
             :items="alignItems"
@@ -498,6 +555,9 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
           :placeholder="ph(rowKeys(row.id)[0]!, row.id === 'gap' ? '0' : undefined)"
           :stepper="row.id !== 'gap'"
           :slider="row.id === 'gap'"
+          :class="row.id === 'gap' && spread ? 'opacity-60' : undefined"
+          :title="row.id === 'gap' && spread ? 'Distribute spaces the children: the gap is only their minimum' : undefined"
+          :data-gap-spread="row.id === 'gap' && spread ? '' : undefined"
           :data-style-row="rowKeys(row.id)[0]"
           @preview="preview(rowKeys(row.id)[0]!, $event)"
           @commit="setField(rowKeys(row.id)[0]!, $event)"
