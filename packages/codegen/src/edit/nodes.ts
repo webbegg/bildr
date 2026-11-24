@@ -340,7 +340,7 @@ export const nodeUnwrap = defineEdit({
     const tree = draft.tree(file)
     const location = located(tree, nodeId, 'unwrapped')
     const wrapper = location.parent.children![location.index]!
-    if (!(WRAP_TYPES as readonly string[]).includes(wrapper.type)) fail('invalid', `Only a layout container (a Container, Row, Column, Grid or Card) can be unwrapped, not a ${wrapper.type}`)
+    if (!(WRAP_TYPES as readonly string[]).includes(wrapper.type)) fail('invalid', `Only a layout container (a Container, Row, Column, Grid or Card) can be unwrapped, not ${/^[AEIOU]/.test(wrapper.type) ? 'an' : 'a'} ${wrapper.type}`)
     const lifted = (wrapper.children ?? []).map(child => child.id)
     lifted.forEach((id, i) => moveNode(tree, id, location.parent.id, location.index + 1 + i))
     removeNode(tree, wrapper)

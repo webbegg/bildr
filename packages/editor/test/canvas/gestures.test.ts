@@ -272,6 +272,11 @@ describe('the keys', () => {
     await keydown('x')
     expect(sent('bildr:key')).toHaveLength(2)
   })
+
+  it('forwards Alt+Shift+A by its code: on macOS Option turns the key into \'Å\' (layout-containers L4)', async () => {
+    await keydown('Å', { code: 'KeyA', altKey: true, shiftKey: true })
+    expect(sent('bildr:key').map(message => [message.key, message.code])).toEqual([['Å', 'KeyA']])
+  })
 })
 
 describe('the overlays as the hosted canvas draws them', () => {
