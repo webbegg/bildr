@@ -485,7 +485,7 @@ const render = (env: Env, original: ModelNode, indent: string, options: RenderOp
     case 'Row':
     case 'Column':
     case 'Grid': {
-      const tag = node.type === 'Column' || node.type === 'Grid' ? 'div' : tagOf(env, node)
+      const tag = tagOf(env, node)
       const attrs = [...extra, ...styleAttrs(env, node, { display: displayOf(node.type), fallback: fallbackOf(node, options) })]
       const kids = options.pageRoot ? (node.children ?? []).filter(child => child.type !== SLOT_FILL) : node.children
       const inner = slotted(env, node, children(env, node, indent, options, kids), `${indent}  `, options)

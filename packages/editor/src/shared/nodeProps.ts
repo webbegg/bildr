@@ -43,6 +43,8 @@ export const NODE_PROP_DEFS: Record<string, PropDef[]> = {
   Page: [tag],
   Container: [tag],
   Row: [tag, toggle('wrap', 'Wrap')],
+  Column: [tag],
+  Grid: [tag],
   Heading: [text('text', 'Text'), choice('level', 'Level', ['1', '2', '3', '4', '5', '6'], '2', { numeric: true })],
   Text: [{ name: 'text', label: 'Text', kind: 'textarea', default: '' }],
   Image: [{ name: 'src', label: 'Source URL', kind: 'image', default: '' }, text('alt', 'Alt text')],

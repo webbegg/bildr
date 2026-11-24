@@ -23,6 +23,7 @@ import {
   selfFallback,
   splitCardStyle,
   structuralStyle,
+  takesProp,
   TEXT_CLASS
 } from '../../src/render/index.ts'
 
@@ -123,6 +124,13 @@ describe('render rules', () => {
     expect(nodePropProblems('Link', { href: '/about' })).toEqual([])
     expect(nodePropProblems('Link', { href: 42 })).toEqual([{ key: 'href', message: 'href must be a URL' }])
     expect(nodePropProblems('Container', { tag: 'script' })).toEqual([{ key: 'tag', message: 'tag must be one of div, section, article, aside, header, nav, main, footer' }])
+    // Every layout container takes a tag (layout-containers T3).
+    expect(nodePropProblems('Column', { tag: 'script' })[0]?.key).toBe('tag')
+    expect(nodePropProblems('Grid', { tag: 'script' })[0]?.key).toBe('tag')
+    expect(nodePropProblems('Grid', { tag: 'ul' })[0]?.key).toBe('tag')
+    expect(nodePropProblems('Column', { tag: 'nav' })).toEqual([])
+    expect(takesProp('Column', 'tag')).toBe(true)
+    expect(takesProp('Grid', 'tag')).toBe(true)
     expect(nodePropProblems('Image', {})).toEqual([{ key: 'src', message: 'an Image needs `src`, a URL or a binding' }])
     expect(nodePropProblems('Image', { src: 'data:image/png;base64,AA' })).toEqual([{ key: 'src', message: 'src must be an http(s) URL or a path starting with /' }])
     expect(nodePropProblems('Image', { src: { $bind: 'post.cover' } })).toEqual([])
