@@ -54,7 +54,7 @@ describe('node_insert with a preset', () => {
 
   it('refuses an unknown preset, or one whose type is not the given type', () => {
     const p = project()
-    expect(p.refuse('node_insert', { file: 'pg_index', preset: 'Masonry' }, 'invalid').message).toBe('Unknown preset "Masonry": one of Stack, Row, Column, Grid, Card')
+    expect(p.refuse('node_insert', { file: 'pg_index', preset: 'Masonry' }, 'invalid').message).toBe('Unknown preset "Masonry": one of Stack, Row, Column, Grid, Card, Overlay, Section, Columns')
     expect(p.refuse('node_insert', { file: 'pg_index', preset: 'Row', type: 'Text' }, 'invalid').message).toBe('The Row preset is a Container, not a Text')
     expect(applyEdit(fixtureModelFiles(), 'node_insert', { file: 'pg_index' })).toMatchObject({ ok: false, code: 'invalid_input' })
     // exact keeps only the given tokens, and a preset is its tokens (verify B4).
@@ -102,7 +102,8 @@ describe('catalog_get', () => {
     const types = (outcome.result as Json).nodeTypes as Json[]
     const presets = types.filter(entry => entry.preset)
     expect(presets.map(entry => [entry.preset, entry.type, entry.insertable])).toEqual([
-      ['Stack', 'Container', true], ['Row', 'Container', true], ['Column', 'Container', true], ['Grid', 'Container', true], ['Card', 'Container', true]
+      ['Stack', 'Container', true], ['Row', 'Container', true], ['Column', 'Container', true], ['Grid', 'Container', true], ['Card', 'Container', true],
+      ['Overlay', 'Container', true], ['Section', 'Container', true], ['Columns', 'Container', true]
     ])
     expect(presets.find(entry => entry.preset === 'Row')).toMatchObject({ label: 'Row', defaults: { props: {}, style: { direction: 'row', flexWrap: 'wrap', gap: '3', items: 'center' } } })
     for (const type of ['Row', 'Column', 'Grid', 'Card']) {

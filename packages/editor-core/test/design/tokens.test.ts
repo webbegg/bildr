@@ -1,25 +1,40 @@
 import { describe, expect, it } from 'vitest'
 import { allTokenClasses, breakpointsOf, displayFallback, getStyleToken, isResponsiveToken, isStyleTokenKey, parseStyleKey, STYLE_TOKENS, styleClasses, styleKey, styleTokenProblem, tokenSafelistCss } from '@bildr/codegen/design'
 
+/** Splits on the commas outside brackets and parentheses, as Tailwind does: `[repeat(auto-fit,…)]` is one part. */
+function parts(group: string): string[] {
+  const out = ['']
+  let depth = 0
+  for (const char of group) {
+    if ('[('.includes(char)) depth++
+    if ('])'.includes(char)) depth--
+    if (char === ',' && depth === 0) out.push('')
+    else out[out.length - 1] += char
+  }
+  return out
+}
+
 /** Expands `{a,b}` groups the way Tailwind's `@source inline` does, for the coverage check. */
 function expand(pattern: string): string[] {
   const match = /\{([^{}]*)\}/.exec(pattern)
   if (!match) return [pattern]
-  return match[1]!.split(',').flatMap(part => expand(pattern.slice(0, match.index) + part + pattern.slice(match.index + match[0].length)))
+  return parts(match[1]!).flatMap(part => expand(pattern.slice(0, match.index) + part + pattern.slice(match.index + match[0].length)))
 }
 
 describe('style token registry', () => {
   it('covers the S9 properties', () => {
     expect(STYLE_TOKENS.map(t => t.key)).toEqual([
-      'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl', 'gap',
+      'm', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl', 'gap', 'gapX', 'gapY',
       'w', 'h', 'minW', 'maxW', 'minH', 'maxH', 'bg', 'color', 'borderColor', 'text', 'font', 'align', 'tracking', 'leading', 'textTransform',
       'border', 'borderT', 'borderR', 'borderB', 'borderL', 'rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl',
-      'shadow', 'opacity', 'direction', 'flexWrap', 'items', 'justify', 'self', 'grow', 'shrink', 'basis', 'cols', 'colSpan', 'display', 'overflow'
+      'shadow', 'opacity', 'direction', 'flexWrap', 'items', 'justify', 'content', 'self', 'grow', 'shrink', 'basis', 'order',
+      'cols', 'colMin', 'rows', 'colSpan', 'rowSpan', 'overlay', 'display', 'overflow', 'overflowX', 'overflowY',
+      'position', 'inset', 'insetX', 'insetY', 'top', 'right', 'bottom', 'left', 'z'
     ])
     expect(getStyleToken('direction')).toMatchObject({ prefix: 'flex', group: 'Layout', values: ['row', 'col', 'row-reverse', 'col-reverse'] })
     expect(isResponsiveToken(getStyleToken('direction')!)).toBe(true)
     expect(getStyleToken('self')).toMatchObject({ prefix: 'self', group: 'Layout', values: ['auto', 'start', 'center', 'end', 'stretch'] })
-    expect(getStyleToken('cols')).toMatchObject({ prefix: 'grid-cols', group: 'Layout', values: ['1', '2', '3', '4', '5', '6', '12'] })
+    expect(getStyleToken('cols')).toMatchObject({ prefix: 'grid-cols', group: 'Layout', values: ['1', '2', '3', '4', '5', '6', '12', 'auto-fit'] })
     expect(getStyleToken('colSpan')).toMatchObject({ prefix: 'col-span', group: 'Layout', values: ['1', '2', '3', '4', '5', '6', '12', 'full'] })
     expect(getStyleToken('maxW')).toMatchObject({ prefix: 'max-w', group: 'Size' })
     expect(getStyleToken('h')).toMatchObject({ prefix: 'h', group: 'Size', values: ['auto', 'full', 'screen', 'fit', '0', '4', '8', '12', '16', '20', '24', '32', '40', '48', '56', '64', '72', '80', '96', 'fill'] })
@@ -35,7 +50,7 @@ describe('style token registry', () => {
     expect(styleTokenProblem('mt', '10')).toBeUndefined()
     expect(styleTokenProblem('mt', '13')).toBe('"13" is not a value of style token "mt"')
     expect(styleTokenProblem('p', '16px')).toBe('"16px" is not a value of style token "p"')
-    expect(styleTokenProblem('position', 'fixed')).toBe('Unknown style token "position"')
+    expect(styleTokenProblem('placement', 'fixed')).toBe('Unknown style token "placement"')
   })
 
   it('maps tokens to Tailwind classes in registry order', () => {
@@ -46,7 +61,7 @@ describe('style token registry', () => {
   })
 
   it('ignores tokens that are not in the registry', () => {
-    expect(styleClasses({ mt: '13', position: 'fixed', p: '4' })).toBe('p-4')
+    expect(styleClasses({ mt: '13', placement: 'fixed', p: '4' })).toBe('p-4')
   })
 })
 
@@ -93,7 +108,7 @@ describe('responsive style keys', () => {
 
   it('generates the variant classes in the safelist', () => {
     expect(allTokenClasses()).toEqual(expect.arrayContaining(['md:grid-cols-3', 'sm:mt-10', 'lg:col-span-full', 'md:text-2xl', 'lg:self-center']))
-    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:,max-lg:,max-md:,max-sm:}grid-cols-{1,2,3,4,5,6,12}");')
+    expect(tokenSafelistCss()).toContain('@source inline("{,sm:,md:,lg:,max-lg:,max-md:,max-sm:}grid-cols-{1,2,3,4,5,6,12,[repeat(auto-fit,minmax(min(var(--col-min,16rem),100%),1fr))]}");')
   })
 })
 
@@ -177,6 +192,31 @@ describe('display token', () => {
     expect(displayFallback('grid', { 'md:display': 'hidden' })).toBe('grid')
     expect(displayFallback('flex', { display: 'hidden' })).toBe('')
     expect(displayFallback('block', { display: 'flex' })).toBe('')
+  })
+})
+
+describe('layout-containers L5 tokens', () => {
+  it('splits the gap into columns and rows', () => {
+    expect(styleClasses({ gap: '4', gapX: '2', 'md:gapY': '8' })).toBe('gap-4 gap-x-2 md:gap-y-8')
+  })
+
+  it('fits as many columns of a minimum width as the grid holds (auto-fit), 16rem unless colMin sets it', () => {
+    expect(styleClasses({ display: 'grid', cols: 'auto-fit', colMin: '48' })).toBe('grid-cols-[repeat(auto-fit,minmax(min(var(--col-min,16rem),100%),1fr))] [--col-min:calc(var(--spacing)*48)] grid')
+    expect(styleClasses({ rows: '2', rowSpan: 'full', colSpan: 'full' })).toBe('grid-rows-2 col-span-full row-span-full')
+  })
+
+  it('stacks an Overlay\'s children in one grid cell, and lets a breakpoint turn it off', () => {
+    expect(styleClasses({ display: 'grid', overlay: 'stack', 'md:overlay': 'none' })).toBe('*:[grid-area:1/1] md:*:[grid-area:auto] grid')
+  })
+
+  it('positions, pins and layers a node, and orders it in its stack', () => {
+    expect(styleClasses({ position: 'absolute', insetX: '0', top: '4', z: '10', order: 'first' })).toBe('order-first absolute inset-x-0 top-4 z-10')
+    expect(styleClasses({ position: 'sticky', top: '0', 'md:position': 'static' })).toBe('sticky md:static top-0')
+    expect(styleTokenProblem('z', '15')).toBe('"15" is not a value of style token "z"')
+  })
+
+  it('clips per axis and aligns wrapped lines', () => {
+    expect(styleClasses({ overflowX: 'auto', overflowY: 'hidden', content: 'between' })).toBe('content-between overflow-x-auto overflow-y-hidden')
   })
 })
 
