@@ -2,6 +2,8 @@
 const ICONS: Record<string, string> = {
   Page: 'i-lucide-file',
   Container: 'i-lucide-square-dashed',
+  /** The layout presets of a Container (Row, Column, Grid and Card have their legacy types' icons). */
+  Stack: 'i-lucide-square-dashed',
   Row: 'i-lucide-columns-3',
   Column: 'i-lucide-rows-3',
   Grid: 'i-lucide-layout-grid',

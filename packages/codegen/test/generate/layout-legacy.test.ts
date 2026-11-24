@@ -18,7 +18,8 @@ const legacyMarkup = () => {
 
 describe('legacy layout containers (layout-containers S4)', () => {
   // Taken before the one-container model; the only deliberate change since: a child of a Container or
-  // Card laid out as a row, or of a Column set to a grid, no longer gets the vertical stack's `self-stretch` (T2).
+  // Card laid out as a row (or of a Container laid out as a grid or a block) no longer gets the vertical
+  // stack's `self-stretch` (T2, log L4). Every other type keeps its type's rule, a Column set to a grid too.
   it('render the same markup as before the one-container model', () => {
     expect(legacyMarkup()).toMatchInlineSnapshot(`
       "<section class="flex p-4 gap-3 flex-col items-start self-stretch">
@@ -49,7 +50,7 @@ describe('legacy layout containers (layout-containers S4)', () => {
           <div class="flex flex-col" />
         </div>
         <div class="flex-col self-stretch grid-cols-2 grid">
-          <div class="flex flex-col" />
+          <div class="flex flex-col self-stretch" />
         </div>
       </section>"
     `)
