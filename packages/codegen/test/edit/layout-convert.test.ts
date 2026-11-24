@@ -154,6 +154,13 @@ describe('node_convert and variant overrides (verify B3)', () => {
     expect(overrideOf(p, nodeId)).toEqual({ style: { p: '6' }, unset: ['gap'] })
   })
 
+  it('keeps a Grid a row where a variant turns it flex (recheck B1)', () => {
+    const { p, nodeId } = withOverride({ type: 'Grid', style: { cols: '2' } }, { style: { 'md:display': 'flex' } })
+    p.edit('node_convert', { file: 'cmp_post_card', nodeId })
+    expect(findNode(p.json(CARD).root, nodeId)).toMatchObject({ type: 'Container', style: { cols: '2', display: 'grid', direction: 'row' } })
+    expect(overrideOf(p, nodeId)).toEqual({ style: { 'md:display': 'flex' } })
+  })
+
   it('refuses a Row whose wrap a component property binds, saying so', () => {
     const p = project()
     const { nodeId } = p.edit('node_insert', { file: 'cmp_post_card', parentId: (p.json(CARD).root as Json).id, type: 'Row' })

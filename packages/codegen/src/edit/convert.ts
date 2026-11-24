@@ -155,6 +155,9 @@ export const nodeConvert = defineEdit({
         if (error instanceof EditError) fail('invalid', label(error.message))
         throw error
       }
+      // A Grid a variant turns flex laid out a row there too, where the Container's flex would be a column.
+      const flexInVariant = legacy.type === 'Grid' && variants.some(variant => Object.entries(variant.overrides[target.id]?.style ?? {}).some(([key, value]) => parseStyleKey(key)?.token.key === 'display' && value === 'flex'))
+      if (flexInVariant && converted.style?.direction === undefined) converted.style = { ...converted.style, direction: 'row' }
       for (const key of Object.keys(target)) Reflect.deleteProperty(target, key)
       Object.assign(target, converted)
       for (const variant of variants) {
