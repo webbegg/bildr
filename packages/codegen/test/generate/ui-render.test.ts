@@ -35,6 +35,11 @@ describe('generateUi follows the canvas render rules', () => {
     expect(page).toContain('    <div class="flex flex-row flex-wrap self-stretch">\n      <div class="flex flex-col" />')
   })
 
+  it('renders a Column or a Grid as the tag it names (layout-containers T3)', () => {
+    expect(indexWith({ id: 'n_x', type: 'Column', props: { tag: 'nav' } })).toContain('    <nav class="flex flex-col self-stretch" />')
+    expect(indexWith({ id: 'n_x', type: 'Grid', props: { tag: 'section' }, style: { cols: '2' } })).toContain('    <section class="grid self-stretch grid-cols-2" />')
+  })
+
   it('makes a page fill its frame (page-min-height)', () => {
     expect(generated(fixtureModel(), 'pages/index.vue')).toContain('<section class="gap-6 min-h-full flex-col flex">')
   })

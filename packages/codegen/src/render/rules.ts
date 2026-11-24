@@ -30,7 +30,10 @@ export const NODE_ELEMENTS = {
   InputSelect: 'USelect'
 } as const
 
-/** The tags a Page, Container, Row or List may render as (`props.tag`); the first is the default. */
+/** The types that render as the tag they name (`props.tag`). */
+export const TAGGED_TYPES: readonly string[] = ['Page', 'Container', 'Row', 'Column', 'Grid', 'List']
+
+/** The tags a node of `TAGGED_TYPES` may render as; the first is the default. */
 export const CONTAINER_TAGS = ['div', 'section', 'article', 'aside', 'header', 'nav', 'main', 'footer']
 
 /** The tag of a container: its `tag` prop, the default without one, undefined for a tag outside `CONTAINER_TAGS`. */
@@ -257,8 +260,8 @@ export const NODE_PROPS: Readonly<Record<string, readonly string[]>> = {
   Page: ['tag', 'when', 'loading', 'empty'],
   Container: ['tag'],
   Row: ['tag', 'wrap'],
-  Column: [],
-  Grid: [],
+  Column: ['tag'],
+  Grid: ['tag'],
   Card: [],
   Heading: ['level', 'text'],
   Text: ['text'],
@@ -308,7 +311,7 @@ export function nodePropProblems(type: string, props: Record<string, unknown> = 
     else if (!isSafeUrl(value, 'href')) problems.push({ key: 'href', message: 'href must be an http(s), mailto: or tel: URL, or a path starting with /' })
     else if (props.to !== undefined) problems.push({ key: 'href', message: 'A link has either `href` (external) or `to` (a page), not both' })
   }
-  if ((type === 'Page' || type === 'Container' || type === 'Row' || type === 'List') && props.tag !== undefined && containerTag(props.tag) === undefined) {
+  if (TAGGED_TYPES.includes(type) && props.tag !== undefined && containerTag(props.tag) === undefined) {
     problems.push({ key: 'tag', message: `tag must be one of ${CONTAINER_TAGS.join(', ')}` })
   }
   if (type === 'Image') {

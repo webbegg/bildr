@@ -479,7 +479,7 @@ const renderNode = (frame: Frame, original: ModelNode, options: Options = {}): P
     case 'Row':
     case 'Column':
     case 'Grid': {
-      const tag = node.type === 'Column' || node.type === 'Grid' ? 'div' : containerTag(props.tag) ?? 'div'
+      const tag = containerTag(props.tag) ?? 'div'
       if (node.type === 'Page' && props.when !== undefined) {
         const when = evaluate(props.when, frame.scope)
         if (when !== MISSING && !when) return typeof props.empty === 'string' ? [placeholderElement(frame.id(node), node.type, props.empty)] : []
