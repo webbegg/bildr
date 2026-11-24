@@ -69,8 +69,8 @@ describe('panel rows', () => {
 
   it('offers each group\'s optional properties in its header "+" menu', () => {
     expect(menus(rows(column))).toEqual({
-      Size: ['maxWidth', 'minWidth', 'maxHeight', 'minHeight', 'grow', 'shrink'],
-      Layout: ['margin', 'overflow'],
+      Size: ['maxWidth', 'minWidth', 'maxHeight', 'minHeight', 'grow', 'shrink', 'order', 'position'],
+      Layout: ['stackBelow', 'margin', 'overflow', 'overflowX', 'overflowY'],
       Styles: ['corners', 'display'],
       Typography: ['fontSize', 'fontWeight', 'textAlign', 'textColor', 'letterSpacing', 'lineHeight', 'transform']
     })
@@ -108,8 +108,8 @@ describe('panel rows', () => {
       Styles: ['visible', 'opacity', 'fill−', 'border+', 'shadows+', 'radius', 'corners−'],
       Typography: ['letterSpacing−']
     })
-    expect(menus(sections).Size).toEqual(['minWidth', 'maxHeight', 'minHeight', 'grow', 'shrink'])
-    expect(menus(sections).Layout).toEqual(['overflow'])
+    expect(menus(sections).Size).toEqual(['minWidth', 'maxHeight', 'minHeight', 'grow', 'shrink', 'order', 'position'])
+    expect(menus(sections).Layout).toEqual(['stackBelow', 'overflow', 'overflowX', 'overflowY'])
     expect(menus(sections).Typography).toEqual(['fontSize', 'fontWeight', 'textAlign', 'textColor', 'lineHeight', 'transform'])
   })
 
@@ -126,13 +126,36 @@ describe('panel rows', () => {
     const style = { minH: '32' }
     const sections = rows({ ...column, style })
     expect(view(sections).Size).toEqual(['self', 'width', 'height', 'minHeight−'])
-    expect(menus(sections).Size).toEqual(['maxWidth', 'minWidth', 'maxHeight', 'grow', 'shrink'])
+    expect(menus(sections).Size).toEqual(['maxWidth', 'minWidth', 'maxHeight', 'grow', 'shrink', 'order', 'position'])
     expect(rowProvenance(style, 'height', 'mobile')).toEqual({ state: 'unset' })
     expect(rowProvenance(style, 'minHeight', 'mobile')).toEqual({ state: 'set', key: 'minH', value: '32' })
   })
 
   it('shows a mixed optional row', () => {
     expect(view(rows(column, 'mobile', [], ['minW'])).Size).toEqual(['self', 'width', 'height', 'minWidth'])
+  })
+
+  describe('layout-containers L5 rows', () => {
+    const grid: PanelNode = { type: 'Container', style: { display: 'grid', cols: '3' } }
+    it('offers a grid its rows, row and column gaps, content alignment and Overlay; auto-fit columns show their minimum width', () => {
+      expect(menus(rows(grid)).Layout).toEqual(['content', 'rows', 'overlay', 'gapX', 'gapY', 'margin', 'overflow', 'overflowX', 'overflowY'])
+      expect(view(rows({ ...grid, style: { display: 'grid', cols: 'auto-fit' } })).Layout).toEqual(['type', 'columns', 'colMin', 'gap', 'padding'])
+    })
+
+    it('offers a stack Stack below, and the split gap and content alignment once it wraps', () => {
+      const stack: PanelNode = { type: 'Container', style: { direction: 'row' } }
+      expect(menus(rows(stack)).Layout).toEqual(['stackBelow', 'margin', 'overflow', 'overflowX', 'overflowY'])
+      expect(menus(rows({ ...stack, style: { direction: 'row', flexWrap: 'wrap' } })).Layout).toEqual(['stackBelow', 'content', 'gapX', 'gapY', 'margin', 'overflow', 'overflowX', 'overflowY'])
+      expect(view(rows({ ...stack, style: { 'direction': 'col', 'md:direction': 'row' } })).Layout).toContain('stackBelow')
+    })
+
+    it('offers a child its order in a stack, its row span in a grid, and its position anywhere; positioned, it shows the pin and the layer', () => {
+      expect(menus(rows(text)).Size).toEqual(['maxWidth', 'minWidth', 'maxHeight', 'minHeight', 'grow', 'shrink', 'order', 'position'])
+      expect(menus(rows({ type: 'Text', parentType: 'Container', parentStyle: { display: 'grid' }, style: {} })).Size).toEqual(['rowSpan', 'maxWidth', 'minWidth', 'maxHeight', 'minHeight', 'position'])
+      expect(view(rows({ ...text, style: { position: 'absolute' } })).Size).toEqual(['self', 'width', 'height', 'position−', 'pin', 'z'])
+      expect(view(rows({ ...text, style: { position: 'relative' } })).Size).toEqual(['self', 'width', 'height', 'position−'])
+      expect(view(rows({ ...text, style: { 'position': 'absolute', 'md:position': 'static' } }, 'tablet')).Size).toEqual(['self', 'width', 'height', 'position−'])
+    })
   })
 
   it('gives a Grid columns instead of direction and alignment', () => {
@@ -190,10 +213,10 @@ describe('panel rows', () => {
   it('shows Layout on a leaf as a title with a "+" offering padding, margin, self and overflow', () => {
     expect(rows(text).map(s => s.section)).toEqual(['Size', 'Layout', 'Styles', 'Typography'])
     expect(view(rows(text)).Layout).toEqual([])
-    expect(menus(rows(text)).Layout).toEqual(['padding', 'margin', 'overflow'])
+    expect(menus(rows(text)).Layout).toEqual(['padding', 'margin', 'overflow', 'overflowX', 'overflowY'])
     const margin = rows({ ...text, style: { 'lg:mt': '2' } }, 'tablet')
     expect(view(margin).Layout).toEqual(['margin'])
-    expect(menus(margin).Layout).toEqual(['padding', 'overflow'])
+    expect(menus(margin).Layout).toEqual(['padding', 'overflow', 'overflowX', 'overflowY'])
     expect(view(rows({ type: 'Button', style: { p: '2' } })).Layout).toEqual(['padding−'])
     expect(view(rows({ type: 'Button', style: {} }, 'mobile', ['margin'])).Layout).toEqual(['margin−'])
   })
@@ -214,7 +237,7 @@ describe('panel rows', () => {
     expect(view(rows({ type: 'Text', parentType: 'Container', parentStyle: { direction: 'row' }, style: {} })).Size).not.toContain('span')
     const root = rows({ type: 'Page', root: true, style: {} })
     expect(view(root).Styles).toEqual(['opacity', 'fill+', 'border+', 'shadows+', 'radius'])
-    expect(menus(root).Layout).toEqual(['overflow'])
+    expect(menus(root).Layout).toEqual(['stackBelow', 'overflow', 'overflowX', 'overflowY'])
     expect(menus(root).Styles).toEqual(['corners'])
   })
 

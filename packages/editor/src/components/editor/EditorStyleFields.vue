@@ -16,6 +16,10 @@ import type { Distribution } from '../../shared/alignMatrix.ts'
 import { alignState, distributeWrite, DISTRIBUTIONS } from '../../shared/alignMatrix.ts'
 import type { LayoutType, PanelMenuItem, RowId, SplitToken } from '../../shared/panel.ts'
 import { joinSplit, layoutReset, layoutType, layoutTypeWrite, panelRows, rowAdd, rowKeys, rowProvenance, rowReset, SPLIT_KEYS, splitMode } from '../../shared/panel.ts'
+import type { Pin, PinAxis, PinValues } from '../../shared/pin.ts'
+import { pinOf, pinWrite } from '../../shared/pin.ts'
+import type { StackWidth } from '../../shared/stackBelow.ts'
+import { STACK_WIDTHS, stackBelowOf, stackBelowWrite } from '../../shared/stackBelow.ts'
 
 /**
  * Design-token controls for a node's style, in Framer's sections (Size,
@@ -179,6 +183,8 @@ const LABELS: Record<RowId, string> = {
   width: 'Width', height: 'Height', maxWidth: 'Max W', minWidth: 'Min W', maxHeight: 'Max H', minHeight: 'Min H', grow: 'Grow', shrink: 'Shrink',
   type: 'Type', direction: 'Direction', distribute: 'Distribute', align: 'Align', wrap: 'Wrap', columns: 'Columns', gap: 'Gap',
   padding: 'Padding', span: 'Span', margin: 'Margin', self: 'Self', overflow: 'Overflow',
+  rowSpan: 'Rows', order: 'Order', position: 'Position', pin: 'Pin', z: 'Layer', stackBelow: 'Stack', content: 'Lines',
+  colMin: 'Min col', rows: 'Rows', overlay: 'Overlay', gapX: 'Gap X', gapY: 'Gap Y', overflowX: 'Overflow X', overflowY: 'Overflow Y',
   visible: 'Visible', opacity: 'Opacity', fill: 'Fill', border: 'Border', shadows: 'Shadows', radius: 'Radius', corners: 'Corners',
   display: 'Display', fontSize: 'Size', fontWeight: 'Weight', textAlign: 'Align', textColor: 'Color',
   letterSpacing: 'Letter', lineHeight: 'Line', transform: 'Transform'
@@ -187,6 +193,7 @@ const LABELS: Record<RowId, string> = {
 const MENU_LABELS: Partial<Record<RowId, string>> = {
   maxWidth: 'Max Width', minWidth: 'Min Width', maxHeight: 'Max Height', minHeight: 'Min Height', grow: 'Grow', shrink: 'Shrink',
   padding: 'Padding', margin: 'Margin', self: 'Align self', overflow: 'Overflow',
+  rowSpan: 'Row span', stackBelow: 'Stack below', content: 'Align content', rows: 'Grid rows', overlay: 'Overlap children', gapX: 'Column gap', gapY: 'Row gap',
   display: 'Display', corners: 'Individual corners',
   fontSize: 'Font size', fontWeight: 'Font weight', textAlign: 'Text align', textColor: 'Text color',
   letterSpacing: 'Letter spacing', lineHeight: 'Line height', transform: 'Transform'
@@ -198,6 +205,17 @@ const MENU_HINTS: Partial<Record<RowId, string>> = {
   shrink: 'Whether it gets smaller when space runs out',
   self: 'Overrides the parent\'s Align for this one',
   overflow: 'Clips or scrolls what doesn\'t fit',
+  overflowX: 'Clips or scrolls sideways only',
+  overflowY: 'Clips or scrolls up and down only',
+  rowSpan: 'The grid rows it takes',
+  order: 'First or last on screen, whatever its place',
+  position: 'Absolute, fixed or sticky: out of the flow',
+  stackBelow: 'A column on small screens, a row above',
+  content: 'Where the wrapped lines or grid rows sit',
+  rows: 'A set number of rows',
+  overlay: 'Every child in one cell, layered in order',
+  gapX: 'The space between columns',
+  gapY: 'The space between rows',
   display: 'Block, flex or grid, past Visible and Type',
   corners: 'A radius per corner',
   fontSize: 'Children inherit it',
@@ -322,16 +340,75 @@ const LEADING_LABELS: Record<string, string> = { none: 'None', tight: 'Tight', s
 const TRANSFORM_LABELS: Record<string, string> = { 'uppercase': 'Uppercase', 'lowercase': 'Lowercase', 'capitalize': 'Capitalize', 'normal-case': 'None' }
 const TRANSFORM_ICONS: Record<string, string> = { 'uppercase': 'i-lucide-case-upper', 'lowercase': 'i-lucide-case-lower', 'capitalize': 'i-lucide-case-sensitive', 'normal-case': 'i-lucide-minus' }
 
+const POSITION_LABELS: Record<string, string> = { static: 'In flow', relative: 'Relative', absolute: 'Absolute', fixed: 'Fixed', sticky: 'Sticky' }
+const ORDER_LABELS: Record<string, string> = { first: 'First', last: 'Last', none: 'In order' }
+const Z_LABELS: Record<string, string> = { auto: 'Auto' }
+const CONTENT_LABELS: Record<string, string> = { start: 'Start', center: 'Center', end: 'End', between: 'Space between', around: 'Space around', evenly: 'Space evenly', stretch: 'Stretch' }
+const OVERLAY_LABELS: Record<string, string> = { stack: 'Overlap', none: 'Own cells' }
+
 // Rows edited with a select: their option labels, the unset placeholder, and options shown in their own style.
 const SELECT_ROWS: Partial<Record<RowId, { labels: Record<string, string>, unset: string, styled?: boolean }>> = {
   shadows: { labels: SHADOW_LABELS, unset: 'None' },
   overflow: { labels: OVERFLOW_LABELS, unset: 'Visible' },
+  overflowX: { labels: OVERFLOW_LABELS, unset: 'Visible' },
+  overflowY: { labels: OVERFLOW_LABELS, unset: 'Visible' },
+  position: { labels: POSITION_LABELS, unset: 'In flow' },
+  order: { labels: ORDER_LABELS, unset: 'In order' },
+  z: { labels: Z_LABELS, unset: 'Auto' },
+  content: { labels: CONTENT_LABELS, unset: 'Normal' },
+  overlay: { labels: OVERLAY_LABELS, unset: 'Own cells' },
   grow: { labels: GROW_LABELS, unset: 'None' },
   shrink: { labels: SHRINK_LABELS, unset: 'Yes' },
   fontWeight: { labels: {}, unset: 'normal', styled: true },
   letterSpacing: { labels: TRACKING_LABELS, unset: 'Normal', styled: true },
   lineHeight: { labels: LEADING_LABELS, unset: 'Normal' }
 }
+
+// layout-containers L5: position, pin and layer; Stack below; auto-fit columns.
+/** The rows edited with a scale field (a stepper; the gaps a slider). */
+const SCALE_ROWS: RowId[] = ['columns', 'colMin', 'rows', 'span', 'rowSpan', 'gap', 'gapX', 'gapY']
+const GAP_ROWS: RowId[] = ['gap', 'gapX', 'gapY']
+const scalePlaceholder = (row: RowId) => {
+  const key = rowKeys(row)[0]!
+  if (row === 'gapX' || row === 'gapY') return ph(key, current('gap') ?? '0')
+  return ph(key, row === 'gap' ? '0' : row === 'colMin' ? '64' : undefined)
+}
+
+/** A select row's pick; an Absolute node gets a positioned parent (unless it has one) to pin to. */
+function selectWrite(row: RowId, value: string) {
+  setField(rowKeys(row)[0]!, value)
+  if (row !== 'position' || value !== 'absolute' || props.root) return
+  const parent = styleProvenance(props.parentStyle ?? {}, 'position', editor.deviceId, editor.breakpointBase)
+  if (parent.state === 'unset' || parent.value === 'static') emit('updateParent', atDevice({ position: 'relative' }))
+}
+
+const PIN_VALUE_KEYS = ['inset', 'insetX', 'insetY', 'top', 'right', 'bottom', 'left', 'mx', 'my', 'w', 'h'] as const
+const pinValues = computed<PinValues>(() => Object.fromEntries(PIN_VALUE_KEYS.flatMap(key => (current(key) === undefined ? [] : [[key, current(key)!]]))))
+const pin = computed(() => pinOf(pinValues.value))
+/** The picker's axes as one write: each axis' insets, a null only for a key the device sets. */
+function setPin(axes: Partial<Record<PinAxis, Pin>>) {
+  let values: PinValues = pinValues.value
+  const patch: Record<string, string | null> = {}
+  for (const [axis, next] of Object.entries(axes) as [PinAxis, Pin][]) {
+    const step = pinWrite(values, axis, next)
+    Object.assign(patch, step)
+    values = Object.fromEntries(Object.entries({ ...values, ...step }).filter((entry): entry is [string, string] => entry[1] !== null))
+  }
+  update(Object.fromEntries(Object.entries(patch).flatMap(([key, value]): [string, string | null][] => {
+    if (value !== null) return own(key) === value ? [] : [[keyAt(key), value]]
+    const p = provenance(key)
+    return p.state === 'set' ? [[p.key, null]] : []
+  })))
+}
+const PIN_SIDES = [['top', 'T'], ['right', 'R'], ['bottom', 'B'], ['left', 'L']] as const
+const pinCells = computed(() => PIN_SIDES.map(([key, letter]) => ({ key, letter, token: token(key), value: own(key), inherited: inherited(key), placeholder: ph(key, '–') })))
+
+const BREAKPOINT_PX: Record<StackWidth, number> = { sm: 640, md: 768, lg: 1024 }
+const STACK_ITEMS = [{ value: 'never', label: 'Never' }, ...STACK_WIDTHS.map(width => ({ value: width, label: `Below ${BREAKPOINT_PX[width]}px (${width})` }))]
+const stackBelow = computed(() => stackBelowOf(props.styles, editor.breakpointBase))
+const setStackBelow = (next: string) => update(stackBelowWrite(props.styles, next === 'never' ? null : next as StackWidth, editor.breakpointBase))
+
+const autoFit = computed(() => current('cols') === 'auto-fit')
 
 // A select in a field shell.
 const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
@@ -580,16 +657,66 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
           />
         </EditorRow>
 
+        <EditorRow
+          v-else-if="row.id === 'stackBelow'"
+          v-bind="rowLabel(row.id)"
+          :label="LABELS.stackBelow"
+          title="Stack below: a column on narrower screens, a row above"
+          name="stackBelow"
+          data-style-row="stackBelow"
+          @reset="setStackBelow('never')"
+        >
+          <EditorField class="flex-1">
+            <USelect
+              :model-value="stackBelow"
+              :items="STACK_ITEMS"
+              placeholder="Never"
+              variant="none"
+              size="sm"
+              :class="SELECT"
+              :ui="SELECT_BARE_UI"
+              aria-label="Stack below"
+              data-style-key="stackBelow"
+              @update:model-value="setStackBelow($event as string)"
+            />
+          </EditorField>
+        </EditorRow>
+
+        <EditorRow
+          v-else-if="row.id === 'pin'"
+          v-bind="rowLabel(row.id)"
+          :label="LABELS.pin"
+          title="Pin to the sides of the positioned parent"
+          name="pin"
+          data-style-row="pin"
+          @reset="resetRow(row.id)"
+        >
+          <EditorPinPicker
+            :h="pin.h"
+            :v="pin.v"
+            :mixed="isMixed(...rowKeys('pin'))"
+            @pin="setPin"
+          />
+          <template #below>
+            <EditorJoinedFields
+              :cells="pinCells"
+              data-style-row="pin-offsets"
+              @preview="preview"
+              @commit="setField"
+            />
+          </template>
+        </EditorRow>
+
         <EditorScaleRow
-          v-else-if="row.id === 'columns' || row.id === 'span' || row.id === 'gap'"
+          v-else-if="SCALE_ROWS.includes(row.id)"
           v-bind="rowLabel(row.id)"
           :label="LABELS[row.id]"
           :token="token(rowKeys(row.id)[0]!)"
           :value="own(rowKeys(row.id)[0]!)"
           :inherited="inherited(rowKeys(row.id)[0]!)"
-          :placeholder="ph(rowKeys(row.id)[0]!, row.id === 'gap' ? '0' : undefined)"
-          :stepper="row.id !== 'gap'"
-          :slider="row.id === 'gap'"
+          :placeholder="scalePlaceholder(row.id)"
+          :stepper="!GAP_ROWS.includes(row.id)"
+          :slider="GAP_ROWS.includes(row.id)"
           :class="row.id === 'gap' && spread ? 'opacity-60' : undefined"
           :title="row.id === 'gap' && spread ? 'Distribute spaces the children: the gap is only their minimum' : undefined"
           :data-gap-spread="row.id === 'gap' && spread ? '' : undefined"
@@ -599,7 +726,28 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
           @reset="resetRow(row.id)"
           @mouseenter="hoverRow(row.id, true)"
           @mouseleave="hoverRow(row.id, false)"
-        />
+        >
+          <template
+            v-if="row.id === 'columns'"
+            #after
+          >
+            <UTooltip
+              text="Auto-fit: as many columns of the minimum width as fit"
+              :delay-duration="500"
+            >
+              <button
+                type="button"
+                class="h-[30px] shrink-0 rounded-lg bg-elevated px-2 text-[11px]"
+                :class="autoFit ? 'text-primary' : 'text-muted hover:text-highlighted'"
+                :aria-pressed="autoFit"
+                data-cols-auto-fit
+                @click="setField('cols', autoFit ? '3' : 'auto-fit')"
+              >
+                Auto
+              </button>
+            </UTooltip>
+          </template>
+        </EditorScaleRow>
 
         <EditorBoxRow
           v-else-if="row.id === 'padding' || row.id === 'margin'"
@@ -763,7 +911,7 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
               :aria-label="token(rowKeys(row.id)[0]!).label"
               :data-style-key="rowKeys(row.id)[0]"
               :content="optionPreview(rowKeys(row.id)[0]!)"
-              @update:model-value="setField(rowKeys(row.id)[0]!, $event)"
+              @update:model-value="selectWrite(row.id, $event as string)"
               @update:open="!$event && preview(rowKeys(row.id)[0]!, null)"
             >
               <template #item-label="{ item: option }">
@@ -785,6 +933,18 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
               </template>
             </USelect>
           </EditorField>
+          <template
+            v-if="row.id === 'order'"
+            #below
+          >
+            <p
+              class="rounded-lg bg-warning/10 px-2 py-1.5 text-[11px] text-toned"
+              role="note"
+              data-order-warning
+            >
+              Order moves it on screen only: screen readers and the Tab key still follow the layers' order.
+            </p>
+          </template>
         </EditorRow>
 
         <EditorScaleRow
