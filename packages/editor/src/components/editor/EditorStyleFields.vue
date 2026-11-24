@@ -55,6 +55,8 @@ const props = defineProps<{
   type: string
   /** The parent's type; a Grid child gets a column span. */
   parentType?: string
+  /** The parent's style: a child of a Container laid out as a grid gets a column span too. */
+  parentStyle?: Record<string, string>
   root?: boolean
 }>()
 const emit = defineEmits<{
@@ -121,7 +123,7 @@ const natural = computed(() => naturalDisplay({ type: props.type, props: {} }))
 /** Optional rows added this session, before (or, for Display and the corners, without) a token. */
 const added = ref<RowId[]>([])
 const sections = computed(() => panelRows(
-  { type: props.type, parentType: props.parentType, root: props.root, style: props.styles, natural: natural.value },
+  { type: props.type, parentType: props.parentType, parentStyle: props.parentStyle, root: props.root, style: props.styles, natural: natural.value },
   { device: editor.deviceId, base: editor.breakpointBase, added: added.value, mixed: props.mixed }
 ))
 

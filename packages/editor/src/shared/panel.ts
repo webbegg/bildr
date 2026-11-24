@@ -132,8 +132,10 @@ export function layoutTypeWrite(type: string, style: Record<string, string>, dev
 
 export interface PanelNode {
   type: string
-  /** The parent's type; a Grid or List child gets a column span. */
+  /** The parent's type; a Grid or List child, or one of a parent laid out as a grid, gets a column span. */
   parentType?: string
+  /** The parent's style: a Container with `display: grid` at the device is a grid parent. */
+  parentStyle?: Record<string, string>
   root?: boolean
   style: Record<string, string>
   /** The display the node renders with when no token applies (see `naturalDisplay`). */
@@ -175,6 +177,10 @@ export interface PanelView {
 
 const GRID_TYPES = ['Grid', 'List']
 
+/** Whether the node's parent lays it out in a grid at the device: a Grid or a List, or a parent whose Type is Grid there. */
+const inGrid = (node: PanelNode, device: DeviceId, base: BreakpointBase): boolean =>
+  !!node.parentType && (GRID_TYPES.includes(node.parentType) || layoutType(node.parentType, node.parentStyle ?? {}, device, base) === 'grid')
+
 /** Whether a node shows text of its own (or is the page root, whose type styles the page): its typography rows are core. */
 // A Link holds children in the model but shows its own `text` too, so its typography is core (the hosted Link is no container).
 const textual = (node: PanelNode) => !!node.root || ((!isContainerType(node.type) || node.type === 'Link') && node.type !== 'Image')
@@ -210,7 +216,7 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
     columns: grid || (sets('cols') && !stack),
     gap: container || sets('gap'),
     padding: true,
-    span: GRID_TYPES.includes(node.parentType ?? '') || sets('colSpan'),
+    span: inGrid(node, device, base) || sets('colSpan'),
     margin: !node.root,
     self: !node.root,
     overflow: true,

@@ -164,6 +164,10 @@ describe('panel rows', () => {
 
   it('gives a Grid child its span, and the page root no margin, self or visibility', () => {
     expect(view(rows({ type: 'Card', parentType: 'Grid', style: {} })).Layout).toEqual(['direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'span'])
+    // A Container laid out as a grid (the Grid preset) is a grid parent too (layout-containers T5).
+    expect(view(rows({ type: 'Text', parentType: 'Container', parentStyle: { display: 'grid', cols: '3' }, style: {} })).Layout).toContain('span')
+    expect(view(rows({ type: 'Text', parentType: 'Container', parentStyle: { 'display': 'flex', 'md:display': 'grid' }, style: {} }, 'desktop')).Layout).toContain('span')
+    expect(view(rows({ type: 'Text', parentType: 'Container', parentStyle: { direction: 'row' }, style: {} })).Layout).not.toContain('span')
     const root = rows({ type: 'Page', root: true, style: {} })
     expect(view(root).Styles).toEqual(['opacity', 'fill+', 'border+', 'shadows+', 'radius'])
     expect(menus(root).Layout).toEqual(['overflow'])
