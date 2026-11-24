@@ -31,7 +31,9 @@ describe('panel sections', () => {
     expect(panelSection('mx')).toBe('Layout')
     expect(panelSection('cols')).toBe('Layout')
     expect(panelSection('md:flexWrap')).toBe('Layout')
-    expect(panelSection('self')).toBe('Layout')
+    // How the node sits in its parent leads Size (layout-containers L2).
+    expect(panelSection('self')).toBe('Size')
+    expect(panelSection('md:colSpan')).toBe('Size')
     expect(panelSection('overflow')).toBe('Layout')
     expect(panelSection('md:display')).toBe('Styles')
     expect(panelSection('bg')).toBe('Styles')
@@ -52,13 +54,13 @@ describe('panel rows', () => {
 
   it('shows every section\'s core rows, with "Add…" slots for Fill, Border and Shadows', () => {
     expect(view(rows(column))).toEqual({
-      Size: ['width', 'height'],
-      Layout: ['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding'],
+      Size: ['self', 'width', 'height'],
+      Layout: ['type', 'direction', 'distribute', 'align', 'gap', 'padding'],
       Styles: ['visible', 'opacity', 'fill+', 'border+', 'shadows+', 'radius'],
       Typography: []
     })
     expect(view(rows(text))).toEqual({
-      Size: ['width', 'height'],
+      Size: ['self', 'width', 'height'],
       Layout: [],
       Styles: ['visible', 'opacity', 'fill+', 'border+', 'shadows+', 'radius'],
       Typography: ['fontSize', 'fontWeight', 'textAlign', 'textColor']
@@ -68,7 +70,7 @@ describe('panel rows', () => {
   it('offers each group\'s optional properties in its header "+" menu', () => {
     expect(menus(rows(column))).toEqual({
       Size: ['maxWidth', 'minWidth', 'maxHeight', 'minHeight'],
-      Layout: ['margin', 'self', 'overflow'],
+      Layout: ['margin', 'overflow'],
       Styles: ['corners', 'display'],
       Typography: ['fontSize', 'fontWeight', 'textAlign', 'textColor', 'letterSpacing', 'lineHeight', 'transform']
     })
@@ -101,13 +103,13 @@ describe('panel rows', () => {
     const style = { 'lg:maxW': 'full', 'md:m': '2', 'lg:tracking': 'wide', 'roundedTl': 'lg', 'bg': 'muted' }
     const sections = rows({ ...column, style }, 'desktop')
     expect(view(sections)).toEqual({
-      Size: ['width', 'height', 'maxWidth−'],
-      Layout: ['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'margin'],
+      Size: ['self', 'width', 'height', 'maxWidth−'],
+      Layout: ['type', 'direction', 'distribute', 'align', 'gap', 'padding', 'margin'],
       Styles: ['visible', 'opacity', 'fill−', 'border+', 'shadows+', 'radius', 'corners−'],
       Typography: ['letterSpacing−']
     })
     expect(menus(sections).Size).toEqual(['minWidth', 'maxHeight', 'minHeight'])
-    expect(menus(sections).Layout).toEqual(['self', 'overflow'])
+    expect(menus(sections).Layout).toEqual(['overflow'])
     expect(menus(sections).Typography).toEqual(['fontSize', 'fontWeight', 'textAlign', 'textColor', 'lineHeight', 'transform'])
   })
 
@@ -123,14 +125,14 @@ describe('panel rows', () => {
   it('shows a set minimum height as a Min Height row, not as the Height value', () => {
     const style = { minH: '32' }
     const sections = rows({ ...column, style })
-    expect(view(sections).Size).toEqual(['width', 'height', 'minHeight−'])
+    expect(view(sections).Size).toEqual(['self', 'width', 'height', 'minHeight−'])
     expect(menus(sections).Size).toEqual(['maxWidth', 'minWidth', 'maxHeight'])
     expect(rowProvenance(style, 'height', 'mobile')).toEqual({ state: 'unset' })
     expect(rowProvenance(style, 'minHeight', 'mobile')).toEqual({ state: 'set', key: 'minH', value: '32' })
   })
 
   it('shows a mixed optional row', () => {
-    expect(view(rows(column, 'mobile', [], ['minW'])).Size).toEqual(['width', 'height', 'minWidth'])
+    expect(view(rows(column, 'mobile', [], ['minW'])).Size).toEqual(['self', 'width', 'height', 'minWidth'])
   })
 
   it('gives a Grid columns instead of direction and alignment', () => {
@@ -140,16 +142,39 @@ describe('panel rows', () => {
   it('switches a stack to the Grid rows where its display is grid', () => {
     const grid = { type: 'Column', style: { 'md:display': 'grid', 'md:cols': '2' } }
     expect(view(rows(grid, 'tablet')).Layout).toEqual(['type', 'columns', 'gap', 'padding'])
-    expect(view(rows(grid, 'mobile')).Layout).toEqual(['type', 'direction', 'distribute', 'align', 'wrap', 'gap', 'padding'])
+    expect(view(rows(grid, 'mobile')).Layout).toEqual(['type', 'direction', 'distribute', 'align', 'gap', 'padding'])
+  })
+
+  it('gives a container laid out as None (block flow) only its padding: no stack, grid or gap rows', () => {
+    expect(view(rows({ type: 'Container', style: { display: 'block' } })).Layout).toEqual(['type', 'padding'])
+    expect(view(rows({ type: 'Container', style: { display: 'block', gap: '2' } })).Layout).toEqual(['type', 'gap', 'padding'])
+  })
+
+  it('puts Wrap beside Direction on a stack; it is a row of its own only where something else sets it', () => {
+    expect(view(rows({ type: 'Container', style: { flexWrap: 'wrap' } })).Layout).not.toContain('wrap')
+    expect(view(rows({ type: 'Container', style: { display: 'grid', flexWrap: 'wrap' } })).Layout).toContain('wrap')
+  })
+
+  it('leads Size with "In parent": the parent\'s layout, its Align self in a stack or grid, its span in a grid', () => {
+    const size = (node: PanelNode, device: 'mobile' | 'desktop' = 'mobile') => rows(node, device).find(s => s.section === 'Size')!
+    expect(size(text)).toMatchObject({ inParent: 'stack' })
+    expect(size({ type: 'Text', parentType: 'Grid', style: {} })).toMatchObject({ inParent: 'grid', rows: [{ id: 'self' }, { id: 'span' }, { id: 'width' }, { id: 'height' }] })
+    expect(size({ type: 'Text', parentType: 'Container', parentStyle: { 'md:display': 'grid' }, style: {} }, 'desktop').inParent).toBe('grid')
+    expect(size({ type: 'Text', parentType: 'Container', parentStyle: { display: 'block' }, style: {} })).toMatchObject({ inParent: 'none', rows: [{ id: 'width' }, { id: 'height' }] })
+    // A self a block parent ignores still shows, so it can be removed.
+    expect(view(rows({ type: 'Text', parentType: 'Container', parentStyle: { display: 'block' }, style: { self: 'end' } })).Size).toEqual(['self', 'width', 'height'])
+    expect(size({ type: 'Text', parentType: 'Card', style: {} }).inParent).toBe('stack')
+    expect(size({ type: 'Page', root: true, style: {} }).inParent).toBeUndefined()
+    expect(view(rows({ type: 'Page', root: true, style: {} })).Size).toEqual(['width', 'height'])
   })
 
   it('shows Layout on a leaf as a title with a "+" offering padding, margin, self and overflow', () => {
     expect(rows(text).map(s => s.section)).toEqual(['Size', 'Layout', 'Styles', 'Typography'])
     expect(view(rows(text)).Layout).toEqual([])
-    expect(menus(rows(text)).Layout).toEqual(['padding', 'margin', 'self', 'overflow'])
+    expect(menus(rows(text)).Layout).toEqual(['padding', 'margin', 'overflow'])
     const margin = rows({ ...text, style: { 'lg:mt': '2' } }, 'tablet')
     expect(view(margin).Layout).toEqual(['margin'])
-    expect(menus(margin).Layout).toEqual(['padding', 'self', 'overflow'])
+    expect(menus(margin).Layout).toEqual(['padding', 'overflow'])
     expect(view(rows({ type: 'Button', style: { p: '2' } })).Layout).toEqual(['padding−'])
     expect(view(rows({ type: 'Button', style: {} }, 'mobile', ['margin'])).Layout).toEqual(['margin−'])
   })
@@ -163,11 +188,11 @@ describe('panel rows', () => {
   })
 
   it('gives a Grid child its span, and the page root no margin, self or visibility', () => {
-    expect(view(rows({ type: 'Card', parentType: 'Grid', style: {} })).Layout).toEqual(['direction', 'distribute', 'align', 'wrap', 'gap', 'padding', 'span'])
+    expect(view(rows({ type: 'Card', parentType: 'Grid', style: {} }))).toMatchObject({ Size: ['self', 'span', 'width', 'height'], Layout: ['direction', 'distribute', 'align', 'gap', 'padding'] })
     // A Container laid out as a grid (the Grid preset) is a grid parent too (layout-containers T5).
-    expect(view(rows({ type: 'Text', parentType: 'Container', parentStyle: { display: 'grid', cols: '3' }, style: {} })).Layout).toContain('span')
-    expect(view(rows({ type: 'Text', parentType: 'Container', parentStyle: { 'display': 'flex', 'md:display': 'grid' }, style: {} }, 'desktop')).Layout).toContain('span')
-    expect(view(rows({ type: 'Text', parentType: 'Container', parentStyle: { direction: 'row' }, style: {} })).Layout).not.toContain('span')
+    expect(view(rows({ type: 'Text', parentType: 'Container', parentStyle: { display: 'grid', cols: '3' }, style: {} })).Size).toContain('span')
+    expect(view(rows({ type: 'Text', parentType: 'Container', parentStyle: { 'display': 'flex', 'md:display': 'grid' }, style: {} }, 'desktop')).Size).toContain('span')
+    expect(view(rows({ type: 'Text', parentType: 'Container', parentStyle: { direction: 'row' }, style: {} })).Size).not.toContain('span')
     const root = rows({ type: 'Page', root: true, style: {} })
     expect(view(root).Styles).toEqual(['opacity', 'fill+', 'border+', 'shadows+', 'radius'])
     expect(menus(root).Layout).toEqual(['overflow'])
@@ -178,7 +203,9 @@ describe('panel rows', () => {
     const styles = (style: Record<string, string>) => view(rows({ type: 'Column', natural: 'flex', style })).Styles
     expect(styles({ 'display': 'hidden', 'md:display': 'flex' })).not.toContain('display')
     expect(styles({ 'md:display': 'grid' })).not.toContain('display')
-    expect(styles({ display: 'block' })).toContain('display−')
+    // Block is the Type row's None (layout-containers L2).
+    expect(styles({ display: 'block' })).not.toContain('display')
+    expect(view(rows({ type: 'Text', natural: 'block', style: { display: 'flex' } })).Styles).toContain('display−')
     expect(view(rows({ type: 'Column', natural: 'flex', style: {} }, 'mobile', ['display'])).Styles).toContain('display−')
   })
 })
@@ -223,6 +250,8 @@ describe('row writes', () => {
     // Hiding is the Visible row's, not the layout's.
     expect(layoutReset({ 'display': 'hidden', 'items': 'center', 'md:items': 'end' }, 'mobile')).toEqual({ items: null })
     expect(layoutReset({ w: 'full' }, 'mobile')).toEqual({})
+    // None is a layout too; how the node sits in its parent (Size's In parent) is not.
+    expect(layoutReset({ display: 'block', self: 'end', colSpan: '2' }, 'mobile')).toEqual({ display: null })
   })
 })
 
@@ -234,6 +263,9 @@ describe('layout type', () => {
     expect(layoutType('Grid', { 'lg:display': 'flex' }, 'desktop')).toBe('stack')
     // A hidden node keeps its type's layout.
     expect(layoutType('Grid', { display: 'hidden' }, 'mobile')).toBe('grid')
+    // Block flow is None (layout-containers L2).
+    expect(layoutType('Container', { display: 'block' }, 'mobile')).toBe('none')
+    expect(layoutType('Container', { 'display': 'block', 'md:display': 'flex' }, 'tablet')).toBe('stack')
     // Cards lay out an inner stack and Lists follow their layout prop: no Type row.
     expect(layoutType('Card', {}, 'mobile')).toBeUndefined()
     expect(layoutType('List', {}, 'mobile')).toBeUndefined()
@@ -251,6 +283,13 @@ describe('layout type', () => {
     expect(layoutTypeWrite('Column', { display: 'grid' }, 'tablet', 'stack')).toEqual({ 'md:display': 'flex' })
     expect(layoutTypeWrite('Grid', {}, 'mobile', 'stack')).toEqual({ display: 'flex' })
     expect(layoutTypeWrite('Column', {}, 'mobile', 'stack')).toEqual({})
+    expect(layoutTypeWrite('Container', { display: 'block' }, 'mobile', 'stack')).toEqual({ display: null })
+  })
+
+  it('writes None as the block display, dropped where the breakpoint below is None already', () => {
+    expect(layoutTypeWrite('Container', { gap: '4' }, 'mobile', 'none')).toEqual({ display: 'block' })
+    expect(layoutTypeWrite('Container', { 'display': 'block', 'md:display': 'grid' }, 'tablet', 'none')).toEqual({ 'md:display': null })
+    expect(layoutTypeWrite('Grid', {}, 'tablet', 'none')).toEqual({ 'md:display': 'block' })
   })
 })
 

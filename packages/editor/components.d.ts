@@ -80,6 +80,7 @@ declare module 'vue' {
     DesignThemeRow: typeof import('./src/components/design/DesignThemeRow.vue')['default']
     DiffView: typeof import('./src/components/DiffView.vue')['default']
     EditorAddRow: typeof import('./src/components/editor/panel/EditorAddRow.vue')['default']
+    EditorAlignMatrix: typeof import('./src/components/editor/panel/EditorAlignMatrix.vue')['default']
     EditorAssets: typeof import('./src/components/editor/sidebar/EditorAssets.vue')['default']
     EditorBindingDot: typeof import('./src/components/editor/EditorBindingDot.vue')['default']
     EditorBindingValue: typeof import('./src/components/editor/EditorBindingValue.vue')['default']
