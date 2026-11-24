@@ -456,7 +456,7 @@ const SLOT_FILL = 'SlotFill'
 
 /** The node's children, one level deeper (`depth` more for a wrapper), laid out the way the node lays them out. */
 const children = (env: Env, node: ModelNode, indent: string, options: RenderOptions, kids = node.children ?? [], depth = 1) =>
-  kids.flatMap(child => render(env, child, `${indent}${'  '.repeat(depth)}`, { slots: options.slots, inStack: childrenInStack(node.type, node.props) }))
+  kids.flatMap(child => render(env, child, `${indent}${'  '.repeat(depth)}`, { slots: options.slots, inStack: childrenInStack(node.type, node.props, node.style) }))
 
 /** The token fallbacks of a node in its parent: the type's (render rules) after the stack's `self: stretch`. */
 const fallbackOf = (node: ModelNode, options: RenderOptions, own: Record<string, string> = fallbackStyle(node.type, node.props)) =>
@@ -724,7 +724,7 @@ const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
     attr('key', `:key="${byPosition ? position : `${as}.id`}"`)
   ]
   const kids = node.children ?? []
-  const inStack = childrenInStack(node.type, props)
+  const inStack = childrenInStack(node.type, props, node.style)
   const inner = kids.length === 1
     ? render(itemEnv, kids[0]!, `${indent}  `, { attrs: repeat, slots: options.slots, inStack })
     : [`${indent}  <template ${repeat.map(entry => entry.text).join(' ')}>`, ...kids.flatMap(child => render(itemEnv, child, `${indent}    `, { slots: options.slots, inStack })), `${indent}  </template>`]
@@ -742,7 +742,7 @@ const findNode = (node: ModelNode, id: string): ModelNode | undefined =>
 /** `<template #name>` with a SlotFill's children, laid out the way the slot's node lays them out. */
 const fillTemplate = (env: Env, fill: ModelNode, name: string, target: ModelNode | undefined, indent: string, slots?: Map<string, string>) => [
   `${indent}<template #${name}>`,
-  ...(fill.children ?? []).flatMap(child => render(env, child, `${indent}  `, { slots, inStack: target ? childrenInStack(target.type, target.props) : false })),
+  ...(fill.children ?? []).flatMap(child => render(env, child, `${indent}  `, { slots, inStack: target ? childrenInStack(target.type, target.props, target.style) : false })),
   `${indent}</template>`
 ]
 

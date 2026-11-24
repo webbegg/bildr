@@ -76,6 +76,19 @@ describe('render rules', () => {
     expect(childrenInStack('List', { layout: 'grid' })).toBe(false)
   })
 
+  it('reads the stack from the base layout tokens, so a Container set to a row or a grid is no vertical stack (layout-containers T2)', () => {
+    expect(childrenInStack('Container', {}, { direction: 'row' })).toBe(false)
+    expect(childrenInStack('Container', {}, { direction: 'row-reverse' })).toBe(false)
+    expect(childrenInStack('Card', {}, { direction: 'row' })).toBe(false)
+    expect(childrenInStack('Column', {}, { display: 'grid' })).toBe(false)
+    expect(childrenInStack('Container', {}, { display: 'block' })).toBe(false)
+    expect(childrenInStack('Container', {}, { direction: 'col-reverse' })).toBe(true)
+    expect(childrenInStack('Row', {}, { direction: 'col' })).toBe(true)
+    // A breakpoint direction leaves the base stack as it is.
+    expect(childrenInStack('Container', {}, { 'md:direction': 'row' })).toBe(true)
+    expect(childrenInStack('List', { layout: 'row' }, { direction: 'col' })).toBe(true)
+  })
+
   it('renders the container tag the node names, or none for another', () => {
     expect(containerTag(undefined)).toBe('div')
     expect(containerTag('section')).toBe('section')

@@ -459,7 +459,7 @@ const renderChildren = (frame: Frame, node: ModelNode, options: Options, kids = 
   if (layoutSlot?.fill) return layoutSlot.fill()
   const componentSlot = frame.componentSlots?.get(node.id)
   if (componentSlot?.fill) return componentSlot.fill()
-  const inStack = childrenInStack(node.type, node.props)
+  const inStack = childrenInStack(node.type, node.props, node.style)
   const rendered = kids.flatMap(child => renderNode(frame, child, { inStack, copy: options.copy }))
   // A layout's page slot, edited on its own: where the page's content goes.
   if (layoutSlot?.name === 'children' && !rendered.length) return [{ tag: 'div', class: 'rounded-sm border border-dashed border-default p-4 text-sm text-muted', attrs: {}, children: ['Page content'], placeholder: true }]
@@ -615,7 +615,7 @@ const list = (frame: Frame, node: ModelNode, options: Options): PlanElement[] =>
     if (typeof props.empty === 'string') return [placeholderElement(frame.id(node), node.type, props.empty, options.copy)]
     if (props.hideWhenEmpty === true) return []
   }
-  const inStack = childrenInStack(node.type, props)
+  const inStack = childrenInStack(node.type, props, node.style)
   const kids = node.children ?? []
   // `loadMore`: the first n records, then the Load more button while more follow; preview mode's clicks show a page more each.
   const more = loadMoreSize(props.loadMore)
@@ -667,7 +667,7 @@ const instance = (frame: Frame, node: ModelNode, options: Options): PlanElement[
     const target = findNode(component.root, property.nodeId)
     componentSlots.set(property.nodeId, {
       fill: fill
-        ? () => (fill.children ?? []).flatMap(child => renderNode(frame, child, { inStack: target ? childrenInStack(target.type, target.props) : false, copy: options.copy }))
+        ? () => (fill.children ?? []).flatMap(child => renderNode(frame, child, { inStack: target ? childrenInStack(target.type, target.props, target.style) : false, copy: options.copy }))
         : undefined
     })
   }
@@ -748,7 +748,7 @@ export function renderPlan(input: RenderInput): PlanElement[] {
       name: slot.name,
       fill: slot.name === 'children'
         ? () => renderNode(pageFrame, page.root, { pageRoot: true })
-        : fill ? () => (fill.children ?? []).flatMap(child => renderNode(pageFrame, child, { inStack: target ? childrenInStack(target.type, target.props) : false })) : undefined
+        : fill ? () => (fill.children ?? []).flatMap(child => renderNode(pageFrame, child, { inStack: target ? childrenInStack(target.type, target.props, target.style) : false })) : undefined
     })
   }
   const frame: Frame = {

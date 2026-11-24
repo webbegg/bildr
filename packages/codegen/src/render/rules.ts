@@ -115,10 +115,18 @@ export function displayOf(type: string, props: Record<string, unknown> = {}): st
   return ''
 }
 
-/** Whether a type lays its children out in a vertical stack, so their `selfFallback` applies. */
-export function childrenInStack(type: string, props: Record<string, unknown> = {}): boolean {
-  if (type === 'List') return listLayout(props.layout) === 'stack'
-  return type !== 'Row' && STACK_TYPES.includes(type)
+/**
+ * Whether a node lays its children out in a vertical stack, so their
+ * `selfFallback` applies: its type's layout, as its base `display` and
+ * `direction` tokens leave it. A breakpoint token leaves the base stack as it
+ * is.
+ */
+export function childrenInStack(type: string, props: Record<string, unknown> = {}, style: Record<string, string> = {}): boolean {
+  // A Card's `display` styles the card; its inner stack is always flex.
+  const display = type !== 'Card' && (style.display === 'block' || style.display === 'grid' || style.display === 'flex') ? style.display : displayOf(type, props)
+  if (display !== 'flex') return false
+  const direction = style.direction ?? fallbackStyle(type, props).direction
+  return direction === 'col' || direction === 'col-reverse'
 }
 
 /** The types that fill the width of a vertical stack whatever its `items`. */
