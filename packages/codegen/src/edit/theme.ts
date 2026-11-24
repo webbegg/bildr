@@ -5,7 +5,7 @@ import { breakpointsOf, isResponsiveToken, STYLE_TOKENS } from '../design/tokens
 import { NODE_PROPS } from '../render/rules.ts'
 import { defineEdit, fail } from './core.ts'
 import type { Draft } from './core.ts'
-import { INTERNAL_TYPES, PALETTE } from './palette.ts'
+import { INTERNAL_TYPES, LEGACY_LAYOUT_TYPES, PALETTE } from './palette.ts'
 import { walk } from './tree.ts'
 
 /** The theme file (`theme.json`), its bundled presets, the project file (`bildr.json`) and the catalog. */
@@ -152,7 +152,8 @@ export const catalogGet = defineEdit({
     const custom = Object.keys(draft.model.theme?.custom ?? {})
     return {
       nodeTypes: [
-        ...PALETTE.map(entry => ({ type: entry.type, label: entry.label, description: entry.description, container: entry.container, insertable: true, props: propsOf(entry.type), defaults: { props: entry.props, style: entry.style } })),
+        ...PALETTE.map(entry => ({ type: entry.type, ...(entry.preset ? { preset: entry.preset } : {}), label: entry.label, description: entry.description, container: entry.container, insertable: true, props: propsOf(entry.type), defaults: { props: entry.props, style: entry.style } })),
+        ...LEGACY_LAYOUT_TYPES.map(entry => ({ type: entry.type, label: entry.label, description: entry.description, container: entry.container, insertable: false, props: propsOf(entry.type), defaults: { props: entry.props, style: entry.style } })),
         ...INTERNAL_TYPES.map(type => ({ type, ...INTERNAL_INFO[type], container: true, props: propsOf(type), defaults: { props: {}, style: {} } }))
       ],
       styleTokens: STYLE_TOKENS.map(token => ({ key: token.key, label: token.label, group: token.group, values: token.values, responsive: isResponsiveToken(token), ...(token.kind ? { kind: token.kind } : {}) })),

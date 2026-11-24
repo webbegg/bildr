@@ -1,0 +1,47 @@
+import { describe, expect, it } from 'vitest'
+import { PALETTE } from '../../../codegen/src/edit/palette.ts'
+import { layerName } from '../../src/shared/layers.ts'
+import { insertId, insertSpec, layoutIcon } from '../../src/shared/presets.ts'
+
+// layout-containers T5: the editor inserts and wraps with the layout presets, and names a Container by its layout.
+
+describe('insertSpec', () => {
+  it('sends a preset name as a preset, anything else as a type', () => {
+    expect(insertSpec('Row')).toEqual({ preset: 'Row' })
+    expect(insertSpec('Stack')).toEqual({ preset: 'Stack' })
+    expect(insertSpec('Grid')).toEqual({ preset: 'Grid' })
+    expect(insertSpec('Text')).toEqual({ type: 'Text' })
+    expect(insertSpec('Container')).toEqual({ type: 'Container' })
+  })
+
+  it('keys a catalog entry by its preset, or its type', () => {
+    expect(insertId({ type: 'Container', preset: 'Row' })).toBe('Row')
+    expect(insertId({ type: 'Text' })).toBe('Text')
+  })
+
+  it('keys the palette (what catalog_get lists as insertable) by the presets, once each', () => {
+    const ids = PALETTE.map(insertId)
+    expect(ids.slice(0, 5)).toEqual(['Stack', 'Row', 'Column', 'Grid', 'Card'])
+    expect(new Set(ids).size).toBe(ids.length)
+  })
+})
+
+describe('a Container in the layers', () => {
+  const file = { root: { id: 'root', type: 'Page' } }
+  const sources = { components: [], layouts: [] }
+
+  it('is named and drawn by its layout: Stack, Row or Grid', () => {
+    expect(layerName(file, { id: 'a', type: 'Container' }, sources)).toBe('Stack')
+    expect(layerName(file, { id: 'a', type: 'Container', style: { direction: 'row' } }, sources)).toBe('Row')
+    expect(layerName(file, { id: 'a', type: 'Container', style: { display: 'grid' } }, sources)).toBe('Grid')
+    expect(layerName(file, { id: 'a', type: 'Container', style: { display: 'block' } }, sources)).toBe('Container')
+    expect(layerName(file, { id: 'a', type: 'Container', name: 'Hero' }, sources)).toBe('Hero')
+    // Legacy types keep their names.
+    expect(layerName(file, { id: 'a', type: 'Column' }, sources)).toBe('Column')
+    expect(layoutIcon({ type: 'Container', style: { direction: 'row' } })).toBe('i-lucide-arrow-right')
+    expect(layoutIcon({ type: 'Container' })).toBe('i-lucide-arrow-down')
+    expect(layoutIcon({ type: 'Container', style: { display: 'grid' } })).toBe('i-lucide-grid-3x3')
+    expect(layoutIcon({ type: 'Row' })).toBe('i-lucide-arrow-right')
+    expect(layoutIcon({ type: 'Text' })).toBeUndefined()
+  })
+})

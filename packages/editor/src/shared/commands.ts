@@ -315,7 +315,7 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
       enabled: onCanvas,
       run: ({ editor }) => editor.insert(c.type)
     })),
-    action('wrap', 'Wrap in Container', 'i-lucide-box-select', ['group'], selectsSiblings, ({ editor }) => editor.group(), shortcutKeys('group')),
+    action('wrap', 'Wrap in Stack', 'i-lucide-box-select', ['group', 'container'], selectsSiblings, ({ editor }) => editor.group(), shortcutKeys('group')),
     action('auto-layout', 'Auto layout', 'i-lucide-columns-3', ['row', 'column', 'stack'], selectsSiblings, ({ editor }) => editor.autoLayout()),
     action('duplicate', 'Duplicate', 'i-lucide-copy', ['copy', 'clone'], hasSelection, ({ editor }) => editor.duplicate()),
     action('delete', 'Delete', 'i-lucide-trash-2', ['remove'], hasSelection, ({ editor }) => editor.remove()),

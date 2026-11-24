@@ -12,7 +12,14 @@ import type { Value } from '../model/schemas.ts'
  */
 
 export interface PaletteEntry {
+  /** The stored node type. */
   type: string
+  /**
+   * A layout preset of a Container (layout-containers): what `node_insert`
+   * and `node_wrap` take as `preset`, and the name of the node's id. Every
+   * preset's node is a plain Container with the preset's tokens.
+   */
+  preset?: string
   label: string
   description: string
   /** Holds child nodes. */
@@ -22,10 +29,10 @@ export interface PaletteEntry {
 }
 
 export const PALETTE: readonly PaletteEntry[] = [
-  { type: 'Container', label: 'Container', description: 'A block that stacks its children vertically.', container: true, props: {}, style: { p: '4', gap: '3', items: 'start' } },
-  { type: 'Row', label: 'Row', description: 'Lays out its children horizontally.', container: true, props: { wrap: true }, style: { gap: '3', items: 'center' } },
-  { type: 'Column', label: 'Column', description: 'Lays out its children vertically.', container: true, props: {}, style: { gap: '3', items: 'start' } },
-  { type: 'Grid', label: 'Grid', description: 'Lays out its children in equal columns; a child can span several with colSpan.', container: true, props: {}, style: { cols: '3', gap: '6' } },
+  { type: 'Container', preset: 'Stack', label: 'Stack', description: 'A Container that stacks its children vertically, with padding. Every layout preset is a Container: its display, direction, wrap, gap, alignment and columns are style tokens.', container: true, props: {}, style: { p: '4', gap: '3', items: 'start' } },
+  { type: 'Container', preset: 'Row', label: 'Row', description: 'A Container that lays out its children horizontally and wraps them (direction: row, flexWrap: wrap).', container: true, props: {}, style: { direction: 'row', flexWrap: 'wrap', gap: '3', items: 'center' } },
+  { type: 'Container', preset: 'Column', label: 'Column', description: 'A Container that lays out its children vertically, without padding (direction: col).', container: true, props: {}, style: { direction: 'col', gap: '3', items: 'start' } },
+  { type: 'Container', preset: 'Grid', label: 'Grid', description: 'A Container that lays out its children in equal columns (display: grid, cols); a child can span several with colSpan.', container: true, props: {}, style: { display: 'grid', cols: '3', gap: '6' } },
   { type: 'Card', label: 'Card', description: 'A bordered surface holding other nodes.', container: true, props: {}, style: { gap: '3', items: 'start' } },
   { type: 'Heading', label: 'Heading', description: 'A title (h1 to h6).', container: false, props: { text: 'Heading', level: 2 }, style: {} },
   { type: 'Text', label: 'Text', description: 'A paragraph of text.', container: false, props: { text: 'Some text' }, style: {} },
@@ -38,10 +45,27 @@ export const PALETTE: readonly PaletteEntry[] = [
   { type: 'Form', label: 'Form', description: 'Submits its fields to an Action (`action`, `fields`).', container: true, props: {}, style: { gap: '3', items: 'start' } }
 ]
 
+/**
+ * The layout types before the one-container model: still stored, rendered
+ * and accepted as `type`, but no longer offered; their presets replace them.
+ */
+export const LEGACY_LAYOUT_TYPES: readonly PaletteEntry[] = [
+  { type: 'Row', label: 'Row', description: 'Legacy: lays out its children horizontally. Insert the preset "Row" instead.', container: true, props: { wrap: true }, style: { gap: '3', items: 'center' } },
+  { type: 'Column', label: 'Column', description: 'Legacy: lays out its children vertically. Insert the preset "Column" instead.', container: true, props: {}, style: { gap: '3', items: 'start' } },
+  { type: 'Grid', label: 'Grid', description: 'Legacy: lays out its children in equal columns. Insert the preset "Grid" instead.', container: true, props: {}, style: { cols: '3', gap: '6' } }
+]
+
 /** Types a tree holds that the palette doesn't offer: the root of a page, uses of components and slot content. */
 export const INTERNAL_TYPES = ['Page', 'Instance', 'SlotFill'] as const
 
-export const paletteEntry = (type: string): PaletteEntry | undefined => PALETTE.find(entry => entry.type === type)
+/** The defaults a node of `type` is inserted with (a Container's are the Stack preset's). */
+export const paletteEntry = (type: string): PaletteEntry | undefined =>
+  PALETTE.find(entry => entry.type === type) ?? LEGACY_LAYOUT_TYPES.find(entry => entry.type === type)
+
+/** The layout presets, in palette order. */
+export const PRESETS: readonly PaletteEntry[] = PALETTE.filter(entry => entry.preset !== undefined)
+
+export const presetEntry = (preset: string): PaletteEntry | undefined => PRESETS.find(entry => entry.preset === preset)
 
 /** Whether `type` is a node type the model knows. */
 export const isNodeType = (type: string): boolean => type in NODE_PROPS

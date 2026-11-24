@@ -1,4 +1,5 @@
 import type { ComponentFile, ModelNode, Value } from '../model/schemas.ts'
+import { baseLayout } from '../render/rules.ts'
 import { A2UI_VERSION, BASIC_CATALOG_ID } from './wire.ts'
 import type { A2uiAction, A2uiComponent, A2uiCreateSurface, A2uiDynamic } from './wire.ts'
 
@@ -40,6 +41,13 @@ const AS_COLUMN: Record<string, string | undefined> = {
   Form: 'Form becomes a Column: its action and fields are lost',
   // Outside an Instance, a SlotFill is the page's content for a layout slot; the layout itself isn't on the surface.
   SlotFill: 'The layout slot becomes a Column: the layout is not on the surface'
+}
+
+/** A Container, Row, Column or Grid is drawn by how it lays out (`baseLayout`): as a Row, a Grid (a lossy Column) or a Column. */
+const drawnAs = (node: ModelNode): string => {
+  if (!['Container', 'Row', 'Column', 'Grid'].includes(node.type)) return node.type
+  const layout = baseLayout(node.type, node.props, node.style)
+  return layout === 'row' ? 'Row' : layout === 'grid' ? 'Grid' : node.type === 'Container' ? 'Container' : 'Column'
 }
 
 type Expr = Record<string, unknown>
@@ -153,7 +161,13 @@ export const toA2ui = (root: ModelNode, options: ToA2uiOptions): ToA2uiResult =>
     const children = (list: ModelNode[] = node.children ?? [], inner = scopes) =>
       list.map(child => emit(child, inner)).filter((child): child is string => child !== undefined)
 
-    switch (node.type) {
+    const drawn = drawnAs(node)
+    // The tokens that only say what `drawn` already is.
+    if (drawn !== node.type) {
+      if (style.direction === (drawn === 'Row' ? 'row' : 'col')) Reflect.deleteProperty(style, 'direction')
+      if (style.display === (drawn === 'Grid' ? 'grid' : 'flex')) Reflect.deleteProperty(style, 'display')
+    }
+    switch (drawn) {
       case 'Row':
         component.component = 'Row'
         out.push(component)
@@ -274,7 +288,7 @@ export const toA2ui = (root: ModelNode, options: ToA2uiOptions): ToA2uiResult =>
         }
         component.component = 'Column'
         out.push(component)
-        const why = AS_COLUMN[node.type]
+        const why = AS_COLUMN[drawn]
         if (why) lose(node.id, 'node', why)
         if (node.type === 'Form') {
           take('action')

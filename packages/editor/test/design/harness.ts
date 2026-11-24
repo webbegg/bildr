@@ -28,7 +28,7 @@ export const world: { model: Model, posted: EditorToCanvas[] } = { model: struct
 export const modelGet = () => ({ ok: true, model: world.model, files: parsed, database: false })
 
 export const catalog = () => ({
-  nodeTypes: PALETTE.map(entry => ({ type: entry.type, label: entry.label, description: entry.description, container: entry.container, insertable: true, props: [], defaults: { props: entry.props, style: entry.style } })),
+  nodeTypes: PALETTE.map(entry => ({ type: entry.type, ...(entry.preset ? { preset: entry.preset } : {}), label: entry.label, description: entry.description, container: entry.container, insertable: true, props: [], defaults: { props: entry.props, style: entry.style } })),
   styleTokens: [],
   breakpoints: { base: 'mobile', prefixes: ['sm', 'md', 'lg'] },
   colors: [],

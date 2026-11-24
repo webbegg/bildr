@@ -7,7 +7,8 @@ import { defineEdit, fail, rootName } from './core.ts'
 import type { Draft, Tree } from './core.ts'
 import { apiItemsProblem } from './page-uses.ts'
 import { useAction } from './queries.ts'
-import { INTERNAL_TYPES, isContainerType, isNodeType, LINK_PROPS, paletteEntry } from './palette.ts'
+import { INTERNAL_TYPES, isContainerType, isNodeType, LINK_PROPS, paletteEntry, PRESETS, presetEntry } from './palette.ts'
+import type { PaletteEntry } from './palette.ts'
 import { cloneWithNewIds, containsNode, findNode, findParent, insertChild, subtreeIds, walk } from './tree.ts'
 
 /** The node operations of `shared/document/operations.ts` (insert, remove, move, setProps, setStyle, setNodeMeta) on `.bildr/` trees. */
@@ -20,7 +21,10 @@ const Nodes = {
 }
 
 export interface NodeSpec {
-  type: string
+  /** The node type; optional with a `preset`, which names its type. */
+  type?: string
+  /** A layout preset (Stack, Row, Column, Grid): a Container with the preset's tokens. */
+  preset?: string
   name?: string
   locked?: boolean
   props?: Record<string, Value>
@@ -30,14 +34,15 @@ export interface NodeSpec {
 }
 
 export const NodeSpecSchema: z.ZodType<NodeSpec> = z.lazy(() => z.object({
-  type: z.string().min(1).describe('A node type, see catalog_get'),
+  type: z.string().min(1).optional().describe('A node type, see catalog_get; optional with a preset'),
+  preset: z.string().min(1).optional().describe('A layout preset (Stack, Row, Column or Grid, see catalog_get): a Container with the preset\'s style tokens'),
   name: z.string().min(1).max(100).optional().describe('A layer name'),
   locked: z.boolean().optional(),
   props: z.record(z.string(), ValueSchema).optional().describe('Props over the type\'s defaults (with exact: all of them)'),
   style: z.record(z.string(), z.string()).optional().describe('Style tokens over the type\'s defaults (with exact: all of them)'),
   interactions: z.array(InteractionSchema).optional(),
   children: z.array(NodeSpecSchema).optional()
-}))
+}).refine(spec => spec.type !== undefined || spec.preset !== undefined, { message: 'A node needs a type or a preset' }))
 
 const StyleSchema = z.record(z.string(), z.string()).describe('Style tokens, e.g. { "mt": "10", "bg": "primary" }; see catalog_get styleTokens')
 const StylePatchSchema = z.record(z.string(), z.string().nullable()).describe('Style tokens to set, e.g. { "mt": "10", "md:mt": "16" }; null removes one')
@@ -91,20 +96,28 @@ export const containerIn = (tree: Tree, parentId: string, child: string): ModelN
 
 const nonEmpty = <T extends object>(value: T | undefined): T | undefined => (value && Object.keys(value).length ? value : undefined)
 
+/** The palette entry and the node type of a spec: its preset's, or its type's. */
+const entryOf = (spec: NodeSpec): { entry: PaletteEntry | undefined, type: string } => {
+  if (spec.preset === undefined) return { entry: paletteEntry(spec.type!), type: spec.type! }
+  const entry = presetEntry(spec.preset) ?? fail('invalid', `Unknown preset "${spec.preset}": one of ${PRESETS.map(preset => preset.preset).join(', ')}`)
+  if (spec.type !== undefined && spec.type !== entry.type) fail('invalid', `The ${spec.preset} preset is a ${entry.type}, not a ${spec.type}`)
+  return { entry, type: entry.type }
+}
+
 /** A new node (and its children) for `spec`, with the palette defaults unless `exact`. */
 export const buildNode = (draft: Draft, spec: NodeSpec, exact = false): ModelNode => {
-  const entry = paletteEntry(spec.type)
-  if (!entry && !(INTERNAL_TYPES as readonly string[]).includes(spec.type)) fail('invalid', `Unknown node type "${spec.type}"`)
-  if (!isNodeType(spec.type)) fail('invalid', `Unknown node type "${spec.type}"`)
-  checkProps(spec.type, spec.props ?? {})
+  const { entry, type } = entryOf(spec)
+  if (!entry && !(INTERNAL_TYPES as readonly string[]).includes(type)) fail('invalid', `Unknown node type "${type}"`)
+  if (!isNodeType(type)) fail('invalid', `Unknown node type "${type}"`)
+  checkProps(type, spec.props ?? {})
   checkStyle(draft, spec.style ?? {})
-  if (spec.children?.length && !isContainerType(spec.type)) fail('invalid', `A ${spec.type} cannot hold children`)
+  if (spec.children?.length && !isContainerType(type)) fail('invalid', `A ${type} cannot hold children`)
   const defaults = exact || !entry ? {} : { ...entry.props }
   // A link takes `to` (a page) or `href` (a URL): a given one replaces the other's default.
   if (LINK_PROPS.some(key => spec.props?.[key] !== undefined)) for (const key of LINK_PROPS) Reflect.deleteProperty(defaults, key)
   const props = nonEmpty({ ...defaults, ...spec.props })
   const style = nonEmpty({ ...(exact || !entry ? {} : entry.style), ...spec.style })
-  const node: ModelNode = { id: draft.nodeId(spec.type), type: spec.type }
+  const node: ModelNode = { id: draft.nodeId(spec.preset ?? type), type }
   if (spec.name) node.name = spec.name
   if (spec.locked) node.locked = true
   if (props) node.props = props
@@ -191,14 +204,15 @@ export const nodeInsert = defineEdit({
     parentId: LocalIdSchema.optional().describe('The container to insert into; defaults to the tree root'),
     index: z.int().nonnegative().optional().describe('Position among its children; defaults to the end'),
     exact: z.boolean().optional().describe('true: only the given props and style, without the type\'s defaults (a paste)'),
-    nodes: z.array(NodeSpecSchema).min(1).optional().describe('Several nodes, in order from index, all or nothing; replaces type, props, style and children'),
-    type: z.string().min(1).optional().describe('A node type (catalog_get nodeTypes); required unless nodes is given'),
+    nodes: z.array(NodeSpecSchema).min(1).optional().describe('Several nodes, in order from index, all or nothing; replaces type, preset, props, style and children'),
+    type: z.string().min(1).optional().describe('A node type (catalog_get nodeTypes); a type or a preset is required unless nodes is given'),
+    preset: z.string().min(1).optional().describe('A layout preset (catalog_get nodeTypes with a preset: Stack, Row, Column, Grid): a Container with the preset\'s style tokens'),
     name: z.string().min(1).max(100).optional(),
     props: z.record(z.string(), ValueSchema).optional(),
     style: StyleSchema.optional(),
     interactions: z.array(InteractionSchema).optional(),
     children: z.array(NodeSpecSchema).optional()
-  }).refine(input => (input.nodes ? input.type === undefined : input.type !== undefined), { message: 'Give type, or nodes (not both)', path: ['type'] }),
+  }).refine(input => (input.nodes ? input.type === undefined && input.preset === undefined : input.type !== undefined || input.preset !== undefined), { message: 'Give type or preset, or nodes (not both)', path: ['type'] }),
   apply: (draft, { file, parentId, index, exact, nodes: specs, ...spec }) => {
     const tree = draft.tree(file)
     const all = specs ?? [spec as NodeSpec]
@@ -318,16 +332,17 @@ export const nodeWrap = defineEdit({
     file: FileRef,
     ...Nodes,
     type: z.enum(WRAP_TYPES).optional().describe('The wrapping container; defaults to Container'),
+    preset: z.string().min(1).optional().describe('A layout preset for the wrapping Container (Stack, Row, Column or Grid, see catalog_get)'),
     style: StyleSchema.optional().describe('Style tokens over the container\'s defaults')
   }),
-  apply: (draft, { file, type = 'Container', style, ...nodes }) => {
+  apply: (draft, { file, type, preset, style, ...nodes }) => {
     const tree = draft.tree(file)
     const ids = idsOf(nodes)
     const locations = ids.map(id => located(tree, id, 'wrapped'))
     const parent = locations[0]!.parent
     if (locations.some(location => location.parent !== parent)) fail('invalid', 'Only siblings (nodes of one parent) can be wrapped together')
     const index = Math.min(...locations.map(location => location.index))
-    const wrapper = buildNode(draft, { type, ...(style ? { style } : {}) })
+    const wrapper = buildNode(draft, { ...(preset ? { preset } : {}), ...(type || !preset ? { type: type ?? 'Container' } : {}), ...(style ? { style } : {}) })
     const moved = ids.map(id => findNode(tree.root, id)!)
     parent.children = parent.children!.filter(child => !ids.includes(child.id))
     parent.children.splice(index, 0, wrapper)

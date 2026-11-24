@@ -48,6 +48,8 @@ export interface FileRef {
 
 export interface CatalogNodeType {
   type: string
+  /** A layout preset (Stack, Row, Column, Grid): a Container with `defaults.style`. */
+  preset?: string
   label: string
   description: string
   container: boolean
@@ -70,7 +72,6 @@ type ModelResult = { ok: true, model: ProjectModel } | { ok: false, problems: Mo
 export type Edit = (name: string, input: Record<string, unknown>) => Promise<Record<string, unknown> | undefined>
 
 const FALLBACK_CONTAINERS = ['Page', 'Container', 'Row', 'Column', 'Grid', 'Card', 'Form', 'List', 'Link', 'SlotFill']
-export const WRAP_TYPES = ['Container', 'Row', 'Column', 'Card', 'Grid'] as const
 
 /** What a copy holds: the node as a spec `node_insert` takes (no ids; it mints new ones). */
 const toSpec = (node: ModelNode): Record<string, unknown> => ({
@@ -430,9 +431,9 @@ export const createDesign = () => {
   /** A Form insertion waiting for its action (`FormActionDialog`): a Form without one can't be generated. */
   const pendingForm = shallowRef<{ at: { parentId?: string, index?: number } } | null>(null)
 
-  const insert = async (spec: { type: string, props?: Record<string, Value> }, at: { parentId?: string, index?: number } = insertionPoint()) => {
+  const insert = async (spec: ({ type: string } | { preset: string }) & { props?: Record<string, Value> }, at: { parentId?: string, index?: number } = insertionPoint()) => {
     if (!fileId.value) return
-    if (spec.type === 'Form' && spec.props?.action === undefined && page.value) {
+    if ('type' in spec && spec.type === 'Form' && spec.props?.action === undefined && page.value) {
       pendingForm.value = { at }
       return
     }
@@ -487,9 +488,9 @@ export const createDesign = () => {
     const done = await edit('node_delete', { file: fileInput(), nodeIds: ids() })
     if (done) select([])
   }
-  const wrap = async (type: typeof WRAP_TYPES[number] = 'Container') => {
+  const wrap = async () => {
     if (!ids().length) return
-    const out = await edit('node_wrap', { file: fileInput(), nodeIds: ids(), type })
+    const out = await edit('node_wrap', { file: fileInput(), nodeIds: ids(), type: 'Container' })
     if (typeof out?.nodeId === 'string') select([out.nodeId])
   }
   const makeComponent = async (name?: string) => {

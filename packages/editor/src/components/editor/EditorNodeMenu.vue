@@ -141,12 +141,12 @@ const items = computed<ContextMenuItem[][]>(() => {
           { label: 'Siblings', kbds: ['meta', 'a'], disabled: isRoot, onSelect: () => select(selectAllSiblings(root, [id])) }
         ]
       },
-      { label: many ? 'Group in Container' : 'Wrap in Container', icon: 'i-lucide-square-dashed', kbds: ['meta', 'g'], disabled: cannotWrap, onSelect: () => editor.wrap(wrapIds, 'Container') },
+      { label: many ? 'Group in Stack' : 'Wrap in Stack', icon: 'i-lucide-square-dashed', kbds: ['meta', 'g'], disabled: cannotWrap, onSelect: () => editor.wrap(wrapIds, 'Container') },
       {
         label: 'Wrap in',
         icon: 'i-lucide-box',
         disabled: cannotWrap,
-        children: (['Row', 'Column', 'Card', 'Grid'] as const).map(type => ({ label: type, onSelect: () => editor.wrap(wrapIds, type) }))
+        children: (['Row', 'Column', 'Grid', 'Card'] as const).map(kind => ({ label: kind, onSelect: () => editor.wrap(wrapIds, kind) }))
       },
       { label: 'Add auto layout', icon: 'i-lucide-layout-panel-left', kbds: ['shift', 'a'], disabled: cannotWrap, onSelect: () => editor.autoLayout() }
     ],

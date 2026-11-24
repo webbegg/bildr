@@ -189,7 +189,7 @@ export { detectItems, inferApiModels, inferFields, isUnder, remoteUrl } from './
 export type { InferredField, RemoteUrl } from './remote.ts'
 export type { ApiField, ApiModel } from '../model/schemas.ts'
 export type { EditErrorCode, EditOutcome, FileChange } from './core.ts'
-export { isContainerType, PALETTE } from './palette.ts'
+export { isContainerType, PALETTE, PRESETS, presetEntry } from './palette.ts'
 export { THEME_PRESETS } from './theme.ts'
 export type { ThemePreset } from './theme.ts'
 export type { PaletteEntry } from './palette.ts'

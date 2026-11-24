@@ -106,7 +106,8 @@ describe('remove, duplicate, wrap, group', () => {
   it('wraps and groups siblings in document order and selects the container', async () => {
     const { editor, actions } = await boot({ node_wrap: ok({ nodeId: 'n_wrap' }) }, 'pg_index')
     await editor.wrap('n_head', 'Row')
-    expect(inputs(actions, 'node_wrap')).toEqual([{ file: 'pg_index', nodeId: 'n_head', type: 'Row' }])
+    // A layout kind is a preset: a Container with its tokens (layout-containers T5).
+    expect(inputs(actions, 'node_wrap')).toEqual([{ file: 'pg_index', nodeId: 'n_head', preset: 'Row' }])
     expect(editor.selectedId).toBe('n_wrap')
     editor.selectedIds = ['n_about', 'n_head']
     await editor.group()
@@ -328,7 +329,7 @@ describe('auto layout', () => {
     editor.selectedIds = ['n_head', 'n_list']
     await editor.autoLayout()
     const [call] = inputs(actions, 'node_wrap') as Array<{ style: { gap: string } }>
-    expect(call).toMatchObject({ file: 'pg_index', nodeIds: ['n_head', 'n_list'], type: 'Column' })
+    expect(call).toMatchObject({ file: 'pg_index', nodeIds: ['n_head', 'n_list'], preset: 'Column' })
     expect(typeof call!.style.gap).toBe('string')
   })
 

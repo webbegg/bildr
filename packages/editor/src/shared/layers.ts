@@ -6,6 +6,7 @@ import { DEFAULT_FRAMES } from '@bildr/editor-core/frames'
 import { devicesFor, styleProvenance } from '@bildr/editor-core/styleFields'
 import type { Device, DeviceId } from '@bildr/editor-core/styleFields'
 import { findNode, findParent } from '../design/tree.ts'
+import { containerName } from './presets.ts'
 
 /**
  * The layers tree's pure behaviour (the hosted `shared/editor/layers.ts`, over
@@ -25,12 +26,14 @@ function eyeDevices(device: DeviceId, shown: readonly DeviceId[], base: Breakpoi
  * The name the layers, the canvas label and the inspector give `node` of
  * `file`: an Instance is named by its component, a SlotFill by the slot it
  * fills (its Instance's slot property, or for one on a page root the page
- * layout's slot). Everything else, and an unknown component or slot,
- * shows its type. A node's own `name` wins over all of these.
+ * layout's slot), a Container by its layout (`containerName`: Stack, Row,
+ * Grid). Everything else, and an unknown component or slot, shows its type.
+ * A node's own `name` wins over all of these.
  */
 export function layerName(file: Pick<PageFile | ComponentFile | LayoutFile, 'root'> & { layout?: string }, node: ModelNode, sources: { components: readonly ComponentFile[], layouts: readonly LayoutFile[] }): string {
   if (node.name) return node.name
   if (node.type === 'Instance') return sources.components.find(entry => entry.id === node.props?.component)?.name ?? node.type
+  if (node.type === 'Container') return containerName(node)
   if (node.type !== 'SlotFill') return node.type
   const parent = findParent(file.root, node.id)
   if (parent?.type === 'Instance') {

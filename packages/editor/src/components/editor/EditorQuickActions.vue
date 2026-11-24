@@ -9,6 +9,7 @@ import type { Command, CommandContext } from '../../shared/commands.ts'
 import { editorCommands, GROUP_LABELS, pushRecent, searchCommands } from '../../shared/commands.ts'
 import { componentCommands } from '../../shared/componentEditor.ts'
 import { layoutCommands } from '../../shared/layoutEditor.ts'
+import { insertId } from '../../shared/presets.ts'
 
 /**
  * The `⌘K` quick actions, Framer's Quick Insert: type a component's name and
@@ -47,7 +48,7 @@ const recent = ref<string[]>(JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]'
 
 /** What the palette inserts: the store's catalog (the hosted editor read its component registry). */
 const HIDDEN = ['Page', 'Instance', 'SlotFill']
-const insertTypes = computed(() => (editor.catalog?.nodeTypes ?? []).filter(entry => entry.insertable !== false && !HIDDEN.includes(entry.type)).map(entry => ({ type: entry.type, label: entry.label, icon: nodeIcon(entry.type) })))
+const insertTypes = computed(() => (editor.catalog?.nodeTypes ?? []).filter(entry => entry.insertable !== false && !HIDDEN.includes(entry.type)).map(entry => ({ type: insertId(entry), label: entry.label, icon: nodeIcon(insertId(entry)) })))
 
 const ctx = computed<CommandContext>(() => ({
   editor,
