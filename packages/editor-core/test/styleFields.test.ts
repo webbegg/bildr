@@ -1,34 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_THEME, getStyleToken, STYLE_TOKENS } from '@bildr/codegen/design'
-import { breakpointLabel, breakpointStyles, colorSwatch, colorSwatchRows, customColorSwatches, DEVICES, hasStyleAt, provenanceHighlight, provenanceHint, sectionMark, setStyleTokens, spacingItems, STYLE_SECTIONS, styleFieldControl, styleProvenance, styleSection, styleSections } from '../src/styleFields.ts'
+import { DEFAULT_THEME, getStyleToken } from '@bildr/codegen/design'
+import { breakpointLabel, breakpointStyles, colorSwatch, colorSwatchRows, customColorSwatches, DEVICES, hasStyleAt, provenanceHighlight, provenanceHint, setStyleTokens, spacingItems, styleFieldControl, styleProvenance } from '../src/styleFields.ts'
 
 describe('style fields', () => {
-  it('lists the sections in Stacki order, with every design token in exactly one', () => {
-    expect(STYLE_SECTIONS).toEqual(['Layout', 'Spacing', 'Size', 'Typography', 'Backgrounds', 'Borders', 'Effects'])
-    const keys = styleSections().flatMap(s => s.fields.map(f => f.key))
-    expect(keys.sort()).toEqual(STYLE_TOKENS.map(t => t.key).sort())
-    expect(styleSections().find(s => s.section === 'Layout')!.fields.map(f => f.key)).toEqual(['direction', 'flexWrap', 'items', 'justify', 'self', 'gap', 'cols', 'colSpan', 'display', 'overflow'])
-  })
-
-  it('puts each token key, breakpoint-prefixed or not, in its section', () => {
-    expect(styleSection('mt')).toBe('Spacing')
-    expect(styleSection('md:cols')).toBe('Layout')
-    expect(styleSection('gap')).toBe('Layout')
-    expect(styleSection('maxW')).toBe('Size')
-    expect(styleSection('color')).toBe('Typography')
-    expect(styleSection('lg:align')).toBe('Typography')
-    expect(styleSection('bg')).toBe('Backgrounds')
-    expect(styleSection('borderColor')).toBe('Borders')
-    expect(styleSection('rounded')).toBe('Borders')
-    expect(styleSection('shadow')).toBe('Effects')
-    expect(styleSection('opacity')).toBe('Effects')
-    expect(styleSection('md:overflow')).toBe('Layout')
-    expect(styleSection('roundedTl')).toBe('Borders')
-    expect(styleSection('borderB')).toBe('Borders')
-    expect(styleSection('bogus')).toBeUndefined()
-    expect(styleSection('xl:mt')).toBeUndefined()
-  })
-
   it('uses a select for the five-value alignments, which overflow as segments', () => {
     expect(styleFieldControl(getStyleToken('items')!)).toBe('select')
     expect(styleFieldControl(getStyleToken('self')!)).toBe('select')
@@ -131,14 +105,6 @@ describe('provenance', () => {
     expect(provenanceHint(styleProvenance({ 'mt': '10', 'sm:mt': '4' }, 'mt', 'tablet'))).toBe('From Large phone: 4')
     expect(styleProvenance({ 'mt': '10', 'sm:mt': '4' }, 'mt', 'large-phone')).toEqual({ state: 'set', key: 'sm:mt', value: '4' })
     expect(provenanceHint({ state: 'unset' })).toBeUndefined()
-  })
-
-  it('marks a section blue only when the device sets one of its keys', () => {
-    expect(sectionMark(style, 'Spacing', 'tablet')).toBe('set')
-    expect(sectionMark(style, 'Layout', 'tablet')).toBeUndefined()
-    expect(sectionMark(style, 'Layout', 'mobile')).toBe('set')
-    expect(sectionMark(style, 'Backgrounds', 'desktop')).toBe('set')
-    expect(sectionMark(style, 'Size', 'desktop')).toBeUndefined()
   })
 
   it('tells whether a node has overrides at a device breakpoint', () => {

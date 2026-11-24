@@ -1,23 +1,7 @@
 import { cascadeTo, getStyleToken, isResponsiveToken, orderedStyleTokens, parseStyleKey, SHADES, spacingBasePx, STYLE_HEX, styleKey, THEME_COLORS, themeColorValue, themeNeutralColor } from '@bildr/codegen/design'
 import type { Breakpoint, BreakpointBase, NeutralColorKind, StyleToken, Theme, ThemeColorName } from '@bildr/codegen/design'
 
-/** How the style panel presents the design tokens: token pickers, in Stacki's sections. */
-
-export const STYLE_SECTIONS = ['Layout', 'Spacing', 'Size', 'Typography', 'Backgrounds', 'Borders', 'Effects'] as const
-
-export type StyleSection = typeof STYLE_SECTIONS[number]
-
-// Each section's tokens in panel order. Gap sits in Layout, as in Stacki; the
-// colours go to the section of what they paint.
-const SECTION_KEYS: Record<StyleSection, string[]> = {
-  Layout: ['direction', 'flexWrap', 'items', 'justify', 'self', 'gap', 'cols', 'colSpan', 'display', 'overflow'],
-  Spacing: ['m', 'mx', 'my', 'mt', 'mr', 'mb', 'ml', 'p', 'px', 'py', 'pt', 'pr', 'pb', 'pl'],
-  Size: ['w', 'h', 'minW', 'maxW', 'minH', 'maxH'],
-  Typography: ['text', 'font', 'align', 'tracking', 'leading', 'textTransform', 'color'],
-  Backgrounds: ['bg'],
-  Borders: ['border', 'borderT', 'borderR', 'borderB', 'borderL', 'borderColor', 'rounded', 'roundedTl', 'roundedTr', 'roundedBr', 'roundedBl'],
-  Effects: ['shadow', 'opacity']
-}
+/** How the style panel presents the design tokens: token pickers (the panel's sections and rows are `shared/panel.ts` in the editor). */
 
 /** Short row labels for the panel's label column; the others use the token label. */
 const SHORT_LABELS: Record<string, string> = {
@@ -30,16 +14,6 @@ const SHORT_LABELS: Record<string, string> = {
 
 export function fieldLabel(token: StyleToken): string {
   return SHORT_LABELS[token.key] ?? token.label
-}
-
-/** The section of a token key, breakpoint-prefixed or not; undefined for unknown keys. */
-export function styleSection(key: string): StyleSection | undefined {
-  const base = parseStyleKey(key)?.token.key
-  return base ? STYLE_SECTIONS.find(s => SECTION_KEYS[s].includes(base)) : undefined
-}
-
-export function styleSections(): { section: StyleSection, fields: StyleToken[] }[] {
-  return STYLE_SECTIONS.map(section => ({ section, fields: SECTION_KEYS[section].map(key => getStyleToken(key)!) }))
 }
 
 export type StyleFieldControl = 'color' | 'spacing' | 'segmented' | 'select'
@@ -188,11 +162,6 @@ export function provenanceHighlight(provenance: Provenance): 'override' | undefi
 /** Where an inherited value comes from, for a tooltip, e.g. `From Mobile: 10` (`From Desktop: 4` desktop-first). */
 export function provenanceHint(provenance: Provenance, base: BreakpointBase = 'mobile'): string | undefined {
   return provenance.state === 'inherited' ? `From ${breakpointLabel(provenance.from, base)}: ${provenance.value}` : undefined
-}
-
-/** A collapsed section's dot: `set` if the device sets one of its tokens; inheriting gets no dot. */
-export function sectionMark(style: Record<string, string>, section: StyleSection, device: DeviceId, base: BreakpointBase = 'mobile'): 'set' | undefined {
-  return SECTION_KEYS[section].some(key => styleProvenance(style, key, device, base).state === 'set') ? 'set' : undefined
 }
 
 /** Whether the node writes any token at exactly the device's breakpoint (the base for the Primary). */
