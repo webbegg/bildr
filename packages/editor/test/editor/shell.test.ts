@@ -356,6 +356,16 @@ describe('the node menu', () => {
     expect(actions.named('node_update_style').map(call => call.input)).toEqual([{ file: 'pg_index', nodeIds: ['n_h1'], style: { display: 'hidden' } }])
   })
 
+  it('removes a layout container\'s wrapper, and dims it for anything else (layout-containers L4)', async () => {
+    const { actions } = await open({ node_unwrap: ok({ nodeIds: ['n_h1', 'n_toggle'] }) })
+    await openMenu('n_h1')
+    expect(item('Remove wrapper')?.hasAttribute('data-disabled')).toBe(true)
+    await keydown('Escape')
+    await openMenu('n_head')
+    await click(item('Remove wrapper')!)
+    expect(actions.named('node_unwrap').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_head' }])
+  })
+
   it('filters its actions with the search field, parents as "Parent › Item"', async () => {
     await open()
     await openMenu('n_h1')

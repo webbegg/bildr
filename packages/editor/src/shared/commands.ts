@@ -69,7 +69,9 @@ const BEFORE_DEVICES: Shortcut[] = [
   { id: 'rename', label: 'Rename the layer', keys: [['meta', 'r']] },
   { id: 'lock', label: 'Lock or unlock on the canvas', keys: [['meta', 'l']] },
   { id: 'group', label: 'Group in a Container', keys: [['meta', 'g']] },
-  { id: 'auto-layout', label: 'Auto layout (Row or Column)', keys: [['shift', 'a']] },
+  { id: 'auto-layout', label: 'Auto layout (Row or Column; again: Stack, Grid, None)', keys: [['shift', 'a']] },
+  { id: 'remove-layout', label: 'Remove layout (block flow)', keys: [['alt', 'shift', 'a']] },
+  { id: 'unwrap', label: 'Remove wrapper', keys: [['meta', 'shift', 'g']] },
   { id: 'create-component', label: 'Create component', keys: [['meta', 'alt', 'k']] },
   { id: 'detach-instance', label: 'Detach instance', keys: [['meta', 'alt', 'b']] },
   { id: 'select-child', label: 'Select the first child', keys: [['enter']] },
@@ -249,6 +251,8 @@ export interface CommandEditor {
   insert: (type: string) => unknown
   group: () => unknown
   autoLayout: () => unknown
+  removeLayout: () => unknown
+  unwrap: () => unknown
   duplicate: () => unknown
   remove: () => unknown
   navigate: (step: SelectionStep) => unknown
@@ -317,6 +321,8 @@ export function editorCommands(ctx: CommandContext): EditorCommand[] {
     })),
     action('wrap', 'Wrap in Stack', 'i-lucide-box-select', ['group', 'container'], selectsSiblings, ({ editor }) => editor.group(), shortcutKeys('group')),
     action('auto-layout', 'Auto layout', 'i-lucide-columns-3', ['row', 'column', 'stack'], selectsSiblings, ({ editor }) => editor.autoLayout()),
+    action('unwrap', 'Remove wrapper', 'i-lucide-ungroup', ['unwrap', 'ungroup', 'flatten'], hasSelection, ({ editor }) => editor.unwrap()),
+    action('remove-layout', 'Remove layout', 'i-lucide-square', ['none', 'block', 'flow'], hasSelection, ({ editor }) => editor.removeLayout()),
     action('duplicate', 'Duplicate', 'i-lucide-copy', ['copy', 'clone'], hasSelection, ({ editor }) => editor.duplicate()),
     action('delete', 'Delete', 'i-lucide-trash-2', ['remove'], hasSelection, ({ editor }) => editor.remove()),
     action('select-parent', 'Select parent', 'i-lucide-arrow-up-left', ['up'], c => onCanvas(c) && !!c.editor.selectedId && c.editor.selectedId !== c.editor.page?.root.id, ({ editor }) => editor.navigate('parent')),

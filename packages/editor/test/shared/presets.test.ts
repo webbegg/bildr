@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PALETTE } from '../../../codegen/src/edit/palette.ts'
 import { layerName } from '../../src/shared/layers.ts'
-import { insertId, insertSpec, layoutIcon, legacyLayouts } from '../../src/shared/presets.ts'
+import { insertId, insertSpec, isFlattenable, layoutIcon, legacyLayouts } from '../../src/shared/presets.ts'
 
 // layout-containers T5: the editor inserts and wraps with the layout presets, and names a Container by its layout.
 
@@ -51,5 +51,25 @@ describe('a Container in the layers', () => {
     expect(layoutIcon({ type: 'Container', style: { display: 'grid' } })).toBe('i-lucide-grid-3x3')
     expect(layoutIcon({ type: 'Row' })).toBe('i-lucide-arrow-right')
     expect(layoutIcon({ type: 'Text' })).toBeUndefined()
+  })
+})
+
+describe('isFlattenable (layout-containers L4)', () => {
+  const text = { id: 'n_t', type: 'Text' }
+  it('flags a Container that only wraps one node and adds nothing of its own', () => {
+    expect(isFlattenable({ id: 'n_c', type: 'Container', children: [text] })).toBe(true)
+    expect(isFlattenable({ id: 'n_c', type: 'Container', style: {}, children: [text] })).toBe(true)
+  })
+
+  it('leaves one with a style, props, interactions, a name, a lock, two children or none, and the legacy types', () => {
+    const plain = { id: 'n_c', type: 'Container', children: [text] }
+    expect(isFlattenable({ ...plain, style: { p: '4' } })).toBe(false)
+    expect(isFlattenable({ ...plain, props: { tag: 'section' } })).toBe(false)
+    expect(isFlattenable({ ...plain, interactions: [{ event: 'click', steps: [] }] } as never)).toBe(false)
+    expect(isFlattenable({ ...plain, name: 'Hero' })).toBe(false)
+    expect(isFlattenable({ ...plain, locked: true })).toBe(false)
+    expect(isFlattenable({ ...plain, children: [text, { id: 'n_u', type: 'Text' }] })).toBe(false)
+    expect(isFlattenable({ ...plain, children: [] })).toBe(false)
+    expect(isFlattenable({ ...plain, type: 'Row' })).toBe(false)
   })
 })

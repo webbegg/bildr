@@ -213,6 +213,18 @@ describe('the style sections', () => {
     expect(writes()).toEqual([{ items: 'end' }, { items: 'stretch' }, { flexWrap: 'wrap' }, { display: 'block' }])
   })
 
+  it('hints to flatten a Container that only wraps one node, and removes the wrapper (layout-containers L4)', async () => {
+    const page = (await import('../design/harness.ts')).indexPage().root
+    const head = page.children!.find(child => child.id === 'n_head')!
+    Object.assign(head, { type: 'Container', style: undefined, children: head.children!.slice(0, 1) })
+    const { actions } = await open({ node_unwrap: ok({ nodeIds: ['n_h1'] }) })
+    await select('n_head')
+    await click(q('[data-flatten-hint] button'))
+    expect(actions.named('node_unwrap').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_head' }])
+    await select('n_about')
+    expect(document.body.querySelector('[data-flatten-hint]')).toBeNull()
+  })
+
   it('notes a Fill in a parent that fits its content, and fixes it on the parent or the node (layout-containers L3)', async () => {
     const head = (await import('../design/harness.ts')).indexPage().root.children!.find(child => child.id === 'n_head')!
     head.style = { ...head.style, w: 'fit' }

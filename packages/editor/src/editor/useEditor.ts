@@ -31,7 +31,9 @@ import type { UseEntry } from '../shared/dataArtifacts.ts'
 import type { PendingMigration } from '../types.ts'
 import { interactionKey, parseInteractionKey } from '../shared/interactionPanel.ts'
 import { layerName } from '../shared/layers.ts'
-import { insertSpec } from '../shared/presets.ts'
+import { insertSpec, isUnwrappable } from '../shared/presets.ts'
+import { layoutType, layoutTypeWrite } from '../shared/panel.ts'
+import type { LayoutType } from '../shared/panel.ts'
 import { createDataView } from './dataView.ts'
 import { carryFile, carryPage, requestView, screenOf, takeStart } from './views.ts'
 import type { DataRequest } from './views.ts'
@@ -124,6 +126,9 @@ export interface EnvStatusEntry {
   hasDefault?: boolean
   [key: string]: unknown
 }
+
+/** Shift+A on a layout: the type it cycles to. */
+const LAYOUT_CYCLE: Record<LayoutType, LayoutType> = { stack: 'grid', grid: 'none', none: 'stack' }
 
 const DEEP_KEY = 'bildr:deep-select'
 const DARK_KEY = 'bildr:canvas-dark'
@@ -484,6 +489,27 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     if (typeof result?.nodeId === 'string') selectedId.value = result.nodeId
   }
 
+  /** Cmd/Ctrl+Shift+G, Remove wrapper: the selected layout container's children take its place, and are selected. */
+  const unwrap = async (id = selectedId.value) => {
+    const tree = root()
+    const node = tree && id && id !== tree.id ? findNode(tree, id) : undefined
+    if (!node || !isUnwrappable(node.type)) return
+    const result = await runOnPage('node_unwrap', { nodeId: node.id })
+    if (Array.isArray(result?.nodeIds)) selectedIds.value = result.nodeIds as string[]
+  }
+
+  /** Alt+Shift+A, Remove layout: each selected Stack or Grid becomes block flow at the edited device (one undo step). */
+  const removeLayout = async () => {
+    const tree = root()
+    if (!tree) return
+    const updates = selectedIds.value.flatMap((id) => {
+      const node = findNode(tree, id)
+      const style = node && layoutType(node.type, node.style ?? {}, deviceId.value, breakpointBase.value) ? layoutTypeWrite(node.type, node.style ?? {}, deviceId.value, 'none', breakpointBase.value) : {}
+      return node && Object.keys(style).length ? [{ nodeId: id, style }] : []
+    })
+    await updateStyles(updates)
+  }
+
   /** Converts the legacy layouts (Row, Column, Grid, Card) at and under a node into Containers (one undo step). */
   const convertLayouts = async (id: string) => {
     const result = await runOnPage('node_convert', { nodeId: id, subtree: true })
@@ -536,7 +562,8 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
   /**
    * Shift+A, Figma's "Add auto layout": wraps the selected siblings in a Row
    * (side by side) or Column (stacked) in their visual order, with the gap token
-   * nearest their spacing. A single container without a direction gets one instead.
+   * nearest their spacing. A single container without a direction gets one instead;
+   * one with a layout cycles it Stack → Grid → None.
    */
   const autoLayout = async () => {
     const ids = siblingSelection('add auto layout')
@@ -544,6 +571,12 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     if (!ids || !tree) return
     if (ids.length === 1) {
       const node = findNode(tree, ids[0]!)!
+      const current = layoutType(node.type, node.style ?? {}, deviceId.value, breakpointBase.value)
+      if (current && (current !== 'stack' || node.style?.direction !== undefined)) {
+        // A second press on a layout cycles its type, as Plasmic does (layout-containers L4).
+        const next = LAYOUT_CYCLE[current]
+        return updateStyle(node.id, layoutTypeWrite(node.type, node.style ?? {}, deviceId.value, next, breakpointBase.value))
+      }
       if (isFlexType(node.type) && node.style?.direction === undefined) {
         const boxes = await measureNodes((node.children ?? []).map(child => child.id))
         const direction = boxes.length > 1 ? inferAutoLayout(boxes).direction : 'col'
@@ -1015,8 +1048,10 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     else if (meta && !shift && lower === 'r' && selectedId.value) startRename()
     else if (meta && !shift && lower === 'l' && selectedId.value) void toggleLock()
     else if (meta && lower === 'd') void duplicate()
+    else if (meta && shift && lower === 'g') void unwrap()
     else if (meta && lower === 'g') void group()
     else if (meta && lower === 'a' && tree) select(selectAllSiblings(tree, selectedIds.value))
+    else if (!meta && shift && alt && code === 'KeyA') void removeLayout()
     else if (!meta && shift && lower === 'a') void autoLayout()
     else if (!meta && (key === 'Delete' || key === 'Backspace') && interactionId.value && component.value) void removeInteraction(interactionId.value)
     else if (!meta && (key === 'Delete' || key === 'Backspace')) void remove()
@@ -1094,7 +1129,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     loading: design.loading, error: design.error, errorCode: design.errorCode, errorField: design.errorField, dismissError: design.dismissError, regenerated: design.regenerated, problems: design.problems, files: design.files, components: design.components, layouts: design.layouts, catalog: design.catalog, dragging: design.dragging, dragCancels: design.dragCancels, canvasMode: design.mode, pagePaths: design.pagePaths, formSelects: design.formSelects, formats: design.formats,
     isContainer: design.isContainer, scopeOf: design.scopeOf, pendingInsert: design.pendingInsert, confirmInsert: design.confirmInsert, pendingForm: design.pendingForm, confirmForm: design.confirmForm, formActions: design.formActions, refreshDataSoon: design.refreshDataSoon, stateValues: design.stateValues, setStateValue: design.setStateValue, resetStateValues: design.resetStateValues, select, selectNode: design.selectNode, start, dispose: design.dispose,
     // Operations.
-    notify, reload, reloadEnv, run, runOnPage, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, layoutFromSelection, createLayoutFromSelection, setPageLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, addState, addInteraction, updateInteraction, removeInteraction, setTransition, previewInteractions, renameVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, convertLayouts, group, autoLayout, moveBy, moveSelection,
+    notify, reload, reloadEnv, run, runOnPage, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, layoutFromSelection, createLayoutFromSelection, setPageLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, addState, addInteraction, updateInteraction, removeInteraction, setTransition, previewInteractions, renameVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, unwrap, convertLayouts, group, autoLayout, removeLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, updateStyles, previewTheme, updateTheme, undo, redo, shortcut
   })

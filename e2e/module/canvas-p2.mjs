@@ -201,6 +201,26 @@ await run('canvas-p2', async ({ page, errors }) => {
   const escMoves = await writesBeforeSentinel(beforeEsc)
   check(escMoves === 0 && JSON.stringify(order()) === JSON.stringify([alpha, bravo, charlie]), `a cancelled reorder moves nothing (${escMoves} writes before the sentinel)`)
 
+  // layout-containers L4: in a grid the drop indicator is the cell the node lands in, not a line.
+  await action('node_update_style', { file: s.file, nodeId: column, style: { display: 'grid', cols: '3' } })
+  await until(async () => (await frame.locator(`[data-node="${column}"]`).getAttribute('class'))?.includes('grid-cols-3'))
+  await select(alpha)
+  await canvasShowsSelected(alpha)
+  const cellFrom = await center(frame.locator(`[data-node="${alpha}"]`))
+  const charlieCell = await frame.locator(`[data-node="${charlie}"]`).boundingBox()
+  await page.mouse.move(cellFrom.x, cellFrom.y)
+  await page.mouse.down()
+  await page.mouse.move(charlieCell.x + charlieCell.width * 0.25, charlieCell.y + charlieCell.height / 2, { steps: 10 })
+  const cell = await until(async () => {
+    const el = frame.locator('[data-drop-indicator][data-drop-cell]')
+    return await el.count() === 1 && el.boundingBox()
+  })
+  check(!!cell && Math.abs(cell.width - charlieCell.width) < 2 && Math.abs(cell.height - charlieCell.height) < 2, `over a grid child the indicator is its cell (${cell && Math.round(cell.width)}x${cell && Math.round(cell.height)} vs ${Math.round(charlieCell.width)}x${Math.round(charlieCell.height)})`)
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await action('history_undo')
+  check(!!await until(() => nodeOf(column).style?.display === undefined), 'undo turns the grid back into a column')
+
   // A press on the selection released outside the frame before 4px leaves no drag behind: hover back in doesn't drag, and the next click selects.
   await select(alpha)
   await canvasShowsSelected(alpha)

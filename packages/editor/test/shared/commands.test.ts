@@ -122,6 +122,8 @@ describe('editorCommands', () => {
       insert: vi.fn(),
       group: vi.fn(),
       autoLayout: vi.fn(),
+      removeLayout: vi.fn(),
+      unwrap: vi.fn(),
       duplicate: vi.fn(),
       remove: vi.fn(),
       navigate: vi.fn(),

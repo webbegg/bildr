@@ -348,6 +348,41 @@ describe('auto layout', () => {
     const head = (editor.page?.root.children ?? []).find(child => child.id === 'n_head')!
     if (head.style?.direction === undefined) expect(inputs(actions, 'node_update_style')).toEqual([{ file: 'pg_index', nodeIds: ['n_head'], style: { direction: 'row' } }])
   })
+
+  it('a press on a layout that has its direction cycles Stack → Grid → None → Stack (layout-containers L4)', async () => {
+    const { editor, actions } = await boot({ node_update_style: ok() }, 'pg_index')
+    const child = (id: string) => (editor.page?.root.children ?? []).find(node => node.id === id)!
+    child('n_head').style = { ...child('n_head').style, direction: 'row' }
+    editor.selectedId = 'n_head'
+    await editor.autoLayout()
+    editor.selectedId = 'n_about'
+    await editor.autoLayout()
+    child('n_about').style = { ...child('n_about').style, display: 'block' }
+    await editor.autoLayout()
+    expect(inputs(actions, 'node_update_style').map(call => (call as { style: unknown }).style)).toEqual([
+      { display: 'grid', cols: '2' },
+      { display: 'block' },
+      { display: 'flex' }
+    ])
+  })
+
+  it('Alt+Shift+A removes the layout of every selected one in one step: block flow, children in order (layout-containers L4)', async () => {
+    const { editor, actions } = await boot({ node_update_style: ok() }, 'pg_index')
+    editor.selectedIds = ['n_head', 'n_about', 'n_h1']
+    await editor.removeLayout()
+    expect(inputs(actions, 'node_update_style')).toEqual([{ file: 'pg_index', updates: [{ nodeId: 'n_head', style: { display: 'block' } }, { nodeId: 'n_about', style: { display: 'block' } }] }])
+  })
+
+  it('unwraps a layout container and selects its children (layout-containers L4)', async () => {
+    const { editor, actions } = await boot({ node_unwrap: ok({ nodeIds: ['n_h1', 'n_toggle'] }) }, 'pg_index')
+    editor.selectedId = 'n_head'
+    await editor.unwrap()
+    expect(inputs(actions, 'node_unwrap')).toEqual([{ file: 'pg_index', nodeId: 'n_head' }])
+    expect(editor.selectedIds).toEqual(['n_h1', 'n_toggle'])
+    editor.selectedId = 'n_h1'
+    await editor.unwrap()
+    expect(actions.named('node_unwrap')).toHaveLength(1)
+  })
 })
 
 describe('the store keeps the rules', () => {
