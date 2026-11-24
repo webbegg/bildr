@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SHIFT_STOPS } from '../src/scale.ts'
-import { changedPatch, fillSizes, gapRects, handleCursor, handlePoint, HANDLES, hitHandle, hitPoint, hitRadius, nearestStop, paddingDragKey, paddingRects, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '../src/handles.ts'
+import { changedPatch, edgeSizePatch, fillSizes, gapRects, handleCursor, handlePoint, HANDLES, hitHandle, hitPoint, hitRadius, nearestStop, paddingDragKey, paddingRects, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '../src/handles.ts'
 
 const rect = { x: 100, y: 50, width: 200, height: 80 }
 
@@ -267,5 +267,13 @@ describe('spacing drags', () => {
     const opts = { breakpoint: 'md' as const, basePx: 4, shift: false }
     expect(spacingDragPatch({ gap: '2' }, { kind: 'gap', axis: 'row' }, 8, { dx: 8, dy: 100 }, opts)).toEqual({ 'md:gap': '4' })
     expect(spacingDragPatch({ gap: '2' }, { kind: 'gap', axis: 'col' }, 8, { dx: 100, dy: -8 }, opts)).toEqual({ 'md:gap': '0' })
+  })
+})
+
+describe('edge double-click (layout-containers L3)', () => {
+  it('fits the axes a handle resizes, or fills them with Alt, at the edited breakpoint', () => {
+    expect(edgeSizePatch('e', undefined, false)).toEqual({ w: 'fit' })
+    expect(edgeSizePatch('n', 'md', true)).toEqual({ 'md:h': 'fill' })
+    expect(edgeSizePatch('se', undefined, true)).toEqual({ w: 'fill', h: 'fill' })
   })
 })

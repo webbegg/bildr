@@ -3,7 +3,7 @@ import type { Ref } from 'vue'
 import { spacingBasePx } from '@bildr/codegen/design'
 import type { Breakpoint, Theme } from '@bildr/codegen/design'
 import type { ModelNode } from '@bildr/codegen/model'
-import { changedPatch, fillSizes, gapRects, handleCursor, handlePoint, HANDLES, hitPoint, hitRadius, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '@bildr/editor-core/handles'
+import { changedPatch, edgeSizePatch, fillSizes, gapRects, handleCursor, handlePoint, HANDLES, hitPoint, hitRadius, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '@bildr/editor-core/handles'
 import type { Axis, HandleId, Insets, ResizeDrag, SpacingHandle, SpacingTarget } from '@bildr/editor-core/handles'
 import type { StylePatch } from '@bildr/editor-core/preview'
 import { SCRUB_DEAD_ZONE } from '@bildr/editor-core/scrub'
@@ -20,7 +20,8 @@ import type { CanvasMode, CanvasToEditor, SpacingOverlay } from './protocol.ts'
  *
  * - 8 resize handles (corners and edge midpoints): a drag previews the W/H scale step nearest
  *   the pointer (`resizePatch`), labelled e.g. `w-64 · 256px`, Shift by 4 stops; a Fit or Fill
- *   size becomes fixed.
+ *   size becomes fixed. A double-click on a handle makes the axes it resizes Fit, Alt+double-click
+ *   Fill (`edgeSizePatch`).
  * - padding and gap overlays (hatched, accent) while the panel's Padding or Gap field is
  *   hovered (`bildr:overlay`), or both while the pointer is over a selected auto layout; their
  *   handles drag the padding key the side uses or `gap`, snapped the same way.
@@ -93,6 +94,8 @@ const HANDLE_INSET_PX = 8
 const SPACING_CURSORS: Record<string, string> = { top: 'ns-resize', bottom: 'ns-resize', left: 'ew-resize', right: 'ew-resize', row: 'ew-resize', col: 'ns-resize' }
 
 const px = (value: string) => Number.parseFloat(value) || 0
+/** Two presses on a handle within this many ms are a double-click (the edge gesture). */
+const DOUBLE_PRESS_MS = 400
 const toRect = (box: Box) => ({ x: box.left, y: box.top, width: box.width, height: box.height })
 const inside = (point: Point, rect: { x: number, y: number, width: number, height: number }) =>
   point.x >= rect.x && point.x <= rect.x + rect.width && point.y >= rect.y && point.y <= rect.y + rect.height
@@ -147,6 +150,8 @@ export function useGestures(ctx: GesturesContext) {
   let pointer: Point | null = null
   /** Set when a press ended a drag (or Esc cancelled one): the click that follows selects nothing. */
   let swallowClick = false
+  /** The last press on a resize handle, which a second one soon after makes a double-click. */
+  let lastHandlePress: { handle: HandleId, nodeId: string, at: number } | null = null
 
   const resizeHandles = computed(() => editableBox.value ? HANDLES.map(handle => ({ handle, ...handlePoint(toRect(editableBox.value!), handle) })) : [])
   const spacingHandleList = computed<SpacingHandle[]>(() => {
@@ -348,6 +353,8 @@ export function useGestures(ctx: GesturesContext) {
       if (g.slot) ctx.post({ type: 'bildr:drop', parentId: g.slot.parentId, index: g.slot.index, payload: JSON.stringify({ kind: 'node', id: g.nodeId }) })
       return
     }
+    // A press that dragged a size is no first click of a double-click.
+    if (Object.keys(g.patch).length) lastHandlePress = null
     const node = ctx.root() ? findNode(ctx.root()!, g.nodeId) : undefined
     const changed = node ? changedPatch(node.style ?? {}, g.patch) : {}
     if (Object.keys(changed).length) ctx.post({ type: 'bildr:style-commit', nodeId: g.nodeId, style: changed })
@@ -374,6 +381,18 @@ export function useGestures(ctx: GesturesContext) {
     if (!root || !id || !box) return false
     const start = canvasPoint(event)
     const hit = handleAt(start)
+    // A second press on the same resize handle soon after the first: Fit, or Fill with Alt (one undo step, no drag).
+    const handle = hit && 'handle' in hit ? hit.handle : null
+    const again = handle && lastHandlePress?.handle === handle && lastHandlePress.nodeId === id && event.timeStamp - lastHandlePress.at < DOUBLE_PRESS_MS
+    lastHandlePress = handle ? { handle, nodeId: id, at: event.timeStamp } : null
+    if (handle && again) {
+      lastHandlePress = null
+      const node = findNode(root, id)
+      const changed = node ? changedPatch(node.style ?? {}, edgeSizePatch(handle, ctx.breakpoint(), event.altKey)) : {}
+      if (Object.keys(changed).length) ctx.post({ type: 'bildr:style-commit', nodeId: id, style: changed })
+      swallowClick = true
+      return true
+    }
     const base = { nodeId: id, pageId: ctx.fileId(), state: startGesture(event.pointerId, start, !!hit) }
     if (hit && 'handle' in hit) {
       const drag: ResizeDrag = { handle: hit.handle, width: box.width, height: box.height, breakpoint: ctx.breakpoint(), basePx: spacingBasePx(ctx.theme()?.spacing ?? 'default'), fill: fillSize(id) }

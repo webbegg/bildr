@@ -30,6 +30,18 @@ describe('generateUi follows the canvas render rules', () => {
     expect(page).toContain('    <div class="flex flex-col self-stretch">\n      <section class="flex flex-col self-start" />')
   })
 
+  it('resolves Fill by the parent\'s axis: siblings share a row, and a stack-below row fills across on mobile (layout-containers L3)', () => {
+    const page = indexWith({ id: 'n_x', type: 'Container', style: { 'direction': 'col', 'md:direction': 'row' }, children: [
+      { ...text('n_a'), style: { w: 'fill' } },
+      { ...text('n_b'), style: { w: 'fill', grow: '2' } }
+    ] })
+    expect(page).toContain('<p class="whitespace-pre-line md:min-w-0 self-stretch md:self-auto md:grow-1 md:basis-[0%]">a</p>')
+    expect(page).toContain('<p class="whitespace-pre-line md:min-w-0 self-stretch md:self-auto grow-2 md:basis-[0%]">a</p>')
+    // A Fill in a vertical stack's cross axis, and 100% in a block parent.
+    expect(indexWith({ ...text('n_c'), style: { w: 'fill' } })).toContain('<p class="whitespace-pre-line self-stretch">a</p>')
+    expect(indexWith({ id: 'n_d', type: 'Container', style: { display: 'block' }, children: [{ ...text('n_e'), style: { h: 'fill' } }] })).toContain('<p class="whitespace-pre-line h-full">a</p>')
+  })
+
   it('lays a Row out as a flex row that wraps with `wrap`, whose children follow its items (row-direction-wrap)', () => {
     const page = indexWith({ id: 'n_x', type: 'Row', props: { wrap: true }, children: [{ id: 'n_y', type: 'Container' }] })
     expect(page).toContain('    <div class="flex flex-row flex-wrap self-stretch">\n      <div class="flex flex-col" />')

@@ -97,6 +97,14 @@ describe('generateUi: variants', () => {
     expect(code).toContain('const badgeVariants = {\n  default: \'px-2\',\n  loud: \'py-1\'\n} as const')
   })
 
+  it('resolves a Fill child per variant where a variant turns its parent\'s axis (layout-containers L3)', () => {
+    const code = badgeOut((component) => {
+      component.root.children[0].style = { w: 'fill' }
+      component.variants = [{ id: 'var_stacked', name: 'stacked', overrides: { n_badge: { style: { direction: 'col' } } } }]
+    })
+    expect(code).toContain('const badgeTextVariants = {\n  default: \'min-w-0 grow-1 basis-[0%]\',\n  stacked: \'self-stretch\'\n} as const')
+  })
+
   it('sets the variant of an instance by name', () => {
     const page = out((files) => {
       loud()(files[BADGE]!)

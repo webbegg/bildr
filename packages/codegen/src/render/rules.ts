@@ -1,5 +1,6 @@
 import { THEME_COLORS } from '../design/theme.ts'
-import { parseStyleKey } from '../design/tokens.ts'
+import type { BreakpointBase } from '../design/tokens.ts'
+import { levels, parseStyleKey, styleKey } from '../design/tokens.ts'
 
 /**
  * The render rules (spec V4, RA §6): per node type, what the generator
@@ -163,6 +164,73 @@ export function selfFallback(type: string, style: Record<string, string> = {}, i
   if (!inStack || style.self !== undefined) return {}
   const aligned = Object.keys(style).some(key => parseStyleKey(key)?.token.key === 'align')
   return BLOCK_TYPES.includes(type) || (['Heading', 'Text'].includes(type) && aligned) ? { self: 'stretch' } : {}
+}
+
+/** A node's parent, as Fill reads its layout (`fillStyle`). */
+export interface LayoutParent {
+  type: string
+  props?: Record<string, unknown>
+  style?: Record<string, string>
+}
+
+/** Fill's stored value, an intent `fillStyle` resolves. */
+export const FILL = 'fill'
+
+// What Fill writes per parent layout: along a stack's main axis it grows from a zero basis (and may shrink below its content), across it stretches.
+const FILL_WIDTH: Record<BaseLayout, Record<string, string>> = { row: { grow: '1', basis: '0', minW: '0' }, col: { self: 'stretch' }, grid: { w: 'full' }, block: { w: 'full' } }
+const FILL_HEIGHT: Record<BaseLayout, Record<string, string>> = { row: { self: 'stretch' }, col: { grow: '1', basis: '0', minH: '0' }, grid: { self: 'stretch' }, block: { h: 'full' } }
+/** What undoes a resolved token at a breakpoint where Fill no longer writes it (a min size of 0 is harmless, so it stays). */
+const FILL_NEUTRAL: Record<string, string> = { grow: '0', basis: 'auto', self: 'auto', w: 'auto', h: 'auto' }
+const FILL_KEYS = ['w', 'h', 'grow', 'basis', 'minW', 'minH', 'self']
+
+/**
+ * A style with its Fill sizes (`w`/`h` = `fill`) resolved by the parent's
+ * layout at each breakpoint (layout-containers L3, as Figma and Framer do):
+ * along a stack's main axis Fill is `grow-1 basis-0 min-w-0` (siblings share
+ * the space), across it `self-stretch`; in a grid cell or a block parent it is
+ * 100%, as without a parent. The parent's `display` and `direction` (or its
+ * type) can change per breakpoint, so each level of the cascade writes what
+ * changes there, undoing what Fill wrote below and no longer applies. A token
+ * the node sets itself (a grow weight, an Align self) is kept, never written,
+ * from the breakpoint it sets it at.
+ * A style without Fill comes back as it is.
+ */
+export function fillStyle(style: Record<string, string>, parent: LayoutParent | undefined, base: BreakpointBase = 'mobile'): Record<string, string> {
+  const tokenOf = (key: string) => parseStyleKey(key)?.token.key
+  if (!Object.entries(style).some(([key, value]) => value === FILL && ['w', 'h'].includes(tokenOf(key) ?? ''))) return style
+  const order = levels(base)
+  const upTo = (map: Record<string, string>, token: string, at: number) => {
+    for (let i = at; i >= 0; i--) {
+      const key = styleKey(token, order[i])
+      if (map[key] !== undefined) return { key, value: map[key] }
+    }
+    return undefined
+  }
+  // A token the node sets itself is its own from the breakpoint it sets it at (below, Fill still writes it).
+  const owned = (token: string, at: number) => upTo(style, token, at) !== undefined
+  const out = Object.fromEntries(Object.entries(style).filter(([key, value]) => !(value === FILL && ['w', 'h'].includes(tokenOf(key) ?? ''))))
+  const written = new Set<string>()
+  const parentStyle = parent?.style ?? {}
+  order.forEach((breakpoint, at) => {
+    const layoutStyle = Object.fromEntries((['display', 'direction'] as const).flatMap((token) => {
+      const value = upTo(parentStyle, token, at)?.value
+      return value === undefined ? [] : [[token, value]]
+    }))
+    const layout = parent ? baseLayout(parent.type, parent.props, layoutStyle) : 'block'
+    const fills = { w: upTo(style, 'w', at)?.value === FILL, h: upTo(style, 'h', at)?.value === FILL }
+    const wanted = { ...(fills.w ? FILL_WIDTH[layout] : {}), ...(fills.h ? FILL_HEIGHT[layout] : {}) }
+    for (const token of FILL_KEYS) {
+      const size = token === 'w' || token === 'h'
+      if (size ? !fills[token] : owned(token, at)) continue
+      const current = upTo(out, token, at)
+      const next = wanted[token] ?? (current && (size || written.has(current.key)) ? FILL_NEUTRAL[token] : undefined)
+      if (next === undefined || next === current?.value) continue
+      const key = styleKey(token, breakpoint)
+      out[key] = next
+      written.add(key)
+    }
+  })
+  return out
 }
 
 /** The level of a Heading without one. */

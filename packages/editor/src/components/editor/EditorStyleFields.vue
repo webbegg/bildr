@@ -68,6 +68,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   update: [style: Record<string, string | null>]
   preview: [style: Record<string, string | null> | null]
+  /** A patch for the parent's style (the Fill-in-Fit fix), at the edited device. */
+  updateParent: [style: Record<string, string | null>]
 }>()
 const editor = useEditor()
 
@@ -174,7 +176,7 @@ const rowLabel = (row: RowId) => ({
 })
 
 const LABELS: Record<RowId, string> = {
-  width: 'Width', height: 'Height', maxWidth: 'Max W', minWidth: 'Min W', maxHeight: 'Max H', minHeight: 'Min H',
+  width: 'Width', height: 'Height', maxWidth: 'Max W', minWidth: 'Min W', maxHeight: 'Max H', minHeight: 'Min H', grow: 'Grow', shrink: 'Shrink',
   type: 'Type', direction: 'Direction', distribute: 'Distribute', align: 'Align', wrap: 'Wrap', columns: 'Columns', gap: 'Gap',
   padding: 'Padding', span: 'Span', margin: 'Margin', self: 'Self', overflow: 'Overflow',
   visible: 'Visible', opacity: 'Opacity', fill: 'Fill', border: 'Border', shadows: 'Shadows', radius: 'Radius', corners: 'Corners',
@@ -183,7 +185,7 @@ const LABELS: Record<RowId, string> = {
 }
 // The "+" menu names, Framer's.
 const MENU_LABELS: Partial<Record<RowId, string>> = {
-  maxWidth: 'Max Width', minWidth: 'Min Width', maxHeight: 'Max Height', minHeight: 'Min Height',
+  maxWidth: 'Max Width', minWidth: 'Min Width', maxHeight: 'Max Height', minHeight: 'Min Height', grow: 'Grow', shrink: 'Shrink',
   padding: 'Padding', margin: 'Margin', self: 'Align self', overflow: 'Overflow',
   display: 'Display', corners: 'Individual corners',
   fontSize: 'Font size', fontWeight: 'Font weight', textAlign: 'Text align', textColor: 'Text color',
@@ -192,6 +194,8 @@ const MENU_LABELS: Partial<Record<RowId, string>> = {
 // The "+" items that need explaining: their second line.
 const MENU_HINTS: Partial<Record<RowId, string>> = {
   margin: 'Space outside the edges',
+  grow: 'Its share of the space, among Fill siblings',
+  shrink: 'Whether it gets smaller when space runs out',
   self: 'Overrides the parent\'s Align for this one',
   overflow: 'Clips or scrolls what doesn\'t fit',
   display: 'Block, flex or grid, past Visible and Type',
@@ -210,6 +214,10 @@ const SIZE_LIMITS: Partial<Record<RowId, string>> = { maxWidth: 'maxW', minWidth
 const modeItems = (key: SizeKey) => sizeModes(key).map(mode => ({ value: mode, label: SIZE_MODE_LABELS[mode] }))
 const setMode = (key: SizeKey, mode: SizeMode) => setField(key, sizeModeValue(key, mode, current(key)))
 const sizeKey = (row: RowId): SizeKey => (row === 'width' ? 'w' : 'h')
+/** Fill inside a parent that fits its content (Figma's Fill-in-Hug): the parent Fills too, or the node fits. */
+const FIT_AXES: Record<SizeKey, string> = { w: 'width', h: 'height' }
+const fillParent = (key: SizeKey) => emit('updateParent', atDevice({ [key]: 'fill' }))
+const fitChild = (key: SizeKey) => setField(key, 'fit')
 
 // The selection's boxes in the active frame (canvas px), for the greyed auto sizes.
 const measured = shallowRef<MeasuredSizes>(EMPTY_SIZES)
@@ -305,6 +313,8 @@ const SELF_ICONS: Record<string, string> = {
 }
 const SELF_LABELS: Record<string, string> = { auto: 'Auto', start: 'Start', center: 'Center', end: 'End', stretch: 'Stretch' }
 const DISPLAY_LABELS: Record<string, string> = { hidden: 'Hidden', block: 'Block', flex: 'Flex', grid: 'Grid' }
+const GROW_LABELS: Record<string, string> = { 0: 'None', 1: '1×', 2: '2×', 3: '3×' }
+const SHRINK_LABELS: Record<string, string> = { 0: 'No', 1: 'Yes' }
 const OVERFLOW_LABELS: Record<string, string> = { visible: 'Visible', hidden: 'Hidden', auto: 'Auto', scroll: 'Scroll', clip: 'Clip' }
 const SHADOW_LABELS: Record<string, string> = { 'none': 'None', 'xs': 'Extra small', 'sm': 'Small', 'md': 'Medium', 'lg': 'Large', 'xl': 'Extra large', '2xl': 'Huge' }
 const TRACKING_LABELS: Record<string, string> = { tighter: 'Tighter', tight: 'Tight', normal: 'Normal', wide: 'Wide', wider: 'Wider', widest: 'Widest' }
@@ -316,6 +326,8 @@ const TRANSFORM_ICONS: Record<string, string> = { 'uppercase': 'i-lucide-case-up
 const SELECT_ROWS: Partial<Record<RowId, { labels: Record<string, string>, unset: string, styled?: boolean }>> = {
   shadows: { labels: SHADOW_LABELS, unset: 'None' },
   overflow: { labels: OVERFLOW_LABELS, unset: 'Visible' },
+  grow: { labels: GROW_LABELS, unset: 'None' },
+  shrink: { labels: SHRINK_LABELS, unset: 'Yes' },
   fontWeight: { labels: {}, unset: 'normal', styled: true },
   letterSpacing: { labels: TRACKING_LABELS, unset: 'Normal', styled: true },
   lineHeight: { labels: LEADING_LABELS, unset: 'Normal' }
@@ -328,7 +340,7 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
 <template>
   <div :data-editing-breakpoint="editor.device.breakpoint ?? 'base'">
     <EditorStyleSection
-      v-for="{ section, rows, menu, reset, collapsed, inParent } in sections"
+      v-for="{ section, rows, menu, reset, collapsed, inParent, fillInFit } in sections"
       :key="section"
       :label="section"
       :collapsed="collapsed"
@@ -344,6 +356,29 @@ const SELECT = 'h-full min-w-0 flex-1 ps-2.5 text-[12px]'
         :title="inParent === 'none' ? 'The parent has no layout: it flows its children as blocks' : undefined"
       >
         In parent<span class="text-highlighted">{{ LAYOUT_LABELS[inParent] }}</span>
+      </div>
+      <div
+        v-for="axis in fillInFit ?? []"
+        :key="axis"
+        class="my-1 rounded-lg bg-warning/10 px-2 py-1.5 text-[11px] text-toned"
+        role="note"
+        :data-fill-in-fit="axis"
+      >
+        The parent fits its content's {{ FIT_AXES[axis] }}, so Fill has no room to fill.
+        <span class="mt-1 flex gap-2">
+          <button
+            type="button"
+            class="text-primary hover:underline"
+            data-fill-fix="parent"
+            @click="fillParent(axis)"
+          >Make parent Fill</button>
+          <button
+            type="button"
+            class="text-primary hover:underline"
+            data-fill-fix="child"
+            @click="fitChild(axis)"
+          >Make this Fit</button>
+        </span>
       </div>
       <template
         v-for="row in rows"

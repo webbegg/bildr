@@ -213,6 +213,21 @@ describe('the style sections', () => {
     expect(writes()).toEqual([{ items: 'end' }, { items: 'stretch' }, { flexWrap: 'wrap' }, { display: 'block' }])
   })
 
+  it('notes a Fill in a parent that fits its content, and fixes it on the parent or the node (layout-containers L3)', async () => {
+    const head = (await import('../design/harness.ts')).indexPage().root.children!.find(child => child.id === 'n_head')!
+    head.style = { ...head.style, w: 'fit' }
+    head.children!.find(child => child.id === 'n_h1')!.style = { w: 'fill' }
+    const { actions } = await open({ node_update_style: ok() })
+    await select('n_h1')
+    expect(section('Size')!.querySelector<HTMLElement>('[data-fill-in-fit]')?.dataset.fillInFit).toBe('w')
+    await click(q('[data-fill-fix="parent"]'))
+    await click(q('[data-fill-fix="child"]'))
+    expect(actions.named('node_update_style').map(call => call.input)).toEqual([
+      { file: 'pg_index', nodeIds: ['n_head'], style: { w: 'fill' } },
+      { file: 'pg_index', nodeIds: ['n_h1'], style: { w: 'fit' } }
+    ])
+  })
+
   it('leads Size with how the parent lays the node out: In parent Stack with Align self, Grid with Span too', async () => {
     await open()
     await select('n_h1')

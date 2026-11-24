@@ -10,9 +10,10 @@ import type { Model } from '../model/load.ts'
 import type { ActionFile, ComponentFile, EntityFile, LayoutFile, ModelNode, PageFile, PropertyDef, QueryFile, Value } from '../model/schemas.ts'
 import {
   animatedProperties, CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, CONTAINER_TAGS, containerTag, DEFAULT_HEADING_LEVEL,
-  DEFAULT_TRANSITION, displayOf, fallbackStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, LINK_CLASS,
+  DEFAULT_TRANSITION, displayOf, fallbackStyle, FILL, fillStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, LINK_CLASS,
   LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, nodePropProblems, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses, uiStepProblems
 } from '../render/rules.ts'
+import type { LayoutParent } from '../render/rules.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
 import { VALUE_TYPES } from '../model/field-types.ts'
 import { entityNames, moduleContext } from './context.ts'
@@ -448,6 +449,8 @@ interface RenderOptions {
   slots?: Map<string, string>
   /** The parent lays its children out in a vertical stack (`childrenInStack`), so `selfFallback` applies. */
   inStack?: boolean
+  /** The node that lays this one out, which resolves its Fill sizes (`fillStyle`); none for a file's root. */
+  parent?: LayoutParent
   /** The root of a page: its SlotFills fill the slots of the page's layout. */
   pageRoot?: boolean
 }
@@ -456,7 +459,7 @@ const SLOT_FILL = 'SlotFill'
 
 /** The node's children, one level deeper (`depth` more for a wrapper), laid out the way the node lays them out. */
 const children = (env: Env, node: ModelNode, indent: string, options: RenderOptions, kids = node.children ?? [], depth = 1) =>
-  kids.flatMap(child => render(env, child, `${indent}${'  '.repeat(depth)}`, { slots: options.slots, inStack: childrenInStack(node.type, node.props, node.style) }))
+  kids.flatMap(child => render(env, child, `${indent}${'  '.repeat(depth)}`, { slots: options.slots, inStack: childrenInStack(node.type, node.props, node.style), parent: node }))
 
 /** The token fallbacks of a node in its parent: the type's (render rules) after the stack's `self: stretch`. */
 const fallbackOf = (node: ModelNode, options: RenderOptions, own: Record<string, string> = fallbackStyle(node.type, node.props)) =>
@@ -477,7 +480,10 @@ const render = (env: Env, original: ModelNode, indent: string, options: RenderOp
   if (problem) fail(env, original, problem.message)
   // Props a variant overrides or a property drives become expressions.
   const swapped = env.substitutions?.get(original.id)
-  const node = swapped ? { ...original, props: { ...original.props, ...swapped } } : original
+  const props = swapped ? { ...original.props, ...swapped } : original.props
+  // Fill sizes become what they are in this parent (a variant's looks are resolved alike, in `variantsOf`).
+  const style = original.style && fillStyle(original.style, options.parent, env.base)
+  const node = swapped || style !== original.style ? { ...original, props, style } : original
   const extra = [...(options.attrs ?? []), ...visibility(env, node), ...(env.root?.id === node.id ? env.root.attrs : [])]
   switch (node.type) {
     case 'Page':
@@ -726,8 +732,8 @@ const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, options:
   const kids = node.children ?? []
   const inStack = childrenInStack(node.type, props, node.style)
   const inner = kids.length === 1
-    ? render(itemEnv, kids[0]!, `${indent}  `, { attrs: repeat, slots: options.slots, inStack })
-    : [`${indent}  <template ${repeat.map(entry => entry.text).join(' ')}>`, ...kids.flatMap(child => render(itemEnv, child, `${indent}    `, { slots: options.slots, inStack })), `${indent}  </template>`]
+    ? render(itemEnv, kids[0]!, `${indent}  `, { attrs: repeat, slots: options.slots, inStack, parent: { ...node, props } })
+    : [`${indent}  <template ${repeat.map(entry => entry.text).join(' ')}>`, ...kids.flatMap(child => render(itemEnv, child, `${indent}    `, { slots: options.slots, inStack, parent: { ...node, props } })), `${indent}  </template>`]
   const button = shown && more
     ? [`${indent}  <div v-if="${escapeAttr(items)}.length > ${shown}" class="${LOAD_MORE_CLASS}">`, `${indent}    <UButton label="${LOAD_MORE_LABEL}" @click="${shown} += ${more}" />`, `${indent}  </div>`]
     : []
@@ -742,7 +748,7 @@ const findNode = (node: ModelNode, id: string): ModelNode | undefined =>
 /** `<template #name>` with a SlotFill's children, laid out the way the slot's node lays them out. */
 const fillTemplate = (env: Env, fill: ModelNode, name: string, target: ModelNode | undefined, indent: string, slots?: Map<string, string>) => [
   `${indent}<template #${name}>`,
-  ...(fill.children ?? []).flatMap(child => render(env, child, `${indent}  `, { slots, inStack: target ? childrenInStack(target.type, target.props, target.style) : false })),
+  ...(fill.children ?? []).flatMap(child => render(env, child, `${indent}  `, { slots, inStack: target ? childrenInStack(target.type, target.props, target.style) : false, parent: target })),
   `${indent}</template>`
 ]
 
@@ -1062,10 +1068,26 @@ const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string, Model
   const timing = interactive ? new Map([['default', timingOf()], ...variants.map(variant => [variant.name, timingOf(variant)] as const)]) : undefined
   const map = new Map<string, Variant>()
   env.substitutions ??= new Map()
-  for (const id of [...new Set(variants.flatMap(variant => Object.keys(variant.overrides)))]) {
+  const parents = new Map<string, ModelNode>()
+  const walk = (node: ModelNode) => (node.children ?? []).forEach((child) => {
+    parents.set(child.id, node)
+    walk(child)
+  })
+  walk(component.root)
+  const overridden = [...new Set(variants.flatMap(variant => Object.keys(variant.overrides)))]
+  // A Fill child of an overridden node changes with its parent's axis, so it gets its looks too.
+  const filling = (node: ModelNode) => Object.values(node.style ?? {}).includes(FILL)
+  const followers = overridden.flatMap(id => (nodes.get(id)?.children ?? []).filter(filling).map(child => child.id))
+  /** A node's style in a variant, Fill resolved by its parent in that variant (as `render` resolves the default). */
+  const lookOf = (id: string, own: Record<string, string>, variant: VariantDef | undefined) => {
+    const parent = parents.get(id)
+    const parentLook = parent && { ...parent, style: variant ? styleIn(parent.style ?? {}, effective(variant, parent.id)) : parent.style }
+    return fillStyle(variant ? styleIn(own, effective(variant, id)) : own, parentLook, env.base)
+  }
+  for (const id of [...new Set([...overridden, ...followers])]) {
     const node = nodes.get(id) ?? fail(env, undefined, `a variant overrides the unknown node ${id}`)
     const own = node.style ?? {}
-    const looks: Array<[string, Record<string, string>]> = [['default', own], ...variants.map(variant => [variant.name, styleIn(own, effective(variant, id))] as [string, Record<string, string>])]
+    const looks: Array<[string, Record<string, string>]> = [['default', lookOf(id, own, undefined)], ...variants.map(variant => [variant.name, lookOf(id, own, variant)] as [string, Record<string, string>])]
     const styleOf = new Map(looks)
     const pointer: Variant['pointer'] = new Map()
     // The root can't be its own group's descendant: it takes the plain pseudo-class variants.

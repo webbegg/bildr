@@ -1,12 +1,13 @@
 import { displayFallback, orderedStyleTokens, parseStyleKey, styleClasses, styleInline } from '@bildr/codegen/design'
+import type { BreakpointBase } from '@bildr/codegen/design'
 import type { ComponentFile, LayoutFile, ModelNode, PageFile, PropertyDef, Value } from '@bildr/codegen/model'
 import {
   animatedProperties, CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, containerTag, DEFAULT_HEADING_LEVEL,
-  DEFAULT_TRANSITION, displayOf, fallbackStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, isSafeUrl, LINK_CLASS,
+  DEFAULT_TRANSITION, displayOf, fallbackStyle, FILL, fillStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, isSafeUrl, LINK_CLASS,
   LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses,
   formatValue
 } from '@bildr/codegen/render'
-import type { ValueFormats } from '@bildr/codegen/render'
+import type { LayoutParent, ValueFormats } from '@bildr/codegen/render'
 import { INSTANCE_ID_SEPARATOR, layoutNodeId } from './ids.ts'
 import type { PlainValue } from './protocol.ts'
 
@@ -67,6 +68,8 @@ export interface RenderInput {
   formSelects?: Record<string, Record<string, string[]>>
   /** File id → the money and percent fields its nodes show as text (`valueFormats`), so they read as the generated app writes them. */
   formats?: Record<string, ValueFormats>
+  /** The project's breakpoint base: the cascade Fill sizes resolve along (`fillStyle`). */
+  base?: BreakpointBase
 }
 
 export interface PlanElement {
@@ -260,7 +263,7 @@ const bindProperties = (shell: Shell, properties: PropertyDef[], nodes: Map<stri
   }
 }
 
-const componentShell = (component: ComponentFile): Shell => {
+const componentShell = (component: ComponentFile, base?: BreakpointBase): Shell => {
   const shell = emptyShell()
   const nodes = nodeIndex(component.root)
   const variants = component.variants
@@ -276,11 +279,21 @@ const componentShell = (component: ComponentFile): Shell => {
     let css = interactive && !interactions.length && states.every(state => Object.values(state.overrides).every(override => !override.props && !override.unset?.length))
     const timingOf = (variant?: VariantDef) => transitionTimingClasses(variant?.transition ?? (variant?.state?.of ? byId.get(variant.state.of)?.transition : undefined) ?? component.transition ?? DEFAULT_TRANSITION)
     const timing = interactive ? new Map([['default', timingOf()], ...variants.map(variant => [variant.name, timingOf(variant)] as const)]) : undefined
-    for (const id of [...new Set(variants.flatMap(variant => Object.keys(variant.overrides)))]) {
+    const parents = new Map<string, ModelNode>()
+    for (const node of nodes.values()) for (const child of node.children ?? []) parents.set(child.id, node)
+    const overridden = [...new Set(variants.flatMap(variant => Object.keys(variant.overrides)))]
+    // A Fill child of an overridden node changes with its parent's axis, so it gets its looks too (the generator's `variantsOf`).
+    const followers = overridden.flatMap(id => (nodes.get(id)?.children ?? []).filter(child => Object.values(child.style ?? {}).includes(FILL)).map(child => child.id))
+    const lookOf = (id: string, own: Record<string, string>, variant: VariantDef | undefined) => {
+      const parent = parents.get(id)
+      const parentLook = parent && { ...parent, style: variant ? styleIn(parent.style ?? {}, effective(variant, parent.id)) : parent.style }
+      return fillStyle(variant ? styleIn(own, effective(variant, id)) : own, parentLook, base)
+    }
+    for (const id of [...new Set([...overridden, ...followers])]) {
       const node = nodes.get(id)
       if (!node) continue
       const own = node.style ?? {}
-      const looks: Array<[string, Record<string, string>]> = [['default', own], ...variants.map(variant => [variant.name, styleIn(own, effective(variant, id))] as [string, Record<string, string>])]
+      const looks: Array<[string, Record<string, string>]> = [['default', lookOf(id, own, undefined)], ...variants.map(variant => [variant.name, lookOf(id, own, variant)] as [string, Record<string, string>])]
       const styles = new Map(looks)
       const pointer = new Map<string, Pointer[]>()
       const [hoverPrefix, pressedPrefix] = id === component.root.id ? ['hover:', 'active:'] : [`group-hover/${group}:`, `group-active/${group}:`]
@@ -351,6 +364,8 @@ interface Frame {
 
 interface Options {
   inStack?: boolean
+  /** The node that lays this one out, which resolves its Fill sizes (`fillStyle`); none for a file's root. */
+  parent?: LayoutParent
   copy?: boolean
   pageRoot?: boolean
   /** The id the element takes instead of the frame's (an instance root). */
@@ -460,7 +475,7 @@ const renderChildren = (frame: Frame, node: ModelNode, options: Options, kids = 
   const componentSlot = frame.componentSlots?.get(node.id)
   if (componentSlot?.fill) return componentSlot.fill()
   const inStack = childrenInStack(node.type, node.props, node.style)
-  const rendered = kids.flatMap(child => renderNode(frame, child, { inStack, copy: options.copy }))
+  const rendered = kids.flatMap(child => renderNode(frame, child, { inStack, copy: options.copy, parent: node }))
   // A layout's page slot, edited on its own: where the page's content goes.
   if (layoutSlot?.name === 'children' && !rendered.length) return [{ tag: 'div', class: 'rounded-sm border border-dashed border-default p-4 text-sm text-muted', attrs: {}, children: ['Page content'], placeholder: true }]
   return rendered
@@ -470,7 +485,10 @@ const fallbackOf = (node: ModelNode, options: Options, own: Record<string, strin
   ({ ...selfFallback(node.type, node.style, options.inStack), ...own })
 
 const renderNode = (frame: Frame, original: ModelNode, options: Options = {}): PlanElement[] => {
-  const node = effectiveNode(frame, original)
+  const swapped = effectiveNode(frame, original)
+  // Fill sizes become what they are in this parent (a variant's looks are resolved alike, in `componentShell`).
+  const style = swapped.style && fillStyle(swapped.style, options.parent, frame.input.base)
+  const node = style === swapped.style ? swapped : { ...swapped, style }
   if (!isVisible(frame, node)) return []
   const props = node.props ?? {}
   switch (node.type) {
@@ -626,7 +644,7 @@ const list = (frame: Frame, node: ModelNode, options: Options): PlanElement[] =>
   const children = shown.flatMap((row, index) => {
     const itemFrame: Frame = { ...frame, scope: { ...frame.scope, [as]: row } }
     const copy = options.copy || index > 0
-    return kids.flatMap(child => renderNode(itemFrame, child, { inStack, copy }).map(element => missing ? { ...element, class: [element.class, 'opacity-60'].filter(Boolean).join(' '), placeholder: false } : element))
+    return kids.flatMap(child => renderNode(itemFrame, child, { inStack, copy, parent: node }).map(element => missing ? { ...element, class: [element.class, 'opacity-60'].filter(Boolean).join(' '), placeholder: false } : element))
   })
   if (more && rows.length > count) {
     const copy = options.copy ? { copy: true } : {}
@@ -656,7 +674,7 @@ const instance = (frame: Frame, node: ModelNode, options: Options): PlanElement[
   }
   const variantId = typeof props.variant === 'string' ? props.variant : ''
   const set = variantId ? component.variants.find(variant => variant.id === variantId)?.name ?? 'default' : 'default'
-  const shell = componentShell(component)
+  const shell = componentShell(component, frame.input.base)
   const key = id
   const variant = frame.input.shown?.[key] ?? set
   const look = styleOf(frame, node, { fallback: selfFallback(component.root.type, component.root.style, options.inStack) })
@@ -667,7 +685,7 @@ const instance = (frame: Frame, node: ModelNode, options: Options): PlanElement[
     const target = findNode(component.root, property.nodeId)
     componentSlots.set(property.nodeId, {
       fill: fill
-        ? () => (fill.children ?? []).flatMap(child => renderNode(frame, child, { inStack: target ? childrenInStack(target.type, target.props, target.style) : false, copy: options.copy }))
+        ? () => (fill.children ?? []).flatMap(child => renderNode(frame, child, { inStack: target ? childrenInStack(target.type, target.props, target.style) : false, copy: options.copy, parent: target }))
         : undefined
     })
   }
@@ -720,7 +738,7 @@ export function renderPlan(input: RenderInput): PlanElement[] {
   const { file, data } = input
   const plain = (node: ModelNode) => node.id
   if (isComponent(file)) {
-    const shell = componentShell(file)
+    const shell = componentShell(file, input.base)
     const scope: Scope = {}
     for (const property of file.properties) {
       if (property.kind === 'slot') continue
@@ -748,7 +766,7 @@ export function renderPlan(input: RenderInput): PlanElement[] {
       name: slot.name,
       fill: slot.name === 'children'
         ? () => renderNode(pageFrame, page.root, { pageRoot: true })
-        : fill ? () => (fill.children ?? []).flatMap(child => renderNode(pageFrame, child, { inStack: target ? childrenInStack(target.type, target.props, target.style) : false })) : undefined
+        : fill ? () => (fill.children ?? []).flatMap(child => renderNode(pageFrame, child, { inStack: target ? childrenInStack(target.type, target.props, target.style) : false, parent: target })) : undefined
     })
   }
   const frame: Frame = {

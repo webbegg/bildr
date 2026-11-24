@@ -9,7 +9,9 @@ describe('size modes', () => {
 
   it('reads the mode from the token value', () => {
     expect(sizeMode('w', 'fit')).toBe('fit')
-    expect(sizeMode('w', 'full')).toBe('fill')
+    // Fill is the intent the parent's axis resolves (layout-containers L3); a stored `full` keeps its 100%.
+    expect(sizeMode('w', 'fill')).toBe('fill')
+    expect(sizeMode('w', 'full')).toBe('relative')
     expect(sizeMode('w', '1/2')).toBe('relative')
     expect(sizeMode('w', 'screen')).toBe('relative')
     expect(sizeMode('w', '64')).toBe('fixed')
@@ -18,25 +20,27 @@ describe('size modes', () => {
     expect(sizeMode('w', undefined)).toBeUndefined()
     expect(sizeMode('h', '64')).toBe('fixed')
     expect(sizeMode('h', 'fit')).toBe('fit')
-    expect(sizeMode('h', 'full')).toBe('fill')
+    expect(sizeMode('h', 'fill')).toBe('fill')
+    expect(sizeMode('h', 'full')).toBe('relative')
     expect(sizeMode('h', 'screen')).toBe('relative')
     expect(sizeMode('h', 'auto')).toBeUndefined()
     expect(sizeMode('h', undefined)).toBeUndefined()
   })
 
   it('writes the token of a mode, keeping a value that fits it', () => {
-    expect(sizeModeValue('w', 'fill', undefined)).toBe('full')
+    expect(sizeModeValue('w', 'fill', undefined)).toBe('fill')
     expect(sizeModeValue('w', 'fit', '1/2')).toBe('fit')
-    expect(sizeModeValue('w', 'relative', 'full')).toBe('1/2')
+    expect(sizeModeValue('w', 'relative', 'full')).toBe('full')
+    expect(sizeModeValue('w', 'relative', 'fill')).toBe('1/2')
     expect(sizeModeValue('w', 'relative', '2/3')).toBe('2/3')
     expect(sizeModeValue('w', 'fixed', undefined)).toBe('64')
     expect(sizeModeValue('w', 'fixed', 'full')).toBe('64')
     expect(sizeModeValue('w', 'fixed', '32')).toBe('32')
-    expect(sizeModeValue('w', 'fill', '32')).toBe('full')
+    expect(sizeModeValue('w', 'fill', '32')).toBe('fill')
     expect(sizeModeValue('h', 'fixed', undefined)).toBe('64')
     expect(sizeModeValue('h', 'fixed', '32')).toBe('32')
     expect(sizeModeValue('h', 'fit', '64')).toBe('fit')
-    expect(sizeModeValue('h', 'fill', '64')).toBe('full')
+    expect(sizeModeValue('h', 'fill', '64')).toBe('fill')
     expect(sizeModeValue('h', 'relative', undefined)).toBe('screen')
   })
 
@@ -44,7 +48,7 @@ describe('size modes', () => {
     expect(measuredSize('w', undefined, [78.4])).toBe('78')
     expect(measuredSize('w', 'auto', [77.5])).toBe('78')
     expect(measuredSize('h', 'fit', [40])).toBe('40')
-    expect(measuredSize('w', 'full', [1199.6])).toBe('1200')
+    expect(measuredSize('w', 'fill', [1199.6])).toBe('1200')
   })
 
   it('shows no measure for a Fixed or Relative size, without a box, or when the selected boxes differ', () => {
