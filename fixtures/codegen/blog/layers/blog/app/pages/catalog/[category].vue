@@ -12,8 +12,8 @@ const { data: products, pending: productsLoading, error: productsError } = useCa
     <p v-if="productsLoading" class="text-muted">Loading…</p>
     <p v-else-if="productsError" class="text-error">Couldn't load this.</p>
     <p v-else-if="!(products ?? []).length" class="text-muted">No products.</p>
-    <div v-else class="flex flex-col items-start gap-3 self-stretch">
-      <p v-for="product in (products ?? [])" :key="product.id" class="whitespace-pre-line">{{ product.name }} costs {{ product.price }}</p>
+    <div v-else role="list" class="flex flex-col items-start gap-3 self-stretch">
+      <p v-for="product in (products ?? [])" :key="product.id" role="listitem" class="whitespace-pre-line">{{ product.name }} costs {{ product.price }}</p>
     </div>
   </div>
 </template>

@@ -164,8 +164,9 @@ export const card = (env: Env, node: ModelNode, extra: Attr[], indent: string, o
 export const image = (env: Env, node: ModelNode, extra: Attr[], indent: string, options: RenderOptions) => {
   const { src, alt } = node.props ?? {}
   if (src === undefined || src === '') return fail(env, node, 'an Image needs `src`, a URL or a binding')
+  // No alt: a decorative image, which screen readers skip (`alt=""`).
   // Always bound: a static `src` would be an asset import for Vue's compiler, and a missing upload would fail the build.
-  const attrs = [...extra, boundAttr('src', expression(env, node, src, 'template')), ...(alt === undefined ? [] : [valueAttr(env, node, 'alt', alt)])]
+  const attrs = [...extra, boundAttr('src', expression(env, node, src, 'template')), valueAttr(env, node, 'alt', alt ?? '')]
   return element(NODE_ELEMENTS.Image, [...attrs, ...styleAttrs(env, node, { display: displayOf(node.type), fallback: fallbackOf(node, options, IMAGE_FALLBACK_STYLE) })], undefined, indent)
 }
 
@@ -358,6 +359,11 @@ export const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, o
     attr('key', `:key="${byPosition ? position : `${as}.id`}"`)
   ]
   const kids = node.children ?? []
+  // A list to assistive technology, its rows the items (roles keep the canvas's DOM: a `<ul>` would put an `<li>` around each row).
+  // Not over a landmark's role, with several nodes per row (each would be an item), nor with the load-more button (a list holds only items).
+  const tag = tagOf(env, node)
+  const roles = tag === 'div' && kids.length === 1 && !more
+  if (roles) repeat.push(staticAttr('role', 'listitem'))
   const inStack = childrenInStack(node.type, props, node.style)
   const inner = kids.length === 1
     ? render(itemEnv, kids[0]!, `${indent}  `, { attrs: repeat, slots: options.slots, inStack, parent: { ...node, props } })
@@ -365,7 +371,7 @@ export const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, o
   const button = shown && more
     ? [`${indent}  <div v-if="${escapeAttr(items)}.length > ${shown}" class="${LOAD_MORE_CLASS}">`, `${indent}    <UButton label="${LOAD_MORE_LABEL}" @click="${shown} += ${more}" />`, `${indent}  </div>`]
     : []
-  lines.push(...element(tagOf(env, node), [...shownIf, ...styleAttrs(env, node, { display: displayOf(node.type, props), fallback: fallbackOf(node, options) })], [...inner, ...button], indent))
+  lines.push(...element(tag, [...shownIf, ...(roles ? [staticAttr('role', 'list')] : []), ...styleAttrs(env, node, { display: displayOf(node.type, props), fallback: fallbackOf(node, options) })], [...inner, ...button], indent))
   return lines
 }
 

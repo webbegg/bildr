@@ -44,6 +44,32 @@ describe('generateUi: a guarded page whose data does not exist', () => {
   })
 })
 
+// codegen-architecture T2: what assistive technology reads, with the DOM (tags and classes) the canvas renders.
+describe('generateUi: accessible semantics', () => {
+  it('gives an Image with no alt an empty one: a decorative image', () => {
+    expect(indexWith({ id: 'n_x', type: 'Image', props: { src: '/uploads/a.png' } })).toContain('<img :src="\'/uploads/a.png\'" alt="" class="block max-w-full">')
+  })
+
+  it('makes a List a list whose rows are its items', () => {
+    const page = generated(fixtureModel(), 'pages/catalog/[category].vue')
+    expect(page).toContain('<div v-else role="list" class="flex flex-col items-start gap-3 self-stretch">')
+    expect(page).toContain('<p v-for="product in (products ?? [])" :key="product.id" role="listitem" class="whitespace-pre-line">')
+  })
+
+  it('leaves a List with a landmark tag, several nodes per row or a load-more button as it is', () => {
+    // The golden index's posts load more: the button's row sits in the list's element.
+    expect(generated(fixtureModel(), 'pages/index.vue')).not.toContain('role="list')
+    const row = (extra: Partial<ModelNode['props']>, children: ModelNode[]): ModelNode => ({
+      id: 'n_l', type: 'List', props: { items: { $bind: 'quotes' }, as: 'quote', ...extra }, children
+    })
+    const landmark = indexWith(row({ tag: 'nav' }, [text('n_t')]))
+    expect(landmark).toContain('<nav class="flex flex-col self-stretch">\n      <p v-for="quote in quotes" :key="quote.id">a</p>')
+    expect(landmark).not.toContain('role="listitem">a</p>')
+    const pairs = indexWith(row({}, [text('n_t'), text('n_u')]))
+    expect(pairs).toMatch(/<div class="[^"]*">\n\s*<template v-for="quote in quotes" :key="quote.id">/)
+  })
+})
+
 // E3 ("the canvas wins"): the generator renders what the canvas renders, through the shared
 // rules of @bildr/codegen/render (formerly the KNOWN_DIVERGENCES entries named per test).
 describe('generateUi follows the canvas render rules', () => {
@@ -211,9 +237,9 @@ describe('generateUi follows the canvas render rules', () => {
 
   it('lays a List out by its `layout` (list-layout)', () => {
     const list = (layout?: string): ModelNode => ({ id: 'n_x', type: 'List', props: { items: { $bind: 'quotes' }, as: 'q', ...(layout ? { layout } : {}) }, children: [{ id: 'n_y', type: 'Container' }] })
-    expect(indexWith(list())).toContain('    <div class="flex flex-col self-stretch">\n      <div v-for="q in quotes" :key="q.id" class="flex flex-col self-stretch" />')
-    expect(indexWith(list('row'))).toContain('    <div class="flex flex-wrap self-stretch">\n      <div v-for="q in quotes" :key="q.id" class="flex flex-col" />')
-    expect(indexWith(list('grid'))).toContain('    <div class="grid self-stretch">\n      <div v-for="q in quotes" :key="q.id" class="flex flex-col" />')
+    expect(indexWith(list())).toContain('    <div role="list" class="flex flex-col self-stretch">\n      <div v-for="q in quotes" :key="q.id" role="listitem" class="flex flex-col self-stretch" />')
+    expect(indexWith(list('row'))).toContain('    <div role="list" class="flex flex-wrap self-stretch">\n      <div v-for="q in quotes" :key="q.id" role="listitem" class="flex flex-col" />')
+    expect(indexWith(list('grid'))).toContain('    <div role="list" class="grid self-stretch">\n      <div v-for="q in quotes" :key="q.id" role="listitem" class="flex flex-col" />')
   })
 
   it('renders Column, Grid, Image and Card (generator-missing-types)', () => {
@@ -223,7 +249,7 @@ describe('generateUi follows the canvas render rules', () => {
     // A URL, not a module: bound, so Vue's asset transform never turns `/uploads/…` into a build-time import
     // (an upload the build can't find would fail it).
     expect(indexWith({ id: 'n_x', type: 'Image', props: { src: '/uploads/a.png', alt: 'A cat' } })).toContain('<img :src="\'/uploads/a.png\'" alt="A cat" class="block max-w-full">')
-    expect(indexWith({ id: 'n_x', type: 'Image', props: { src: { $bind: 'preferences.avatar' } } })).toContain('<img :src="preferences.avatar" class="block max-w-full">')
+    expect(indexWith({ id: 'n_x', type: 'Image', props: { src: { $bind: 'preferences.avatar' } } })).toContain('<img :src="preferences.avatar" alt="" class="block max-w-full">')
     expect(indexWith({ id: 'n_x', type: 'Card', style: { gap: '2', p: '4' }, children: [text('n_y')] })).toContain([
       '    <div class="self-stretch overflow-hidden rounded-lg bg-default p-4 ring ring-default">',
       '      <div class="flex flex-col gap-2">',
