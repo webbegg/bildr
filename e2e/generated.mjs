@@ -917,6 +917,10 @@ async function smoke(ctx) {
     }
     await page.goto(`${base}/posts/${post.slug}`)
     await visible(page.getByRole('heading', { name: post.title }), 'detail page by direct URL: the title')
+    // A slug no post has: once the posts have loaded, Nuxt's error page, a 404 with the page's empty text.
+    await page.goto(`${base}/posts/no-such-post`)
+    await visible(page.getByRole('heading', { name: '404' }), 'detail page of a missing post: Nuxt\'s error page, a 404')
+    await visible(page.getByText('This post doesn\'t exist.'), 'and the page\'s empty text as its message')
 
     // The golden "shop-catalog" page lists the server API's products (P7a): the page's composable asks the bildr route, which asks the stub.
     await page.goto(`${base}/catalog/books`)

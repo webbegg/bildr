@@ -4,6 +4,10 @@ definePageMeta({ name: 'weather', layout: 'main' })
 
 const route = useRoute('weather')
 const { data: report, pending: reportLoading, error: reportError } = useWeatherForecast(() => ({ city: route.params.city }))
+// The report doesn't exist: Nuxt's error page, a 404.
+watchEffect(() => {
+  if (!reportLoading.value && !reportError.value && !report.value) showError({ status: 404, message: 'No forecast.' })
+})
 </script>
 
 <template>
@@ -14,5 +18,4 @@ const { data: report, pending: reportLoading, error: reportError } = useWeatherF
     <p class="whitespace-pre-line">{{ report?.celsius }} degrees</p>
     <p class="whitespace-pre-line">Observed {{ report?.observedAt }}</p>
   </div>
-  <p v-else class="text-muted">No forecast.</p>
 </template>

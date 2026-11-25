@@ -21,6 +21,18 @@ export const composableLines = (env: Env) => [
   ...(env.needs.has('toast') ? ['const toast = useToast()'] : [])
 ]
 
+/** A guarded page's 404 (`guarded`): once its data has settled without the record, Nuxt's error page shows the empty text. */
+export const notFoundLines = (env: Env) => {
+  const page = env.notFound.page
+  if (!page) return []
+  return [
+    `// The ${page.subject} doesn't exist: Nuxt's error page, a 404.`,
+    'watchEffect(() => {',
+    `  if (${page.condition}) showError({ status: 404, message: ${tsString(page.message)} })`,
+    '})'
+  ]
+}
+
 export const handlerLines = (env: Env) => env.handlers.flatMap(lines => ['', ...lines])
 
 export const siteRoot = (env: Env) => plainRoot('site', () => env.needs.add('site'))
@@ -304,6 +316,7 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
     ...declarations,
     ...computedLines,
     ...formLines,
+    ...notFoundLines(env),
     // Last: unhead calls the getters at once, so what they read must be declared.
     ...(seoLine ? [seoLine] : [])
   ]

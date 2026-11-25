@@ -62,8 +62,19 @@ export interface Env {
   items: Map<string, () => string>
   /** Shared by every copy of the env: the item names a handler under construction has read (undefined outside one). */
   track: { items?: Set<string> }
+  /** Shared by every copy of the env: the guarded Page whose missing data is a 404, as its script reads it (`guarded`). */
+  notFound: { page?: NotFound }
   /** The money and percent fields the file's nodes show as text, by node id and path (`valueFormats`). */
   formats: ValueFormats
+}
+
+/** A guarded Page's 404: shown once nothing it reads is loading or failed and its `when` data is missing. */
+export interface NotFound {
+  /** What the comment names. */
+  subject: string
+  /** The script condition of a missing record. */
+  condition: string
+  message: string
 }
 
 export interface Variant {
@@ -257,6 +268,6 @@ export const entityOf = (env: Env, node: ModelNode | undefined, id: string): Ent
 
 /** A fresh env for one generated file. */
 export const newEnv = (model: Model, file: string, context?: ModuleContext): Env => ({
-  model, context, file, roots: new Map(), used: new Map(), needs: new Set(), handlers: [], variantLines: [], optional: { used: new Set(), guarded: new Set() }, aliases: { actions: new Map(), state: new Map() }, items: new Map(), track: {}, formats: {},
+  model, context, file, roots: new Map(), used: new Map(), needs: new Set(), handlers: [], variantLines: [], optional: { used: new Set(), guarded: new Set() }, aliases: { actions: new Map(), state: new Map() }, items: new Map(), track: {}, notFound: {}, formats: {},
   base: model.project.breakpointBase ?? 'mobile', variantExpr: 'props.variant'
 })

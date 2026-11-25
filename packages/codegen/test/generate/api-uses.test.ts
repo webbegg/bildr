@@ -106,7 +106,9 @@ describe('a page that uses an API query', () => {
     expect(lines[at('<p v-else-if="nowError"') + 1]).toMatch(/^<div v-else-if="now"/)
     expect(content).toContain('{{ now?.city }}: {{ now?.celsius }}')
     expect(content).toContain('>{{ now?.city }}<')
-    expect(content).toContain('<p v-else class="text-muted">No forecast.</p>')
+    // No forecast once it has loaded without failing: a 404.
+    expect(content).toContain('if (!nowLoading.value && !nowError.value && !now.value) showError({ status: 404, message: \'No forecast.\' })')
+    expect(content).not.toContain('<p v-else class="text-muted">No forecast.</p>')
   })
 
   it('reads nested fields of a row with optional chaining', () => {
