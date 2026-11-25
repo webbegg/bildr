@@ -48,25 +48,21 @@
     },
     "layers/apis/app/composables/apis/useWeatherForecast.ts": {
       "owner": "managed",
-      "sha256": "b78bf149e7c1f4f76b7a774823f2c6370d7ed61c62a6bc237ff9202c4e6ca356",
+      "sha256": "c1731b72c56e843439c6e718530948aed0c039fe9638902e5c748709f54c396e",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/app/composables/apis/useWeatherReportForecast.ts": {
       "owner": "managed",
-      "sha256": "2b9f4f0cd1a23761890e8fb2f565df25f4ae1dd0e1c196f2d4405aae1d700e42",
+      "sha256": "836be66ecc774acc6c6c8c605faca3f292056147e0074cf3c6974fa0b9272a74",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/app/data/api-query.ts": {
       "owner": "managed",
-      "sha256": "10a84ba17a3637bba51b0377a79d807ef225fba6230a4bd6689b8a4c07b88070"
-    },
-    "layers/apis/app/data/browser-client.ts": {
-      "owner": "managed",
-      "sha256": "521551abe5840dd0bbb4261249cd3476842d2fb44ba4fd4954fd27fc19d0effb"
+      "sha256": "48572552d76cac56e8d5caa41d9c21741d05cdc0ba7838c32fecdf79eba44089"
     },
     "layers/apis/app/data/weather.ts": {
       "owner": "managed",
-      "sha256": "af69f27d741641d6b5fe27beb800a704f22728f81ee5edd5cc6597bda9aafb79",
+      "sha256": "bcaf4b3d995af4324b624b60d4fa6aa36ae5f97c9f4adbf74e0e28be6242b503",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/nuxt.config.ts": {
@@ -93,13 +89,9 @@
       "sha256": "5ce612a063e7d7084216d222ddc09dd5d3254a2f4df0758dac33441795977829",
       "source": ".bildr/datasources/catalog.json"
     },
-    "layers/apis/server/lib/fetch-client.ts": {
-      "owner": "managed",
-      "sha256": "65dde0bc4ad58e3d855f0ede9ddbf30b2db4a391a75bae0713ed8563eaea66c6"
-    },
     "layers/apis/server/utils/catalog.ts": {
       "owner": "managed",
-      "sha256": "6e184a2c1ec2ed454c5827731df8b10e37feffaaae56475be051eeafee70c813",
+      "sha256": "ff1d5464ef0278ec58cb16f47b50a47f5780b7006bdc73887759a92c54fa229e",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/data/catalog/client.ts": {
@@ -232,10 +224,6 @@
       "sha256": "1a124d7dc5c3127852068a64c6dc0964db5a4d5555b1823f2c7ee4b65e6a071f",
       "source": ".bildr/datasources/weather.json"
     },
-    "layers/apis/test/browser-client.test.ts": {
-      "owner": "managed",
-      "sha256": "e05ec8045043c8f09b56fec651be91a46f36dba13d2e2f8898ad3a353aaef6aa"
-    },
     "layers/apis/test/catalog/catalog-repository.http.test.ts": {
       "owner": "managed",
       "sha256": "a90ed4bab1c09fd534afa981d592e1e78ba9d7e8381cbd9553fd91f5899dd729",
@@ -270,10 +258,6 @@
       "owner": "managed",
       "sha256": "5b096b0fd246203c2a53cd19f1fc01375f3d2380e784efdaa1bde106e21868bd",
       "source": ".bildr/datasources/catalog.json"
-    },
-    "layers/apis/test/fetch-client.test.ts": {
-      "owner": "managed",
-      "sha256": "1b2d36f061171949d48a1179f81594dc7e3f84418b55b20f99fbbb2e825f05eb"
     },
     "layers/apis/test/weather/fake-repository.ts": {
       "owner": "managed",
@@ -561,7 +545,11 @@
     },
     "layers/core/server/utils/remote.ts": {
       "owner": "managed",
-      "sha256": "233a04587cd466d8cf155d0f0344a212f0b0b01535c2e9291bdb60a4ff7b7434"
+      "sha256": "d650730dbb73540b92f2fd691089e1582c85936229a27a7b0bc0c89233a20818"
+    },
+    "layers/core/shared/http/client.ts": {
+      "owner": "managed",
+      "sha256": "3e01c981ed39401e28c280093b2c90658bb7c006883d9f5a94884b5f45c7801e"
     },
     "layers/core/shared/kernel/ids.ts": {
       "owner": "managed",
@@ -574,6 +562,10 @@
     "layers/core/shared/kernel/result.ts": {
       "owner": "managed",
       "sha256": "9fd03dbf0883e94baa5469b2671b3543b9c16a308617fa5994ad4277423e4eb3"
+    },
+    "layers/core/test/infrastructure/http-client.test.ts": {
+      "owner": "managed",
+      "sha256": "821073351a99fa1fc0dd0f0d88a2566b193d2642f72214ef7a06332a0b60441f"
     },
     "nuxt.config.ts": {
       "owner": "scaffold",

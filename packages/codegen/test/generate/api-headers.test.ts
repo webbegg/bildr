@@ -66,12 +66,13 @@ describe('the generated server client sends the call\'s headers under the source
     response.end('{}')
   })
   let baseUrl = ''
-  let createFetchClient: Client
-  const dir = mkdtempSync(join(tmpdir(), 'bildr-fetch-headers-'))
+  let createHttpClient: Client
+  const dir = mkdtempSync(join(tmpdir(), 'bildr-http-headers-'))
   beforeAll(async () => {
-    const source = shop().find(file => file.path === 'layers/apis/server/lib/fetch-client.ts')!.content
-    writeFileSync(join(dir, 'fetch-client.mjs'), ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText)
-    createFetchClient = ((await import(pathToFileURL(join(dir, 'fetch-client.mjs')).href)) as { createFetchClient: Client }).createFetchClient
+    // The core HTTP client every source calls through (codegen-architecture T3a).
+    const source = shop().find(file => file.path === 'layers/core/shared/http/client.ts')!.content
+    writeFileSync(join(dir, 'client.mjs'), ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText)
+    createHttpClient = ((await import(pathToFileURL(join(dir, 'client.mjs')).href)) as { createHttpClient: Client }).createHttpClient
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`
   })
@@ -82,20 +83,20 @@ describe('the generated server client sends the call\'s headers under the source
 
   it('sends them, leaving out the undefined ones', async () => {
     seen.length = 0
-    await createFetchClient({ baseUrl, headers: { accept: 'application/json', authorization: 'Bearer secret' } })('/p', { method: 'GET', headers: { 'X-Api-Version': '2', 'X-Page': 3, 'X-Locale': undefined } })
+    await createHttpClient({ baseUrl, headers: { accept: 'application/json', authorization: 'Bearer secret' } })('/p', { method: 'GET', headers: { 'X-Api-Version': '2', 'X-Page': 3, 'X-Locale': undefined } })
     expect(seen[0]).toMatchObject({ 'x-api-version': '2', 'x-page': '3', 'accept': 'application/json', 'authorization': 'Bearer secret' })
     expect(seen[0]).not.toHaveProperty('x-locale')
   })
 
   it('never lets a call replace the sign-in, whatever its case, but lets it ask for another accept', async () => {
     seen.length = 0
-    await createFetchClient({ baseUrl, headers: { accept: 'application/json', authorization: 'Bearer secret' } })('/p', { method: 'POST', body: {}, headers: { 'Authorization': 'Bearer mine', 'Accept': 'application/vnd.api+json', 'Content-Type': 'text/plain' } })
+    await createHttpClient({ baseUrl, headers: { accept: 'application/json', authorization: 'Bearer secret' } })('/p', { method: 'POST', body: {}, headers: { 'Authorization': 'Bearer mine', 'Accept': 'application/vnd.api+json', 'Content-Type': 'text/plain' } })
     expect(seen[0]).toMatchObject({ 'authorization': 'Bearer secret', 'accept': 'application/vnd.api+json', 'content-type': 'application/json' })
   })
 
   it('refuses a header value it can\'t send, without calling the API', async () => {
     seen.length = 0
-    await expect(createFetchClient({ baseUrl, headers: {} })('/p', { method: 'GET', headers: { 'X-Note': 'a\r\nX-Evil: 1' } })).rejects.toMatchObject({ name: 'FetchFailure', status: 0, message: 'was given a header it can\'t send' })
+    await expect(createHttpClient({ baseUrl })('/p', { method: 'GET', headers: { 'X-Note': 'a\r\nX-Evil: 1' } })).rejects.toMatchObject({ name: 'HttpFailure', status: 0, message: 'was given a header it can\'t send' })
     expect(seen).toEqual([])
   })
 })

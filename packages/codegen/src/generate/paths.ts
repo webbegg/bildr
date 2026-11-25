@@ -64,8 +64,6 @@ export type ModulePaths = ReturnType<typeof modulePaths>
 export const apisPaths = {
   root: APIS,
   nuxtConfig: `${APIS}/nuxt.config.ts`,
-  fetchClient: `${APIS}/server/lib/fetch-client.ts`,
-  browserClient: `${APIS}/app/data/browser-client.ts`,
   apiQuery: `${APIS}/app/data/api-query.ts`,
   composable: (name: string) => `${APIS}/app/composables/apis/${name}.ts`,
   test: (file: string) => `${APIS}/test/${file}`,
