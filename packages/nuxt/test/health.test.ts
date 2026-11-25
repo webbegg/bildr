@@ -283,12 +283,14 @@ describe.skipIf(!!NEEDS_FIXTURE)(`runCheck${NEEDS_FIXTURE}`, { timeout: 300_000 
     const file = 'layers/main/test/application/sample.test.ts'
     const green = `import { describe, expect, it } from 'vitest'\n\ndescribe('math', () => {\n  it('adds', () => {\n    expect(1 + 1).toBe(2)\n  })\n})\n`
     put(file, green)
+    // The starter ships tests of its own (the core HTTP client's): the sample adds one to them, whatever their number.
     const passing = await runCheck(dir, 'tests')
-    expect(passing).toMatchObject({ name: 'tests', ok: true, summary: '1 test passed', findings: [] })
+    expect(passing).toMatchObject({ name: 'tests', ok: true, summary: expect.stringMatching(/^\d+ tests? passed$/), findings: [] })
+    const passed = Number(/^(\d+)/.exec(passing.summary)![1])
 
     put(file, green.replace('})\n})\n', '})\n  it(\'fails\', () => {\n    expect(1 + 1).toBe(3)\n  })\n})\n'))
     const failing = await runCheck(dir, 'tests')
-    expect(failing).toMatchObject({ name: 'tests', ok: false, summary: '1 test failed, 1 passed' })
+    expect(failing).toMatchObject({ name: 'tests', ok: false, summary: `1 test failed, ${passed} passed` })
     expect(failing.findings).toEqual([{ file, line: 8, message: 'math fails: AssertionError: expected 2 to be 3 // Object.is equality' }])
     rmSync(join(dir, file))
   })
