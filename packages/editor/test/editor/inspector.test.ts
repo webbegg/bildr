@@ -313,6 +313,18 @@ describe('the style sections', () => {
       expect(q('[data-style-row="stackBelow"]')).toBeNull()
     })
 
+    it('fills a grid\'s empty cells with Stacks, one undo step (layout-containers L6)', async () => {
+      Object.assign(await nodeIn('n_about_text'), { style: {} })
+      const { actions } = await open({ node_insert: ok({ nodeIds: ['n_new'] }) })
+      await select('n_about')
+      expect(q('[data-fill-cells]')).toBeNull()
+      await chooseDevice('tablet')
+      await select('n_about')
+      expect(q('[data-fill-cells]')?.textContent).toContain('1 empty cell')
+      await click(q('[data-fill-cells] button'))
+      expect(actions.named('node_insert').map(call => call.input)).toEqual([{ file: 'pg_index', parentId: 'n_about', nodes: [{ preset: 'Stack' }] }])
+    })
+
     it('warns that Order moves a node on screen only', async () => {
       Object.assign(await nodeIn('n_h1'), { style: { order: 'last' } })
       await open()

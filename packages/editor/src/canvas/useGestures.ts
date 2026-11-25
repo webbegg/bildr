@@ -1,12 +1,14 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import type { Ref } from 'vue'
-import { spacingBasePx } from '@bildr/codegen/design'
-import type { Breakpoint, Theme } from '@bildr/codegen/design'
+import { spacingBasePx, styleKey } from '@bildr/codegen/design'
+import type { Breakpoint, BreakpointBase, Theme } from '@bildr/codegen/design'
 import type { ModelNode } from '@bildr/codegen/model'
 import { changedPatch, edgeSizePatch, fillSizes, gapRects, handleCursor, handlePoint, HANDLES, hitPoint, hitRadius, resizePatch, scaleLabel, spacingDragPatch, spacingHandles } from '@bildr/editor-core/handles'
 import type { Axis, HandleId, Insets, ResizeDrag, SpacingHandle, SpacingTarget } from '@bildr/editor-core/handles'
 import type { StylePatch } from '@bildr/editor-core/preview'
 import { SCRUB_DEAD_ZONE } from '@bildr/editor-core/scrub'
+import { spanPatch, tokenAt, trackRects, trackSizes, trackStep } from '@bildr/editor-core/gridTracks'
+import type { SpanDrag } from '@bildr/editor-core/gridTracks'
 import { containsNode, findNode } from '../design/tree.ts'
 import type { DropSlot } from './drop.ts'
 import { canDragNode, gestureTargetGone, isNoopMove, REORDER_THRESHOLD, startGesture, stepGesture } from './gesture.ts'
@@ -57,6 +59,8 @@ export interface GesturesContext {
   panelOverlay: Ref<SpacingOverlay | null>
   /** The breakpoint this frame's width renders at, where its handles write. */
   breakpoint: () => Breakpoint | undefined
+  /** The project's breakpoint base, which the breakpoint's cascade follows. */
+  breakpointBase: () => BreakpointBase
   firstCopy: (id: string) => Element | null
   /** A node's box now, in canvas px. */
   boxOf: (id: string) => Box | null
@@ -86,7 +90,18 @@ interface GestureBase { nodeId: string, pageId: string | undefined, state: Gestu
 type Gesture
   = | GestureBase & { kind: 'resize', drag: ResizeDrag, patch: Record<string, string>, cursor: string }
     | GestureBase & { kind: 'spacing', target: SpacingTarget, startPx: number, patch: Record<string, string>, cursor: string, shown: { padding: boolean, gap: boolean } }
+    | GestureBase & { kind: 'span', drag: SpanDrag, patch: Record<string, string>, cursor: string }
     | GestureBase & { kind: 'reorder', slot: DropSlot | null }
+
+type GridRect = { x: number, y: number, width: number, height: number }
+/** A − or + on a grid's column or row count: the value it writes (undefined: disabled). */
+export interface GridStep { id: 'col-' | 'col+' | 'row-' | 'row+', key: 'cols' | 'rows', value: string | null | undefined, rect: GridRect }
+/** A selected grid's tracks (layout-containers L6), their headers outside its box, and its count steps. */
+export interface GridTracks { cols: GridRect[], rows: GridRect[], colHeaders: GridRect[], rowHeaders: GridRect[], steps: GridStep[] }
+
+/** The track header strip and the steps: their size and their distance from the box, in screen px. */
+export const GRID_STRIP_PX = 16
+const GRID_OFFSET_PX = 8
 
 /** Handle sizes in screen px (scaled back by the zoom): the drawn dot, the hit radius, and a spacing handle's least inset. */
 export const HANDLE_PX = 7
@@ -142,6 +157,8 @@ export function useGestures(ctx: GesturesContext) {
   const editableBox = shallowRef<Box | null>(null)
   /** The spacing overlays shown on the editable node, measured each frame; null when none shows. */
   const spacing = shallowRef<SpacingBox | null>(null)
+  /** The tracks of the selected grid, measured each frame; null when it is no grid. */
+  const gridTracks = shallowRef<GridTracks | null>(null)
   /** The live token label of a handle drag, at the pointer (canvas px). */
   const dragLabel = ref<{ text: string, x: number, y: number } | null>(null)
 
@@ -221,10 +238,77 @@ export function useGestures(ctx: GesturesContext) {
     spacing.value = { ...rest, showPadding: want === 'hover' || want.padding, showGap: flex && (want === 'hover' || want.gap) }
   }
 
+  /** The columns and rows of a grid element: its content box split by the resolved tracks. */
+  function gridOf(el: Element | null) {
+    if (!el) return null
+    const css = getComputedStyle(el)
+    if (!css.display.includes('grid')) return null
+    const content = contentOf(el)
+    const colSizes = trackSizes(css.gridTemplateColumns)
+    const rowSizes = trackSizes(css.gridTemplateRows)
+    if (!colSizes.length) return null
+    return { colSizes, rowSizes, colGap: px(css.columnGap), rowGap: px(css.rowGap), cols: trackRects(content, colSizes, px(css.columnGap), 'col'), rows: trackRects(content, rowSizes, px(css.rowGap), 'row') }
+  }
+
+  /** The selected grid's tracks, headers and steps (each step's value from the count where this frame renders). */
+  function trackGrid() {
+    const id = editable.value
+    const box = editableBox.value
+    const grid = id && box && gesture?.kind !== 'span' ? gridOf(ctx.firstCopy(id)) : null
+    const root = ctx.root()
+    if (!grid || !box || !root) {
+      gridTracks.value = null
+      return
+    }
+    const z = ctx.zoom.value
+    const strip = GRID_STRIP_PX / z
+    const offset = GRID_OFFSET_PX / z
+    const style = findNode(root, id!)?.style ?? {}
+    const steps: GridStep[] = []
+    const axis = (key: 'cols' | 'rows', measured: number, at: (i: number) => GridRect) => {
+      const current = tokenAt(style, key, ctx.breakpoint(), ctx.breakpointBase())
+      if (current !== undefined && !/^\d+$/.test(current)) return
+      const prefix = key === 'cols' ? 'col' : 'row'
+      steps.push({ id: `${prefix}-`, key, value: trackStep(key, current, measured, -1), rect: at(0) }, { id: `${prefix}+`, key, value: trackStep(key, current, measured, 1), rect: at(1) })
+    }
+    // Outside the box, unless that is off the frame's edge (a grid at its top or left): then just inside it.
+    const colTop = box.top - offset - strip >= 0 ? box.top - offset - strip : box.top + 2 / z
+    const rowLeft = box.left - offset - strip >= 0 ? box.left - offset - strip : box.left + 2 / z
+    // The steps follow the strips past the box, or end them inside it where that would leave the frame (a full-width grid).
+    const pair = 2 * strip + 2 / z
+    const fits = (end: number, limit: number) => !limit || end <= limit
+    const colX = fits(box.left + box.width + offset + pair, document.documentElement.scrollWidth) ? box.left + box.width + offset : box.left + box.width - pair - 2 / z
+    const rowY = fits(box.top + box.height + offset + pair, document.documentElement.scrollHeight) ? box.top + box.height + offset : box.top + box.height - pair - 2 / z
+    axis('cols', grid.colSizes.length, i => ({ x: colX + i * (strip + 2 / z), y: colTop, width: strip, height: strip }))
+    axis('rows', grid.rowSizes.length, i => ({ x: rowLeft, y: rowY + i * (strip + 2 / z), width: strip, height: strip }))
+    gridTracks.value = {
+      cols: grid.cols,
+      rows: grid.rows,
+      colHeaders: grid.cols.map(col => ({ x: col.x, y: colTop, width: col.width, height: strip })),
+      rowHeaders: grid.rows.map(row => ({ x: rowLeft, y: row.y, width: strip, height: row.height })),
+      steps
+    }
+  }
+
+  /** A span drag for a grid child's edge handle: its parent grid's mean track and gap per axis, and its spans now. */
+  function spanDrag(id: string, handle: HandleId, box: Box): SpanDrag | null {
+    const el = ctx.firstCopy(id)
+    const position = el ? getComputedStyle(el).position : ''
+    const grid = position === 'absolute' || position === 'fixed' ? null : gridOf(el?.parentElement ?? null)
+    if (!grid) return null
+    const mean = (sizes: number[]) => sizes.reduce((sum, size) => sum + size, 0) / (sizes.length || 1)
+    const axis = (sizes: number[], gap: number, size: number) => {
+      const track = mean(sizes)
+      return { track, gap, count: sizes.length, span: Math.max(1, Math.round((size + gap) / (track + gap || 1))) }
+    }
+    return { handle, breakpoint: ctx.breakpoint(), col: axis(grid.colSizes, grid.colGap, box.width), row: axis(grid.rowSizes, grid.rowGap, box.height) }
+  }
+
   /** Measured every frame by the canvas. */
   function track() {
     editableBox.value = editable.value ? ctx.boxOf(editable.value) : null
     trackSpacing()
+    trackGrid()
   }
 
   /**
@@ -258,7 +342,7 @@ export function useGestures(ctx: GesturesContext) {
   }
 
   /** Shows a handle drag's patch on the node here at once, and through the editor in the other frames. */
-  function showPatch(g: Extract<Gesture, { kind: 'resize' | 'spacing' }>, patch: Record<string, string>, at: Point) {
+  function showPatch(g: Extract<Gesture, { kind: 'resize' | 'spacing' | 'span' }>, patch: Record<string, string>, at: Point) {
     const entries = Object.entries(patch)
     dragLabel.value = entries.length ? { text: entries.map(([key, value]) => scaleLabel(key, value, ctx.theme()?.spacing ?? 'default')).join(', '), x: at.x, y: at.y } : null
     if (JSON.stringify(patch) === JSON.stringify(g.patch)) return
@@ -290,11 +374,13 @@ export function useGestures(ctx: GesturesContext) {
       return
     }
     const style = findNode(root, g.nodeId)?.style ?? {}
-    const patch = g.kind === 'resize'
-      ? resizePatch(g.drag, delta, event.shiftKey)
-      : Math.hypot(delta.dx, delta.dy) < SCRUB_DEAD_ZONE
-        ? {}
-        : spacingDragPatch(style, g.target, g.startPx, delta, { breakpoint: ctx.breakpoint(), basePx: spacingBasePx(ctx.theme()?.spacing ?? 'default'), shift: event.shiftKey })
+    const patch = g.kind === 'span'
+      ? spanPatch(g.drag, delta)
+      : g.kind === 'resize'
+        ? resizePatch(g.drag, delta, event.shiftKey)
+        : Math.hypot(delta.dx, delta.dy) < SCRUB_DEAD_ZONE
+          ? {}
+          : spacingDragPatch(style, g.target, g.startPx, delta, { breakpoint: ctx.breakpoint(), basePx: spacingBasePx(ctx.theme()?.spacing ?? 'default'), shift: event.shiftKey })
     showPatch(g, patch, at)
   }
 
@@ -381,6 +467,13 @@ export function useGestures(ctx: GesturesContext) {
     const box = editableBox.value
     if (!root || !id || !box) return false
     const start = canvasPoint(event)
+    // A grid's − or + takes the press: it writes its count at this frame's breakpoint (a disabled one does nothing).
+    const gridStep = gridTracks.value?.steps.find(s => inside(start, s.rect))
+    if (gridStep) {
+      if (gridStep.value !== undefined) ctx.post({ type: 'bildr:style-commit', nodeId: id, style: { [styleKey(gridStep.key, ctx.breakpoint())]: gridStep.value } })
+      swallowClick = true
+      return true
+    }
     const hit = handleAt(start)
     // A second press on the same resize handle soon after the first: Fit, or Fill with Alt (one undo step, no drag).
     const handle = hit && 'handle' in hit ? hit.handle : null
@@ -395,7 +488,11 @@ export function useGestures(ctx: GesturesContext) {
       return true
     }
     const base = { nodeId: id, pageId: ctx.fileId(), state: startGesture(event.pointerId, start, !!hit) }
-    if (hit && 'handle' in hit) {
+    const span = hit && 'handle' in hit ? spanDrag(id, hit.handle, box) : null
+    if (span && hit && 'handle' in hit) {
+      // In a grid, an edge spans tracks instead of sizing (the size of a cell is the grid's).
+      gesture = { kind: 'span', ...base, drag: span, patch: {}, cursor: handleCursor(hit.handle) }
+    } else if (hit && 'handle' in hit) {
       const drag: ResizeDrag = { handle: hit.handle, width: box.width, height: box.height, breakpoint: ctx.breakpoint(), basePx: spacingBasePx(ctx.theme()?.spacing ?? 'default'), fill: fillSize(id) }
       gesture = { kind: 'resize', ...base, drag, patch: {}, cursor: handleCursor(hit.handle) }
     } else if (hit && spacing.value) {
@@ -430,7 +527,8 @@ export function useGestures(ctx: GesturesContext) {
     pointer = canvasPoint(event)
     if (gesture) return true
     const over = ctx.mode.value === 'edit' ? handleAt(pointer) : null
-    setCursor(over ? 'handle' in over ? handleCursor(over.handle) : spacingCursor(over.spacing) : null)
+    const step = ctx.mode.value === 'edit' && gridTracks.value?.steps.find(s => inside(pointer!, s.rect))
+    setCursor(step ? (step.value === undefined ? 'not-allowed' : 'pointer') : over ? 'handle' in over ? handleCursor(over.handle) : spacingCursor(over.spacing) : null)
     return false
   }
 
@@ -465,5 +563,5 @@ export function useGestures(ctx: GesturesContext) {
     else endGesture()
   }
 
-  return { editable, editableBox, spacing, resizeHandles, spacingHandleList, dragLabel, track, down, moved, left, cancel, takesClick, dispose }
+  return { editable, editableBox, spacing, gridTracks, resizeHandles, spacingHandleList, dragLabel, track, down, moved, left, cancel, takesClick, dispose }
 }

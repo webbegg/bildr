@@ -22,7 +22,7 @@ import ModelNode from './ModelNode.vue'
 import { dropTarget, gridCell, insertTarget, nearestUnlocked } from './drop.ts'
 import type { Box, DropSlot } from './drop.ts'
 import { canvasKeyMessage, isCanvasMessage } from './protocol.ts'
-import { HANDLE_PX, useGestures } from './useGestures.ts'
+import { GRID_STRIP_PX, HANDLE_PX, useGestures } from './useGestures.ts'
 import type { Indicator } from './useGestures.ts'
 import type { CanvasMode, CanvasToEditor, EditorToCanvas, RenderMessage, SpacingOverlay } from './protocol.ts'
 import { isCheckbox, pageNodeId, renderPlan, stepValue } from './render.ts'
@@ -309,6 +309,7 @@ const handles = useGestures({
   zoom,
   panelOverlay,
   breakpoint: () => frameBreakpoint(),
+  breakpointBase: () => render.value?.breakpointBase ?? 'mobile',
   firstCopy,
   boxOf: id => boxes.selected.find(box => box.id === id) ?? outline(id),
   reachableAt,
@@ -322,7 +323,9 @@ const handles = useGestures({
   },
   post
 })
-const { spacing, resizeHandles, spacingHandleList, dragLabel } = handles
+const { spacing, gridTracks, resizeHandles, spacingHandleList, dragLabel } = handles
+/** A grid's header strip sits above its box: the selection label goes above the strip. */
+const labelLift = computed(() => (gridTracks.value ? `translateY(${-(GRID_STRIP_PX + 8) / zoom.value}px) ` : ''))
 
 /** The white ring around a handle, `px` wide on screen. */
 const ringShadow = (width: number) => `0 0 0 ${width / zoom.value}px #fff`
@@ -826,7 +829,7 @@ onBeforeUnmount(() => {
             v-if="box.id === selectedId && active"
             class="absolute left-0 px-1 text-[10px] leading-4 font-medium whitespace-nowrap text-white"
             :class="labelInside(box) ? 'top-0 origin-top-left rounded-sm' : 'bottom-full origin-bottom-left rounded-t-sm'"
-            :style="{ backgroundColor: `var(${ACCENT_VAR})`, transform: labelInside(box) ? `translate(${2 / zoom}px, ${2 / zoom}px) scale(${1 / zoom})` : `scale(${1 / zoom})` }"
+            :style="{ backgroundColor: `var(${ACCENT_VAR})`, transform: labelInside(box) ? `translate(${2 / zoom}px, ${2 / zoom}px) scale(${1 / zoom})` : `${labelLift}scale(${1 / zoom})` }"
             :data-selection-label="labelInside(box) ? 'inside' : 'above'"
           >{{ box.label }}</span>
         </div>
@@ -878,6 +881,53 @@ onBeforeUnmount(() => {
           :style="{ left: `${h.x - HANDLE_PX / 2 / zoom}px`, top: `${h.y - HANDLE_PX / 2 / zoom}px`, width: `${HANDLE_PX / zoom}px`, height: `${HANDLE_PX / zoom}px`, boxShadow: ringShadow(1.5) }"
           :data-resize-handle="h.handle"
         />
+        <template v-if="gridTracks">
+          <div
+            v-for="(col, i) in gridTracks.cols"
+            :key="`col-${i}`"
+            class="pointer-events-none absolute z-50 outline-dashed"
+            :style="{ ...rectStyle(col), outlineWidth: `${1 / zoom}px`, outlineOffset: `${-1 / zoom}px`, outlineColor: `color-mix(in srgb, var(${ACCENT_VAR}) 45%, transparent)` }"
+            data-grid-track="col"
+          />
+          <div
+            v-for="(row, i) in gridTracks.rows"
+            :key="`row-${i}`"
+            class="pointer-events-none absolute z-50 outline-dashed"
+            :style="{ ...rectStyle(row), outlineWidth: `${1 / zoom}px`, outlineOffset: `${-1 / zoom}px`, outlineColor: `color-mix(in srgb, var(${ACCENT_VAR}) 30%, transparent)` }"
+            data-grid-track="row"
+          />
+          <div
+            v-for="(header, i) in [...gridTracks.colHeaders.map(r => ({ r, axis: 'col' })), ...gridTracks.rowHeaders.map(r => ({ r, axis: 'row' }))]"
+            :key="`h-${i}`"
+            class="pointer-events-none absolute z-50 grid place-items-center overflow-hidden rounded-sm"
+            :style="{ ...rectStyle(header.r), backgroundColor: `color-mix(in srgb, var(${ACCENT_VAR}) 12%, transparent)` }"
+            :data-grid-header="header.axis"
+          >
+            <span
+              class="text-[10px] leading-none font-medium whitespace-nowrap text-(--canvas-accent) tabular-nums"
+              :style="{ transform: `scale(${1 / zoom})` }"
+            >
+              {{ Math.round(header.axis === 'col' ? header.r.width : header.r.height) }}
+            </span>
+          </div>
+          <div
+            v-for="s in gridTracks.steps"
+            :key="s.id"
+            class="pointer-events-none absolute z-50 grid place-items-center rounded-sm text-white"
+            :class="s.value === undefined ? 'opacity-40' : ''"
+            :style="{ ...rectStyle(s.rect), backgroundColor: `var(${ACCENT_VAR})` }"
+            :data-grid-step="s.id"
+            :data-disabled="s.value === undefined ? '' : undefined"
+            :title="`${s.id.endsWith('+') ? 'Add' : 'Remove'} a ${s.key === 'cols' ? 'column' : 'row'}`"
+          >
+            <span
+              class="text-[12px] leading-none font-semibold"
+              :style="{ transform: `scale(${1 / zoom})` }"
+            >
+              {{ s.id.endsWith('+') ? '+' : '−' }}
+            </span>
+          </div>
+        </template>
         <span
           v-if="dragLabel"
           class="pointer-events-none absolute z-50 origin-top-left rounded-sm bg-(--canvas-accent) px-1 text-[10px] leading-4 font-medium whitespace-nowrap text-white tabular-nums"
