@@ -21,17 +21,17 @@ describe('legacy layout containers (layout-containers S4)', () => {
   // Card laid out as a row (or of a Container laid out as a grid or a block) no longer gets the vertical
   // stack's `self-stretch` (T2, log L4). Every other type keeps its type's rule, a Column set to a grid too.
   // Since codegen-architecture T1 the classes are in Tailwind's order, without a default `flex-row`, and a
-  // 1px border is the bare `border-*` class: the same CSS.
+  // 1px border is the bare `border-*` class: the same CSS. A static one-line Text has no `whitespace-pre-line` (no-op).
   it('render the same markup as before the one-container model', () => {
     expect(legacyMarkup()).toMatchInlineSnapshot(`
       "<section class="flex flex-col items-start gap-3 self-stretch p-4">
         <div class="flex flex-wrap items-center gap-3 self-stretch md:gap-6">
-          <p class="whitespace-pre-line">a</p>
+          <p>a</p>
           <div class="flex w-full flex-col" />
           <div class="flex flex-col gap-2" />
         </div>
         <nav class="flex justify-between self-stretch">
-          <p class="whitespace-pre-line">b</p>
+          <p>b</p>
         </nav>
         <div class="flex flex-col items-start gap-3 self-stretch md:flex-row">
           <h3 class="self-stretch text-center text-2xl font-semibold">c</h3>
@@ -40,11 +40,11 @@ describe('legacy layout containers (layout-containers S4)', () => {
         </div>
         <div class="grid grid-cols-3 gap-6 self-stretch md:grid-cols-4">
           <div class="col-span-2 flex flex-col" />
-          <p class="whitespace-pre-line">e</p>
+          <p>e</p>
         </div>
         <div class="self-stretch overflow-hidden rounded-lg bg-default p-4 ring ring-default">
           <div class="flex items-start gap-3">
-            <p class="whitespace-pre-line">f</p>
+            <p>f</p>
             <div class="flex flex-col" />
           </div>
         </div>

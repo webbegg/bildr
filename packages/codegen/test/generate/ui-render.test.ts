@@ -35,11 +35,11 @@ describe('generateUi follows the canvas render rules', () => {
       { ...text('n_a'), style: { w: 'fill' } },
       { ...text('n_b'), style: { w: 'fill', grow: '2' } }
     ] })
-    expect(page).toContain('<p class="self-stretch whitespace-pre-line md:min-w-0 md:grow-1 md:basis-[0%] md:self-auto">a</p>')
-    expect(page).toContain('<p class="grow-2 self-stretch whitespace-pre-line md:min-w-0 md:basis-[0%] md:self-auto">a</p>')
+    expect(page).toContain('<p class="self-stretch md:min-w-0 md:grow-1 md:basis-[0%] md:self-auto">a</p>')
+    expect(page).toContain('<p class="grow-2 self-stretch md:min-w-0 md:basis-[0%] md:self-auto">a</p>')
     // A Fill in a vertical stack's cross axis, and 100% in a block parent.
-    expect(indexWith({ ...text('n_c'), style: { w: 'fill' } })).toContain('<p class="self-stretch whitespace-pre-line">a</p>')
-    expect(indexWith({ id: 'n_d', type: 'Container', style: { display: 'block' }, children: [{ ...text('n_e'), style: { h: 'fill' } }] })).toContain('<p class="h-full whitespace-pre-line">a</p>')
+    expect(indexWith({ ...text('n_c'), style: { w: 'fill' } })).toContain('<p class="self-stretch">a</p>')
+    expect(indexWith({ id: 'n_d', type: 'Container', style: { display: 'block' }, children: [{ ...text('n_e'), style: { h: 'fill' } }] })).toContain('<p class="h-full">a</p>')
   })
 
   it('lays a Row out as a flex row that wraps with `wrap`, whose children follow its items (row-direction-wrap)', () => {
@@ -73,8 +73,10 @@ describe('generateUi follows the canvas render rules', () => {
     expect(page).toContain('<UButton label="Load more" @click="shownMore += 4" />')
   })
 
-  it('keeps the line breaks of a Text (text-line-breaks)', () => {
-    expect(indexWith({ ...text('n_x'), style: { text: 'sm' } })).toContain('<p class="text-sm whitespace-pre-line">a</p>')
+  it('keeps the line breaks of a Text whose text can have them (text-line-breaks)', () => {
+    expect(indexWith({ ...text('n_x', 'a\nb'), style: { text: 'sm' } })).toContain('<p class="text-sm whitespace-pre-line">{{ \'a\\nb\' }}</p>')
+    // Bound text can hold a break.
+    expect(indexWith({ id: 'n_x', type: 'Text', props: { text: { $template: '{featured.length} posts' } } })).toContain('<p class="whitespace-pre-line">{{ featured.length }} posts</p>')
   })
 
   it('emits a Text with a line break as a string expression, because Vue condenses a newline in template text to a space', () => {
@@ -86,8 +88,9 @@ describe('generateUi follows the canvas render rules', () => {
     expect(page).toMatch(/<p class="whitespace-pre-line">\{\{ 'a\\nb ' \}\}\{\{ featured\.length \}\}<\/p>/)
   })
 
-  it('leaves a single-line Text as plain template text', () => {
-    expect(indexWith(text('n_x', 'one two'))).toContain('<p class="whitespace-pre-line">one two</p>')
+  it('leaves a single-line Text as plain template text, without the class for line breaks it has none of', () => {
+    expect(indexWith(text('n_x', 'one two'))).toContain('<p>one two</p>')
+    expect(indexWith({ ...text('n_x'), style: { text: 'sm' } })).toContain('<p class="text-sm">a</p>')
   })
 
   it('renders a Link as ULink with the canvas classes, `href` in a new tab and an icon (link-element)', () => {
@@ -192,7 +195,7 @@ describe('generateUi follows the canvas render rules', () => {
   })
 
   it('renders Column, Grid, Image and Card (generator-missing-types)', () => {
-    expect(indexWith({ id: 'n_x', type: 'Column', children: [text('n_y')] })).toContain('    <div class="flex flex-col self-stretch">\n      <p class="whitespace-pre-line">a</p>')
+    expect(indexWith({ id: 'n_x', type: 'Column', children: [text('n_y')] })).toContain('    <div class="flex flex-col self-stretch">\n      <p>a</p>')
     expect(indexWith({ id: 'n_x', type: 'Grid', style: { 'cols': '1', 'md:cols': '3' }, children: [{ id: 'n_y', type: 'Container' }] }))
       .toContain('    <div class="grid grid-cols-1 self-stretch md:grid-cols-3">\n      <div class="flex flex-col" />')
     // A URL, not a module: bound, so Vue's asset transform never turns `/uploads/…` into a build-time import
@@ -202,7 +205,7 @@ describe('generateUi follows the canvas render rules', () => {
     expect(indexWith({ id: 'n_x', type: 'Card', style: { gap: '2', p: '4' }, children: [text('n_y')] })).toContain([
       '    <div class="self-stretch overflow-hidden rounded-lg bg-default p-4 ring ring-default">',
       '      <div class="flex flex-col gap-2">',
-      '        <p class="whitespace-pre-line">a</p>',
+      '        <p>a</p>',
       '      </div>',
       '    </div>'
     ].join('\n'))
@@ -224,7 +227,7 @@ describe('generateUi follows the canvas render rules', () => {
     expect(generated(model, 'pages/index.vue')).toContain([
       '      <BlogPostCard v-for="post in posts.slice(0, shownList)" :key="post.id" :post="post">',
       '        <template #actions>',
-      '          <p class="whitespace-pre-line">More</p>',
+      '          <p>More</p>',
       '        </template>',
       '      </BlogPostCard>'
     ].join('\n'))
@@ -241,7 +244,7 @@ describe('generateUi follows the canvas render rules', () => {
     const page = generated(model, 'pages/index.vue')
     expect(page).toContain('definePageMeta({ name: \'index\', layout: false, layoutValues: { title: \'Posts\' } })')
     expect(page).toMatch(/<template>\n {2}<NuxtLayout name="main">\n {4}<template #default>\n {6}<section /)
-    expect(page).toContain('    <template #footer>\n      <p class="whitespace-pre-line">Thanks for reading</p>\n    </template>\n  </NuxtLayout>\n</template>')
+    expect(page).toContain('    <template #footer>\n      <p>Thanks for reading</p>\n    </template>\n  </NuxtLayout>\n</template>')
     expect(page).not.toContain('Thanks for reading</p>\n    </section>')
     expect(() => indexWith({ id: 'n_x', type: 'Container', children: [{ id: 'n_y', type: 'SlotFill', props: { slot: 'footer' } }] }))
       .toThrow(/a SlotFill sits under an Instance or at the root of a page with a layout/)

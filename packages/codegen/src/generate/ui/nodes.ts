@@ -4,7 +4,7 @@ import type { ModelNode, Value } from '../../model/schemas.ts'
 import { formatCode } from '../../render/format.ts'
 import type { LayoutParent } from '../../render/rules.ts'
 import {
-  CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, CONTAINER_TAGS, containerTag, DEFAULT_HEADING_LEVEL, displayOf, fallbackStyle, fillStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, LINK_CLASS, LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, nodePropProblems, selfFallback, structuralStyle, TEXT_CLASS
+  CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, CONTAINER_TAGS, containerTag, DEFAULT_HEADING_LEVEL, displayOf, fallbackStyle, fillStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, LINK_CLASS, LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, nodePropProblems, selfFallback, structuralStyle, textClasses
 } from '../../render/rules.ts'
 import type { Field } from '../context.ts'
 import { itemParam, itemPosition, loadMoreCounter } from '../names.ts'
@@ -124,8 +124,11 @@ export const render = (env: Env, original: ModelNode, indent: string, options: R
       const attrs = [...extra, ...styleAttrs(env, node, { fallback: fallbackOf(node, options, HEADING_TOKENS[level]) })]
       return element(headingTag(level), attrs, textContent(env, node, node.props?.text), indent)
     }
-    case 'Text':
-      return element(NODE_ELEMENTS.Text, [...extra, ...styleAttrs(env, node, { classes: [TEXT_CLASS], fallback: fallbackOf(node, options) })], textContent(env, node, node.props?.text), indent)
+    case 'Text': {
+      const text = node.props?.text
+      const texts = isObject(text) && isObject(text.$$variants) ? Object.values(text.$$variants) : [text]
+      return element(NODE_ELEMENTS.Text, [...extra, ...styleAttrs(env, node, { classes: textClasses(texts), fallback: fallbackOf(node, options) })], textContent(env, node, text), indent)
+    }
     case 'Image':
       return image(env, node, extra, indent, options)
     case 'Link':

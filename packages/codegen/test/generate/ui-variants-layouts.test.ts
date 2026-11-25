@@ -97,6 +97,16 @@ describe('generateUi: variants', () => {
     expect(code).toContain('const badgeVariants = {\n  default: \'px-2\',\n  loud: \'py-1\'\n} as const')
   })
 
+  it('keeps a Text\'s line breaks when the text of any variant has one', () => {
+    const unbound = (text: string) => (component: Json) => {
+      component.properties = component.properties.filter((property: Json) => property.name !== 'label')
+      loud()(component)
+      component.variants[0].overrides.n_badge_text.props.text = text
+    }
+    expect(badgeOut(unbound('LOUD'))).toContain('<p>{{ ({ default: \'Badge\', loud: \'LOUD\' })[props.variant] }}</p>')
+    expect(badgeOut(unbound('LO\nUD'))).toContain('<p class="whitespace-pre-line">{{ ({ default: \'Badge\', loud: \'LO\\nUD\' })[props.variant] }}</p>')
+  })
+
   it('resolves a Fill child per variant where a variant turns its parent\'s axis (layout-containers L3)', () => {
     const code = badgeOut((component) => {
       component.root.children[0].style = { w: 'fill' }

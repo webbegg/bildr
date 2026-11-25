@@ -264,6 +264,13 @@ export function headingLevel(level: unknown): number | undefined {
 /** A Text keeps the line breaks of its text. */
 export const TEXT_CLASS = 'whitespace-pre-line'
 
+/**
+ * A Text's fixed classes, given every text it can show (one per component variant): `TEXT_CLASS`, unless each is static and on one
+ * line (or unset), with no break to keep.
+ */
+export const textClasses = (texts: unknown[]): string[] =>
+  texts.every(text => text === undefined || (typeof text === 'string' && !text.includes('\n'))) ? [] : [TEXT_CLASS]
+
 /** A Link's underline on hover. */
 export const LINK_CLASS = 'underline-offset-4 hover:underline'
 /** A Link with an icon lays the icon and its text out in a line (with `LINK_ICON_DISPLAY`, a `display` token replaces it). */
