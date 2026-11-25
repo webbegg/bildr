@@ -146,7 +146,7 @@ export const createHttpClient = ({ baseUrl, headers = {}, unconfigured = false, 
     const timeout = AbortSignal.timeout(TIMEOUT_MS)
     const signal = cancel ? anyOf([cancel, timeout]) : timeout
     // A browser says nothing more about a failed call (a refusal by CORS looks like a network error).
-    const unreachable = typeof window === 'undefined' ? 'couldn\'t be reached' : 'couldn\'t be reached, or doesn\'t allow calls from this page'
+    const unreachable = !('window' in globalThis) ? 'couldn\'t be reached' : 'couldn\'t be reached, or doesn\'t allow calls from this page'
     const gone = () => new HttpFailure(0, timeout.aborted ? `didn't answer within ${TIMEOUT_MS / 1000} s` : cancel?.aborted ? 'was cancelled' : unreachable)
     let response: Response
     try {
