@@ -1,5 +1,5 @@
 import type { ApiSource } from '../edit/api.ts'
-import { apiComposableName } from '../edit/generated-names.ts'
+import { apiComposableName } from './names.ts'
 import type { Model } from '../model/load.ts'
 import { headerNameOf } from '../model/schemas.ts'
 import type { ApiField } from '../model/schemas.ts'

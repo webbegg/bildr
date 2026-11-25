@@ -10,7 +10,7 @@ import { bindingScope } from './scope.ts'
 import type { ScopeName } from './scope.ts'
 
 /**
- * The values an interaction step or a computed value may hold (B1): what `generate/ui.ts` can turn into code, checked against what the
+ * The values an interaction step or a computed value may hold (B1): what `generate/ui/` can turn into code, checked against what the
  * node or page can read. A literal (text, number, true or false), `{ "$bind": path }` (with an optional `fallback`), `{ "not": value }`,
  * `{ "$route": param }`, `{ "$form": true | field }`, `{ "$template": "text {path}" }` and `{ "$event": "checked" }`. Anything else
  * (`$param`, `$input`, `$now`, `$var`, lists, null) is not generated in a step yet.
@@ -209,7 +209,7 @@ const entityRow = (draft: Draft, id: string): Typed | undefined => {
 
 const stateRow = (state: StateFile): Typed => rowTyped(Object.fromEntries(state.fields.map(field => [field.name, fieldTyped(field)])))
 
-/** A component property or layout variable as its prop is typed (generate/ui.ts, `propertyType`): `layout` ones are unset without a default. */
+/** A component property or layout variable as its prop is typed (generate/ui/files.ts, `propertyType`): `layout` ones are unset without a default. */
 const propertyTyped = (draft: Draft, property: PropertyDef, layout: boolean): Typed | undefined => {
   if (property.kind === 'slot') return undefined
   if (property.kind === 'entity') {

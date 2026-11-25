@@ -5,6 +5,7 @@ import { zodField } from './entity.ts'
 import type { KernelName } from './entity.ts'
 import { listRoute } from '../query/index.ts'
 import { importLine } from './imports.ts'
+import { composableOf, stateComposableOf } from './names.ts'
 import { importPath } from './paths.ts'
 import { camel, docText, file, header, kebab, pascal, tsDuration, tsLiteral, tsString } from './text.ts'
 
@@ -64,7 +65,7 @@ export const queryFile = (context: ModuleContext, query: QueryFile) => {
   const entity = entityById(context, query.from)
   const names = entityNames(entity)
   const alias = names.variable
-  const composable = `use${pascal(query.name)}`
+  const composable = composableOf(query.name)
   const tanstack = new Set<string>(['useLiveQuery'])
   const vue = new Set<string>()
   const reactive = query.params.filter(param => param.reactive)
@@ -149,7 +150,7 @@ const PERSISTENCE = {
 const stateNames = (context: ModuleContext, state: StateFile) => ({
   type: `${pascal(context.name)}${pascal(state.name)}`,
   collection: `${camel(context.name)}${pascal(state.name)}Collection`,
-  composable: `use${pascal(context.name)}${pascal(state.name)}`,
+  composable: stateComposableOf(context.name, state.name),
   file: kebab(state.name),
   key: `${context.name}:${state.name}`
 })

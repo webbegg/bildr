@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateUi } from '../../../codegen/src/generate/ui.ts'
+import { generateUi } from '../../../codegen/src/generate/ui/index.ts'
 import { loadModel } from '../../../codegen/src/model/load.ts'
 import type { Model } from '../../../codegen/src/model/load.ts'
 import { blogModelFiles } from './fixture.ts'
@@ -114,6 +114,24 @@ describe('canvas render parity with the generated app', () => {
     const props = { ...app.components.BlogTip!.defaults, title: 'A tip', variant: name }
     const generated = renderGenerated(app, app.components.BlogTip!, { props, variant: name, on: {}, $slots: {} })
     expect(canvas(component('Tip'), { title: 'A tip' }, variant)).toEqual(normalized(generated))
+  })
+
+  it.each([['one line', 'Shown'], ['a line break', 'Sho\nwn']])('Tip component file, a variant that changes a Text\'s text to %s', (_, text) => {
+    // The body's text is the node's own (no property), and the collapsed variant shows another instead of hiding it.
+    const changed = model()
+    const tip = changed.modules.blog!.components.find(entry => entry.name === 'Tip')!
+    const body = tip.properties.find(property => property.name === 'body')!
+    body.bindings = []
+    tip.root.children!.find(child => child.id === 'n_tip_body')!.props = { text: 'Body' }
+    tip.variants[0]!.overrides.n_tip_body = { props: { text } }
+    const sfcOf = loadSfc(generateUi(changed).find(file => file.path === 'layers/blog/app/components/blog/Tip.vue')!.content)
+    for (const [name, variant] of [['default', undefined], ['collapsed', { id: 'var_collapsed', label: 'collapsed' }]] as const) {
+      const generated = renderGenerated(app, sfcOf, { props: { ...sfcOf.defaults, title: 'A tip', variant: name }, variant: name, on: {}, $slots: {} })
+      const rendered = normalized(planElements(renderPlan({ file: tip, components: changed.modules.blog!.components, layouts: changed.layouts, data: { title: 'A tip' }, variant })))
+      expect(rendered).toEqual(normalized(generated))
+      // The title (bound to a property) always keeps its breaks; the body does in every variant when one of its texts has one.
+      expect(rendered.filter(line => line.includes('whitespace-pre-line'))).toHaveLength(text.includes('\n') ? 2 : 1)
+    }
   })
 
   it('layout file: header, slots with default content', () => {

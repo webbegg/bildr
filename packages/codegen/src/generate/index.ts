@@ -8,7 +8,7 @@ import { hasDatabase } from './context.ts'
 import { generateData } from './data.ts'
 import { corePaths } from './paths.ts'
 import { generateProject } from './project.ts'
-import { generateUi } from './ui.ts'
+import { generateUi } from './ui/index.ts'
 
 // Generators per layer. Only the complete `generate` may drive a sync: syncing a partial
 // one would treat every file it doesn't emit as "no longer generated" (see planSync).
@@ -16,7 +16,7 @@ export { generateActions } from './actions.ts'
 export { generateApis } from './api.ts'
 export { generateData } from './data.ts'
 export { generateProject } from './project.ts'
-export { generateUi } from './ui.ts'
+export { generateUi } from './ui/index.ts'
 export { hasDatabase } from './context.ts'
 
 /** Static files of the database layer: generated only while the model has a sqlite data source (V7). */

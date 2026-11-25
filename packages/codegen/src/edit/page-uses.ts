@@ -1,10 +1,9 @@
 import type { Model, ModuleModel } from '../model/load.ts'
 import type { ApiQuery, DataSourceFile, PageFile, StateFile, Value } from '../model/schemas.ts'
-import { pascal } from '../generate/text.ts'
+import { apiComposableName, composableOf, handlerName, loadMoreCounter, stateComposableOf, useNames } from '../generate/names.ts'
 import { loadMoreSize } from '../render/rules.ts'
 import { apiParamRequired, apiQueryOf } from './api-uses.ts'
 import { mapPaths, rootOf } from './bindings.ts'
-import { apiComposableName, composableOf, stateComposableOf } from './composable-names.ts'
 import { autoImportedNameProblem } from './reserved-names.ts'
 import { walk } from './tree.ts'
 
@@ -32,18 +31,19 @@ export const moduleOfPageIn = (model: Model, page: PageFile): { name: string, mo
 }
 
 /**
- * The names the generated page script declares for a use `as` of `kind` (generate/ui.ts, `pageFile`): the name itself, and what the
+ * The names the generated page script declares for a use `as` of `kind` (generate/ui/files.ts, `pageFile`): the name itself, and what the
  * page derives from it: a state's `set<As>` (what changes it), a query's loading flag `<as>Loading` (an API query's `<as>Error` too), an action's `<as>Pending` and
  * `<as>Error`. Each says in `by` what it is, as a refusal shows it.
  */
 export const declaredBy = (as: string, kind: UseKind): Declared => {
+  const { set, loading, pending, error } = useNames(as)
   const derived: Array<[string, string]> = kind === 'state'
-    ? [[`set${pascal(as)}`, `the "set…" name of the state "${as}"`]]
+    ? [[set, `the "set…" name of the state "${as}"`]]
     : kind === 'query'
-      ? [[`${as}Loading`, `the loading flag of "${as}"`]]
+      ? [[loading, `the loading flag of "${as}"`]]
       : kind === 'api'
-        ? [[`${as}Loading`, `the loading flag of "${as}"`], [`${as}Error`, `the error of "${as}"`]]
-        : kind === 'action' ? [[`${as}Pending`, `the pending flag of "${as}"`], [`${as}Error`, `the error of "${as}"`]] : []
+        ? [[loading, `the loading flag of "${as}"`], [error, `the error of "${as}"`]]
+        : kind === 'action' ? [[pending, `the pending flag of "${as}"`], [error, `the error of "${as}"`]] : []
   return [{ name: as, by: `"${as}"` }, ...derived.map(([name, by]) => ({ name, by }))]
 }
 
@@ -91,9 +91,8 @@ export const declaredNames = (model: Model, page: PageFile): Declared => {
 export const nodeNames = (page: PageFile): Declared => {
   const names: Declared = []
   walk(page.root, (node) => {
-    const id = pascal(node.id.replace(/^n_/, ''))
-    for (const interaction of node.interactions ?? []) names.push({ name: `on${id}${pascal(interaction.on)}`, by: `the handler of ${node.id}'s ${interaction.on}` })
-    if (node.type === 'List' && loadMoreSize(node.props?.loadMore) !== undefined) names.push({ name: `shown${id}`, by: `the counter of ${node.id}` })
+    for (const interaction of node.interactions ?? []) names.push({ name: handlerName(node.id, interaction.on), by: `the handler of ${node.id}'s ${interaction.on}` })
+    if (node.type === 'List' && loadMoreSize(node.props?.loadMore) !== undefined) names.push({ name: loadMoreCounter(node.id), by: `the counter of ${node.id}` })
   })
   return names
 }

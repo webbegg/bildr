@@ -4,7 +4,7 @@ import { levels, parseStyleKey, styleKey } from '../design/tokens.ts'
 
 /**
  * The render rules (spec V4, RA §6): per node type, what the generator
- * (`generate/ui.ts`) and the editor canvas (`BildrNode.vue`) both need to
+ * (`generate/ui/`) and the editor canvas (`BildrNode.vue`) both need to
  * render a node the same way: its element or Nuxt UI component, the token
  * fallbacks it renders with before its own style (a token of the same key
  * replaces them) and the prop values it accepts. Token → class resolution is
@@ -264,6 +264,13 @@ export function headingLevel(level: unknown): number | undefined {
 /** A Text keeps the line breaks of its text. */
 export const TEXT_CLASS = 'whitespace-pre-line'
 
+/**
+ * A Text's fixed classes, given every text it can show (one per component variant): `TEXT_CLASS`, unless each is static and on one
+ * line (or unset), with no break to keep.
+ */
+export const textClasses = (texts: unknown[]): string[] =>
+  texts.every(text => text === undefined || (typeof text === 'string' && !text.includes('\n'))) ? [] : [TEXT_CLASS]
+
 /** A Link's underline on hover. */
 export const LINK_CLASS = 'underline-offset-4 hover:underline'
 /** A Link with an icon lays the icon and its text out in a line (with `LINK_ICON_DISPLAY`, a `display` token replaces it). */
@@ -445,7 +452,7 @@ export interface RenderDivergence {
   id: string
   /** The node types it affects. */
   types: string[]
-  /** What `generate/ui.ts` emits. */
+  /** What `generate/ui/` emits. */
   generator: string
   /** What the canvas (`BildrNode.vue`) renders. */
   canvas: string

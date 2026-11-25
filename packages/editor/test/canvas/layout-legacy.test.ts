@@ -36,9 +36,9 @@ describe('layout containers on the canvas', () => {
     expect(outline(plan).join('\n')).toMatchInlineSnapshot(`
       "<section n_page> flex min-h-full flex-col gap-6
         <div n_row> flex flex-col self-stretch md:flex-row
-          <p n_a> self-stretch whitespace-pre-line md:min-w-0 md:grow-1 md:basis-[0%] md:self-auto
-          <p n_b> grow-2 self-stretch whitespace-pre-line md:min-w-0 md:basis-[0%] md:self-auto
-        <p n_top> self-stretch whitespace-pre-line"
+          <p n_a> self-stretch md:min-w-0 md:grow-1 md:basis-[0%] md:self-auto
+          <p n_b> grow-2 self-stretch md:min-w-0 md:basis-[0%] md:self-auto
+        <p n_top> self-stretch"
     `)
   })
 })
@@ -53,21 +53,21 @@ describe('legacy layout containers on the canvas (layout-containers S4)', () => 
       "<section n_page> flex min-h-full flex-col gap-6
         <section n_legacy> flex flex-col items-start gap-3 self-stretch p-4
           <div n_row> flex flex-wrap items-center gap-3 self-stretch md:gap-6
-            <p n_row_text> whitespace-pre-line
+            <p n_row_text> 
             <div n_row_box> flex w-full flex-col
             <div n_row_col> flex flex-col gap-2
           <nav n_row_plain> flex justify-between self-stretch
-            <p n_row_plain_text> whitespace-pre-line
+            <p n_row_plain_text> 
           <div n_column> flex flex-col items-start gap-3 self-stretch md:flex-row
             <h3 n_column_heading> self-stretch text-center text-2xl font-semibold
             <div n_column_row> flex gap-1 self-stretch
             <UButton n_column_button> 
           <div n_grid> grid grid-cols-3 gap-6 self-stretch md:grid-cols-4
             <div n_grid_wide> col-span-2 flex flex-col
-            <p n_grid_text> whitespace-pre-line
+            <p n_grid_text> 
           <div n_card> self-stretch overflow-hidden rounded-lg bg-default p-4 ring ring-default
             <div> flex items-start gap-3
-              <p n_card_text> whitespace-pre-line
+              <p n_card_text> 
               <div n_card_box> flex flex-col
           <div n_stack_row> flex gap-2 self-stretch
             <div n_stack_row_box> flex flex-col

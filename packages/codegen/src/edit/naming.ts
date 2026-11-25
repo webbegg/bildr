@@ -1,5 +1,5 @@
 import { kebab as fileName, pascal } from '../generate/text.ts'
-import { composableOf, stateComposableOf } from './composable-names.ts'
+import { composableOf, stateComposableOf } from '../generate/names.ts'
 import { camel, fail } from './core.ts'
 import type { Draft } from './core.ts'
 import { actionNameProblem, queryNameProblem } from './generated-names.ts'

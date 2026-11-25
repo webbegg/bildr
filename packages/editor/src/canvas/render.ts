@@ -4,7 +4,7 @@ import type { ComponentFile, LayoutFile, ModelNode, PageFile, PropertyDef, Value
 import {
   animatedProperties, CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, containerTag, DEFAULT_HEADING_LEVEL,
   DEFAULT_TRANSITION, displayOf, fallbackStyle, FILL, fillStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, isSafeUrl, LINK_CLASS,
-  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, selfFallback, structuralStyle, TEXT_CLASS, transitionTimingClasses,
+  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, selfFallback, structuralStyle, textClasses, transitionTimingClasses,
   formatValue
 } from '@bildr/codegen/render'
 import type { LayoutParent, ValueFormats } from '@bildr/codegen/render'
@@ -16,7 +16,7 @@ import type { PlainValue } from './protocol.ts'
  * or layout file and the data it reads become a render plan, a tree of
  * elements (an HTML tag or a Nuxt UI component, its classes, attributes and
  * children) that `ModelNode.vue` turns into vnodes. It follows the generator
- * (`generate/ui.ts`) rule for rule with the shared `@bildr/codegen/render`
+ * (`generate/ui/`) rule for rule with the shared `@bildr/codegen/render`
  * rules and token classes, so each element has the tag and classes the
  * generated app renders (the parity tests compare them).
  *
@@ -517,8 +517,13 @@ const renderNode = (frame: Frame, original: ModelNode, options: Options = {}): P
       const level = headingLevel(props.level ?? DEFAULT_HEADING_LEVEL) ?? DEFAULT_HEADING_LEVEL
       return [base(frame, node, options, headingTag(level), styleOf(frame, node, { fallback: fallbackOf(node, options, HEADING_TOKENS[level]) }), { children: textChildren(shownText(frame, node, props.text)) })]
     }
-    case 'Text':
-      return [base(frame, node, options, NODE_ELEMENTS.Text, styleOf(frame, node, { classes: [TEXT_CLASS], fallback: fallbackOf(node, options) }), { children: textChildren(shownText(frame, node, props.text)) })]
+    case 'Text': {
+      // Every text the node can show, as the generator sees them: a property's binding, else one per variant when a variant changes it.
+      const bound = frame.shell.substitutions.get(node.id)?.text
+      const byVariant = frame.shell.variantProps.get(node.id)?.text
+      const texts = bound !== undefined ? [bound] : byVariant ? Object.values(byVariant) : [props.text]
+      return [base(frame, node, options, NODE_ELEMENTS.Text, styleOf(frame, node, { classes: textClasses(texts), fallback: fallbackOf(node, options) }), { children: textChildren(shownText(frame, node, props.text)) })]
+    }
     case 'Image': {
       const src = stringOf(props.src, frame.scope)
       const safe = src !== undefined && src !== '' && isSafeUrl(src, 'src')

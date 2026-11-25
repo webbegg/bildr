@@ -1,9 +1,10 @@
 import type { Model, ModuleModel } from '../model/load.ts'
 import type { DataSourceFile, EntityFile, FieldSchema, RepositoryFile } from '../model/schemas.ts'
 import type { z } from 'zod'
+import { moduleRootOf } from './names.ts'
 import { modulePaths } from './paths.ts'
 import type { ModulePaths } from './paths.ts'
-import { camel, kebab, pascal } from './text.ts'
+import { camel, kebab } from './text.ts'
 
 export type Field = z.infer<typeof FieldSchema>
 
@@ -25,7 +26,7 @@ export const moduleContext = (model: Model, name: string): ModuleContext => ({
   model,
   name,
   module: model.modules[name]!,
-  root: `use${pascal(name)}`,
+  root: moduleRootOf(name),
   source: id => model.paths[id] ?? `.bildr/modules/${name}`,
   paths: modulePaths(name)
 })
