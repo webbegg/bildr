@@ -97,8 +97,10 @@ export const componentFile = (context: ModuleContext, component: ComponentFile):
   bindProperties(env, component.properties, nodes, property => property.name)
 
   const template = render(env, component.root, '  ')
-  if (component.variants.length) {
-    props.push(`  variant?: ${['default', ...component.variants.map(variant => variant.name)].map(name => tsString(name)).join(' | ')}`)
+  // The variants an instance picks: a state is the editor's preview of hover or pressed, which the pointer shows.
+  const picked = component.variants.filter(variant => !variant.state)
+  if (picked.length) {
+    props.push(`  variant?: ${['default', ...picked.map(variant => variant.name)].map(name => tsString(name)).join(' | ')}`)
     defaults.push('variant: \'default\'')
   }
   const declare = env.needs.has('props') ? 'const props = ' : ''

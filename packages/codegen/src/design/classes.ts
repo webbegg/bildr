@@ -94,9 +94,12 @@ const propertyOf = (utility: string): Property | undefined => {
 /** Variants in the order Tailwind emits them: children, group and peer states, own states, then media (breakpoints small to large). */
 const VARIANT_ORDER = [/^\*$/, /^group-/, /^peer-/, /^hover$/, /^focus/, /^active$/, /^motion-/, /^max-lg$/, /^max-md$/, /^max-sm$/, /^sm$/, /^md$/, /^lg$/, /^xl$/]
 
-const variantRank = (variant: string) => {
+const variantRank = (variant: string): number => {
   const index = VARIANT_ORDER.findIndex(pattern => pattern.test(variant))
-  return index === -1 ? VARIANT_ORDER.length : index
+  if (index === -1) return VARIANT_ORDER.length
+  // `group-hover/card`, `peer-active`: among themselves, in the order of the state they wrap.
+  const inner = /^(?:group|peer)-([^/]+)/.exec(variant)?.[1]
+  return inner ? index + variantRank(inner) / (VARIANT_ORDER.length + 1) : index
 }
 
 interface Ranked { name: string, index: number, variants: number[], property: number }

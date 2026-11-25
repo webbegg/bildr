@@ -6,25 +6,22 @@ const props = withDefaults(defineProps<{
   post: Pick<Post, 'title' | 'slug' | 'body' | 'published'>
   cover?: string
   draftLabel?: string
-  variant?: 'default' | 'compact' | 'hovered'
+  variant?: 'default' | 'compact'
 }>(), { cover: '', draftLabel: undefined, variant: 'default' })
 
 const cardVariants = {
   default: 'p-5 hover:shadow-md',
-  compact: 'p-3',
-  hovered: 'p-5 shadow-md'
+  compact: 'p-3'
 } as const
 
 const cardStackVariants = {
   default: 'gap-2',
-  compact: 'gap-1',
-  hovered: 'gap-2'
+  compact: 'gap-1'
 } as const
 
 const titleVariants = {
   default: 'group-hover/post-card:text-primary',
-  compact: '',
-  hovered: 'text-primary'
+  compact: ''
 } as const
 </script>
 

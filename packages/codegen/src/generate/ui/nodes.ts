@@ -11,7 +11,7 @@ import { itemParam, itemPosition, loadMoreCounter } from '../names.ts'
 import { identifier, kebab, pascal, tsString } from '../text.ts'
 import type { Env } from './env.ts'
 import {
-  actionById, API_ERROR_TEXT, bindPath, bindRoot, entityOf, errorsOf, expression, fail, isObject, itemRoot, loadingOf, routeLocation, templateParts, where
+  actionById, API_ERROR_TEXT, bindPath, bindRoot, entityOf, errorsOf, expression, fail, isObject, itemRoot, loadingOf, routeLocation, templateParts, variantRead, where
 } from './env.ts'
 import { events } from './interactions.ts'
 import type { Attr } from './markup.ts'
@@ -49,8 +49,7 @@ export const visibility = (env: Env, node: ModelNode): Attr[] => {
   const conditions: string[] = []
   if (node.props?.visible !== undefined) conditions.push(expression(env, node, node.props.visible, 'template'))
   for (const name of env.variants?.get(node.id)?.hiddenIn ?? []) {
-    env.needs.add('props')
-    conditions.push(`${env.variantExpr} !== ${tsString(name)}`)
+    conditions.push(`${variantRead(env)} !== ${tsString(name)}`)
   }
   return conditions.length ? [attr('if', `v-if="${escapeAttr(conditions.join(' && '))}"`)] : []
 }
@@ -385,7 +384,10 @@ export const instance = (env: Env, node: ModelNode, extra: Attr[], indent: strin
   const context = env.context ?? fail(env, node, 'component instances need a module')
   const component = context.module.components.find(entry => entry.id === node.props?.component) ?? fail(env, node, `unknown component ${String(node.props?.component)}`)
   const values = isObject(node.props?.values) ? node.props.values : {}
-  const variantId = node.props?.variant
+  // A state shows under the pointer: the instance takes its base variant.
+  const picked = typeof node.props?.variant === 'string' ? component.variants.find(entry => entry.id === node.props!.variant) : undefined
+  if (typeof node.props?.variant === 'string' && node.props.variant !== '' && !picked) fail(env, node, `component ${component.name} has no variant ${node.props.variant}`)
+  const variantId = picked?.state ? picked.state.of : node.props?.variant
   const variant = typeof variantId === 'string' && variantId !== ''
     ? [staticAttr('variant', component.variants.find(entry => entry.id === variantId)?.name ?? fail(env, node, `component ${component.name} has no variant ${variantId}`))]
     : []

@@ -5,7 +5,7 @@ import type { ModelNode } from '../../model/schemas.ts'
 import { animatedProperties } from '../../render/rules.ts'
 import { camel, pascal, tsString } from '../text.ts'
 import type { Env } from './env.ts'
-import { bindPath, fail } from './env.ts'
+import { bindPath, fail, variantRead } from './env.ts'
 import type { Attr } from './markup.ts'
 import { boundAttr, staticAttr } from './markup.ts'
 
@@ -45,21 +45,24 @@ export const styleAttrs = (env: Env, node: ModelNode, { display = '', fallback =
   const animated = timings.some(Boolean) ? animatedProperties(keys) : []
   const sharedTiming = animated.length && new Set(timings).size === 1 ? timings[0]! : ''
   const rootClasses = env.root?.id === node.id && !part ? env.root.classes : []
-  const classes = tidyClasses([...fixed, display ? displayFallback(display, style) : '', ...rootClasses, animated.length ? `transition-[${animated.join(',')}]` : '', sharedTiming, styleClasses(own)])
+  const only = (entries: Record<string, string>, subset = keys) => Object.fromEntries(subset.filter(key => keys.includes(key) && entries[key] !== undefined).map(key => [key, entries[key]!]))
+  const perVariant = variant && keys.length
+    ? variant.styles.map(([name, entry]): [string, string] => [name, tidyClasses([
+        styleClasses(only({ ...fallback, ...entry })),
+        ...(variant.pointer.get(name) ?? []).map(state => prefixedClasses(only({ ...fallback, ...state.style }, state.keys), state.prefix)),
+        animated.length && !sharedTiming ? variant.timing!.get(name) || 'duration-0' : ''
+      ])])
+    : []
+  // Only the default (its states are classes): no map.
+  const unmapped = perVariant.length === 1 ? perVariant[0]![1] : ''
+  const classes = tidyClasses([...fixed, display ? displayFallback(display, style) : '', ...rootClasses, animated.length ? `transition-[${animated.join(',')}]` : '', sharedTiming, styleClasses(own), unmapped])
   const inline = Object.entries(styleInline(own)).map(([property, value]) => `${property}: ${value}`).join('; ')
   const maps: string[] = []
-  if (variant && keys.length) {
+  if (variant && perVariant.length > 1) {
     // Variant overrides become a class map; the default entry holds what the node renders without one.
     const map = `${variant.base}${part}Variants`
-    const only = (entries: Record<string, string>, subset = keys) => Object.fromEntries(subset.filter(key => keys.includes(key) && entries[key] !== undefined).map(key => [key, entries[key]!]))
-    const perVariant = variant.styles.map(([name, entry]): [string, string] => [name, [
-      styleClasses(only({ ...fallback, ...entry })),
-      ...(variant.pointer.get(name) ?? []).map(state => prefixedClasses(only({ ...fallback, ...state.style }, state.keys), state.prefix)),
-      animated.length && !sharedTiming ? variant.timing!.get(name) || 'duration-0' : ''
-    ].filter(Boolean).join(' ')])
-    env.needs.add('props')
     env.variantLines.push('', `const ${map} = {`, perVariant.map(([name, value]) => `  ${name}: ${tsString(value)}`).join(',\n'), '} as const')
-    maps.push(`${map}[${env.variantExpr}]`)
+    maps.push(`${map}[${variantRead(env)}]`)
   }
   for (const binding of bound) {
     // A style a property drives: a class map of the values it can take, indexed by the property.

@@ -52,7 +52,7 @@ describe('class order of the generated SFCs', () => {
       [...classes.slice(0, 40).map(name => `md:${name}`), ...classes.slice(20, 60).map(name => `hover:${name}`), ...classes.slice(40).reverse()],
       [
         ...classes.slice(0, 30).map(name => `max-md:${name}`), ...classes.slice(10, 40).map(name => `group-hover/card:${name}`),
-        ...classes.slice(30, 50).map(name => `active:${name}`), 'motion-reduce:duration-0', 'duration-200', ...classes.slice(50, 70).map(name => `lg:${name}`), 'group/card'
+        ...classes.slice(30, 50).map(name => `active:${name}`), ...classes.slice(60, 80).map(name => `group-active/card:${name}`), 'motion-reduce:duration-0', 'duration-200', ...classes.slice(50, 70).map(name => `lg:${name}`), 'group/card'
       ]
     ]
     // A class list per element: Tailwind sorts conflicting values of one property by name, so each list keeps one value per token.
