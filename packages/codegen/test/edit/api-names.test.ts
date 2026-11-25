@@ -40,9 +40,11 @@ describe('a query or an action named like a reserved word is refused', () => {
   })
 
   it('every word of the list is a name no query can take', () => {
+    // One project for every word: a refused edit changes nothing (a new one each made the test slow enough to time out in CI).
+    const p = shop()
     for (const name of JS_RESERVED_WORDS) {
       if (!/^[a-z][A-Za-z0-9]*$/.test(name)) continue
-      shop().refuse('api_query_set', { datasource: 'ds_shop', query: items(name) }, 'invalid')
+      p.refuse('api_query_set', { datasource: 'ds_shop', query: items(name) }, 'invalid')
     }
   })
 })
