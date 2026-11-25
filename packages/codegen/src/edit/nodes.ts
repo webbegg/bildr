@@ -24,7 +24,7 @@ const Nodes = {
 export interface NodeSpec {
   /** The node type; optional with a `preset`, which names its type. */
   type?: string
-  /** A layout preset (Stack, Row, Column, Grid, Card): a Container with the preset's tokens. */
+  /** A layout preset (Stack, Row, Column, Grid, Card, Overlay, Section, Columns): a Container with the preset's tokens. */
   preset?: string
   name?: string
   locked?: boolean
@@ -36,7 +36,7 @@ export interface NodeSpec {
 
 export const NodeSpecSchema: z.ZodType<NodeSpec> = z.lazy(() => z.object({
   type: z.string().min(1).optional().describe('A node type, see catalog_get; optional with a preset'),
-  preset: z.string().min(1).optional().describe('A layout preset (Stack, Row, Column, Grid or Card, see catalog_get): a Container with the preset\'s style tokens; not with exact'),
+  preset: z.string().min(1).optional().describe('A layout preset (Stack, Row, Column, Grid, Card, Overlay, Section or Columns, see catalog_get): a Container with the preset\'s style tokens; not with exact'),
   name: z.string().min(1).max(100).optional().describe('A layer name'),
   locked: z.boolean().optional(),
   props: z.record(z.string(), ValueSchema).optional().describe('Props over the type\'s defaults (with exact: all of them)'),
@@ -215,7 +215,7 @@ export const nodeInsert = defineEdit({
     exact: z.boolean().optional().describe('true: only the given props and style, without the type\'s defaults (a paste)'),
     nodes: z.array(NodeSpecSchema).min(1).optional().describe('Several nodes, in order from index, all or nothing; replaces type, preset, props, style and children'),
     type: z.string().min(1).optional().describe('A node type (catalog_get nodeTypes); a type or a preset is required unless nodes is given'),
-    preset: z.string().min(1).optional().describe('A layout preset (catalog_get nodeTypes with a preset: Stack, Row, Column, Grid, Card): a Container with the preset\'s style tokens; not with exact'),
+    preset: z.string().min(1).optional().describe('A layout preset (catalog_get nodeTypes with a preset: Stack, Row, Column, Grid, Card, Overlay, Section, Columns): a Container with the preset\'s style tokens; not with exact'),
     name: z.string().min(1).max(100).optional(),
     props: z.record(z.string(), ValueSchema).optional(),
     style: StyleSchema.optional(),
@@ -360,7 +360,7 @@ export const nodeWrap = defineEdit({
     file: FileRef,
     ...Nodes,
     type: z.enum(WRAP_TYPES).optional().describe('The wrapping container type; defaults to Container. Row, Column, Card and Grid are legacy types: give a preset instead'),
-    preset: z.string().min(1).optional().describe('A layout preset for the wrapping Container (Stack, Row, Column, Grid or Card, see catalog_get)'),
+    preset: z.string().min(1).optional().describe('A layout preset for the wrapping Container (Stack, Row, Column, Grid, Card, Overlay, Section or Columns, see catalog_get)'),
     style: StyleSchema.optional().describe('Style tokens over the container\'s defaults')
   }),
   apply: (draft, { file, type, preset, style, ...nodes }) => {

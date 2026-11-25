@@ -14,6 +14,7 @@ import { nodeDef, propDefsOf } from '../../shared/nodeProps.ts'
 import type { PropDef } from '../../shared/nodeProps.ts'
 import { sharedStyle } from '../../shared/panel.ts'
 import { isFlattenable } from '../../shared/presets.ts'
+import { emptyCells } from '../../shared/gridFill.ts'
 
 /**
  * The right panel, one scrolling view: a sticky head with the element's
@@ -56,6 +57,8 @@ const icon = (type: string) => nodeDef(type)?.icon ?? 'i-lucide-file'
 const parent = computed(() => (node.value && editor.page ? findParent(editor.page.root, node.value.id) : undefined))
 const parentType = computed(() => parent.value?.type)
 const flattenable = computed(() => !!node.value && !multi.value && !isRoot.value && isFlattenable(node.value))
+/** The grid's empty cells at the edited device, which Fill cells fills with Stacks (layout-containers L6). */
+const emptyCellCount = computed(() => (node.value && !multi.value ? emptyCells(node.value, editor.deviceId, editor.breakpointBase) : 0))
 /** The ancestors of the node, from the root down, for the head's breadcrumb. */
 const crumbs = computed(() => (node.value && editor.page ? pathTo(editor.page.root, node.value.id).slice(0, -1).map(id => ({ id, type: findNode(editor.page!.root, id)!.type })) : []))
 const crumbLabel = (crumb: { id: string, type: string }) => {
@@ -272,6 +275,21 @@ function renamePage(field: 'name' | 'path', value: string) {
           @click="editor.unwrap(node!.id)"
         >
           Flatten
+        </button>
+      </div>
+      <div
+        v-if="emptyCellCount"
+        class="mx-3 my-2 flex items-center gap-2 rounded-lg bg-elevated px-2 py-1.5 text-[11px] text-toned"
+        role="note"
+        data-fill-cells
+      >
+        <span class="flex-1">{{ emptyCellCount === 1 ? '1 empty cell' : `${emptyCellCount} empty cells` }} in the last row.</span>
+        <button
+          type="button"
+          class="text-primary hover:underline"
+          @click="editor.fillCells(node!.id)"
+        >
+          Fill cells
         </button>
       </div>
       <EditorStyleFields

@@ -32,6 +32,7 @@ import type { PendingMigration } from '../types.ts'
 import { interactionKey, parseInteractionKey } from '../shared/interactionPanel.ts'
 import { layerName } from '../shared/layers.ts'
 import { insertSpec, isUnwrappable } from '../shared/presets.ts'
+import { emptyCells } from '../shared/gridFill.ts'
 import { layoutType, layoutTypeWrite } from '../shared/panel.ts'
 import type { LayoutType } from '../shared/panel.ts'
 import { createDataView } from './dataView.ts'
@@ -496,6 +497,15 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     if (!node || !isUnwrappable(node.type)) return
     const result = await runOnPage('node_unwrap', { nodeId: node.id })
     if (Array.isArray(result?.nodeIds)) selectedIds.value = result.nodeIds as string[]
+  }
+
+  /** Fill cells (layout-containers L6): an empty Stack in each cell left in the grid's last row at the edited device (one undo step). */
+  const fillCells = async (id: string) => {
+    const tree = root()
+    const node = tree ? findNode(tree, id) : undefined
+    const count = node ? emptyCells(node, deviceId.value, breakpointBase.value) : 0
+    if (!count) return
+    await runOnPage('node_insert', { parentId: id, nodes: Array.from({ length: count }, () => ({ preset: 'Stack' })) })
   }
 
   /** Alt+Shift+A, Remove layout: each selected Stack or Grid becomes block flow at the edited device (one undo step). */
@@ -1129,7 +1139,7 @@ export const createEditor = (design: Design, options: EditorOptions = {}) => {
     loading: design.loading, error: design.error, errorCode: design.errorCode, errorField: design.errorField, dismissError: design.dismissError, regenerated: design.regenerated, problems: design.problems, files: design.files, components: design.components, layouts: design.layouts, catalog: design.catalog, dragging: design.dragging, dragCancels: design.dragCancels, canvasMode: design.mode, pagePaths: design.pagePaths, formSelects: design.formSelects, formats: design.formats,
     isContainer: design.isContainer, scopeOf: design.scopeOf, pendingInsert: design.pendingInsert, confirmInsert: design.confirmInsert, pendingForm: design.pendingForm, confirmForm: design.confirmForm, formActions: design.formActions, refreshDataSoon: design.refreshDataSoon, stateValues: design.stateValues, setStateValue: design.setStateValue, resetStateValues: design.resetStateValues, select, selectNode: design.selectNode, start, dispose: design.dispose,
     // Operations.
-    notify, reload, reloadEnv, run, runOnPage, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, layoutFromSelection, createLayoutFromSelection, setPageLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, addState, addInteraction, updateInteraction, removeInteraction, setTransition, previewInteractions, renameVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, unwrap, convertLayouts, group, autoLayout, removeLayout, moveBy, moveSelection,
+    notify, reload, reloadEnv, run, runOnPage, selectPage, editComponent, exitComponent, editLayout, exitLayout, leaveView, goToCrumb, confirm, createLayout, layoutFromSelection, createLayoutFromSelection, setPageLayout, confirmCreate, openProperties, detachInstance, replaceInstance, selectVariant, setVariantBoard, addVariant, addState, addInteraction, updateInteraction, removeInteraction, setTransition, previewInteractions, renameVariant, setOverride, insertInstance, createComponent, addPage, insert, openPreview, renameProject, requestZoom, setDevice, showFrame, hideFrame, setTool, insertWithTool, drop, remove, duplicate, wrap, unwrap, fillCells, convertLayouts, group, autoLayout, removeLayout, moveBy, moveSelection,
     copy, paste, pasteStyle, startRename, renameNode, setLocked, toggleLock, addToAgent,
     canvasClick, selectRow, setDeepSelect, setPreviewDark, navigate, setMeasurer, measureNodes, setCollapsed, updateProps, previewStyle, updateStyle, updateStyles, previewTheme, updateTheme, undo, redo, shortcut
   })

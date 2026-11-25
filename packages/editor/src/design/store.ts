@@ -48,7 +48,7 @@ export interface FileRef {
 
 export interface CatalogNodeType {
   type: string
-  /** A layout preset (Stack, Row, Column, Grid): a Container with `defaults.style`. */
+  /** A layout preset (Stack, Row, Column, Grid, Card, Overlay, Section, Columns): a Container with `defaults.style`. */
   preset?: string
   label: string
   description: string
