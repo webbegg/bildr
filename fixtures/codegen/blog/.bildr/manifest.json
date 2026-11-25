@@ -362,7 +362,7 @@
     },
     "layers/blog/app/pages/catalog/[category].vue": {
       "owner": "managed",
-      "sha256": "a9d6c7b9d89e3cd9acabb10b1f21defa9c34f7eca990fb209c9d55b8b533ef34",
+      "sha256": "656358d7cbbb9c494130a5b1c55b6c07ead7e703364b86a01326fcb9596414f0",
       "source": ".bildr/modules/blog/pages/shop-catalog.json"
     },
     "layers/blog/app/pages/index.vue": {
