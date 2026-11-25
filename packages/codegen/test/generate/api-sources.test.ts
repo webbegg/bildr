@@ -47,7 +47,6 @@ const APIS_FILES = [
   'layers/apis/server/api/apis/catalog/delete-product.delete.ts',
   'layers/apis/server/api/apis/catalog/product.get.ts',
   'layers/apis/server/api/apis/catalog/products.get.ts',
-  'layers/apis/server/lib/fetch-client.ts',
   'layers/apis/server/utils/catalog.ts',
   'layers/apis/shared/data/catalog/client.ts',
   'layers/apis/shared/data/catalog/mappers/category.mapper.ts',
@@ -71,15 +70,13 @@ const APIS_FILES = [
   'layers/apis/test/catalog/fake-repository.ts',
   'layers/apis/test/catalog/mappers.mapper.test.ts',
   'layers/apis/test/catalog/product.test.ts',
-  'layers/apis/test/catalog/products.test.ts',
-  'layers/apis/test/fetch-client.test.ts'
+  'layers/apis/test/catalog/products.test.ts'
 ]
 
 /** The files of the browser-runtime source (weather): the same domain, data and tests; the browser composition and composables instead of the root and the routes. */
 const BROWSER_FILES = [
   'layers/apis/app/composables/apis/useWeatherForecast.ts',
   'layers/apis/app/composables/apis/useWeatherReportForecast.ts',
-  'layers/apis/app/data/browser-client.ts',
   'layers/apis/app/data/weather.ts',
   'layers/apis/shared/data/weather/client.ts',
   'layers/apis/shared/data/weather/mappers/forecast.mapper.ts',
@@ -91,7 +88,6 @@ const BROWSER_FILES = [
   'layers/apis/shared/domain/weather/repositories/weather-repository.ts',
   'layers/apis/shared/domain/weather/use-cases/forecast.ts',
   'layers/apis/shared/domain/weather/use-cases/report-forecast.ts',
-  'layers/apis/test/browser-client.test.ts',
   'layers/apis/test/weather/fake-repository.ts',
   'layers/apis/test/weather/forecast.test.ts',
   'layers/apis/test/weather/mappers.mapper.test.ts',
@@ -201,10 +197,12 @@ describe('generate: server-runtime api sources', () => {
     expect(root).toContain('export const useCatalogApi = () => {')
     expect(root).toContain('httpCatalogRepository(catalogClient(), detail => console.error(')
     expect(root).toContain('export const catalogErrorStatus: ErrorStatusMap = {')
-    const client = read(generated, 'layers/apis/server/lib/fetch-client.ts')
+    // The core HTTP client (T3a), the one every source calls through.
+    expect(root).toContain('import { HttpFailure, createHttpClient } from \'#core/http/client\'')
+    const client = read(generated, 'layers/core/shared/http/client.ts')
     expect(client).toContain('redirect: \'manual\'')
     expect(client).toContain('AbortSignal.timeout(')
-    expect(client).toContain('url.origin !== base.origin || url.pathname !== `${base.pathname}${relative}`')
+    expect(client).toContain('url.origin !== base.origin || decoded(url.pathname) !== decoded(`${base.pathname}${written}`)')
     expect(client).toContain('const MAX_BYTES = 1_000_000')
     const route = read(generated, 'layers/apis/server/api/apis/catalog/products.get.ts')
     expect(route).toContain('getValidatedQuery(event, QuerySchema)')
@@ -283,8 +281,8 @@ describe('generate: an API with auth refuses a call when its secret is not set (
   const root = read(generated, 'layers/apis/server/utils/catalog.ts')
 
   it('the client is told when the secret is empty, and the root answers a typed not_configured naming the env var (never a value)', () => {
-    expect(root).toContain('createFetchClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? \'\').trim() === \'\' })')
-    expect(root).toContain('if (cause instanceof FetchFailure && cause.notConfigured) {')
+    expect(root).toContain('createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? \'\').trim() === \'\' })')
+    expect(root).toContain('if (cause instanceof HttpFailure && cause.notConfigured) {')
     expect(root).toContain('{ type: \'not_configured\', message: \'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY\' }')
     expect(root).toContain('  not_configured: 503')
     expect(read(generated, 'layers/apis/shared/domain/catalog/errors.ts')).toContain('  | { type: \'not_configured\', message: string }')
@@ -305,7 +303,7 @@ describe('generate: an API with auth refuses a call when its secret is not set (
   })
 
   it('has a generated unit test of the client: unset secret refused before fetch, dot segments refused', () => {
-    const test = read(generated, 'layers/apis/test/fetch-client.test.ts')
+    const test = read(generated, 'layers/core/test/infrastructure/http-client.test.ts')
     expect(test).toContain('unconfigured: true')
     expect(test).toContain('rejects.toMatchObject({ status: 0, notConfigured: true })')
     expect(test).toContain('expect(calls).toEqual([])')
@@ -428,17 +426,19 @@ describe('generate: browser-runtime api sources', () => {
     expect(root).not.toContain('nuxt/server')
   })
 
-  it('has a client over fetch that keeps the confinement of the server one, and sends no credentials', () => {
-    const client = fromWeather('app/data/browser-client.ts')
+  it('calls through the core client, as the server does, with no credentials: only `accept` and the query\'s signal', () => {
+    expect(fromWeather('app/data/weather.ts')).toContain('createHttpClient({ baseUrl, headers: { accept: \'application/json\' }, signal })')
+    const client = read(generated, 'layers/core/shared/http/client.ts')
     expect(client).toContain('redirect: \'manual\'')
     expect(client).toContain('anyOf([cancel, timeout])')
     expect(client).toContain('opaqueredirect')
     expect(client).toContain('credentials: \'omit\'')
     expect(client).toContain('AbortSignal.timeout(')
     expect(client).toContain('const MAX_BYTES = 1_000_000')
-    expect(client).toContain('url.origin !== base.origin || url.pathname !== `${base.pathname}${relative}`')
+    expect(client).toContain('url.origin !== base.origin || decoded(url.pathname) !== decoded(`${base.pathname}${written}`)')
     expect(client).toContain('/^(?:\\.|%2e){1,2}$/i')
-    expect(client).not.toMatch(/useRuntimeConfig|authorization|bearer|secret|cookie/i)
+    // It reads no setting and sets no credential: what it sends is what its caller gives it.
+    expect(client).not.toMatch(/useRuntimeConfig|authorization|bearer/i)
   })
 
   it('has composables with the signature of the server ones, calling the use-case directly (no $fetch, no route)', () => {
@@ -462,11 +462,11 @@ describe('generate: browser-runtime api sources', () => {
     expect(errors).toContain('export const invalidAnswer = (): WeatherError => ({ type: \'invalid_answer\', message: \'The "weather" API answered something unexpected\' })')
     expect(errors).toContain('console.warn')
     expect(fromWeather('app/data/weather.ts')).toContain('console.warn(\'The "weather" API answered something unexpected: \' + detail)')
-    expect(fromWeather('app/data/browser-client.ts')).toContain('throw new Error(result.error.message)')
+    expect(fromWeather('app/data/api-query.ts')).toContain('throw new Error(result.error.message)')
   })
 
   it('has no auth at all: nothing reads a secret, nothing sets a credential header', () => {
-    const text = BROWSER_FILES.filter(path => path.includes('weather') || path.includes('browser-client')).map(path => fromWeather(path.replace(SOURCE, ''))).join('\n')
+    const text = BROWSER_FILES.filter(path => path.includes('weather')).map(path => fromWeather(path.replace(SOURCE, ''))).join('\n')
     expect(text).not.toMatch(/authorization|bearer|api[-_ ]?key|secret|not_configured|unconfigured|cookie/i)
     expect(fromWeather('app/data/weather.ts')).toContain('no auth')
   })
@@ -486,7 +486,7 @@ describe('generate: browser-runtime api sources', () => {
   })
 
   it('has a generated unit test of the client, and the unit project runs the tests of a browser-only project', () => {
-    const test = fromWeather('test/browser-client.test.ts')
+    const test = read(generated, 'layers/core/test/infrastructure/http-client.test.ts')
     expect(test).toContain('credentials: \'omit\'')
     expect(test).toContain('expect(calls).toEqual([])')
     expect(test).toContain('\'%2e%2e\'')

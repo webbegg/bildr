@@ -59,3 +59,9 @@ export const useApiAction = <Input, Output>(call: (input: Input) => Promise<Outp
   }
   return { run, pending, error }
 }
+
+/** What a use-case answered: its value, or its error thrown with the message the UI shows (an invalid answer's is generic: its detail went to the console). */
+export const valueOrThrow = <T>(result: Result<T, { message: string }>): T => {
+  if (!result.ok) throw new Error(result.error.message)
+  return result.value
+}

@@ -44,8 +44,16 @@ describe('generated browser composition and composables, run', () => {
     const loaded = loadModel(fixtureModelFiles())
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems))
     const sources = new Map(generate(loaded.model).map(file => [file.path, file.content]))
-    sources.set('layers/apis/app/data/api-query.ts', QUERY_STUB)
-    const aliases: Record<string, string> = { '#core/kernel/result': 'layers/core/shared/kernel/result.ts', '#core/kernel/ids': 'layers/core/shared/kernel/ids.ts' }
+    // The query helpers are stubbed (TanStack, Vue), but `valueOrThrow` is the generated one: it is what turns a use-case's error into the UI's.
+    const helpers = sources.get('layers/apis/app/data/api-query.ts')!
+    const start = helpers.indexOf('export const valueOrThrow')
+    expect(start).toBeGreaterThan(-1)
+    sources.set('layers/apis/app/data/api-query.ts', `${QUERY_STUB}\n${helpers.slice(start, helpers.indexOf('\n}\n', start) + 3)}`)
+    const aliases: Record<string, string> = {
+      '#core/kernel/result': 'layers/core/shared/kernel/result.ts',
+      '#core/kernel/ids': 'layers/core/shared/kernel/ids.ts',
+      '#core/http/client': 'layers/core/shared/http/client.ts'
+    }
     mkdirSync(join(dir, 'stubs'), { recursive: true })
     writeFileSync(join(dir, 'stubs/app.mjs'), APP_STUB)
     const zod = import.meta.resolve('zod')

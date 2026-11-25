@@ -15,9 +15,10 @@ import { fixtureModelFiles } from '../model/fixture'
  * base URL, with the secret. A path parameter is encoded with encodeURIComponent, which leaves "." and "..": as a whole segment the URL
  * parser resolves them, so `/products/:id/reviews` with a text id ".." called `/v1/reviews` with the server's secret.
  */
-type Client = (options: { baseUrl: string, headers: Record<string, string>, unconfigured?: boolean }) => (path: string, request: { method: 'GET' }) => Promise<unknown>
+type Client = (options: { baseUrl: string, headers?: Record<string, string>, unconfigured?: boolean }) => (path: string, request: { method: 'GET' }) => Promise<unknown>
 
-describe('generated fetch client: dot segments in a path parameter', () => {
+// codegen-architecture T3a: the server sources call through the core HTTP client (layers/core/shared/http/client.ts).
+describe('generated HTTP client, as the server calls it: dot segments in a path parameter', () => {
   const seen: string[] = []
   const server = createServer((request, response) => {
     seen.push(request.url!)
@@ -25,15 +26,15 @@ describe('generated fetch client: dot segments in a path parameter', () => {
     response.end('{}')
   })
   let baseUrl = ''
-  let createFetchClient: Client
-  const dir = mkdtempSync(join(tmpdir(), 'bildr-fetch-client-'))
+  let createHttpClient: Client
+  const dir = mkdtempSync(join(tmpdir(), 'bildr-http-client-'))
   beforeAll(async () => {
     const loaded = loadModel(fixtureModelFiles())
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems))
-    const source = generate(loaded.model).find(file => file.path === 'layers/apis/server/lib/fetch-client.ts')!.content
+    const source = generate(loaded.model).find(file => file.path === 'layers/core/shared/http/client.ts')!.content
     const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
-    writeFileSync(join(dir, 'fetch-client.mjs'), js)
-    createFetchClient = ((await import(pathToFileURL(join(dir, 'fetch-client.mjs')).href)) as { createFetchClient: Client }).createFetchClient
+    writeFileSync(join(dir, 'client.mjs'), js)
+    createHttpClient = ((await import(pathToFileURL(join(dir, 'client.mjs')).href)) as { createHttpClient: Client }).createHttpClient
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`
   })
@@ -44,7 +45,7 @@ describe('generated fetch client: dot segments in a path parameter', () => {
 
   it.each(['..', '.'])('never calls another path for a path parameter %j', async (id) => {
     seen.length = 0
-    const call = createFetchClient({ baseUrl, headers: { authorization: 'Bearer secret' } })
+    const call = createHttpClient({ baseUrl, headers: { authorization: 'Bearer secret' } })
     // What http<S>Repository builds for `/products/:id/reviews` with a text path parameter.
     await call(`/products/${encodeURIComponent(id)}/reviews`, { method: 'GET' }).catch(() => undefined)
     // Either refused, or sent to /v1/products/<one segment>/reviews.
@@ -54,14 +55,14 @@ describe('generated fetch client: dot segments in a path parameter', () => {
   // Verify R3-003: the client is the last guard, so it refuses the encoded dot segments too when it is given one straight.
   it.each(['..', '.', '%2e%2e', '%2E.', '.%2e', '%2e', '%2E%2E'])('refuses a path with the dot segment %j, and the server sees no request', async (segment) => {
     seen.length = 0
-    const call = createFetchClient({ baseUrl, headers: { authorization: 'Bearer secret' } })
-    await expect(call(`/products/${segment}/reviews`, { method: 'GET' })).rejects.toMatchObject({ name: 'FetchFailure', status: 0, message: 'was asked for a path with a "." or ".." segment' })
+    const call = createHttpClient({ baseUrl, headers: { authorization: 'Bearer secret' } })
+    await expect(call(`/products/${segment}/reviews`, { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure', status: 0, message: 'was asked for a path with a "." or ".." segment' })
     expect(seen).toEqual([])
   })
 
   it('still calls a path whose segment only contains dots or encoded dots', async () => {
     seen.length = 0
-    const call = createFetchClient({ baseUrl, headers: {} })
+    const call = createHttpClient({ baseUrl })
     await call('/products/a.b/%2e%2ex', { method: 'GET' })
     expect(seen).toEqual(['/v1/products/a.b/%2e%2ex'])
   })
@@ -69,14 +70,14 @@ describe('generated fetch client: dot segments in a path parameter', () => {
   // Verify R3-004: a source with auth whose secret is not set must not call the API without credentials.
   it('refuses a call, before sending it, when the secret is not set (unconfigured)', async () => {
     seen.length = 0
-    const call = createFetchClient({ baseUrl, headers: { accept: 'application/json' }, unconfigured: true })
-    await expect(call('/products', { method: 'GET' })).rejects.toMatchObject({ name: 'FetchFailure', status: 0, notConfigured: true })
+    const call = createHttpClient({ baseUrl, headers: { accept: 'application/json' }, unconfigured: true })
+    await expect(call('/products', { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure', status: 0, notConfigured: true })
     expect(seen).toEqual([])
   })
 
   it('calls the API when the secret is set, and a failure of the call is not "not configured"', async () => {
     seen.length = 0
-    const call = createFetchClient({ baseUrl, headers: { authorization: 'Bearer secret' }, unconfigured: false })
+    const call = createHttpClient({ baseUrl, headers: { authorization: 'Bearer secret' }, unconfigured: false })
     await call('/products', { method: 'GET' })
     expect(seen).toEqual(['/v1/products'])
     await expect(call('/products/%2e%2e', { method: 'GET' })).rejects.toMatchObject({ notConfigured: false })

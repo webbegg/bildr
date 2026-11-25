@@ -2,8 +2,7 @@
 import type { MaybeRefOrGetter } from 'vue'
 import type { Forecast } from '../../../shared/domain/weather/entities/forecast'
 import type { ForecastInput } from '../../../shared/domain/weather/use-cases/forecast'
-import { useApiQuery } from '../../data/api-query'
-import { valueOrThrow } from '../../data/browser-client'
+import { useApiQuery, valueOrThrow } from '../../data/api-query'
 import { useWeatherApi } from '../../data/weather'
 
 /** Query "forecast" of the "weather" API (The forecast of one city): `data`, `pending` and `error` are refs; it fetches again when the input changes. It calls the API from the page, through the use-case. */

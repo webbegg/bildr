@@ -40,15 +40,17 @@ describe('a query or an action named like a reserved word is refused', () => {
   })
 
   it('every word of the list is a name no query can take', () => {
+    // One project for every word: a refused edit changes nothing (a new one each made the test slow enough to time out in CI).
+    const p = shop()
     for (const name of JS_RESERVED_WORDS) {
       if (!/^[a-z][A-Za-z0-9]*$/.test(name)) continue
-      shop().refuse('api_query_set', { datasource: 'ds_shop', query: items(name) }, 'invalid')
+      p.refuse('api_query_set', { datasource: 'ds_shop', query: items(name) }, 'invalid')
     }
   })
 })
 
 describe('a name the generated files import or declare is refused', () => {
-  it.each(['remoteFailed', 'invalidAnswer', 'invalidInput', 'useRuntimeConfig', 'createFetchClient', 'httpShopRepository', 'fakeShopRepository', 'z', 'ok', 'err', 'describe', 'segment', 'shop', 'useShopApi', 'shopClient', 'shopErrorStatus'])('query %s', (name) => {
+  it.each(['remoteFailed', 'invalidAnswer', 'invalidInput', 'useRuntimeConfig', 'createHttpClient', 'httpShopRepository', 'fakeShopRepository', 'z', 'ok', 'err', 'describe', 'segment', 'shop', 'useShopApi', 'shopClient', 'shopErrorStatus'])('query %s', (name) => {
     const message = shop().refuse('api_query_set', { datasource: 'ds_shop', query: items(name) }, 'invalid').message
     expect(message).toContain(`API "shop": the query "${name}" would be named ${name}`)
     expect(message).toContain('pick another name')
@@ -123,7 +125,7 @@ describe('a source name and a secret name the generated code can\'t take', () =>
     expect(root).not.toMatch(/const \{/)
   })
 
-  it.each(['browser-client', 'api-query'])('a browser source named %s would be the file of the client or of the helpers every browser source shares: refused with a name message, at create, at rename and at a switch to the browser', (name) => {
+  it.each(['api-query'])('a browser source named %s would be the file of the helpers every browser source shares: refused with a name message, at create, at rename and at a switch to the browser', (name) => {
     const taken = `API "${name}": "${name}" is the name of a file every browser API source shares (layers/apis/app/data/${name}.ts, where its own composition would go): pick another name`
     expect(project().refuse('api_create', { name, baseUrl: 'https://x.example.com', runtime: 'browser' }, 'invalid').message).toBe(taken)
     const p = shop({ runtime: 'browser' })
@@ -285,7 +287,7 @@ describe('what the generator declares is in the reserved lists (drift guard)', (
     // `undefined` and the other words of the language are refused as the name of an operation on their own (JS_RESERVED_WORDS).
     const known = new Set<string>([...Object.values(API_DECLARED_NAMES).flat(), ...JS_RESERVED_WORDS])
     // The shared files import nothing the model names, so a global they use can't be hidden by an operation or a model: they are not held to this.
-    const shared = new Set(['layers/apis/server/lib/fetch-client.ts', 'layers/apis/app/data/api-query.ts', 'layers/apis/app/data/browser-client.ts', 'layers/apis/test/browser-client.test.ts', 'layers/apis/test/fetch-client.test.ts', 'layers/apis/nuxt.config.ts'])
+    const shared = new Set(['layers/apis/app/data/api-query.ts', 'layers/apis/nuxt.config.ts'])
     const missing: string[] = []
     for (const file of files.filter(entry => !shared.has(entry.path))) {
       for (const name of globalsIn(file.content)) if (!known.has(name)) missing.push(`${file.path}: ${name}`)
@@ -295,14 +297,14 @@ describe('what the generator declares is in the reserved lists (drift guard)', (
     expect(files.some(file => globalsIn(file.content).has('console'))).toBe(true)
   })
 
-  it.each(['createBrowserClient', 'valueOrThrow'])('a query named %s (the browser composition and composables import it) is refused', (name) => {
+  it.each([['valueOrThrow', 'the helpers of the browser runtime'], ['createHttpClient', 'the core HTTP client (both runtimes)']])('a query named %s (the browser composition and composables import it) is refused', (name, where) => {
     const message = shop({ runtime: 'browser' }).refuse('api_query_set', { datasource: 'ds_shop', query: items(name) }, 'invalid').message
-    expect(message).toContain(`the query "${name}" would be named ${name}, which is already declared or imported by the generated files (the helpers of the browser runtime)`)
+    expect(message).toContain(`the query "${name}" would be named ${name}, which is already declared or imported by the generated files (${where})`)
   })
 
-  it('a model named BrowserFailure (the browser composition imports it) is refused', () => {
-    const message = shop({ runtime: 'browser' }).refuse('api_model_set', { datasource: 'ds_shop', model: { name: 'BrowserFailure', fields: [{ name: 'id', type: 'integer' }] } }, 'invalid').message
-    expect(message).toContain('the type of the model BrowserFailure would be named BrowserFailure, which is already declared or imported by the generated files (the helpers of the browser runtime)')
+  it('a model named HttpFailure (the compositions import it) is refused', () => {
+    const message = shop({ runtime: 'browser' }).refuse('api_model_set', { datasource: 'ds_shop', model: { name: 'HttpFailure', fields: [{ name: 'id', type: 'integer' }] } }, 'invalid').message
+    expect(message).toContain('the type of the model HttpFailure would be named HttpFailure, which is already declared or imported by the generated files (the core HTTP client (both runtimes))')
   })
 
   it('every name an API file declares or imports, and every type it uses, is derived from the model or in the fixed lists', () => {
@@ -316,8 +318,8 @@ describe('what the generator declares is in the reserved lists (drift guard)', (
       for (const claim of apiNameClaims(source as ApiSource)) known.add(claim.name)
       for (const name of Object.values(apiSourceIdentifiers(source.name))) known.add(name)
     }
-    const shared = new Set(['layers/apis/server/lib/fetch-client.ts', 'layers/apis/app/data/api-query.ts', 'layers/apis/app/data/browser-client.ts', 'layers/apis/test/browser-client.test.ts', 'layers/apis/nuxt.config.ts'])
-    expect(files.map(file => file.path)).toEqual(expect.arrayContaining(['layers/apis/app/data/far.ts', 'layers/apis/app/data/browser-client.ts', 'layers/apis/app/composables/apis/useFarThings.ts']))
+    const shared = new Set(['layers/apis/app/data/api-query.ts', 'layers/apis/nuxt.config.ts'])
+    expect(files.map(file => file.path)).toEqual(expect.arrayContaining(['layers/apis/app/data/far.ts', 'layers/apis/app/composables/apis/useFarThings.ts']))
     const missing: string[] = []
     for (const file of files.filter(entry => !shared.has(entry.path))) {
       const { declared, used } = namesIn(file.content)

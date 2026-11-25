@@ -2,21 +2,21 @@
 // Composition of the "weather" API in the browser: the only place where its use-cases meet the HTTP repository.
 // It runs in the page, so it has no auth at all (a key could not stay hidden here: an API that needs one runs on the server) and sends no credentials.
 import { useRuntimeConfig } from '#app'
+import { HttpFailure, createHttpClient } from '#core/http/client'
 import type { ApiClient } from '../../shared/data/weather/client'
 import { httpWeatherRepository } from '../../shared/data/weather/repositories/weather-repository.http'
 import { WeatherFailure, remoteFailed } from '../../shared/domain/weather/errors'
 import { forecast } from '../../shared/domain/weather/use-cases/forecast'
 import { reportForecast } from '../../shared/domain/weather/use-cases/report-forecast'
-import { BrowserFailure, createBrowserClient } from './browser-client'
 
 /** The HTTP client of the "weather" API: it calls the base URL it is given (the one of runtimeConfig.public.apis.weather), and nothing else. `signal` cancels its calls. */
 const weatherClient = (baseUrl: string, signal?: AbortSignal): ApiClient => {
-  const call = createBrowserClient({ baseUrl, signal })
+  const call = createHttpClient({ baseUrl, headers: { accept: 'application/json' }, signal })
   return async (path, request) => {
     try {
       return await call(path, request)
     } catch (cause) {
-      if (cause instanceof BrowserFailure) throw new WeatherFailure(remoteFailed(cause.status, cause.message))
+      if (cause instanceof HttpFailure) throw new WeatherFailure(remoteFailed(cause.status, cause.message))
       throw cause
     }
   }

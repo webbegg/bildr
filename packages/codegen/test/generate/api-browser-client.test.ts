@@ -11,17 +11,18 @@ import { loadModel } from '../../src/model/load'
 import { fixtureModelFiles } from '../model/fixture'
 
 /**
- * Simple data S8 / P3: the browser client of the API sources keeps the guards of the server one (the path is the one the model built,
- * under the base URL, no dot segments, no redirect followed, a size cap) and sends no credentials. The generated file is run for real
- * (Node's fetch), against a local server and a second one a redirect would lead to.
+ * Simple data S8 / P3, codegen-architecture T3a: the core HTTP client, as a browser source's composition uses it (`accept`, no
+ * sign-in, the query's signal), keeps every guard (the path is the one the model built, under the base URL, no dot segments, no
+ * redirect followed, a size cap) and sends no credentials. The generated file is run for real (Node's fetch), against a local server
+ * and a second one a redirect would lead to.
  */
 interface Request { method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', query?: Record<string, string | number | boolean | undefined>, body?: unknown }
+type Call = (path: string, request: Request) => Promise<unknown>
 interface Module {
-  createBrowserClient: (options: { baseUrl: string, signal?: AbortSignal }) => (path: string, request: Request) => Promise<unknown>
-  valueOrThrow: <T>(result: { ok: true, value: T } | { ok: false, error: { message: string } }) => T
+  createHttpClient: (options: { baseUrl: string, headers?: Record<string, string>, signal?: AbortSignal }) => Call
 }
 
-describe('generated browser client', () => {
+describe('generated HTTP client, as the page calls it', () => {
   const seen: Array<{ method?: string, url?: string, headers: Record<string, string | string[] | undefined>, body: string }> = []
   const elsewhere: string[] = []
   const other = createServer((request, response) => {
@@ -62,14 +63,16 @@ describe('generated browser client', () => {
   })
   let baseUrl = ''
   let client: Module
-  const dir = mkdtempSync(join(tmpdir(), 'bildr-browser-client-'))
+  /** The client as a browser source's composition makes it (app/data/<s>.ts). */
+  const browser = (options: { baseUrl: string, signal?: AbortSignal }) => client.createHttpClient({ headers: { accept: 'application/json' }, ...options })
+  const dir = mkdtempSync(join(tmpdir(), 'bildr-http-client-'))
   beforeAll(async () => {
     const loaded = loadModel(fixtureModelFiles())
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems))
-    const source = generate(loaded.model).find(file => file.path === 'layers/apis/app/data/browser-client.ts')!.content
+    const source = generate(loaded.model).find(file => file.path === 'layers/core/shared/http/client.ts')!.content
     const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
-    writeFileSync(join(dir, 'browser-client.mjs'), js)
-    client = (await import(pathToFileURL(join(dir, 'browser-client.mjs')).href)) as Module
+    writeFileSync(join(dir, 'client.mjs'), js)
+    client = (await import(pathToFileURL(join(dir, 'client.mjs')).href)) as Module
     await new Promise<void>(resolve => other.listen(0, '127.0.0.1', resolve))
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
     otherUrl = `http://127.0.0.1:${(other.address() as AddressInfo).port}`
@@ -83,7 +86,7 @@ describe('generated browser client', () => {
 
   it('calls the path under the base URL with the query (an undefined value is not sent) and sends no credentials', async () => {
     seen.length = 0
-    const call = client.createBrowserClient({ baseUrl })
+    const call = browser({ baseUrl })
     await expect(call('/things', { method: 'GET', query: { q: 'a b', page: 2, skip: undefined } })).resolves.toEqual({ ok: true })
     expect(seen.map(entry => entry.url)).toEqual(['/v1/things?q=a+b&page=2'])
     expect(seen[0]!.headers.accept).toBe('application/json')
@@ -92,23 +95,23 @@ describe('generated browser client', () => {
 
   it('sends a body as JSON', async () => {
     seen.length = 0
-    await client.createBrowserClient({ baseUrl })('/reports', { method: 'POST', body: { city: 'Lisbon' } })
+    await browser({ baseUrl })('/reports', { method: 'POST', body: { city: 'Lisbon' } })
     expect(seen[0]).toMatchObject({ method: 'POST', url: '/v1/reports', body: '{"city":"Lisbon"}' })
     expect(seen[0]!.headers['content-type']).toBe('application/json')
   })
 
   it.each(['..', '.', '%2e%2e', '%2E.', '.%2e', '%2e'])('refuses a path with the dot segment %j, and the server sees no request', async (segment) => {
     seen.length = 0
-    await expect(client.createBrowserClient({ baseUrl })(`/things/${segment}/parts`, { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', status: 0, message: 'was asked for a path with a "." or ".." segment' })
+    await expect(browser({ baseUrl })(`/things/${segment}/parts`, { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure', status: 0, message: 'was asked for a path with a "." or ".." segment' })
     expect(seen).toEqual([])
   })
 
   it('refuses a path that is not under the base URL (a second slash would be another host)', async () => {
     seen.length = 0
     elsewhere.length = 0
-    const call = client.createBrowserClient({ baseUrl })
-    await expect(call(`//${otherUrl.slice('http://'.length)}/things`, { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', message: 'was asked for a path outside its base URL' })
-    await expect(call('/../other', { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure' })
+    const call = browser({ baseUrl })
+    await expect(call(`//${otherUrl.slice('http://'.length)}/things`, { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure', message: 'was asked for a path outside its base URL' })
+    await expect(call('/../other', { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure' })
     expect(seen).toEqual([])
     expect(elsewhere).toEqual([])
   })
@@ -116,36 +119,31 @@ describe('generated browser client', () => {
   it('does not follow a redirect: the other host is never asked', async () => {
     seen.length = 0
     elsewhere.length = 0
-    await expect(client.createBrowserClient({ baseUrl })('/redirect', { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', message: 'answered 302: a redirect is not followed' })
+    await expect(browser({ baseUrl })('/redirect', { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure', message: 'answered 302: a redirect is not followed' })
     expect(seen.map(entry => entry.url)).toEqual(['/v1/redirect'])
     expect(elsewhere).toEqual([])
   })
 
   it('fails with the status, and never carries the body of the answer', async () => {
-    const failure = await client.createBrowserClient({ baseUrl })('/fail', { method: 'GET' }).catch((error: Error) => error)
-    expect(failure).toMatchObject({ name: 'BrowserFailure', status: 500, message: 'answered 500' })
+    const failure = await browser({ baseUrl })('/fail', { method: 'GET' }).catch((error: Error) => error)
+    expect(failure).toMatchObject({ name: 'HttpFailure', status: 500, message: 'answered 500' })
     expect(JSON.stringify(failure)).not.toContain('upstream')
   })
 
   it('refuses an answer over 1 MB, answers undefined for an empty one and fails for one without JSON', async () => {
-    const call = client.createBrowserClient({ baseUrl })
-    await expect(call('/big', { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', message: 'answered more than 1 MB' })
+    const call = browser({ baseUrl })
+    await expect(call('/big', { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure', message: 'answered more than 1 MB' })
     await expect(call('/empty', { method: 'GET' })).resolves.toBeUndefined()
-    await expect(call('/text', { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', message: 'answered without JSON' })
+    await expect(call('/text', { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure', message: 'answered without JSON' })
   })
 
   it('does not throw when it is made with a base URL that is not one: the call fails, nothing is sent', async () => {
     seen.length = 0
     for (const bad of ['', 'not a url', undefined as unknown as string]) {
-      const call = client.createBrowserClient({ baseUrl: bad })
-      await expect(call('/things', { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', status: 0, message: 'has no valid base URL' })
+      const call = browser({ baseUrl: bad })
+      await expect(call('/things', { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure', status: 0, message: 'has no valid base URL' })
     }
     expect(seen).toEqual([])
-  })
-
-  it('valueOrThrow gives the value of an ok answer and throws the message of an error', () => {
-    expect(client.valueOrThrow({ ok: true, value: 3 })).toBe(3)
-    expect(() => client.valueOrThrow({ ok: false, error: { message: 'The "weather" API answered 503.' } })).toThrow('The "weather" API answered 503.')
   })
 
   // Verify R3-001, R3-002, R3-003: the branches a real local server can't reach, run with a fake `fetch`.
@@ -191,7 +189,7 @@ describe('generated browser client', () => {
       const { state, response } = streamed(5 * MB)
       expect(response.headers.get('content-length')).toBeNull()
       fakeFetch(async () => response)
-      await expect(client.createBrowserClient({ baseUrl })('/chunked', { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', status: 200, message: 'answered more than 1 MB' })
+      await expect(browser({ baseUrl })('/chunked', { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure', status: 200, message: 'answered more than 1 MB' })
       expect(state.cancelled).toBe(true)
       expect(state.sent).toBeLessThan(5 * MB)
     })
@@ -199,7 +197,7 @@ describe('generated browser client', () => {
     it('refuses an answer over 1 MB whose Content-Length says it is small', async () => {
       const { state, response } = streamed(2 * MB, { 'content-length': '10' })
       fakeFetch(async () => response)
-      await expect(client.createBrowserClient({ baseUrl })('/lies', { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', message: 'answered more than 1 MB' })
+      await expect(browser({ baseUrl })('/lies', { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure', message: 'answered more than 1 MB' })
       expect(state.cancelled).toBe(true)
     })
 
@@ -213,33 +211,36 @@ describe('generated browser client', () => {
           controller.close()
         }
       })))
-      await expect(client.createBrowserClient({ baseUrl })('/limit', { method: 'GET' })).resolves.toHaveLength(MB - 2)
+      await expect(browser({ baseUrl })('/limit', { method: 'GET' })).resolves.toHaveLength(MB - 2)
     })
 
     it('fails on an opaqueredirect (the browser hides a redirect it did not follow: status 0), reading nothing', async () => {
       const cancelled = vi.fn()
       const opaque = { type: 'opaqueredirect', status: 0, ok: false, headers: new Headers(), body: { cancel: cancelled } } as unknown as Response
       fakeFetch(async () => opaque)
-      await expect(client.createBrowserClient({ baseUrl })('/moved', { method: 'GET' })).rejects.toMatchObject({ name: 'BrowserFailure', status: 0, message: 'answered a redirect, which is not followed' })
+      await expect(browser({ baseUrl })('/moved', { method: 'GET' })).rejects.toMatchObject({ name: 'HttpFailure', status: 0, message: 'answered a redirect, which is not followed' })
       expect(cancelled).toHaveBeenCalled()
     })
 
-    it('fails with the generic failure when the fetch rejects (network error, or a refusal by CORS: the browser says no more)', async () => {
+    it('fails with the generic failure when the fetch rejects: in a page, a refusal by CORS too (the browser says no more)', async () => {
       fakeFetch(async () => {
         throw new TypeError('Failed to fetch')
       })
-      const failure = await client.createBrowserClient({ baseUrl })('/things', { method: 'GET' }).catch((error: Error) => error)
-      expect(failure).toMatchObject({ name: 'BrowserFailure', status: 0, message: 'couldn\'t be reached, or doesn\'t allow calls from this page' })
-      expect(JSON.stringify(failure)).not.toContain('Failed to fetch')
+      const onServer = await browser({ baseUrl })('/things', { method: 'GET' }).catch((error: Error) => error)
+      expect(onServer).toMatchObject({ name: 'HttpFailure', status: 0, message: 'couldn\'t be reached' })
+      vi.stubGlobal('window', {})
+      const inPage = await browser({ baseUrl })('/things', { method: 'GET' }).catch((error: Error) => error)
+      expect(inPage).toMatchObject({ name: 'HttpFailure', status: 0, message: 'couldn\'t be reached, or doesn\'t allow calls from this page' })
+      expect(JSON.stringify(inPage)).not.toContain('Failed to fetch')
     })
 
     it('fails when the answer does not come within the timeout (the 10 s signal aborts)', async () => {
       const timeout = new AbortController()
       vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
       const inits = fakeFetch(hangs)
-      const call = client.createBrowserClient({ baseUrl })('/slow', { method: 'GET' })
+      const call = browser({ baseUrl })('/slow', { method: 'GET' })
       timeout.abort()
-      await expect(call).rejects.toMatchObject({ name: 'BrowserFailure', status: 0, message: 'didn\'t answer within 10 s' })
+      await expect(call).rejects.toMatchObject({ name: 'HttpFailure', status: 0, message: 'didn\'t answer within 10 s' })
       expect(AbortSignal.timeout).toHaveBeenCalledWith(10_000)
       expect(inits[0]!.signal).toBeInstanceOf(AbortSignal)
     })
@@ -250,10 +251,10 @@ describe('generated browser client', () => {
       fakeFetch(async init => new Response(new ReadableStream<Uint8Array>({
         pull: () => new Promise<void>((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true }))
       })))
-      const call = client.createBrowserClient({ baseUrl })('/trickle', { method: 'GET' })
+      const call = browser({ baseUrl })('/trickle', { method: 'GET' })
       await new Promise(resolve => setTimeout(resolve, 20))
       timeout.abort()
-      await expect(call).rejects.toMatchObject({ name: 'BrowserFailure', status: 0, message: 'didn\'t answer within 10 s' })
+      await expect(call).rejects.toMatchObject({ name: 'HttpFailure', status: 0, message: 'didn\'t answer within 10 s' })
     })
 
     // Verify R3-003: TanStack gives each fetch of a query an AbortSignal, and a cancelled query must not keep its request.
@@ -261,10 +262,10 @@ describe('generated browser client', () => {
       it('aborting it cancels the request that is under way', async () => {
         const cancel = new AbortController()
         const inits = fakeFetch(hangs)
-        const call = client.createBrowserClient({ baseUrl, signal: cancel.signal })('/slow', { method: 'GET' })
+        const call = browser({ baseUrl, signal: cancel.signal })('/slow', { method: 'GET' })
         expect(inits[0]!.signal!.aborted).toBe(false)
         cancel.abort()
-        await expect(call).rejects.toMatchObject({ name: 'BrowserFailure', status: 0, message: 'was cancelled' })
+        await expect(call).rejects.toMatchObject({ name: 'HttpFailure', status: 0, message: 'was cancelled' })
         expect(inits[0]!.signal!.aborted).toBe(true)
       })
 
@@ -273,15 +274,15 @@ describe('generated browser client', () => {
         fakeFetch(async init => new Response(new ReadableStream<Uint8Array>({
           pull: () => new Promise<void>((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true }))
         })))
-        const call = client.createBrowserClient({ baseUrl, signal: cancel.signal })('/trickle', { method: 'GET' })
+        const call = browser({ baseUrl, signal: cancel.signal })('/trickle', { method: 'GET' })
         await new Promise(resolve => setTimeout(resolve, 20))
         cancel.abort()
-        await expect(call).rejects.toMatchObject({ name: 'BrowserFailure', message: 'was cancelled' })
+        await expect(call).rejects.toMatchObject({ name: 'HttpFailure', message: 'was cancelled' })
       })
 
       it('a signal that is already aborted sends a request that is cancelled at once', async () => {
         const inits = fakeFetch(hangs)
-        await expect(client.createBrowserClient({ baseUrl, signal: AbortSignal.abort() })('/slow', { method: 'GET' })).rejects.toMatchObject({ message: 'was cancelled' })
+        await expect(browser({ baseUrl, signal: AbortSignal.abort() })('/slow', { method: 'GET' })).rejects.toMatchObject({ message: 'was cancelled' })
         expect(inits[0]!.signal!.aborted).toBe(true)
       })
 
@@ -289,14 +290,14 @@ describe('generated browser client', () => {
         const timeout = new AbortController()
         vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
         fakeFetch(hangs)
-        const call = client.createBrowserClient({ baseUrl, signal: new AbortController().signal })('/slow', { method: 'GET' })
+        const call = browser({ baseUrl, signal: new AbortController().signal })('/slow', { method: 'GET' })
         timeout.abort()
         await expect(call).rejects.toMatchObject({ status: 0, message: 'didn\'t answer within 10 s' })
       })
 
       it('a call that is not cancelled answers as it did', async () => {
         const inits = fakeFetch(async () => new Response('{"ok":true}', { status: 200 }))
-        await expect(client.createBrowserClient({ baseUrl, signal: new AbortController().signal })('/things', { method: 'GET' })).resolves.toEqual({ ok: true })
+        await expect(browser({ baseUrl, signal: new AbortController().signal })('/things', { method: 'GET' })).resolves.toEqual({ ok: true })
         expect(inits[0]!.signal!.aborted).toBe(false)
       })
 
@@ -306,18 +307,18 @@ describe('generated browser client', () => {
         try {
           const cancel = new AbortController()
           const inits = fakeFetch(hangs)
-          const call = client.createBrowserClient({ baseUrl, signal: cancel.signal })('/slow', { method: 'GET' })
+          const call = browser({ baseUrl, signal: cancel.signal })('/slow', { method: 'GET' })
           cancel.abort()
           await expect(call).rejects.toMatchObject({ message: 'was cancelled' })
           expect(inits[0]!.signal!.aborted).toBe(true)
           const timeout = new AbortController()
           vi.spyOn(AbortSignal, 'timeout').mockReturnValue(timeout.signal)
           fakeFetch(hangs)
-          const late = client.createBrowserClient({ baseUrl, signal: new AbortController().signal })('/slow', { method: 'GET' })
+          const late = browser({ baseUrl, signal: new AbortController().signal })('/slow', { method: 'GET' })
           timeout.abort()
           await expect(late).rejects.toMatchObject({ message: 'didn\'t answer within 10 s' })
           vi.restoreAllMocks()
-          await expect(client.createBrowserClient({ baseUrl, signal: AbortSignal.abort() })('/slow', { method: 'GET' })).rejects.toMatchObject({ message: 'was cancelled' })
+          await expect(browser({ baseUrl, signal: AbortSignal.abort() })('/slow', { method: 'GET' })).rejects.toMatchObject({ message: 'was cancelled' })
         } finally {
           Object.defineProperty(AbortSignal, 'any', any)
         }

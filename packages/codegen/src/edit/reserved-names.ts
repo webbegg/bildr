@@ -133,7 +133,7 @@ export const LINT_RESTRICTED_FOLDERS: readonly string[] = ['app', 'server', 'inf
  * The files of `layers/apis/app/data/` every browser source shares (generate/api-browser.ts and api-server.ts): a browser source's own
  * composition is `app/data/<name>.ts`, so a source with one of these names would write to the same file.
  */
-export const BROWSER_SHARED_FILES: readonly string[] = ['browser-client', 'api-query']
+export const BROWSER_SHARED_FILES: readonly string[] = ['api-query']
 
 /**
  * What the generated files of an API source import or declare by a name that doesn't come from the model, by where it comes from.
@@ -146,11 +146,12 @@ export const API_DECLARED_NAMES: Record<string, string[]> = {
   'the error helpers of the domain': ['remoteFailed', 'invalidAnswer', 'invalidInput'],
   'the locals of the generated functions': ['input', 'parsed', 'cause', 'deps', 'repository', 'result', 'http', 'calls', 'answer', 'read', 'itemsAt', 'segment', 'headerValue', 'recording', 'unused', 'methods', 'query', 'body', 'params', 'event', 'signal', 'headers', 'call', 'config', 'secret', 'path', 'request', 'baseUrl', 'fetch', 'text', 'value', 'api'],
   'the vitest imports of the generated tests': ['describe', 'expect', 'it'],
-  'the helpers of the server runtime': ['useRuntimeConfig', 'createFetchClient', 'defineEventHandler', 'getValidatedQuery', 'readValidatedBody', 'setResponseStatus', 'unwrapOrThrow', 'useApiQuery', 'useApiAction'],
-  'the helpers of the browser runtime': ['createBrowserClient', 'BrowserFailure', 'valueOrThrow'],
+  'the helpers of the server runtime': ['useRuntimeConfig', 'defineEventHandler', 'getValidatedQuery', 'readValidatedBody', 'setResponseStatus', 'unwrapOrThrow', 'useApiQuery', 'useApiAction'],
+  'the helpers of the browser runtime': ['valueOrThrow'],
+  'the core HTTP client (both runtimes)': ['createHttpClient', 'HttpFailure'],
   'the kernel schemas an entity imports': ['IdSchema', 'TimestampSchema'],
-  'the types the generated files import': ['ApiClient', 'ApiRequest', 'ErrorStatusMap', 'FetchFailure', 'MaybeRefOrGetter', 'QuerySchema'],
+  'the types the generated files import': ['ApiClient', 'ApiRequest', 'ErrorStatusMap', 'MaybeRefOrGetter', 'QuerySchema'],
   // `console` is called, and `AbortSignal` named as a type, in the composition next to the use-cases it imports under their own names: an operation called `console` would hide it.
-  // Only the globals of files that also name something of the model are here: the shared clients (BrowserFailure, createFetchClient…) import nothing from it.
+  // Only the globals of files that also name something of the model are here: the core HTTP client (HttpFailure, createHttpClient…) imports nothing from it.
   'a global the generated files use': ['Array', 'Error', 'Object', 'Partial', 'Promise', 'Record', 'String', 'T', 'console', 'encodeURIComponent', 'AbortSignal']
 }
