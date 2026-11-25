@@ -6,6 +6,7 @@ import { datasourceOf, entityById, entityNames, moduleContext, repositoryOf } fr
 import type { ModuleContext } from './context.ts'
 import { domainFile } from './entity.ts'
 import { importLine } from './imports.ts'
+import { importPath } from './paths.ts'
 import {
   drizzleRepositoryFile, drizzleSchemaFile, listRouteFile, listUseCaseFile, memoryRepositoryFile, portFile,
   restDoesMoreThanList, restRepositoryFile, restRepositoryTestFile
@@ -60,8 +61,6 @@ const moduleData = (context: ModuleContext): Array<Omit<GeneratedFile, 'owner'>>
 }
 
 /** The fixtures of memory entities, which their stores start with at boot. */
-const memorySeedPath = 'server/infrastructure/memory/seed'
-
 const memorySeedFiles = (context: ModuleContext, kept: EntityFile[]) => {
   const ids = new Set(kept.map(entity => entity.id))
   const seeds = context.module.fixtures
@@ -70,7 +69,7 @@ const memorySeedFiles = (context: ModuleContext, kept: EntityFile[]) => {
   if (!seeds.length) return []
   const source = `.bildr/modules/${context.name}/fixtures`
   return [{
-    path: `layers/${context.name}/${memorySeedPath}.ts`,
+    path: context.paths.memorySeed,
     source,
     content: file([
       header(source),
@@ -85,7 +84,7 @@ const memorySeedFiles = (context: ModuleContext, kept: EntityFile[]) => {
 const moduleConfigFile = (context: ModuleContext) => {
   const source = `.bildr/modules/${context.name}/module.json`
   return {
-    path: `layers/${context.name}/nuxt.config.ts`,
+    path: context.paths.nuxtConfig,
     source,
     content: file([
       header(source),
@@ -116,7 +115,7 @@ const seedFiles = (context: ModuleContext, stored: Array<{ entity: EntityFile }>
   const seedName = (entity: EntityFile) => `${entityNames(entity).variable}Seed`
   return [
     {
-      path: `layers/${context.name}/server/infrastructure/db/seed.ts`,
+      path: context.paths.dbSeed,
       source,
       content: file([
         header(source),
@@ -125,13 +124,13 @@ const seedFiles = (context: ModuleContext, stored: Array<{ entity: EntityFile }>
       ])
     },
     {
-      path: `layers/${context.name}/server/tasks/${context.name}/seed.ts`,
+      path: context.paths.seedTask,
       source,
       content: file([
         header(source),
         'import { defineTask } from \'nitropack/runtime\'',
-        importLine('../../infrastructure/db/schema', seeds.map(({ entity }) => entity.plural)),
-        importLine('../../infrastructure/db/seed', seeds.map(({ entity }) => seedName(entity))),
+        importLine(importPath(context.paths.seedTask, context.paths.dbSchema), seeds.map(({ entity }) => entity.plural)),
+        importLine(importPath(context.paths.seedTask, context.paths.dbSeed), seeds.map(({ entity }) => seedName(entity))),
         '',
         `/** \`nuxt task run ${context.name}:seed\`: insert the model fixtures, skipping rows that already exist. */`,
         'export default defineTask({',

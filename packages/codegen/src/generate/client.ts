@@ -5,6 +5,7 @@ import { zodField } from './entity.ts'
 import type { KernelName } from './entity.ts'
 import { listRoute } from '../query/index.ts'
 import { importLine } from './imports.ts'
+import { importPath } from './paths.ts'
 import { camel, docText, file, header, kebab, pascal, tsDuration, tsLiteral, tsString } from './text.ts'
 
 /**
@@ -24,7 +25,7 @@ export const collectionFile = (context: ModuleContext, entity: EntityFile, repos
     : `Client copy of the first page of ${pascal(entity.plural)} from the "${source.name}" REST data source${isWritable(repository) ? '' : ' (read-only)'}.`
   const key = keyOf(entity)
   return {
-    path: `layers/${context.name}/app/data/${kebab(entity.plural)}.collection.ts`,
+    path: context.paths.collection(entityNames(entity).pluralFile),
     source: context.source(entity.id),
     content: file([
       header(context.source(entity.id)),
@@ -121,14 +122,15 @@ export const queryFile = (context: ModuleContext, query: QueryFile) => {
       ]
     : [`export const ${composable} = (${signature}) =>`, `  ${liveQuery('  ').join('\n')}`]
 
+  const path = context.paths.composable(composable)
   return {
-    path: `layers/${context.name}/app/composables/${context.name}/${composable}.ts`,
+    path,
     source: context.source(query.id),
     content: file([
       header(context.source(query.id)),
       importLine('@tanstack/vue-db', [...tanstack]),
       vue.size > 0 && importLine('vue', [...vue].map(name => name === 'MaybeRefOrGetter' ? { name, type: true } : name)),
-      `import { ${names.collection} } from '../../data/${kebab(entity.plural)}.collection'`,
+      `import { ${names.collection} } from '${importPath(path, context.paths.collection(names.pluralFile))}'`,
       '',
       `/** ${docText(doc)} */`,
       ...body
@@ -163,7 +165,7 @@ export const stateCollectionFile = (context: ModuleContext, state: StateFile) =>
   const fields = state.fields.map(field => `  ${field.name}: ${zodField(field, kernel)}`)
   const options = state.persist === 'memory' ? 'localOnlyCollectionOptions' : 'localStorageCollectionOptions'
   return {
-    path: `layers/${context.name}/app/data/${names.file}.collection.ts`,
+    path: context.paths.collection(names.file),
     source: context.source(state.id),
     content: file([
       header(context.source(state.id)),
@@ -195,14 +197,15 @@ export const stateComposableFile = (context: ModuleContext, state: StateFile) =>
   const names = stateNames(context, state)
   const variable = camel(state.name)
   const key = tsString(context.name)
+  const path = context.paths.composable(names.composable)
   return {
-    path: `layers/${context.name}/app/composables/${context.name}/${names.composable}.ts`,
+    path,
     source: context.source(state.id),
     content: file([
       header(context.source(state.id)),
       'import { useLiveQuery } from \'@tanstack/vue-db\'',
       'import { computed } from \'vue\'',
-      importLine(`../../data/${names.file}.collection`, [{ name: names.type, type: true }, `${names.type}Schema`, names.collection]),
+      importLine(importPath(path, context.paths.collection(names.file)), [{ name: names.type, type: true }, `${names.type}Schema`, names.collection]),
       '',
       `/** ${docText(`State "${state.label}": one ${state.persist === 'memory' ? 'in-memory' : 'persisted'} row with defaults, plus a typed setter.`)} */`,
       `export const ${names.composable} = () => {`,

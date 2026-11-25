@@ -4,6 +4,7 @@ import type { Model } from '../model/load.ts'
 import type { DataSourceFile } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
 import { apiSources, browserApiSources, isCallable, serverApiSources } from './api-model.ts'
+import { apisPaths, corePaths, modulePaths } from './paths.ts'
 import { camel, file, header, tsString } from './text.ts'
 
 /**
@@ -18,7 +19,7 @@ export const generateProject = (model: Model): GeneratedFile[] => {
 
 /** The root vitest config: unit and API projects, with every layer alias mirrored (vitest doesn't read nuxt.config). */
 const vitestConfigFile = (model: Model): GeneratedFile => {
-  const apiTests = apiSources(model).some(isCallable) ? ', \'layers/apis/test/**/*.test.ts\'' : ''
+  const apiTests = apiSources(model).some(isCallable) ? `, '${apisPaths.testGlob}'` : ''
   return {
     path: 'vitest.config.ts',
     owner: 'managed',
@@ -34,7 +35,7 @@ const vitestConfigFile = (model: Model): GeneratedFile => {
       'export default defineConfig({',
       '  resolve: {',
       '    alias: {',
-      [`      '#core': here('./layers/core/shared')`, ...Object.keys(model.modules).sort().map(name => `      '#${name}/domain': here('./layers/${name}/shared/domain')`)].join(',\n'),
+      [`      '#core': here('./${corePaths.shared}')`, ...Object.keys(model.modules).sort().map(name => `      '#${name}/domain': here('./${modulePaths(name).domain}')`)].join(',\n'),
       '    }',
       '  },',
       '  test: {',
@@ -51,7 +52,7 @@ const vitestConfigFile = (model: Model): GeneratedFile => {
 }
 
 const themeFile = (theme: Theme): GeneratedFile => ({
-  path: 'layers/core/app/assets/css/theme.css',
+  path: corePaths.themeCss,
   owner: 'managed',
   source: '.bildr/theme.json',
   // themeCss is the stylesheet the editor canvas paints with, so the app looks the same.
@@ -69,7 +70,7 @@ const isPalette = (value: string) => (PALETTE_NAMES as readonly string[]).includ
 const appConfigFile = (model: Model, theme: Theme): GeneratedFile => {
   const { name, description } = model.project
   return {
-    path: 'layers/core/app/app.config.ts',
+    path: corePaths.appConfig,
     owner: 'managed',
     source: '.bildr/bildr.json',
     content: file([
@@ -101,7 +102,7 @@ const nuxtConfigFile = (model: Model): GeneratedFile => {
   const apis = serverApiSources(model)
   const browserApis = browserApiSources(model)
   return {
-    path: 'layers/core/nuxt.config.ts',
+    path: corePaths.nuxtConfig,
     owner: 'managed',
     content: file([
       header('.bildr/bildr.json and .bildr/datasources'),
