@@ -176,8 +176,23 @@ describe('generateUi: variants', () => {
       '  }',
       '}, \'variantRoot\')'
     ].join('\n'))
-    expect(code).toContain('<div ref="variantRoot" class="flex transition-[padding-left,padding-right,padding-top,padding-bottom] duration-300 ease-[ease] motion-reduce:duration-0" :class="[badgeVariants[variant], badgeBgClasses[props.tone]]" v-on="on">')
+    // A click on a root with no control inside: a button to the keyboard and to assistive technology (the composable hears Enter and Space).
+    expect(code).toContain('<div ref="variantRoot" role="button" tabindex="0" class="flex transition-[padding-left,padding-right,padding-top,padding-bottom] duration-300 ease-[ease] motion-reduce:duration-0" :class="[badgeVariants[variant], badgeBgClasses[props.tone]]" v-on="on">')
     expect(code).toContain('({ default: \'Badge\', loud: \'LOUD\' })[variant]')
+  })
+
+  it('leaves a clickable root with a control inside to that control: its click bubbles to the root', () => {
+    // The golden Tip: its toggle is a UButton, which the keyboard already reaches.
+    const tip = out(() => {}, 'components/blog/Tip.vue')
+    expect(tip).toContain('v-on="on"')
+    expect(tip).not.toContain('role="button"')
+    // Hover only: no click, no button.
+    const hovered = badgeOut((component) => {
+      loud()(component)
+      component.interactions = [{ on: 'mouseenter', do: [{ kind: 'setVariant', to: 'var_loud' }] }]
+    })
+    expect(hovered).toContain('v-on="on"')
+    expect(hovered).not.toContain('tabindex')
   })
 
   // prefers-reduced-motion: reduce makes every animated element instant, whatever its variant's timing (Tailwind's `motion-reduce:` variant: no bildr runtime).

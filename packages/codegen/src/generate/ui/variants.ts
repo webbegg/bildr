@@ -4,7 +4,7 @@ import { DEFAULT_TRANSITION, FILL, fillStyle, transitionTimingClasses } from '..
 import { camel, kebab, tsString } from '../text.ts'
 import type { Env, Variant } from './env.ts'
 import { fail, isObject } from './env.ts'
-import { attr } from './markup.ts'
+import { attr, staticAttr } from './markup.ts'
 import { changedKeys } from './style.ts'
 
 /**
@@ -73,6 +73,10 @@ export const styleIn = (style: Record<string, string>, override: Override | unde
  * (style-only states, no interactions); otherwise the core `useVariantState` composable keeps the
  * variant it shows, and the line declaring it is returned.
  */
+/** Nodes the keyboard reaches by themselves (an instance may hold one). */
+const CONTROLS = new Set(['Button', 'Link', 'Input', 'Checkbox', 'Form', 'Instance'])
+const holdsControl = (node: ModelNode): boolean => CONTROLS.has(node.type) || (node.children ?? []).some(holdsControl)
+
 export const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string, ModelNode>): string | undefined => {
   const variants = component.variants
   if (!variants.length) return undefined
@@ -180,7 +184,14 @@ export const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string
     parts.push(['  interactions: {', owners.map(([name, list]) => `    ${name}: [${list.map(step).join(', ')}]`).join(',\n'), '  }'].join('\n'))
   }
   const appear = interactions.some(interaction => interaction.on === 'appear')
-  env.root = { id: component.root.id, classes: [], attrs: [...(appear ? [attr('key', 'ref="variantRoot"')] : []), attr('event', 'v-on="on"')] }
+  // A click on a root with no control in it: a button to the keyboard and assistive technology (the composable hears Enter and Space).
+  // With a control (a Button, a Link, an instance that may hold one), the control is what the keyboard reaches, and its click bubbles.
+  const clickable = interactions.some(interaction => interaction.on === 'click') && !holdsControl(component.root)
+  env.root = {
+    id: component.root.id,
+    classes: [],
+    attrs: [...(appear ? [attr('key', 'ref="variantRoot"')] : []), ...(clickable ? [staticAttr('role', 'button'), staticAttr('tabindex', '0')] : []), attr('event', 'v-on="on"')]
+  }
   // The composable can show a state, so it is typed with every variant name; the component takes only its base variants.
   const names = states.length ? `<${['default', ...variants.map(variant => variant.name)].map(name => tsString(name)).join(' | ')}>` : ''
   if (bases.length > 1) env.needs.add('props')

@@ -520,7 +520,7 @@
     },
     "layers/core/app/composables/useVariantState.ts": {
       "owner": "managed",
-      "sha256": "f7ef51ead129e93d3dcdd4a2036026858d72a56f85ead9636403ce4b34f1a459"
+      "sha256": "52f84f9a205c2fea28ae483e1d40020bd867ad4b089f6a4c34b138530687e386"
     },
     "layers/core/app/data/query-client.ts": {
       "owner": "managed",

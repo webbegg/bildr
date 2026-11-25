@@ -8,7 +8,8 @@ import type { MaybeRefOrGetter, Ref } from 'vue'
  * pointer is over or pressing the instance (pressed wins), and interactions
  * switch the variant after their delay: `appear` once, when the root (the
  * template ref that `root` names) enters the viewport. Bind `on` to the
- * root: `v-on="on"`.
+ * root: `v-on="on"`. Enter and Space on the root are a click: a root a
+ * click switches is a button (`role="button" tabindex="0"`).
  */
 export type VariantEvent = 'click' | 'mouseenter' | 'mouseleave' | 'appear'
 
@@ -102,7 +103,13 @@ export const useVariantState = <V extends string>(variant: MaybeRefOrGetter<V>, 
       },
       pointerdown: () => pointer(() => (pressed.value = true)),
       pointerup: () => pointer(() => (pressed.value = false)),
-      click: () => dispatch('click')
+      click: () => dispatch('click'),
+      // Keys on a control inside are its own: its click bubbles here.
+      keydown: (event: KeyboardEvent) => {
+        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+        event.preventDefault()
+        dispatch('click')
+      }
     }
   }
 }
