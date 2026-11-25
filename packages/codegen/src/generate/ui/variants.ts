@@ -4,7 +4,7 @@ import { DEFAULT_TRANSITION, FILL, fillStyle, transitionTimingClasses } from '..
 import { camel, kebab, tsString } from '../text.ts'
 import type { Env, Variant } from './env.ts'
 import { fail, isObject } from './env.ts'
-import { attr } from './markup.ts'
+import { attr, staticAttr } from './markup.ts'
 import { changedKeys } from './style.ts'
 
 /**
@@ -73,6 +73,25 @@ export const styleIn = (style: Record<string, string>, override: Override | unde
  * (style-only states, no interactions); otherwise the core `useVariantState` composable keeps the
  * variant it shows, and the line declaring it is returned.
  */
+/** Nodes the keyboard reaches by themselves. */
+const CONTROLS = new Set(['Button', 'Link', 'Input', 'Checkbox', 'Form'])
+
+/**
+ * Whether the keyboard reaches a control under `node` in every variant: one that no variant hides (a hidden one leaves the
+ * click unreachable there). An instance holds what its component's root holds.
+ */
+const holdsControl = (env: Env, node: ModelNode, hidden: (node: ModelNode) => boolean, seen = new Set<string>()): boolean => {
+  if (hidden(node)) return false
+  if (CONTROLS.has(node.type)) return true
+  if (node.type === 'Instance') {
+    const id = String(node.props?.component)
+    const component = seen.has(id) ? undefined : env.context?.module.components.find(entry => entry.id === id)
+    // An instance's own variants don't hide it in this component: only `hidden` on the instance node counts.
+    return component !== undefined && holdsControl(env, component.root, child => child.props?.hidden === true, new Set([...seen, id]))
+  }
+  return (node.children ?? []).some(child => holdsControl(env, child, hidden, seen))
+}
+
 export const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string, ModelNode>): string | undefined => {
   const variants = component.variants
   if (!variants.length) return undefined
@@ -180,7 +199,16 @@ export const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string
     parts.push(['  interactions: {', owners.map(([name, list]) => `    ${name}: [${list.map(step).join(', ')}]`).join(',\n'), '  }'].join('\n'))
   }
   const appear = interactions.some(interaction => interaction.on === 'appear')
-  env.root = { id: component.root.id, classes: [], attrs: [...(appear ? [attr('key', 'ref="variantRoot"')] : []), attr('event', 'v-on="on"')] }
+  // A click on a root with no control in it: a button to the keyboard and assistive technology (the composable hears Enter and Space).
+  // With a control every variant shows (a Button, a Link, one in an instance), the control is what the keyboard reaches, and its
+  // click bubbles.
+  const hidden = (node: ModelNode) => node.props?.hidden === true || variants.some(variant => effective(variant, node.id)?.props?.hidden === true)
+  const clickable = interactions.some(interaction => interaction.on === 'click') && !holdsControl(env, component.root, hidden, new Set([component.id]))
+  env.root = {
+    id: component.root.id,
+    classes: [],
+    attrs: [...(appear ? [attr('key', 'ref="variantRoot"')] : []), ...(clickable ? [staticAttr('role', 'button'), staticAttr('tabindex', '0')] : []), attr('event', 'v-on="on"')]
+  }
   // The composable can show a state, so it is typed with every variant name; the component takes only its base variants.
   const names = states.length ? `<${['default', ...variants.map(variant => variant.name)].map(name => tsString(name)).join(' | ')}>` : ''
   if (bases.length > 1) env.needs.add('props')
