@@ -372,7 +372,7 @@
     },
     "layers/blog/app/pages/posts/[slug].vue": {
       "owner": "managed",
-      "sha256": "16e845bb65213619c0971d04bc9ef945e4a3cc3cf40066ed88a53800e4f481c2",
+      "sha256": "428c495e795f7af53720cc127f3c63fe041389a00e852dfec5c04de4d6923b8e",
       "source": ".bildr/modules/blog/pages/post-detail.json"
     },
     "layers/blog/app/pages/posts/new.vue": {
@@ -382,7 +382,7 @@
     },
     "layers/blog/app/pages/weather/[city].vue": {
       "owner": "managed",
-      "sha256": "47e0d83bcad0a437cec86b8f8c1c3f018aea240fafcb909fceb9204613cdc5bd",
+      "sha256": "8172b4b892eb0915fa84ad563d1cdefbe2d599e12b3ca8a62afa4244b485228c",
       "source": ".bildr/modules/blog/pages/weather.json"
     },
     "layers/blog/nuxt.config.ts": {

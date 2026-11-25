@@ -12,6 +12,10 @@ const route = useRoute('posts-slug')
 const toast = useToast()
 const { post, isLoading: postLoading } = usePostBySlug(() => route.params.slug)
 const { execute: publish, pending: publishPending, error: publishError } = usePublishPost()
+// The post doesn't exist: Nuxt's error page, a 404.
+watchEffect(() => {
+  if (!postLoading.value && !post.value) showError({ status: 404, message: 'This post doesn\'t exist.' })
+})
 useSeoMeta({ title: () => post.value?.title ?? 'Post' })
 
 // Interaction "click": run action Publish post, then show a toast.
@@ -33,7 +37,6 @@ const onPublishClick = async () => {
           <p v-if="publishError" class="text-sm whitespace-pre-line text-error">{{ publishError }}</p>
         </div>
       </article>
-      <p v-else class="text-muted">This post doesn't exist.</p>
     </template>
     <template #footer>
       <ULink to="/" class="inline-flex items-center gap-1 underline-offset-4 hover:underline">

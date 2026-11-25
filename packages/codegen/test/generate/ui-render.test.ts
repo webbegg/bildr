@@ -22,6 +22,28 @@ const indexWith = (node: ModelNode) => {
 }
 const text = (id: string, value = 'a'): ModelNode => ({ id, type: 'Text', props: { text: value } })
 
+describe('generateUi: a guarded page whose data does not exist', () => {
+  it('shows Nuxt\'s error page with a 404 and the page\'s empty text, once its data has loaded (codegen-architecture T2)', () => {
+    const page = generated(fixtureModel(), 'pages/posts/[slug].vue')
+    expect(page).toContain([
+      '// The post doesn\'t exist: Nuxt\'s error page, a 404.',
+      'watchEffect(() => {',
+      '  if (!postLoading.value && !post.value) showError({ status: 404, message: \'This post doesn\\\'t exist.\' })',
+      '})'
+    ].join('\n'))
+    expect(page).not.toContain('<p v-else class="text-muted">This post doesn\'t exist.</p>')
+  })
+
+  it('keeps the empty text in the page when nothing says the data is still loading', () => {
+    const model = fixtureModel()
+    const index = pageOf(model, 'index')
+    index.root.props = { ...index.root.props, when: { $bind: 'preferences.showDrafts' }, empty: 'No site.' }
+    const page = generated(model, 'pages/index.vue')
+    expect(page).toContain('<p v-else class="text-muted">No site.</p>')
+    expect(page).not.toContain('showError')
+  })
+})
+
 // E3 ("the canvas wins"): the generator renders what the canvas renders, through the shared
 // rules of @bildr/codegen/render (formerly the KNOWN_DIVERGENCES entries named per test).
 describe('generateUi follows the canvas render rules', () => {

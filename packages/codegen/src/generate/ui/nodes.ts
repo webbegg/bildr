@@ -193,16 +193,24 @@ export const link = (env: Env, node: ModelNode, extra: Attr[], indent: string, o
   return element(NODE_ELEMENTS.Link, attrs, [...iconLine, ...rest], indent)
 }
 
-/** A Page shown only when its `when` data exists: loading text, the page, then the empty text. */
+/**
+ * A Page shown only when its `when` data exists: loading text, the error line, the page, then the empty text. Data that says when it
+ * has loaded makes its absence a 404 instead: Nuxt's error page with the empty text (the script's `watchEffect`, `notFound`).
+ */
 export const guarded = (env: Env, node: ModelNode, tag: string, attrs: Attr[], inner: string[], indent: string) => {
   const when = expression(env, node, node.props!.when, 'template')
   const loading = loadingOf(env, node.props!.when)
   const errors = errorsOf(env, node.props!.when)
+  if (typeof node.props?.empty === 'string' && loading.length) {
+    const settled = [...loading, ...errors].map(flag => `!${flag}.value`)
+    const subject = bindRoot(node.props.when) ?? 'data'
+    env.notFound.page = { subject, condition: [...settled, `!${expression(env, node, node.props.when, 'script')}`].join(' && '), message: node.props.empty }
+  }
   const lines: string[] = []
   if (typeof node.props?.loading === 'string' && loading.length) lines.push(...element('p', [attr('if', `v-if="${loading.join(' || ')}"`), staticAttr('class', 'text-muted')], escapeText(node.props.loading), indent))
   if (errors.length) lines.push(...element('p', [attr('if', `${lines.length ? 'v-else-if' : 'v-if'}="${errors.join(' || ')}"`), staticAttr('class', 'text-error')], API_ERROR_TEXT, indent))
   lines.push(...element(tag, [attr('if', `${lines.length ? 'v-else-if' : 'v-if'}="${escapeAttr(when)}"`), ...attrs], inner, indent))
-  if (typeof node.props?.empty === 'string') lines.push(...element('p', [attr('if', 'v-else'), staticAttr('class', 'text-muted')], escapeText(node.props.empty), indent))
+  if (typeof node.props?.empty === 'string' && !env.notFound.page) lines.push(...element('p', [attr('if', 'v-else'), staticAttr('class', 'text-muted')], escapeText(node.props.empty), indent))
   return lines
 }
 
