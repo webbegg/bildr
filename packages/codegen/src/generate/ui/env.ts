@@ -151,6 +151,12 @@ export const bindPath = (env: Env, node: ModelNode | undefined, path: string, ct
   return entry.resolve(members, ctx)
 }
 
+/** The expression of the variant a component renders; the script declares `props` when it reads the prop. */
+export const variantRead = (env: Env): string => {
+  if (env.variantExpr.startsWith('props.')) env.needs.add('props')
+  return env.variantExpr
+}
+
 export const isObject = (value: unknown): value is Record<string, Value> => typeof value === 'object' && value !== null && !Array.isArray(value)
 
 /** A model value as a TS expression. */
@@ -160,7 +166,7 @@ export const expression = (env: Env, node: ModelNode | undefined, value: Value |
   if (typeof value === 'number' || typeof value === 'boolean') return String(value)
   if (!isObject(value)) return fail(env, node, 'lists are not expressions')
   if (isObject(value.$$variants)) {
-    return `({ ${Object.entries(value.$$variants).map(([name, item]) => `${name}: ${expression(env, node, item, ctx)}`).join(', ')} })[${env.variantExpr}]`
+    return `({ ${Object.entries(value.$$variants).map(([name, item]) => `${name}: ${expression(env, node, item, ctx)}`).join(', ')} })[${variantRead(env)}]`
   }
   if (typeof value.$bind === 'string') {
     const bound = bindPath(env, node, value.$bind, ctx)

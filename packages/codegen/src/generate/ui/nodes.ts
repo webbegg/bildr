@@ -11,7 +11,7 @@ import { itemParam, itemPosition, loadMoreCounter } from '../names.ts'
 import { identifier, kebab, pascal, tsString } from '../text.ts'
 import type { Env } from './env.ts'
 import {
-  actionById, API_ERROR_TEXT, bindPath, bindRoot, entityOf, errorsOf, expression, fail, isObject, itemRoot, loadingOf, routeLocation, templateParts, where
+  actionById, API_ERROR_TEXT, bindPath, bindRoot, entityOf, errorsOf, expression, fail, isObject, itemRoot, loadingOf, routeLocation, templateParts, variantRead, where
 } from './env.ts'
 import { events } from './interactions.ts'
 import type { Attr } from './markup.ts'
@@ -49,8 +49,7 @@ export const visibility = (env: Env, node: ModelNode): Attr[] => {
   const conditions: string[] = []
   if (node.props?.visible !== undefined) conditions.push(expression(env, node, node.props.visible, 'template'))
   for (const name of env.variants?.get(node.id)?.hiddenIn ?? []) {
-    env.needs.add('props')
-    conditions.push(`${env.variantExpr} !== ${tsString(name)}`)
+    conditions.push(`${variantRead(env)} !== ${tsString(name)}`)
   }
   return conditions.length ? [attr('if', `v-if="${escapeAttr(conditions.join(' && '))}"`)] : []
 }

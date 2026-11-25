@@ -678,7 +678,9 @@ const instance = (frame: Frame, node: ModelNode, options: Options): PlanElement[
     const value = given === undefined ? property.default : evaluate(given, frame.scope)
     scope[property.name] = value === undefined && property.kind === 'boolean' ? false : value
   }
-  const variantId = typeof props.variant === 'string' ? props.variant : ''
+  // A state shows under the pointer, as in the generated app: the instance takes its base variant.
+  const picked = typeof props.variant === 'string' && props.variant ? component.variants.find(variant => variant.id === props.variant) : undefined
+  const variantId = picked?.state ? picked.state.of : picked?.id ?? ''
   const set = variantId ? component.variants.find(variant => variant.id === variantId)?.name ?? 'default' : 'default'
   const shell = componentShell(component, frame.input.base)
   const key = id

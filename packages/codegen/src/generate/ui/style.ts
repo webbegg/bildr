@@ -5,7 +5,7 @@ import type { ModelNode } from '../../model/schemas.ts'
 import { animatedProperties } from '../../render/rules.ts'
 import { camel, pascal, tsString } from '../text.ts'
 import type { Env } from './env.ts'
-import { bindPath, fail } from './env.ts'
+import { bindPath, fail, variantRead } from './env.ts'
 import type { Attr } from './markup.ts'
 import { boundAttr, staticAttr } from './markup.ts'
 
@@ -61,9 +61,8 @@ export const styleAttrs = (env: Env, node: ModelNode, { display = '', fallback =
   if (variant && perVariant.length > 1) {
     // Variant overrides become a class map; the default entry holds what the node renders without one.
     const map = `${variant.base}${part}Variants`
-    env.needs.add('props')
     env.variantLines.push('', `const ${map} = {`, perVariant.map(([name, value]) => `  ${name}: ${tsString(value)}`).join(',\n'), '} as const')
-    maps.push(`${map}[${env.variantExpr}]`)
+    maps.push(`${map}[${variantRead(env)}]`)
   }
   for (const binding of bound) {
     // A style a property drives: a class map of the values it can take, indexed by the property.

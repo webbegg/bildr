@@ -52,6 +52,26 @@ describe('canvas render parity with the generated app', () => {
     expect(rendered.length).toBe(32)
   })
 
+  it('index page: a card instance set to the hover state renders its base variant, as the generated page does', () => {
+    const changed = model()
+    const index = changed.modules.blog!.pages.find(entry => entry.name === 'index')!
+    const cards: Array<{ props?: Record<string, unknown> }> = []
+    const walk = (node: { type: string, props?: Record<string, unknown>, children?: unknown[] }) => {
+      if (node.type === 'Instance' && node.props?.component === component('PostCard').id) cards.push(node)
+      for (const child of node.children ?? []) walk(child as typeof node)
+    }
+    walk(index.root as never)
+    expect(cards.length).toBeGreaterThan(0)
+    for (const card of cards) card.props!.variant = 'var_hovered'
+    const data = { site, preferences: { showDrafts: false }, featured: [draft], all: [hello, draft], quotes: [quote] }
+    const generated = renderGeneratedPage(app, loadSfc(generateUi(changed).find(file => file.path === 'layers/blog/app/pages/index.vue')!.content), {
+      ...data, posts: [draft], allLoading: false, featuredLoading: false
+    })
+    const rendered = normalized(planElements(renderPlan({ file: index, components: changed.modules.blog!.components, layouts: changed.layouts, data })))
+    expect(rendered).toEqual(normalized(generated))
+    expect(rendered).toEqual(canvas(page('index'), data))
+  })
+
   it('index page: the computed alias follows its condition', () => {
     const generated = renderGeneratedPage(app, sfc('layers/blog/app/pages/index.vue'), {
       site, preferences: { showDrafts: true }, featured: [], all: [hello, draft], quotes: [], posts: [hello, draft], allLoading: false, featuredLoading: false

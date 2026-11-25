@@ -165,7 +165,6 @@ export const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string
 
   // Interactions or states CSS can't show: the core composable keeps the shown variant.
   env.variantExpr = 'variant'
-  env.needs.add('props')
   const parts: string[] = []
   const stated = bases.flatMap((base) => {
     const kinds = (['hover', 'pressed'] as const).flatMap(kind => stateOf(base.id, kind) ? [`${kind}: ${tsString(stateOf(base.id, kind)!.name)}`] : [])
@@ -184,6 +183,7 @@ export const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string
   env.root = { id: component.root.id, classes: [], attrs: [...(appear ? [attr('key', 'ref="variantRoot"')] : []), attr('event', 'v-on="on"')] }
   // The composable can show a state, so it is typed with every variant name; the component takes only its base variants.
   const names = states.length ? `<${['default', ...variants.map(variant => variant.name)].map(name => tsString(name)).join(' | ')}>` : ''
+  if (bases.length > 1) env.needs.add('props')
   const shown = bases.length > 1 ? '() => props.variant' : '\'default\''
   return `const { variant, on } = useVariantState${names}(${shown}, {\n${parts.join(',\n')}\n}${appear ? ', \'variantRoot\'' : ''})`
 }
