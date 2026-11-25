@@ -7,10 +7,11 @@ import {
   CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, CONTAINER_TAGS, containerTag, DEFAULT_HEADING_LEVEL, displayOf, fallbackStyle, fillStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, LINK_CLASS, LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, nodePropProblems, selfFallback, structuralStyle, TEXT_CLASS
 } from '../../render/rules.ts'
 import type { Field } from '../context.ts'
+import { itemParam, itemPosition, loadMoreCounter } from '../names.ts'
 import { identifier, kebab, pascal, tsString } from '../text.ts'
 import type { Env } from './env.ts'
 import {
-  actionById, API_ERROR_TEXT, bindPath, bindRoot, entityOf, errorsOf, expression, fail, isObject, itemParam, itemRoot, loadingOf, routeLocation, templateParts, where
+  actionById, API_ERROR_TEXT, bindPath, bindRoot, entityOf, errorsOf, expression, fail, isObject, itemRoot, loadingOf, routeLocation, templateParts, where
 } from './env.ts'
 import { events } from './interactions.ts'
 import type { Attr } from './markup.ts'
@@ -334,12 +335,12 @@ export const list = (env: Env, node: ModelNode, extra: Attr[], indent: string, o
   // Over an API query's list, the rows are its model's: keyed by `id` when the model has one, by their position otherwise.
   const api = bindRoot(props.items) === undefined ? undefined : env.roots.get(bindRoot(props.items)!)?.api
   const rows = api && isObject(props.items) && props.items.$bind === bindRoot(props.items) ? api : undefined
-  const position = `${as}Index`
+  const position = itemPosition(as)
   if (api && !rows?.hasId && env.roots.has(position)) fail(env, node, `the position name ${position} is already a name the page uses`)
   const itemEnv: Env = { ...env, roots: new Map(env.roots).set(as, itemRoot(env, as, !!rows)), items: new Map(env.items).set(as, itemType) }
   // `loadMore`: the first n records, and a button that shows n more (state of this node, so one per List).
   const more = loadMoreSize(props.loadMore)
-  const shown = more ? identifier(`shown${pascal(node.id.replace(/^n_/, ''))}`, where(env, node)) : undefined
+  const shown = more ? identifier(loadMoreCounter(node.id), where(env, node)) : undefined
   if (more) env.handlers.push([`const ${shown} = ref(${more})`])
   const byPosition = api && !rows?.hasId
   const repeat = [

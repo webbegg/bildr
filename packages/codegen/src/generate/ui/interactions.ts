@@ -1,8 +1,9 @@
 import type { ModelNode, Value } from '../../model/schemas.ts'
 import { uiStepProblems } from '../../render/rules.ts'
-import { identifier, pascal } from '../text.ts'
+import { identifier } from '../text.ts'
 import type { Ctx, Env } from './env.ts'
-import { actionById, expression, fail, isObject, itemParam, pageById, routeLocation, use, where } from './env.ts'
+import { handlerName, itemParam, useNames } from '../names.ts'
+import { actionById, expression, fail, isObject, pageById, routeLocation, use, where } from './env.ts'
 import type { Attr } from './markup.ts'
 import { attr, escapeAttr } from './markup.ts'
 
@@ -22,7 +23,7 @@ export const runAction = (env: Env, node: ModelNode, step: Record<string, Value>
 export const setState = (env: Env, node: ModelNode, step: Record<string, Value>) => {
   const alias = env.aliases.state.get(String(step.state)) ?? fail(env, node, `state ${String(step.state)} isn't in the page's uses.state`)
   use(env, `state:${alias}`, 'set')
-  return `set${pascal(alias)}({ ${identifier(String(step.field), where(env, node))}: ${expression(env, node, step.value, 'template')} })`
+  return `${useNames(alias).set}({ ${identifier(String(step.field), where(env, node))}: ${expression(env, node, step.value, 'template')} })`
 }
 
 export const EVENT_NAMES: Record<string, string> = { click: 'click', change: 'update:model-value', mouseenter: 'mouseenter', mouseleave: 'mouseleave' }
@@ -54,7 +55,7 @@ export const toast = (env: Env, node: ModelNode, step: Record<string, Value>, ct
  * show a toast. Without an action, the navigate and toast steps in order.
  */
 export const handler = (env: Env, node: ModelNode, on: string, steps: Array<Record<string, Value>>) => {
-  const name = `on${pascal(node.id.replace(/^n_/, ''))}${pascal(on)}`
+  const name = handlerName(node.id, on)
   const unsupported = (): never => fail(env, node, `this ${on} interaction can't be generated yet`)
   const statement = (step: Record<string, Value>): { code: string, summary: string } => {
     if (step.kind === 'navigate') return { code: `await navigateTo(${routeLocation(env, node, step.to, 'script').code})`, summary: `go to ${pageById(env, node, String((step.to as Record<string, Value>).page)).path}` }

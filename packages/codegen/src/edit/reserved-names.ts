@@ -1,4 +1,4 @@
-import { pascal } from '../generate/text.ts'
+import { composableOf } from '../generate/names.ts'
 
 /**
  * Names that the generated code (or the toolchain it runs on) already takes, so a query, an action, a state or a page's use can't
@@ -103,7 +103,7 @@ export const composableProblem = (composable: string, name: string): string | un
 }
 
 /** Why the composable `use<Name>` of a query or an action called `name` can't be generated, or undefined when it can. */
-export const composableNameProblem = (name: string): string | undefined => composableProblem(`use${pascal(name)}`, name)
+export const composableNameProblem = (name: string): string | undefined => composableProblem(composableOf(name), name)
 
 /** Why an action called `name` can't be generated (its use-case is imported under that name into the generated test), or undefined. */
 export const declaredNameProblem = (name: string): string | undefined =>

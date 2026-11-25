@@ -5,6 +5,7 @@ import { isBasicType, sampleOf } from '../model/field-types.ts'
 import { allFields, datasourceOf, entityById, entityNames, moduleContext, repositoryOf } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
 import { importLine } from './imports.ts'
+import { composableOf } from './names.ts'
 import { importPath } from './paths.ts'
 import type { RepositoryAdapter } from './paths.ts'
 import type { ImportName } from './imports.ts'
@@ -411,7 +412,7 @@ const directComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
   const route = `/api/${context.name}${action.http.path}`
   const url = params.length ? `\`${route.replace(/:(\w+)/g, '${$1}')}\`` : tsString(route)
   const body = inputEntity ? `, body: ${uuidInput ? '{ ...input, id: newId() }' : 'input'}` : ''
-  const path = context.paths.composable(`use${pascal(action.name)}`)
+  const path = context.paths.composable(composableOf(action.name))
   return {
     path,
     source,
@@ -459,7 +460,7 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
   if (!optimistic) return directComposableFile(context, analyzed)
   if (!inputEntity && params.length === 0) throw new Error(`${action.id}: an action with no input can't be optimistic (it has no row or parameter to show ahead of the server)`)
   const source = context.source(action.id)
-  const composable = `use${pascal(action.name)}`
+  const composable = composableOf(action.name)
   const invalidated = action.client.invalidates.map(id => entityById(context, id))
   const collections = new Set(invalidated.map(entity => entityNames(entity).collection))
   const ids = new Set<string>()

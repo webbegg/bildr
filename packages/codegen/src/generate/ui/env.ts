@@ -3,6 +3,7 @@ import type { ValueFormats } from '../../edit/formats.ts'
 import type { Model } from '../../model/load.ts'
 import type { ActionFile, EntityFile, ModelNode, PageFile, Value } from '../../model/schemas.ts'
 import type { Field, ModuleContext } from '../context.ts'
+import { itemParam, useNames } from '../names.ts'
 import { identifier, propertyPath, tsString } from '../text.ts'
 import type { Attr } from './markup.ts'
 
@@ -111,9 +112,6 @@ export const refRoot = (name: string, onUse: () => void, optional?: Env['optiona
   loading
 })
 
-/** The parameter a handler takes a List's item `as` as: the script has no `post`, only what the template passes. */
-export const itemParam = (as: string) => `${as}Item`
-
 /** The item name of a List: itself in the template, the handler's parameter in the script (which the handler being built notes). */
 export const itemRoot = (env: Env, as: string, optionalMembers = false): Root => ({
   resolve: (members, ctx) => {
@@ -221,11 +219,11 @@ export const apiRoot = (env: Env, as: string, many: boolean, hasId: boolean): Ro
   },
   loading: () => {
     use(env, `api:${as}`, 'loading')
-    return [`${as}Loading`]
+    return [useNames(as).loading]
   },
   errors: () => {
     use(env, `api:${as}`, 'error')
-    return [`${as}Error`]
+    return [useNames(as).error]
   },
   api: { hasId }
 })

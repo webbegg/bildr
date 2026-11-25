@@ -1,12 +1,12 @@
 import { apiQueryOf, apiRowsOf } from '../../edit/api-uses.ts'
 import { valueFormats } from '../../edit/formats.ts'
-import { apiComposableName } from '../../edit/generated-names.ts'
 import { VALUE_TYPES } from '../../model/field-types.ts'
 import type { Model } from '../../model/load.ts'
 import type { ComponentFile, LayoutFile, PageFile, PropertyDef, QueryFile, Value } from '../../model/schemas.ts'
 import type { GeneratedFile } from '../../sync/plan.ts'
 import type { ModuleContext } from '../context.ts'
 import { entityNames } from '../context.ts'
+import { apiComposableName, composableOf, stateComposableOf, useNames } from '../names.ts'
 import { corePaths } from '../paths.ts'
 import { pascal, tsString } from '../text.ts'
 import type { Env } from './env.ts'
@@ -113,7 +113,7 @@ export const pagePath = (path: string) => {
 
 export const queryNames = (env: Env, query: QueryFile) => {
   const entity = entityOf(env, undefined, query.from)
-  return { composable: `use${pascal(query.name)}`, one: query.result === 'one' ? entityNames(entity).variable : undefined }
+  return { composable: composableOf(query.name), one: query.result === 'one' ? entityNames(entity).variable : undefined }
 }
 
 export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
@@ -133,7 +133,7 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
     const one = queryNames(env, file).one
     env.roots.set(as, refRoot(as, () => use(env, `query:${as}`, 'data'), one ? env.optional : undefined, () => {
       use(env, `query:${as}`, 'loading')
-      return [`${as}Loading`]
+      return [useNames(as).loading]
     }))
   }
   const apis = (uses.apis ?? []).map((entry) => {
@@ -239,15 +239,15 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
   for (const { as, file } of states) {
     const parts = env.used.get(`state:${as}`)
     if (!parts) continue
-    const names = [parts.has('value') && (as === file.name ? file.name : `${file.name}: ${as}`), parts.has('set') && `set: set${pascal(as)}`].filter(Boolean)
-    declarations.push(`const { ${names.join(', ')} } = use${pascal(context.name)}${pascal(file.name)}()`)
+    const names = [parts.has('value') && (as === file.name ? file.name : `${file.name}: ${as}`), parts.has('set') && `set: ${useNames(as).set}`].filter(Boolean)
+    declarations.push(`const { ${names.join(', ')} } = ${stateComposableOf(context.name, file.name)}()`)
   }
   for (const { as, file, args } of queries) {
     const parts = env.used.get(`query:${as}`)
     if (!parts) continue
     const { composable, one } = queryNames(env, file)
     const data = one ? (as === one ? one : `${one}: ${as}`) : `data: ${as}`
-    const names = [parts.has('data') && data, parts.has('loading') && `isLoading: ${as}Loading`].filter(Boolean)
+    const names = [parts.has('data') && data, parts.has('loading') && `isLoading: ${useNames(as).loading}`].filter(Boolean)
     const argList = file.params.map((param) => {
       const value = args?.[param.name]
       if (value === undefined) return undefined
@@ -260,14 +260,14 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
   for (const { as } of apis) {
     const parts = env.used.get(`api:${as}`)
     if (!parts) continue
-    const names = [parts.has('data') && `data: ${as}`, parts.has('loading') && `pending: ${as}Loading`, parts.has('error') && `error: ${as}Error`].filter(Boolean)
+    const names = [parts.has('data') && `data: ${as}`, parts.has('loading') && `pending: ${useNames(as).loading}`, parts.has('error') && `error: ${useNames(as).error}`].filter(Boolean)
     declarations.push(`const { ${names.join(', ')} } = ${calls.get(as)!}`)
   }
   for (const { as, file } of actions) {
     const parts = env.used.get(`action:${as}`)
     if (!parts) continue
-    const names = [parts.has('execute') && `execute: ${as}`, parts.has('pending') && `pending: ${as}Pending`, parts.has('error') && `error: ${as}Error`].filter(Boolean)
-    declarations.push(`const { ${names.join(', ')} } = use${pascal(file.name)}()`)
+    const names = [parts.has('execute') && `execute: ${as}`, parts.has('pending') && `pending: ${useNames(as).pending}`, parts.has('error') && `error: ${useNames(as).error}`].filter(Boolean)
+    declarations.push(`const { ${names.join(', ')} } = ${composableOf(file.name)}()`)
   }
 
   const formLines: string[] = []
