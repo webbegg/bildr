@@ -34,11 +34,11 @@ describe('layout containers on the canvas', () => {
       { id: 'n_top', ...fill }
     ])
     expect(outline(plan).join('\n')).toMatchInlineSnapshot(`
-      "<section n_page> gap-6 min-h-full flex-col flex
-        <div n_row> flex flex-col md:flex-row self-stretch
-          <p n_a> whitespace-pre-line md:min-w-0 self-stretch md:self-auto md:grow-1 md:basis-[0%]
-          <p n_b> whitespace-pre-line md:min-w-0 self-stretch md:self-auto grow-2 md:basis-[0%]
-        <p n_top> whitespace-pre-line self-stretch"
+      "<section n_page> flex min-h-full flex-col gap-6
+        <div n_row> flex flex-col self-stretch md:flex-row
+          <p n_a> self-stretch whitespace-pre-line md:min-w-0 md:grow-1 md:basis-[0%] md:self-auto
+          <p n_b> grow-2 self-stretch whitespace-pre-line md:min-w-0 md:basis-[0%] md:self-auto
+        <p n_top> self-stretch whitespace-pre-line"
     `)
   })
 })
@@ -50,28 +50,28 @@ describe('legacy layout containers on the canvas (layout-containers S4)', () => 
   it('render the same classes as before the one-container model', () => {
     const plan = planOf([LEGACY_LAYOUT_TREE])
     expect(outline(plan).join('\n')).toMatchInlineSnapshot(`
-      "<section n_page> gap-6 min-h-full flex-col flex
-        <section n_legacy> flex p-4 gap-3 flex-col items-start self-stretch
-          <div n_row> flex gap-3 md:gap-6 flex-row flex-wrap items-center self-stretch
+      "<section n_page> flex min-h-full flex-col gap-6
+        <section n_legacy> flex flex-col items-start gap-3 self-stretch p-4
+          <div n_row> flex flex-wrap items-center gap-3 self-stretch md:gap-6
             <p n_row_text> whitespace-pre-line
             <div n_row_box> flex w-full flex-col
-            <div n_row_col> flex gap-2 flex-col
-          <nav n_row_plain> flex flex-row justify-between self-stretch
+            <div n_row_col> flex flex-col gap-2
+          <nav n_row_plain> flex justify-between self-stretch
             <p n_row_plain_text> whitespace-pre-line
-          <div n_column> flex gap-3 flex-col md:flex-row items-start self-stretch
-            <h3 n_column_heading> text-2xl font-semibold text-center self-stretch
-            <div n_column_row> flex gap-1 flex-row self-stretch
+          <div n_column> flex flex-col items-start gap-3 self-stretch md:flex-row
+            <h3 n_column_heading> self-stretch text-center text-2xl font-semibold
+            <div n_column_row> flex gap-1 self-stretch
             <UButton n_column_button> 
-          <div n_grid> grid gap-6 self-stretch grid-cols-3 md:grid-cols-4
-            <div n_grid_wide> flex flex-col col-span-2
+          <div n_grid> grid grid-cols-3 gap-6 self-stretch md:grid-cols-4
+            <div n_grid_wide> col-span-2 flex flex-col
             <p n_grid_text> whitespace-pre-line
-          <div n_card> ring ring-default p-4 bg-default rounded-lg self-stretch overflow-hidden
-            <div> flex gap-3 flex-row items-start
+          <div n_card> self-stretch overflow-hidden rounded-lg bg-default p-4 ring ring-default
+            <div> flex items-start gap-3
               <p n_card_text> whitespace-pre-line
               <div n_card_box> flex flex-col
-          <div n_stack_row> flex gap-2 flex-row self-stretch
+          <div n_stack_row> flex gap-2 self-stretch
             <div n_stack_row_box> flex flex-col
-          <div n_stack_grid> flex-col self-stretch grid-cols-2 grid
+          <div n_stack_grid> grid grid-cols-2 self-stretch
             <div n_stack_grid_box> flex flex-col self-stretch"
     `)
   })

@@ -55,7 +55,7 @@ describe('style token registry', () => {
 
   it('maps tokens to Tailwind classes in registry order', () => {
     expect(styleClasses({ rounded: 'lg', bg: 'primary', mt: '10' })).toBe('mt-10 bg-primary rounded-lg')
-    expect(styleClasses({ maxW: '2xl', w: '1/2', color: 'error', text: '2xl', border: '1' })).toBe('w-1/2 max-w-2xl text-error text-2xl border-1')
+    expect(styleClasses({ maxW: '2xl', w: '1/2', color: 'error', text: '2xl', border: '1' })).toBe('w-1/2 max-w-2xl text-error text-2xl border')
     expect(styleClasses({ colSpan: 'full', cols: '3', self: 'center' })).toBe('self-center grid-cols-3 col-span-full')
     expect(styleClasses({})).toBe('')
   })

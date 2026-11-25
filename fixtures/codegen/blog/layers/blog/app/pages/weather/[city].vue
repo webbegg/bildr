@@ -9,7 +9,7 @@ const { data: report, pending: reportLoading, error: reportError } = useWeatherF
 <template>
   <p v-if="reportLoading" class="text-muted">Loading…</p>
   <p v-else-if="reportError" class="text-error">Couldn't load this.</p>
-  <div v-else-if="report" class="flex gap-4 min-h-full flex-col">
+  <div v-else-if="report" class="flex min-h-full flex-col gap-4">
     <h2 class="text-3xl font-bold tracking-tight">{{ report?.city }}</h2>
     <p class="whitespace-pre-line">{{ report?.celsius }} degrees</p>
     <p class="whitespace-pre-line">Observed {{ report?.observedAt }}</p>

@@ -134,7 +134,8 @@ const spacing = (key: string, label: string, values = SPACING): StyleToken => ({
 
 const BORDER_WIDTHS = ['0', '1', '2', '4', '8']
 const RADII = ['none', 'sm', 'md', 'lg', 'xl', '2xl', '3xl', 'full']
-const border = (key: string, label: string, prefix: string): StyleToken => ({ key, label, group: 'Border', prefix, values: BORDER_WIDTHS })
+// A 1px border is Tailwind's bare `border` / `border-t`, the class a developer writes.
+const border = (key: string, label: string, prefix: string): StyleToken => ({ key, label, group: 'Border', prefix, values: BORDER_WIDTHS, classes: { 1: '' } })
 const radius = (key: string, label: string, prefix: string): StyleToken => ({ key, label, group: 'Border', prefix, values: RADII })
 
 export const STYLE_TOKENS: StyleToken[] = [
@@ -173,7 +174,7 @@ export const STYLE_TOKENS: StyleToken[] = [
   { key: 'leading', label: 'Line height', group: 'Typography', prefix: 'leading', values: ['none', 'tight', 'snug', 'normal', 'relaxed', 'loose'] },
   // Prefix-less like `display`: the classes are `uppercase`, `md:normal-case`, ...
   { key: 'textTransform', label: 'Text transform', group: 'Typography', prefix: '', values: ['uppercase', 'lowercase', 'capitalize', 'normal-case'] },
-  // `border-1` rather than a bare `border`: an empty value means "remove the token".
+  // The stored width is `1` rather than empty (an empty value means "remove the token"); its class is the bare prefix.
   border('border', 'Border width', 'border'),
   border('borderT', 'Border top width', 'border-t'),
   border('borderR', 'Border right width', 'border-r'),
@@ -228,6 +229,7 @@ export const STYLE_TOKENS: StyleToken[] = [
 /** The class of a token value: `mt-10`, or `hidden` for a token without a prefix. */
 const tokenClass = (token: StyleToken, stored: string) => {
   const value = token.classes?.[stored] ?? stored
+  if (!value) return token.prefix
   return token.prefix ? `${token.prefix}-${value}` : value
 }
 
@@ -454,8 +456,10 @@ export function tokenSafelistCss(): string {
   const lines = STYLE_TOKENS.map((t) => {
     // A value rendered as another's class (`classes`) adds none of its own.
     const own = t.values.map(v => t.classes?.[v] ?? v).filter((v, i, all) => all.indexOf(v) === i)
-    const values = own.length === 1 ? own[0] : `{${own.join(',')}}`
-    return `@source inline("${isResponsiveToken(t) ? variants : ''}${t.prefix ? `${t.prefix}-` : ''}${values}");`
+    // A value whose class is the bare prefix (`border`) puts the dash in each other value: `border{-0,,-2}`.
+    const bare = own.includes('')
+    const values = own.length === 1 ? own[0] : `{${own.map(v => bare && v ? `-${v}` : v).join(',')}}`
+    return `@source inline("${isResponsiveToken(t) ? variants : ''}${t.prefix ? `${t.prefix}${bare ? '' : '-'}` : ''}${values}");`
   })
   return [
     '/* Generated from shared/design/tokens.ts by `pnpm tokens:css`. Do not edit. */',

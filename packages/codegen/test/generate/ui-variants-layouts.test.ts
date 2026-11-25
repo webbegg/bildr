@@ -75,7 +75,7 @@ describe('generateUi: property bindings', () => {
   it('binds a style key through a class map of the values it can take', () => {
     const code = badgeOut()
     expect(code).toContain('const badgeBgClasses = {\n  muted: \'bg-muted\',\n  primary: \'bg-primary\'\n} as const')
-    expect(code).toContain('<div class="flex px-2 flex-row" :class="badgeBgClasses[props.tone]">')
+    expect(code).toContain('<div class="flex px-2" :class="badgeBgClasses[props.tone]">')
   })
 
   it('sets an instance value of a property', () => {
@@ -130,7 +130,7 @@ describe('generateUi: variants', () => {
       '} as const'
     ].join('\n'))
     expect(code).not.toContain('group-')
-    expect(code).toContain('<div class="flex transition-[padding-left,padding-right] duration-200 ease-[ease-out] motion-reduce:duration-0 flex-row" :class="[badgeVariants[props.variant], badgeBgClasses[props.tone]]">')
+    expect(code).toContain('<div class="flex transition-[padding-left,padding-right] duration-200 ease-[ease-out] motion-reduce:duration-0" :class="[badgeVariants[props.variant], badgeBgClasses[props.tone]]">')
     expect(code).not.toContain('useVariantState')
   })
 
@@ -143,7 +143,7 @@ describe('generateUi: variants', () => {
       )
     })
     expect(code).toContain('  default: \'text-muted group-hover/badge:text-primary group-active/badge:text-error\',')
-    expect(code).toContain('<div class="flex group/badge')
+    expect(code).toContain('<div class="group/badge flex')
   })
 
   it('gives the golden PostCard root plain hover: classes and its title group-hover/post-card: ones', () => {
@@ -169,7 +169,7 @@ describe('generateUi: variants', () => {
       '  }',
       '}, \'variantRoot\')'
     ].join('\n'))
-    expect(code).toContain('<div ref="variantRoot" class="flex transition-[padding-left,padding-right,padding-top,padding-bottom] duration-300 ease-[ease] motion-reduce:duration-0 flex-row" :class="[badgeVariants[variant], badgeBgClasses[props.tone]]" v-on="on">')
+    expect(code).toContain('<div ref="variantRoot" class="flex transition-[padding-left,padding-right,padding-top,padding-bottom] duration-300 ease-[ease] motion-reduce:duration-0" :class="[badgeVariants[variant], badgeBgClasses[props.tone]]" v-on="on">')
     expect(code).toContain('({ default: \'Badge\', loud: \'LOUD\' })[variant]')
   })
 
@@ -230,7 +230,7 @@ describe('generateUi: breakpointBase', () => {
   }
 
   it('a desktop-first project generates max-width breakpoint classes', () => {
-    expect(out(padded('desktop'), 'pages/index.vue')).toContain('<div class="flex p-8 max-md:p-4 flex-col self-stretch" />')
+    expect(out(padded('desktop'), 'pages/index.vue')).toContain('<div class="flex flex-col self-stretch p-8 max-md:p-4" />')
   })
 
   it('a mobile-first project refuses them', () => {

@@ -20,7 +20,7 @@ const onCancelClick = async () => {
 <template>
   <div class="flex min-h-full flex-col">
     <BlogTip variant="collapsed" title="Writing tips" body="Keep the title short: the slug becomes the post's URL." class="mb-4 max-w-xl self-stretch" />
-    <form class="gap-4 max-w-xl flex-col self-stretch flex" @submit.prevent="onFormSubmit">
+    <form class="flex max-w-xl flex-col gap-4 self-stretch" @submit.prevent="onFormSubmit">
       <h1 class="text-3xl font-semibold tracking-tight">New post</h1>
       <UFormField label="Title" name="title" required class="self-stretch">
         <UInput v-model="form.title" name="title" required maxlength="120" placeholder="A catchy title" class="w-full" />
@@ -32,8 +32,8 @@ const onCancelClick = async () => {
         <UTextarea v-model="form.body" name="body" :rows="6" class="w-full" />
       </UFormField>
       <UCheckbox v-model="form.published" name="published" label="Publish now" />
-      <p v-if="createPostError" class="whitespace-pre-line text-error text-sm">{{ createPostError }}</p>
-      <div class="flex gap-2 flex-row self-stretch">
+      <p v-if="createPostError" class="text-sm whitespace-pre-line text-error">{{ createPostError }}</p>
+      <div class="flex gap-2 self-stretch">
         <UButton type="submit" label="Create" icon="i-lucide-plus" :disabled="createPostPending" />
         <UButton label="Cancel" color="neutral" variant="ghost" @click="onCancelClick" />
       </div>

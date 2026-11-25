@@ -25,18 +25,18 @@ const onPublishClick = async () => {
   <NuxtLayout name="main">
     <template #default>
       <p v-if="postLoading" class="text-muted">Loading…</p>
-      <article v-else-if="post" class="gap-4 min-h-full flex-col flex">
+      <article v-else-if="post" class="flex min-h-full flex-col gap-4">
         <h1 class="text-3xl font-semibold tracking-tight">{{ post.title }}</h1>
         <p class="whitespace-pre-line">{{ post.body }}</p>
-        <div v-if="!post.published" class="flex gap-3 flex-row items-center self-stretch">
+        <div v-if="!post.published" class="flex items-center gap-3 self-stretch">
           <UButton label="Publish" icon="i-lucide-send" :disabled="publishPending" @click="onPublishClick" />
-          <p v-if="publishError" class="whitespace-pre-line text-error text-sm">{{ publishError }}</p>
+          <p v-if="publishError" class="text-sm whitespace-pre-line text-error">{{ publishError }}</p>
         </div>
       </article>
       <p v-else class="text-muted">This post doesn't exist.</p>
     </template>
     <template #footer>
-      <ULink to="/" class="underline-offset-4 hover:underline items-center gap-1 inline-flex">
+      <ULink to="/" class="inline-flex items-center gap-1 underline-offset-4 hover:underline">
         <UIcon name="i-lucide-arrow-left" class="size-[1em] shrink-0" />
         Back to all posts
       </ULink>
