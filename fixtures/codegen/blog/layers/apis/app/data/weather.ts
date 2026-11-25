@@ -3,9 +3,10 @@
 // It runs in the page, so it has no auth at all (a key could not stay hidden here: an API that needs one runs on the server) and sends no credentials.
 import { useRuntimeConfig } from '#app'
 import { HttpFailure, createHttpClient } from '#core/http/client'
+import { err, ok } from '#core/kernel/result'
 import type { ApiClient } from '../../shared/data/weather/client'
 import { httpWeatherRepository } from '../../shared/data/weather/repositories/weather-repository.http'
-import { WeatherFailure, remoteFailed } from '../../shared/domain/weather/errors'
+import { remoteFailed } from '../../shared/domain/weather/errors'
 import { forecast } from '../../shared/domain/weather/use-cases/forecast'
 import { reportForecast } from '../../shared/domain/weather/use-cases/report-forecast'
 
@@ -14,10 +15,10 @@ const weatherClient = (baseUrl: string, signal?: AbortSignal): ApiClient => {
   const call = createHttpClient({ baseUrl, headers: { accept: 'application/json' }, signal })
   return async (path, request) => {
     try {
-      return await call(path, request)
+      return ok(await call(path, request))
     } catch (cause) {
-      if (cause instanceof HttpFailure) throw new WeatherFailure(remoteFailed(cause.status, cause.message))
-      throw cause
+      if (!(cause instanceof HttpFailure)) throw cause
+      return err(remoteFailed(cause.status, cause.message))
     }
   }
 }

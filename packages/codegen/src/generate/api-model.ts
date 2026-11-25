@@ -71,7 +71,6 @@ export interface SourceNames {
   adapter: string
   adapterFile: string
   error: string
-  failure: string
   root: string
   status: string
   client: string
@@ -94,7 +93,6 @@ export const namesOf = (model: Pick<Model, 'paths'>, source: ApiSource): SourceN
     adapter: ids.adapter,
     adapterFile: `${source.name}-repository.http`,
     error: ids.error,
-    failure: ids.failure,
     root: ids.root,
     status: ids.status,
     client: ids.client,
@@ -213,12 +211,12 @@ export const resultType = (operation: Operation) => operation.result ? `${operat
  * `/products/:id` as a template literal over `target` (`input`): each path parameter through `segment` (the adapter's helper: encoded, and
  * never "", "." or "..", which the URL would resolve to another path). A path the model schema refuses is an error.
  */
-export const pathTemplate = (path: string, target = 'input'): { code: string, dynamic: boolean } => {
+export const pathTemplate = (path: string, value: (name: string) => string = name => `segment(input.${name})`): { code: string, dynamic: boolean } => {
   if (!API_PATH.test(path)) throw new Error(`"${path}" is not an API path`)
   const dynamic = path.includes(':')
   if (!dynamic) return { code: tsString(path), dynamic }
   // A path is made of \w, -, ~, ., / and :name: nothing in it needs escaping inside a template literal.
-  return { code: `\`${path.replace(/:([a-z][A-Za-z0-9]*)/g, (_, name: string) => `\${segment(${target}.${name})}`)}\``, dynamic }
+  return { code: `\`${path.replace(/:([a-z][A-Za-z0-9]*)/g, (_, name: string) => `\${${value(name)}}`)}\``, dynamic }
 }
 
 /** The route file name of an operation: `create-product.post.ts`. */

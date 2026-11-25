@@ -70,7 +70,7 @@ const sourceFiles = (model: Model, source: ApiSource): Emitted[] => {
   add(paths.errors, errorLines(source, names))
   add(paths.port(names.portFile), portLines(source, names))
   for (const operation of operationsOf(source)) add(paths.useCase(kebab(operation.name)), useCaseLines(source, names, operation))
-  add(paths.client, clientLines())
+  add(paths.client, clientLines(names, importPath(paths.client, paths.errors)))
   add(paths.adapter(names.adapterFile), adapterLines(source, names))
   out.push(...apiTestFiles(source, names))
   return out
@@ -132,26 +132,15 @@ const errorLines = (source: ApiSource, names: SourceNames): string[] => [
     : '/** The answer is not what the model says. The error has no detail: it reaches the browser, and the detail (field paths, what was expected) is for the server log. */',
   `export const invalidAnswer = (): ${names.error} => ({ type: 'invalid_answer', message: ${tsString(`The "${source.name}" API answered something unexpected`)} })`,
   '',
-  `export const invalidInput = (detail: string): ${names.error} => ({ type: 'invalid_input', message: \`The call to the "${source.name}" API is not valid: \${detail}\` })`,
-  '',
-  `/** Thrown by the repository and the client, caught by the use-cases: they return it as the error of their Result. */`,
-  `export class ${names.failure} extends Error {`,
-  `  readonly error: ${names.error}`,
-  '',
-  `  constructor(error: ${names.error}) {`,
-  '    super(error.message)',
-  `    this.name = '${names.failure}'`,
-  '    this.error = error',
-  '  }',
-  '}'
+  `export const invalidInput = (detail: string): ${names.error} => ({ type: 'invalid_input', message: \`The call to the "${source.name}" API is not valid: \${detail}\` })`
 ]
 
 /** One line of the port: `products(input: { category?: string }): Promise<Product[]>`. */
-const portMethod = (operation: Operation): string[] => {
+const portMethod = (operation: Operation, errorName: string): string[] => {
   const fields = inputFields(operation)
   const about = descriptionOf(operation)
   const label = `${operation.kind === 'query' ? 'Query' : 'Action'} "${operation.name}"${about ? `: ${about}` : ''}`
-  return [`  /** ${label} (${operation.method} ${docText(operation.path)}). */`, `  ${operation.name}(${fields.length ? `input: ${inputType(fields)}` : ''}): Promise<${resultType(operation)}>`]
+  return [`  /** ${label} (${operation.method} ${docText(operation.path)}). */`, `  ${operation.name}(${fields.length ? `input: ${inputType(fields)}` : ''}): Promise<KernelResult<${resultType(operation)}, ${errorName}>>`]
 }
 
 /** `repositories/<s>-repository.ts`: the port, one method per query and action. */
@@ -159,11 +148,14 @@ const portLines = (source: ApiSource, names: SourceNames): string[] => {
   const operations = operationsOf(source)
   const models = [...new Set(operations.flatMap(operation => [operation.result?.model, operation.body]).filter((name): name is string => !!name))].sort()
   return [
+    // Aliased: a model can be named Result.
+    'import type { Result as KernelResult } from \'#core/kernel/result\'',
     ...models.map(name => importLine(`../entities/${modelNames(name).file}`, [{ name: modelNames(name).type, type: true }])),
+    importLine('../errors', [{ name: names.error, type: true }]),
     '',
-    `/** What the "${source.name}" API offers: one method per query and action. A failure is thrown as ${names.failure}. */`,
+    `/** What the "${source.name}" API offers: one method per query and action, each answering its value or the ${names.error} of the call. */`,
     `export interface ${names.port} {`,
-    operations.flatMap(portMethod).join('\n'),
+    operations.flatMap(operation => portMethod(operation, names.error)).join('\n'),
     '}'
   ]
 }
@@ -182,11 +174,11 @@ const useCaseLines = (source: ApiSource, names: SourceNames, operation: Operatio
   const call = `deps.${names.camel}.${operation.name}(${fields.length ? 'parsed.data' : ''})`
   return [
     fields.length > 0 && 'import { z } from \'zod\'',
-    'import { err, ok } from \'#core/kernel/result\'',
+    fields.length > 0 && 'import { err } from \'#core/kernel/result\'',
     // Aliased: a model can be named Result.
     'import type { Result as KernelResult } from \'#core/kernel/result\'',
     ...[...byModel.entries()].sort(([a], [b]) => a < b ? -1 : 1).map(([model, entries]) => importLine(`../entities/${modelNames(model).file}`, entries)),
-    importLine('../errors', [{ name: names.error, type: true }, names.failure, ...(fields.length ? ['invalidInput'] : [])]),
+    importLine('../errors', [{ name: names.error, type: true }, ...(fields.length ? ['invalidInput'] : [])]),
     importLine(`../repositories/${names.portFile}`, [{ name: names.port, type: true }]),
     '',
     ...(fields.length
@@ -211,12 +203,7 @@ const useCaseLines = (source: ApiSource, names: SourceNames, operation: Operatio
           '    if (!parsed.success) return err(invalidInput(parsed.error.message))'
         ]
       : []),
-    '    try {',
-    operation.result ? `      return ok(await ${call})` : `      await ${call}\n      return ok(undefined)`,
-    '    } catch (cause) {',
-    `      if (cause instanceof ${names.failure}) return err(cause.error)`,
-    '      throw cause',
-    '    }',
+    `    return ${call}`,
     '  }'
   ]
 }
@@ -289,7 +276,11 @@ const mapperLines = (name: string, source: ApiSource): string[] => {
   ]
 }
 
-const clientLines = (): string[] => [
+const clientLines = (names: SourceNames, errors: string): string[] => [
+  // Aliased: a model can be named Result.
+  'import type { Result as KernelResult } from \'#core/kernel/result\'',
+  importLine(errors, [{ name: names.error, type: true }]),
+  '',
   '/** One call to the API: the method, the query string and the headers (a value left undefined is not sent) and the JSON body. */',
   'export interface ApiRequest {',
   '  method: \'GET\' | \'POST\' | \'PUT\' | \'PATCH\' | \'DELETE\'',
@@ -298,8 +289,8 @@ const clientLines = (): string[] => [
   '  body?: unknown',
   '}',
   '',
-  '/** The port the HTTP repository calls through: the path under the API\'s base URL, the JSON answer (undefined when it is empty). */',
-  'export type ApiClient = (path: string, request: ApiRequest) => Promise<unknown>'
+  '/** The port the HTTP repository calls through: the path under the API\'s base URL; the JSON answer (undefined when it is empty), or the error of the call. */',
+  `export type ApiClient = (path: string, request: ApiRequest) => Promise<KernelResult<unknown, ${names.error}>>`
 ]
 
 /** `repositories/<s>-repository.http.ts`: builds the paths and queries, reads `itemsPath`, validates with the DTO schemas, maps. */
@@ -314,29 +305,31 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
   const answered = unique(operations.map(operation => operation.result?.model))
   const sent = unique(operations.map(operation => operation.body))
   const adapter = apiPaths(source.name).adapter(names.adapterFile)
+  const refuses = results.length > 0 || usesSegment || usesHeaderText
   return [
     results.length > 0 && importLine('zod', [{ name: 'ZodType', type: true }, ...(usesList ? ['z'] : [])]),
+    operations.length > 0 && importLine('#core/kernel/result', [...(refuses ? ['err'] : []), 'ok']),
+    // Aliased: a model can be named Result.
+    refuses && 'import type { Result as KernelResult } from \'#core/kernel/result\'',
     ...answered.map(name => importLine(`../validations/${modelNames(name).file}.schema`, [modelNames(name).dtoSchema])),
     ...unique([...answered, ...sent]).map(name => importLine(`../mappers/${modelNames(name).file}.mapper`, [
       ...(answered.includes(name) ? [modelNames(name).to] : []),
       ...(sent.includes(name) ? [modelNames(name).from] : [])
     ])),
-    // What the file throws: an invalid answer (a source with a result), and a path parameter that is not a segment or a header one that is not
-    // one line. A source with none of them throws nothing here.
-    (results.length > 0 || usesSegment || usesHeaderText) && importLine(importPath(adapter, apiPaths(source.name).errors), [names.failure, ...(results.length ? ['invalidAnswer'] : []), ...(usesSegment || usesHeaderText ? ['invalidInput'] : [])]),
+    // The errors the file makes: an invalid answer (a source with a result), and a path parameter that is not a segment or a header one that
+    // is not one line. A source with none of them only passes the client's on.
+    refuses && importLine(importPath(adapter, apiPaths(source.name).errors), [{ name: names.error, type: true }, ...(results.length ? ['invalidAnswer'] : []), ...(usesSegment || usesHeaderText ? ['invalidInput'] : [])]),
     importLine(importPath(adapter, apiPaths(source.name).port(names.portFile)), [{ name: names.port, type: true }]),
     importLine('../client', [{ name: 'ApiClient', type: true }]),
     '',
     ...(results.length
       ? [
-          '/** The answer as `schema` reads it, or the failure of an answer that is not what the model says: the failure has no detail, `report` gets it. */',
-          'const read = <T>(schema: ZodType<T>, answer: unknown, report?: (detail: string) => void): T => {',
+          '/** The answer as `schema` reads it, or the error of an answer that is not what the model says: the error has no detail, `report` gets it. */',
+          `const read = <T>(schema: ZodType<T>, answer: unknown, report?: (detail: string) => void): KernelResult<T, ${names.error}> => {`,
           '  const parsed = schema.safeParse(answer)',
-          '  if (!parsed.success) {',
-          '    report?.(parsed.error.message)',
-          `    throw new ${names.failure}(invalidAnswer())`,
-          '  }',
-          '  return parsed.data',
+          '  if (parsed.success) return ok(parsed.data)',
+          '  report?.(parsed.error.message)',
+          '  return err(invalidAnswer())',
           '}',
           ''
         ]
@@ -344,13 +337,13 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
     ...(usesSegment
       ? [
           '/** A path parameter as one segment of the path: encoded, and never empty, "." or ".." (the URL would resolve those to another path), nor with a "/" or a "\\" (that is two segments). */',
-          'const segment = (value: string | number | boolean): string => {',
+          `const segment = (value: string | number | boolean): KernelResult<string, ${names.error}> => {`,
           '  const text = String(value)',
           '  if (text === \'\' || text === \'.\' || text === \'..\') {',
-          `    throw new ${names.failure}(invalidInput(\`a path parameter can't be \${text === '' ? 'empty' : \`"\${text}"\`}\`))`,
+          `    return err(invalidInput(\`a path parameter can't be \${text === '' ? 'empty' : \`"\${text}"\`}\`))`,
           '  }',
-          `  if (/[/\\\\]/.test(text)) throw new ${names.failure}(invalidInput(${tsString('a path parameter is one segment of the path: it can\'t hold a "/" or a "\\"')}))`,
-          '  return encodeURIComponent(text)',
+          `  if (/[/\\\\]/.test(text)) return err(invalidInput(${tsString('a path parameter is one segment of the path: it can\'t hold a "/" or a "\\"')}))`,
+          '  return ok(encodeURIComponent(text))',
           '}',
           ''
         ]
@@ -358,10 +351,8 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
     ...(usesHeaderText
       ? [
           '/** A parameter sent in a header: one line of plain text (a line break would start another header), or undefined, which is not sent. */',
-          'const headerValue = (value: string | undefined): string | undefined => {',
-          `  if (value !== undefined && !/^[\\x20-\\x7E]*$/.test(value)) throw new ${names.failure}(invalidInput(${tsString('a header parameter is one line of plain text')}))`,
-          '  return value',
-          '}',
+          `const headerValue = (value: string | undefined): KernelResult<string | undefined, ${names.error}> =>`,
+          `  value !== undefined && !/^[\\x20-\\x7E]*$/.test(value) ? err(invalidInput(${tsString('a header parameter is one line of plain text')})) : ok(value)`,
           ''
         ]
       : []),
@@ -373,7 +364,7 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
           ''
         ]
       : []),
-    `/** ${names.port} over an ApiClient: builds each path and query, reads the answer where the model says it is, validates it and maps it to the domain. \`onInvalidAnswer\` gets the detail of an answer that is not valid (the failure has none). */`,
+    `/** ${names.port} over an ApiClient: builds each path and query, reads the answer where the model says it is, validates it and maps it to the domain. \`onInvalidAnswer\` gets the detail of an answer that is not valid (the error has none). */`,
     `export const ${names.adapter} = (http: ApiClient${results.length ? ', onInvalidAnswer?: (detail: string) => void' : ''}): ${names.port} => ({`,
     operations.map(operation => adapterMethod(operation)).join(',\n'),
     '})'
@@ -386,7 +377,13 @@ const adapterMethod = (operation: Operation): string => {
   const query = operation.params.filter(param => param.in === 'query')
   const headers = [
     ...operation.headers.map(fixed => `${propertyKey(fixed.name)}: ${tsString(fixed.value)}`),
-    ...operation.params.filter(param => param.in === 'header').map(param => `${propertyKey(headerNameOf(param))}: ${param.type === 'text' ? `headerValue(input.${param.name})` : `input.${param.name}`}`)
+    ...operation.params.filter(param => param.in === 'header').map(param => `${propertyKey(headerNameOf(param))}: ${param.type === 'text' ? `${param.name}Header.value` : `input.${param.name}`}`)
+  ]
+  // A path or header parameter that can't be sent is refused before the call: each is checked first, into `<param>Segment` / `<param>Header`.
+  const checks = [
+    ...pathParams(operation.path).flatMap(name => [`    const ${name}Segment = segment(input.${name})`, `    if (!${name}Segment.ok) return ${name}Segment`]),
+    ...operation.params.filter(param => param.in === 'header' && param.type === 'text')
+      .flatMap(param => [`    const ${param.name}Header = headerValue(input.${param.name})`, `    if (!${param.name}Header.ok) return ${param.name}Header`])
   ]
   const request = [
     `method: ${tsString(operation.method)}`,
@@ -397,13 +394,16 @@ const adapterMethod = (operation: Operation): string => {
   const call = `http(${path}, { ${request.join(', ')} })`
   const result = operation.result
   const head = `  async ${operation.name}(${fields.length ? 'input' : ''}) {`
-  if (!result) return [head, `    await ${call}`, '  }'].join('\n')
+  if (!result) return [head, ...checks, `    const answer = await ${call}`, '    return answer.ok ? ok(undefined) : answer', '  }'].join('\n')
   const names = modelNames(result.model)
-  const answer = result.itemsPath ? `itemsAt(answer, [${result.itemsPath.split('.').map(tsString).join(', ')}])` : 'answer'
+  const answer = result.itemsPath ? `itemsAt(answer.value, [${result.itemsPath.split('.').map(tsString).join(', ')}])` : 'answer.value'
   const body = result.many
-    ? `    return read(z.array(${names.dtoSchema}), ${answer}, onInvalidAnswer).map(${names.to})`
-    : `    return ${names.to}(read(${names.dtoSchema}, ${answer}, onInvalidAnswer))`
-  return [head, `    const answer = await ${call}`, body, '  }'].join('\n')
+    ? [`    const dtos = read(z.array(${names.dtoSchema}), ${answer}, onInvalidAnswer)`, `    return dtos.ok ? ok(dtos.value.map(${names.to})) : dtos`]
+    : [`    const dto = read(${names.dtoSchema}, ${answer}, onInvalidAnswer)`, `    return dto.ok ? ok(${names.to}(dto.value)) : dto`]
+  return [head, ...checks, `    const answer = await ${call}`, '    if (!answer.ok) return answer', ...body, '  }'].join('\n')
 }
 
-const tsPath = (operation: Operation) => pathTemplate(operation.path).code
+/** The path parameters of an API path, in order, once each. */
+const pathParams = (path: string): string[] => [...new Set([...path.matchAll(/:([a-z][A-Za-z0-9]*)/g)].map(match => match[1]!))]
+
+const tsPath = (operation: Operation) => pathTemplate(operation.path, name => `${name}Segment.value`).code

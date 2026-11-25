@@ -70,7 +70,7 @@ describe('a name the generated files import or declare is refused', () => {
   })
 
   it('a model named like something a file declares', () => {
-    for (const name of ['ShopRepository', 'ShopError', 'ShopFailure', 'Promise', 'Error', 'Record', 'ApiClient', 'ZodType', 'ItemDto', 'ItemSchema']) {
+    for (const name of ['ShopRepository', 'ShopError', 'Promise', 'Error', 'Record', 'ApiClient', 'ZodType', 'ItemDto', 'ItemSchema']) {
       const message = shop().refuse('api_model_set', { datasource: 'ds_shop', model: { name, fields: [{ name: 'id', type: 'integer' }] } }, 'invalid').message
       expect(message, name).toContain('pick another name')
     }

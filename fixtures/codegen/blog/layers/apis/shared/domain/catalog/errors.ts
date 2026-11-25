@@ -13,14 +13,3 @@ export const remoteFailed = (status: number, detail: string): CatalogError => ({
 export const invalidAnswer = (): CatalogError => ({ type: 'invalid_answer', message: 'The "catalog" API answered something unexpected' })
 
 export const invalidInput = (detail: string): CatalogError => ({ type: 'invalid_input', message: `The call to the "catalog" API is not valid: ${detail}` })
-
-/** Thrown by the repository and the client, caught by the use-cases: they return it as the error of their Result. */
-export class CatalogFailure extends Error {
-  readonly error: CatalogError
-
-  constructor(error: CatalogError) {
-    super(error.message)
-    this.name = 'CatalogFailure'
-    this.error = error
-  }
-}

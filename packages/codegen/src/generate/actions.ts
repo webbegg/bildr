@@ -366,7 +366,9 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
     content: file([
       header(source),
       `// Composition root of the ${context.name} module: the only place where use-cases meet their adapters.`,
-      'import type { ErrorStatusMap } from \'#core/kernel/result\'',
+      statuses.length
+        ? importLine(`#${context.name}/domain/errors`, [{ name: errorTypeName(context), type: true }])
+        : 'import type { ErrorStatusMap } from \'#core/kernel/result\'',
       ...imports.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0).map(entry => `import { ${entry.name} } from '${entry.path}'`),
       '',
       ...(stores.length ? ['// Memory data sources: one store per server process, seeded from the model fixtures, never persisted.', ...stores, ''] : []),
@@ -377,8 +379,9 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
       '}',
       '',
       `/** HTTP status of each ${context.name} domain error. */`,
-      statuses.length ? `export const ${camel(context.name)}ErrorStatus: ErrorStatusMap = {` : `export const ${camel(context.name)}ErrorStatus: ErrorStatusMap = {}`,
-      ...(statuses.length ? [statuses.join(',\n'), '}'] : [])
+      // Every error type of the module has its status: a type added without one does not compile.
+      statuses.length ? `export const ${camel(context.name)}ErrorStatus = {` : `export const ${camel(context.name)}ErrorStatus: ErrorStatusMap = {}`,
+      ...(statuses.length ? [statuses.join(',\n'), `} satisfies Record<${errorTypeName(context)}['type'], number>`] : [])
     ])
   }
 }

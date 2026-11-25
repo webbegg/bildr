@@ -150,45 +150,49 @@ describe('generate: server-runtime api sources', () => {
   it('has a port with one method per query and action, and one use-case each that validates its input', () => {
     const port = read(generated, 'layers/apis/shared/domain/catalog/repositories/catalog-repository.ts')
     expect(port).toContain('export interface CatalogRepository {')
-    expect(port).toContain('  products(input: { category?: string, locale?: string }): Promise<Product[]>')
-    expect(port).toContain('  product(input: { id: number }): Promise<Product>')
-    expect(port).toContain('  createProduct(input: { body: Product }): Promise<Product>')
-    expect(port).toContain('  deleteProduct(input: { id: number }): Promise<void>')
+    // Result-only (T3b): the port answers the error of a call, it never throws it.
+    expect(port).toContain('  products(input: { category?: string, locale?: string }): Promise<KernelResult<Product[], CatalogError>>')
+    expect(port).toContain('  product(input: { id: number }): Promise<KernelResult<Product, CatalogError>>')
+    expect(port).toContain('  createProduct(input: { body: Product }): Promise<KernelResult<Product, CatalogError>>')
+    expect(port).toContain('  deleteProduct(input: { id: number }): Promise<KernelResult<void, CatalogError>>')
     const useCase = read(generated, 'layers/apis/shared/domain/catalog/use-cases/products.ts')
     expect(useCase).toContain('export const ProductsInputSchema = z.object({\n  category: z.string().optional(),\n  locale: z.string().optional()\n})')
     expect(useCase).toContain('export const products = (deps: ProductsDeps) =>')
     expect(useCase).toContain('Promise<KernelResult<Product[], CatalogError>>')
     expect(useCase).toContain('ProductsInputSchema.safeParse(input)')
-    expect(useCase).toContain('deps.catalog.products(parsed.data)')
-    expect(useCase).toContain('if (cause instanceof CatalogFailure) return err(cause.error)')
+    expect(useCase).toContain('    return deps.catalog.products(parsed.data)\n')
+    expect(useCase).not.toContain('catch')
     expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/create-product.ts')).toContain('  body: ProductSchema')
     expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/delete-product.ts')).toContain('Promise<KernelResult<void, CatalogError>>')
-    expect(read(generated, 'layers/apis/shared/domain/catalog/errors.ts')).toContain('export class CatalogFailure extends Error')
+    expect(read(generated, 'layers/apis/shared/domain/catalog/errors.ts')).not.toContain('class')
+    expect(generated.map(file => file.content).join('\n')).not.toContain('CatalogFailure')
   })
 
   it('builds the paths (encoded), the query on its remote key, reads itemsPath and validates the answers', () => {
     const http = read(generated, 'layers/apis/shared/data/catalog/repositories/catalog-repository.http.ts')
     expect(http).toContain('export const httpCatalogRepository = (http: ApiClient, onInvalidAnswer?: (detail: string) => void): CatalogRepository => ({')
     // A query parameter on its remote key, a list read under data.items.
-    expect(http).toContain('http(\'/products\', { method: \'GET\', query: { cat: input.category }, headers: { \'X-Api-Version\': \'2\', \'Accept-Language\': headerValue(input.locale) } })')
-    expect(http).toContain('read(z.array(ProductDtoSchema), itemsAt(answer, [\'data\', \'items\']), onInvalidAnswer).map(toProduct)')
-    // A path parameter, encoded, and a single model.
-    expect(http).toContain('http(`/products/${segment(input.id)}`, { method: \'GET\' })')
-    expect(http).toContain('return encodeURIComponent(text)')
-    expect(http).toContain('return toProduct(read(ProductDtoSchema, answer, onInvalidAnswer))')
+    expect(http).toContain('http(\'/products\', { method: \'GET\', query: { cat: input.category }, headers: { \'X-Api-Version\': \'2\', \'Accept-Language\': localeHeader.value } })')
+    // The client's error is passed on as it is; the answer is read, then mapped.
+    expect(http).toContain('    if (!answer.ok) return answer\n    const dtos = read(z.array(ProductDtoSchema), itemsAt(answer.value, [\'data\', \'items\']), onInvalidAnswer)\n    return dtos.ok ? ok(dtos.value.map(toProduct)) : dtos')
+    // A path parameter, checked and encoded before the call, and a single model.
+    expect(http).toContain('    const idSegment = segment(input.id)\n    if (!idSegment.ok) return idSegment\n    const answer = await http(`/products/${idSegment.value}`, { method: \'GET\' })')
+    expect(http).toContain('return ok(encodeURIComponent(text))')
+    expect(http).toContain('return dto.ok ? ok(toProduct(dto.value)) : dto')
     // A body mapped to the remote, a call with no result.
     expect(http).toContain('{ method: \'POST\', body: fromProduct(input.body) }')
-    expect(http).toContain('await http(`/products/${segment(input.id)}`, { method: \'DELETE\' })')
-    // The failure has no detail (it reaches the browser): the detail goes to the reporter the composition root gives.
+    expect(http).toContain('const answer = await http(`/products/${idSegment.value}`, { method: \'DELETE\' })\n    return answer.ok ? ok(undefined) : answer')
+    // The error has no detail (it reaches the browser): the detail goes to the reporter the composition root gives.
     expect(http).toContain('report?.(parsed.error.message)')
-    expect(http).toContain('throw new CatalogFailure(invalidAnswer())')
+    expect(http).toContain('return err(invalidAnswer())')
     expect(http).not.toMatch(/invalidAnswer\(parsed/)
     // A path parameter is one segment: no "/" or "\\" either.
-    expect(http).toContain('if (/[/\\\\]/.test(text)) throw new CatalogFailure(invalidInput(')
+    expect(http).toContain('if (/[/\\\\]/.test(text)) return err(invalidInput(')
+    expect(http).not.toContain('throw')
   })
 
   it('has the ApiClient port the repository calls through', () => {
-    expect(read(generated, 'layers/apis/shared/data/catalog/client.ts')).toContain('export type ApiClient = (path: string, request: ApiRequest) => Promise<unknown>')
+    expect(read(generated, 'layers/apis/shared/data/catalog/client.ts')).toContain('export type ApiClient = (path: string, request: ApiRequest) => Promise<KernelResult<unknown, CatalogError>>')
   })
 
   it('wires the server: a client over fetch under the base URL, a route per operation, a composable each', () => {
@@ -196,7 +200,11 @@ describe('generate: server-runtime api sources', () => {
     expect(root).toContain('useRuntimeConfig().apis.catalog')
     expect(root).toContain('export const useCatalogApi = () => {')
     expect(root).toContain('httpCatalogRepository(catalogClient(), detail => console.error(')
-    expect(root).toContain('export const catalogErrorStatus: ErrorStatusMap = {')
+    // Every error type has its status: one added without it does not compile.
+    expect(root).toContain('export const catalogErrorStatus = {')
+    expect(root).toContain('} satisfies Record<CatalogError[\'type\'], number>')
+    expect(root).toContain('      return ok(await call(path, request))')
+    expect(root).toContain('      return err(remoteFailed(cause.status, cause.message))')
     // The core HTTP client (T3a), the one every source calls through.
     expect(root).toContain('import { HttpFailure, createHttpClient } from \'#core/http/client\'')
     const client = read(generated, 'layers/core/shared/http/client.ts')
@@ -282,7 +290,7 @@ describe('generate: an API with auth refuses a call when its secret is not set (
 
   it('the client is told when the secret is empty, and the root answers a typed not_configured naming the env var (never a value)', () => {
     expect(root).toContain('createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? \'\').trim() === \'\' })')
-    expect(root).toContain('if (cause instanceof HttpFailure && cause.notConfigured) {')
+    expect(root).toContain('if (cause.notConfigured) return err({ type: \'not_configured\'')
     expect(root).toContain('{ type: \'not_configured\', message: \'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY\' }')
     expect(root).toContain('  not_configured: 503')
     expect(read(generated, 'layers/apis/shared/domain/catalog/errors.ts')).toContain('  | { type: \'not_configured\', message: string }')
@@ -406,7 +414,7 @@ describe('generate: browser-runtime api sources', () => {
 
   it('has the entities, the port and the use-cases of the model', () => {
     expect(fromWeather('shared/domain/weather/entities/forecast.ts')).toContain('  observedAt: z.iso.datetime({ offset: true })')
-    expect(fromWeather('shared/domain/weather/repositories/weather-repository.ts')).toContain('  forecast(input: { city: string }): Promise<Forecast>')
+    expect(fromWeather('shared/domain/weather/repositories/weather-repository.ts')).toContain('  forecast(input: { city: string }): Promise<KernelResult<Forecast, WeatherError>>')
     expect(fromWeather('shared/domain/weather/use-cases/report-forecast.ts')).toContain('deps.weather.reportForecast(parsed.data)')
   })
 

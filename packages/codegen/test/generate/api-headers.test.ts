@@ -40,8 +40,9 @@ describe('the generated code of a call with headers', () => {
 
   it('sends the fixed headers and the header parameters, a text one through headerValue', () => {
     const repository = content('layers/apis/shared/data/shop-api/repositories/shop-api-repository.http.ts')
-    expect(repository).toContain('headers: { \'X-Api-Version\': \'2\', \'Accept-Language\': headerValue(input.locale), \'X-Page\': input.page }')
-    expect(repository).toContain('const headerValue = (value: string | undefined): string | undefined => {')
+    expect(repository).toContain('    const localeHeader = headerValue(input.locale)\n    if (!localeHeader.ok) return localeHeader\n')
+    expect(repository).toContain('headers: { \'X-Api-Version\': \'2\', \'Accept-Language\': localeHeader.value, \'X-Page\': input.page }')
+    expect(repository).toContain('const headerValue = (value: string | undefined): KernelResult<string | undefined, ShopApiError> =>')
     expect(content('layers/apis/shared/data/shop-api/client.ts')).toContain('  headers?: Record<string, string | number | boolean | undefined>')
   })
 

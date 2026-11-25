@@ -2,10 +2,10 @@
 // Composition root of the "catalog" API: the only place where its use-cases meet the HTTP repository.
 import { useRuntimeConfig } from 'nuxt/server'
 import { HttpFailure, createHttpClient } from '#core/http/client'
-import type { ErrorStatusMap } from '#core/kernel/result'
+import { err, ok } from '#core/kernel/result'
 import type { ApiClient } from '../../shared/data/catalog/client'
 import { httpCatalogRepository } from '../../shared/data/catalog/repositories/catalog-repository.http'
-import { CatalogFailure, remoteFailed } from '../../shared/domain/catalog/errors'
+import { type CatalogError, remoteFailed } from '../../shared/domain/catalog/errors'
 import { createProduct } from '../../shared/domain/catalog/use-cases/create-product'
 import { deleteProduct } from '../../shared/domain/catalog/use-cases/delete-product'
 import { product } from '../../shared/domain/catalog/use-cases/product'
@@ -19,13 +19,11 @@ const catalogClient = (): ApiClient => {
   const call = createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? '').trim() === '' })
   return async (path, request) => {
     try {
-      return await call(path, request)
+      return ok(await call(path, request))
     } catch (cause) {
-      if (cause instanceof HttpFailure && cause.notConfigured) {
-        throw new CatalogFailure({ type: 'not_configured', message: 'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY' })
-      }
-      if (cause instanceof HttpFailure) throw new CatalogFailure(remoteFailed(cause.status, cause.message))
-      throw cause
+      if (!(cause instanceof HttpFailure)) throw cause
+      if (cause.notConfigured) return err({ type: 'not_configured', message: 'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY' })
+      return err(remoteFailed(cause.status, cause.message))
     }
   }
 }
@@ -43,9 +41,9 @@ export const useCatalogApi = () => {
 }
 
 /** HTTP status of each "catalog" API error. */
-export const catalogErrorStatus: ErrorStatusMap = {
+export const catalogErrorStatus = {
   remote_failed: 502,
   invalid_answer: 502,
   invalid_input: 400,
   not_configured: 503
-}
+} satisfies Record<CatalogError['type'], number>

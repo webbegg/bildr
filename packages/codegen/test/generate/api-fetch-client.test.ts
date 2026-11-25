@@ -98,33 +98,30 @@ describe('generated http repository: a path parameter is one segment', () => {
     return generate(loaded.model)
   }
 
-  /** The `segment` function of the generated repository, run with a failure that records what it was given. */
+  /** The `segment` function of the generated repository, run with the kernel's ok/err and an invalidInput that keeps its detail. */
   const segmentOf = () => {
     const adapter = generated().find(file => file.path === 'layers/apis/shared/data/catalog/repositories/catalog-repository.http.ts')!.content
     const start = adapter.indexOf('const segment = ')
     const code = adapter.slice(start, adapter.indexOf('\n}\n', start) + 2)
     const js = ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText
-    class Failure extends Error {
-      constructor(readonly error: { message: string }) {
-        super(error.message)
-      }
-    }
-    return new Function('CatalogFailure', 'invalidInput', `${js}\nreturn segment`)(Failure, (message: string) => ({ message })) as (value: string | number | boolean) => string
+    const ok = (value: unknown) => ({ ok: true, value })
+    const err = (error: unknown) => ({ ok: false, error })
+    return new Function('ok', 'err', 'invalidInput', `${js}\nreturn segment`)(ok, err, (message: string) => ({ type: 'invalid_input', message })) as (value: string | number | boolean) => { ok: boolean, value?: string, error?: { message: string } }
   }
 
   it.each(['', '.', '..'])('refuses %j', (value) => {
-    expect(() => segmentOf()(value)).toThrow(/a path parameter can't be/)
+    expect(segmentOf()(value)).toEqual({ ok: false, error: { type: 'invalid_input', message: expect.stringMatching(/a path parameter can't be/) } })
   })
 
   it.each(['a/b', '/', '../x', 'a\\b', '\\', '..\\x'])('refuses %j: a "/" or a "\\" makes it more than one segment', (value) => {
-    expect(() => segmentOf()(value)).toThrow(/one segment/)
+    expect(segmentOf()(value)).toEqual({ ok: false, error: { type: 'invalid_input', message: expect.stringMatching(/one segment/) } })
   })
 
   it('encodes any other value, and takes numbers and booleans', () => {
     const segment = segmentOf()
-    expect(segment('a b?c#d%')).toBe('a%20b%3Fc%23d%25')
-    expect(segment('..a')).toBe('..a')
-    expect(segment(42)).toBe('42')
-    expect(segment(false)).toBe('false')
+    expect(segment('a b?c#d%')).toEqual({ ok: true, value: 'a%20b%3Fc%23d%25' })
+    expect(segment('..a')).toEqual({ ok: true, value: '..a' })
+    expect(segment(42)).toEqual({ ok: true, value: '42' })
+    expect(segment(false)).toEqual({ ok: true, value: 'false' })
   })
 })
