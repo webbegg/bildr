@@ -14,7 +14,7 @@ import { findNode, walk } from './tree.ts'
 /**
  * Interactions on any node (B1, S2): "when <event> → steps", on the nodes of a page, a layout or a component (the variant
  * interactions of a component, `component_interaction_*`, are another list: the component's own, which switch variants). The steps
- * are the ones `generate/ui.ts` turns into code, and each add or update is refused for anything it would leave out, fail on, or
+ * are the ones `generate/ui/` turns into code, and each add or update is refused for anything it would leave out, fail on, or
  * silently ignore:
  *
  * - `setState {state, field, value}`, `runAction {action, args}`, `navigate {to: {page, params}}` and `toast {title, …}`; `setVariant` is not generated.
@@ -35,10 +35,10 @@ import { findNode, walk } from './tree.ts'
  *   the interaction there is another, it changed since the caller opened it, and the edit is refused.
  * - A value is checked against what receives it (`expectValue`): a state field, a toast's text, a route parameter, an action's
  *   parameter, an action on a collection (a row of it, or the form's), each by what the value is in the generated TypeScript. A
- *   handler the script declares gets the List items it reads from the template (`generate/ui.ts`).
+ *   handler the script declares gets the List items it reads from the template (`generate/ui/interactions.ts`).
  */
 
-/** The events each node type the generator attaches events to (`events()` in generate/ui.ts) takes. */
+/** The events each node type the generator attaches events to (`events()` in generate/ui/interactions.ts) takes. */
 const EVENTS_OF: Record<string, readonly string[]> = {
   Button: ['click', 'mouseenter', 'mouseleave'],
   Checkbox: ['click', 'change', 'mouseenter', 'mouseleave'],

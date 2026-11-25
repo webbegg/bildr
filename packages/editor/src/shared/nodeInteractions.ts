@@ -17,7 +17,7 @@ import { stateById, statesOfPage, useOfState } from './stateModel.ts'
  * - `interactionProblems.ts`: what a draft still needs before it can be written, so the module never sees half a step;
  * - `interactionSummary.ts`: what a row says, and which step a refusal is about.
  *
- * Here: which nodes take which events (`eventsOf`: what `generate/ui.ts` attaches events to: a Button, a Checkbox, a Form), which
+ * Here: which nodes take which events (`eventsOf`: what `generate/ui/interactions.ts` (`events()`) attaches events to: a Button, a Checkbox, a Form), which
  * step can come next (`addableKinds`: Set state is a single step, an action goes first, and Go to page and Show message steps
  * follow it (on success) or follow each other (in order); a layout or component has no state or actions to use), the states,
  * actions and pages a step can name, and the ways a step's value can be given (`valueModes`).

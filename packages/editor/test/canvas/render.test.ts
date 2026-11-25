@@ -5,7 +5,7 @@ import { CANVAS_LINK, pageNodeId, renderPlan, setsState } from '../../src/canvas
 import type { PlanChild, PlanElement, RenderInput } from '../../src/canvas/render.ts'
 import { blogModelFiles } from './fixture.ts'
 import { evaluate } from './generated.ts'
-import { generateUi } from '../../../codegen/src/generate/ui.ts'
+import { generateUi } from '../../../codegen/src/generate/ui/index.ts'
 import { valueFormats } from '../../../codegen/src/edit/formats.ts'
 
 /** What the canvas adds to the generated app's markup: node ids, placeholders for missing data, list copies. */

@@ -32,7 +32,7 @@ export const moduleOfPageIn = (model: Model, page: PageFile): { name: string, mo
 }
 
 /**
- * The names the generated page script declares for a use `as` of `kind` (generate/ui.ts, `pageFile`): the name itself, and what the
+ * The names the generated page script declares for a use `as` of `kind` (generate/ui/files.ts, `pageFile`): the name itself, and what the
  * page derives from it: a state's `set<As>` (what changes it), a query's loading flag `<as>Loading` (an API query's `<as>Error` too), an action's `<as>Pending` and
  * `<as>Error`. Each says in `by` what it is, as a refusal shows it.
  */

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { generateUi } from '../../../codegen/src/generate/ui.ts'
+import { generateUi } from '../../../codegen/src/generate/ui/index.ts'
 import { loadModel } from '../../../codegen/src/model/load.ts'
 import type { Model } from '../../../codegen/src/model/load.ts'
 import { blogModelFiles } from './fixture.ts'

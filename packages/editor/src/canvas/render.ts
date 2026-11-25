@@ -16,7 +16,7 @@ import type { PlainValue } from './protocol.ts'
  * or layout file and the data it reads become a render plan, a tree of
  * elements (an HTML tag or a Nuxt UI component, its classes, attributes and
  * children) that `ModelNode.vue` turns into vnodes. It follows the generator
- * (`generate/ui.ts`) rule for rule with the shared `@bildr/codegen/render`
+ * (`generate/ui/`) rule for rule with the shared `@bildr/codegen/render`
  * rules and token classes, so each element has the tag and classes the
  * generated app renders (the parity tests compare them).
  *
