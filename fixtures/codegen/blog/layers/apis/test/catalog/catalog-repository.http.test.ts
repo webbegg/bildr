@@ -17,12 +17,14 @@ const recording = (answer: unknown) => {
 
 describe('httpCatalogRepository', () => {
   it('products: refuses a header parameter with a line break, without calling the API', async () => {
-    const { http, calls } = recording(undefined)
-    expect(await httpCatalogRepository(http).products({ ...{
-      category: 'category 1',
-      locale: 'locale 1'
-    }, locale: 'a\r\nX-Evil: 1' })).toMatchObject({ ok: false, error: { type: 'invalid_input' } })
-    expect(calls).toEqual([])
+    {
+      const { http, calls } = recording(undefined)
+      expect(await httpCatalogRepository(http).products({ ...{
+        category: 'category 1',
+        locale: 'locale 1'
+      }, locale: 'a\r\nX-Evil: 1' })).toMatchObject({ ok: false, error: { type: 'invalid_input' } })
+      expect(calls).toEqual([])
+    }
   })
 
   it('products: GET /products, reads the list under data.items and maps it', async () => {
@@ -83,6 +85,15 @@ describe('httpCatalogRepository', () => {
     ] })
   })
 
+  it('products: answers the error of the client as it is', async () => {
+    const failed = err(remoteFailed(503, 'answered 503'))
+    const http: ApiClient = async () => failed
+    expect(await httpCatalogRepository(http).products({
+      category: 'category 1',
+      locale: 'locale 1'
+    })).toEqual(failed)
+  })
+
   it('products: an answer that is not a list of Product is an invalid_answer without detail (the detail goes to onInvalidAnswer)', async () => {
     expect.assertions(2)
     const { http } = recording('unexpected')
@@ -132,6 +143,14 @@ describe('httpCatalogRepository', () => {
         }
       ]
     } })
+  })
+
+  it('product: answers the error of the client as it is', async () => {
+    const failed = err(remoteFailed(503, 'answered 503'))
+    const http: ApiClient = async () => failed
+    expect(await httpCatalogRepository(http).product({
+      id: 1
+    })).toEqual(failed)
   })
 
   it('product: an answer that is not Product is an invalid_answer without detail (the detail goes to onInvalidAnswer)', async () => {
@@ -211,6 +230,27 @@ describe('httpCatalogRepository', () => {
     } })
   })
 
+  it('createProduct: answers the error of the client as it is', async () => {
+    const failed = err(remoteFailed(503, 'answered 503'))
+    const http: ApiClient = async () => failed
+    expect(await httpCatalogRepository(http).createProduct({
+      body: {
+        id: 1,
+        name: 'name 1',
+        price: 1.5,
+        inStock: true,
+        createdAt: '2024-01-02T03:04:05.000Z',
+        note: 'note 1',
+        categories: [
+          {
+            id: 1,
+            name: 'name 1'
+          }
+        ]
+      }
+    })).toEqual(failed)
+  })
+
   it('createProduct: an answer that is not Product is an invalid_answer without detail (the detail goes to onInvalidAnswer)', async () => {
     expect.assertions(2)
     const { http } = recording('unexpected')
@@ -248,12 +288,11 @@ describe('httpCatalogRepository', () => {
     expect(result).toEqual({ ok: true, value: undefined })
   })
 
-  it('products: answers the error of the client as it is', async () => {
+  it('deleteProduct: answers the error of the client as it is', async () => {
     const failed = err(remoteFailed(503, 'answered 503'))
     const http: ApiClient = async () => failed
-    expect(await httpCatalogRepository(http).products({
-      category: 'category 1',
-      locale: 'locale 1'
+    expect(await httpCatalogRepository(http).deleteProduct({
+      id: 1
     })).toEqual(failed)
   })
 })

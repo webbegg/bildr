@@ -226,7 +226,7 @@
     },
     "layers/apis/test/catalog/catalog-repository.http.test.ts": {
       "owner": "managed",
-      "sha256": "fbdb36084604a4970bff89b697942a6308fbf1a992dd24d904bbec14a6c1720a",
+      "sha256": "bf0a16817411bcbd846f83868b70428e5e04bc14bbbf356b81a7c875e0b9cc48",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/catalog/create-product.test.ts": {
@@ -281,7 +281,7 @@
     },
     "layers/apis/test/weather/weather-repository.http.test.ts": {
       "owner": "managed",
-      "sha256": "2f190fb5859314ed376e4e446df0c00e0e4bb110c32bad3b5c4fb2770e4dc712",
+      "sha256": "3d59df368020e5893ca299599432df44a5b65a174aeb5e616f84cd0e20b7ae33",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/blog/app/components/blog/PostCard.vue": {

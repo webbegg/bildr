@@ -165,7 +165,10 @@ describe('generate: server-runtime api sources', () => {
     expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/create-product.ts')).toContain('  body: ProductSchema')
     expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/delete-product.ts')).toContain('Promise<KernelResult<void, CatalogError>>')
     expect(read(generated, 'layers/apis/shared/domain/catalog/errors.ts')).not.toContain('class')
-    expect(generated.map(file => file.content).join('\n')).not.toContain('CatalogFailure')
+    // No source's files declare or throw a failure of their own any more (T3b): only the core client's HttpFailure is named.
+    const apis = generated.filter(file => file.path.startsWith('layers/apis/')).map(file => file.content).join('\n')
+    expect(apis.match(/\b\w*Failure\b/g)?.filter(name => name !== 'HttpFailure') ?? []).toEqual([])
+    expect(apis).not.toMatch(/class \w+ extends Error/)
   })
 
   it('builds the paths (encoded), the query on its remote key, reads itemsPath and validates the answers', () => {

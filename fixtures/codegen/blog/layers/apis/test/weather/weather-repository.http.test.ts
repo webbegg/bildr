@@ -46,6 +46,14 @@ describe('httpWeatherRepository', () => {
     } })
   })
 
+  it('forecast: answers the error of the client as it is', async () => {
+    const failed = err(remoteFailed(503, 'answered 503'))
+    const http: ApiClient = async () => failed
+    expect(await httpWeatherRepository(http).forecast({
+      city: 'city 1'
+    })).toEqual(failed)
+  })
+
   it('forecast: an answer that is not Forecast is an invalid_answer without detail (the detail goes to onInvalidAnswer)', async () => {
     expect.assertions(2)
     const { http } = recording('unexpected')
@@ -87,6 +95,18 @@ describe('httpWeatherRepository', () => {
     } })
   })
 
+  it('reportForecast: answers the error of the client as it is', async () => {
+    const failed = err(remoteFailed(503, 'answered 503'))
+    const http: ApiClient = async () => failed
+    expect(await httpWeatherRepository(http).reportForecast({
+      body: {
+        city: 'city 1',
+        celsius: 1.5,
+        observedAt: '2024-01-02T03:04:05.000Z'
+      }
+    })).toEqual(failed)
+  })
+
   it('reportForecast: an answer that is not Forecast is an invalid_answer without detail (the detail goes to onInvalidAnswer)', async () => {
     expect.assertions(2)
     const { http } = recording('unexpected')
@@ -97,13 +117,5 @@ describe('httpWeatherRepository', () => {
         observedAt: '2024-01-02T03:04:05.000Z'
       }
     })).toEqual({ ok: false, error: { type: 'invalid_answer', message: 'The "weather" API answered something unexpected' } })
-  })
-
-  it('forecast: answers the error of the client as it is', async () => {
-    const failed = err(remoteFailed(503, 'answered 503'))
-    const http: ApiClient = async () => failed
-    expect(await httpWeatherRepository(http).forecast({
-      city: 'city 1'
-    })).toEqual(failed)
   })
 })

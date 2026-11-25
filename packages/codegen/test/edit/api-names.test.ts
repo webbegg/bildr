@@ -76,6 +76,19 @@ describe('a name the generated files import or declare is refused', () => {
     }
   })
 
+  // T3b (R3 RELIABILITY-001): the HTTP repository checks a path parameter into `<param>Segment` and a text header one into `<param>Header`.
+  it('a name like the checked value of a path or text header parameter, but not the same parameter used twice', () => {
+    const p = shop()
+    p.edit('api_query_set', { datasource: 'ds_shop', query: { name: 'item', path: '/items/:id', params: [{ name: 'id', in: 'path', type: 'integer' }, { name: 'locale', in: 'header', type: 'text' }], result: { model: 'Item', many: false } } })
+    // A second operation with the same `id`: one local per method, claimed once.
+    p.edit('api_action_set', { datasource: 'ds_shop', action: { name: 'removeItem', method: 'DELETE', path: '/items/:id', params: [{ name: 'id', in: 'path', type: 'integer' }] } })
+    expect(p.refuse('api_query_set', { datasource: 'ds_shop', query: items('idSegment') }, 'invalid').message).toContain('the checked value of the path parameter "id" in the HTTP repository would be named idSegment, which is already the name of the query "idSegment"')
+    expect(p.refuse('api_query_set', { datasource: 'ds_shop', query: items('localeHeader') }, 'invalid').message).toContain('the checked value of the header parameter "locale" in the HTTP repository would be named localeHeader')
+    // A model whose mapper would be the local: `toSegment` next to a path parameter `to`.
+    p.edit('api_query_set', { datasource: 'ds_shop', query: { name: 'route', path: '/routes/:to', params: [{ name: 'to', in: 'path', type: 'text' }], result: { model: 'Item', many: false } } })
+    expect(p.refuse('api_model_set', { datasource: 'ds_shop', model: { name: 'Segment', fields: [{ name: 'id', type: 'integer' }] } }, 'invalid').message).toContain('toSegment')
+  })
+
   it('a model that uses a use-case\'s own type', () => {
     const p = shop()
     p.edit('api_query_set', { datasource: 'ds_shop', query: items('products') })
