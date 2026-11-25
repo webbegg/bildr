@@ -283,7 +283,8 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
     z: positioned || sets('z'),
     type: !!layout,
     direction: stack || sets('direction'),
-    stackBelow: stack,
+    // It writes the base direction and a breakpoint's: offered on the base device only.
+    stackBelow: stack && breakpointOf(device, base) === undefined,
     content: grid || (stack && wraps) || sets('content'),
     colMin: grid && (valueAt(node.style, 'cols', device, base) === 'auto-fit' || sets('colMin')),
     rows: grid || sets('rows'),
@@ -327,7 +328,7 @@ export function panelRows(node: PanelNode, view: PanelView): PanelSectionRows[] 
   }
   const valued = (row: RowId) => {
     if (row === 'display') return setsDisplay
-    if (row === 'stackBelow') return stackBelowOf(node.style, base) !== undefined
+    if (row === 'stackBelow') return breakpointOf(device, base) === undefined && stackBelowOf(node.style, base) !== undefined
     return sets(...rowKeys(row))
   }
   const has = (row: RowId) => added.includes(row) || rowKeys(row).some(key => mixed.includes(key)) || valued(row)

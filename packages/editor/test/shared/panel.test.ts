@@ -109,7 +109,8 @@ describe('panel rows', () => {
       Typography: ['letterSpacing−']
     })
     expect(menus(sections).Size).toEqual(['minWidth', 'maxHeight', 'minHeight', 'grow', 'shrink', 'order', 'position'])
-    expect(menus(sections).Layout).toEqual(['stackBelow', 'overflow', 'overflowX', 'overflowY'])
+    // Stack below is offered on the base device only.
+    expect(menus(sections).Layout).toEqual(['overflow', 'overflowX', 'overflowY'])
     expect(menus(sections).Typography).toEqual(['fontSize', 'fontWeight', 'textAlign', 'textColor', 'lineHeight', 'transform'])
   })
 

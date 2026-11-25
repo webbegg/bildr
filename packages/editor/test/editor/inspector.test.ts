@@ -2,7 +2,7 @@ import { defineComponent, h } from 'vue'
 import { describe, expect, it } from 'vitest'
 import EditorCommitInput from '../../src/components/editor/EditorCommitInput.vue'
 import { click, mountWithApp, settle, typeInto } from '../helpers.ts'
-import { byLabel, inspectorHead, menuItem, menuLabels, open, optionLabels, pickOpenItem, postCard, propInput, propRow, propSelect, resetStyle, select, selectLayer, selectOption, setupHarness, showVariant, styleField, typeStyle } from '../design/harness.ts'
+import { byLabel, chooseDevice, inspectorHead, menuItem, menuLabels, open, optionLabels, pickOpenItem, postCard, propInput, propRow, propSelect, resetStyle, select, selectLayer, selectOption, setupHarness, showVariant, styleField, typeStyle } from '../design/harness.ts'
 
 /**
  * The hosted inspector over the module (U4): the head, the Page section, the prop sections with the
@@ -287,6 +287,30 @@ describe('the style sections', () => {
       expect(q('[data-style-row="colMin"]')).not.toBeNull()
       await click(q('[data-cols-auto-fit]'))
       expect(writes(actions)).toEqual([{ file: 'pg_index', nodeIds: ['n_about'], style: { cols: '3' } }])
+    })
+
+    it('pins left on Tablet over a right inherited from the base: the inherited side is cancelled there', async () => {
+      Object.assign(await nodeIn('n_h1'), { style: { position: 'absolute', right: '0', top: '0', mx: 'auto' } })
+      const { actions } = await open({ node_update_style: ok() })
+      await chooseDevice('tablet')
+      await select('n_h1')
+      await click(q('[data-pin-cell="start,start"]'))
+      expect(writes(actions)).toEqual([{ file: 'pg_index', nodeIds: ['n_h1'], style: { 'md:left': '0', 'md:right': 'auto', 'md:mx': '0', 'md:top': '0' } }])
+    })
+
+    it('offers Stack below on the base device only (it writes the base direction and its breakpoint)', async () => {
+      await open()
+      await chooseDevice('tablet')
+      await select('n_head')
+      expect(await menuLabels(section('Layout')!.querySelector('[data-section-action="add"]'))).not.toContain('Stack below')
+    })
+
+    it('removes an added Stack below row with its "−"', async () => {
+      await open()
+      await select('n_head')
+      await menuItem(section('Layout')!.querySelector('[data-section-action="add"]'), 'Stack below')
+      await click(q('[data-style-row="stackBelow"] [data-row-remove]'))
+      expect(q('[data-style-row="stackBelow"]')).toBeNull()
     })
 
     it('warns that Order moves a node on screen only', async () => {

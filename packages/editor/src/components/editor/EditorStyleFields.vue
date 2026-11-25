@@ -157,6 +157,7 @@ function resetLayout() {
 /** Reset override, or an optional row's "−": its keys set at this breakpoint; unset everywhere, it goes back to the menu or "Add…". */
 function resetRow(row: RowId) {
   added.value = added.value.filter(other => other !== row)
+  if (row === 'stackBelow') return setStackBelow('never')
   const responsive = isResponsiveToken(token(rowKeys(row)[0]!))
   update(rowReset(props.styles, row, responsive ? breakpoint.value : undefined))
 }
@@ -183,7 +184,7 @@ const LABELS: Record<RowId, string> = {
   width: 'Width', height: 'Height', maxWidth: 'Max W', minWidth: 'Min W', maxHeight: 'Max H', minHeight: 'Min H', grow: 'Grow', shrink: 'Shrink',
   type: 'Type', direction: 'Direction', distribute: 'Distribute', align: 'Align', wrap: 'Wrap', columns: 'Columns', gap: 'Gap',
   padding: 'Padding', span: 'Span', margin: 'Margin', self: 'Self', overflow: 'Overflow',
-  rowSpan: 'Rows', order: 'Order', position: 'Position', pin: 'Pin', z: 'Layer', stackBelow: 'Stack', content: 'Lines',
+  rowSpan: 'Row span', order: 'Order', position: 'Position', pin: 'Pin', z: 'Layer', stackBelow: 'Stack', content: 'Lines',
   colMin: 'Min col', rows: 'Rows', overlay: 'Overlay', gapX: 'Gap X', gapY: 'Gap Y', overflowX: 'Overflow X', overflowY: 'Overflow Y',
   visible: 'Visible', opacity: 'Opacity', fill: 'Fill', border: 'Border', shadows: 'Shadows', radius: 'Radius', corners: 'Corners',
   display: 'Display', fontSize: 'Size', fontWeight: 'Weight', textAlign: 'Align', textColor: 'Color',
@@ -382,6 +383,8 @@ function selectWrite(row: RowId, value: string) {
   if (parent.state === 'unset' || parent.value === 'static') emit('updateParent', atDevice({ position: 'relative' }))
 }
 
+/** The value that cancels an inherited pin token at a device: no inset, no auto margin. */
+const PIN_NEUTRAL: Record<string, string> = { mx: '0', my: '0' }
 const PIN_VALUE_KEYS = ['inset', 'insetX', 'insetY', 'top', 'right', 'bottom', 'left', 'mx', 'my', 'w', 'h'] as const
 const pinValues = computed<PinValues>(() => Object.fromEntries(PIN_VALUE_KEYS.flatMap(key => (current(key) === undefined ? [] : [[key, current(key)!]]))))
 const pin = computed(() => pinOf(pinValues.value))
@@ -396,7 +399,11 @@ function setPin(axes: Partial<Record<PinAxis, Pin>>) {
   }
   update(Object.fromEntries(Object.entries(patch).flatMap(([key, value]): [string, string | null][] => {
     if (value !== null) return own(key) === value ? [] : [[keyAt(key), value]]
+    // Cleared: the device's own key goes, unless a value from another level would show through; then it is neutralised here.
     const p = provenance(key)
+    const rest = p.state === 'set' ? Object.fromEntries(Object.entries(props.styles).filter(([other]) => other !== p.key)) : props.styles
+    const beneath = styleProvenance(rest, key, editor.deviceId, editor.breakpointBase)
+    if (beneath.state !== 'unset') return [[keyAt(key), PIN_NEUTRAL[key] ?? 'auto']]
     return p.state === 'set' ? [[p.key, null]] : []
   })))
 }
