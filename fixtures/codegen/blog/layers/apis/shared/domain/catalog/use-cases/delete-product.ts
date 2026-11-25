@@ -16,7 +16,7 @@ export interface DeleteProductDeps {
 
 /** Action "deleteProduct" of the "catalog" API. */
 export const deleteProduct = (deps: DeleteProductDeps) =>
-  async (input: DeleteProductInput): Promise<KernelResult<void, CatalogError>> => {
+  async (input: DeleteProductInput): Promise<KernelResult<undefined, CatalogError>> => {
     const parsed = DeleteProductInputSchema.safeParse(input)
     if (!parsed.success) return err(invalidInput(parsed.error.message))
     return deps.catalog.deleteProduct(parsed.data)

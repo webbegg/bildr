@@ -32,17 +32,17 @@ export const moduleOfPageIn = (model: Model, page: PageFile): { name: string, mo
 
 /**
  * The names the generated page script declares for a use `as` of `kind` (generate/ui/files.ts, `pageFile`): the name itself, and what the
- * page derives from it: a state's `set<As>` (what changes it), a query's loading flag `<as>Loading` (an API query's `<as>Error` too), an action's `<as>Pending` and
+ * page derives from it: a state's `set<As>` (what changes it), a query's loading flag `<as>Loading` (an API query's status `<as>Status` instead), an action's `<as>Pending` and
  * `<as>Error`. Each says in `by` what it is, as a refusal shows it.
  */
 export const declaredBy = (as: string, kind: UseKind): Declared => {
-  const { set, loading, pending, error } = useNames(as)
+  const { set, loading, status, pending, error } = useNames(as)
   const derived: Array<[string, string]> = kind === 'state'
     ? [[set, `the "set…" name of the state "${as}"`]]
     : kind === 'query'
       ? [[loading, `the loading flag of "${as}"`]]
       : kind === 'api'
-        ? [[loading, `the loading flag of "${as}"`], [error, `the error of "${as}"`]]
+        ? [[status, `the status of "${as}"`]]
         : kind === 'action' ? [[pending, `the pending flag of "${as}"`], [error, `the error of "${as}"`]] : []
   return [{ name: as, by: `"${as}"` }, ...derived.map(([name, by]) => ({ name, by }))]
 }

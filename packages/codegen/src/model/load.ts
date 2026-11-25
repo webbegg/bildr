@@ -420,7 +420,7 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
         const typed = apiArgsProblem(source, query, use.args, { page, states: mod.state, as: use.as })
         if (typed) report(path, `${where}.args`, typed)
       })
-      // What the page's script declares from its API uses (`<as>Loading`, `<as>Error`, the composable, `route`…) can't meet another name.
+      // What the page's script declares from its API uses (`<as>Status`, the composable, `route`…) can't meet another name.
       if (uses.apis?.length && !problems.some(problem => problem.path === path && problem.message.startsWith('uses.apis.') && /\.as: The name/.test(problem.message))) {
         const clash = pageNamesProblem(model, page)
         if (clash) report(path, 'uses.apis', clash)

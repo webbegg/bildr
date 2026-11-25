@@ -10,7 +10,7 @@ import { apiComposableName, composableOf, stateComposableOf, useNames } from '..
 import { corePaths } from '../paths.ts'
 import { pascal, tsString } from '../text.ts'
 import type { Env } from './env.ts'
-import { actionById, apiRoot, entityOf, expression, fail, isObject, keyedById, loadingOf, newEnv, plainRoot, refRoot, use } from './env.ts'
+import { actionById, apiRoot, entityOf, expression, fail, isObject, keyedById, loadingOf, newEnv, plainRoot, refRoot, settledOf, use } from './env.ts'
 import { sfc } from './markup.ts'
 import { fillTemplate, findNode, render, SLOT_FILL } from './nodes.ts'
 import { bindProperties, nodeIndex, variantsOf } from './variants.ts'
@@ -179,7 +179,7 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
     env.roots.set(entry.as, refRoot(entry.as, () => {
       use(env, `computed:${entry.as}`, 'value')
       if (writing !== undefined) reads.set(writing, (reads.get(writing) ?? new Set<string>()).add(entry.as))
-    }, undefined, () => [...loadingOf(env, entry.then), ...loadingOf(env, entry.else)]))
+    }, undefined, () => [...loadingOf(env, entry.then), ...loadingOf(env, entry.else)], () => [...settledOf(env, entry.then), ...settledOf(env, entry.else)]))
   }
 
   // The template first: it decides which declarations the script needs.
@@ -274,7 +274,7 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
   for (const { as } of apis) {
     const parts = env.used.get(`api:${as}`)
     if (!parts) continue
-    const names = [parts.has('data') && `data: ${as}`, parts.has('loading') && `pending: ${useNames(as).loading}`, parts.has('error') && `error: ${useNames(as).error}`].filter(Boolean)
+    const names = [parts.has('data') && `data: ${as}`, parts.has('status') && `status: ${useNames(as).status}`].filter(Boolean)
     declarations.push(`const { ${names.join(', ')} } = ${calls.get(as)!}`)
   }
   for (const { as, file } of actions) {

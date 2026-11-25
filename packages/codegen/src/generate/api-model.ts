@@ -205,7 +205,8 @@ export const inputFields = (operation: Operation): InputField[] => [
 export const inputType = (fields: InputField[]) => `{ ${fields.map(field => `${field.name}${field.optional ? '?' : ''}: ${field.ts}`).join(', ')} }`
 
 /** What a call returns, as a TS type. */
-export const resultType = (operation: Operation) => operation.result ? `${operation.result.model}${operation.result.many ? '[]' : ''}` : 'void'
+/** What an operation answers: its model, or `undefined` for one that answers nothing (a type argument can't be `void`). */
+export const resultType = (operation: Operation) => operation.result ? `${operation.result.model}${operation.result.many ? '[]' : ''}` : 'undefined'
 
 /**
  * `/products/:id` as a template literal over `target` (`input`): each path parameter through `segment` (the adapter's helper: encoded, and

@@ -154,7 +154,8 @@ describe('generate: server-runtime api sources', () => {
     expect(port).toContain('  products(input: { category?: string, locale?: string }): Promise<KernelResult<Product[], CatalogError>>')
     expect(port).toContain('  product(input: { id: number }): Promise<KernelResult<Product, CatalogError>>')
     expect(port).toContain('  createProduct(input: { body: Product }): Promise<KernelResult<Product, CatalogError>>')
-    expect(port).toContain('  deleteProduct(input: { id: number }): Promise<KernelResult<void, CatalogError>>')
+    // An operation that answers nothing answers `undefined`: it is a type argument of its composable, which `void` can't be.
+    expect(port).toContain('  deleteProduct(input: { id: number }): Promise<KernelResult<undefined, CatalogError>>')
     const useCase = read(generated, 'layers/apis/shared/domain/catalog/use-cases/products.ts')
     expect(useCase).toContain('export const ProductsInputSchema = z.object({\n  category: z.string().optional(),\n  locale: z.string().optional()\n})')
     expect(useCase).toContain('export const products = (deps: ProductsDeps) =>')
@@ -163,10 +164,11 @@ describe('generate: server-runtime api sources', () => {
     expect(useCase).toContain('    return deps.catalog.products(parsed.data)\n')
     expect(useCase).not.toContain('catch')
     expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/create-product.ts')).toContain('  body: ProductSchema')
-    expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/delete-product.ts')).toContain('Promise<KernelResult<void, CatalogError>>')
+    expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/delete-product.ts')).toContain('Promise<KernelResult<undefined, CatalogError>>')
     expect(read(generated, 'layers/apis/shared/domain/catalog/errors.ts')).not.toContain('class')
     // No source's files declare or throw a failure of their own any more (T3b): only the core client's HttpFailure is named.
-    const apis = generated.filter(file => file.path.startsWith('layers/apis/')).map(file => file.content).join('\n')
+    // The query helpers are the exception: TanStack Query knows only thrown errors, so a query's error Result travels through it in one (`Answered`).
+    const apis = generated.filter(file => file.path.startsWith('layers/apis/') && file.path !== 'layers/apis/app/data/api-query.ts').map(file => file.content).join('\n')
     expect(apis.match(/\b\w*Failure\b/g)?.filter(name => name !== 'HttpFailure') ?? []).toEqual([])
     expect(apis).not.toMatch(/class \w+ extends Error/)
   })
@@ -456,14 +458,15 @@ describe('generate: browser-runtime api sources', () => {
     const query = fromWeather('app/composables/apis/useWeatherForecast.ts')
     expect(query).toContain('export const useWeatherForecast = (input: MaybeRefOrGetter<ForecastInput>) => {')
     expect(query).toContain('const api = useWeatherApi()')
-    expect(query).toContain('useApiQuery<ForecastInput, Forecast>({')
+    // The source's error is the query's (T3c): the use-case's Result is handed over as it is.
+    expect(query).toContain('useApiQuery<ForecastInput, Forecast, WeatherError>({')
     expect(query).toContain('key: [\'apis\', \'weather\', \'forecast\'],')
     // The query passes the AbortSignal of its fetch on, as the server composables give it to $fetch.
-    expect(query).toContain('fetch: async (query, signal) => valueOrThrow(await api(signal).forecast(query))')
+    expect(query).toContain('fetch: (query, signal) => api(signal).forecast(query)')
     const action = fromWeather('app/composables/apis/useWeatherReportForecast.ts')
     expect(action).toContain('export const useWeatherReportForecast = () => {')
-    expect(action).toContain('useApiAction<ReportForecastInput, Forecast>(')
-    expect(action).toContain('async input => valueOrThrow(await api().reportForecast(input))')
+    expect(action).toContain('useApiAction<ReportForecastInput, Forecast, WeatherError>(')
+    expect(action).toContain('input => api().reportForecast(input)')
     expect(action).toContain('[\'apis\', \'weather\']')
     for (const text of [query, action]) expect(text).not.toMatch(/\$fetch|\/api\/apis/)
   })
@@ -473,7 +476,8 @@ describe('generate: browser-runtime api sources', () => {
     expect(errors).toContain('export const invalidAnswer = (): WeatherError => ({ type: \'invalid_answer\', message: \'The "weather" API answered something unexpected\' })')
     expect(errors).toContain('console.warn')
     expect(fromWeather('app/data/weather.ts')).toContain('console.warn(\'The "weather" API answered something unexpected: \' + detail)')
-    expect(fromWeather('app/data/api-query.ts')).toContain('throw new Error(result.error.message)')
+    // The query hands the use-case's error on as it is: no message is rewritten on the way.
+    expect(fromWeather('app/data/api-query.ts')).toContain('if (!result.ok) throw new Answered(result.error)')
   })
 
   it('has no auth at all: nothing reads a secret, nothing sets a credential header', () => {

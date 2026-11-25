@@ -11,27 +11,20 @@ import { generatedRunner } from './run-generated'
  * Simple data S7 / P3 (verify R3-004): the generated browser composition and composables are run for real, not only read as text: the
  * composables of the "weather" source of the golden fixture, over its composition, use-cases, repository, mappers, schemas and client.
  * Only what the app provides is replaced: `#app` (the runtime config) and the query helpers (TanStack and Vue are not dependencies of this
- * package), and `fetch`.
+ * package; api-query-helpers.test.ts runs those), and `fetch`. Since T3c a composable's call answers the use-case's Result as it is.
  */
-interface QueryOptions { fetch: (input: unknown, signal: AbortSignal) => Promise<unknown> }
+type Result = { ok: true, value: unknown } | { ok: false, error: { type: string, message: string, status?: number } }
+interface QueryOptions { fetch: (input: unknown, signal: AbortSignal) => Promise<Result> }
 interface Composables {
   useWeatherForecast: (input: unknown) => { options: QueryOptions }
-  useWeatherReportForecast: () => { run: (input: unknown) => Promise<{ ok: true, value: unknown } | { ok: false, error: string }> }
+  useWeatherReportForecast: () => { run: (input: unknown) => Promise<Result> }
 }
 
 const CONFIG = '__bildrBrowserCompositionConfig'
-/** The helpers of app/data/api-query.ts without TanStack: a query hands its options back, an action's `run` answers a Result as the real one does. */
+/** The helpers of app/data/api-query.ts without TanStack: a query hands its options back, an action's `run` is its call. */
 const QUERY_STUB = `
 export const useApiQuery = options => ({ options })
-export const useApiAction = call => ({
-  run: async (input) => {
-    try {
-      return { ok: true, value: await call(input) }
-    } catch (cause) {
-      return { ok: false, error: cause.message }
-    }
-  }
-})
+export const useApiAction = call => ({ run: call })
 `
 const APP_STUB = `export const useRuntimeConfig = () => globalThis.${CONFIG}\n`
 
@@ -43,11 +36,7 @@ describe('generated browser composition and composables, run', () => {
     const loaded = loadModel(fixtureModelFiles())
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems))
     const sources = new Map(generate(loaded.model).map(file => [file.path, file.content]))
-    // The query helpers are stubbed (TanStack, Vue), but `valueOrThrow` is the generated one: it is what turns a use-case's error into the UI's.
-    const helpers = sources.get('layers/apis/app/data/api-query.ts')!
-    const start = helpers.indexOf('export const valueOrThrow')
-    expect(start).toBeGreaterThan(-1)
-    sources.set('layers/apis/app/data/api-query.ts', `${QUERY_STUB}\n${helpers.slice(start, helpers.indexOf('\n}\n', start) + 3)}`)
+    sources.set('layers/apis/app/data/api-query.ts', QUERY_STUB)
     const { load } = generatedRunner(sources, dir, { '#app': APP_STUB })
     composables = {
       ...await load<Pick<Composables, 'useWeatherForecast'>>('layers/apis/app/composables/apis/useWeatherForecast.ts'),
@@ -74,14 +63,14 @@ describe('generated browser composition and composables, run', () => {
     return calls
   }
   const json = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status })
+  const forecast = (input: unknown, signal = new AbortController().signal) => composables.useWeatherForecast(input).options.fetch(input, signal)
   const REMOTE = { city: 'Lisbon', celsius: 21.5, observed_at: '2026-05-01T10:00:00Z' }
   const FORECAST = { city: 'Lisbon', celsius: 21.5, observedAt: '2026-05-01T10:00:00Z' }
 
   it('a query calls the base URL of the runtime config, with the remote key, and answers the entity', async () => {
     configure('https://weather.example.com/v1')
     const calls = fakeFetch(json(REMOTE))
-    const { options } = composables.useWeatherForecast({ city: 'Lisbon' })
-    await expect(options.fetch({ city: 'Lisbon' }, new AbortController().signal)).resolves.toEqual(FORECAST)
+    await expect(forecast({ city: 'Lisbon' })).resolves.toEqual({ ok: true, value: FORECAST })
     expect(calls.map(call => call.url)).toEqual(['https://weather.example.com/v1/forecast?q=Lisbon'])
     expect(calls[0]!.init).toMatchObject({ method: 'GET', redirect: 'manual', credentials: 'omit' })
   })
@@ -90,25 +79,22 @@ describe('generated browser composition and composables, run', () => {
     configure('https://weather.example.com/v1')
     fakeFetch(json({ city: 7, observed_at: 'yesterday' }))
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const { options } = composables.useWeatherForecast({ city: 'Lisbon' })
-    const failure = await options.fetch({ city: 'Lisbon' }, new AbortController().signal).catch((error: Error) => error)
-    expect(failure).toBeInstanceOf(Error)
-    expect((failure as Error).message).toBe('The "weather" API answered something unexpected')
+    const result = await forecast({ city: 'Lisbon' })
+    expect(result).toEqual({ ok: false, error: { type: 'invalid_answer', message: 'The "weather" API answered something unexpected' } })
     expect(warn).toHaveBeenCalledTimes(1)
     const [message] = warn.mock.calls[0] as [string]
     expect(message.startsWith('The "weather" API answered something unexpected: ')).toBe(true)
     // The detail names what was wrong with the answer; the error that reaches the UI doesn't.
     expect(message).toContain('city')
     expect(message).toContain('celsius')
-    expect((failure as Error).message).not.toContain('celsius')
+    expect(JSON.stringify(result)).not.toContain('celsius')
   })
 
-  it('an API that answers an error: the status in the message, nothing of its body, nothing on the console', async () => {
+  it('an API that answers an error: remote_failed with the status, nothing of its body, nothing on the console', async () => {
     configure('https://weather.example.com/v1')
     fakeFetch(json({ secret_internal: 'upstream' }, 503))
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const failure = await composables.useWeatherForecast({ city: 'Lisbon' }).options.fetch({ city: 'Lisbon' }, new AbortController().signal).catch((error: Error) => error)
-    expect((failure as Error).message).toBe('The "weather" API answered 503.')
+    await expect(forecast({ city: 'Lisbon' })).resolves.toEqual({ ok: false, error: { type: 'remote_failed', status: 503, message: 'The "weather" API answered 503.' } })
     expect(warn).not.toHaveBeenCalled()
   })
 
@@ -116,11 +102,11 @@ describe('generated browser composition and composables, run', () => {
     configure('https://weather.example.com/v1')
     const calls = fakeFetch(init => new Promise<Response>((_resolve, reject) => init.signal!.addEventListener('abort', () => reject(init.signal!.reason), { once: true })))
     const cancel = new AbortController()
-    const pending = composables.useWeatherForecast({ city: 'Lisbon' }).options.fetch({ city: 'Lisbon' }, cancel.signal).catch((error: Error) => error)
+    const pending = forecast({ city: 'Lisbon' }, cancel.signal)
     await vi.waitFor(() => expect(calls).toHaveLength(1))
     expect(calls[0]!.init.signal!.aborted).toBe(false)
     cancel.abort()
-    expect(((await pending) as Error).message).toBe('The "weather" API was cancelled.')
+    expect(await pending).toMatchObject({ ok: false, error: { type: 'remote_failed', message: 'The "weather" API was cancelled.' } })
     expect(calls[0]!.init.signal!.aborted).toBe(true)
   })
 
@@ -131,23 +117,22 @@ describe('generated browser composition and composables, run', () => {
     expect(calls.map(call => call.url)).toEqual(['https://weather.example.com/v1/reports'])
     expect(calls[0]!.init).toMatchObject({ method: 'POST', body: JSON.stringify(REMOTE), credentials: 'omit' })
     fakeFetch(json({}, 500))
-    await expect(composables.useWeatherReportForecast().run({ body: FORECAST })).resolves.toEqual({ ok: false, error: 'The "weather" API answered 500.' })
+    await expect(composables.useWeatherReportForecast().run({ body: FORECAST })).resolves.toEqual({ ok: false, error: { type: 'remote_failed', status: 500, message: 'The "weather" API answered 500.' } })
   })
 
   it('an input that is not valid never reaches the API', async () => {
     configure('https://weather.example.com/v1')
     const calls = fakeFetch(json(REMOTE))
-    const failure = await composables.useWeatherForecast({}).options.fetch({}, new AbortController().signal).catch((error: Error) => error)
-    expect((failure as Error).message).toContain('The call to the "weather" API is not valid')
+    const result = await forecast({})
+    expect(result).toMatchObject({ ok: false, error: { type: 'invalid_input' } })
+    expect(!result.ok && result.error.message).toContain('The call to the "weather" API is not valid')
     expect(calls).toEqual([])
   })
 
   it('a base URL that is not configured fails the call with its message, not the composable', async () => {
     configure(undefined)
     const calls = fakeFetch(json(REMOTE))
-    const { options } = composables.useWeatherForecast({ city: 'Lisbon' })
-    const failure = await options.fetch({ city: 'Lisbon' }, new AbortController().signal).catch((error: Error) => error)
-    expect((failure as Error).message).toBe('The "weather" API has no valid base URL.')
+    await expect(forecast({ city: 'Lisbon' })).resolves.toMatchObject({ ok: false, error: { type: 'remote_failed', message: 'The "weather" API has no valid base URL.' } })
     expect(calls).toEqual([])
   })
 })

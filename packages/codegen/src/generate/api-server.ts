@@ -40,7 +40,11 @@ const layerConfigFile = (): Emitted => ({
   ])
 })
 
-/** The two helpers the client composables share: a reactive query over the app's TanStack query client, and an async action. */
+/**
+ * The helpers the client composables share: a query over the app's TanStack query client with the contract of Nuxt's useAsyncData
+ * (`data`, `status`, `error`, `refresh`), an action that answers a Result, and `fromRoute`, which reads a server source's route as a Result.
+ * Both runtimes give them a Result whose error is the source's own (`ApiError`): the page tells its errors apart by `type`.
+ */
 const queryHelpersFile = (): Emitted => ({
   path: apisPaths.apiQuery,
   content: file([
@@ -50,66 +54,116 @@ const queryHelpersFile = (): Emitted => ({
     'import { getCurrentScope, onScopeDispose, shallowRef, toValue, watch } from \'vue\'',
     'import type { MaybeRefOrGetter } from \'vue\'',
     'import { err, ok } from \'#core/kernel/result\'',
-    'import type { Result } from \'#core/kernel/result\'',
+    'import type { ApiError, DomainError, Result } from \'#core/kernel/result\'',
     'import { queryClient } from \'#layers/core/app/data/query-client\'',
     '',
+    '/** Where a query is, as the `status` of Nuxt\'s useAsyncData: `pending` while it fetches (again), then `success` or `error`. */',
+    'export type ApiStatus = \'pending\' | \'success\' | \'error\'',
+    '',
     '/** What a query composable of an API data source gives `useApiQuery`. */',
-    'export interface ApiQueryOptions<Input, Output> {',
+    'export interface ApiQueryOptions<Input, Output, E extends DomainError> {',
     '  /** Where the answer is cached: the source and the query. The input is added to it. */',
     '  key: readonly unknown[]',
     '  input: MaybeRefOrGetter<Input>',
-    '  fetch: (input: Input, signal: AbortSignal) => Promise<Output>',
+    '  /** The call: it answers a Result, never throws for an expected failure. */',
+    '  fetch: (input: Input, signal: AbortSignal) => Promise<Result<Output, ApiError<E>>>',
     '}',
     '',
-    '/** A query over the app\'s query client: `data`, `pending` and `error` are refs, and it fetches again when `input` changes. */',
-    'export const useApiQuery = <Input, Output>({ key, input, fetch }: ApiQueryOptions<Input, Output>) => {',
+    '/** A failure outside the source\'s errors (the server could not be reached, or a bug): its detail goes to the console, the UI gets a generic message. */',
+    'const unexpected = (cause: unknown): ApiError<never> => {',
+    '  console.error(cause)',
+    '  return { type: \'unexpected\', message: \'Something went wrong. Please try again.\' }',
+    '}',
+    '',
+    'const isDomainError = (value: unknown): value is DomainError =>',
+    '  typeof value === \'object\' && value !== null && typeof (value as DomainError).type === \'string\' && typeof (value as DomainError).message === \'string\'',
+    '',
+    '/**',
+    ' * What a server source\'s route answered (a `$fetch` of it): its value, or the source\'s error the route answered with. The route sends',
+    ' * the error as the `data` of its HTTP error (`unwrapOrThrow`); anything else is `unexpected`.',
+    ' */',
+    'export const fromRoute = async <T, E extends DomainError>(call: Promise<T>): Promise<Result<T, ApiError<E>>> => {',
+    '  try {',
+    '    return ok(await call)',
+    '  } catch (cause) {',
+    '    const sent = typeof cause === \'object\' && cause !== null ? (cause as { data?: { data?: unknown } }).data?.data : undefined',
+    '    // The route answers only the errors of its source: the type says which they are.',
+    '    return err(isDomainError(sent) ? sent as E : unexpected(cause))',
+    '  }',
+    '}',
+    '',
+    '/** The error a query\'s call answered, carried through TanStack Query (which knows only thrown errors) to the query\'s `error`. */',
+    'class Answered extends Error {',
+    '  readonly error: ApiError',
+    '  constructor(error: ApiError) {',
+    '    super(error.message)',
+    '    this.error = error',
+    '  }',
+    '}',
+    '',
+    '/** Only a call that may pass on a second try is tried again: an unreachable server, or an API that answered an error. */',
+    'const retry = (count: number, cause: Error) =>',
+    '  count < 3 && (!(cause instanceof Answered) || cause.error.type === \'unexpected\' || cause.error.type === \'remote_failed\')',
+    '',
+    '/**',
+    ' * A query over the app\'s query client, with the contract of Nuxt\'s useAsyncData: `data`, `status` and `error` (the source\'s typed',
+    ' * error) are refs, `refresh()` fetches again. It also fetches again when `input` changes.',
+    ' */',
+    'export const useApiQuery = <Input, Output, E extends DomainError>({ key, input, fetch }: ApiQueryOptions<Input, Output, E>) => {',
     '  const optionsFor = () => {',
     '    const value = toValue(input)',
-    '    return { queryKey: [...key, value], queryFn: ({ signal }: { signal: AbortSignal }) => fetch(value, signal) }',
+    '    return {',
+    '      queryKey: [...key, value],',
+    '      queryFn: async ({ signal }: { signal: AbortSignal }) => {',
+    '        const result = await fetch(value, signal)',
+    '        if (!result.ok) throw new Answered(result.error)',
+    '        return result.value',
+    '      },',
+    '      retry',
+    '    }',
     '  }',
     '  const observer = new QueryObserver<Output>(queryClient, optionsFor())',
     '  const data = shallowRef<Output>()',
-    '  const error = shallowRef<string>()',
-    '  const pending = shallowRef(true)',
+    '  const status = shallowRef<ApiStatus>(\'pending\')',
+    '  const error = shallowRef<ApiError<E>>()',
     '  const sync = (result: QueryObserverResult<Output>) => {',
     '    data.value = result.data',
-    '    error.value = result.error ? errorMessage(result.error) : undefined',
-    '    pending.value = result.isFetching',
+    '    // What `fetch` answered is one of E: `Answered` carries it untyped through TanStack Query.',
+    '    error.value = !result.error ? undefined : result.error instanceof Answered ? result.error.error as ApiError<E> : unexpected(result.error)',
+    '    status.value = result.isFetching ? \'pending\' : result.status',
     '  }',
     '  sync(observer.getCurrentResult())',
     '  const unsubscribe = observer.subscribe(sync)',
     '  watch(() => toValue(input), () => observer.setOptions(optionsFor()), { deep: true })',
     '  if (getCurrentScope()) onScopeDispose(unsubscribe)',
-    '  return { data, error, pending, refresh: () => observer.refetch() }',
+    '  const refresh = async () => {',
+    '    await observer.refetch()',
+    '  }',
+    '  return { data, status, error, refresh }',
     '}',
     '',
-    '/** An action: `run` calls the API, then refetches the queries under `invalidates`. It answers a Result, never throws. */',
-    'export const useApiAction = <Input, Output>(call: (input: Input) => Promise<Output>, invalidates: readonly unknown[]) => {',
+    '/** An action: `run` calls the API, then refetches the queries under `invalidates`. It answers a Result, never throws; `pending` and `error` are refs. */',
+    'export const useApiAction = <Input, Output, E extends DomainError>(call: (input: Input) => Promise<Result<Output, ApiError<E>>>, invalidates: readonly unknown[]) => {',
     '  type RunArguments = undefined extends Input ? [input?: Input] : [input: Input]',
     '  const pending = shallowRef(false)',
-    '  const error = shallowRef<string>()',
-    '  const run = async (...[input]: RunArguments): Promise<Result<Output, string>> => {',
+    '  const error = shallowRef<ApiError<E>>()',
+    '  const run = async (...[input]: RunArguments): Promise<Result<Output, ApiError<E>>> => {',
     '    pending.value = true',
     '    error.value = undefined',
     '    try {',
-    '      const value = await call(input as Input)',
-    '      await queryClient.invalidateQueries({ queryKey: invalidates })',
-    '      return ok(value)',
+    '      const result = await call(input as Input)',
+    '      if (result.ok) await queryClient.invalidateQueries({ queryKey: invalidates })',
+    '      else error.value = result.error',
+    '      return result',
     '    } catch (cause) {',
-    '      const message = errorMessage(cause)',
-    '      error.value = message',
-    '      return err(message)',
+    '      const failure = unexpected(cause)',
+    '      error.value = failure',
+    '      return err(failure)',
     '    } finally {',
     '      pending.value = false',
     '    }',
     '  }',
     '  return { run, pending, error }',
-    '}',
-    '',
-    '/** What a use-case answered: its value, or its error thrown with the message the UI shows (an invalid answer\'s is generic: its detail went to the console). */',
-    'export const valueOrThrow = <T>(result: Result<T, { message: string }>): T => {',
-    '  if (!result.ok) throw new Error(result.error.message)',
-    '  return result.value',
     '}'
   ])
 })
@@ -237,10 +291,11 @@ const routeFileOf = (source: ApiSource, names: SourceNames, operation: Operation
 // ── Composables ────────────────────────────────────────────────────────
 
 /**
- * `app/composables/apis/use<S><Op>.ts`: a query is reactive data over the query client, an action an async `run`. The public signature is
- * the same for both runtimes; only what is called differs: a server source calls its Nitro route, a browser one the use-case itself
- * (through the composition of app/data/<s>.ts), which answers a Result that `valueOrThrow` turns into the value or the error the UI sees. A query passes
- * the AbortSignal of its fetch to the composition, so a cancelled query cancels its request, as the `$fetch` of a server one does.
+ * `app/composables/apis/use<S><Op>.ts`: a query is `{ data, status, error, refresh }` over the query client, an action an async `run`. The
+ * public signature is the same for both runtimes, its error the source's own; only what is called differs: a server source calls its Nitro
+ * route (`fromRoute` reads it as a Result), a browser one the use-case itself (through the composition of app/data/<s>.ts), which answers
+ * one. A query passes the AbortSignal of its fetch to the composition, so a cancelled query cancels its request, as the `$fetch` of a
+ * server one does.
  */
 export const composableFile = (source: ApiSource, names: SourceNames, operation: Operation, runtime: ApiSource['runtime'] = 'server'): Emitted => {
   const browser = runtime === 'browser'
@@ -252,6 +307,8 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
   const url = tsString(`/api/apis/${names.dir}/${kebab(operation.name)}`)
   const result = resultType(operation)
   const input = `${type}Input`
+  // The type arguments of useApiQuery / useApiAction: what it takes, what it answers, the source's error.
+  const generics = `<${fields.length ? input : 'undefined'}, ${result}, ${names.error}>`
   const optionalInput = fields.every(field => field.optional)
   const about = descriptionOf(operation)
   const label = `${operation.kind === 'query' ? 'Query' : 'Action'} "${operation.name}" of the "${source.name}" API${about ? ` (${about})` : ''}`
@@ -261,10 +318,12 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
   const imports = lines(
     ...(operation.kind === 'query' && fields.length ? ['import type { MaybeRefOrGetter } from \'vue\''] : []),
     ...(operation.result ? [importLine(importPath(path, paths.entity(modelNames(operation.result.model).file)), [{ name: operation.result.model, type: true }])] : []),
+    importLine(importPath(path, paths.errors), [{ name: names.error, type: true }]),
     ...(fields.length ? [importLine(importPath(path, paths.useCase(kebab(operation.name))), [{ name: input, type: true }])] : []),
-    importLine(importPath(path, apisPaths.apiQuery), [operation.kind === 'query' ? 'useApiQuery' : 'useApiAction', ...(browser ? ['valueOrThrow'] : [])]),
+    importLine(importPath(path, apisPaths.apiQuery), [...(browser ? [] : ['fromRoute']), operation.kind === 'query' ? 'useApiQuery' : 'useApiAction']),
     ...(browser ? [importLine(importPath(path, paths.browserRoot), [names.root])] : [])
   )
+  const queryDoc = `/** ${label}: \`data\`, \`status\` and \`error\` are refs, \`refresh()\` fetches again${fields.length ? '; it also fetches again when the input changes' : ''}.`
   // The local the browser composables hold the composition in: `api(signal)` gives the use-cases bound to that call's signal.
   const use = 'api'
   if (operation.kind === 'query' && browser) {
@@ -275,20 +334,20 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
         header(names.source),
         ...imports,
         '',
-        `/** ${label}: \`data\`, \`pending\` and \`error\` are refs${fields.length ? '; it fetches again when the input changes' : ''}. It calls the API from the page, through the use-case. */`,
+        `${queryDoc} It calls the API from the page, through the use-case. */`,
         `export const ${name} = (${fields.length ? `input: MaybeRefOrGetter<${input}>${optionalInput ? ' = {}' : ''}` : ''}) => {`,
         `  const ${use} = ${names.root}()`,
-        `  return useApiQuery<${fields.length ? input : 'undefined'}, ${result}>({`,
+        `  return useApiQuery${generics}({`,
         `    key: ['apis', ${tsString(names.dir)}, ${tsString(operation.name)}],`,
         `    input${fields.length ? '' : ': undefined'},`,
-        `    fetch: async (${fields.length ? 'query' : '_input'}, signal) => valueOrThrow(await ${use}(signal).${operation.name}(${fields.length ? 'query' : ''}))`,
+        `    fetch: (${fields.length ? 'query' : '_input'}, signal) => ${use}(signal).${operation.name}(${fields.length ? 'query' : ''})`,
         '  })',
         '}'
       ])
     }
   }
   if (operation.kind === 'query') {
-    const fetch = `$fetch<${result}>(${url}, { ${fields.length ? 'query, ' : ''}signal })`
+    const fetch = `fromRoute($fetch<${result}>(${url}, { ${fields.length ? 'query, ' : ''}signal }))`
     return {
       path,
       source: names.source,
@@ -296,9 +355,9 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
         header(names.source),
         ...imports,
         '',
-        `/** ${label}: \`data\`, \`pending\` and \`error\` are refs${fields.length ? '; it fetches again when the input changes' : ''}. */`,
+        `${queryDoc} */`,
         `export const ${name} = (${fields.length ? `input: MaybeRefOrGetter<${input}>${optionalInput ? ' = {}' : ''}` : ''}) =>`,
-        `  useApiQuery<${fields.length ? input : 'undefined'}, ${result}>({`,
+        `  useApiQuery${generics}({`,
         `    key: ['apis', ${tsString(names.dir)}, ${tsString(operation.name)}],`,
         `    input${fields.length ? '' : ': undefined'},`,
         `    fetch: (${fields.length ? 'query' : '_input'}, signal) => ${fetch}`,
@@ -307,9 +366,6 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
     }
   }
   if (browser) {
-    const generics = operation.result ? `<${fields.length ? input : 'undefined'}, ${result}>` : ''
-    const parameter = fields.length ? (operation.result ? 'input' : `input: ${input}`) : ''
-    const call = `valueOrThrow(await ${use}().${operation.name}(${fields.length ? 'input' : ''}))`
     return {
       path,
       source: names.source,
@@ -321,7 +377,7 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
         `export const ${name} = () => {`,
         `  const ${use} = ${names.root}()`,
         `  return useApiAction${generics}(`,
-        operation.result ? `    async ${parameter || '()'} => ${call},` : `    async (${parameter}) => {\n      ${call}\n    },`,
+        `    ${fields.length ? 'input' : '()'} => ${use}().${operation.name}(${fields.length ? 'input' : ''}),`,
         `    ['apis', ${tsString(names.dir)}]`,
         '  )',
         '}'
@@ -329,11 +385,10 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
     }
   }
   const request = [`method: ${tsString(operation.method)}`, ...(params.length ? ['query'] : []), ...(body ? ['body'] : [])].join(', ')
-  const fetch = `$fetch<${result === 'void' ? 'unknown' : result}>(${url}, { ${request} })`
+  // An action that answers nothing gets the route's empty answer (204): `undefined`.
+  const fetch = `fromRoute($fetch<${result}>(${url}, { ${request} }))`
   const argument = params.length && body ? '{ body, ...query }' : body ? '{ body }' : params.length ? 'query' : ''
-  // With a result both types are given; without one the output is the function's own (`void` can't be a type argument of a call).
-  const generics = operation.result ? `<${fields.length ? input : 'undefined'}, ${result}>` : ''
-  const call = operation.result ? `(${argument}) => ${fetch}` : `async (${argument}${fields.length ? `: ${input}` : ''}) => {\n      await ${fetch}\n    }`
+  const call = `${argument === 'query' ? argument : `(${argument})`} => ${fetch}`
   return {
     path,
     source: names.source,

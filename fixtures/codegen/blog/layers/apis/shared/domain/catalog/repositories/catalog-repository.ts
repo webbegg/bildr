@@ -12,5 +12,5 @@ export interface CatalogRepository {
   /** Action "createProduct" (POST /products). */
   createProduct(input: { body: Product }): Promise<KernelResult<Product, CatalogError>>
   /** Action "deleteProduct" (DELETE /products/:id). */
-  deleteProduct(input: { id: number }): Promise<KernelResult<void, CatalogError>>
+  deleteProduct(input: { id: number }): Promise<KernelResult<undefined, CatalogError>>
 }

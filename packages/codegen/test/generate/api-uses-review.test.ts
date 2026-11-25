@@ -75,7 +75,7 @@ describe('S1: a route parameter fills a number parameter', () => {
     const useCase = files.find(file => file.path.endsWith('/use-cases/product.ts'))!.content
     expect(useCase).toContain('z.number().int()')
     expect(useCase).toContain('if (!parsed.success) return err(invalidInput(parsed.error.message))')
-    expect(files.find(file => file.path === 'layers/blog/app/pages/detail/[id]/[ratio].vue')!.content).toContain('<p v-else-if="foundError" class="text-error">')
+    expect(files.find(file => file.path === 'layers/blog/app/pages/detail/[id]/[ratio].vue')!.content).toContain('<p v-else-if="foundStatus === \'error\'" class="text-error">')
   })
 
   it('leaves a text parameter as it was', () => {
@@ -92,9 +92,9 @@ describe('S3: the empty text of an API list waits for the answer', () => {
     const p = shop()
     listPage(p, 'quiet', { empty: 'Nothing here.' })
     const lines = pageOf(p, 'quiet').split('\n').map(line => line.trim())
-    const at = lines.findIndex(line => line.startsWith('<template v-if="productsLoading"'))
-    expect(lines[at]).toBe('<template v-if="productsLoading" />')
-    expect(lines[at + 1]).toBe('<p v-else-if="productsError" class="text-error">Couldn\'t load this.</p>')
+    const at = lines.findIndex(line => line.startsWith('<template v-if="productsStatus === \'pending\'"'))
+    expect(lines[at]).toBe('<template v-if="productsStatus === \'pending\'" />')
+    expect(lines[at + 1]).toBe('<p v-else-if="productsStatus === \'error\'" class="text-error">Couldn\'t load this.</p>')
     expect(lines[at + 2]).toBe('<p v-else-if="!(products ?? []).length" class="text-muted">Nothing here.</p>')
     expect(lines[at + 3]).toMatch(/^<div v-else/)
     expect(lines[at + 4]).toContain('v-for="item in (products ?? [])"')
@@ -105,6 +105,6 @@ describe('S3: the empty text of an API list waits for the answer', () => {
     listPage(p, 'texted', { empty: 'Nothing here.', loading: 'Loading…' })
     expect(pageOf(p, 'texted')).not.toContain('<template v-if')
     listPage(p, 'bare')
-    expect(pageOf(p, 'bare')).not.toContain('productsLoading')
+    expect(pageOf(p, 'bare')).not.toContain('\'pending\'')
   })
 })
