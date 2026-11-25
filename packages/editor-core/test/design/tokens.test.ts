@@ -197,7 +197,7 @@ describe('display token', () => {
 
 describe('layout-containers L5 tokens', () => {
   it('splits the gap into columns and rows', () => {
-    expect(styleClasses({ gap: '4', gapX: '2', 'md:gapY': '8' })).toBe('gap-4 gap-x-2 md:gap-y-8')
+    expect(styleClasses({ 'gap': '4', 'gapX': '2', 'md:gapY': '8' })).toBe('gap-4 gap-x-2 md:gap-y-8')
   })
 
   it('fits as many columns of a minimum width as the grid holds (auto-fit), 16rem unless colMin sets it', () => {
@@ -206,12 +206,12 @@ describe('layout-containers L5 tokens', () => {
   })
 
   it('stacks an Overlay\'s children in one grid cell, and lets a breakpoint turn it off', () => {
-    expect(styleClasses({ display: 'grid', overlay: 'stack', 'md:overlay': 'none' })).toBe('*:[grid-area:1/1] md:*:[grid-area:auto] grid')
+    expect(styleClasses({ 'display': 'grid', 'overlay': 'stack', 'md:overlay': 'none' })).toBe('*:[grid-area:1/1] md:*:[grid-area:auto] grid')
   })
 
   it('positions, pins and layers a node, and orders it in its stack', () => {
     expect(styleClasses({ position: 'absolute', insetX: '0', top: '4', z: '10', order: 'first' })).toBe('order-first absolute inset-x-0 top-4 z-10')
-    expect(styleClasses({ position: 'sticky', top: '0', 'md:position': 'static' })).toBe('sticky md:static top-0')
+    expect(styleClasses({ 'position': 'sticky', 'top': '0', 'md:position': 'static' })).toBe('sticky md:static top-0')
     expect(styleTokenProblem('z', '15')).toBe('"15" is not a value of style token "z"')
   })
 
