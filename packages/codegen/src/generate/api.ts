@@ -4,6 +4,7 @@ import type { Model } from '../model/load.ts'
 import { headerNameOf } from '../model/schemas.ts'
 import type { ApiField } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
+import { apiPaths, importPath } from './paths.ts'
 import { apiSources, browserApiSources, descriptionOf, dtoValue, fieldNote, fieldType, inputFields, inputType, isCallable, modelNames, namesOf, nestedModels, operationsOf, pathTemplate, propertyAccess, propertyKey, remoteKey, resultType, serverApiSources, wrapField } from './api-model.ts'
 import type { Emitted, Operation, SourceNames } from './api-model.ts'
 import { generateBrowserRuntime } from './api-browser.ts'
@@ -55,23 +56,22 @@ export const generateApis = (model: Model): GeneratedFile[] => {
 
 const sourceFiles = (model: Model, source: ApiSource): Emitted[] => {
   const names = namesOf(model, source)
-  const domain = `layers/apis/shared/domain/${names.dir}`
-  const data = `layers/apis/shared/data/${names.dir}`
+  const paths = apiPaths(names.dir)
   const out: Emitted[] = []
   const add = (path: string, lines: Array<string | false | undefined>) => out.push({ path, source: names.source, content: file([header(names.source), ...lines]) })
 
   for (const apiModel of source.models) {
     const model = modelNames(apiModel.name)
-    add(`${domain}/entities/${model.file}.ts`, entityLines(apiModel.name, source))
-    add(`${data}/models/${model.file}.dto.ts`, dtoLines(apiModel.name, source))
-    add(`${data}/validations/${model.file}.schema.ts`, dtoSchemaLines(apiModel.name, source))
-    add(`${data}/mappers/${model.file}.mapper.ts`, mapperLines(apiModel.name, source))
+    add(paths.entity(model.file), entityLines(apiModel.name, source))
+    add(paths.dto(model.file), dtoLines(apiModel.name, source))
+    add(paths.dtoSchema(model.file), dtoSchemaLines(apiModel.name, source))
+    add(paths.mapper(model.file), mapperLines(apiModel.name, source))
   }
-  add(`${domain}/errors.ts`, errorLines(source, names))
-  add(`${domain}/repositories/${names.portFile}.ts`, portLines(source, names))
-  for (const operation of operationsOf(source)) add(`${domain}/use-cases/${kebab(operation.name)}.ts`, useCaseLines(source, names, operation))
-  add(`${data}/client.ts`, clientLines())
-  add(`${data}/repositories/${names.adapterFile}.ts`, adapterLines(source, names))
+  add(paths.errors, errorLines(source, names))
+  add(paths.port(names.portFile), portLines(source, names))
+  for (const operation of operationsOf(source)) add(paths.useCase(kebab(operation.name)), useCaseLines(source, names, operation))
+  add(paths.client, clientLines())
+  add(paths.adapter(names.adapterFile), adapterLines(source, names))
   out.push(...apiTestFiles(source, names))
   return out
 }
@@ -274,7 +274,7 @@ const mapperLines = (name: string, source: ApiSource): string[] => {
   })
   return [
     ...nested.map(model => importLine(`./${modelNames(model).file}.mapper`, [modelNames(model).to, modelNames(model).from])),
-    importLine(`../../../domain/${source.name}/entities/${names.file}`, [{ name: names.type, type: true }]),
+    importLine(importPath(apiPaths(source.name).mapper(names.file), apiPaths(source.name).entity(names.file)), [{ name: names.type, type: true }]),
     importLine(`../models/${names.file}.dto`, [{ name: names.dto, type: true }]),
     '',
     `/** The ${name} of the domain, from what the API sent. */`,
@@ -313,6 +313,7 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
   const unique = (names: Array<string | undefined>) => [...new Set(names.filter((name): name is string => !!name))].sort()
   const answered = unique(operations.map(operation => operation.result?.model))
   const sent = unique(operations.map(operation => operation.body))
+  const adapter = apiPaths(source.name).adapter(names.adapterFile)
   return [
     results.length > 0 && importLine('zod', [{ name: 'ZodType', type: true }, ...(usesList ? ['z'] : [])]),
     ...answered.map(name => importLine(`../validations/${modelNames(name).file}.schema`, [modelNames(name).dtoSchema])),
@@ -322,8 +323,8 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
     ])),
     // What the file throws: an invalid answer (a source with a result), and a path parameter that is not a segment or a header one that is not
     // one line. A source with none of them throws nothing here.
-    (results.length > 0 || usesSegment || usesHeaderText) && importLine(`../../../domain/${source.name}/errors`, [names.failure, ...(results.length ? ['invalidAnswer'] : []), ...(usesSegment || usesHeaderText ? ['invalidInput'] : [])]),
-    importLine(`../../../domain/${source.name}/repositories/${names.portFile}`, [{ name: names.port, type: true }]),
+    (results.length > 0 || usesSegment || usesHeaderText) && importLine(importPath(adapter, apiPaths(source.name).errors), [names.failure, ...(results.length ? ['invalidAnswer'] : []), ...(usesSegment || usesHeaderText ? ['invalidInput'] : [])]),
+    importLine(importPath(adapter, apiPaths(source.name).port(names.portFile)), [{ name: names.port, type: true }]),
     importLine('../client', [{ name: 'ApiClient', type: true }]),
     '',
     ...(results.length

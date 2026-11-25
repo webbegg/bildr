@@ -15,6 +15,7 @@ import {
 } from '../render/rules.ts'
 import type { LayoutParent } from '../render/rules.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
+import { corePaths } from './paths.ts'
 import { VALUE_TYPES } from '../model/field-types.ts'
 import { entityNames, moduleContext } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
@@ -958,7 +959,7 @@ const layoutFile = (model: Model, layout: LayoutFile): GeneratedFile => {
     : []
   const script = [...composableLines(env), ...layoutLines, ...env.variantLines, ...handlerLines(env)]
   while (script[0] === '') script.shift()
-  return { path: `layers/core/app/layouts/${layout.name}.vue`, owner: 'managed', source, content: sfc(source, script, template) }
+  return { path: corePaths.layout(layout.name), owner: 'managed', source, content: sfc(source, script, template) }
 }
 
 const PROPERTY_TYPES: Record<string, string> = { text: 'string', textarea: 'string', number: 'number', boolean: 'boolean', image: 'string', link: 'string', icon: 'string', field: 'string' }
@@ -1013,7 +1014,7 @@ const componentFile = (context: ModuleContext, component: ComponentFile): Genera
   const script = [...imports, ...(imports.length ? [''] : []), ...define, ...(variantLine ? ['', variantLine] : []), ...composableLines(env), ...env.variantLines, ...handlerLines(env)]
   while (script[0] === '') script.shift()
   return {
-    path: `layers/${context.name}/app/components/${context.name}/${component.name}.vue`,
+    path: context.paths.component(component.name),
     owner: 'managed',
     source,
     content: sfc(source, script, template)
@@ -1361,7 +1362,7 @@ const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
     ...handlerLines(env)
   ]
   return {
-    path: `layers/${context.name}/app/pages/${pagePath(page.path)}`,
+    path: context.paths.page(pagePath(page.path)),
     owner: 'managed',
     source,
     content: sfc(source, script, template)

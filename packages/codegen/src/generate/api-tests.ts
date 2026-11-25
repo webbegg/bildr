@@ -3,6 +3,7 @@ import { headerNameOf } from '../model/schemas.ts'
 import { inputFields, modelNames, nestedModels, operationsOf, remoteKey, sampleAnswer, sampleInput, sampleModel, sampleVariants } from './api-model.ts'
 import type { Emitted, Operation, SourceNames } from './api-model.ts'
 import { importLine } from './imports.ts'
+import { apiPaths, importPath } from './paths.ts'
 import { file, header, kebab, tsLiteral, tsString } from './text.ts'
 
 /**
@@ -10,10 +11,13 @@ import { file, header, kebab, tsLiteral, tsString } from './text.ts'
  * ApiClient (path, parameters, itemsPath, mapping, an invalid answer) and one test file per use-case, against
  * a fake repository. They run in the project's unit vitest project, with no Nuxt and no network.
  */
+/** The specifier a test of the source imports `target` with: every test file sits in the source's one test folder. */
+const fromTest = (names: SourceNames, target: string) => importPath(apiPaths(names.dir).test('index.ts'), target)
+
 export const apiTestFiles = (source: ApiSource, names: SourceNames): Emitted[] => {
   const operations = operationsOf(source)
   const at = (path: string, lines: Array<string | false>): Emitted => ({
-    path: `layers/apis/test/${names.dir}/${path}`,
+    path: apiPaths(names.dir).test(path),
     source: names.source,
     content: file([header(names.source), ...lines])
   })
@@ -30,7 +34,7 @@ export const apiTestFiles = (source: ApiSource, names: SourceNames): Emitted[] =
 const literal = (value: unknown, indent: string) => value === undefined ? 'undefined' : tsLiteral(value, indent)
 
 const fakeLines = (names: SourceNames, operations: Operation[]): string[] => [
-  importLine(`../../shared/domain/${names.dir}/repositories/${names.portFile}`, [{ name: names.port, type: true }]),
+  importLine(fromTest(names, apiPaths(names.dir).port(names.portFile)), [{ name: names.port, type: true }]),
   '',
   '/** What a fake repository does with a method the test did not give it: fail, so a use-case can\'t call one by accident. */',
   'const unused = async (): Promise<never> => {',
@@ -125,8 +129,8 @@ const repositoryTestLines = (source: ApiSource, names: SourceNames, operations: 
   })
   return [
     'import { describe, expect, it } from \'vitest\'',
-    importLine(`../../shared/data/${names.dir}/client`, [{ name: 'ApiClient', type: true }, { name: 'ApiRequest', type: true }]),
-    importLine(`../../shared/data/${names.dir}/repositories/${names.adapterFile}`, [names.adapter]),
+    importLine(fromTest(names, apiPaths(names.dir).client), [{ name: 'ApiClient', type: true }, { name: 'ApiRequest', type: true }]),
+    importLine(fromTest(names, apiPaths(names.dir).adapter(names.adapterFile)), [names.adapter]),
     '',
     '/** An ApiClient that records its calls and answers `answer`. */',
     'const recording = (answer: unknown) => {',
@@ -160,9 +164,9 @@ const useCaseTestLines = (source: ApiSource, names: SourceNames, operation: Oper
   const use = (repository: string, argument: string) => `await ${operation.name}({ ${names.camel}: ${repository} })(${argument})`
   return [
     'import { describe, expect, it } from \'vitest\'',
-    importLine(`../../shared/domain/${names.dir}/errors`, [names.failure, 'remoteFailed']),
-    importLine(`../../shared/domain/${names.dir}/use-cases/${kebab(operation.name)}`, [operation.name]),
-    importLine(`./fake-repository`, [names.fake]),
+    importLine(fromTest(names, apiPaths(names.dir).errors), [names.failure, 'remoteFailed']),
+    importLine(fromTest(names, apiPaths(names.dir).useCase(kebab(operation.name))), [operation.name]),
+    importLine(fromTest(names, apiPaths(names.dir).test('fake-repository.ts')), [names.fake]),
     '',
     `describe('${operation.name}', () => {`,
     '  it(\'returns what the API answers\', async () => {',
@@ -236,7 +240,7 @@ const mapperTestLines = (source: ApiSource, names: SourceNames): string[] => {
   return [
     'import { describe, expect, it } from \'vitest\'',
     ...[...source.models].sort((a, b) => modelNames(a.name).file < modelNames(b.name).file ? -1 : 1)
-      .map(model => importLine(`../../shared/data/${names.dir}/mappers/${modelNames(model.name).file}.mapper`, [modelNames(model.name).to, ...(sent.has(model.name) ? [modelNames(model.name).from] : [])])),
+      .map(model => importLine(fromTest(names, apiPaths(names.dir).mapper(modelNames(model.name).file)), [modelNames(model.name).to, ...(sent.has(model.name) ? [modelNames(model.name).from] : [])])),
     '',
     `describe('the mappers of the "${source.name}" API', () => {`,
     tests.map(test => test.join('\n')).join('\n\n'),

@@ -3,6 +3,7 @@
  * module and the CLI only work on these; anything else gets the reasons and a
  * pointer to `pnpm create bildr`. Pure: the caller reads the files.
  */
+import { corePaths } from '../generate/paths.ts'
 
 /** Every starter-kit project has these. The database ones (drizzle-orm, @libsql/client) only come with a sqlite data source (V7). */
 export const STARTER_KIT_DEPENDENCIES = ['nuxt', 'zod', '@tanstack/vue-db', '@tanstack/query-db-collection', '@bildr/nuxt'] as const
@@ -30,7 +31,7 @@ export const detectStarterKit = (read: (path: string) => string | undefined): St
     }
   }
 
-  if (read('layers/core/nuxt.config.ts') === undefined) reasons.push('No layers/core: the starter kit\'s core layer is missing')
+  if (read(corePaths.nuxtConfig) === undefined) reasons.push('No layers/core: the starter kit\'s core layer is missing')
 
   const pkg = read('package.json')
   let deps: Record<string, unknown> = {}

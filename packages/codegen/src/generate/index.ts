@@ -6,6 +6,7 @@ import { generateActions } from './actions.ts'
 import { generateApis } from './api.ts'
 import { hasDatabase } from './context.ts'
 import { generateData } from './data.ts'
+import { corePaths } from './paths.ts'
 import { generateProject } from './project.ts'
 import { generateUi } from './ui.ts'
 
@@ -19,7 +20,7 @@ export { generateUi } from './ui.ts'
 export { hasDatabase } from './context.ts'
 
 /** Static files of the database layer: generated only while the model has a sqlite data source (V7). */
-export const DATABASE_FILES = new Set(['layers/core/server/utils/db.ts', 'layers/core/server/plugins/migrate.ts', 'drizzle.config.ts'])
+export const DATABASE_FILES = new Set([corePaths.dbClient, corePaths.migratePlugin, 'drizzle.config.ts'])
 
 /** Root files the starter kit writes once and then leaves to the user; never part of a sync. */
 export const SCAFFOLD_ROOT_FILES = new Set(['nuxt.config.ts', 'tsconfig.json', '.gitignore', 'pnpm-workspace.yaml', 'app/README.md', 'server/README.md'])

@@ -1,6 +1,8 @@
 import type { Model, ModuleModel } from '../model/load.ts'
 import type { DataSourceFile, EntityFile, FieldSchema, RepositoryFile } from '../model/schemas.ts'
 import type { z } from 'zod'
+import { modulePaths } from './paths.ts'
+import type { ModulePaths } from './paths.ts'
 import { camel, kebab, pascal } from './text.ts'
 
 export type Field = z.infer<typeof FieldSchema>
@@ -15,6 +17,8 @@ export interface ModuleContext {
   root: string
   /** Where a model artifact lives, for headers and manifest sources. */
   source: (id: string) => string
+  /** Where the module's generated files go. */
+  paths: ModulePaths
 }
 
 export const moduleContext = (model: Model, name: string): ModuleContext => ({
@@ -22,7 +26,8 @@ export const moduleContext = (model: Model, name: string): ModuleContext => ({
   name,
   module: model.modules[name]!,
   root: `use${pascal(name)}`,
-  source: id => model.paths[id] ?? `.bildr/modules/${name}`
+  source: id => model.paths[id] ?? `.bildr/modules/${name}`,
+  paths: modulePaths(name)
 })
 
 /** Names derived from an entity: `Post`, `post`, `posts`, `post-repository`… */
@@ -33,7 +38,9 @@ export const entityNames = (entity: EntityFile) => ({
   file: kebab(entity.name),
   port: `${entity.name}Repository`,
   portFile: `${kebab(entity.name)}-repository`,
-  collection: `${entity.plural}Collection`
+  collection: `${entity.plural}Collection`,
+  /** The plural as a file or route segment: `posts`, `blog-posts`. */
+  pluralFile: kebab(entity.plural)
 })
 
 export const repositoryOf = (context: ModuleContext, entity: EntityFile): RepositoryFile | undefined =>

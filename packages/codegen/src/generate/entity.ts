@@ -47,7 +47,7 @@ export const domainFile = (context: ModuleContext, entity: EntityFile) => {
   const unique = entity.fields.filter(field => field.unique)
 
   return {
-    path: `layers/${context.name}/shared/domain/${names.file}.ts`,
+    path: context.paths.entity(names.file),
     source: context.source(entity.id),
     content: file([
       header(context.source(entity.id)),

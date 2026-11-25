@@ -2,6 +2,7 @@ import type { EntityFile, RepositoryFile } from '../model/schemas.ts'
 import { allFields, datasourceOf, entityNames, keyOf } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
 import { importLine } from './imports.ts'
+import { importPath } from './paths.ts'
 import { isBasicType, sampleOf, VALUE_TYPES } from '../model/field-types.ts'
 import { docText, file, header, pascal, snake, tsLiteral, tsString } from './text.ts'
 
@@ -57,7 +58,7 @@ export const drizzleSchemaFile = (context: ModuleContext, stored: Array<{ entity
   })
   const source = `.bildr/modules/${context.name}/entities`
   return {
-    path: `layers/${context.name}/server/infrastructure/db/schema.ts`,
+    path: context.paths.dbSchema,
     source,
     content: file([
       header(source),
@@ -95,7 +96,7 @@ export const portFile = (context: ModuleContext, entity: EntityFile, repository:
     if (op === 'delete') methods.push(`  delete(id: ${key.type}): Promise<void>`)
   }
   return {
-    path: `layers/${context.name}/server/application/ports/${names.portFile}.ts`,
+    path: context.paths.port(names.portFile),
     source: context.source(repository.id),
     content: file([
       header(context.source(repository.id)),
@@ -181,16 +182,17 @@ export const drizzleRepositoryFile = (context: ModuleContext, entity: EntityFile
       ]
     : []
   const usesType = has(repository, 'create') || has(repository, 'update') || mapper.length > 0
+  const path = context.paths.repository(names.file, 'drizzle')
   return {
-    path: `layers/${context.name}/server/infrastructure/repositories/${names.file}.drizzle.ts`,
+    path,
     source: context.source(repository.id),
     content: file([
       header(context.source(repository.id)),
       drizzle.size > 0 && importLine('drizzle-orm', [...drizzle]),
       'import type { LibSQLDatabase } from \'drizzle-orm/libsql\'',
       usesType && `import type { ${names.type} } from '#${context.name}/domain/${names.file}'`,
-      `import type { ${names.port} } from '../../application/ports/${names.portFile}'`,
-      `import { ${table === entity.plural ? table : `${entity.plural} as ${table}`} } from '../db/schema'`,
+      `import type { ${names.port} } from '${importPath(path, context.paths.port(names.portFile))}'`,
+      `import { ${table === entity.plural ? table : `${entity.plural} as ${table}`} } from '${importPath(path, context.paths.dbSchema)}'`,
       '',
       ...mapper,
       `/** ${names.port} over the app database (Drizzle + libSQL). */`,
@@ -242,13 +244,14 @@ export const memoryRepositoryFile = (context: ModuleContext, entity: EntityFile,
   if (has(repository, 'update')) body.push(`    async update(id, ${row}) {`, `      rows.set(id, ${row})`, `      return ${row}`, '    }')
   if (has(repository, 'delete')) body.push('    async delete(id) {', '      rows.delete(id)', '    }')
   const methods = body.map((line, index) => line === '    }' && index < body.length - 1 ? '    },' : line)
+  const path = context.paths.repository(names.file, 'memory')
   return {
-    path: `layers/${context.name}/server/infrastructure/repositories/${names.file}.memory.ts`,
+    path,
     source: context.source(repository.id),
     content: file([
       header(context.source(repository.id)),
       `import type { ${names.type} } from '#${context.name}/domain/${names.file}'`,
-      `import type { ${names.port} } from '../../application/ports/${names.portFile}'`,
+      `import type { ${names.port} } from '${importPath(path, context.paths.port(names.portFile))}'`,
       '',
       memoryDoc(context, repository, names.port),
       `export const memory${names.port} = (seed: ${names.type}[] = []): ${names.port} => {`,
@@ -335,13 +338,14 @@ export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, r
   const fields = remoteFields(entity, rest)
   const items = rest.list.itemsPath
   const total = rest.list.totalPath
+  const path = context.paths.repository(names.file, 'rest')
   return {
-    path: `layers/${context.name}/server/infrastructure/repositories/${names.file}.rest.ts`,
+    path,
     source: context.source(repository.id),
     content: file([
       header(context.source(repository.id)),
       `import { ${names.type}Schema } from '#${context.name}/domain/${names.file}'`,
-      `import type { ${names.port} } from '../../application/ports/${names.portFile}'`,
+      `import type { ${names.port} } from '${importPath(path, context.paths.port(names.portFile))}'`,
       '',
       '/** The minimal HTTP client this adapter needs (core\'s useRemote provides it). */',
       `export type ${names.type}Http = <T>(path: string, options?: { query?: Record<string, string | number | undefined> }) => Promise<T>`,
@@ -381,13 +385,14 @@ export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFil
   const remoteRow = `{ ${fields.map(({ field, remote }) => `${property(remote)}: ${tsLiteral(sample(field))}`).join(', ')} }`
   const modelRow = `{ ${fields.map(({ field }) => `${field.name}: ${tsLiteral(sample(field))}`).join(', ')} }`
   const query = `{ ${property(rest.paging.limitParam!)}: 10, ${property(rest.paging.offsetParam!)}: 20 }`
+  const path = context.paths.test(`infrastructure/${names.file}.rest.test.ts`)
   return {
-    path: `layers/${context.name}/test/infrastructure/${names.file}.rest.test.ts`,
+    path,
     source: context.source(repository.id),
     content: file([
       header(context.source(repository.id)),
       'import { describe, expect, it } from \'vitest\'',
-      `import { type ${names.type}Http, rest${names.port} } from '../../server/infrastructure/repositories/${names.file}.rest'`,
+      `import { type ${names.type}Http, rest${names.port} } from '${importPath(path, context.paths.repository(names.file, 'rest'))}'`,
       '',
       `describe('rest${names.port}', () => {`,
       '  it(\'maps fields and offset paging to the REST source\', async () => {',
@@ -481,13 +486,14 @@ const restCrudRepositoryFile = (context: ModuleContext, entity: EntityFile, repo
   if (has(repository, 'delete')) {
     body.push('  async delete(id) {', `    await http<unknown>(${idPath(rest.delete!.path)}${callOptions(methodOf(rest, 'delete'), [])})`, '  }')
   }
+  const path = context.paths.repository(names.file, 'rest')
   return {
-    path: `layers/${context.name}/server/infrastructure/repositories/${names.file}.rest.ts`,
+    path,
     source: context.source(repository.id),
     content: file([
       header(context.source(repository.id)),
       importLine(`#${context.name}/domain/${names.file}`, [{ name: names.type, type: true }, ...(readsRows ? [`${names.type}Schema`] : [])]),
-      `import type { ${names.port} } from '../../application/ports/${names.portFile}'`,
+      `import type { ${names.port} } from '${importPath(path, context.paths.port(names.portFile))}'`,
       '',
       '/** The minimal HTTP client this adapter needs (core\'s useRemote provides it). With `optional`, a 404 resolves to undefined. */',
       `export type ${names.type}Http = <T>(path: string, options?: ${HTTP_OPTIONS}) => Promise<T>`,
@@ -584,13 +590,14 @@ const restCrudRepositoryTestFile = (context: ModuleContext, entity: EntityFile, 
       '  })'
     ])
   }
+  const path = context.paths.test(`infrastructure/${names.file}.rest.test.ts`)
   return {
-    path: `layers/${context.name}/test/infrastructure/${names.file}.rest.test.ts`,
+    path,
     source: context.source(repository.id),
     content: file([
       header(context.source(repository.id)),
       'import { describe, expect, it } from \'vitest\'',
-      `import { type ${names.type}Http, ${factory} } from '../../server/infrastructure/repositories/${names.file}.rest'`,
+      `import { type ${names.type}Http, ${factory} } from '${importPath(path, context.paths.repository(names.file, 'rest'))}'`,
       '',
       `const row = { ${fields.map(({ field, remote }) => `${property(remote)}: ${tsLiteral(crudSample(field))}`).join(', ')} }`,
       `const ${names.variable} = { ${fields.map(({ field }) => `${field.name}: ${tsLiteral(crudSample(field))}`).join(', ')} }`,
@@ -617,14 +624,15 @@ const restCrudRepositoryTestFile = (context: ModuleContext, entity: EntityFile, 
 export const listUseCaseFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
   const names = entityNames(entity)
   const useCase = `list${pascal(entity.plural)}`
+  const path = context.paths.query(`list-${names.pluralFile}`)
   return {
-    path: `layers/${context.name}/server/application/queries/list-${snake(entity.plural).replace(/_/g, '-')}.ts`,
+    path,
     source: context.source(repository.id),
     content: file([
       header(context.source(repository.id)),
       'import type { Page, PageRequest } from \'#core/kernel/page\'',
       `import type { ${names.type} } from '#${context.name}/domain/${names.file}'`,
-      `import type { ${names.port} } from '../ports/${names.portFile}'`,
+      `import type { ${names.port} } from '${importPath(path, context.paths.port(names.portFile))}'`,
       '',
       `export interface ${pascal(useCase)}Deps {`,
       `  ${names.plural}: ${names.port}`,
@@ -638,7 +646,7 @@ export const listUseCaseFile = (context: ModuleContext, entity: EntityFile, repo
 }
 
 export const listRouteFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => ({
-  path: `layers/${context.name}/server/api/${context.name}/${snake(entity.plural).replace(/_/g, '-')}/index.get.ts`,
+  path: context.paths.apiRoute(`${entityNames(entity).pluralFile}/index.get.ts`),
   source: context.source(repository.id),
   content: file([
     header(context.source(repository.id)),
