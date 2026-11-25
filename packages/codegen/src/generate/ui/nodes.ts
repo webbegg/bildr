@@ -385,7 +385,10 @@ export const instance = (env: Env, node: ModelNode, extra: Attr[], indent: strin
   const context = env.context ?? fail(env, node, 'component instances need a module')
   const component = context.module.components.find(entry => entry.id === node.props?.component) ?? fail(env, node, `unknown component ${String(node.props?.component)}`)
   const values = isObject(node.props?.values) ? node.props.values : {}
-  const variantId = node.props?.variant
+  // A state shows under the pointer: the instance takes its base variant.
+  const picked = typeof node.props?.variant === 'string' ? component.variants.find(entry => entry.id === node.props!.variant) : undefined
+  if (typeof node.props?.variant === 'string' && node.props.variant !== '' && !picked) fail(env, node, `component ${component.name} has no variant ${node.props.variant}`)
+  const variantId = picked?.state ? picked.state.of : node.props?.variant
   const variant = typeof variantId === 'string' && variantId !== ''
     ? [staticAttr('variant', component.variants.find(entry => entry.id === variantId)?.name ?? fail(env, node, `component ${component.name} has no variant ${variantId}`))]
     : []

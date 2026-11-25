@@ -3,7 +3,7 @@ import type { ComponentFile, ModelNode, PropertyDef, Value } from '../../model/s
 import { DEFAULT_TRANSITION, FILL, fillStyle, transitionTimingClasses } from '../../render/rules.ts'
 import { camel, kebab, tsString } from '../text.ts'
 import type { Env, Variant } from './env.ts'
-import { fail } from './env.ts'
+import { fail, isObject } from './env.ts'
 import { attr } from './markup.ts'
 import { changedKeys } from './style.ts'
 
@@ -148,6 +148,17 @@ export const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string
   env.variants = map
   if (!interactive) return undefined
   if (css) {
+    // The states are the editor's previews of hover and pressed: the classes show them, so they are no variant the component takes.
+    const stateNames = new Set(states.map(state => state.name))
+    for (const entry of map.values()) {
+      entry.styles = entry.styles.filter(([name]) => !stateNames.has(name))
+      entry.hiddenIn = entry.hiddenIn.filter(name => !stateNames.has(name))
+    }
+    for (const swapped of env.substitutions.values()) {
+      for (const value of Object.values(swapped)) {
+        if (isObject(value) && isObject(value.$$variants)) for (const name of stateNames) Reflect.deleteProperty(value.$$variants, name)
+      }
+    }
     if ([...map].some(([id, entry]) => id !== component.root.id && entry.pointer.size)) env.root = { id: component.root.id, classes: [`group/${group}`], attrs: [] }
     return undefined
   }
@@ -171,5 +182,8 @@ export const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string
   }
   const appear = interactions.some(interaction => interaction.on === 'appear')
   env.root = { id: component.root.id, classes: [], attrs: [...(appear ? [attr('key', 'ref="variantRoot"')] : []), attr('event', 'v-on="on"')] }
-  return `const { variant, on } = useVariantState(() => props.variant, {\n${parts.join(',\n')}\n}${appear ? ', \'variantRoot\'' : ''})`
+  // The composable can show a state, so it is typed with every variant name; the component takes only its base variants.
+  const names = states.length ? `<${['default', ...variants.map(variant => variant.name)].map(name => tsString(name)).join(' | ')}>` : ''
+  const shown = bases.length > 1 ? '() => props.variant' : '\'default\''
+  return `const { variant, on } = useVariantState${names}(${shown}, {\n${parts.join(',\n')}\n}${appear ? ', \'variantRoot\'' : ''})`
 }

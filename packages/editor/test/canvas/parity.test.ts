@@ -99,12 +99,22 @@ describe('canvas render parity with the generated app', () => {
 
   it.each([
     ['default', undefined],
-    ['compact', { id: 'var_compact', label: 'compact' }],
-    ['hovered', { id: 'var_hovered', label: 'hovered' }]
+    ['compact', { id: 'var_compact', label: 'compact' }]
   ])('PostCard component file, %s variant', (name, variant) => {
     const props = { ...app.components.BlogPostCard!.defaults, post: draft, variant: name }
     const generated = renderGenerated(app, app.components.BlogPostCard!, { props, variant: name, $slots: {} })
     expect(canvas(component('PostCard'), { post: draft }, variant)).toEqual(normalized(generated))
+  })
+
+  it('PostCard component file, its hover state: what the generated card shows under the pointer', () => {
+    // The state is no variant of the generated card (codegen-architecture T2): its `hover:` and `group-hover/post-card:` classes show it.
+    expect(app.components.BlogPostCard!.defaults.variant).toBe('default')
+    const generated = renderGenerated(app, app.components.BlogPostCard!, { props: { ...app.components.BlogPostCard!.defaults, post: draft }, variant: 'default', $slots: {} })
+    // Under the pointer: the root's `hover:` classes and the group's `group-hover/post-card:` ones apply (a Link's own `hover:underline`
+    // is no part of the state). The fixture's state only adds tokens the card doesn't set, so it replaces none.
+    const state = (name: string, root: boolean) => name.startsWith('group-hover/post-card:') || (root && name.startsWith('hover:'))
+    const hovered = generated.map((element, index) => ({ ...element, classes: element.classes.map(name => state(name, index === 0) ? name.slice(name.indexOf(':') + 1) : name) }))
+    expect(canvas(component('PostCard'), { post: draft }, { id: 'var_hovered', label: 'hovered' })).toEqual(normalized(hovered))
   })
 
   it.each([

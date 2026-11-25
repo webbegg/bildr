@@ -302,12 +302,12 @@
     },
     "layers/blog/app/components/blog/PostCard.vue": {
       "owner": "managed",
-      "sha256": "264d26874ecff708ed4809c59a30efba9519b4c7d45584350a3357040b79fc9a",
+      "sha256": "2ca7f9ad4802f64cb9739a9ae1de52db77d8c8ab473f4a9b3cb9b8d3795ac160",
       "source": ".bildr/modules/blog/components/post-card.json"
     },
     "layers/blog/app/components/blog/Tip.vue": {
       "owner": "managed",
-      "sha256": "2b00fc82ad3b28724e52b83270ad095d275dc55301f048e7bd0aabd47118cfe4",
+      "sha256": "cccef95a6c34aee3443aff8b37916f25d9fe2760cd6285bd21d9667d72f46b60",
       "source": ".bildr/modules/blog/components/tip.json"
     },
     "layers/blog/app/composables/blog/useAllPosts.ts": {

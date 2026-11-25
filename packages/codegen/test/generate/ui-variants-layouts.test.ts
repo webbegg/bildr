@@ -132,15 +132,11 @@ describe('generateUi: variants', () => {
       )
       component.transition = { type: 'ease', duration: 0.2, easing: 'ease-out' }
     })
-    expect(code).toContain([
-      'const badgeVariants = {',
-      '  default: \'px-2 hover:px-3 active:px-4\',',
-      '  hovered: \'px-3\',',
-      '  pressed: \'px-4\'',
-      '} as const'
-    ].join('\n'))
+    // States are the editor's previews of hover and pressed: CSS shows them, so they are no variant the component takes (codegen-architecture T2).
+    expect(code).not.toContain('variant?:')
+    expect(code).not.toContain('badgeVariants')
     expect(code).not.toContain('group-')
-    expect(code).toContain('<div class="flex transition-[padding-left,padding-right] duration-200 ease-[ease-out] motion-reduce:duration-0" :class="[badgeVariants[props.variant], badgeBgClasses[props.tone]]">')
+    expect(code).toContain('<div class="flex px-2 transition-[padding-left,padding-right] duration-200 ease-[ease-out] hover:px-3 active:px-4 motion-reduce:duration-0" :class="badgeBgClasses[props.tone]">')
     expect(code).not.toContain('useVariantState')
   })
 
@@ -152,13 +148,14 @@ describe('generateUi: variants', () => {
         { id: 'var_pressed', name: 'pressed', overrides: { n_badge_text: { style: { color: 'error' } } }, state: { of: '', kind: 'pressed' } }
       )
     })
-    expect(code).toContain('  default: \'text-muted group-hover/badge:text-primary group-active/badge:text-error\',')
+    expect(code).toMatch(/<p class="[^"]* text-muted [^"]*group-hover\/badge:text-primary group-active\/badge:text-error [^"]*">/)
     expect(code).toContain('<div class="group/badge flex')
   })
 
   it('gives the golden PostCard root plain hover: classes and its title group-hover/post-card: ones', () => {
     const code = out(() => {}, 'components/blog/PostCard.vue')
-    expect(code).toContain('const cardVariants = {\n  default: \'p-5 hover:shadow-md\',')
+    expect(code).toContain('  variant?: \'default\' | \'compact\'\n')
+    expect(code).toContain('const cardVariants = {\n  default: \'p-5 hover:shadow-md\',\n  compact: \'p-3\'\n} as const')
     expect(code).not.toMatch(/cardVariants = \{[^}]*group-hover/)
     expect(code).toContain('const titleVariants = {\n  default: \'group-hover/post-card:text-primary\',')
     expect(code).toContain('group/post-card')
@@ -200,7 +197,23 @@ describe('generateUi: variants', () => {
     const code = badgeOut((component) => {
       component.variants.push({ id: 'var_hover', name: 'hovered', overrides: { n_badge_text: { props: { text: 'Hi' } } }, state: { of: '', kind: 'hover' } })
     })
-    expect(code).toContain('const { variant, on } = useVariantState(() => props.variant, {\n  states: { default: { hover: \'hovered\' } }\n})')
+    // The composable shows the state, so it knows every variant name; the component takes none (it has only the default).
+    expect(code).toContain('const { variant, on } = useVariantState<\'default\' | \'hovered\'>(\'default\', {\n  states: { default: { hover: \'hovered\' } }\n})')
+    expect(code).not.toContain('variant?:')
+    const based = badgeOut((component) => {
+      loud()(component)
+      component.variants.push({ id: 'var_hover', name: 'hovered', overrides: { n_badge_text: { props: { text: 'Hi' } } }, state: { of: '', kind: 'hover' } })
+    })
+    expect(based).toContain('  variant?: \'default\' | \'loud\'\n')
+    expect(based).toContain('useVariantState<\'default\' | \'loud\' | \'hovered\'>(() => props.variant, {')
+  })
+
+  it('sets an instance to a state\'s base variant: the pointer shows the state', () => {
+    const page = out((files) => {
+      files[BADGE]!.variants.push({ id: 'var_hover', name: 'hovered', overrides: { n_badge: { style: { px: '3' } } }, state: { of: '', kind: 'hover' } })
+      files[IDX]!.root.children.push({ id: 'n_b', type: 'Instance', props: { component: 'cmp_badge', variant: 'var_hover' } })
+    }, 'pages/index.vue')
+    expect(page).toContain('<BlogBadge class="self-stretch" />')
   })
 })
 

@@ -16,7 +16,7 @@ const { variant, on } = useVariantState(() => props.variant, {
 })
 
 const tipVariants = {
-  default: 'py-4 gap-2',
+  default: 'gap-2 py-4',
   collapsed: 'py-2'
 } as const
 

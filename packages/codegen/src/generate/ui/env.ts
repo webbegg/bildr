@@ -80,7 +80,7 @@ export interface NotFound {
 export interface Variant {
   /** The base of its class map constants, e.g. `card` for `cardVariants`. */
   base: string
-  /** `default`, then every variant of the component, with the node's style in it (overrides and `unset` applied). */
+  /** `default`, then every variant of the component, with the node's style in it (overrides and `unset` applied); without the states `pointer` shows. */
   styles: Array<[string, Record<string, string>]>
   /** Hover and pressed states rendered in CSS: per base variant, the class prefix, the state's style and the keys it changes. */
   pointer: Map<string, Array<{ prefix: string, style: Record<string, string>, keys: string[] }>>
