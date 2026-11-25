@@ -202,7 +202,7 @@ describe('generate: server-runtime api sources', () => {
     const client = read(generated, 'layers/core/shared/http/client.ts')
     expect(client).toContain('redirect: \'manual\'')
     expect(client).toContain('AbortSignal.timeout(')
-    expect(client).toContain('url.origin !== base.origin || url.pathname !== `${base.pathname}${relative}`')
+    expect(client).toContain('url.origin !== base.origin || decoded(url.pathname) !== decoded(`${base.pathname}${written}`)')
     expect(client).toContain('const MAX_BYTES = 1_000_000')
     const route = read(generated, 'layers/apis/server/api/apis/catalog/products.get.ts')
     expect(route).toContain('getValidatedQuery(event, QuerySchema)')
@@ -435,7 +435,7 @@ describe('generate: browser-runtime api sources', () => {
     expect(client).toContain('credentials: \'omit\'')
     expect(client).toContain('AbortSignal.timeout(')
     expect(client).toContain('const MAX_BYTES = 1_000_000')
-    expect(client).toContain('url.origin !== base.origin || url.pathname !== `${base.pathname}${relative}`')
+    expect(client).toContain('url.origin !== base.origin || decoded(url.pathname) !== decoded(`${base.pathname}${written}`)')
     expect(client).toContain('/^(?:\\.|%2e){1,2}$/i')
     // It reads no setting and sets no credential: what it sends is what its caller gives it.
     expect(client).not.toMatch(/useRuntimeConfig|authorization|bearer/i)

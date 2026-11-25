@@ -88,6 +88,15 @@ const baseOf = (baseUrl: string): URL => {
   throw new HttpFailure(0, 'has no valid base URL')
 }
 
+/** A path as the URL holds it, its encoding undone (`decodeURI` keeps an encoded "/", "?" or "#"): a malformed one stays as it is. */
+const decoded = (path: string): string => {
+  try {
+    return decodeURI(path)
+  } catch {
+    return path
+  }
+}
+
 /** The signals as one that aborts when any of them does: `AbortSignal.any`, or by hand in a browser that has none yet. */
 const anyOf = (signals: AbortSignal[]): AbortSignal => {
   if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals)
@@ -126,7 +135,10 @@ export const createHttpClient = ({ baseUrl, headers = {}, unconfigured = false, 
     // A path parameter ".." (or "%2e%2e") would be resolved by the URL to another path, called with the headers.
     if (relative.split('/').some(segment => /^(?:\.|%2e){1,2}$/i.test(segment))) throw new HttpFailure(0, 'was asked for a path with a "." or ".." segment')
     const url = new URL(relative, base)
-    if (url.origin !== base.origin || url.pathname !== `${base.pathname}${relative}`) throw new HttpFailure(0, 'was asked for a path outside its base URL')
+    // The path the URL resolved is the one written under the base URL (a query string of the path is its own; the URL encodes the
+    // rest): a "\" it read as "/", or another host, is not.
+    const written = relative.split(/[?#]/, 1)[0]!
+    if (url.origin !== base.origin || decoded(url.pathname) !== decoded(`${base.pathname}${written}`)) throw new HttpFailure(0, 'was asked for a path outside its base URL')
     for (const [key, value] of Object.entries(query ?? {})) {
       if (value !== undefined) url.searchParams.set(key, String(value))
     }

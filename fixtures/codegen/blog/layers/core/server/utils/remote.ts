@@ -5,7 +5,7 @@ import { HttpFailure, createHttpClient } from '#core/http/client'
 /** One call to a REST data source. A `body` is sent as JSON; with `optional`, a 404 resolves to undefined. */
 export interface RemoteRequest {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
-  query?: Record<string, string | number | undefined>
+  query?: Record<string, string | number | boolean | undefined>
   body?: unknown
   optional?: boolean
 }
