@@ -221,6 +221,21 @@ await run('canvas-p2', async ({ page, errors }) => {
   await action('history_undo')
   check(!!await until(() => nodeOf(column).style?.display === undefined), 'undo turns the grid back into a column')
 
+  // layout-containers L5: the canvas compiles the new tokens' classes (arbitrary values from the safelist).
+  const css = (id, property) => frame.locator(`[data-node="${id}"]`).evaluate((el, name) => getComputedStyle(el)[name], property)
+  await action('node_update_style', { file: s.file, nodeId: column, style: { display: 'grid', cols: 'auto-fit', colMin: '24', position: 'relative' } })
+  const fitColumns = await until(async () => {
+    const value = await css(column, 'gridTemplateColumns')
+    return value && value !== 'none' && value
+  })
+  check(!!fitColumns && fitColumns.split(' ').length >= 2, `auto-fit lays the grid out in columns of the minimum width (${fitColumns})`)
+  await action('node_update_style', { file: s.file, nodeId: column, style: { overlay: 'stack' } })
+  check(!!await until(async () => await css(alpha, 'gridRowStart') === '1' && await css(charlie, 'gridColumnStart') === '1'), 'Overlay puts every child in the one cell')
+  await action('node_update_style', { file: s.file, nodeId: bravo, style: { position: 'absolute', insetX: '0', top: '0', z: '10' } })
+  check(!!await until(async () => await css(bravo, 'position') === 'absolute' && await css(bravo, 'zIndex') === '10' && await css(bravo, 'top') === '0px'), 'an absolute node is pinned and layered')
+  for (let i = 0; i < 4; i++) await action('history_undo')
+  check(!!await until(() => nodeOf(column).style?.display === undefined && !nodeOf(bravo).style?.position), 'undo takes the L5 tokens back')
+
   // A press on the selection released outside the frame before 4px leaves no drag behind: hover back in doesn't drag, and the next click selects.
   await select(alpha)
   await canvasShowsSelected(alpha)
