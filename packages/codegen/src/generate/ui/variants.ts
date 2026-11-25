@@ -73,9 +73,24 @@ export const styleIn = (style: Record<string, string>, override: Override | unde
  * (style-only states, no interactions); otherwise the core `useVariantState` composable keeps the
  * variant it shows, and the line declaring it is returned.
  */
-/** Nodes the keyboard reaches by themselves (an instance may hold one). */
-const CONTROLS = new Set(['Button', 'Link', 'Input', 'Checkbox', 'Form', 'Instance'])
-const holdsControl = (node: ModelNode): boolean => CONTROLS.has(node.type) || (node.children ?? []).some(holdsControl)
+/** Nodes the keyboard reaches by themselves. */
+const CONTROLS = new Set(['Button', 'Link', 'Input', 'Checkbox', 'Form'])
+
+/**
+ * Whether the keyboard reaches a control under `node` in every variant: one that no variant hides (a hidden one leaves the
+ * click unreachable there). An instance holds what its component's root holds.
+ */
+const holdsControl = (env: Env, node: ModelNode, hidden: (node: ModelNode) => boolean, seen = new Set<string>()): boolean => {
+  if (hidden(node)) return false
+  if (CONTROLS.has(node.type)) return true
+  if (node.type === 'Instance') {
+    const id = String(node.props?.component)
+    const component = seen.has(id) ? undefined : env.context?.module.components.find(entry => entry.id === id)
+    // An instance's own variants don't hide it in this component: only `hidden` on the instance node counts.
+    return component !== undefined && holdsControl(env, component.root, child => child.props?.hidden === true, new Set([...seen, id]))
+  }
+  return (node.children ?? []).some(child => holdsControl(env, child, hidden, seen))
+}
 
 export const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string, ModelNode>): string | undefined => {
   const variants = component.variants
@@ -185,8 +200,10 @@ export const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string
   }
   const appear = interactions.some(interaction => interaction.on === 'appear')
   // A click on a root with no control in it: a button to the keyboard and assistive technology (the composable hears Enter and Space).
-  // With a control (a Button, a Link, an instance that may hold one), the control is what the keyboard reaches, and its click bubbles.
-  const clickable = interactions.some(interaction => interaction.on === 'click') && !holdsControl(component.root)
+  // With a control every variant shows (a Button, a Link, one in an instance), the control is what the keyboard reaches, and its
+  // click bubbles.
+  const hidden = (node: ModelNode) => node.props?.hidden === true || variants.some(variant => effective(variant, node.id)?.props?.hidden === true)
+  const clickable = interactions.some(interaction => interaction.on === 'click') && !holdsControl(env, component.root, hidden, new Set([component.id]))
   env.root = {
     id: component.root.id,
     classes: [],

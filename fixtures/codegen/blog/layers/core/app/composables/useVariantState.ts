@@ -104,9 +104,11 @@ export const useVariantState = <V extends string>(variant: MaybeRefOrGetter<V>, 
       pointerdown: () => pointer(() => (pressed.value = true)),
       pointerup: () => pointer(() => (pressed.value = false)),
       click: () => dispatch('click'),
-      // Keys on a control inside are its own: its click bubbles here.
+      // Only a root that is a button (no control inside), and once per press: keys on a control are its own, its click bubbles here.
       keydown: (event: KeyboardEvent) => {
-        if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return
+        const root = event.currentTarget
+        if (event.target !== root || !(root instanceof Element) || root.getAttribute('role') !== 'button') return
+        if ((event.key !== 'Enter' && event.key !== ' ') || event.repeat || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return
         event.preventDefault()
         dispatch('click')
       }

@@ -195,6 +195,15 @@ describe('generateUi: variants', () => {
     expect(hovered).not.toContain('tabindex')
   })
 
+  it('makes the root a button when a variant hides its only control', () => {
+    const TIP = '.bildr/modules/blog/components/tip.json'
+    const tip = out((files) => {
+      const collapsed = (files[TIP]!.variants as Json[]).find(variant => variant.id === 'var_collapsed')!
+      ;(collapsed.overrides as Record<string, Json>).n_tip_toggle = { props: { hidden: true } }
+    }, 'components/blog/Tip.vue')
+    expect(tip).toMatch(/role="button" tabindex="0"[^>]*v-on="on"/)
+  })
+
   // prefers-reduced-motion: reduce makes every animated element instant, whatever its variant's timing (Tailwind's `motion-reduce:` variant: no bildr runtime).
   it('makes every transition instant under prefers-reduced-motion', () => {
     const animated = (code: string) => [...code.matchAll(/class="([^"]*\btransition-\[[^"]*)"/g)].map(match => match[1]!.split(' '))
