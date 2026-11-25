@@ -11,20 +11,25 @@ import { generatedRunner } from './run-generated'
  * Simple data S7 / P3 (verify R3-004): the generated browser composition and composables are run for real, not only read as text: the
  * composables of the "weather" source of the golden fixture, over its composition, use-cases, repository, mappers, schemas and client.
  * Only what the app provides is replaced: `#app` (the runtime config) and the query helpers (TanStack and Vue are not dependencies of this
- * package; api-query-helpers.test.ts runs those), and `fetch`. Since T3c a composable's call answers the use-case's Result as it is.
+ * package; api-query-helpers.test.ts runs those), and `fetch` (`$fetch` for the server source's composables). Since T3c a composable's call answers the use-case's Result as it is.
  */
 type Result = { ok: true, value: unknown } | { ok: false, error: { type: string, message: string, status?: number } }
-interface QueryOptions { fetch: (input: unknown, signal: AbortSignal) => Promise<Result> }
+interface QueryOptions { key: unknown[], input: unknown, fetch: (input: unknown, signal: AbortSignal) => Promise<Result> }
+interface Action { run: (input?: unknown) => Promise<Result>, invalidates: unknown[] }
 interface Composables {
   useWeatherForecast: (input: unknown) => { options: QueryOptions }
-  useWeatherReportForecast: () => { run: (input: unknown) => Promise<Result> }
+  useWeatherReportForecast: () => Action
+  useCatalogProducts: (input?: unknown) => { options: QueryOptions }
+  useCatalogDeleteProduct: () => Action
+  useCatalogCreateProduct: () => Action
 }
 
 const CONFIG = '__bildrBrowserCompositionConfig'
-/** The helpers of app/data/api-query.ts without TanStack: a query hands its options back, an action's `run` is its call. */
+/** The helpers of app/data/api-query.ts without TanStack: a query hands its options back, an action's `run` is its call; `fromRoute` marks what it read. */
 const QUERY_STUB = `
 export const useApiQuery = options => ({ options })
-export const useApiAction = call => ({ run: call })
+export const useApiAction = (call, invalidates) => ({ run: call, invalidates })
+export const fromRoute = async call => ({ ok: true, value: { fromRoute: await call } })
 `
 const APP_STUB = `export const useRuntimeConfig = () => globalThis.${CONFIG}\n`
 
@@ -38,10 +43,8 @@ describe('generated browser composition and composables, run', () => {
     const sources = new Map(generate(loaded.model).map(file => [file.path, file.content]))
     sources.set('layers/apis/app/data/api-query.ts', QUERY_STUB)
     const { load } = generatedRunner(sources, dir, { '#app': APP_STUB })
-    composables = {
-      ...await load<Pick<Composables, 'useWeatherForecast'>>('layers/apis/app/composables/apis/useWeatherForecast.ts'),
-      ...await load<Pick<Composables, 'useWeatherReportForecast'>>('layers/apis/app/composables/apis/useWeatherReportForecast.ts')
-    }
+    const names: Array<keyof Composables> = ['useWeatherForecast', 'useWeatherReportForecast', 'useCatalogProducts', 'useCatalogDeleteProduct', 'useCatalogCreateProduct']
+    composables = Object.assign({}, ...await Promise.all(names.map(name => load<Partial<Composables>>(`layers/apis/app/composables/apis/${name}.ts`)))) as Composables
   })
   afterAll(() => {
     rmSync(dir, { recursive: true, force: true })
@@ -66,6 +69,33 @@ describe('generated browser composition and composables, run', () => {
   const forecast = (input: unknown, signal = new AbortController().signal) => composables.useWeatherForecast(input).options.fetch(input, signal)
   const REMOTE = { city: 'Lisbon', celsius: 21.5, observed_at: '2026-05-01T10:00:00Z' }
   const FORECAST = { city: 'Lisbon', celsius: 21.5, observedAt: '2026-05-01T10:00:00Z' }
+
+  it('a query is cached under its source and name, with its input; an action refetches the queries of its source (R3-005)', () => {
+    configure('https://weather.example.com/v1')
+    const input = () => ({ city: 'Lisbon' })
+    expect(composables.useWeatherForecast(input).options).toMatchObject({ key: ['apis', 'weather', 'forecast'], input })
+    expect(composables.useWeatherReportForecast().invalidates).toEqual(['apis', 'weather'])
+    expect(composables.useCatalogProducts().options).toMatchObject({ key: ['apis', 'catalog', 'products'], input: {} })
+    expect(composables.useCatalogDeleteProduct().invalidates).toEqual(['apis', 'catalog'])
+  })
+
+  it('a server source\'s composables call its route with $fetch and read it with fromRoute: the query string, the body, the signal (R3-005)', async () => {
+    const calls: Array<[string, Record<string, unknown>]> = []
+    vi.stubGlobal('$fetch', async (url: string, options: Record<string, unknown>) => {
+      calls.push([url, options])
+      return 'answered'
+    })
+    const signal = new AbortController().signal
+    await expect(composables.useCatalogProducts().options.fetch({ category: 'lamps' }, signal)).resolves.toEqual({ ok: true, value: { fromRoute: 'answered' } })
+    // An action that answers nothing gets the route's empty answer as it is.
+    await expect(composables.useCatalogDeleteProduct().run({ id: 7 })).resolves.toEqual({ ok: true, value: { fromRoute: 'answered' } })
+    await composables.useCatalogCreateProduct().run({ body: { name: 'Lamp' } })
+    expect(calls).toEqual([
+      ['/api/apis/catalog/products', { query: { category: 'lamps' }, signal }],
+      ['/api/apis/catalog/delete-product', { method: 'DELETE', query: { id: 7 } }],
+      ['/api/apis/catalog/create-product', { method: 'POST', body: { name: 'Lamp' } }]
+    ])
+  })
 
   it('a query calls the base URL of the runtime config, with the remote key, and answers the entity', async () => {
     configure('https://weather.example.com/v1')

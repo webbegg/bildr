@@ -21,6 +21,7 @@ interface Observer {
   options: { queryKey: unknown[], queryFn: (context: { signal: AbortSignal }) => Promise<unknown>, retry: (count: number, cause: Error) => boolean }
   emit: (result: ObserverResult) => void
   refetched: number
+  unsubscribed: boolean
 }
 interface Helpers {
   useApiQuery: (options: { key: unknown[], input: unknown, fetch: (input: unknown, signal: AbortSignal) => Promise<Result> }) => {
@@ -38,12 +39,13 @@ interface Helpers {
 }
 
 const STATE = '__bildrQueryHelpers'
+/** Vue's few functions the helpers call: a watcher and a scope the test drives (`state.watchers`, `state.scope`, `state.disposers`). */
 const VUE_STUB = `
 export const shallowRef = value => ({ value })
 export const toValue = source => typeof source === 'function' ? source() : source
-export const watch = () => {}
-export const getCurrentScope = () => undefined
-export const onScopeDispose = () => {}
+export const watch = (source, callback) => { globalThis.${STATE}.watchers.push({ source, callback }) }
+export const getCurrentScope = () => globalThis.${STATE}.scope
+export const onScopeDispose = callback => { globalThis.${STATE}.disposers.push(callback) }
 `
 const QUERY_CORE_STUB = `
 export class QueryObserver {
@@ -51,11 +53,12 @@ export class QueryObserver {
     this.options = options
     this.listeners = []
     this.refetched = 0
+    this.unsubscribed = false
     this.current = { data: undefined, error: null, isFetching: false, status: 'pending' }
     globalThis.${STATE}.observers.push(this)
   }
   getCurrentResult() { return this.current }
-  subscribe(listener) { this.listeners.push(listener); return () => {} }
+  subscribe(listener) { this.listeners.push(listener); return () => { this.unsubscribed = true } }
   setOptions(options) { this.options = options }
   refetch() { this.refetched += 1; return Promise.resolve(this.current) }
   emit(result) { this.current = result; this.listeners.forEach(listener => listener(result)) }
@@ -66,7 +69,13 @@ const QUERY_CLIENT_STUB = `export const queryClient = { invalidateQueries: async
 describe('generated query helpers, run', () => {
   const dir = mkdtempSync(join(tmpdir(), 'bildr-query-helpers-'))
   let helpers: Helpers
-  let state: { observers: Observer[], invalidated: unknown[][] }
+  let state: {
+    observers: Observer[]
+    invalidated: unknown[][]
+    watchers: Array<{ source: () => unknown, callback: () => void }>
+    scope?: object
+    disposers: Array<() => void>
+  }
 
   beforeAll(async () => {
     const loaded = loadModel(fixtureModelFiles())
@@ -79,7 +88,7 @@ describe('generated query helpers, run', () => {
     helpers = await load<Helpers>('layers/apis/app/data/api-query.ts')
   })
   beforeEach(() => {
-    state = { observers: [], invalidated: [] }
+    state = { observers: [], invalidated: [], watchers: [], disposers: [] }
     Object.assign(globalThis, { [STATE]: state })
   })
   afterAll(() => {
@@ -108,13 +117,45 @@ describe('generated query helpers, run', () => {
       await expect(observer.options.queryFn({ signal })).resolves.toEqual({ id: 2 })
     })
 
-    it('is pending until it answers, then success with the data, then pending again while it fetches again', () => {
+    it('fetches again with the new input as its key when the input changes', () => {
+      let id = 1
+      const { observer } = query(async () => ({ ok: true, value: 1 }), () => ({ id }))
+      const [watcher] = state.watchers
+      id = 2
+      expect(watcher!.source()).toEqual({ id: 2 })
+      watcher!.callback()
+      expect(observer.options.queryKey).toEqual(['apis', 'shop', 'item', { id: 2 }])
+    })
+
+    it('stops listening to the observer when its scope ends', () => {
+      state.scope = {}
+      const { observer } = query(async () => ({ ok: true, value: 1 }))
+      expect(observer.unsubscribed).toBe(false)
+      state.disposers.forEach(dispose => dispose())
+      expect(observer.unsubscribed).toBe(true)
+    })
+
+    it('is pending until it answers, then success with the data; fetching again keeps the answer shown (R3-002)', () => {
       const { data, status, error, observer } = query(async () => ({ ok: true, value: 1 }))
       expect(status.value).toBe('pending')
       observer.emit({ data: { id: 1 }, error: null, isFetching: false, status: 'success' })
       expect([data.value, status.value, error.value]).toEqual([{ id: 1 }, 'success', undefined])
+      // A refresh, or the window taking the focus again: the page keeps what it shows instead of flashing its loading text.
       observer.emit({ data: { id: 1 }, error: null, isFetching: true, status: 'success' })
-      expect(status.value).toBe('pending')
+      expect([data.value, status.value]).toEqual([{ id: 1 }, 'success'])
+      // A new input has no answer yet: pending.
+      observer.emit({ data: undefined, error: null, isFetching: true, status: 'pending' })
+      expect([data.value, status.value]).toEqual([undefined, 'pending'])
+    })
+
+    it('fetching again after an error is pending without the old error; failing after an answer is an error, the answer kept', async () => {
+      const { data, status, error, observer } = query(async () => ({ ok: false, error: NOT_FOUND }))
+      const cause = await thrown(observer)
+      // TanStack keeps the error of the last attempt while it fetches again.
+      observer.emit({ error: cause, isFetching: true, status: 'error' })
+      expect([status.value, error.value]).toEqual(['pending', undefined])
+      observer.emit({ data: { id: 1 }, error: cause, isFetching: false, status: 'error' })
+      expect([data.value, status.value, error.value]).toEqual([{ id: 1 }, 'error', NOT_FOUND])
     })
 
     it('an error Result becomes the query\'s error as it is, typed: the source\'s own, never a message', async () => {
@@ -128,22 +169,29 @@ describe('generated query helpers, run', () => {
       expect(error.value).toBeUndefined()
     })
 
-    it('a call that throws (a bug) is `unexpected`: a generic message, the detail on the console', () => {
+    it('a call that throws (a bug) is `unexpected`: a generic message, the detail on the console once, however often it is reported', () => {
       const log = vi.spyOn(console, 'error').mockImplementation(() => {})
       const { error, observer } = query(async () => ({ ok: true, value: 1 }))
       const bug = new TypeError('x is undefined')
       observer.emit({ error: bug, isFetching: false, status: 'error' })
-      expect(error.value).toEqual({ type: 'unexpected', message: 'Something went wrong. Please try again.' })
+      const first = error.value
+      expect(first).toEqual({ type: 'unexpected', message: 'Something went wrong. Please try again.' })
+      observer.emit({ data: 1, error: bug, isFetching: false, status: 'error' })
+      expect(error.value).toBe(first)
+      expect(log).toHaveBeenCalledTimes(1)
       expect(log).toHaveBeenCalledWith(bug)
     })
 
-    it('tries again only what may pass a second time: a failed API or something unexpected, three times at most', async () => {
+    it('tries again only what may pass a second time: no answer, a failing API (5xx, 408, 429) or something unexpected, three times at most (R3-001)', async () => {
       /** What the query's function throws for `error`, and the query's own retry rule. */
       const failing = async (error: ApiError) => thrown(query(async () => ({ ok: false, error })).observer) as Promise<Error>
       const { retry } = query(async () => ({ ok: true, value: 1 })).observer.options
-      expect(retry(0, await failing(NOT_FOUND))).toBe(true)
-      expect(retry(2, await failing(NOT_FOUND))).toBe(true)
-      expect(retry(3, await failing(NOT_FOUND))).toBe(false)
+      const remote = (status: number) => failing({ type: 'remote_failed', status, message: `answered ${status}` })
+      for (const status of [0, 408, 429, 500, 503]) expect(retry(0, await remote(status)), String(status)).toBe(true)
+      expect(retry(2, await remote(503))).toBe(true)
+      expect(retry(3, await remote(503))).toBe(false)
+      // What the API answered on purpose is its answer: a 404 shows at once, not after three tries.
+      for (const status of [400, 401, 403, 404, 422]) expect(retry(0, await remote(status)), String(status)).toBe(false)
       expect(retry(0, new TypeError('offline'))).toBe(true)
       for (const type of ['invalid_input', 'invalid_answer', 'not_configured']) expect(retry(0, await failing({ type, message: type }))).toBe(false)
     })
@@ -163,15 +211,19 @@ describe('generated query helpers, run', () => {
       expect([action.pending.value, action.error.value]).toEqual([false, undefined])
     })
 
-    it('is pending while it runs', async () => {
-      let finish = (_result: Result) => {}
+    it('is pending while any of its runs is (R3-006)', async () => {
+      const finish: Array<(result: Result) => void> = []
       const action = helpers.useApiAction(() => new Promise<Result>((resolve) => {
-        finish = resolve
+        finish.push(resolve)
       }), ['apis', 'shop'])
-      const running = action.run()
+      const first = action.run()
+      const second = action.run()
       expect(action.pending.value).toBe(true)
-      finish({ ok: true, value: undefined })
-      await running
+      finish[0]!({ ok: true, value: undefined })
+      await first
+      expect(action.pending.value).toBe(true)
+      finish[1]!({ ok: true, value: undefined })
+      await second
       expect(action.pending.value).toBe(false)
     })
 

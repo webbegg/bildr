@@ -7,7 +7,10 @@ import { err, ok } from '#core/kernel/result'
 import type { ApiError, DomainError, Result } from '#core/kernel/result'
 import { queryClient } from '#layers/core/app/data/query-client'
 
-/** Where a query is, as the `status` of Nuxt's useAsyncData: `pending` while it fetches (again), then `success` or `error`. */
+/**
+ * Where a query is, as the `status` of Nuxt's useAsyncData: `pending` until it has an answer, then `success` or `error`. Fetching again
+ * over an answer stays `success` (the page keeps showing it until the new one replaces it); after an error it is `pending` again.
+ */
 export type ApiStatus = 'pending' | 'success' | 'error'
 
 /** What a query composable of an API data source gives `useApiQuery`. */
@@ -51,9 +54,16 @@ class Answered extends Error {
   }
 }
 
-/** Only a call that may pass on a second try is tried again: an unreachable server, or an API that answered an error. */
-const retry = (count: number, cause: Error) =>
-  count < 3 && (!(cause instanceof Answered) || cause.error.type === 'unexpected' || cause.error.type === 'remote_failed')
+/**
+ * Only a call that may pass on a second try is tried again, three times at most: something unexpected (no server), an API that did not
+ * answer (`status` 0), failed itself (5xx) or asked to wait (408, 429). What it answered on purpose (a 404) is its answer.
+ */
+const retry = (count: number, cause: Error) => {
+  if (count >= 3) return false
+  if (!(cause instanceof Answered) || cause.error.type === 'unexpected') return true
+  const status = cause.error.type === 'remote_failed' ? (cause.error as { status?: unknown }).status : undefined
+  return typeof status === 'number' && (status === 0 || status === 408 || status === 429 || status >= 500)
+}
 
 /**
  * A query over the app's query client, with the contract of Nuxt's useAsyncData: `data`, `status` and `error` (the source's typed
@@ -76,11 +86,21 @@ export const useApiQuery = <Input, Output, E extends DomainError>({ key, input, 
   const data = shallowRef<Output>()
   const status = shallowRef<ApiStatus>('pending')
   const error = shallowRef<ApiError<E>>()
+  // The observer reports a failure on each update: it is read (and an unexpected one logged) once, and stays the same error.
+  let reported: Error | undefined
+  let failure: ApiError<E> | undefined
+  const errorOf = (cause: Error): ApiError<E> => {
+    if (cause !== reported || !failure) {
+      reported = cause
+      // What `fetch` answered is one of E: `Answered` carries it untyped through TanStack Query.
+      failure = cause instanceof Answered ? cause.error as ApiError<E> : unexpected(cause)
+    }
+    return failure
+  }
   const sync = (result: QueryObserverResult<Output>) => {
     data.value = result.data
-    // What `fetch` answered is one of E: `Answered` carries it untyped through TanStack Query.
-    error.value = !result.error ? undefined : result.error instanceof Answered ? result.error.error as ApiError<E> : unexpected(result.error)
-    status.value = result.isFetching ? 'pending' : result.status
+    status.value = result.status === 'success' ? 'success' : result.isFetching || result.status === 'pending' ? 'pending' : 'error'
+    error.value = status.value === 'error' && result.error ? errorOf(result.error) : undefined
   }
   sync(observer.getCurrentResult())
   const unsubscribe = observer.subscribe(sync)
@@ -97,7 +117,10 @@ export const useApiAction = <Input, Output, E extends DomainError>(call: (input:
   type RunArguments = undefined extends Input ? [input?: Input] : [input: Input]
   const pending = shallowRef(false)
   const error = shallowRef<ApiError<E>>()
+  // It is pending while any of its runs is.
+  let running = 0
   const run = async (...[input]: RunArguments): Promise<Result<Output, ApiError<E>>> => {
+    running += 1
     pending.value = true
     error.value = undefined
     try {
@@ -110,7 +133,8 @@ export const useApiAction = <Input, Output, E extends DomainError>(call: (input:
       error.value = failure
       return err(failure)
     } finally {
-      pending.value = false
+      running -= 1
+      pending.value = running > 0
     }
   }
   return { run, pending, error }

@@ -113,6 +113,22 @@ describe('a page that uses an API query', () => {
     expect(content).not.toContain('<p v-else class="text-muted">No forecast.</p>')
   })
 
+  // T3c R3-004: a computed value over API uses loads, fails and has loaded as they do: its guard has their error line too.
+  it('guards a Page on a computed value over API uses with their loading, error line and 404', () => {
+    const p = shop()
+    const { pageId, nodeId } = p.edit('page_create', { name: 'weather-either' })
+    p.edit('page_use_add', { page: pageId, as: 'here', api: { datasource: 'ds_weather', query: 'forecast' }, args: { city: 'Lisbon' } })
+    p.edit('page_use_add', { page: pageId, as: 'there', api: { datasource: 'ds_weather', query: 'forecast' }, args: { city: 'Porto' } })
+    p.edit('page_use_add', { page: pageId, as: 'prefs', state: 'st_preferences' })
+    p.edit('page_computed_set', { page: pageId, as: 'shown', if: { $bind: 'prefs.showDrafts' }, then: { $bind: 'here' }, else: { $bind: 'there' } })
+    p.edit('node_update_props', { file: pageId, nodeId, props: { when: { $bind: 'shown' }, loading: 'Loading…', empty: 'No forecast.' } })
+    p.edit('node_insert', { file: pageId, parentId: nodeId, type: 'Text', props: { text: { $bind: 'shown.city' } } })
+    const content = pageOf(p, 'weather-either')
+    expect(content).toContain('<p v-if="hereStatus === \'pending\' || thereStatus === \'pending\'" class="text-muted">Loading…</p>')
+    expect(content).toContain('<p v-else-if="hereStatus === \'error\' || thereStatus === \'error\'" class="text-error">Couldn\'t load this.</p>')
+    expect(content).toContain('if (hereStatus.value === \'success\' && thereStatus.value === \'success\' && !shown.value) showError({ status: 404, message: \'No forecast.\' })')
+  })
+
   it('reads nested fields of a row with optional chaining', () => {
     const p = shop()
     listPage(p, 'cities', PRODUCTS, {}, '{item.title} in {item.address.city}')

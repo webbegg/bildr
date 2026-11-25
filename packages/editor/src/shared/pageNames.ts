@@ -23,7 +23,7 @@ const capital = (name: string): string => name.charAt(0).toUpperCase() + name.sl
 const declaredBy = (as: string, kind: UseKind): string[] => {
   if (kind === 'state') return [as, `set${capital(as)}`]
   if (kind === 'query') return [as, `${as}Loading`]
-  if (kind === 'api') return [as, `${as}Loading`, `${as}Error`]
+  if (kind === 'api') return [as, `${as}Status`]
   if (kind === 'action') return [as, `${as}Pending`, `${as}Error`]
   return [as]
 }

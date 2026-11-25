@@ -114,7 +114,8 @@ export const fail = (env: Env, node: ModelNode | undefined, message: string): ne
   throw new Error(`${env.file}${node ? ` (node ${node.id})` : ''}: ${message}`)
 }
 
-export const refRoot = (name: string, onUse: () => void, optional?: Env['optional'], loading?: () => string[], settled?: () => string[]): Root => ({
+/** A root read as a ref; `flags` are the loading, error and settled flags of the data behind it (a query, or a computed value over some). */
+export const refRoot = (name: string, onUse: () => void, optional?: Env['optional'], flags: Pick<Root, 'loading' | 'errors' | 'settled'> = {}): Root => ({
   resolve: (members, ctx) => {
     onUse()
     if (ctx === 'template') return [name, ...members].join('.')
@@ -122,8 +123,7 @@ export const refRoot = (name: string, onUse: () => void, optional?: Env['optiona
     const chain = optional && !optional.guarded.has(name) ? '?.' : '.'
     return `${name}.value${members.map(member => `${chain}${member}`).join('')}`
   },
-  loading,
-  settled
+  ...flags
 })
 
 /** The item name of a List: itself in the template, the handler's parameter in the script (which the handler being built notes). */

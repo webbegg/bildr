@@ -10,7 +10,7 @@ import { apiComposableName, composableOf, stateComposableOf, useNames } from '..
 import { corePaths } from '../paths.ts'
 import { pascal, tsString } from '../text.ts'
 import type { Env } from './env.ts'
-import { actionById, apiRoot, entityOf, expression, fail, isObject, keyedById, loadingOf, newEnv, plainRoot, refRoot, settledOf, use } from './env.ts'
+import { actionById, apiRoot, entityOf, errorsOf, expression, fail, isObject, keyedById, loadingOf, newEnv, plainRoot, refRoot, settledOf, use } from './env.ts'
 import { sfc } from './markup.ts'
 import { fillTemplate, findNode, render, SLOT_FILL } from './nodes.ts'
 import { bindProperties, nodeIndex, variantsOf } from './variants.ts'
@@ -145,9 +145,11 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
   const queries = (uses.queries ?? []).map(entry => ({ ...entry, file: context.module.queries.find(query => query.id === entry.query) ?? fail(env, undefined, `unknown query ${entry.query}`) }))
   for (const { as, file } of queries) {
     const one = queryNames(env, file).one
-    env.roots.set(as, refRoot(as, () => use(env, `query:${as}`, 'data'), one ? env.optional : undefined, () => {
-      use(env, `query:${as}`, 'loading')
-      return [useNames(as).loading]
+    env.roots.set(as, refRoot(as, () => use(env, `query:${as}`, 'data'), one ? env.optional : undefined, {
+      loading: () => {
+        use(env, `query:${as}`, 'loading')
+        return [useNames(as).loading]
+      }
     }))
   }
   const apis = (uses.apis ?? []).map((entry) => {
@@ -179,7 +181,12 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
     env.roots.set(entry.as, refRoot(entry.as, () => {
       use(env, `computed:${entry.as}`, 'value')
       if (writing !== undefined) reads.set(writing, (reads.get(writing) ?? new Set<string>()).add(entry.as))
-    }, undefined, () => [...loadingOf(env, entry.then), ...loadingOf(env, entry.else)], () => [...settledOf(env, entry.then), ...settledOf(env, entry.else)]))
+    }, undefined, {
+      // It loads, fails and has loaded as what its branches read does.
+      loading: () => [...loadingOf(env, entry.then), ...loadingOf(env, entry.else)],
+      errors: () => [...errorsOf(env, entry.then), ...errorsOf(env, entry.else)],
+      settled: () => [...settledOf(env, entry.then), ...settledOf(env, entry.else)]
+    }))
   }
 
   // The template first: it decides which declarations the script needs.
