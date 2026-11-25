@@ -139,10 +139,10 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
       `// Composition root of the "${source.name}" API: the only place where its use-cases meet the HTTP repository.`,
       'import { useRuntimeConfig } from \'nuxt/server\'',
       importLine('#core/http/client', ['createHttpClient', 'HttpFailure']),
-      'import type { ErrorStatusMap } from \'#core/kernel/result\'',
+      importLine('#core/kernel/result', ['err', 'ok']),
       importLine(importPath(path, paths.client), [{ name: 'ApiClient', type: true }]),
       importLine(importPath(path, paths.adapter(names.adapterFile)), [names.adapter]),
-      importLine(importPath(path, paths.errors), [names.failure, 'remoteFailed']),
+      importLine(importPath(path, paths.errors), [{ name: names.error, type: true }, 'remoteFailed']),
       ...operations
         .map(operation => ({ path: importPath(path, paths.useCase(kebab(operation.name))), name: operation.name }))
         .sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
@@ -157,17 +157,11 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
       `  const call = createHttpClient({ baseUrl: config.baseUrl, headers${secret ? `, unconfigured: String(config.${secret} ?? '').trim() === ''` : ''} })`,
       '  return async (path, request) => {',
       '    try {',
-      '      return await call(path, request)',
+      '      return ok(await call(path, request))',
       '    } catch (cause) {',
-      ...(envVar
-        ? [
-            '      if (cause instanceof HttpFailure && cause.notConfigured) {',
-            `        throw new ${names.failure}({ type: 'not_configured', message: ${tsString(`The "${source.name}" API is not configured: set ${envVar}`)} })`,
-            '      }'
-          ]
-        : []),
-      `      if (cause instanceof HttpFailure) throw new ${names.failure}(remoteFailed(cause.status, cause.message))`,
-      '      throw cause',
+      '      if (!(cause instanceof HttpFailure)) throw cause',
+      ...(envVar ? [`      if (cause.notConfigured) return err({ type: 'not_configured', message: ${tsString(`The "${source.name}" API is not configured: set ${envVar}`)} })`] : []),
+      '      return err(remoteFailed(cause.status, cause.message))',
       '    }',
       '  }',
       '}',
@@ -187,9 +181,9 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
       '}',
       '',
       `/** HTTP status of each "${source.name}" API error. */`,
-      `export const ${names.status}: ErrorStatusMap = {`,
+      `export const ${names.status} = {`,
       [...STATUSES, ...(envVar ? [NOT_CONFIGURED_STATUS] : [])].map(status => `  ${status}`).join(',\n'),
-      '}'
+      `} satisfies Record<${names.error}['type'], number>`
     ])
   }
 }

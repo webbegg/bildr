@@ -72,7 +72,7 @@ const expectedResult = (source: ApiSource, operation: Operation) => {
 /** What a text path parameter can't be: empty, a dot segment, or more than one segment. */
 const NOT_A_SEGMENT = ['', '.', '..', 'a/b', 'a\\b']
 
-const repositoryTestLines = (source: ApiSource, names: SourceNames, operations: Operation[]): string[] => {
+const repositoryTestLines = (source: ApiSource, names: SourceNames, operations: Operation[]): Array<string | false> => {
   const tests = operations.flatMap((operation): string[][] => {
     const input = sampleInput(source, operation)
     const fields = inputFields(operation)
@@ -89,9 +89,14 @@ const repositoryTestLines = (source: ApiSource, names: SourceNames, operations: 
       ...(headerTexts.length
         ? [[
             `  it(${tsString(`${operation.name}: refuses a header parameter with a line break, without calling the API`)}, async () => {`,
-            '    const { http, calls } = recording(undefined)',
-            ...headerTexts.map(param => `    await expect(${names.adapter}(http).${operation.name}({ ...${literal(input, '    ')}, ${param.name}: 'a\\r\\nX-Evil: 1' })).rejects.toMatchObject({ error: { type: 'invalid_input' } })`),
-            '    expect(calls).toEqual([])',
+            // One recorder each: a refusal of one parameter can't hide a missing check on another.
+            ...headerTexts.flatMap(param => [
+              '    {',
+              '      const { http, calls } = recording(undefined)',
+              `      expect(await ${names.adapter}(http).${operation.name}({ ...${literal(input, '      ')}, ${param.name}: 'a\\r\\nX-Evil: 1' })).toMatchObject({ ok: false, error: { type: 'invalid_input' } })`,
+              '      expect(calls).toEqual([])',
+              '    }'
+            ]),
             '  })'
           ]]
         : []),
@@ -101,7 +106,7 @@ const repositoryTestLines = (source: ApiSource, names: SourceNames, operations: 
             ...texts.flatMap(param => [
               `    for (const value of [${NOT_A_SEGMENT.map(tsString).join(', ')}]) {`,
               '      const { http, calls } = recording(undefined)',
-              `      await expect(${names.adapter}(http).${operation.name}({ ...${literal(input, '      ')}, ${param.name}: value })).rejects.toMatchObject({ error: { type: 'invalid_input' } })`,
+              `      expect(await ${names.adapter}(http).${operation.name}({ ...${literal(input, '      ')}, ${param.name}: value })).toMatchObject({ ok: false, error: { type: 'invalid_input' } })`,
               '      expect(calls).toEqual([])',
               '    }'
             ]),
@@ -111,9 +116,16 @@ const repositoryTestLines = (source: ApiSource, names: SourceNames, operations: 
       [
         `  it(${tsString(label)}, async () => {`,
         `    const { http, calls } = recording(${literal(answer, '    ')})`,
-        `    ${operation.result ? 'const result = ' : ''}await ${names.adapter}(http).${operation.name}(${argument})`,
+        `    const result = await ${names.adapter}(http).${operation.name}(${argument})`,
         `    expect(calls).toEqual(${sent})`,
-        ...(operation.result ? [`    expect(result).toEqual(${literal(expectedResult(source, operation), '    ')})`] : []),
+        `    expect(result).toEqual({ ok: true, value: ${operation.result ? literal(expectedResult(source, operation), '    ') : 'undefined'} })`,
+        '  })'
+      ],
+      [
+        `  it(${tsString(`${operation.name}: answers the error of the client as it is`)}, async () => {`,
+        '    const failed = err(remoteFailed(503, \'answered 503\'))',
+        '    const http: ApiClient = async () => failed',
+        `    expect(await ${names.adapter}(http).${operation.name}(${argument})).toEqual(failed)`,
         '  })'
       ],
       ...(operation.result
@@ -121,23 +133,26 @@ const repositoryTestLines = (source: ApiSource, names: SourceNames, operations: 
             `  it(${tsString(`${operation.name}: an answer that is not ${operation.result.many ? 'a list of ' : ''}${operation.result.model} is an invalid_answer without detail (the detail goes to onInvalidAnswer)`)}, async () => {`,
             '    expect.assertions(2)',
             '    const { http } = recording(\'unexpected\')',
-            `    await expect(${names.adapter}(http, detail => expect(detail.length).toBeGreaterThan(0)).${operation.name}(${argument})).rejects.toMatchObject({ error: { type: 'invalid_answer', message: ${tsString(`The "${source.name}" API answered something unexpected`)} } })`,
+            `    expect(await ${names.adapter}(http, detail => expect(detail.length).toBeGreaterThan(0)).${operation.name}(${argument})).toEqual({ ok: false, error: { type: 'invalid_answer', message: ${tsString(`The "${source.name}" API answered something unexpected`)} } })`,
             '  })'
           ]]
         : [])
     ]
   })
+  const any = operations.length > 0
   return [
     'import { describe, expect, it } from \'vitest\'',
+    importLine('#core/kernel/result', [...(any ? ['err'] : []), 'ok']),
     importLine(fromTest(names, apiPaths(names.dir).client), [{ name: 'ApiClient', type: true }, { name: 'ApiRequest', type: true }]),
     importLine(fromTest(names, apiPaths(names.dir).adapter(names.adapterFile)), [names.adapter]),
+    any ? importLine(fromTest(names, apiPaths(names.dir).errors), ['remoteFailed']) : false,
     '',
     '/** An ApiClient that records its calls and answers `answer`. */',
     'const recording = (answer: unknown) => {',
     '  const calls: Array<{ path: string, request: ApiRequest }> = []',
     '  const http: ApiClient = async (path, request) => {',
     '    calls.push({ path, request })',
-    '    return answer',
+    '    return ok(answer)',
     '  }',
     '  return { http, calls }',
     '}',
@@ -159,28 +174,23 @@ const useCaseTestLines = (source: ApiSource, names: SourceNames, operation: Oper
   const fields = inputFields(operation)
   const input = fields.length ? literal(sampleInput(source, operation), '    ') : ''
   const value = literal(expectedResult(source, operation), '    ')
-  // An object literal after `=>` would be a block: it goes in parentheses.
-  const returned = value.startsWith('{') ? `(${value})` : value
   const use = (repository: string, argument: string) => `await ${operation.name}({ ${names.camel}: ${repository} })(${argument})`
   return [
     'import { describe, expect, it } from \'vitest\'',
-    importLine(fromTest(names, apiPaths(names.dir).errors), [names.failure, 'remoteFailed']),
+    'import { err, ok } from \'#core/kernel/result\'',
+    importLine(fromTest(names, apiPaths(names.dir).errors), ['remoteFailed']),
     importLine(fromTest(names, apiPaths(names.dir).useCase(kebab(operation.name))), [operation.name]),
     importLine(fromTest(names, apiPaths(names.dir).test('fake-repository.ts')), [names.fake]),
     '',
     `describe('${operation.name}', () => {`,
     '  it(\'returns what the API answers\', async () => {',
-    `    const repository = ${names.fake}({ ${operation.name}: async () => ${operation.result ? returned : 'undefined'} })`,
+    `    const repository = ${names.fake}({ ${operation.name}: async () => ok(${operation.result ? value : 'undefined'}) })`,
     `    const result = ${use('repository', input)}`,
     `    expect(result).toEqual({ ok: true, value: ${operation.result ? value : 'undefined'} })`,
     '  })',
     '',
     '  it(\'returns a failure of the API as a remote_failed error\', async () => {',
-    `    const repository = ${names.fake}({`,
-    `      ${operation.name}: async () => {`,
-    `        throw new ${names.failure}(remoteFailed(503, 'answered 503'))`,
-    '      }',
-    '    })',
+    `    const repository = ${names.fake}({ ${operation.name}: async () => err(remoteFailed(503, 'answered 503')) })`,
     `    const result = ${use('repository', input)}`,
     '    expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: \'remote_failed\', status: 503 }) })',
     '  })',

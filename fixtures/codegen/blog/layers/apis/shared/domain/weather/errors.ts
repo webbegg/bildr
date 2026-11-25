@@ -12,14 +12,3 @@ export const remoteFailed = (status: number, detail: string): WeatherError => ({
 export const invalidAnswer = (): WeatherError => ({ type: 'invalid_answer', message: 'The "weather" API answered something unexpected' })
 
 export const invalidInput = (detail: string): WeatherError => ({ type: 'invalid_input', message: `The call to the "weather" API is not valid: ${detail}` })
-
-/** Thrown by the repository and the client, caught by the use-cases: they return it as the error of their Result. */
-export class WeatherFailure extends Error {
-  readonly error: WeatherError
-
-  constructor(error: WeatherError) {
-    super(error.message)
-    this.name = 'WeatherFailure'
-    this.error = error
-  }
-}

@@ -62,7 +62,7 @@
     },
     "layers/apis/app/data/weather.ts": {
       "owner": "managed",
-      "sha256": "bcaf4b3d995af4324b624b60d4fa6aa36ae5f97c9f4adbf74e0e28be6242b503",
+      "sha256": "e3395be62d26232febd8e98f5e434043cef5f541b14cce68176216427034662f",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/nuxt.config.ts": {
@@ -91,12 +91,12 @@
     },
     "layers/apis/server/utils/catalog.ts": {
       "owner": "managed",
-      "sha256": "ff1d5464ef0278ec58cb16f47b50a47f5780b7006bdc73887759a92c54fa229e",
+      "sha256": "3c1be2e8934370e25e855944814e020f965274dffb1de4b029c45cb64f8f7641",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/data/catalog/client.ts": {
       "owner": "managed",
-      "sha256": "f0a0c08b1b0d06ed98788efa918cd960521b7eac9a53925272fff63ba37b6352",
+      "sha256": "7bd3a84ff345708d017e0a8a5a9d4f4598738b97a7762c1768303ee1b94e4f78",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/data/catalog/mappers/category.mapper.ts": {
@@ -121,7 +121,7 @@
     },
     "layers/apis/shared/data/catalog/repositories/catalog-repository.http.ts": {
       "owner": "managed",
-      "sha256": "bfc08352f05a1a20fda8eadc2833f08ce952e8b0ce6e22521d73ef0dd505f7b0",
+      "sha256": "676726d2620b98f87bff368a82e6375ac9b9c65472f090d3ae31e103e9d0e1b3",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/data/catalog/validations/category.schema.ts": {
@@ -136,7 +136,7 @@
     },
     "layers/apis/shared/data/weather/client.ts": {
       "owner": "managed",
-      "sha256": "e78ca4ad1e1c22e87ffe95fedf8a2a4c6a77727fe222fffe2c1412416b1408dd",
+      "sha256": "07d962789264d43007d3e9e5096845b5cae573ba4812c60d089201abfead887a",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/shared/data/weather/mappers/forecast.mapper.ts": {
@@ -151,7 +151,7 @@
     },
     "layers/apis/shared/data/weather/repositories/weather-repository.http.ts": {
       "owner": "managed",
-      "sha256": "8da22351745349295819012b20c8592a81667ac584657988293bf7b9c40f8fd6",
+      "sha256": "5f1241697fee9c83e53192dea334a8b0c4739375dc632134a0caa0d0f5697330",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/shared/data/weather/validations/forecast.schema.ts": {
@@ -171,32 +171,32 @@
     },
     "layers/apis/shared/domain/catalog/errors.ts": {
       "owner": "managed",
-      "sha256": "0c78d2525e89090b5bbc10a5f68dd31f4322f8f552431baef42df8cc5b941008",
+      "sha256": "304de2a63424100959dcf634bcd6fc8efcec90e072e9bf752f1c8a6a351e1156",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/domain/catalog/repositories/catalog-repository.ts": {
       "owner": "managed",
-      "sha256": "598e002a645e2edb686c9012742cf812fc7f05e2a2be3f653a061c2cf1187e00",
+      "sha256": "72876dabd9227a56184da1bc59edeba71260e741eed0ccc92e3a9a8bbf3d7268",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/domain/catalog/use-cases/create-product.ts": {
       "owner": "managed",
-      "sha256": "82a0087e6e55d56a11bff614670383759c899d65abe7554030cafbb639580beb",
+      "sha256": "52576cc541a8a2e2b67b619d3aa79f4b88a614b90915427a5e60358dd3473448",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/domain/catalog/use-cases/delete-product.ts": {
       "owner": "managed",
-      "sha256": "0ef69c18886562443b93240e0f3837527817196a9c9afcc618f2adeecf01910a",
+      "sha256": "31d4c3e6dd2da77e36dedb9de26956ef875c013db040a8e88dffde262bb04b56",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/domain/catalog/use-cases/product.ts": {
       "owner": "managed",
-      "sha256": "d75e9638ce1289d6ec49c4cd5fce7a35dae3c768b808939c5c25ed6e82294993",
+      "sha256": "e5aaed2e111b5c251355a67415769d6397a0cc9083b7e59221203f76f3d0e840",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/domain/catalog/use-cases/products.ts": {
       "owner": "managed",
-      "sha256": "3eb63ddaa2fa3976d3a7838d2a86a2aeebc9ea5ccc833e6c926665866ef285de",
+      "sha256": "eebdc23832b3c56ee1b0fb8617320428462d445f3b4ee80acc9fe8a507c9f8ec",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/domain/weather/entities/forecast.ts": {
@@ -206,37 +206,37 @@
     },
     "layers/apis/shared/domain/weather/errors.ts": {
       "owner": "managed",
-      "sha256": "bbd19497c724bcaf2f65a1ef5b968d6f08c7529630d6b0edd08ea42fe0923da9",
+      "sha256": "c8c69ea6a1c393c3d9c3f4921e4ff9529651452bdeb70eedd6b28ec0946eaa66",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/shared/domain/weather/repositories/weather-repository.ts": {
       "owner": "managed",
-      "sha256": "d8ab9ee1a131acf5fc1a58e77148fda979e6566549307b360962d1c6ccb2f5b6",
+      "sha256": "43314bf3b0fbcac27719107bae55c1d46f9cc736dee7b71ed1808ba74c34297f",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/shared/domain/weather/use-cases/forecast.ts": {
       "owner": "managed",
-      "sha256": "4ff453730867a97a29a5bf0a14458d362e428c64de4be4ecc7326ff15f9bf48f",
+      "sha256": "d23ec3ac30dfe1518e0d0c5c8905f4185c3e940e73eb6e7846deb694a063da80",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/shared/domain/weather/use-cases/report-forecast.ts": {
       "owner": "managed",
-      "sha256": "1a124d7dc5c3127852068a64c6dc0964db5a4d5555b1823f2c7ee4b65e6a071f",
+      "sha256": "cc4d4dc4b7b7dec5d340165147abffa215e48825fe85624a404d3dc2171a8ebf",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/test/catalog/catalog-repository.http.test.ts": {
       "owner": "managed",
-      "sha256": "a90ed4bab1c09fd534afa981d592e1e78ba9d7e8381cbd9553fd91f5899dd729",
+      "sha256": "bf0a16817411bcbd846f83868b70428e5e04bc14bbbf356b81a7c875e0b9cc48",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/catalog/create-product.test.ts": {
       "owner": "managed",
-      "sha256": "153bcfa8948c31e5fe30b4c6e0362ea9a83de0c658664b33fab48df91bee19ab",
+      "sha256": "6fa2b027bbad0f3d090fa9f5efd66f5752f768f0041a0d6d052d5258d3a53c6d",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/catalog/delete-product.test.ts": {
       "owner": "managed",
-      "sha256": "4709ed8cfcb08d2c3baaeb86b197f460080e509f240afa07cf33a6e08d491ce2",
+      "sha256": "4d8e2058cba9ff5f2b3a80058d25cf2f46d11bcd71efe32ea4301759aee4486a",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/catalog/fake-repository.ts": {
@@ -251,12 +251,12 @@
     },
     "layers/apis/test/catalog/product.test.ts": {
       "owner": "managed",
-      "sha256": "046f5a9031570d4cb64c3bf2d42f59c5e97094009e13fd14c4114080f9663ce0",
+      "sha256": "2e781a5c92ac8fb46538191387d86d1b394926c089b9c938004deef26368702d",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/catalog/products.test.ts": {
       "owner": "managed",
-      "sha256": "5b096b0fd246203c2a53cd19f1fc01375f3d2380e784efdaa1bde106e21868bd",
+      "sha256": "ee723448fd9fce7289df83c7299bc6b7c07dd0e6fe24be8d96cecdb5101c4ef7",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/weather/fake-repository.ts": {
@@ -266,7 +266,7 @@
     },
     "layers/apis/test/weather/forecast.test.ts": {
       "owner": "managed",
-      "sha256": "d70cb1b8d0c5f38c804b590cb9c21a6efeabf66c7c8671bc134026d11f7af646",
+      "sha256": "4643cd687bf11719be0093ab715fd4f4abc112b2fca61c56c062ec67b25652d8",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/test/weather/mappers.mapper.test.ts": {
@@ -276,12 +276,12 @@
     },
     "layers/apis/test/weather/report-forecast.test.ts": {
       "owner": "managed",
-      "sha256": "120c6253dd840637a8fcee1b82e1919da008a854a2fcb0042181ce09125e9c1a",
+      "sha256": "5db5e276b61ef24bee949f9647f507e9f8ea2aa1806518404823f0c84fb01aaa",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/test/weather/weather-repository.http.test.ts": {
       "owner": "managed",
-      "sha256": "5b35c08a7f1bf014c91c6a0e6d17b85a96af1455bf9e8c4b4d6d0fd016c8ec7d",
+      "sha256": "3d59df368020e5893ca299599432df44a5b65a174aeb5e616f84cd0e20b7ae33",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/blog/app/components/blog/PostCard.vue": {
@@ -456,7 +456,7 @@
     },
     "layers/blog/server/utils/blog.ts": {
       "owner": "managed",
-      "sha256": "f1a2ce1612820eb27f087ec009fd4bbcf1a13f9cb6666fea796cbf9b351a0f89",
+      "sha256": "6e4764327e02ec3202750e462987a46510ae5d8869d6400f60469f89ab6357d3",
       "source": ".bildr/modules/blog"
     },
     "layers/blog/shared/domain/errors.ts": {

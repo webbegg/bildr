@@ -1,12 +1,11 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, posix } from 'node:path'
-import { pathToFileURL } from 'node:url'
-import ts from 'typescript'
+import { join } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import { generate } from '../../src/generate/index'
 import { loadModel } from '../../src/model/load'
 import { fixtureModelFiles } from '../model/fixture'
+import { generatedRunner } from './run-generated'
 
 /**
  * Simple data S7 / P3 (verify R3-004): the generated browser composition and composables are run for real, not only read as text: the
@@ -49,44 +48,10 @@ describe('generated browser composition and composables, run', () => {
     const start = helpers.indexOf('export const valueOrThrow')
     expect(start).toBeGreaterThan(-1)
     sources.set('layers/apis/app/data/api-query.ts', `${QUERY_STUB}\n${helpers.slice(start, helpers.indexOf('\n}\n', start) + 3)}`)
-    const aliases: Record<string, string> = {
-      '#core/kernel/result': 'layers/core/shared/kernel/result.ts',
-      '#core/kernel/ids': 'layers/core/shared/kernel/ids.ts',
-      '#core/http/client': 'layers/core/shared/http/client.ts'
-    }
-    mkdirSync(join(dir, 'stubs'), { recursive: true })
-    writeFileSync(join(dir, 'stubs/app.mjs'), APP_STUB)
-    const zod = import.meta.resolve('zod')
-    const emitted = new Set<string>()
-    /** What `specifier`, imported by the generated file `from`, is: a stub, the package, or another generated file. */
-    const resolve = (specifier: string, from: string): string | undefined => {
-      if (specifier === '#app') return pathToFileURL(join(dir, 'stubs/app.mjs')).href
-      if (specifier === 'zod') return zod
-      if (aliases[specifier]) return emit(aliases[specifier])
-      if (specifier.startsWith('.')) return emit(`${posix.normalize(posix.join(posix.dirname(from), specifier))}.ts`)
-      return undefined
-    }
-    /** Transpiles `path` (and, first, what it imports) into the directory, its imports pointing at the transpiled files. */
-    const emit = (path: string): string => {
-      const out = join(dir, `${path}.mjs`)
-      if (emitted.has(path)) return pathToFileURL(out).href
-      emitted.add(path)
-      const source = sources.get(path)
-      if (source === undefined) throw new Error(`The generated project has no ${path}`)
-      const js = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText
-      const rewritten = js.replace(/(\bfrom\s+|\bimport\s+)(['"])([^'"]+)\2/g, (_, keyword: string, quote: string, specifier: string) => {
-        const target = resolve(specifier, path)
-        if (!target) throw new Error(`${path} imports ${specifier}, which this test does not provide`)
-        return `${keyword}${quote}${target}${quote}`
-      })
-      mkdirSync(dirname(out), { recursive: true })
-      writeFileSync(out, rewritten)
-      return pathToFileURL(out).href
-    }
-    const [forecast, report] = ['useWeatherForecast', 'useWeatherReportForecast'].map(name => emit(`layers/apis/app/composables/apis/${name}.ts`))
+    const { load } = generatedRunner(sources, dir, { '#app': APP_STUB })
     composables = {
-      ...(await import(forecast!) as Pick<Composables, 'useWeatherForecast'>),
-      ...(await import(report!) as Pick<Composables, 'useWeatherReportForecast'>)
+      ...await load<Pick<Composables, 'useWeatherForecast'>>('layers/apis/app/composables/apis/useWeatherForecast.ts'),
+      ...await load<Pick<Composables, 'useWeatherReportForecast'>>('layers/apis/app/composables/apis/useWeatherReportForecast.ts')
     }
   })
   afterAll(() => {

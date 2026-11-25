@@ -56,7 +56,6 @@ export const apiSourceIdentifiers = (sourceName: string) => {
     adapter: `http${name}Repository`,
     fake: `fake${name}Repository`,
     error: `${name}Error`,
-    failure: `${name}Failure`,
     root: `use${name}Api`,
     status: `${key}ErrorStatus`,
     client: `${key}Client`
@@ -81,7 +80,6 @@ export const apiNameClaims = (source: ApiNamed): ApiNameClaim[] => {
     { name: ids.adapter, owner: `the HTTP repository of the API "${source.name}"` },
     { name: ids.fake, owner: `the fake repository of the API "${source.name}" in its tests` },
     { name: ids.error, owner: `the errors of the API "${source.name}"` },
-    { name: ids.failure, owner: `the failure of the API "${source.name}"` },
     { name: ids.root, owner: `the composition root of the API "${source.name}"` },
     { name: ids.status, owner: `the error statuses of the API "${source.name}"` },
     { name: ids.client, owner: `the client of the API "${source.name}"` }
@@ -104,6 +102,14 @@ export const apiNameClaims = (source: ApiNamed): ApiNameClaim[] => {
       { name: apiComposableName(source.name, operation.name), owner: `the composable of ${owner}` }
     )
   }
+  // The HTTP repository checks a path parameter into `<param>Segment` and a text header one into `<param>Header` (once per name: two
+  // operations with the same parameter share it).
+  const locals = new Map<string, string>()
+  for (const param of [...source.queries, ...source.actions].flatMap(operation => operation.params)) {
+    if (param.in === 'path') locals.set(`${param.name}Segment`, `the path parameter "${param.name}"`)
+    if (param.in === 'header' && param.type === 'text') locals.set(`${param.name}Header`, `the header parameter "${param.name}"`)
+  }
+  for (const [name, of] of locals) claims.push({ name, owner: `the checked value of ${of} in the HTTP repository` })
   return claims
 }
 

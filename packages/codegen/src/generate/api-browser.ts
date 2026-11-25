@@ -39,9 +39,10 @@ const compositionFile = (source: ApiSource, names: SourceNames): Emitted => {
       '// It runs in the page, so it has no auth at all (a key could not stay hidden here: an API that needs one runs on the server) and sends no credentials.',
       'import { useRuntimeConfig } from \'#app\'',
       importLine('#core/http/client', ['createHttpClient', 'HttpFailure']),
+      importLine('#core/kernel/result', ['err', 'ok']),
       importLine(importPath(path, paths.client), [{ name: 'ApiClient', type: true }]),
       importLine(importPath(path, paths.adapter(names.adapterFile)), [names.adapter]),
-      importLine(importPath(path, paths.errors), [names.failure, 'remoteFailed']),
+      importLine(importPath(path, paths.errors), ['remoteFailed']),
       ...operations
         .map(operation => ({ path: importPath(path, paths.useCase(kebab(operation.name))), name: operation.name }))
         .sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
@@ -52,10 +53,10 @@ const compositionFile = (source: ApiSource, names: SourceNames): Emitted => {
       '  const call = createHttpClient({ baseUrl, headers: { accept: \'application/json\' }, signal })',
       '  return async (path, request) => {',
       '    try {',
-      '      return await call(path, request)',
+      '      return ok(await call(path, request))',
       '    } catch (cause) {',
-      `      if (cause instanceof HttpFailure) throw new ${names.failure}(remoteFailed(cause.status, cause.message))`,
-      '      throw cause',
+      '      if (!(cause instanceof HttpFailure)) throw cause',
+      '      return err(remoteFailed(cause.status, cause.message))',
       '    }',
       '  }',
       '}',
