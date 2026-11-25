@@ -35,25 +35,25 @@ describe('generateUi follows the canvas render rules', () => {
       { ...text('n_a'), style: { w: 'fill' } },
       { ...text('n_b'), style: { w: 'fill', grow: '2' } }
     ] })
-    expect(page).toContain('<p class="whitespace-pre-line md:min-w-0 self-stretch md:self-auto md:grow-1 md:basis-[0%]">a</p>')
-    expect(page).toContain('<p class="whitespace-pre-line md:min-w-0 self-stretch md:self-auto grow-2 md:basis-[0%]">a</p>')
+    expect(page).toContain('<p class="self-stretch whitespace-pre-line md:min-w-0 md:grow-1 md:basis-[0%] md:self-auto">a</p>')
+    expect(page).toContain('<p class="grow-2 self-stretch whitespace-pre-line md:min-w-0 md:basis-[0%] md:self-auto">a</p>')
     // A Fill in a vertical stack's cross axis, and 100% in a block parent.
-    expect(indexWith({ ...text('n_c'), style: { w: 'fill' } })).toContain('<p class="whitespace-pre-line self-stretch">a</p>')
-    expect(indexWith({ id: 'n_d', type: 'Container', style: { display: 'block' }, children: [{ ...text('n_e'), style: { h: 'fill' } }] })).toContain('<p class="whitespace-pre-line h-full">a</p>')
+    expect(indexWith({ ...text('n_c'), style: { w: 'fill' } })).toContain('<p class="self-stretch whitespace-pre-line">a</p>')
+    expect(indexWith({ id: 'n_d', type: 'Container', style: { display: 'block' }, children: [{ ...text('n_e'), style: { h: 'fill' } }] })).toContain('<p class="h-full whitespace-pre-line">a</p>')
   })
 
   it('lays a Row out as a flex row that wraps with `wrap`, whose children follow its items (row-direction-wrap)', () => {
     const page = indexWith({ id: 'n_x', type: 'Row', props: { wrap: true }, children: [{ id: 'n_y', type: 'Container' }] })
-    expect(page).toContain('    <div class="flex flex-row flex-wrap self-stretch">\n      <div class="flex flex-col" />')
+    expect(page).toContain('    <div class="flex flex-wrap self-stretch">\n      <div class="flex flex-col" />')
   })
 
   it('renders a Column or a Grid as the tag it names (layout-containers T3)', () => {
     expect(indexWith({ id: 'n_x', type: 'Column', props: { tag: 'nav' } })).toContain('    <nav class="flex flex-col self-stretch" />')
-    expect(indexWith({ id: 'n_x', type: 'Grid', props: { tag: 'section' }, style: { cols: '2' } })).toContain('    <section class="grid self-stretch grid-cols-2" />')
+    expect(indexWith({ id: 'n_x', type: 'Grid', props: { tag: 'section' }, style: { cols: '2' } })).toContain('    <section class="grid grid-cols-2 self-stretch" />')
   })
 
   it('makes a page fill its frame (page-min-height)', () => {
-    expect(generated(fixtureModel(), 'pages/index.vue')).toContain('<section class="gap-6 min-h-full flex-col flex">')
+    expect(generated(fixtureModel(), 'pages/index.vue')).toContain('<section class="flex min-h-full flex-col gap-6">')
   })
 
   it('renders a Heading with the typography of its level, its own tokens first (heading-tokens, heading-levels)', () => {
@@ -74,7 +74,7 @@ describe('generateUi follows the canvas render rules', () => {
   })
 
   it('keeps the line breaks of a Text (text-line-breaks)', () => {
-    expect(indexWith({ ...text('n_x'), style: { text: 'sm' } })).toContain('<p class="whitespace-pre-line text-sm">a</p>')
+    expect(indexWith({ ...text('n_x'), style: { text: 'sm' } })).toContain('<p class="text-sm whitespace-pre-line">a</p>')
   })
 
   it('emits a Text with a line break as a string expression, because Vue condenses a newline in template text to a space', () => {
@@ -93,7 +93,7 @@ describe('generateUi follows the canvas render rules', () => {
   it('renders a Link as ULink with the canvas classes, `href` in a new tab and an icon (link-element)', () => {
     const page = indexWith({ id: 'n_x', type: 'Link', props: { href: 'https://nuxt.com', text: 'Nuxt', icon: 'i-lucide-external-link' } })
     expect(page).toContain([
-      '    <ULink to="https://nuxt.com" target="_blank" class="underline-offset-4 hover:underline items-center gap-1 inline-flex">',
+      '    <ULink to="https://nuxt.com" target="_blank" class="inline-flex items-center gap-1 underline-offset-4 hover:underline">',
       '      <UIcon name="i-lucide-external-link" class="size-[1em] shrink-0" />',
       '      Nuxt',
       '    </ULink>'
@@ -187,21 +187,21 @@ describe('generateUi follows the canvas render rules', () => {
   it('lays a List out by its `layout` (list-layout)', () => {
     const list = (layout?: string): ModelNode => ({ id: 'n_x', type: 'List', props: { items: { $bind: 'quotes' }, as: 'q', ...(layout ? { layout } : {}) }, children: [{ id: 'n_y', type: 'Container' }] })
     expect(indexWith(list())).toContain('    <div class="flex flex-col self-stretch">\n      <div v-for="q in quotes" :key="q.id" class="flex flex-col self-stretch" />')
-    expect(indexWith(list('row'))).toContain('    <div class="flex flex-row flex-wrap self-stretch">\n      <div v-for="q in quotes" :key="q.id" class="flex flex-col" />')
+    expect(indexWith(list('row'))).toContain('    <div class="flex flex-wrap self-stretch">\n      <div v-for="q in quotes" :key="q.id" class="flex flex-col" />')
     expect(indexWith(list('grid'))).toContain('    <div class="grid self-stretch">\n      <div v-for="q in quotes" :key="q.id" class="flex flex-col" />')
   })
 
   it('renders Column, Grid, Image and Card (generator-missing-types)', () => {
     expect(indexWith({ id: 'n_x', type: 'Column', children: [text('n_y')] })).toContain('    <div class="flex flex-col self-stretch">\n      <p class="whitespace-pre-line">a</p>')
     expect(indexWith({ id: 'n_x', type: 'Grid', style: { 'cols': '1', 'md:cols': '3' }, children: [{ id: 'n_y', type: 'Container' }] }))
-      .toContain('    <div class="grid self-stretch grid-cols-1 md:grid-cols-3">\n      <div class="flex flex-col" />')
+      .toContain('    <div class="grid grid-cols-1 self-stretch md:grid-cols-3">\n      <div class="flex flex-col" />')
     // A URL, not a module: bound, so Vue's asset transform never turns `/uploads/…` into a build-time import
     // (an upload the build can't find would fail it).
     expect(indexWith({ id: 'n_x', type: 'Image', props: { src: '/uploads/a.png', alt: 'A cat' } })).toContain('<img :src="\'/uploads/a.png\'" alt="A cat" class="block max-w-full">')
     expect(indexWith({ id: 'n_x', type: 'Image', props: { src: { $bind: 'preferences.avatar' } } })).toContain('<img :src="preferences.avatar" class="block max-w-full">')
     expect(indexWith({ id: 'n_x', type: 'Card', style: { gap: '2', p: '4' }, children: [text('n_y')] })).toContain([
-      '    <div class="ring ring-default p-4 bg-default rounded-lg self-stretch overflow-hidden">',
-      '      <div class="flex gap-2 flex-col">',
+      '    <div class="self-stretch overflow-hidden rounded-lg bg-default p-4 ring ring-default">',
+      '      <div class="flex flex-col gap-2">',
       '        <p class="whitespace-pre-line">a</p>',
       '      </div>',
       '    </div>'

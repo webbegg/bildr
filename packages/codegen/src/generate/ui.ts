@@ -1,3 +1,4 @@
+import { tidyClasses } from '../design/classes.ts'
 import { customColorNames } from '../design/theme.ts'
 import { displayFallback, orderedStyleTokens, parseStyleKey, styleClasses, styleInline, styleTokenProblem } from '../design/tokens.ts'
 import type { BreakpointBase } from '../design/tokens.ts'
@@ -363,7 +364,7 @@ const styleAttrs = (env: Env, node: ModelNode, { display = '', fallback = {}, cl
   const animated = timings.some(Boolean) ? animatedProperties(keys) : []
   const sharedTiming = animated.length && new Set(timings).size === 1 ? timings[0]! : ''
   const rootClasses = env.root?.id === node.id && !part ? env.root.classes : []
-  const classes = [...fixed, display ? displayFallback(display, style) : '', ...rootClasses, animated.length ? `transition-[${animated.join(',')}]` : '', sharedTiming, styleClasses(own)].filter(Boolean).join(' ')
+  const classes = tidyClasses([...fixed, display ? displayFallback(display, style) : '', ...rootClasses, animated.length ? `transition-[${animated.join(',')}]` : '', sharedTiming, styleClasses(own)])
   const inline = Object.entries(styleInline(own)).map(([property, value]) => `${property}: ${value}`).join('; ')
   const maps: string[] = []
   if (variant && keys.length) {

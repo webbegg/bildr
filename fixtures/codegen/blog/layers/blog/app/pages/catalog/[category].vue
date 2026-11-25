@@ -7,12 +7,12 @@ const { data: products, pending: productsLoading, error: productsError } = useCa
 </script>
 
 <template>
-  <div class="flex gap-4 min-h-full flex-col">
+  <div class="flex min-h-full flex-col gap-4">
     <h2 class="text-3xl font-bold tracking-tight">Catalog</h2>
     <p v-if="productsLoading" class="text-muted">Loading…</p>
     <p v-else-if="productsError" class="text-error">Couldn't load this.</p>
     <p v-else-if="!(products ?? []).length" class="text-muted">No products.</p>
-    <div v-else class="flex gap-3 flex-col items-start self-stretch">
+    <div v-else class="flex flex-col items-start gap-3 self-stretch">
       <p v-for="product in (products ?? [])" :key="product.id" class="whitespace-pre-line">{{ product.name }} costs {{ product.price }}</p>
     </div>
   </div>

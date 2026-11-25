@@ -27,11 +27,11 @@ const tipBgClasses = {
 </script>
 
 <template>
-  <div class="flex transition-[gap,padding-top,padding-bottom] duration-200 ease-[ease-in-out] motion-reduce:duration-0 px-4 rounded-md flex-col" :class="[tipVariants[variant], tipBgClasses[props.tone]]" v-on="on">
-    <div class="flex flex-row items-center justify-between self-stretch">
-      <p class="whitespace-pre-line font-medium">{{ props.title }}</p>
+  <div class="flex flex-col rounded-md px-4 transition-[gap,padding-top,padding-bottom] duration-200 ease-[ease-in-out] motion-reduce:duration-0" :class="[tipVariants[variant], tipBgClasses[props.tone]]" v-on="on">
+    <div class="flex items-center justify-between self-stretch">
+      <p class="font-medium whitespace-pre-line">{{ props.title }}</p>
       <UButton :label="({ default: 'Hide', collapsed: 'Show' })[variant]" color="neutral" variant="ghost" size="xs" :icon="props.icon" />
     </div>
-    <p v-if="variant !== 'collapsed'" class="whitespace-pre-line text-muted text-sm">{{ props.body ?? '' }}</p>
+    <p v-if="variant !== 'collapsed'" class="text-sm whitespace-pre-line text-muted">{{ props.body ?? '' }}</p>
   </div>
 </template>

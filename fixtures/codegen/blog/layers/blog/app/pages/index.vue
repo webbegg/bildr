@@ -13,17 +13,17 @@ const shownList = ref(6)
 </script>
 
 <template>
-  <section class="gap-6 min-h-full flex-col flex">
-    <div class="flex flex-row items-center justify-between self-stretch">
+  <section class="flex min-h-full flex-col gap-6">
+    <div class="flex items-center justify-between self-stretch">
       <h1 class="text-3xl font-semibold tracking-tight">Posts</h1>
       <UCheckbox :model-value="preferences.showDrafts" label="Show drafts" @update:model-value="setPreferences({ showDrafts: $event === true })" />
     </div>
     <p v-if="allLoading || featuredLoading" class="text-muted">Loading…</p>
     <p v-else-if="!posts.length" class="text-muted">No posts yet.</p>
-    <div v-else class="gap-4 self-stretch sm:grid-cols-2 grid">
+    <div v-else class="grid gap-4 self-stretch sm:grid-cols-2">
       <BlogPostCard v-for="post in posts.slice(0, shownList)" :key="post.id" :post="post">
         <template #actions>
-          <ULink :to="{ name: 'posts-slug', params: { slug: post.slug } }" class="underline-offset-4 hover:underline items-center gap-1 inline-flex text-primary text-sm">
+          <ULink :to="{ name: 'posts-slug', params: { slug: post.slug } }" class="inline-flex items-center gap-1 text-sm text-primary underline-offset-4 hover:underline">
             <UIcon name="i-lucide-arrow-right" class="size-[1em] shrink-0" />
             Read more
           </ULink>
@@ -33,12 +33,12 @@ const shownList = ref(6)
         <UButton label="Load more" @click="shownList += 6" />
       </div>
     </div>
-    <aside v-if="quotes.length" class="pt-6 gap-2 border-default border-t-1 flex-col self-stretch flex">
-      <p v-for="quote in quotes" :key="quote.id" class="whitespace-pre-line text-sm">“{{ quote.text }}” — {{ quote.author }}</p>
+    <aside v-if="quotes.length" class="flex flex-col gap-2 self-stretch border-t border-default pt-6">
+      <p v-for="quote in quotes" :key="quote.id" class="text-sm whitespace-pre-line">“{{ quote.text }}” — {{ quote.author }}</p>
     </aside>
-    <div class="grid gap-6 items-center self-stretch grid-cols-1 md:grid-cols-3">
+    <div class="grid grid-cols-1 items-center gap-6 self-stretch md:grid-cols-3">
       <img :src="'/uploads/notebook.svg'" alt="An open notebook" class="block max-w-full rounded-lg">
-      <div class="flex gap-2 flex-col md:col-span-2">
+      <div class="flex flex-col gap-2 md:col-span-2">
         <h2 class="text-xl font-semibold tracking-tight">About this blog</h2>
         <p class="whitespace-pre-line text-muted">{{ 'Notes on building apps from a model.\nNew posts most weeks.' }}</p>
       </div>

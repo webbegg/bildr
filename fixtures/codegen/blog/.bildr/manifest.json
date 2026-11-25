@@ -302,12 +302,12 @@
     },
     "layers/blog/app/components/blog/PostCard.vue": {
       "owner": "managed",
-      "sha256": "f89ea6eba666f96dfd1a00582e7467e79f69b99580b2643985b8efc9a7eaf84e",
+      "sha256": "264d26874ecff708ed4809c59a30efba9519b4c7d45584350a3357040b79fc9a",
       "source": ".bildr/modules/blog/components/post-card.json"
     },
     "layers/blog/app/components/blog/Tip.vue": {
       "owner": "managed",
-      "sha256": "1efc953108fee7cf65431e1cab596f80b3052df9d4109572686b1682a45aeea7",
+      "sha256": "2b00fc82ad3b28724e52b83270ad095d275dc55301f048e7bd0aabd47118cfe4",
       "source": ".bildr/modules/blog/components/tip.json"
     },
     "layers/blog/app/composables/blog/useAllPosts.ts": {
@@ -362,27 +362,27 @@
     },
     "layers/blog/app/pages/catalog/[category].vue": {
       "owner": "managed",
-      "sha256": "d85eb899dad46e9cef03e86c449209dbf65e690273981a42e8482c1d166bde84",
+      "sha256": "a9d6c7b9d89e3cd9acabb10b1f21defa9c34f7eca990fb209c9d55b8b533ef34",
       "source": ".bildr/modules/blog/pages/shop-catalog.json"
     },
     "layers/blog/app/pages/index.vue": {
       "owner": "managed",
-      "sha256": "4359dd75375a75471008e417f0f8447e4ef767d961d1c01221680c5f08162468",
+      "sha256": "ccb0792a5f1ba76f1c28cabbe325df932e7499a8dad53e1d56aafba32a20d2ce",
       "source": ".bildr/modules/blog/pages/index.json"
     },
     "layers/blog/app/pages/posts/[slug].vue": {
       "owner": "managed",
-      "sha256": "898fb9f792a9351e26fd42726ff411697ad17fb2a800f57b574da8037cd8eb93",
+      "sha256": "16e845bb65213619c0971d04bc9ef945e4a3cc3cf40066ed88a53800e4f481c2",
       "source": ".bildr/modules/blog/pages/post-detail.json"
     },
     "layers/blog/app/pages/posts/new.vue": {
       "owner": "managed",
-      "sha256": "32972c90abf236a2997118a1aee2458ecf21a5882225660737c73210dc3ba416",
+      "sha256": "01be36242dbffa557430dc3d3b5cec4b8c4079f91ec84147dfaaf4805466e3d4",
       "source": ".bildr/modules/blog/pages/new-post.json"
     },
     "layers/blog/app/pages/weather/[city].vue": {
       "owner": "managed",
-      "sha256": "93b0da1caa9e6617525a12f9a325f24eec3f64b6c9a9fb09cbf292a3b8254c74",
+      "sha256": "47e0d83bcad0a437cec86b8f8c1c3f018aea240fafcb909fceb9204613cdc5bd",
       "source": ".bildr/modules/blog/pages/weather.json"
     },
     "layers/blog/nuxt.config.ts": {
@@ -532,7 +532,7 @@
     },
     "layers/core/app/layouts/main.vue": {
       "owner": "managed",
-      "sha256": "dc6d14d2d3d78d9b18fe701b0c7818333fd23c3392dd7f66a803b9272be45bae",
+      "sha256": "149b3183a18a279949ca8bdcd31483d58d9ba6cde36d3e9fe470927bab27eef9",
       "source": ".bildr/layouts/main.json"
     },
     "layers/core/app/types/page-meta.d.ts": {

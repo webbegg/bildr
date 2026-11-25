@@ -1,4 +1,4 @@
-import { displayFallback, orderedStyleTokens, parseStyleKey, styleClasses, styleInline } from '@bildr/codegen/design'
+import { displayFallback, orderedStyleTokens, parseStyleKey, styleClasses, styleInline, tidyClasses } from '@bildr/codegen/design'
 import type { BreakpointBase } from '@bildr/codegen/design'
 import type { ComponentFile, LayoutFile, ModelNode, PageFile, PropertyDef, Value } from '@bildr/codegen/model'
 import {
@@ -404,7 +404,8 @@ const styleOf = (frame: Frame, node: ModelNode, { display = '', fallback = {}, c
   const rootClasses = frame.shell.root?.id === node.id && !part ? frame.shell.root.classes : []
   // The generator's transition class, built the same way: the canvas has no CSS for it (it animates nothing in edit mode).
   const transition = animated.length ? `transition-[${animated.join(',')}]` : ''
-  const classes = [...fixed, display ? displayFallback(display, style) : '', ...rootClasses, transition, sharedTiming, styleClasses(own)]
+  // Tidied as the generator tidies its static class attribute: the same order, no default direction.
+  const classes = [tidyClasses([...fixed, display ? displayFallback(display, style) : '', ...rootClasses, transition, sharedTiming, styleClasses(own)])]
   if (variant && keys.length) {
     const name = frame.variant
     const only = (entries: Record<string, string>, subset = keys) => Object.fromEntries(subset.filter(key => keys.includes(key) && entries[key] !== undefined).map(key => [key, entries[key]!]))

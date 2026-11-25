@@ -6,21 +6,21 @@ const layout = computed(() => ({ title: 'Blog', ...route.meta.layoutValues }) as
 </script>
 
 <template>
-  <div class="min-h-screen flex-col flex">
-    <header class="flex border-default border-b-1 flex-col self-stretch">
-      <nav class="flex mx-auto p-4 w-full max-w-4xl flex-row items-center justify-between self-stretch">
-        <ULink to="/" class="underline-offset-4 hover:underline text-lg font-semibold">{{ site.name }}</ULink>
-        <p class="whitespace-pre-line text-muted text-sm">{{ layout.title }}</p>
-        <ULink to="/posts/new" class="underline-offset-4 hover:underline px-3 py-1.5 bg-primary text-inverted text-sm rounded-md">New post</ULink>
+  <div class="flex min-h-screen flex-col">
+    <header class="flex flex-col self-stretch border-b border-default">
+      <nav class="mx-auto flex w-full max-w-4xl items-center justify-between self-stretch p-4">
+        <ULink to="/" class="text-lg font-semibold underline-offset-4 hover:underline">{{ site.name }}</ULink>
+        <p class="text-sm whitespace-pre-line text-muted">{{ layout.title }}</p>
+        <ULink to="/posts/new" class="rounded-md bg-primary px-3 py-1.5 text-sm text-inverted underline-offset-4 hover:underline">New post</ULink>
       </nav>
     </header>
-    <main class="flex mx-auto p-4 w-full max-w-4xl flex-col self-stretch">
+    <main class="mx-auto flex w-full max-w-4xl flex-col self-stretch p-4">
       <slot />
     </main>
-    <footer class="flex mt-auto p-4 text-muted border-default text-sm text-center border-t-1 flex-col self-stretch">
+    <footer class="mt-auto flex flex-col self-stretch border-t border-default p-4 text-center text-sm text-muted">
       <slot name="footer">
         <p class="whitespace-pre-line">{{ site.description }}</p>
-        <ULink to="https://nuxt.com" target="_blank" class="underline-offset-4 hover:underline items-center gap-1 inline-flex self-center">
+        <ULink to="https://nuxt.com" target="_blank" class="inline-flex items-center gap-1 self-center underline-offset-4 hover:underline">
           <UIcon name="i-lucide-external-link" class="size-[1em] shrink-0" />
           Built with Nuxt
         </ULink>
