@@ -128,10 +128,62 @@ describe('generated module composables, run', () => {
     })
   })
 
+  describe('a direct action (no optimistic change: it calls its route itself)', () => {
+    const PUBLISH = '.bildr/modules/blog/actions/publish-post.json'
+    const directDir = mkdtempSync(join(tmpdir(), 'bildr-module-direct-'))
+    let usePublishPost: () => Promise<Action>
+    beforeAll(() => {
+      const files = fixtureModelFiles()
+      const publish = JSON.parse(files[PUBLISH]!) as { client: Record<string, unknown> }
+      delete publish.client.optimistic
+      const loaded = loadModel({ ...files, [PUBLISH]: JSON.stringify(publish) })
+      if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems))
+      const run = generatedRunner(new Map(generate(loaded.model).map(file => [file.path, file.content])), directDir, {
+        'vue': VUE_STUB,
+        '../../data/posts.collection': COLLECTION_STUB
+      })
+      usePublishPost = async () => (await run.load<{ usePublishPost: () => Action }>('layers/blog/app/composables/blog/usePublishPost.ts')).usePublishPost()
+    })
+    afterAll(() => {
+      rmSync(directDir, { recursive: true, force: true })
+    })
+
+    it('calls the route, then refetches what it invalidates, and answers ok', async () => {
+      fetching(() => undefined)
+      const action = await usePublishPost()
+      await expect(action.run('p1')).resolves.toEqual({ ok: true, value: undefined })
+      expect(state.calls).toEqual([['$fetch', '/api/blog/posts/p1/publish', { method: 'POST' }], ['refetch']])
+    })
+
+    it('answers the module\'s error as it is, and refetches nothing', async () => {
+      const missing = { type: 'post_not_found', message: 'There is no post p1.', id: 'p1' }
+      fetching(() => {
+        throw routeError(missing, 404)
+      })
+      const action = await usePublishPost()
+      await expect(action.run('p1')).resolves.toEqual({ ok: false, error: missing })
+      expect([action.error.value, state.calls.map(call => call[0])]).toEqual([missing, ['$fetch']])
+    })
+
+    it('is pending while a run is, and a route that fails without a domain error is `unexpected`', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      let fail!: (reason: unknown) => void
+      vi.stubGlobal('$fetch', () => new Promise((_resolve, reject) => {
+        fail = reject
+      }))
+      const action = await usePublishPost()
+      const running = action.run('p1')
+      expect(action.pending.value).toBe(true)
+      fail(Object.assign(new Error('[POST] 500'), { data: { status: 500, message: 'Server Error' } }))
+      await expect(running).resolves.toEqual({ ok: false, error: { type: 'unexpected', message: 'Something went wrong. Please try again.' } })
+      expect(action.pending.value).toBe(false)
+    })
+  })
+
   describe('a query', () => {
     const useAllPosts = async () => (await load<{ useAllPosts: () => Query }>('layers/blog/app/composables/blog/useAllPosts.ts')).useAllPosts()
     const live = (flags: { isReady?: boolean, isLoadingError?: boolean }) => ({
-      data: { value: [] }, isReady: { value: flags.isReady ?? false }, isLoadingError: { value: flags.isLoadingError ?? false }, isCrashed: { value: false }
+      data: { value: [] }, isReady: { value: flags.isReady ?? false }, isLoadingError: { value: flags.isLoadingError ?? false }, isCrashed: { value: false }, isSyncError: { value: false }
     })
 
     it('answers the live query\'s data with its status, and refresh() refetches its collection', async () => {

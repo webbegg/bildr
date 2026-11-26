@@ -81,14 +81,16 @@ export interface LiveQuery<T> {
   readonly isReady: { readonly value: boolean }
   readonly isLoadingError: { readonly value: boolean }
   readonly isCrashed: { readonly value: boolean }
+  readonly isSyncError: { readonly value: boolean }
 }
 
 /**
  * A live query with the contract of Nuxt's useAsyncData: `data`, `status` and `error` are refs, `refresh()` refetches what it reads.
- * It is `success` once ready (a later sync problem keeps its data shown), `error` when its first load failed or its store broke.
+ * It is `error` when its first load failed, its store broke or a later sync failed (its data stays), else `success` once ready.
  */
 export const fromLiveQuery = <T>(query: LiveQuery<T>, refetch: () => Promise<unknown>) => {
-  const status = computed<DataStatus>(() => query.isReady.value ? 'success' : query.isLoadingError.value || query.isCrashed.value ? 'error' : 'pending')
+  const failed = () => query.isLoadingError.value || query.isCrashed.value || query.isSyncError.value
+  const status = computed<DataStatus>(() => failed() ? 'error' : query.isReady.value ? 'success' : 'pending')
   // The collection reports its own failure; the UI gets the generic message.
   const error = computed<ApiError<never> | undefined>(() => status.value === 'error' ? { type: 'unexpected', message: SOMETHING_WENT_WRONG } : undefined)
   const refresh = async () => {

@@ -135,14 +135,15 @@ describe('generated core data results, run', () => {
 
   describe('fromLiveQuery', () => {
     /** The flags of a TanStack DB live query, as `useLiveQuery` has them. */
-    const live = (flags: { isReady?: boolean, isLoadingError?: boolean, isCrashed?: boolean } = {}, data: unknown = []) => ({
+    const live = (flags: { isReady?: boolean, isLoadingError?: boolean, isCrashed?: boolean, isSyncError?: boolean } = {}, data: unknown = []) => ({
       data: { value: data },
       isReady: { value: flags.isReady ?? false },
       isLoadingError: { value: flags.isLoadingError ?? false },
-      isCrashed: { value: flags.isCrashed ?? false }
+      isCrashed: { value: flags.isCrashed ?? false },
+      isSyncError: { value: flags.isSyncError ?? false }
     })
 
-    it('is pending until the query is ready, then success with its data; it keeps the data a later sync problem leaves', () => {
+    it('is pending until the query is ready, then success with its data', () => {
       const query = live()
       const answer = results.fromLiveQuery(query, async () => undefined)
       expect([answer.status.value, answer.error.value]).toEqual(['pending', undefined])
@@ -156,6 +157,15 @@ describe('generated core data results, run', () => {
         const answer = results.fromLiveQuery(live(flags), async () => undefined)
         expect([answer.status.value, answer.error.value]).toEqual(['error', UNEXPECTED])
       }
+    })
+
+    it('a sync that fails after data (a refetch) is an error that keeps the data, as useAsyncData does; it is success again once it syncs', () => {
+      const query = live({ isReady: true }, [{ id: 1 }])
+      const answer = results.fromLiveQuery(query, async () => undefined)
+      query.isSyncError.value = true
+      expect([answer.data.value, answer.status.value, answer.error.value]).toEqual([[{ id: 1 }], 'error', UNEXPECTED])
+      query.isSyncError.value = false
+      expect([answer.status.value, answer.error.value]).toEqual(['success', undefined])
     })
 
     it('refresh() refetches what the query reads and answers nothing', async () => {
