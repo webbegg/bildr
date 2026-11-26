@@ -3,7 +3,7 @@ import { QueryObserver } from '@tanstack/query-core'
 import type { QueryObserverResult } from '@tanstack/query-core'
 import { getCurrentScope, onScopeDispose, shallowRef, toValue, watch } from 'vue'
 import type { MaybeRefOrGetter } from 'vue'
-import type { ApiError, DomainError, Result } from '#core/kernel/result'
+import type { ApiError, DomainError, Result, SourceFailureType } from '#core/kernel/result'
 import { queryClient } from '#layers/core/app/data/query-client'
 import { Answered, failureOf, useAction } from '#layers/core/app/data/results'
 import type { DataStatus } from '#layers/core/app/data/results'
@@ -18,7 +18,7 @@ export interface ApiQueryOptions<Input, Output, E extends DomainError> {
 }
 
 /** The failures of a source that may pass on a second try (SourceFailureType): it asked to wait, took too long, or is down. */
-const PASSING = new Set(['rate_limited', 'timeout', 'unavailable'])
+const PASSING: ReadonlySet<string> = new Set<SourceFailureType>(['rate_limited', 'timeout', 'unavailable'])
 
 /**
  * Only a call that may pass on a second try is tried again, three times at most: something unexpected (the server could not be

@@ -42,7 +42,7 @@ describe('createHttpClient', () => {
   it('refuses a header it can\'t send, without calling', async () => {
     await withFetch(json, async (calls) => {
       const call = createHttpClient({ baseUrl: BASE })
-      await expect(call('/things', { method: 'GET', headers: { 'X-Note': 'a\r\nX-Evil: 1' } })).rejects.toMatchObject({ name: 'HttpFailure', status: 0 })
+      await expect(call('/things', { method: 'GET', headers: { 'X-Note': 'a\r\nX-Evil: 1' } })).rejects.toMatchObject({ name: 'HttpFailure', status: 0, reason: 'refused', type: 'remote_failed' })
       expect(calls).toEqual([])
     })
   })
@@ -107,10 +107,41 @@ describe('createHttpClient', () => {
         throw new TypeError('fetch failed')
       }) as typeof fetch
       await expect(createHttpClient({ baseUrl: BASE })('/things', { method: 'GET' })).rejects.toMatchObject({ status: 0, type: 'unavailable' })
-      expect(new HttpFailure(0, 'didn\'t answer within 10 s', 'timeout').type).toBe('timeout')
     } finally {
       globalThis.fetch = fetch
     }
+  })
+
+  it('a call the timeout aborted, sending or reading the answer, failed as timeout', async () => {
+    const { fetch } = globalThis
+    const { timeout } = AbortSignal
+    try {
+      AbortSignal.timeout = () => AbortSignal.abort()
+      globalThis.fetch = (async (_url: unknown, init: RequestInit) => {
+        throw init.signal!.reason
+      }) as typeof fetch
+      await expect(createHttpClient({ baseUrl: BASE })('/things', { method: 'GET' })).rejects.toMatchObject({ status: 0, reason: 'timeout', type: 'timeout' })
+      globalThis.fetch = (async () => new Response(new ReadableStream({ pull: () => Promise.reject(new DOMException('aborted', 'AbortError')) }))) as typeof fetch
+      await expect(createHttpClient({ baseUrl: BASE })('/things', { method: 'GET' })).rejects.toMatchObject({ status: 0, reason: 'timeout', type: 'timeout' })
+    } finally {
+      globalThis.fetch = fetch
+      AbortSignal.timeout = timeout
+    }
+  })
+
+  it('a redirect the browser hides (status 0), or an answer over the size cap, failed as remote_failed', async () => {
+    const opaque = () => {
+      const response = new Response(null, { status: 200 })
+      Object.defineProperty(response, 'type', { value: 'opaqueredirect' })
+      Object.defineProperty(response, 'status', { value: 0 })
+      return response
+    }
+    await withFetch(opaque, async () => {
+      await expect(createHttpClient({ baseUrl: BASE })('/things', { method: 'GET' })).rejects.toMatchObject({ status: 0, reason: 'answered', type: 'remote_failed' })
+    })
+    await withFetch(() => new Response('{}', { status: 200, headers: { 'content-length': '2000000' } }), async () => {
+      await expect(createHttpClient({ baseUrl: BASE })('/things', { method: 'GET' })).rejects.toMatchObject({ status: 200, type: 'remote_failed' })
+    })
   })
 
   it('a call it refused, or an answer that is not JSON, failed as remote_failed: retrying it changes nothing', async () => {
@@ -142,9 +173,9 @@ describe('resultClient', () => {
     await expect(http('/x', { method: 'GET' })).resolves.toEqual({ ok: true, value: { id: 1 } })
   })
 
-  it('answers a failed call as the error `failed` makes of it, with its status and whether it was configured', async () => {
-    const http = resultClient(failing(new HttpFailure(503, 'answered 503')), failure => ({ status: failure.status, notConfigured: failure.notConfigured, message: failure.message }))
-    await expect(http('/x', { method: 'GET' })).resolves.toEqual({ ok: false, error: { status: 503, notConfigured: false, message: 'answered 503' } })
+  it('answers a failed call as the error `failed` makes of it, with why it failed, its status and whether it was configured', async () => {
+    const http = resultClient(failing(new HttpFailure(503, 'answered 503')), failure => ({ type: failure.type, status: failure.status, notConfigured: failure.notConfigured, message: failure.message }))
+    await expect(http('/x', { method: 'GET' })).resolves.toEqual({ ok: false, error: { type: 'unavailable', status: 503, notConfigured: false, message: 'answered 503' } })
   })
 
   it('throws what is not a failed call (a bug is not an answer)', async () => {
