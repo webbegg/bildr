@@ -31,6 +31,7 @@ Dependencies point inward only. ESLint enforces it (`pnpm lint`).
 ```
 shared/domain/            entities (zod schemas + types), domain errors and rules (<entity>.rules.ts: what an action
                           changes, shared by its use-case and its optimistic update): no Vue, no Nitro
+shared/domain/sources/    what a call to a REST data source can fail with: the module's errors include them
 shared/contracts/         one HTTP contract per route (method, path, what it reads, what it answers): the
                           route and its client (composable, collection) both read it, so they can't drift
 server/application/       use-cases and repository ports: plain functions, no framework

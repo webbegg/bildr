@@ -3,6 +3,7 @@ import { camel, kebab, pascal } from '../generate/text.ts'
 import type { Model } from '../model/load.ts'
 import type { ApiSource } from './api.ts'
 import { apiComposableName } from '../generate/names.ts'
+import { resultSources, sourceNames } from '../generate/rest-source.ts'
 import { API_DECLARED_NAMES, BROWSER_SHARED_FILES, composableNameProblem, composableProblem, declaredNameProblem, JS_RESERVED_WORDS, LINT_RESTRICTED_FOLDERS } from './reserved-names.ts'
 
 /**
@@ -26,6 +27,12 @@ export const generatedNames = (model: Model, module: string): Map<string, string
     add(`${entityName.variable}Seed`, `the sample rows of ${entity.name}`)
     add(`list${pascal(entity.plural)}`, `the list use-case of ${entity.name}`)
     for (const kind of ['drizzle', 'rest', 'memory']) add(`${kind}${entityName.port}`, `an adapter of the ${entity.name} repository`)
+  }
+  // A REST source's client in the composition root and its error factories (codegen-architecture R1').
+  for (const source of resultSources(context)) {
+    const named = sourceNames(context, source)
+    add(named.client, `the client of the "${source.name}" data source`)
+    for (const factory of [named.failed, named.invalidAnswer]) add(factory, `an error factory of the "${source.name}" data source`)
   }
   for (const action of context.module.actions) {
     for (const error of action.errors) add(camel(error.type), `the error "${error.type}"`)

@@ -37,7 +37,8 @@ describe('a name the generated code can\'t declare is refused', () => {
     'useBlog', 'blogErrorStatus', // its other exports
     'drizzlePostRepository', 'restQuoteRepository', // the adapters it imports
     'postNotFound', // an error factory the errors file exports
-    'publishPostChange' // the domain rule of an action (T4a)
+    'publishPostChange', // the domain rule of an action (T4a)
+    'quotesClient', 'quotesFailed', 'quotesInvalidAnswer' // a REST source's client and error factories (R1')
   ])('action %s', (name) => {
     project().refuse('action_create', { entity: 'ent_post', template: 'delete', name }, 'invalid')
   })
@@ -51,6 +52,7 @@ describe('a name the generated code can\'t declare is refused', () => {
     expect(project().refuse('action_create', { entity: 'ent_post', template: 'delete', name: 'posts' }, 'invalid').message).toContain('the Post repository inside the composition root')
     expect(project().refuse('action_create', { entity: 'ent_post', template: 'delete', name: 'postNotFound' }, 'invalid').message).toContain('the error "post_not_found"')
     expect(project().refuse('action_create', { entity: 'ent_post', template: 'delete', name: 'publishPostChange' }, 'invalid').message).toContain('the domain rule of the action "publishPost"')
+    expect(project().refuse('action_create', { entity: 'ent_post', template: 'delete', name: 'quotesClient' }, 'invalid').message).toContain('the client of the "quotes" data source')
   })
 
   it('an edit that gives something else a name an action already has is refused too (a new entity whose plural is an action)', () => {

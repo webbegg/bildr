@@ -381,7 +381,7 @@
     },
     "layers/blog/server/api/blog/quotes/index.get.ts": {
       "owner": "managed",
-      "sha256": "07c4e23ba2dc10eaff28ff0ccba6ca77cb97d4be2940683e2c7829632009fec5",
+      "sha256": "fb5268c6a29543f772e5dc408599e59a9dfb4f2db1ee26672bbf99c50cbdef59",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/blog/server/application/actions/create-post.ts": {
@@ -401,7 +401,7 @@
     },
     "layers/blog/server/application/ports/quote-repository.ts": {
       "owner": "managed",
-      "sha256": "169d44fd6a5686fae6f265b32da560f37b940ec195f108f671ce4ad1d4514a75",
+      "sha256": "fcf984dd6c2a02cfd6f41a966bc7ab87938aa69e91e8a0fed519b168e3aac32f",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/blog/server/application/queries/list-posts.ts": {
@@ -411,7 +411,7 @@
     },
     "layers/blog/server/application/queries/list-quotes.ts": {
       "owner": "managed",
-      "sha256": "338374ba17ea670e7db19ec1619b9f1447a5f4670a0f9714929a9c46c69059e9",
+      "sha256": "913b50968e5236330b319bcdaa887943261f34cf9ea8b2f83b76cfaf66a734d2",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/blog/server/infrastructure/db/schema.ts": {
@@ -436,7 +436,7 @@
     },
     "layers/blog/server/infrastructure/repositories/quote.rest.ts": {
       "owner": "managed",
-      "sha256": "c31f45f594bc0d006837f65c56bad4e894c5fe70e2c949e40d9326e7a5991e46",
+      "sha256": "74ae01a002d656be878255b2460eaf0d14ee47b75405bca989d21124b881203c",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/blog/server/tasks/blog/seed.ts": {
@@ -446,7 +446,7 @@
     },
     "layers/blog/server/utils/blog.ts": {
       "owner": "managed",
-      "sha256": "6e4764327e02ec3202750e462987a46510ae5d8869d6400f60469f89ab6357d3",
+      "sha256": "54545a05da3bac96a1a9a5a2f7998aa272e9dc7d13ade3e6e99c9d1fee76ede2",
       "source": ".bildr/modules/blog"
     },
     "layers/blog/shared/contracts/create-post.ts": {
@@ -471,7 +471,7 @@
     },
     "layers/blog/shared/domain/errors.ts": {
       "owner": "managed",
-      "sha256": "eec9cda8c90cd209fa9dea089593e668a09b034597464fc0ae1cb28d3df0ca12"
+      "sha256": "f6734e3553d8753634930287f7bf572392051e8ae8fc92e19f74195b5b220d26"
     },
     "layers/blog/shared/domain/post.rules.ts": {
       "owner": "managed",
@@ -487,6 +487,11 @@
       "sha256": "bded347e89b6f9be6eabdee27f3f407db7e03926f4c70d7613a1008f77b98e48",
       "source": ".bildr/modules/blog/entities/quote.json"
     },
+    "layers/blog/shared/domain/sources/quotes.ts": {
+      "owner": "managed",
+      "sha256": "60dd9c094dffb04e13464de98b9407417814707d534a0c489b07453fe395307b",
+      "source": ".bildr/datasources/quotes.json"
+    },
     "layers/blog/test/application/create-post.test.ts": {
       "owner": "managed",
       "sha256": "ae40fc42e68b157ebe291572c7c73b6cf6b42a09aa32eccf5a601c22d85a5e24",
@@ -499,7 +504,7 @@
     },
     "layers/blog/test/infrastructure/quote.rest.test.ts": {
       "owner": "managed",
-      "sha256": "987984af842a77ee1d20b9ba8d69a5dce7256de0d2ba681146265aa2c6e067cb",
+      "sha256": "b485be9ab68dbef041ee9f35ba64ccbfd69fed305180fb9b2004a6a84b577dac",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/core/app/app.config.ts": {

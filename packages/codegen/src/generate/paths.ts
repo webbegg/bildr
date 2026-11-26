@@ -35,6 +35,8 @@ export const modulePaths = (module: string) => {
     /** What the actions change on an entity: pure functions the use-cases and the optimistic updates share. */
     rules: (file: string) => `${root}/shared/domain/${file}.rules.ts`,
     errors: `${root}/shared/domain/errors.ts`,
+    /** What a call to one of the module's REST data sources can fail with (R1'). */
+    sourceErrors: (file: string) => `${root}/shared/domain/sources/${file}.ts`,
     /** The folder the `#<module>/contracts` alias points at: one HTTP contract per route, read by the route and its client. */
     contracts: `${root}/shared/contracts`,
     contract: (file: string) => `${root}/shared/contracts/${file}.ts`,

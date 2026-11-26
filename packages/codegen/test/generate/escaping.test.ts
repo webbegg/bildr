@@ -81,7 +81,7 @@ describe('expression paths become code only as property paths (RISK-001)', () =>
     repository.rest.paging.offsetParam = 'skip */ process.exit(1) /*'
     const file = generateData(model).find(entry => entry.content.includes('Paging style: offset'))!
     // In the doc comment the terminator is escaped; as a query key it is only text inside a string.
-    expect(file.content).toContain('Paging style: offset (skip *\\/ process.exit(1) /*/limit). */')
+    expect(file.content).toContain('Paging style: offset (skip *\\/ process.exit(1) /*/limit). A failed call')
     expect(file.content).toContain('\'skip */ process.exit(1) /*\': offset')
   })
 

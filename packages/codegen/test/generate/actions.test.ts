@@ -26,6 +26,7 @@ const ACTION_FILES = [
   'layers/blog/shared/contracts/publish-post.ts',
   'layers/blog/shared/domain/errors.ts',
   'layers/blog/shared/domain/post.rules.ts',
+  'layers/blog/shared/domain/sources/quotes.ts',
   'layers/blog/test/application/create-post.test.ts',
   'layers/blog/test/application/publish-post.test.ts'
 ]
@@ -131,12 +132,16 @@ describe('generateActions rules', () => {
   it('a module without actions still gets its error type and composition root', () => {
     const model = fixtureModel()
     model.modules.blog!.actions = []
+    // R1': the REST source it lists from still fails as its own errors do.
     const files = generateActions(model)
-    expect(files.find(file => file.path.endsWith('domain/errors.ts'))!.content).toContain('export type BlogError = never\n')
-    expect(files.find(file => file.path.endsWith('utils/blog.ts'))!.content).toContain('export const blogErrorStatus: ErrorStatusMap = {}\n')
-    // A module with nothing to wire: no blank line inside an empty object.
+    expect(files.find(file => file.path.endsWith('domain/errors.ts'))!.content).toContain('export type BlogError =\n  | QuotesSourceError\n')
+    expect(files.find(file => file.path.endsWith('utils/blog.ts'))!.content).toContain('export const blogErrorStatus = {\n  remote_failed: 502,\n  invalid_answer: 502\n}')
+    // A module with nothing to wire: no error at all, and no blank line inside an empty object.
     model.modules.blog!.repositories = []
-    const empty = generateActions(model).find(file => file.path.endsWith('utils/blog.ts'))!.content
+    const unwired = generateActions(model)
+    expect(unwired.find(file => file.path.endsWith('domain/errors.ts'))!.content).toContain('export type BlogError = never\n')
+    expect(unwired.find(file => file.path.endsWith('utils/blog.ts'))!.content).toContain('export const blogErrorStatus: ErrorStatusMap = {}\n')
+    const empty = unwired.find(file => file.path.endsWith('utils/blog.ts'))!.content
     expect(empty).toContain('  return {}\n')
     expect(empty).not.toContain('{\n\n')
   })
@@ -150,12 +155,13 @@ describe('generateActions rules', () => {
     const root = generateActions(model).find(file => file.path.endsWith('utils/blog.ts'))!.content
     expect(root).not.toContain('const posts')
     expect(root).not.toContain('drizzlePostRepository')
-    expect(root).toContain('  const quotes = restQuoteRepository(useRemote(\'quotes\'))\n')
+    expect(root).toContain('  const quotes = restQuoteRepository(quotesClient(), ')
+    expect(root).toContain('const quotesClient = ')
     expect(root).toContain('/** The blog module\'s use-cases, wired to the "quotes" data source. */\n')
     // Nothing consumed at all: no adapter, no wiring claim.
     delete blog.repositories.find(entry => entry.id === 'repo_quote')!.expose
     const bare = generateActions(model).find(file => file.path.endsWith('utils/blog.ts'))!.content
-    expect(bare).not.toMatch(/Repository|^ {2}const /m)
+    expect(bare).not.toMatch(/Repository|^ {2}const |quotesClient/m)
     expect(bare).toContain('/** The blog module\'s use-cases. */\nexport const useBlog = () => {\n  return {}\n}\n')
   })
 
