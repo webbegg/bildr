@@ -22,6 +22,8 @@ const ACTION_FILES = [
   'layers/blog/server/application/actions/create-post.ts',
   'layers/blog/server/application/actions/publish-post.ts',
   'layers/blog/server/utils/blog.ts',
+  'layers/blog/shared/contracts/create-post.ts',
+  'layers/blog/shared/contracts/publish-post.ts',
   'layers/blog/shared/domain/errors.ts',
   'layers/blog/shared/domain/post.rules.ts',
   'layers/blog/test/application/create-post.test.ts',
@@ -68,6 +70,8 @@ const withDirectActions = () => {
 describe('the composable of an action with no optimistic update', () => {
   const files = withDirectActions()
   const composable = (name: string) => files.find(file => file.path === `layers/blog/app/composables/blog/${name}.ts`)!.content
+  // T4b: the route's method, path and answer are its contract's; the composable reads them from it.
+  const contract = (name: string) => files.find(file => file.path === `layers/blog/shared/contracts/${name}.ts`)!.content
 
   it('an update posts to its route with the id and refetches what it invalidates', () => {
     const source = composable('useEditNote')
@@ -78,7 +82,7 @@ describe('the composable of an action with no optimistic update', () => {
     expect(source).toContain('import type { BlogError } from \'#blog/domain/errors\'')
     expect(source).toContain([
       'export const useEditNote = () => useAction(async (id: string) => {',
-      '  const result = await fromRoute<Note, BlogError>($fetch<Note>(`/api/blog/notes/${id}`, { method: \'PATCH\' }))',
+      '  const result = await fromRoute<EditNoteResponse, BlogError>($fetch<EditNoteResponse>(editNoteContract.path(id), { method: editNoteContract.method }))',
       '  if (result.ok) {',
       '    await notesCollection.utils.refetch()',
       '  }',
@@ -86,13 +90,17 @@ describe('the composable of an action with no optimistic update', () => {
       '})'
     ].join('\n'))
     expect(source).not.toContain('vue')
+    expect(contract('edit-note')).toContain('  method: \'PATCH\',\n  path: (id: string) => `/api/blog/notes/${id}`,\n')
+    expect(contract('edit-note')).toContain('export type EditNoteResponse = Note\n')
   })
 
   it('a delete on an entity the app doesn\'t list posts and has nothing to refetch', () => {
     const source = composable('useRemoveSecret')
     expect(source).not.toContain('createOptimisticAction')
     // Nothing to refetch: it answers the route's Result as it is; a route that answers nothing answers `undefined`.
-    expect(source).toContain('export const useRemoveSecret = () => useAction(async (id: string) => fromRoute<undefined, BlogError>($fetch<undefined>(`/api/blog/secrets/${id}`, { method: \'DELETE\' })))')
+    expect(source).toContain('export const useRemoveSecret = () => useAction(async (id: string) => fromRoute<RemoveSecretResponse, BlogError>($fetch<RemoveSecretResponse>(removeSecretContract.path(id), { method: removeSecretContract.method })))')
+    expect(contract('remove-secret')).toContain('  method: \'DELETE\',\n  path: (id: string) => `/api/blog/secrets/${id}`,\n')
+    expect(contract('remove-secret')).toContain('export type RemoveSecretResponse = undefined\n')
     expect(source).not.toContain('Collection')
   })
 
@@ -102,13 +110,15 @@ describe('the composable of an action with no optimistic update', () => {
     expect(source).toContain('import { newId } from \'#core/kernel/ids\'')
     expect(source).toContain('type TidyNotesInput = Omit<NewNote, \'id\'>')
     expect(source).toContain('useAction(async (input: TidyNotesInput) => ')
-    expect(source).toContain('$fetch<undefined>(\'/api/blog/notes/tidy-notes\', { method: \'POST\', body: { ...input, id: newId() } })')
+    expect(source).toContain('$fetch<TidyNotesResponse>(tidyNotesContract.path, { method: tidyNotesContract.method, body: { ...input, id: newId() } })')
+    expect(contract('tidy-notes')).toContain('  method: \'POST\',\n  path: \'/api/blog/notes/tidy-notes\',\n  body: NewNoteSchema\n')
   })
 
   it('an action with no input still posts with nothing', () => {
     const source = composable('useTidyPosts')
     expect(source).toContain('useAction(async () => ')
-    expect(source).toContain('$fetch<undefined>(\'/api/blog/posts/tidy-posts\', { method: \'POST\' })')
+    expect(source).toContain('$fetch<TidyPostsResponse>(tidyPostsContract.path, { method: tidyPostsContract.method })')
+    expect(contract('tidy-posts')).toContain('  method: \'POST\',\n  path: \'/api/blog/posts/tidy-posts\'\n} as const')
   })
 
   it('an action with an optimistic update keeps createOptimisticAction', () => {

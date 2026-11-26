@@ -2,6 +2,7 @@ import type { Model } from '../model/load.ts'
 import type { EntityFile, RepositoryFile } from '../model/schemas.ts'
 import type { GeneratedFile } from '../sync/plan.ts'
 import { collectionFile, queryFile, stateCollectionFile, stateComposableFile } from './client.ts'
+import { listContractFile } from './contracts.ts'
 import { datasourceOf, entityById, entityNames, moduleContext, repositoryOf } from './context.ts'
 import type { ModuleContext } from './context.ts'
 import { domainFile } from './entity.ts'
@@ -50,7 +51,7 @@ const moduleData = (context: ModuleContext): Array<Omit<GeneratedFile, 'owner'>>
       if (restDoesMoreThanList(repository)) out.push(memoryRepositoryFile(context, entity, repository))
     }
     if (repository.expose?.list && repository.operations.includes('list')) {
-      out.push(listUseCaseFile(context, entity, repository), listRouteFile(context, entity, repository), collectionFile(context, entity, repository))
+      out.push(listUseCaseFile(context, entity, repository), listContractFile(context, entity, repository), listRouteFile(context, entity, repository), collectionFile(context, entity, repository))
     }
   }
   if (stored.length) out.push(drizzleSchemaFile(context, stored))
@@ -95,6 +96,7 @@ const moduleConfigFile = (context: ModuleContext) => {
       'export default defineNuxtConfig({',
       `  $meta: { name: '${context.name}' },`,
       '  alias: {',
+      `    '#${context.name}/contracts': here('./shared/contracts'),`,
       `    '#${context.name}/domain': here('./shared/domain')`,
       '  },',
       `  // Query, action and state composables live in app/composables/${context.name}/ and are auto-imported.`,

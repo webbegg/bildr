@@ -77,7 +77,8 @@ describe('action_create: update and delete', () => {
     const files = generated(p)
     expect(files['layers/blog/server/api/blog/tags/[id].patch.ts']).toContain('getRouterParam(event, \'id\')')
     expect(files['layers/blog/server/application/actions/update-tag.ts']).toContain('tags.update(id, { ...existing })')
-    expect(files['layers/blog/app/composables/blog/useUpdateTag.ts']).toContain('method: \'PATCH\'')
+    expect(files['layers/blog/app/composables/blog/useUpdateTag.ts']).toContain('method: updateTagContract.method')
+    expect(files['layers/blog/shared/contracts/update-tag.ts']).toContain('method: \'PATCH\'')
   })
 
   it('update is refused for an entity with timestamps, which the generator can\'t stamp from an update that sets nothing', () => {

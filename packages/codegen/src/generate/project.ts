@@ -35,7 +35,10 @@ const vitestConfigFile = (model: Model): GeneratedFile => {
       'export default defineConfig({',
       '  resolve: {',
       '    alias: {',
-      [`      '#core': here('./${corePaths.shared}')`, ...Object.keys(model.modules).sort().map(name => `      '#${name}/domain': here('./${modulePaths(name).domain}')`)].join(',\n'),
+      [`      '#core': here('./${corePaths.shared}')`, ...Object.keys(model.modules).sort().flatMap(name => [
+        `      '#${name}/contracts': here('./${modulePaths(name).contracts}')`,
+        `      '#${name}/domain': here('./${modulePaths(name).domain}')`
+      ])].join(',\n'),
       '    }',
       '  },',
       '  test: {',

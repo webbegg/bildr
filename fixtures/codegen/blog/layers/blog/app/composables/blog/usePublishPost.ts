@@ -3,8 +3,8 @@ import { createOptimisticAction } from '@tanstack/vue-db'
 import { now } from '#core/kernel/ids'
 import { type ApiError, type Result, ok } from '#core/kernel/result'
 import { Answered, fromRoute, useAction } from '#layers/core/app/data/results'
+import { type PublishPostResponse, publishPostContract } from '#blog/contracts/publish-post'
 import type { BlogError } from '#blog/domain/errors'
-import type { Post } from '#blog/domain/post'
 import { publishPostChange } from '#blog/domain/post.rules'
 import { postsCollection } from '../../data/posts.collection'
 
@@ -18,7 +18,7 @@ export const usePublishPost = () => {
       })
     },
     mutationFn: async (id) => {
-      const result = await fromRoute<Post, BlogError>($fetch<Post>(`/api/blog/posts/${id}/publish`, { method: 'POST' }))
+      const result = await fromRoute<PublishPostResponse, BlogError>($fetch<PublishPostResponse>(publishPostContract.path(id), { method: publishPostContract.method }))
       // A transaction knows only thrown errors: `Answered` carries the module's error to `run`, and the change is rolled back.
       if (!result.ok) throw new Answered(result.error)
       await postsCollection.utils.refetch()
