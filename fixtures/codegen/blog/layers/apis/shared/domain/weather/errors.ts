@@ -3,12 +3,16 @@ import type { SourceFailureType } from '#core/kernel/result'
 
 /** Every expected failure of the "weather" API: it failed (why, by what it answered), it answered something unexpected, the input was not valid. */
 export type WeatherError =
-  | { type: SourceFailureType, message: string, status: number }
+  | { type: SourceFailureType, message: string, status: number, retryAfter?: number }
   | { type: 'invalid_answer', message: string }
   | { type: 'invalid_input', message: string }
 
-/** A failed call: `type` is why, `status` what the API answered (0 when it didn't answer); `detail` finishes "The API …". */
-export const remoteFailed = (type: SourceFailureType, status: number, detail: string): WeatherError => ({ type, message: `The "weather" API ${detail}.`, status })
+/**
+ * A failed call: `type` is why, `status` what it answered (0 when it didn't answer), `retryAfter` the seconds it asked to wait (when it
+ * said); `detail` finishes "The "weather" API …".
+ */
+export const remoteFailed = (type: SourceFailureType, status: number, detail: string, retryAfter?: number): WeatherError =>
+  ({ type, message: `The "weather" API ${detail}.`, status, ...(retryAfter === undefined ? {} : { retryAfter }) })
 
 /** The answer is not what the model says. The error has no detail: the UI shows it as it is, and the detail (field paths, what was expected) goes to console.warn. */
 export const invalidAnswer = (): WeatherError => ({ type: 'invalid_answer', message: 'The "weather" API answered something unexpected' })

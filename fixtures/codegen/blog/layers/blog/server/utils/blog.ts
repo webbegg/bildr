@@ -17,7 +17,7 @@ const quotesClient = (): ApiClient<QuotesSourceError> => {
   const { baseUrl, apiKey } = useRuntimeConfig().datasources.quotes
   const headers: Record<string, string> = { accept: 'application/json' }
   if (apiKey) headers.authorization = `Bearer ${apiKey}`
-  return resultClient(createHttpClient({ baseUrl, headers }), failure => quotesFailed(failure.type, failure.status, failure.message))
+  return resultClient(createHttpClient({ baseUrl, headers }), failure => quotesFailed(failure.type, failure.status, failure.message, failure.retryAfter))
 }
 
 /** The blog module's use-cases, wired to the app database and the "quotes" data source. */

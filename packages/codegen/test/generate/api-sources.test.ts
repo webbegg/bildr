@@ -218,7 +218,7 @@ describe('generate: server-runtime api sources', () => {
     expect(root).toContain('export const catalogErrorStatus = {')
     expect(root).toContain('} satisfies Record<CatalogError[\'type\'], number>')
     // A failed call is the source's error, through the core client (T3a, T3d).
-    expect(root).toContain(': remoteFailed(failure.type, failure.status, failure.message))')
+    expect(root).toContain(': remoteFailed(failure.type, failure.status, failure.message, failure.retryAfter))')
     expect(root).toContain('import { type ApiClient, resultClient } from \'#core/http/api-client\'')
     expect(root).toContain('import { createHttpClient } from \'#core/http/client\'')
     const client = read(generated, 'layers/core/shared/http/client.ts')
@@ -228,7 +228,7 @@ describe('generate: server-runtime api sources', () => {
     expect(client).toContain('const MAX_BYTES = 1_000_000')
     const route = read(generated, 'layers/apis/server/api/apis/catalog/products.get.ts')
     expect(route).toContain('getValidatedQuery(event, productsContract.query)')
-    expect(route).toContain('unwrapOrThrow(await useCatalogApi().products(input), catalogErrorStatus)')
+    expect(route).toContain('unwrapOrThrow(await useCatalogApi().products(input), catalogErrorStatus, event)')
     expect(read(generated, 'layers/apis/shared/contracts/catalog/product.ts')).toContain('id: z.coerce.number().int()')
     const post = read(generated, 'layers/apis/server/api/apis/catalog/create-product.post.ts')
     expect(post).toContain('readValidatedBody(event, createProductContract.body)')
@@ -289,7 +289,7 @@ describe('generate: an invalid upstream answer never reaches the browser (verify
   it('the composition root logs the detail on the server, and the route hands the browser the error as it is', () => {
     const root = read(generated, 'layers/apis/server/utils/catalog.ts')
     expect(root).toContain('httpCatalogRepository(catalogClient(), detail => console.error(\'The "catalog" API answered something unexpected: \' + detail))')
-    expect(read(generated, 'layers/apis/server/api/apis/catalog/products.get.ts')).toContain('unwrapOrThrow(await useCatalogApi().products(input), catalogErrorStatus)')
+    expect(read(generated, 'layers/apis/server/api/apis/catalog/products.get.ts')).toContain('unwrapOrThrow(await useCatalogApi().products(input), catalogErrorStatus, event)')
   })
 
   it('the generated repository test asserts the generic message and the report', () => {

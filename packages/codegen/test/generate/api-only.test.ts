@@ -78,13 +78,13 @@ describe('golden API-only project: the generated files', () => {
       'import type { HealthResponse } from \'../../../../shared/contracts/status/health\'',
       'import { statusErrorStatus, useStatusApi } from \'../../../utils/status\'',
       '',
-      'export default defineEventHandler(async (): Promise<HealthResponse> => {'
+      'export default defineEventHandler(async (event): Promise<HealthResponse> => {'
     ].join('\n'))
     expect(content('layers/apis/shared/contracts/status/health.ts')).toContain('  method: \'GET\',\n  path: \'/api/apis/status/health\'\n} as const')
     expect(content('layers/apis/server/api/apis/status/relabel.put.ts')).toContain([
       '  const params = await getValidatedQuery(event, relabelContract.query)',
       '  const body = await readValidatedBody(event, relabelContract.body)',
-      '  return unwrapOrThrow(await useStatusApi().relabel({ ...params, body }), statusErrorStatus)'
+      '  return unwrapOrThrow(await useStatusApi().relabel({ ...params, body }), statusErrorStatus, event)'
     ].join('\n'))
     expect(content('layers/apis/app/composables/apis/useStatusRelabel.ts')).toContain(
       '    ({ body, ...query }) => fromRoute($fetch<RelabelResponse>(relabelContract.path, { method: relabelContract.method, query, body })),')

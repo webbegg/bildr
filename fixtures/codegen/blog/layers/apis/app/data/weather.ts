@@ -11,7 +11,7 @@ import { forecast } from '../../shared/application/weather/queries/forecast'
 
 /** The HTTP client of the "weather" API: it calls the base URL it is given (the one of runtimeConfig.public.apis.weather), and nothing else. `signal` cancels its calls. */
 const weatherClient = (baseUrl: string, signal?: AbortSignal): ApiClient<WeatherError> =>
-  resultClient(createHttpClient({ baseUrl, headers: { accept: 'application/json' }, signal }), failure => remoteFailed(failure.type, failure.status, failure.message))
+  resultClient(createHttpClient({ baseUrl, headers: { accept: 'application/json' }, signal }), failure => remoteFailed(failure.type, failure.status, failure.message, failure.retryAfter))
 
 /**
  * The use-cases of the "weather" API, wired to its HTTP repository. Call it in a composable's setup (it reads the runtime config): it answers

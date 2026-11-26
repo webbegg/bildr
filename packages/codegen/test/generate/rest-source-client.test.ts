@@ -45,7 +45,7 @@ describe('the generated client of a REST data source', () => {
     if (path === '/v1/tasks') return answer(200, { items: [{ id: TASK, title: 'Write', done: false }], total: 1 })
     if (path === `/v1/tasks/${TASK}`) return answer(404)
     for (const status of [401, 429, 500, 422]) {
-      if (path === `/v1/tasks/6f1c2d3e-4b5a-4c6d-8e7f-000000000${status}`) return answer(status)
+      if (path === `/v1/tasks/6f1c2d3e-4b5a-4c6d-8e7f-000000000${status}`) return answer(status, undefined, status === 429 ? { 'retry-after': '3' } : {})
     }
     if (path === '/v1/tasks/6f1c2d3e-4b5a-4c6d-8e7f-000000000302') {
       return answer(302, undefined, { location: `http://127.0.0.1:${(other.address() as AddressInfo).port}/v1/tasks` })
@@ -101,7 +101,8 @@ describe('the generated client of a REST data source', () => {
   it.each([[401, 'unauthorized', 502], [429, 'rate_limited', 503], [500, 'unavailable', 503], [422, 'remote_failed', 502]])(
     'any other failure is the source\'s error, naming the source and what it answered: %i is %s, the route answers %i', async (status, type, answered) => {
       await expect(useMain().completeTask(`6f1c2d3e-4b5a-4c6d-8e7f-000000000${status}`)).resolves.toEqual({
-        ok: false, error: { type, message: `The "api" data source answered ${status}.`, status }
+        // R3'b: a source that asks to wait says for how long.
+        ok: false, error: { type, message: `The "api" data source answered ${status}.`, status, ...(status === 429 ? { retryAfter: 3 } : {}) }
       })
       expect(statusOf[type]).toBe(answered)
     })

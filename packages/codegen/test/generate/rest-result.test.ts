@@ -30,11 +30,15 @@ describe('a list-only REST repository answers a Result', () => {
       '',
       '/** Every expected failure of a call to the "quotes" REST data source: it failed (why, by what it answered), or it answered something unexpected. */',
       'export type QuotesSourceError =',
-      '  | { type: SourceFailureType, message: string, status: number }',
+      '  | { type: SourceFailureType, message: string, status: number, retryAfter?: number }',
       '  | { type: \'invalid_answer\', message: string }',
       '',
-      '/** A failed call: `type` is why, `status` what the source answered (0 when it didn\'t answer); `detail` finishes "The "quotes" data source …". */',
-      'export const quotesFailed = (type: SourceFailureType, status: number, detail: string): QuotesSourceError => ({ type, message: `The "quotes" data source ${detail}.`, status })',
+      '/**',
+      ' * A failed call: `type` is why, `status` what it answered (0 when it didn\'t answer), `retryAfter` the seconds it asked to wait (when it',
+      ' * said); `detail` finishes "The "quotes" data source …".',
+      ' */',
+      'export const quotesFailed = (type: SourceFailureType, status: number, detail: string, retryAfter?: number): QuotesSourceError =>',
+      '  ({ type, message: `The "quotes" data source ${detail}.`, status, ...(retryAfter === undefined ? {} : { retryAfter }) })',
       '',
       '/** The answer is not what the model says. The error has no detail: it reaches the browser, and the detail (field paths, what was expected) is for the server log. */',
       'export const quotesInvalidAnswer = (): QuotesSourceError => ({ type: \'invalid_answer\', message: \'The "quotes" data source answered something unexpected\' })',
@@ -80,7 +84,7 @@ describe('a list-only REST repository answers a Result', () => {
       '  const { baseUrl, apiKey } = useRuntimeConfig().datasources.quotes',
       '  const headers: Record<string, string> = { accept: \'application/json\' }',
       '  if (apiKey) headers.authorization = `Bearer ${apiKey}`',
-      '  return resultClient(createHttpClient({ baseUrl, headers }), failure => quotesFailed(failure.type, failure.status, failure.message))',
+      '  return resultClient(createHttpClient({ baseUrl, headers }), failure => quotesFailed(failure.type, failure.status, failure.message, failure.retryAfter))',
       '}'
     ].join('\n'))
     expect(root).toContain('  const quotes = restQuoteRepository(quotesClient(), detail => console.error(\'The "quotes" data source answered something unexpected: \' + detail))\n')
@@ -88,7 +92,7 @@ describe('a list-only REST repository answers a Result', () => {
   })
 
   it('the list route answers the page, or throws the source\'s error with its status', () => {
-    expect(content(`${BLOG}/server/api/blog/quotes/index.get.ts`)).toContain('  return unwrapOrThrow(await useBlog().listQuotes(page), blogErrorStatus)\n')
+    expect(content(`${BLOG}/server/api/blog/quotes/index.get.ts`)).toContain('  return unwrapOrThrow(await useBlog().listQuotes(page), blogErrorStatus, event)\n')
   })
 
   it('its generated test passes, for fields whose rules a name is not a value of (a uuid key, a moment, an email, a minimum length)', async () => {

@@ -5,5 +5,5 @@ import { catalogErrorStatus, useCatalogApi } from '../../../utils/catalog'
 
 export default defineEventHandler(async (event): Promise<CreateProductResponse> => {
   const body = await readValidatedBody(event, createProductContract.body)
-  return unwrapOrThrow(await useCatalogApi().createProduct({ body }), catalogErrorStatus)
+  return unwrapOrThrow(await useCatalogApi().createProduct({ body }), catalogErrorStatus, event)
 })

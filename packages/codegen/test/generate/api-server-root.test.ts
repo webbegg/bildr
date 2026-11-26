@@ -12,7 +12,7 @@ import { generatedRunner } from './run-generated'
  * golden fixture, over its use-cases, repository, mappers, schemas and the core client, then the route's `unwrapOrThrow` with its status
  * map. Only what Nuxt provides is replaced (`nuxt/server`: the runtime config, an h3-like createError), and `fetch`.
  */
-type Result = { ok: true, value: unknown } | { ok: false, error: { type: string, message: string, status?: number } }
+type Result = { ok: true, value: unknown } | { ok: false, error: { type: string, message: string, status?: number, retryAfter?: number } }
 interface Root {
   useCatalogApi: () => {
     product: (input: unknown) => Promise<Result>
@@ -20,7 +20,7 @@ interface Root {
   }
   catalogErrorStatus: Record<string, number>
 }
-type Unwrap = (result: Result, statuses: Record<string, number>) => unknown
+type Unwrap = (result: Result, statuses: Record<string, number>, event?: { res: { headers: Headers } }) => unknown
 
 const CONFIG = '__bildrServerRootConfig'
 const NUXT_STUB = [
@@ -67,6 +67,16 @@ describe('generated server composition root, run', () => {
       return { status: (cause as { status: number }).status, message: (cause as Error).message }
     }
   }
+  /** The headers the route answers `result` with (the event's response headers, set before it throws). */
+  const headersOf = (result: Result) => {
+    const event = { res: { headers: new Headers() } }
+    try {
+      unwrapOrThrow(result, root.catalogErrorStatus, event)
+    } catch {
+      // Its status and message are routed()'s.
+    }
+    return Object.fromEntries(event.res.headers)
+  }
   const DTO = { id: 7, name: 'Lamp', price: 12.5, in_stock: true, created_at: '2026-05-01T10:00:00Z', note: null, categories: [{ id: 1, name: 'Home' }] }
 
   it('answers the entity, calling the base URL with the secret', async () => {
@@ -98,6 +108,22 @@ describe('generated server composition root, run', () => {
     const result = await root.useCatalogApi().deleteProduct({ id: 7 })
     expect(result).toEqual({ ok: false, error: { type, status, message: `The "catalog" API answered ${status}.` } })
     expect(routed(result)).toEqual({ status: answered, message: `The "catalog" API answered ${status}.` })
+  })
+
+  // R3'b: a source that asked to wait says for how long; the route answers 503 with the same Retry-After, so the caller waits as asked.
+  it.each([[429, 'rate_limited'], [503, 'unavailable']])('a call answered %i with a Retry-After fails as %s with it: the route sends it back', async (status, type) => {
+    configure('key-1')
+    fakeFetch(new Response(null, { status, headers: { 'retry-after': '12' } }))
+    const result = await root.useCatalogApi().deleteProduct({ id: 7 })
+    expect(result).toEqual({ ok: false, error: { type, status, retryAfter: 12, message: `The "catalog" API answered ${status}.` } })
+    expect(routed(result)).toMatchObject({ status: 503 })
+    expect(headersOf(result)).toEqual({ 'retry-after': '12' })
+  })
+
+  it('a failure without a wait sends no Retry-After, and a route status that is not 503 none either', () => {
+    expect(headersOf({ ok: false, error: { type: 'unavailable', status: 500, message: 'm' } })).toEqual({})
+    expect(headersOf({ ok: false, error: { type: 'remote_failed', status: 409, retryAfter: 5, message: 'm' } })).toEqual({})
+    expect(headersOf({ ok: true, value: 1 })).toEqual({})
   })
 
   it('answers an unexpected answer as invalid_answer without detail, the detail in the server log: the route answers 502', async () => {

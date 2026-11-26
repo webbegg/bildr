@@ -5,7 +5,7 @@ import { catalogErrorStatus, useCatalogApi } from '../../../utils/catalog'
 
 export default defineEventHandler(async (event) => {
   const input = await getValidatedQuery(event, deleteProductContract.query)
-  unwrapOrThrow(await useCatalogApi().deleteProduct(input), catalogErrorStatus)
+  unwrapOrThrow(await useCatalogApi().deleteProduct(input), catalogErrorStatus, event)
   setResponseStatus(event, 204)
   return null
 })
