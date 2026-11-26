@@ -656,17 +656,27 @@ export async function boot({ keep = process.env.E2E_KEEP === '1', desktop = fals
   try {
     return await bootIn(tmp, { keep, desktop, started })
   } catch (error) {
-    await Promise.all(started.map(stop))
-    if (keep) console.log(`kept ${tmp}`)
-    else {
-      for (const name of ['create.log', 'dev.log']) {
-        const text = readOr(join(tmp, name))
-        if (text) console.log(`${name} (tail):\n${text.trimEnd().split('\n').slice(-15).map(line => `    | ${line}`).join('\n')}`)
-      }
-      rmSync(tmp, { recursive: true, force: true })
-    }
+    await discardBoot(tmp, { started, keep })
     throw error
   }
+}
+
+/**
+ * Undoes a boot that failed: stops the children it started, forgets its project in `app` (a project the
+ * script attached to stays), and prints the logs' tails before deleting the dir (unless `keep`).
+ */
+export async function discardBoot(tmp, { started, keep }) {
+  await Promise.all(started.map(stop))
+  if (app.root.startsWith(`${tmp}/`)) Object.assign(app, { base: '', token: '', root: '', log: '' })
+  if (keep) {
+    console.log(`kept ${tmp}`)
+    return
+  }
+  for (const name of ['create.log', 'dev.log']) {
+    const text = readOr(join(tmp, name))
+    if (text) console.log(`${name} (tail):\n${text.trimEnd().split('\n').slice(-15).map(line => `    | ${line}`).join('\n')}`)
+  }
+  rmSync(tmp, { recursive: true, force: true })
 }
 
 async function bootIn(tmp, { keep, desktop, started }) {
@@ -674,7 +684,9 @@ async function bootIn(tmp, { keep, desktop, started }) {
   const log = join(tmp, 'dev.log')
   const create = start(process.execPath, ['--experimental-strip-types', '--no-warnings', CLI, root, '--name', 'Blog', '--module', 'blog'], { cwd: tmp, log: join(tmp, 'create.log') })
   started.push(create)
-  const created = await Promise.race([create.exited, sleep(MINUTE).then(() => undefined)])
+  let timer
+  const created = await Promise.race([create.exited, new Promise(resolve => (timer = setTimeout(resolve, MINUTE)))])
+  clearTimeout(timer)
   if (created?.code !== 0) throw new Error(`create-bildr failed (log ${join(tmp, 'create.log')})`)
   symlinkSync(join(FIXTURE, 'node_modules'), join(root, 'node_modules'), 'dir')
   if (desktop) {
