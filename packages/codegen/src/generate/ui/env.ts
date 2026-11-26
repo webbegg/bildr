@@ -14,10 +14,12 @@ export type Ctx = 'template' | 'script'
 export interface Root {
   /** The expression for `root.members…` in a template or in script setup (where refs need `.value`). */
   resolve: (members: string[], ctx: Ctx) => string
-  /** The loading flags of the data behind this root (queries), for loading texts. */
+  /** What is true in a template while the data behind this root (queries) loads, for loading texts. */
   loading?: () => string[]
-  /** The error flags of the data behind this root (API queries), for the error line. */
+  /** What is true in a template when the data behind this root (API queries) failed, for the error line. */
   errors?: () => string[]
+  /** What is true in script setup once the data behind this root has loaded (a guarded Page's 404); else none of `loading` and `errors` is. */
+  settled?: () => string[]
   /** An API query's answer: whether the rows of its model have an `id` (the key of a List over them). */
   api?: { hasId: boolean }
 }
@@ -112,7 +114,8 @@ export const fail = (env: Env, node: ModelNode | undefined, message: string): ne
   throw new Error(`${env.file}${node ? ` (node ${node.id})` : ''}: ${message}`)
 }
 
-export const refRoot = (name: string, onUse: () => void, optional?: Env['optional'], loading?: () => string[]): Root => ({
+/** A root read as a ref; `flags` are the loading, error and settled flags of the data behind it (a query, or a computed value over some). */
+export const refRoot = (name: string, onUse: () => void, optional?: Env['optional'], flags: Pick<Root, 'loading' | 'errors' | 'settled'> = {}): Root => ({
   resolve: (members, ctx) => {
     onUse()
     if (ctx === 'template') return [name, ...members].join('.')
@@ -120,7 +123,7 @@ export const refRoot = (name: string, onUse: () => void, optional?: Env['optiona
     const chain = optional && !optional.guarded.has(name) ? '?.' : '.'
     return `${name}.value${members.map(member => `${chain}${member}`).join('')}`
   },
-  loading
+  ...flags
 })
 
 /** The item name of a List: itself in the template, the handler's parameter in the script (which the handler being built notes). */
@@ -210,6 +213,13 @@ export const errorsOf = (env: Env, value: Value | undefined) => {
   return root ? env.roots.get(root)?.errors?.() ?? [] : []
 }
 
+/** What is true in script setup once what a `$bind` value reads has loaded: its own `settled`, or none of its flags (refs) set. */
+export const settledOf = (env: Env, value: Value | undefined) => {
+  const root = bindRoot(value) ? env.roots.get(bindRoot(value)!) : undefined
+  if (!root) return []
+  return root.settled?.() ?? [...root.loading?.() ?? [], ...root.errors?.() ?? []].map(flag => `!${flag}.value`)
+}
+
 /** What a List or a guarded Page shows when an API query failed. */
 export const API_ERROR_TEXT = 'Couldn\'t load this.'
 
@@ -221,7 +231,7 @@ export const keyedById = (model: { fields: Array<{ name: string, type: string, o
 
 /**
  * An API query's answer (`uses.apis`): `data` of the composable, which is undefined until it answers. A list reads as empty then
- * (`(<as> ?? [])`), a one result with `?.`; its loading flag is `<as>Loading` and its error `<as>Error`.
+ * (`(<as> ?? [])`), a one result with `?.`. It loads, failed or has loaded as its `status` (`<as>Status`) says.
  */
 export const apiRoot = (env: Env, as: string, many: boolean, hasId: boolean): Root => ({
   resolve: (members, ctx) => {
@@ -235,12 +245,16 @@ export const apiRoot = (env: Env, as: string, many: boolean, hasId: boolean): Ro
     return `${as}.value${members.map((member, index) => `${many || index === 0 ? chain : '?.'}${member}`).join('')}`
   },
   loading: () => {
-    use(env, `api:${as}`, 'loading')
-    return [useNames(as).loading]
+    use(env, `api:${as}`, 'status')
+    return [`${useNames(as).status} === 'pending'`]
   },
   errors: () => {
-    use(env, `api:${as}`, 'error')
-    return [useNames(as).error]
+    use(env, `api:${as}`, 'status')
+    return [`${useNames(as).status} === 'error'`]
+  },
+  settled: () => {
+    use(env, `api:${as}`, 'status')
+    return [`${useNames(as).status}.value === 'success'`]
   },
   api: { hasId }
 })

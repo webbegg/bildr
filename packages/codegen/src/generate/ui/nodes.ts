@@ -11,7 +11,7 @@ import { itemParam, itemPosition, loadMoreCounter } from '../names.ts'
 import { identifier, kebab, pascal, tsString } from '../text.ts'
 import type { Env } from './env.ts'
 import {
-  actionById, API_ERROR_TEXT, bindPath, bindRoot, entityOf, errorsOf, expression, fail, isObject, itemRoot, loadingOf, routeLocation, templateParts, variantRead, where
+  actionById, API_ERROR_TEXT, bindPath, bindRoot, entityOf, errorsOf, expression, fail, isObject, itemRoot, loadingOf, routeLocation, settledOf, templateParts, variantRead, where
 } from './env.ts'
 import { events } from './interactions.ts'
 import type { Attr } from './markup.ts'
@@ -202,7 +202,7 @@ export const guarded = (env: Env, node: ModelNode, tag: string, attrs: Attr[], i
   const loading = loadingOf(env, node.props!.when)
   const errors = errorsOf(env, node.props!.when)
   if (typeof node.props?.empty === 'string' && loading.length) {
-    const settled = [...loading, ...errors].map(flag => `!${flag}.value`)
+    const settled = settledOf(env, node.props!.when)
     const subject = bindRoot(node.props.when) ?? 'data'
     env.notFound.page = { subject, condition: [...settled, `!${expression(env, node, node.props.when, 'script')}`].join(' && '), message: node.props.empty }
   }

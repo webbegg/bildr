@@ -60,8 +60,7 @@ describe('uses.apis', () => {
     const names = (as: string, more: Use[] = []) => problems(withApis([{ ...products, as }, ...more]))
     expect(names('layout')).toEqual([`${IDX}: uses.apis: "layout" is a name the page's script uses itself: pick another`])
     expect(names('route')).toEqual([`${IDX}: uses.apis: "route" is a name the page's script uses itself: pick another`])
-    expect(names('catalogueLoading', [{ ...products, as: 'catalogue' }])[0]).toMatch(/^.*uses.apis: The page's script would declare "catalogueLoading" twice/)
-    expect(names('catalogueError', [{ ...products, as: 'catalogue' }])[0]).toMatch(/would declare "catalogueError" twice/)
+    expect(names('catalogueStatus', [{ ...products, as: 'catalogue' }])[0]).toMatch(/^.*uses.apis: The page's script would declare "catalogueStatus" twice/)
     expect(names('useCatalogProducts')).toEqual([`${IDX}: uses.apis: The page's script would declare "useCatalogProducts" twice: as "useCatalogProducts" and as the name the query products of the API catalog generates`])
   })
 

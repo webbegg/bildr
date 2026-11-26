@@ -719,7 +719,7 @@ export const PageFileSchema = z.object({
   uses: z.object({
     state: z.array(z.object({ as: CamelNameSchema, state: ArtifactIdSchema })).optional(),
     queries: z.array(z.object({ as: CamelNameSchema, query: ArtifactIdSchema, args: z.record(CamelNameSchema, ValueSchema).optional() })).optional(),
-    /** Queries of API data sources (`kind: "api"`): the source, the query by name, and the values of its parameters. Read as `data`, `<as>Loading` and `<as>Error`. */
+    /** Queries of API data sources (`kind: "api"`): the source, the query by name, and the values of its parameters. Read as `data` and `<as>Status`. */
     apis: z.array(z.object({ as: CamelNameSchema, datasource: ArtifactIdSchema, query: CamelNameSchema, args: z.record(CamelNameSchema, ValueSchema).optional() })).optional(),
     actions: z.array(z.object({ as: CamelNameSchema, action: ArtifactIdSchema })).optional(),
     computed: z.array(z.looseObject({ as: CamelNameSchema })).optional()

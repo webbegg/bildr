@@ -310,7 +310,7 @@ describe('what the generator declares is in the reserved lists (drift guard)', (
     expect(files.some(file => globalsIn(file.content).has('console'))).toBe(true)
   })
 
-  it.each([['valueOrThrow', 'the helpers of the browser runtime'], ['createHttpClient', 'the core HTTP client (both runtimes)']])('a query named %s (the browser composition and composables import it) is refused', (name, where) => {
+  it.each([['fromRoute', 'the helpers of the server runtime'], ['createHttpClient', 'the core HTTP client (both runtimes)']])('a query named %s (the compositions and composables import it) is refused', (name, where) => {
     const message = shop({ runtime: 'browser' }).refuse('api_query_set', { datasource: 'ds_shop', query: items(name) }, 'invalid').message
     expect(message).toContain(`the query "${name}" would be named ${name}, which is already declared or imported by the generated files (${where})`)
   })

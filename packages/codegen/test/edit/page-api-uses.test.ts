@@ -72,10 +72,11 @@ describe('page_use_add with an API query', () => {
     const p = shop()
     useProducts(p)
     expect(p.refuse('page_use_add', { page: 'pg_index', as: 'products', api: { datasource: SHOP, query: 'notes' } }, 'invalid').message).toBe('The page already uses the name "products"')
-    expect(p.refuse('page_use_add', { page: 'pg_index', as: 'productsLoading', api: { datasource: SHOP, query: 'notes' } }, 'invalid').message)
-      .toBe('The page\'s script would declare "productsLoading" twice: as the loading flag of "products" and as "productsLoading"')
-    expect(p.refuse('page_use_add', { page: 'pg_index', as: 'productsError', api: { datasource: SHOP, query: 'notes' } }, 'invalid').message)
-      .toBe('The page\'s script would declare "productsError" twice: as the error of "products" and as "productsError"')
+    expect(p.refuse('page_use_add', { page: 'pg_index', as: 'productsStatus', api: { datasource: SHOP, query: 'notes' } }, 'invalid').message)
+      .toBe('The page\'s script would declare "productsStatus" twice: as the status of "products" and as "productsStatus"')
+    // An API query's loading and error are its status now (T3c): the names are free.
+    p.edit('page_use_add', { page: 'pg_index', as: 'productsLoading', api: { datasource: SHOP, query: 'notes' } })
+    p.edit('page_use_add', { page: 'pg_index', as: 'productsError', api: { datasource: SHOP, query: 'notes' } })
     // A name another use of the page has can't be taken by an API use either.
     expect(p.refuse('page_use_add', { page: 'pg_index', as: 'featured', api: { datasource: SHOP, query: 'notes' } }, 'invalid').message).toBe('The page already uses the name "featured"')
   })

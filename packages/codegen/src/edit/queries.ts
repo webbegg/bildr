@@ -492,7 +492,7 @@ export const pageUseAdd = defineEdit({
     api: z.object({
       datasource: ArtifactIdSchema.describe('An API data source id (kind "api"), e.g. "ds_shop"'),
       query: CamelNameSchema.describe('The name of one of its queries, e.g. "products"')
-    }).optional().describe('A query of an API data source to read: it answers as <as> (a list, or one record), with <as>Loading and <as>Error'),
+    }).optional().describe('A query of an API data source to read: it answers as <as> (a list, or one record), with <as>Status (pending, success or error)'),
     args: z.record(CamelNameSchema, ValueSchema).optional().describe('With a query: its parameters\' values, e.g. { "limit": 6 } or { "slug": { "$route": "slug" } }; with an API query: its path and query parameters, the required ones included')
   }),
   apply: (draft, { page: pageId, as, query: queryId, action: actionId, state: stateId, api, args }) => {

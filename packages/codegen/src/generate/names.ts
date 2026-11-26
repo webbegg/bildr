@@ -22,10 +22,11 @@ export const moduleRootOf = (module: string): string => composableOf(module)
 
 // ── A page's script ─────────────────────────────────────────────────────
 
-/** What a page's script derives from a use `as`: a state's setter, a query's loading flag, an action's pending flag, an error. */
+/** What a page's script derives from a use `as`: a state's setter, a query's loading flag, an API query's status, an action's pending flag, an error. */
 export const useNames = (as: string) => ({
   set: `set${pascal(as)}`,
   loading: `${as}Loading`,
+  status: `${as}Status`,
   pending: `${as}Pending`,
   error: `${as}Error`
 })

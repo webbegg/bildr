@@ -13,5 +13,11 @@ export interface DomainError {
   message: string
 }
 
+/**
+ * What a call failed with, seen from where it was made (the page): one of its domain errors, or `unexpected` when it failed outside them
+ * (the server could not be reached, or a bug). `type` tells them apart, so a caller handles each error it knows by name.
+ */
+export type ApiError<E extends DomainError = DomainError> = E | { type: 'unexpected', message: string }
+
 /** Maps each domain error type of a module to an HTTP status (used by the HTTP adapter). */
 export type ErrorStatusMap = Record<string, number>
