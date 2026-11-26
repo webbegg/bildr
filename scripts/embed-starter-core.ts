@@ -16,7 +16,6 @@ const STATIC_CORE = [
   'layers/core/test/infrastructure/http-client.test.ts',
   'layers/core/server/utils/db.ts',
   'layers/core/server/utils/http-error.ts',
-  'layers/core/server/utils/remote.ts',
   'layers/core/server/plugins/migrate.ts',
   'layers/core/app/data/query-client.ts',
   'layers/core/app/data/results.ts',
