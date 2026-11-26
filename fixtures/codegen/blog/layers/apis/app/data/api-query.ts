@@ -3,7 +3,7 @@ import { QueryObserver } from '@tanstack/query-core'
 import type { QueryObserverResult } from '@tanstack/query-core'
 import { getCurrentScope, onScopeDispose, shallowRef, toValue, watch } from 'vue'
 import type { MaybeRefOrGetter } from 'vue'
-import type { ApiError, DomainError, Result } from '#core/kernel/result'
+import type { ApiError, DomainError, Result, SourceFailureType } from '#core/kernel/result'
 import { queryClient } from '#layers/core/app/data/query-client'
 import { Answered, failureOf, useAction } from '#layers/core/app/data/results'
 import type { DataStatus } from '#layers/core/app/data/results'
@@ -17,15 +17,16 @@ export interface ApiQueryOptions<Input, Output, E extends DomainError> {
   fetch: (input: Input, signal: AbortSignal) => Promise<Result<Output, ApiError<E>>>
 }
 
+/** The failures of a source that may pass on a second try (SourceFailureType): it asked to wait, took too long, or is down. */
+const PASSING: ReadonlySet<string> = new Set<SourceFailureType>(['rate_limited', 'timeout', 'unavailable'])
+
 /**
- * Only a call that may pass on a second try is tried again, three times at most: something unexpected (no server), an API that did not
- * answer (`status` 0), failed itself (5xx) or asked to wait (408, 429). What it answered on purpose (a 404) is its answer.
+ * Only a call that may pass on a second try is tried again, three times at most: something unexpected (the server could not be
+ * reached), or a failure that passes (PASSING). What the API answered on purpose (a 404, a refusal) is its answer.
  */
 const retry = (count: number, cause: Error) => {
   if (count >= 3) return false
-  if (!(cause instanceof Answered) || cause.error.type === 'unexpected') return true
-  const status = cause.error.type === 'remote_failed' ? (cause.error as { status?: unknown }).status : undefined
-  return typeof status === 'number' && (status === 0 || status === 408 || status === 429 || status >= 500)
+  return !(cause instanceof Answered) || cause.error.type === 'unexpected' || PASSING.has(cause.error.type)
 }
 
 /**

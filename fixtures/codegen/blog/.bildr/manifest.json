@@ -58,11 +58,11 @@
     },
     "layers/apis/app/data/api-query.ts": {
       "owner": "managed",
-      "sha256": "12fd36db0f47bb1ed607c96f7c713e2e8eb7d8091faae2d619026d0e6b85e9b7"
+      "sha256": "a0d05c517dd64fc9d3d20f096a4f0405a0d5f4e496762c9c10e751a96dd34f2c"
     },
     "layers/apis/app/data/weather.ts": {
       "owner": "managed",
-      "sha256": "02fc6268093d7808d7a7392244cb98cc2ec0dc5f8537a1cdf94d8446d748ef33",
+      "sha256": "c7e46b0693f526239330cf0d70043de674ab498d6deef88f96571d224674d7d2",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/nuxt.config.ts": {
@@ -91,7 +91,7 @@
     },
     "layers/apis/server/utils/catalog.ts": {
       "owner": "managed",
-      "sha256": "16a85db9249ea48e27c90fc257a165e24f077cedbd46942ddd085de99c950494",
+      "sha256": "aa8e18d20a5924664932d9e1b366104ed06d861c0c100cab52218472e2839800",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/application/catalog/actions/create-product.ts": {
@@ -166,7 +166,7 @@
     },
     "layers/apis/shared/domain/catalog/errors.ts": {
       "owner": "managed",
-      "sha256": "304de2a63424100959dcf634bcd6fc8efcec90e072e9bf752f1c8a6a351e1156",
+      "sha256": "0a8ffef5751ade628c69d77847c6833271d4bcb33c288450ae319dd5fb0a495f",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/domain/weather/entities/forecast.ts": {
@@ -176,7 +176,7 @@
     },
     "layers/apis/shared/domain/weather/errors.ts": {
       "owner": "managed",
-      "sha256": "c8c69ea6a1c393c3d9c3f4921e4ff9529651452bdeb70eedd6b28ec0946eaa66",
+      "sha256": "174dc1501f7ead4515d4754c0640608e757e1e3ab4d56dcd23d64ffc12d8026e",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/shared/infrastructure/catalog/mappers/category.mapper.ts": {
@@ -236,17 +236,17 @@
     },
     "layers/apis/test/catalog/catalog-repository.http.test.ts": {
       "owner": "managed",
-      "sha256": "ac850498773b8363cd2b30c935c460b612dc3e374d29f291f27775c5fbe39087",
+      "sha256": "17a37412383697c87a7b2cdb7a11116c8c55aa29db567ba8940a22a2baf84796",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/catalog/create-product.test.ts": {
       "owner": "managed",
-      "sha256": "3a6ae05554ec050bbeb823cee3aa43f3aba4c0e2c72c29fdaa183036ff712d83",
+      "sha256": "cea6f5a8480d01b83576a4cca80dbd9b1c3d23e1e7e1242613b9e024704298ef",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/catalog/delete-product.test.ts": {
       "owner": "managed",
-      "sha256": "4ef4512a4f80b92bbaa43829ca43e12d87f9372ca061385745909fad65598c34",
+      "sha256": "ed6359923e983c72b9c0e7848f5c0946ef429c102f9b79f4d6df63c445129205",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/catalog/fake-repository.ts": {
@@ -261,12 +261,12 @@
     },
     "layers/apis/test/catalog/product.test.ts": {
       "owner": "managed",
-      "sha256": "a6d04d9df4e1a4138c34594750aeba4b877579b7a89be9e6b5c8e37fc1946d6d",
+      "sha256": "a6f202f7de417ee7075eaa15de342b7c7f49ead49cadffc44bdcf477bd469119",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/catalog/products.test.ts": {
       "owner": "managed",
-      "sha256": "fba08b8460c29866a4c626e4d5fdfa7b414400ddd3d84a251ec21b81850afbe3",
+      "sha256": "2b31f5af67deb478b10a43903ef7f09166a3f456bd91684f775df3153ec877ff",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/test/weather/fake-repository.ts": {
@@ -276,7 +276,7 @@
     },
     "layers/apis/test/weather/forecast.test.ts": {
       "owner": "managed",
-      "sha256": "4e86546193953570ebaaadb3c1ac243f80d7d55662c00ab4bd52cbd5d22428bd",
+      "sha256": "7508ed2b9ee7e1880f0a6f06e8564f4fcdd88167f26dff2da6a3ca9fc4619451",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/test/weather/mappers.mapper.test.ts": {
@@ -286,12 +286,12 @@
     },
     "layers/apis/test/weather/report-forecast.test.ts": {
       "owner": "managed",
-      "sha256": "8dfd95c2ad35787f94ea2b5fd7703a4e5b4971bad84466a99f03f532eada5acb",
+      "sha256": "7d287da4b30d553d9c468b8d3c3758c6ca58d037b03a755e412815dbc37a294d",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/test/weather/weather-repository.http.test.ts": {
       "owner": "managed",
-      "sha256": "238799b02e0e38b1fe98d634168005d60d48c93b6feefb6dfc3d11175fcfb495",
+      "sha256": "90676d433c0b4ed85e4acd8c4dc35c4cb264754b00c9abe2553b5448ef7b9275",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/blog/app/components/blog/PostCard.vue": {
@@ -466,7 +466,7 @@
     },
     "layers/blog/server/utils/blog.ts": {
       "owner": "managed",
-      "sha256": "54545a05da3bac96a1a9a5a2f7998aa272e9dc7d13ade3e6e99c9d1fee76ede2",
+      "sha256": "d871d2b660ce0840da1e0c9fd314304b1abfcf2a5791f8d8a0e5228926d08575",
       "source": ".bildr/modules/blog"
     },
     "layers/blog/shared/contracts/create-post.ts": {
@@ -509,7 +509,7 @@
     },
     "layers/blog/shared/domain/sources/quotes.ts": {
       "owner": "managed",
-      "sha256": "60dd9c094dffb04e13464de98b9407417814707d534a0c489b07453fe395307b",
+      "sha256": "147b636cae92a063f8ee6fa19e61b6385cddb5dcd96014c77313d44edbc76af7",
       "source": ".bildr/datasources/quotes.json"
     },
     "layers/blog/test/application/create-post.test.ts": {
@@ -524,7 +524,7 @@
     },
     "layers/blog/test/infrastructure/quote.rest.test.ts": {
       "owner": "managed",
-      "sha256": "81c954e3de5f4676fe288a12073b680c70c635c721dd15c710a6d7ec6b361738",
+      "sha256": "90e9a2753e0195419df9d13c8b47e00ac6e3ed2081138809b835732f12f4f8e4",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/core/app/app.config.ts": {
@@ -588,7 +588,7 @@
     },
     "layers/core/shared/http/client.ts": {
       "owner": "managed",
-      "sha256": "a9983e4303009842972cc0a8d9300775adcfff78b26b123d603565ba76a90bf6"
+      "sha256": "9e99e206c474d5d5125244820e75f1244c2466ae0850e4474cbe798d0de1dd13"
     },
     "layers/core/shared/kernel/ids.ts": {
       "owner": "managed",
@@ -600,11 +600,11 @@
     },
     "layers/core/shared/kernel/result.ts": {
       "owner": "managed",
-      "sha256": "f6258d868c2dae3b21f6d2fb19b89af5343d82e11438f85678ee24344aa77de8"
+      "sha256": "7deac36de3398ca0d0e07ae807c7875b07849b5bcdef4fe152e46c33a6338067"
     },
     "layers/core/test/infrastructure/http-client.test.ts": {
       "owner": "managed",
-      "sha256": "eb12754ee90ea78185a4f50997226d4a25d53272921241b916853060e8d1e094"
+      "sha256": "bbda4a230575f1291e7db0caf04afefa2877bc430a18db2f32526ea8b5fb6358"
     },
     "nuxt.config.ts": {
       "owner": "scaffold",

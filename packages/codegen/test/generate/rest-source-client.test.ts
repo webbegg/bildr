@@ -44,7 +44,9 @@ describe('the generated client of a REST data source', () => {
     }
     if (path === '/v1/tasks') return answer(200, { items: [{ id: TASK, title: 'Write', done: false }], total: 1 })
     if (path === `/v1/tasks/${TASK}`) return answer(404)
-    if (path === '/v1/tasks/6f1c2d3e-4b5a-4c6d-8e7f-000000000500') return answer(500)
+    for (const status of [401, 429, 500, 422]) {
+      if (path === `/v1/tasks/6f1c2d3e-4b5a-4c6d-8e7f-000000000${status}`) return answer(status)
+    }
     if (path === '/v1/tasks/6f1c2d3e-4b5a-4c6d-8e7f-000000000302') {
       return answer(302, undefined, { location: `http://127.0.0.1:${(other.address() as AddressInfo).port}/v1/tasks` })
     }
@@ -52,6 +54,7 @@ describe('the generated client of a REST data source', () => {
   })
   let dir: string
   let useMain: () => Main
+  let statusOf: Record<string, number>
   let call: Call
 
   beforeAll(async () => {
@@ -63,7 +66,9 @@ describe('the generated client of a REST data source', () => {
     const { load } = generatedRunner(new Map(generate(loaded.model).map(file => [file.path, file.content])), dir, {
       'nuxt/server': `export const useRuntimeConfig = () => globalThis.${CONFIG}`
     })
-    useMain = (await load<{ useMain: typeof useMain }>('layers/main/server/utils/main.ts')).useMain
+    const root = await load<{ useMain: typeof useMain, mainErrorStatus: typeof statusOf }>('layers/main/server/utils/main.ts')
+    useMain = root.useMain
+    statusOf = root.mainErrorStatus
     const core = await load<{ createHttpClient: (options: { baseUrl: string }) => Call }>('layers/core/shared/http/client.ts')
     await new Promise<void>(resolve => other.listen(0, '127.0.0.1', resolve))
     await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
@@ -92,11 +97,14 @@ describe('the generated client of a REST data source', () => {
     await expect(useMain().deleteTask(TASK)).resolves.toEqual({ ok: true, value: undefined })
   })
 
-  it('any other failure is the source\'s error, naming the source and what it answered', async () => {
-    await expect(useMain().completeTask('6f1c2d3e-4b5a-4c6d-8e7f-000000000500')).resolves.toEqual({
-      ok: false, error: { type: 'remote_failed', message: 'The "api" data source answered 500.', status: 500 }
+  // R3': why it failed, and what the route answers for it (a gateway's statuses: the source refusing the app's key is the server's to fix).
+  it.each([[401, 'unauthorized', 502], [429, 'rate_limited', 503], [500, 'unavailable', 503], [422, 'remote_failed', 502]])(
+    'any other failure is the source\'s error, naming the source and what it answered: %i is %s, the route answers %i', async (status, type, answered) => {
+      await expect(useMain().completeTask(`6f1c2d3e-4b5a-4c6d-8e7f-000000000${status}`)).resolves.toEqual({
+        ok: false, error: { type, message: `The "api" data source answered ${status}.`, status }
+      })
+      expect(statusOf[type]).toBe(answered)
     })
-  })
 
   it('does not follow a redirect: the key never reaches another host', async () => {
     elsewhere.length = 0

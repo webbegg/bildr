@@ -367,7 +367,7 @@ export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, r
       '  async get(id) {',
       `    ${call('get')}`,
       '    // The source has no such row: it answered 404, or nothing.',
-      `    if (!${answer}.ok) return ${answer}.error.type === 'remote_failed' && ${answer}.error.status === 404 ? ok(undefined) : ${answer}`,
+      `    if (!${answer}.ok) return ${answer}.error.type === 'not_found' ? ok(undefined) : ${answer}`,
       `    return ${answer}.value === undefined ? ok(undefined) : read(${itemSchema}, ${answer}.value)`,
       '  }'
     )
@@ -388,7 +388,7 @@ export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, r
       '  async delete(id) {',
       `    ${call('delete')}`,
       '    // A row the source has no longer (404) is deleted already, as the in-memory twin says.',
-      `    return ${answer}.ok || (${answer}.error.type === 'remote_failed' && ${answer}.error.status === 404) ? ok(undefined) : ${answer}`,
+      `    return ${answer}.ok || ${answer}.error.type === 'not_found' ? ok(undefined) : ${answer}`,
       '  }'
     )
   }
@@ -497,7 +497,7 @@ export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFil
       '    const found = fake(ok(row))',
       `    expect(await found.repository.get(${tsLiteral(id)})).toEqual(ok(${names.variable}))`,
       `    expect(found.calls).toEqual([{ path: ${at(rest.get!.path)}, request: ${request('get', [])} }])`,
-      `    expect(await fake(err(${errors.failed}(404, 'answered 404'))).repository.get(${tsLiteral(id)})).toEqual(ok(undefined))`,
+      `    expect(await fake(err(${errors.failed}('not_found', 404, 'answered 404'))).repository.get(${tsLiteral(id)})).toEqual(ok(undefined))`,
       `    expect(await fake(ok(undefined)).repository.get(${tsLiteral(id)})).toEqual(ok(undefined))`,
       '  })'
     ])
@@ -519,13 +519,13 @@ export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFil
       '    const { calls, repository } = fake(ok(undefined))',
       `    expect(await repository.delete(${tsLiteral(id)})).toEqual(ok(undefined))`,
       `    expect(calls).toEqual([{ path: ${at(rest.delete!.path)}, request: ${request('delete', [])} }])`,
-      `    expect(await fake(err(${errors.failed}(404, 'answered 404'))).repository.delete(${tsLiteral(id)})).toEqual(ok(undefined))`,
+      `    expect(await fake(err(${errors.failed}('not_found', 404, 'answered 404'))).repository.delete(${tsLiteral(id)})).toEqual(ok(undefined))`,
       '  })'
     ])
   }
   tests.push([
     '  it(\'answers the error of a failed call\', async () => {',
-    `    const failed = ${errors.failed}(503, 'answered 503')`,
+    `    const failed = ${errors.failed}('unavailable', 503, 'answered 503')`,
     `    expect(await fake(err(failed)).repository.${callOf(first)}).toEqual(err(failed))`,
     '  })'
   ])

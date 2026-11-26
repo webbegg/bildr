@@ -48,7 +48,7 @@ describe('httpWeatherRepository', () => {
   })
 
   it('forecast: answers the error of the client as it is', async () => {
-    const failed = err(remoteFailed(503, 'answered 503'))
+    const failed = err(remoteFailed('unavailable', 503, 'answered 503'))
     const http: ApiClient<WeatherError> = async () => failed
     expect(await httpWeatherRepository(http).forecast({
       city: 'city 1'
@@ -97,7 +97,7 @@ describe('httpWeatherRepository', () => {
   })
 
   it('reportForecast: answers the error of the client as it is', async () => {
-    const failed = err(remoteFailed(503, 'answered 503'))
+    const failed = err(remoteFailed('unavailable', 503, 'answered 503'))
     const http: ApiClient<WeatherError> = async () => failed
     expect(await httpWeatherRepository(http).reportForecast({
       body: {

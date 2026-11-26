@@ -218,7 +218,7 @@ describe('generate: server-runtime api sources', () => {
     expect(root).toContain('export const catalogErrorStatus = {')
     expect(root).toContain('} satisfies Record<CatalogError[\'type\'], number>')
     // A failed call is the source's error, through the core client (T3a, T3d).
-    expect(root).toContain(': remoteFailed(failure.status, failure.message))')
+    expect(root).toContain(': remoteFailed(failure.type, failure.status, failure.message))')
     expect(root).toContain('import { type ApiClient, resultClient } from \'#core/http/api-client\'')
     expect(root).toContain('import { createHttpClient } from \'#core/http/client\'')
     const client = read(generated, 'layers/core/shared/http/client.ts')

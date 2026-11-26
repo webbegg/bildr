@@ -87,7 +87,7 @@ describe('httpCatalogRepository', () => {
   })
 
   it('products: answers the error of the client as it is', async () => {
-    const failed = err(remoteFailed(503, 'answered 503'))
+    const failed = err(remoteFailed('unavailable', 503, 'answered 503'))
     const http: ApiClient<CatalogError> = async () => failed
     expect(await httpCatalogRepository(http).products({
       category: 'category 1',
@@ -147,7 +147,7 @@ describe('httpCatalogRepository', () => {
   })
 
   it('product: answers the error of the client as it is', async () => {
-    const failed = err(remoteFailed(503, 'answered 503'))
+    const failed = err(remoteFailed('unavailable', 503, 'answered 503'))
     const http: ApiClient<CatalogError> = async () => failed
     expect(await httpCatalogRepository(http).product({
       id: 1
@@ -232,7 +232,7 @@ describe('httpCatalogRepository', () => {
   })
 
   it('createProduct: answers the error of the client as it is', async () => {
-    const failed = err(remoteFailed(503, 'answered 503'))
+    const failed = err(remoteFailed('unavailable', 503, 'answered 503'))
     const http: ApiClient<CatalogError> = async () => failed
     expect(await httpCatalogRepository(http).createProduct({
       body: {
@@ -290,7 +290,7 @@ describe('httpCatalogRepository', () => {
   })
 
   it('deleteProduct: answers the error of the client as it is', async () => {
-    const failed = err(remoteFailed(503, 'answered 503'))
+    const failed = err(remoteFailed('unavailable', 503, 'answered 503'))
     const http: ApiClient<CatalogError> = async () => failed
     expect(await httpCatalogRepository(http).deleteProduct({
       id: 1

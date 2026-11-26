@@ -100,7 +100,7 @@ describe('generated query helpers, run', () => {
     Reflect.deleteProperty(globalThis, STATE)
   })
 
-  const NOT_FOUND: ApiError = { type: 'remote_failed', status: 404, message: 'The "shop" API answered 404.' }
+  const NOT_FOUND: ApiError = { type: 'not_found', status: 404, message: 'The "shop" API answered 404.' } as ApiError
   const INVALID: ApiError = { type: 'invalid_input', message: 'The call to the "shop" API is not valid: id' }
   const signal = new AbortController().signal
   /** A query over `fetch`, and the observer behind it. */
@@ -183,16 +183,16 @@ describe('generated query helpers, run', () => {
       expect(log).toHaveBeenCalledWith(bug)
     })
 
-    it('tries again only what may pass a second time: no answer, a failing API (5xx, 408, 429) or something unexpected, three times at most (R3-001)', async () => {
+    it('tries again only what may pass a second time: a wait, a timeout, an outage or something unexpected, three times at most (R3-001, R3\')', async () => {
       /** What the query's function throws for `error`, and the query's own retry rule. */
       const failing = async (error: ApiError) => thrown(query(async () => ({ ok: false, error })).observer) as Promise<Error>
       const { retry } = query(async () => ({ ok: true, value: 1 })).observer.options
-      const remote = (status: number) => failing({ type: 'remote_failed', status, message: `answered ${status}` })
-      for (const status of [0, 408, 429, 500, 503]) expect(retry(0, await remote(status)), String(status)).toBe(true)
-      expect(retry(2, await remote(503))).toBe(true)
-      expect(retry(3, await remote(503))).toBe(false)
+      const remote = (type: string) => failing({ type, status: 0, message: type } as ApiError)
+      for (const type of ['rate_limited', 'timeout', 'unavailable']) expect(retry(0, await remote(type)), type).toBe(true)
+      expect(retry(2, await remote('unavailable'))).toBe(true)
+      expect(retry(3, await remote('unavailable'))).toBe(false)
       // What the API answered on purpose is its answer: a 404 shows at once, not after three tries.
-      for (const status of [400, 401, 403, 404, 422]) expect(retry(0, await remote(status)), String(status)).toBe(false)
+      for (const type of ['not_found', 'unauthorized', 'remote_failed']) expect(retry(0, await remote(type)), type).toBe(false)
       expect(retry(0, new TypeError('offline'))).toBe(true)
       for (const type of ['invalid_input', 'invalid_answer', 'not_configured']) expect(retry(0, await failing({ type, message: type }))).toBe(false)
     })

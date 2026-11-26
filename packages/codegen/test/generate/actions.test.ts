@@ -135,7 +135,7 @@ describe('generateActions rules', () => {
     // R1': the REST source it lists from still fails as its own errors do.
     const files = generateActions(model)
     expect(files.find(file => file.path.endsWith('domain/errors.ts'))!.content).toContain('export type BlogError =\n  | QuotesSourceError\n')
-    expect(files.find(file => file.path.endsWith('utils/blog.ts'))!.content).toContain('export const blogErrorStatus = {\n  remote_failed: 502,\n  invalid_answer: 502\n}')
+    expect(files.find(file => file.path.endsWith('utils/blog.ts'))!.content).toContain('export const blogErrorStatus = {\n  not_found: 404,\n  unauthorized: 502,\n  rate_limited: 503,\n  timeout: 504,\n  unavailable: 503,\n  remote_failed: 502,\n  invalid_answer: 502\n}')
     // A module with nothing to wire: no error at all, and no blank line inside an empty object.
     model.modules.blog!.repositories = []
     const unwired = generateActions(model)
