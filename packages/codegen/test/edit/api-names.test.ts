@@ -50,7 +50,7 @@ describe('a query or an action named like a reserved word is refused', () => {
 })
 
 describe('a name the generated files import or declare is refused', () => {
-  it.each(['remoteFailed', 'invalidAnswer', 'invalidInput', 'useRuntimeConfig', 'createHttpClient', 'httpShopRepository', 'fakeShopRepository', 'z', 'ok', 'err', 'describe', 'segment', 'shop', 'useShopApi', 'shopClient', 'shopErrorStatus'])('query %s', (name) => {
+  it.each(['remoteFailed', 'invalidAnswer', 'invalidInput', 'useRuntimeConfig', 'createHttpClient', 'resultClient', 'failure', 'httpShopRepository', 'fakeShopRepository', 'z', 'ok', 'err', 'describe', 'segment', 'shop', 'useShopApi', 'shopClient', 'shopErrorStatus'])('query %s', (name) => {
     const message = shop().refuse('api_query_set', { datasource: 'ds_shop', query: items(name) }, 'invalid').message
     expect(message).toContain(`API "shop": the query "${name}" would be named ${name}`)
     expect(message).toContain('pick another name')
