@@ -50,11 +50,12 @@ describe('the generated client of a REST data source', () => {
     }
     answer(200, { path })
   })
-  const dir = mkdtempSync(join(tmpdir(), 'bildr-rest-source-'))
+  let dir: string
   let useMain: () => Main
   let call: Call
 
   beforeAll(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'bildr-rest-source-'))
     const kit = starterKit({ name: 'Tasks', database: 'none' })
     const added = Object.fromEntries(walk(join(apiOnlyRoot, '.bildr')).map(path => [relative(apiOnlyRoot, path), readFileSync(path, 'utf8')]))
     const loaded = loadModel({ ...kit.model, ...added })
