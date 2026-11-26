@@ -115,7 +115,9 @@ describe('generateData rules', () => {
     quotes.rest = { ...quotes.rest, get: { path: '/quotes/:id' }, create: { path: '/quotes/add' }, update: { method: 'PATCH', path: '/quotes/:id' }, delete: { path: '/quotes/:id' } }
     const files = generateData(model)
     const adapter = files.find(file => file.path === 'layers/blog/server/infrastructure/repositories/quote.rest.ts')!.content
-    expect(adapter).toContain('http<QuoteRow | undefined>(`/quotes/${segment(id)}`, { optional: true })')
+    expect(adapter).toContain('const answer = await http(`/quotes/${segment(id)}`, { method: \'GET\' })')
+    // A 404 is no such row (R1'): ok(undefined), not the source's error.
+    expect(adapter).toContain('if (!answer.ok) return answer.error.type === \'remote_failed\' && answer.error.status === 404 ? ok(undefined) : answer')
     // An id is one path segment: "." or ".." would move the request elsewhere once the URL is resolved.
     expect(adapter).toContain('if (value === \'\' || value === \'.\' || value === \'..\') throw new Error(`Not a valid id for a REST path: ${JSON.stringify(value)}`)')
     expect(adapter).toContain('return encodeURIComponent(value)')
@@ -124,15 +126,16 @@ describe('generateData rules', () => {
     expect(adapterTest()).not.toContain('refuses ids that would change the path')
     model.modules.blog!.entities.find(entity => entity.id === 'ent_quote')!.fields[0]!.type = 'text'
     expect(adapterTest()).toContain('await expect(repository.get(\'..\')).rejects.toThrow(\'Not a valid id for a REST path\')')
-    expect(adapter).toContain('http<QuoteRow | undefined>(\'/quotes/add\', { method: \'POST\', body: toRow(quote) })')
+    expect(adapter).toContain('const answer = await http(\'/quotes/add\', { method: \'POST\', body: toRow(quote) })')
     expect(adapter).toContain('{ method: \'PATCH\', body: toRow(quote) }')
     expect(adapter).toContain('{ method: \'DELETE\' }')
     // Model field → remote key, both ways.
-    expect(adapter).toContain('const toRow = (quote: Quote): QuoteRow => ({ id: quote.id, quote: quote.text, author: quote.author })')
+    expect(adapter).toContain('const toRow = (quote: Quote) => ({ id: quote.id, quote: quote.text, author: quote.author })')
     // Use-case tests need an in-memory adapter with the same port.
     expect(files.map(file => file.path)).toContain('layers/blog/server/infrastructure/repositories/quote.memory.ts')
     const port = files.find(file => file.path === 'layers/blog/server/application/ports/quote-repository.ts')!.content
-    expect(port).toContain('  create(quote: Quote): Promise<Quote>\n')
+    expect(port).toContain('  create(quote: Quote): Promise<Result<Quote, QuotesSourceError>>\n')
+    expect(port).toContain('  delete(id: number): Promise<Result<undefined, QuotesSourceError>>\n')
   })
 
   it('refuses a REST operation without its endpoint, or a lookup path without :id', () => {

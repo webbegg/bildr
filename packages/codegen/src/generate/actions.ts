@@ -332,6 +332,7 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
   // The trailing guards an update's rule took over: the use-case doesn't run them itself.
   const guarded = new Set(rule ? analyzed.steps.slice(analyzed.steps.length - 1 - rule.guards.length, -1) : [])
   let usesErr = false
+  let usesOk = false
   let validated = false
   // What the body reads of its input: an input it never reads is named `_input`, which the project's lint allows.
   let readsInput = false
@@ -363,6 +364,33 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
     const repository = analyzed.repositories.find(entry => entry.repository.id === step.repository)!
     return `${repositoryVariable(repository.entity)}.${identifier(String(step.op), `${action.id}: repository op`)}(${Object.values(step.args ?? {}).map(arg => compile(arg, scope)).join(', ')})`
   }
+  // A REST repository answers a Result (R1'): its failure is the use-case's own, passed on as it is, and its value read after.
+  const answersOf = (step: object) =>
+    answersResult(context, analyzed.repositories.find(entry => entry.repository.id === (step as { repository?: unknown }).repository)!.repository)
+  /** `ok(value)`, and `ok` imported. */
+  const okOf = (value: string) => {
+    usesOk = true
+    return `ok(${value})`
+  }
+  // The error factories too: the module's errors file exports them, and a use-case imports its own.
+  const taken = new Set([action.name, 'data', 'input', 'at', 'ok', 'err', 'now', ...params.map(param => param.name), ...analyzed.repositories.map(({ entity }) => repositoryVariable(entity)),
+    ...errorsOf(context).map(error => errorFactory(error.type)),
+    ...analyzed.steps.map(step => String(step.as ?? '')), ...(rule ? [rule.name, changeLocal(analyzed, rule)!] : [])])
+  /** A local of the use-case no other name takes. */
+  const freeLocal = (name: string) => {
+    let free = name
+    while (taken.has(free)) free += '_'
+    taken.add(free)
+    return free
+  }
+  /** `const <name> = await <call>`, its value read from its Result when it answers one. */
+  const awaited = (name: string, step: RepositoryCall) => {
+    if (!answersOf(step)) return [`const ${name} = await ${call(step)}`]
+    const answer = freeLocal(`${name}Loaded`)
+    return [`const ${answer} = await ${call(step)}`, `if (!${answer}.ok) return ${answer}`, `const ${name} = ${answer}.value`]
+  }
+  /** The answer of a write: its Result as it is, or the row wrapped in one. */
+  const written = (step: object, expression: string) => answersOf(step) ? `return ${expression}` : `return ${okOf(`await ${expression}`)}`
 
   for (const step of analyzed.steps) {
     if (guarded.has(step)) continue
@@ -373,15 +401,21 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
       validated = true
       readsInput = true
     } else if (step.kind === 'assert') {
-      body.push(`if (await ${call(step.unless as RepositoryCall)}) return ${errorCall(String(step.error), step.errorData as Record<string, Value>)}`)
+      const unless = step.unless as RepositoryCall
+      if (answersOf(unless)) {
+        const existing = freeLocal('existing')
+        body.push(...awaited(existing, unless), `if (${existing}) return ${errorCall(String(step.error), step.errorData as Record<string, Value>)}`)
+      } else {
+        body.push(`if (await ${call(unless)}) return ${errorCall(String(step.error), step.errorData as Record<string, Value>)}`)
+      }
     } else if (step.kind === 'load') {
       const as = identifier(String(step.as), `${action.id}: load as`)
-      body.push(`const ${as} = await ${call(step as unknown as RepositoryCall)}`)
+      body.push(...awaited(as, step as unknown as RepositoryCall))
       if (step.orError) body.push(`if (!${as}) return ${errorCall(String(step.orError), step.errorData as Record<string, Value>)}`)
     } else if (step.kind === 'return') {
       const when = compile(step.if as Value, scope)
       // A return that always runs is a plain return: `if (true)` fails the project's lint.
-      body.push(when === 'true' ? `return ok(${compile(step.value as Value, scope)})` : `if (${when}) return ok(${compile(step.value as Value, scope)})`)
+      body.push(when === 'true' ? `return ${okOf(compile(step.value as Value, scope))}` : `if (${when}) return ${okOf(compile(step.value as Value, scope))}`)
     } else if (step.kind === 'repository') {
       const repository = analyzed.repositories.find(entry => entry.repository.id === step.repository)!
       const timestamps = repository.entity.timestamps ? (step.op === 'create' ? ['createdAt', 'updatedAt'] : ['updatedAt']) : []
@@ -396,19 +430,19 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
       const applied = (of: string) => applyRule(rule!, of, scope.at ? 'at' : 'now()')
       if (step.op === 'create') {
         const set = rule ? [`...${applied('data')}`] : setEntries(step.set as Record<string, Value>, scope)
-        body.push(`return ok(await ${variable}.create({ ${['...data', ...set, ...stamped].join(', ')} }))`)
+        body.push(written(step, `${variable}.create({ ${['...data', ...set, ...stamped].join(', ')} })`))
       } else if (step.op === 'update' && rule) {
         // The rule's guards decide whether anything changes: nothing, and the row is answered as it is.
         const local = changeLocal(analyzed, rule)!
         body.push(
           `const ${local} = ${applied(rule.row!)}`,
-          `if (!${local}) return ok(${rule.row})`,
-          `return ok(await ${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${rule.row}`, `...${local}`, ...stamped].join(', ')} }))`
+          `if (!${local}) return ${okOf(rule.row!)}`,
+          written(step, `${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${rule.row}`, `...${local}`, ...stamped].join(', ')} })`)
         )
       } else if (step.op === 'update') {
-        body.push(`return ok(await ${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${compile(step.from as Value, scope)}`, ...setEntries(step.set as Record<string, Value>, scope), ...stamped].join(', ')} }))`)
+        body.push(written(step, `${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${compile(step.from as Value, scope)}`, ...setEntries(step.set as Record<string, Value>, scope), ...stamped].join(', ')} })`))
       } else if (step.op === 'delete') {
-        body.push(`await ${variable}.delete(${compile(step.id as Value, scope)})`, 'return ok(undefined)')
+        body.push(...(answersOf(step) ? [`return ${variable}.delete(${compile(step.id as Value, scope)})`] : [`await ${variable}.delete(${compile(step.id as Value, scope)})`, `return ${okOf('undefined')}`]))
       } else {
         throw new Error(`${action.id}: repository operation "${String(step.op)}" is not generated yet`)
       }
@@ -432,7 +466,8 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
     content: file([
       header(source),
       kernelIds.size > 0 && importLine('#core/kernel/ids', [...kernelIds]),
-      importLine('#core/kernel/result', [{ name: 'Result', type: true }, ...(usesErr ? ['err'] : []), 'ok']),
+      // A use-case whose every answer is a REST repository's Result wraps none itself.
+      importLine('#core/kernel/result', [{ name: 'Result', type: true }, ...(usesErr ? ['err'] : []), ...(usesOk ? ['ok'] : [])]),
       importLine(`#${context.name}/domain/errors`, errorImports),
       ...[...domain.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([path, names]) => importLine(`#${context.name}/domain/${path}`, names)),
       ...analyzed.repositories.map(({ entity }) => `import type { ${entityNames(entity).port} } from '${importPath(path, context.paths.port(entityNames(entity).portFile))}'`),
@@ -522,9 +557,8 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
       if (seeded) seeds.push(`${names.variable}Seed`)
       stores.push(`const ${names.plural} = ${adapter}(${seeded ? `${names.variable}Seed` : ''})`)
     } else {
-      const client = answersResult(context, repository)
-        ? sourceAdapterArgs(context, datasource)
-        : datasource.kind === 'sqlite' ? 'useDb()' : `useRemote(${tsString(datasource.name)})`
+      // A REST repository is wired to its source's client (R1'); a database one to the app database.
+      const client = answersResult(context, repository) ? sourceAdapterArgs(context, datasource) : 'useDb()'
       if (answersResult(context, repository) && !clients.includes(datasource)) clients.push(datasource)
       wiring.push(`  const ${names.plural} = ${adapter}(${client})`)
     }
@@ -860,7 +894,8 @@ const useCaseTestFile = (context: ModuleContext, analyzed: Analyzed) => {
     const seeded = loaded && context.module.fixtures.some(fixtures => fixtures.entity === loaded.entity.id)
     if (loaded && !seeded) throw new Error(`${action.id}: generated tests need fixtures for ${loaded.entity.name}`)
     if (loaded) {
-      const seedFile = datasourceOf(context, loaded.repository).kind === 'memory' ? context.paths.memorySeed : context.paths.dbSeed
+      // A database entity's rows are its seed; a memory or REST one's, the memory seed (a REST twin's rows in these tests).
+      const seedFile = datasourceOf(context, loaded.repository).kind === 'sqlite' ? context.paths.dbSeed : context.paths.memorySeed
       imports.push(named(`${entityNames(loaded.entity).variable}Seed`, seedFile))
     }
     const existing = loaded ? `${entityNames(loaded.entity).variable}Seed[0]!.id` : tsString(sampleId(1))

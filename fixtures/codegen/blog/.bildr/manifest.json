@@ -436,7 +436,7 @@
     },
     "layers/blog/server/infrastructure/repositories/quote.rest.ts": {
       "owner": "managed",
-      "sha256": "74ae01a002d656be878255b2460eaf0d14ee47b75405bca989d21124b881203c",
+      "sha256": "423e378a78b5dd1643121b73ecd79a6d1c047911e18fca796460b852517cd70c",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/blog/server/tasks/blog/seed.ts": {
@@ -504,7 +504,7 @@
     },
     "layers/blog/test/infrastructure/quote.rest.test.ts": {
       "owner": "managed",
-      "sha256": "9e3ad1328cc82ab58ebd171b1d5c4decd225b01693d157bfa5dda82e9eb0308f",
+      "sha256": "81c954e3de5f4676fe288a12073b680c70c635c721dd15c710a6d7ec6b361738",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/core/app/app.config.ts": {

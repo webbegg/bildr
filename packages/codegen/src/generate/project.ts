@@ -100,7 +100,7 @@ const nuxtConfigFile = (model: Model): GeneratedFile => {
   if (sqlite.length > 1) throw new Error(`The project can have at most one sqlite data source (the app database), found ${sqlite.length}`)
   // REST sources under `datasources`, API sources that run on the server under `apis`, the ones that run in the browser under `public.apis`
   // (the page reads only runtimeConfig.public, and never a secret). Apart, so a source with no auth or another secret can't change the type
-  // `useRemote` reads the REST ones through.
+  // a module's composition root reads the REST ones through (each source's client, R1').
   const rest = model.datasources.filter(source => source.kind === 'rest')
   const apis = serverApiSources(model)
   const browserApis = browserApiSources(model)

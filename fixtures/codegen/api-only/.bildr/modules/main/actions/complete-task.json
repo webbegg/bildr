@@ -1,0 +1,80 @@
+{
+  "$schema": "https://bildr.dev/schema/action.v1.json",
+  "id": "act_complete_task",
+  "name": "completeTask",
+  "label": "Complete task",
+  "description": "Mark a task done. A task already done is answered as it is.",
+  "http": {
+    "method": "POST",
+    "path": "/tasks/:id/complete"
+  },
+  "input": {
+    "params": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "from": "route"
+      }
+    ]
+  },
+  "output": {
+    "entity": "ent_task"
+  },
+  "errors": [
+    {
+      "type": "task_not_found",
+      "status": 404,
+      "message": "Task not found.",
+      "data": {
+        "id": "text"
+      }
+    }
+  ],
+  "steps": [
+    {
+      "kind": "load",
+      "as": "task",
+      "repository": "repo_task",
+      "op": "get",
+      "args": {
+        "id": {
+          "$input": "id"
+        }
+      },
+      "orError": "task_not_found",
+      "errorData": {
+        "id": {
+          "$input": "id"
+        }
+      }
+    },
+    {
+      "kind": "return",
+      "if": {
+        "$var": "task.done"
+      },
+      "value": {
+        "$var": "task"
+      }
+    },
+    {
+      "kind": "repository",
+      "repository": "repo_task",
+      "op": "update",
+      "id": {
+        "$input": "id"
+      },
+      "from": {
+        "$var": "task"
+      },
+      "set": {
+        "done": true
+      }
+    }
+  ],
+  "client": {
+    "invalidates": [
+      "ent_task"
+    ]
+  }
+}

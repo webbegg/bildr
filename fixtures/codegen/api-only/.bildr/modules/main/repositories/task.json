@@ -6,7 +6,9 @@
   "operations": [
     "list",
     "get",
-    "create"
+    "create",
+    "update",
+    "delete"
   ],
   "rest": {
     "list": {
@@ -19,6 +21,12 @@
     },
     "create": {
       "path": "/tasks"
+    },
+    "update": {
+      "path": "/tasks/:id"
+    },
+    "delete": {
+      "path": "/tasks/:id"
     }
   },
   "expose": {
