@@ -29,6 +29,8 @@ export const generatedNames = (model: Model, module: string): Map<string, string
   }
   for (const action of context.module.actions) {
     for (const error of action.errors) add(camel(error.type), `the error "${error.type}"`)
+    // Its domain rule (codegen-architecture T4a), claimed whether its steps make one or not: a step edit can't then clash.
+    add(`${action.name}Change`, `the domain rule of the action "${action.name}"`)
   }
   return names
 }

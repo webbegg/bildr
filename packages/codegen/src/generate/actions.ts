@@ -21,7 +21,7 @@ export const generateActions = (model: Model): GeneratedFile[] => {
   for (const name of Object.keys(model.modules).sort()) {
     const context = moduleContext(model, name)
     const actions = context.module.actions.map(action => analyze(context, action))
-    files.push(errorsFile(context), compositionRootFile(context, actions))
+    files.push(errorsFile(context), compositionRootFile(context, actions), ...rulesFiles(context, actions))
     for (const action of actions) files.push(useCaseFile(context, action), routeFile(context, action), composableFile(context, action), useCaseTestFile(context, action))
   }
   return files
@@ -143,6 +143,163 @@ const errorsFile = (context: ModuleContext) => {
   }
 }
 
+// ── Domain rules ───────────────────────────────────────────────────────
+
+/**
+ * What an action changes, as one pure function of the domain (codegen-architecture T4a): the `set` of its repository step and,
+ * for an update, the trailing `return <row> if …` steps (the action changes nothing then). The use-case applies it, and so does
+ * the optimistic update when it says the same as the steps or nothing (`agreesWith`). Timestamps aren't in it: they are the
+ * store's bookkeeping, stamped where the row is written.
+ */
+interface Rule {
+  name: string
+  entity: EntityFile
+  kind: 'create' | 'update'
+  /** The row an update loads and changes (update only). */
+  row?: string
+  /**
+   * What it reads: the input (create), or the fields of the row its guards read (update). Only those fields: the server passes the
+   * entity, the optimistic update the collection's draft, whose fields with a default are optional.
+   */
+  param: { name: string, type: string }
+  set: Record<string, Value>
+  /** When any holds, the action changes nothing (update only). */
+  guards: Value[]
+  /** Whether it sets a time: it takes `at`. */
+  at: boolean
+}
+
+/** Whether every `$input` and `$var` a value tree reads passes `allowed`. */
+const readsOnly = (value: unknown, allowed: (read: { input?: string, var?: string }) => boolean): boolean => {
+  if (!value || typeof value !== 'object') return true
+  if (Array.isArray(value)) return value.every(item => readsOnly(item, allowed))
+  if ('$input' in value) return allowed({ input: String(value.$input) })
+  if ('$var' in value) return allowed({ var: String(value.$var) })
+  return Object.values(value).every(item => readsOnly(item, allowed))
+}
+
+const ruleName = (action: ActionFile) => `${action.name}Change`
+
+/** The rule of an action, or undefined when its steps set nothing a pure function of its input or its row can say. */
+const ruleOf = (analyzed: Analyzed): Rule | undefined => {
+  const { action, inputEntity, steps } = analyzed
+  const last = steps.at(-1)
+  if (last?.kind !== 'repository') return undefined
+  const set = (last.set ?? {}) as Record<string, Value>
+  if (Object.keys(set).length === 0) return undefined
+  const entity = analyzed.repositories.find(entry => entry.repository.id === last.repository)!.entity
+  if (last.op === 'create') {
+    if (!inputEntity || !readsOnly(set, read => read.input !== undefined)) return undefined
+    // What it sets decides nothing (constants, the time): the use-case says it inline.
+    if (readsOnly(set, () => false)) return undefined
+    return { name: ruleName(action), entity, kind: 'create', param: { name: 'input', type: `New${inputEntity.name}` }, set, guards: [], at: nowCount(set) > 0 }
+  }
+  if (last.op !== 'update') return undefined
+  const from = last.from as Value
+  const row = from && typeof from === 'object' && !Array.isArray(from) && '$var' in from ? String(from.$var) : undefined
+  // The row must be one the action loaded from the repository it updates: the rule takes it as that entity.
+  if (!row || !steps.some(step => step.kind === 'load' && step.as === row && step.repository === last.repository)) return undefined
+  // What it sets reads nothing (the row's fields would be optional on the draft); its guards read fields of the row.
+  if (!readsOnly(set, () => false)) return undefined
+  const fields = new Set<string>()
+  /** The fields of the row a guard reads, when it reads nothing else. */
+  const own = (value: unknown) => {
+    const read = new Set<string>()
+    const only = readsOnly(value, (entry) => {
+      if (!entry.var?.startsWith(`${row}.`)) return false
+      read.add(entry.var.slice(row.length + 1).split('.')[0]!)
+      return true
+    })
+    return only ? read : undefined
+  }
+  // The returns right before the update that answer the row unchanged: where the action changes nothing.
+  const guards: Value[] = []
+  for (let index = steps.length - 2; index >= 0; index--) {
+    const step = steps[index]!
+    const value = step.value as Value
+    const answersRow = value && typeof value === 'object' && !Array.isArray(value) && '$var' in value && value.$var === row
+    const read = step.kind === 'return' && answersRow && step.if && typeof step.if === 'object' ? own(step.if) : undefined
+    if (!read?.size) break
+    guards.unshift(step.if as Value)
+    for (const field of read) fields.add(field)
+  }
+  // An update with no guard decides nothing (it sets constants, the time): the use-case says it inline.
+  if (guards.length === 0) return undefined
+  const param = { name: row, type: `Partial<Pick<${entity.name}, ${[...fields].map(quotedKey).join(' | ')}>>` }
+  const rule: Rule = { name: ruleName(action), entity, kind: 'update', row, param, set, guards, at: nowCount(set) > 0 }
+  // The rule answers into a local of the use-case: with no free name for it, the action keeps its steps inline.
+  return changeLocal(analyzed, rule) ? rule : undefined
+}
+
+const quotedKey = (key: string) => tsString(key)
+
+/** The name of the change an update use-case reads from its rule: one no other name of the use-case takes. */
+const changeLocal = (analyzed: Analyzed, rule: Rule) => {
+  const taken = new Set([rule.name, analyzed.action.name, 'data', 'input', 'at', ...analyzed.params.map(param => param.name), ...analyzed.steps.map(step => String(step.as ?? ''))])
+  return [`${rule.row}Change`, 'change', 'changed'].find(name => !taken.has(name))
+}
+
+/** The call of a rule: `of` is what it reads, `at` the time it sets (when it sets one). */
+const applyRule = (rule: Rule, of: string, at: string) => `${rule.name}(${[of, ...(rule.at ? [at] : [])].join(', ')})`
+
+/** One `<entity>.rules.ts` per entity some action changes by a rule. */
+const rulesFiles = (context: ModuleContext, actions: Analyzed[]) => {
+  const byEntity = new Map<string, Array<{ analyzed: Analyzed, rule: Rule }>>()
+  for (const analyzed of actions) {
+    const rule = ruleOf(analyzed)
+    if (rule) byEntity.set(rule.entity.id, [...(byEntity.get(rule.entity.id) ?? []), { analyzed, rule }])
+  }
+  return [...byEntity.values()].map((rules) => {
+    const entity = rules[0]!.rule.entity
+    const path = context.paths.rules(entityNames(entity).file)
+    const types = new Map<string, Set<string>>()
+    const type = (of: EntityFile, name: string) => types.set(entityNames(of).file, (types.get(entityNames(of).file) ?? new Set()).add(name))
+    const functions = rules.map(({ analyzed, rule }) => {
+      const scope = { input: (name: string) => `input.${name}`, at: true }
+      const changed = `Pick<${entity.name}, ${Object.keys(rule.set).map(quotedKey).join(' | ')}>`
+      const params = [`${rule.param.name}: ${rule.param.type}`, ...(rule.at ? ['at: string'] : [])].join(', ')
+      const doc = (what: string) => `/** ${docText(`What "${analyzed.action.label}" ${what}. The use-case and its optimistic update both apply it.`)} */`
+      type(entity, entity.name)
+      const body = `{ ${setEntries(rule.set, scope).join(', ')} }`
+      if (rule.kind === 'create') {
+        type(analyzed.inputEntity!, rule.param.type)
+        return [doc(`sets on a new ${entity.name}`), `export const ${rule.name} = (${params}): ${changed} => (${body})`]
+      }
+      return [
+        doc(`changes on a ${entity.name}, or undefined when it changes nothing`),
+        `export const ${rule.name} = (${params}): ${changed} | undefined => {`,
+        ...rule.guards.map(guard => `  if (${compile(guard, scope)}) return undefined`),
+        `  return ${body}`,
+        '}'
+      ]
+    })
+    return {
+      path,
+      content: file([
+        `// Generated by bildr from the ${context.name} module's actions. Editing this file detaches it from the editor.`,
+        ...[...types.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+          .map(([of, names]) => importLine(importPath(path, context.paths.entity(of)), [...names].sort().map(name => ({ name, type: true })))),
+        ...functions.flatMap(lines => ['', ...lines])
+      ])
+    }
+  })
+}
+
+/** A model value as one string, its object keys sorted: two values that say the same are equal. */
+const canonical = (value: unknown): string => JSON.stringify(value, (_, item: unknown) => item && typeof item === 'object' && !Array.isArray(item)
+  ? Object.fromEntries(Object.entries(item).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))
+  : item)
+
+/** Whether an optimistic update says what the rule says (or nothing): then it applies the rule instead of its own code. */
+const agreesWith = (optimistic: Optimistic, rule: Rule) => {
+  if (optimistic.kind !== 'update' || rule.kind !== 'update' || optimistic.entity !== rule.entity.id) return false
+  if (optimistic.set === undefined && optimistic.unless === undefined) return true
+  if (optimistic.set === undefined || canonical(optimistic.set) !== canonical(rule.set)) return false
+  // A rule always has a guard: an update that sets the same with no `unless` says something else.
+  if (optimistic.unless === undefined) return false
+  return rule.guards.length === 1 && canonical(rule.guards[0]) === canonical({ $var: `${rule.row}.${optimistic.unless}` })
+}
+
 // ── Use-case ───────────────────────────────────────────────────────────
 
 const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
@@ -151,11 +308,14 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
   const deps = `${pascal(action.name)}Deps`
   const kernelIds = new Set<string>()
   const domain = new Map<string, ImportName[]>()
-  const addDomain = (entity: EntityFile, name: ImportName) => {
-    const key = entityNames(entity).file
+  const addDomain = (entity: EntityFile, name: ImportName, of: 'entity' | 'rules' = 'entity') => {
+    const key = `${entityNames(entity).file}${of === 'rules' ? '.rules' : ''}`
     domain.set(key, [...(domain.get(key) ?? []), name])
   }
   const errorImports: ImportName[] = [{ name: errorTypeName(context), type: true }]
+  const rule = ruleOf(analyzed)
+  // The trailing guards an update's rule took over: the use-case doesn't run them itself.
+  const guarded = new Set(rule ? analyzed.steps.slice(analyzed.steps.length - 1 - rule.guards.length, -1) : [])
   let usesErr = false
   let validated = false
   // What the body reads of its input: an input it never reads is named `_input`, which the project's lint allows.
@@ -190,6 +350,7 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
   }
 
   for (const step of analyzed.steps) {
+    if (guarded.has(step)) continue
     if (step.kind === 'validate') {
       if (!inputEntity) throw new Error(`${action.id}: validate needs an entity input`)
       body.push(`const data = New${inputEntity.name}Schema.parse(input)`)
@@ -209,13 +370,26 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
     } else if (step.kind === 'repository') {
       const repository = analyzed.repositories.find(entry => entry.repository.id === step.repository)!
       const timestamps = repository.entity.timestamps ? (step.op === 'create' ? ['createdAt', 'updatedAt'] : ['updatedAt']) : []
-      scope.at = nowCount(step.set) + timestamps.length >= 2
-      if (scope.at || nowCount(step.set)) kernelIds.add('now')
+      // A rule reads the time once, as its `at`.
+      const times = rule ? Number(rule.at) : nowCount(step.set)
+      scope.at = times + timestamps.length >= 2
+      if (scope.at || times) kernelIds.add('now')
       if (scope.at) body.push('const at = now()')
       const stamped = timestamps.map(name => `${name}: ${scope.at ? 'at' : 'now()'}`)
       const variable = repositoryVariable(repository.entity)
+      if (rule) addDomain(rule.entity, { name: rule.name }, 'rules')
+      const applied = (of: string) => applyRule(rule!, of, scope.at ? 'at' : 'now()')
       if (step.op === 'create') {
-        body.push(`return ok(await ${variable}.create({ ${['...data', ...setEntries(step.set as Record<string, Value>, scope), ...stamped].join(', ')} }))`)
+        const set = rule ? [`...${applied('data')}`] : setEntries(step.set as Record<string, Value>, scope)
+        body.push(`return ok(await ${variable}.create({ ${['...data', ...set, ...stamped].join(', ')} }))`)
+      } else if (step.op === 'update' && rule) {
+        // The rule's guards decide whether anything changes: nothing, and the row is answered as it is.
+        const local = changeLocal(analyzed, rule)!
+        body.push(
+          `const ${local} = ${applied(rule.row!)}`,
+          `if (!${local}) return ok(${rule.row})`,
+          `return ok(await ${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${rule.row}`, `...${local}`, ...stamped].join(', ')} }))`
+        )
       } else if (step.op === 'update') {
         body.push(`return ok(await ${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${compile(step.from as Value, scope)}`, ...setEntries(step.set as Record<string, Value>, scope), ...stamped].join(', ')} }))`)
       } else if (step.op === 'delete') {
@@ -244,7 +418,7 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
       kernelIds.size > 0 && importLine('#core/kernel/ids', [...kernelIds]),
       importLine('#core/kernel/result', [{ name: 'Result', type: true }, ...(usesErr ? ['err'] : []), 'ok']),
       importLine(`#${context.name}/domain/errors`, errorImports),
-      ...[...domain.entries()].map(([path, names]) => importLine(`#${context.name}/domain/${path}`, names)),
+      ...[...domain.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([path, names]) => importLine(`#${context.name}/domain/${path}`, names)),
       ...analyzed.repositories.map(({ entity }) => `import type { ${entityNames(entity).port} } from '${importPath(path, context.paths.port(entityNames(entity).portFile))}'`),
       '',
       ...(wired
@@ -493,12 +667,18 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
   const entity = entityById(context, optimistic.entity)
   const collection = entityNames(entity).collection
   collections.add(collection)
+  const rule = ruleOf(analyzed)
+  const rules: string[] = []
   if (optimistic.kind === 'insert') {
     const create = analyzed.steps.find(step => step.kind === 'repository' && step.op === 'create')
     const set = (create?.set ?? {}) as Record<string, Value>
+    // The insert shows what the server will create: the create step's rule, when it has one, applied to the input.
+    const applies = rule?.kind === 'create' && rule.entity.id === entity.id
     const stamps = entity.timestamps ? ['createdAt', 'updatedAt'] : []
-    const at = nowCount(set) + stamps.length >= 2
-    if (at || nowCount(set)) ids.add('now')
+    const times = applies ? Number(rule.at) : nowCount(set)
+    const at = times + stamps.length >= 2
+    if (at || times) ids.add('now')
+    if (applies) rules.push(rule.name)
     const scope = { input: (name: string) => `input.${name}`, at }
     const picked = new Set(action.input.pick ?? allFields(entity).map(field => field.name))
     const defaults = entity.fields.filter(field => picked.has(field.name) && field.default !== undefined).map(field => `${field.name}: ${tsLiteral(field.default!)}`)
@@ -507,7 +687,18 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
       ...(at ? ['  const at = now()'] : []),
       `  ${collection}.insert({`,
       `    ${[...defaults, '...input'].join(', ')},`,
-      `    ${[...setEntries(set, scope), ...stamps.map(name => `${name}: ${at ? 'at' : 'now()'}`)].join(', ')}`,
+      `    ${[...(applies ? [`...${applyRule(rule, 'input', at ? 'at' : 'now()')}`] : setEntries(set, scope)), ...stamps.map(name => `${name}: ${at ? 'at' : 'now()'}`)].join(', ')}`,
+      '  })',
+      '},'
+    )
+  } else if (optimistic.kind === 'update' && rule && agreesWith(optimistic, rule)) {
+    rules.push(rule.name)
+    if (rule.at) ids.add('now')
+    mutate.push(
+      `onMutate: (${argument}) => {`,
+      `  ${collection}.update(${compile(optimistic.key ?? null, { input: name => name, at: false })}, (draft) => {`,
+      `    const change = ${applyRule(rule, 'draft', 'now()')}`,
+      '    if (change) Object.assign(draft, change)',
       '  })',
       '},'
     )
@@ -549,6 +740,7 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
       importLine('#layers/core/app/data/results', ['Answered', 'fromRoute', 'useAction']),
       importLine(`#${context.name}/domain/errors`, [{ name: errorTypeName(context), type: true }]),
       typed && importLine(`#${context.name}/domain/${entityNames(typed).file}`, [...types].map(name => ({ name, type: true }))),
+      rules.length > 0 && importLine(`#${context.name}/domain/${entityNames(entity).file}.rules`, rules),
       ...[...collections].sort().map((collection) => {
         const entity = context.module.entities.find(entry => entityNames(entry).collection === collection)!
         return `import { ${collection} } from '${importPath(path, context.paths.collection(entityNames(entity).pluralFile))}'`

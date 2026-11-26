@@ -5,6 +5,7 @@ import { type ApiError, type Result, ok } from '#core/kernel/result'
 import { Answered, fromRoute, useAction } from '#layers/core/app/data/results'
 import type { BlogError } from '#blog/domain/errors'
 import type { NewPost, Post } from '#blog/domain/post'
+import { createPostChange } from '#blog/domain/post.rules'
 import { postsCollection } from '../../data/posts.collection'
 
 type CreatePostInput = Omit<NewPost, 'id'>
@@ -16,7 +17,7 @@ export const useCreatePost = () => {
       const at = now()
       postsCollection.insert({
         body: '', published: false, ...input,
-        publishedAt: input.published ? at : null, createdAt: at, updatedAt: at
+        ...createPostChange(input, at), createdAt: at, updatedAt: at
       })
     },
     mutationFn: async (input) => {

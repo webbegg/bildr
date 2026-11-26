@@ -296,7 +296,7 @@
     },
     "layers/blog/app/composables/blog/useCreatePost.ts": {
       "owner": "managed",
-      "sha256": "05e95374440ea2fdf74db6337c990b4cb5ba1aa4865c5844ab92d335391f3d1a",
+      "sha256": "635e5307b9d1b9c95d5f17a74d9f97991bc8465e9e96a2f6f58e74ea499e6b24",
       "source": ".bildr/modules/blog/actions/create-post.json"
     },
     "layers/blog/app/composables/blog/useFeaturedPosts.ts": {
@@ -316,7 +316,7 @@
     },
     "layers/blog/app/composables/blog/usePublishPost.ts": {
       "owner": "managed",
-      "sha256": "86e7a646cbb9b25cea0115eed1f1800061d76f717e68315ac1c08e69f628fffa",
+      "sha256": "53247623b567f70e45647a67cb2bd5995fbc9e3dbeb1d387ffbc6b346b3a780c",
       "source": ".bildr/modules/blog/actions/publish-post.json"
     },
     "layers/blog/app/data/posts.collection.ts": {
@@ -386,12 +386,12 @@
     },
     "layers/blog/server/application/actions/create-post.ts": {
       "owner": "managed",
-      "sha256": "5bc385739304d11415c75007ff1a13560787a5daf85e1c9c07cad86b0e3c786e",
+      "sha256": "95f1cdbae8a854a5aeb767fac461ac17c08bfa6c5f5ee286c9b83c4a0c2546fe",
       "source": ".bildr/modules/blog/actions/create-post.json"
     },
     "layers/blog/server/application/actions/publish-post.ts": {
       "owner": "managed",
-      "sha256": "e2c0362b06e4eb0f0722a09d71859510c382fc0b981fbdf944139db1fe345b97",
+      "sha256": "f442c5f67ea483e2ae0f24d14383fe41847c67938825cdc23233e1639c826cd0",
       "source": ".bildr/modules/blog/actions/publish-post.json"
     },
     "layers/blog/server/application/ports/post-repository.ts": {
@@ -452,6 +452,10 @@
     "layers/blog/shared/domain/errors.ts": {
       "owner": "managed",
       "sha256": "eec9cda8c90cd209fa9dea089593e668a09b034597464fc0ae1cb28d3df0ca12"
+    },
+    "layers/blog/shared/domain/post.rules.ts": {
+      "owner": "managed",
+      "sha256": "e4702b4130fc6ca53c0da681b62136e818cf77f0caaee0a28bf65b472fbfb454"
     },
     "layers/blog/shared/domain/post.ts": {
       "owner": "managed",

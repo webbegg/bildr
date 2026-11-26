@@ -29,7 +29,8 @@ Copy `.env.example` to `.env` to change the database URL or the data source cred
 Dependencies point inward only. ESLint enforces it (`pnpm lint`).
 
 ```
-shared/domain/            entities (zod schemas + types) and domain errors: no Vue, no Nitro
+shared/domain/            entities (zod schemas + types), domain errors and rules (<entity>.rules.ts: what an action
+                          changes, shared by its use-case and its optimistic update): no Vue, no Nitro
 server/application/       use-cases and repository ports: plain functions, no framework
 server/infrastructure/    adapters: Drizzle tables and repositories, REST repositories, seeds
 server/api/               thin HTTP handlers: validate, call a use-case, map errors

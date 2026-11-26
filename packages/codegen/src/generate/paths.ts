@@ -32,6 +32,8 @@ export const modulePaths = (module: string) => {
     /** The folder the `#<module>/domain` alias points at. */
     domain: `${root}/shared/domain`,
     entity: (file: string) => `${root}/shared/domain/${file}.ts`,
+    /** What the actions change on an entity: pure functions the use-cases and the optimistic updates share. */
+    rules: (file: string) => `${root}/shared/domain/${file}.rules.ts`,
     errors: `${root}/shared/domain/errors.ts`,
     // server/application: ports and use-cases
     port: (file: string) => `${root}/server/application/ports/${file}.ts`,
