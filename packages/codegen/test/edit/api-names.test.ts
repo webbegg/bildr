@@ -320,6 +320,15 @@ describe('what the generator declares is in the reserved lists (drift guard)', (
     expect(message).toContain('the type of the model HttpFailure would be named HttpFailure, which is already declared or imported by the generated files (the core HTTP client (both runtimes))')
   })
 
+  // R2: the route's contract answers ItemsResponse, which it declares next to the model it imports.
+  it('a model named like the answer type of a query\'s contract is refused', () => {
+    const p = shop()
+    p.edit('api_query_set', { datasource: 'ds_shop', query: items('items') })
+    const message = p.refuse('api_model_set', { datasource: 'ds_shop', model: { name: 'ItemsResponse', fields: [{ name: 'id', type: 'integer' }] } }, 'invalid').message
+    expect(message).toContain('ItemsResponse')
+    expect(message).toContain('the answer type of the HTTP contract of the query "items"')
+  })
+
   it('every name an API file declares or imports, and every type it uses, is derived from the model or in the fixed lists', () => {
     // The golden blog's catalog API plus a source that uses every kind of operation, parameter and field.
     const model = wide()

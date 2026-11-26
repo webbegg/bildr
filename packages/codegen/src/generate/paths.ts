@@ -103,6 +103,8 @@ export const apiPaths = (dir: string) => {
     /** The composition root of a source that runs in the browser. */
     browserRoot: `${APIS}/app/data/${dir}.ts`,
     apiRoute: (route: string) => `${APIS}/server/api/apis/${dir}/${route}`,
+    /** The HTTP contract of a route (a source that runs on the server): its route and its composable read it. */
+    contract: (file: string) => `${APIS}/shared/contracts/${dir}/${file}.ts`,
     test: (file: string) => `${APIS}/test/${dir}/${file}`
   }
 }

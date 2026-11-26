@@ -53,6 +53,10 @@ const APIS_FILES = [
   'layers/apis/shared/application/catalog/ports/catalog-repository.ts',
   'layers/apis/shared/application/catalog/queries/product.ts',
   'layers/apis/shared/application/catalog/queries/products.ts',
+  'layers/apis/shared/contracts/catalog/create-product.ts',
+  'layers/apis/shared/contracts/catalog/delete-product.ts',
+  'layers/apis/shared/contracts/catalog/product.ts',
+  'layers/apis/shared/contracts/catalog/products.ts',
   'layers/apis/shared/domain/catalog/entities/category.ts',
   'layers/apis/shared/domain/catalog/entities/product.ts',
   'layers/apis/shared/domain/catalog/errors.ts',
@@ -223,15 +227,16 @@ describe('generate: server-runtime api sources', () => {
     expect(client).toContain('url.origin !== base.origin || decoded(url.pathname) !== decoded(`${base.pathname}${written}`)')
     expect(client).toContain('const MAX_BYTES = 1_000_000')
     const route = read(generated, 'layers/apis/server/api/apis/catalog/products.get.ts')
-    expect(route).toContain('getValidatedQuery(event, QuerySchema)')
+    expect(route).toContain('getValidatedQuery(event, productsContract.query)')
     expect(route).toContain('unwrapOrThrow(await useCatalogApi().products(input), catalogErrorStatus)')
-    expect(read(generated, 'layers/apis/server/api/apis/catalog/product.get.ts')).toContain('id: z.coerce.number().int()')
+    expect(read(generated, 'layers/apis/shared/contracts/catalog/product.ts')).toContain('id: z.coerce.number().int()')
     const post = read(generated, 'layers/apis/server/api/apis/catalog/create-product.post.ts')
-    expect(post).toContain('readValidatedBody(event, ProductSchema)')
+    expect(post).toContain('readValidatedBody(event, createProductContract.body)')
     expect(post).toContain('useCatalogApi().createProduct({ body })')
     expect(read(generated, 'layers/apis/server/api/apis/catalog/delete-product.delete.ts')).toContain('setResponseStatus(event, 204)')
-    expect(read(generated, 'layers/apis/app/composables/apis/useCatalogProducts.ts')).toContain('\'/api/apis/catalog/products\'')
-    expect(read(generated, 'layers/apis/app/composables/apis/useCatalogCreateProduct.ts')).toContain('\'/api/apis/catalog/create-product\'')
+    expect(read(generated, 'layers/apis/shared/contracts/catalog/products.ts')).toContain('  path: \'/api/apis/catalog/products\'')
+    expect(read(generated, 'layers/apis/app/composables/apis/useCatalogProducts.ts')).toContain('$fetch<ProductsResponse>(productsContract.path')
+    expect(read(generated, 'layers/apis/app/composables/apis/useCatalogCreateProduct.ts')).toContain('$fetch<CreateProductResponse>(createProductContract.path')
   })
 
   it('reads the secret only from the source\'s runtimeConfig: a bearer token', () => {
@@ -413,7 +418,9 @@ describe('generate: browser-runtime api sources', () => {
   it('reuses the P2 generators: the domain, data and tests of a source are the same whether it runs on the server or in the browser', () => {
     const { env: _, ...rest } = weather()
     const asServer = files({ [WEATHER]: JSON.stringify({ ...rest, runtime: 'server', env: { baseUrl: 'NUXT_APIS_WEATHER_BASE_URL' } }) })
+    // A server source's HTTP contracts are its routes': a browser source has none.
     const shared = (path: string) => (path.startsWith(`${SOURCE}shared/`) || path.startsWith(`${SOURCE}test/weather/`)) && path.includes('weather')
+      && !path.startsWith(`${SOURCE}shared/contracts/`)
     const same = paths(generated).filter(shared)
     expect(same.length).toBeGreaterThan(10)
     expect(paths(asServer).filter(shared)).toEqual(same)

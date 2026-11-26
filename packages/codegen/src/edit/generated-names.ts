@@ -109,6 +109,9 @@ export const apiNameClaims = (source: ApiNamed): ApiNameClaim[] => {
       { name: `${type}InputSchema`, owner: `the input schema of ${owner}` },
       { name: `${type}Input`, owner: `the input type of ${owner}` },
       { name: `${type}Deps`, owner: `the dependencies of ${owner}` },
+      // A server source's route and composable import its HTTP contract (R2); claimed whatever the runtime, so switching it never clashes.
+      { name: `${operation.name}Contract`, owner: `the HTTP contract of ${owner}` },
+      { name: `${type}Response`, owner: `the answer type of the HTTP contract of ${owner}` },
       { name: apiComposableName(source.name, operation.name), owner: `the composable of ${owner}` }
     )
   }
