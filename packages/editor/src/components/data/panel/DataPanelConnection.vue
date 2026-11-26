@@ -122,6 +122,7 @@ onMounted(async () => {
           numeric
           :invalid="timeoutInvalid"
           data-connection-timeout
+          @edit="timeoutInvalid = false"
           @commit="setTimeoutS"
         />
       </EditorRow>

@@ -1087,8 +1087,13 @@ describe('connections', () => {
     const input = () => q('[data-connection-panel]')!.querySelector<HTMLInputElement>('[aria-label="Timeout"]')
     expect(input()?.value).toBe('')
     expect(input()?.placeholder).toBe('10')
-    for (const value of ['5', '0', '61', '2.5', 'abc']) await typeInto(input(), value)
+    for (const value of ['5', '0', '61', 'abc', '2.5']) await typeInto(input(), value)
     expect(inputs(actions, 'datasource_update')).toEqual([{ datasource: 'ds_quotes', timeout: 5 }])
+    expect(input()?.getAttribute('aria-invalid')).toBe('true')
+    input()!.value = '3'
+    input()!.dispatchEvent(new Event('input'))
+    await settle()
+    expect(input()?.getAttribute('aria-invalid')).toBeNull()
   })
 
   it('shows the timeout a connection has, and clearing it gives the default back', async () => {

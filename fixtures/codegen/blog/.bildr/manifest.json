@@ -580,7 +580,7 @@
     },
     "layers/core/server/utils/http-error.ts": {
       "owner": "managed",
-      "sha256": "a106b9f169331bee4be713df1b5f9084c8fd946c24a1eeb6f963c128da7941fb"
+      "sha256": "9652c0665d7a1d8e8b9213d6d5bcf49b214a9e723feae9c8aba3c66a65d35e1d"
     },
     "layers/core/shared/http/api-client.ts": {
       "owner": "managed",
