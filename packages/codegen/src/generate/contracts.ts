@@ -3,6 +3,7 @@ import { entityNames } from './context.ts'
 import type { ModuleContext } from './context.ts'
 import { importLine } from './imports.ts'
 import type { ImportName } from './imports.ts'
+import { listRoute } from '../query/index.ts'
 import { docText, file, header, kebab, pascal, tsString } from './text.ts'
 
 /**
@@ -91,6 +92,12 @@ const add = (imports: Map<string, ImportName[]>, from: string, ...names: ImportN
 /** The contract of an action's route. Its parameters are route uuids (the only ones generated yet). */
 export const actionContractFile = (context: ModuleContext, analyzed: { action: ActionFile, inputEntity?: EntityFile, params: Array<{ name: string }>, output?: EntityFile }) => {
   const { action, inputEntity, params, output } = analyzed
+  // A path with parameters is a template that reads each `:segment`, so each has to be one of the parameters its function
+  // takes. A path with none stays a string, as it is.
+  const names = params.map(param => param.name)
+  for (const [, segment] of names.length ? action.http.path.matchAll(/:(\w+)/g) : []) {
+    if (!names.includes(segment!)) throw new Error(`${action.id}: ${action.http.path} has :${segment}, which is not one of its route parameters (${names.join(', ') || 'none'})`)
+  }
   const imports = new Map<string, ImportName[]>()
   if (params.length) add(imports, '#core/kernel/ids', { name: 'IdSchema' })
   if (inputEntity) add(imports, `#${context.name}/domain/${entityNames(inputEntity).file}`, { name: `New${inputEntity.name}Schema` })
@@ -122,7 +129,8 @@ export const listContractFile = (context: ModuleContext, entity: EntityFile, rep
     what: `the ${names.type} list`,
     client: `the ${entity.plural} collection`,
     method: 'GET',
-    path: `/api/${context.name}/${kebab(entity.plural)}`,
+    // The editor's live rows read the same route: one source for both.
+    path: listRoute(context.model, entity.id) ?? `/api/${context.name}/${kebab(entity.plural)}`,
     params: [],
     reads: { key: 'query', schema: 'PageRequestSchema' },
     response: `Page<${names.type}>`,

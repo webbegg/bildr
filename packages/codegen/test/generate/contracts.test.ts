@@ -80,6 +80,12 @@ describe('the HTTP contract of a route', () => {
     expect(() => generate(clashing)).toThrow('the contract\'s response type PublishPostResponse would take the name of the PublishPostResponse it answers')
   })
 
+  it('refuses a route path with a segment that is not one of its parameters (its template would read an undeclared name)', () => {
+    const model = structuredClone(fixtureModel())
+    model.modules.blog!.actions.find(entry => entry.name === 'publishPost')!.http.path = '/posts/:postId/publish/:id'
+    expect(() => generate(model)).toThrow('/posts/:postId/publish/:id has :postId, which is not one of its route parameters (id)')
+  })
+
   it('the module\'s layer has an alias for its contracts, and so do the project\'s tests', () => {
     expect(content(`${BLOG}/nuxt.config.ts`)).toContain('    \'#blog/contracts\': here(\'./shared/contracts\'),\n    \'#blog/domain\': here(\'./shared/domain\')\n')
     expect(content('vitest.config.ts')).toContain('      \'#blog/contracts\': here(\'./layers/blog/shared/contracts\'),\n')
