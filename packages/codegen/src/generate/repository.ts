@@ -384,7 +384,13 @@ export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, r
     )
   }
   if (has(repository, 'delete')) {
-    body.push('  async delete(id) {', `    ${call('delete')}`, `    return ${answer}.ok ? ok(undefined) : ${answer}`, '  }')
+    body.push(
+      '  async delete(id) {',
+      `    ${call('delete')}`,
+      '    // A row the source has no longer (404) is deleted already, as the in-memory twin says.',
+      `    return ${answer}.ok || (${answer}.error.type === 'remote_failed' && ${answer}.error.status === 404) ? ok(undefined) : ${answer}`,
+      '  }'
+    )
   }
   const path = context.paths.repository(names.file, 'rest')
   const paging = has(repository, 'list') ? ` Paging style: offset (${docText(String(rest.paging.offsetParam))}/${docText(String(rest.paging.limitParam))}).` : ''
@@ -509,10 +515,11 @@ export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFil
   }
   if (has(repository, 'delete')) {
     tests.push([
-      '  it(\'deletes by id\', async () => {',
+      '  it(\'deletes by id, and a row the source has no longer is deleted already (404)\', async () => {',
       '    const { calls, repository } = fake(ok(undefined))',
       `    expect(await repository.delete(${tsLiteral(id)})).toEqual(ok(undefined))`,
       `    expect(calls).toEqual([{ path: ${at(rest.delete!.path)}, request: ${request('delete', [])} }])`,
+      `    expect(await fake(err(${errors.failed}(404, 'answered 404'))).repository.delete(${tsLiteral(id)})).toEqual(ok(undefined))`,
       '  })'
     ])
   }

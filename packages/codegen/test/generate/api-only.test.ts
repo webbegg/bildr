@@ -117,6 +117,9 @@ describe('golden API-only project: the generated files', () => {
     const seed = files.find(file => file.path === 'layers/main/server/infrastructure/memory/seed.ts')!.content
     expect(seed).toContain('export const noteSeed: Note[] = [')
     expect(seed).toContain('Seeded from the model fixtures')
+    // A memory store's rows and a REST twin's, each said for what it is.
+    expect(seed).toContain('when the server starts. Changes to them are lost when it stops. (Note)\n')
+    expect(seed).toContain('start with in use-case tests. The source\'s own rows are its own. (Task)\n')
     const root = files.find(file => file.path === 'layers/main/server/utils/main.ts')!.content
     // One store per server process (outside the composition root's function): rows live until it stops.
     expect(root).toMatch(/^const notes = memoryNoteRepository\(noteSeed\)$/m)

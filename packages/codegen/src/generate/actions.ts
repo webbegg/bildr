@@ -332,6 +332,7 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
   // The trailing guards an update's rule took over: the use-case doesn't run them itself.
   const guarded = new Set(rule ? analyzed.steps.slice(analyzed.steps.length - 1 - rule.guards.length, -1) : [])
   let usesErr = false
+  let usesOk = false
   let validated = false
   // What the body reads of its input: an input it never reads is named `_input`, which the project's lint allows.
   let readsInput = false
@@ -366,7 +367,14 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
   // A REST repository answers a Result (R1'): its failure is the use-case's own, passed on as it is, and its value read after.
   const answersOf = (step: object) =>
     answersResult(context, analyzed.repositories.find(entry => entry.repository.id === (step as { repository?: unknown }).repository)!.repository)
+  /** `ok(value)`, and `ok` imported. */
+  const okOf = (value: string) => {
+    usesOk = true
+    return `ok(${value})`
+  }
+  // The error factories too: the module's errors file exports them, and a use-case imports its own.
   const taken = new Set([action.name, 'data', 'input', 'at', 'ok', 'err', 'now', ...params.map(param => param.name), ...analyzed.repositories.map(({ entity }) => repositoryVariable(entity)),
+    ...errorsOf(context).map(error => errorFactory(error.type)),
     ...analyzed.steps.map(step => String(step.as ?? '')), ...(rule ? [rule.name, changeLocal(analyzed, rule)!] : [])])
   /** A local of the use-case no other name takes. */
   const freeLocal = (name: string) => {
@@ -382,7 +390,7 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
     return [`const ${answer} = await ${call(step)}`, `if (!${answer}.ok) return ${answer}`, `const ${name} = ${answer}.value`]
   }
   /** The answer of a write: its Result as it is, or the row wrapped in one. */
-  const written = (step: object, expression: string) => answersOf(step) ? `return ${expression}` : `return ok(await ${expression})`
+  const written = (step: object, expression: string) => answersOf(step) ? `return ${expression}` : `return ${okOf(`await ${expression}`)}`
 
   for (const step of analyzed.steps) {
     if (guarded.has(step)) continue
@@ -407,7 +415,7 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
     } else if (step.kind === 'return') {
       const when = compile(step.if as Value, scope)
       // A return that always runs is a plain return: `if (true)` fails the project's lint.
-      body.push(when === 'true' ? `return ok(${compile(step.value as Value, scope)})` : `if (${when}) return ok(${compile(step.value as Value, scope)})`)
+      body.push(when === 'true' ? `return ${okOf(compile(step.value as Value, scope))}` : `if (${when}) return ${okOf(compile(step.value as Value, scope))}`)
     } else if (step.kind === 'repository') {
       const repository = analyzed.repositories.find(entry => entry.repository.id === step.repository)!
       const timestamps = repository.entity.timestamps ? (step.op === 'create' ? ['createdAt', 'updatedAt'] : ['updatedAt']) : []
@@ -428,13 +436,13 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
         const local = changeLocal(analyzed, rule)!
         body.push(
           `const ${local} = ${applied(rule.row!)}`,
-          `if (!${local}) return ok(${rule.row})`,
+          `if (!${local}) return ${okOf(rule.row!)}`,
           written(step, `${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${rule.row}`, `...${local}`, ...stamped].join(', ')} })`)
         )
       } else if (step.op === 'update') {
         body.push(written(step, `${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${compile(step.from as Value, scope)}`, ...setEntries(step.set as Record<string, Value>, scope), ...stamped].join(', ')} })`))
       } else if (step.op === 'delete') {
-        body.push(...(answersOf(step) ? [`return ${variable}.delete(${compile(step.id as Value, scope)})`] : [`await ${variable}.delete(${compile(step.id as Value, scope)})`, 'return ok(undefined)']))
+        body.push(...(answersOf(step) ? [`return ${variable}.delete(${compile(step.id as Value, scope)})`] : [`await ${variable}.delete(${compile(step.id as Value, scope)})`, `return ${okOf('undefined')}`]))
       } else {
         throw new Error(`${action.id}: repository operation "${String(step.op)}" is not generated yet`)
       }
@@ -459,7 +467,7 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
       header(source),
       kernelIds.size > 0 && importLine('#core/kernel/ids', [...kernelIds]),
       // A use-case whose every answer is a REST repository's Result wraps none itself.
-      importLine('#core/kernel/result', [{ name: 'Result', type: true }, ...(usesErr ? ['err'] : []), ...(body.some(line => /\bok\(/.test(line)) ? ['ok'] : [])]),
+      importLine('#core/kernel/result', [{ name: 'Result', type: true }, ...(usesErr ? ['err'] : []), ...(usesOk ? ['ok'] : [])]),
       importLine(`#${context.name}/domain/errors`, errorImports),
       ...[...domain.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([path, names]) => importLine(`#${context.name}/domain/${path}`, names)),
       ...analyzed.repositories.map(({ entity }) => `import type { ${entityNames(entity).port} } from '${importPath(path, context.paths.port(entityNames(entity).portFile))}'`),

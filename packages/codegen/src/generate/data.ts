@@ -65,6 +65,16 @@ const moduleData = (context: ModuleContext): Array<Omit<GeneratedFile, 'owner'>>
   return out
 }
 
+/** What the memory seed's rows are: a memory store's rows at boot, a REST twin's in use-case tests, or each, by entity. */
+const seedComment = (context: ModuleContext, entities: EntityFile[]) => {
+  const memory = entities.filter(entity => datasourceOf(context, repositoryOf(context, entity)!).kind === 'memory')
+  const store = '// The rows each memory store starts with when the server starts. Changes to them are lost when it stops.'
+  const twin = '// The rows the in-memory twins of REST repositories start with in use-case tests. The source\'s own rows are its own.'
+  if (memory.length === entities.length) return [store]
+  if (!memory.length) return [twin]
+  return [`${store} (${memory.map(entity => entity.name).join(', ')})`, `${twin} (${entities.filter(entity => !memory.includes(entity)).map(entity => entity.name).join(', ')})`]
+}
+
 /** The fixtures of memory entities, which their stores start with at boot, and of REST ones, which their in-memory twins take in use-case tests. */
 const memorySeedFiles = (context: ModuleContext, kept: EntityFile[]) => {
   const ids = new Set(kept.map(entity => entity.id))
@@ -80,9 +90,7 @@ const memorySeedFiles = (context: ModuleContext, kept: EntityFile[]) => {
       header(source),
       ...seeds.map(({ entity }) => `import type { ${entity.name} } from '#${context.name}/domain/${entityNames(entity).file}'`),
       '',
-      kept.some(entity => datasourceOf(context, repositoryOf(context, entity)!).kind === 'memory')
-        ? '// The rows each memory store starts with when the server starts. Changes to them are lost when it stops.'
-        : '// The rows the in-memory twins of REST repositories start with in use-case tests. The source\'s own rows are its own.',
+      ...seedComment(context, seeds.map(({ entity }) => entity)),
       ...seeds.flatMap(({ entity, rows }, index) => [...(index ? [''] : []), `export const ${entityNames(entity).variable}Seed: ${entity.name}[] = ${tsLiteral(rows)}`])
     ])
   }]

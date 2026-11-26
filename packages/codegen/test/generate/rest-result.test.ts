@@ -168,3 +168,104 @@ describe('a list-only REST repository answers a Result', () => {
     }
   })
 })
+
+/** The blog model with quotes on every REST operation (a uuid key, as route parameters are), and `actions` added to the module. */
+const crudQuotes = (actions: Array<Record<string, unknown>>) => {
+  const files = fixtureModelFiles()
+  const at = (path: string) => JSON.parse(files[path]!) as Record<string, unknown> & { fields: Array<Record<string, unknown>> }
+  const entity = at('.bildr/modules/blog/entities/quote.json')
+  entity.fields[0]!.type = 'uuid'
+  files['.bildr/modules/blog/entities/quote.json'] = JSON.stringify(entity)
+  const repository = at('.bildr/modules/blog/repositories/quote.json') as Record<string, unknown> & { rest: Record<string, unknown> }
+  repository.operations = ['list', 'get', 'create', 'update', 'delete']
+  Object.assign(repository.rest, { get: { path: '/quotes/:id' }, create: { path: '/quotes' }, update: { path: '/quotes/:id' }, delete: { path: '/quotes/:id' } })
+  files['.bildr/modules/blog/repositories/quote.json'] = JSON.stringify(repository)
+  // A use-case that loads a quote has its generated tests run on its in-memory twin, seeded with these.
+  files['.bildr/modules/blog/fixtures/quote.json'] = JSON.stringify({ entity: 'ent_quote', rows: [{ id: '6f1c2d3e-4b5a-4c6d-8e7f-000000000201', text: 'Seeded', author: 'Ana' }] })
+  for (const action of actions) files[`.bildr/modules/blog/actions/${String(action.name)}.json`] = JSON.stringify({ client: { invalidates: ['ent_quote'] }, ...action })
+  const loaded = loadModel(files)
+  if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems))
+  return generate(loaded.model)
+}
+const byId = { id: { $input: 'id' } }
+const idParam = { params: [{ name: 'id', type: 'uuid', from: 'route' }] }
+
+describe('a REST repository that looks up and writes answers a Result; a use-case passes its failure on (R1\'b)', () => {
+  it('a load without orError, an assert, an update without a rule; a database repository beside it keeps its plain answers', () => {
+    const generated = crudQuotes([{
+      id: 'act_check_quote', name: 'checkQuote', label: 'Check quote', http: { method: 'POST', path: '/quotes/:id/check' }, input: idParam,
+      output: { entity: 'ent_quote' },
+      errors: [{ type: 'quote_taken', status: 409, message: 'Taken.' }],
+      steps: [
+        { kind: 'assert', unless: { repository: 'repo_quote', op: 'get', args: byId }, error: 'quote_taken' },
+        { kind: 'load', as: 'post', repository: 'repo_post', op: 'get', args: byId },
+        { kind: 'load', as: 'quote', repository: 'repo_quote', op: 'get', args: byId },
+        { kind: 'repository', repository: 'repo_quote', op: 'update', id: { $input: 'id' }, from: { $var: 'quote' }, set: { author: { $var: 'post.title' } } }
+      ]
+    }])
+    const useCase = generated.find(file => file.path === `${BLOG}/server/application/actions/check-quote.ts`)!.content
+    expect(useCase).toContain([
+      '    const existingLoaded = await quotes.get(id)',
+      '    if (!existingLoaded.ok) return existingLoaded',
+      '    const existing = existingLoaded.value',
+      '    if (existing) return err(quoteTaken())',
+      '    const post = await posts.get(id)',
+      '    const quoteLoaded = await quotes.get(id)',
+      '    if (!quoteLoaded.ok) return quoteLoaded',
+      '    const quote = quoteLoaded.value',
+      '    return quotes.update(id, { ...quote, author: post.title })'
+    ].join('\n'))
+    // Every answer is a REST repository's Result or an error: `ok` is not imported.
+    expect(useCase).toContain('import { type Result, err } from \'#core/kernel/result\'\n')
+  })
+
+  it('a local never takes the name of an error factory (an error named like it)', () => {
+    const generated = crudQuotes([{
+      id: 'act_touch_quote', name: 'touchQuote', label: 'Touch quote', http: { method: 'POST', path: '/quotes/:id/touch' }, input: idParam,
+      output: { entity: 'ent_quote' },
+      errors: [{ type: 'quote_loaded', status: 409, message: 'Loaded.' }, { type: 'existing', status: 409, message: 'Exists.' }],
+      steps: [
+        { kind: 'assert', unless: { repository: 'repo_quote', op: 'get', args: byId }, error: 'existing' },
+        { kind: 'load', as: 'quote', repository: 'repo_quote', op: 'get', args: byId, orError: 'quote_loaded' },
+        { kind: 'repository', repository: 'repo_quote', op: 'update', id: { $input: 'id' }, from: { $var: 'quote' }, set: { author: 'x' } }
+      ]
+    }])
+    const useCase = generated.find(file => file.path === `${BLOG}/server/application/actions/touch-quote.ts`)!.content
+    expect(useCase).toContain('    const existing_Loaded = await quotes.get(id)\n')
+    expect(useCase).toContain('    const existing_ = existing_Loaded.value\n    if (existing_) return err(existing())\n')
+    expect(useCase).toContain('    const quoteLoaded_ = await quotes.get(id)\n')
+    expect(useCase).toContain('    if (!quote) return err(quoteLoaded())\n')
+  })
+
+  it('a string that reads like ok( imports nothing: only an ok the body calls does', () => {
+    const generated = crudQuotes([{
+      id: 'act_ok_quote', name: 'okQuote', label: 'Ok quote', http: { method: 'POST', path: '/quotes/:id/ok' }, input: idParam,
+      output: { entity: 'ent_quote' }, errors: [],
+      steps: [
+        { kind: 'load', as: 'quote', repository: 'repo_quote', op: 'get', args: byId },
+        { kind: 'repository', repository: 'repo_quote', op: 'update', id: { $input: 'id' }, from: { $var: 'quote' }, set: { author: 'ok(' } }
+      ]
+    }])
+    expect(generated.find(file => file.path === `${BLOG}/server/application/actions/ok-quote.ts`)!.content).toContain('import type { Result } from \'#core/kernel/result\'\n')
+  })
+
+  it('deleting a row the source has no longer is done (a 404 is ok), as its in-memory twin says', async () => {
+    const generated = crudQuotes([])
+    const adapter = generated.find(file => file.path === `${BLOG}/server/infrastructure/repositories/quote.rest.ts`)!.content
+    expect(adapter).toContain('      return answer.ok || (answer.error.type === \'remote_failed\' && answer.error.status === 404) ? ok(undefined) : answer\n')
+    const dir = mkdtempSync(join(tmpdir(), 'bildr-rest-result-'))
+    try {
+      const tests: Array<[string, () => Promise<void>]> = []
+      const scope = globalThis as { generatedTests?: typeof tests }
+      scope.generatedTests = tests
+      const vitest = `export { expect } from ${JSON.stringify(import.meta.resolve('vitest'))}\nexport const describe = (_, body) => body()\nexport const it = (name, body) => globalThis.generatedTests.push([name, body])\n`
+      const { load } = generatedRunner(new Map(generated.map(file => [file.path, file.content])), dir, { vitest })
+      await load(`${BLOG}/test/infrastructure/quote.rest.test.ts`)
+      delete scope.generatedTests
+      expect(tests.map(([name]) => name)).toContain('deletes by id, and a row the source has no longer is deleted already (404)')
+      for (const [, body] of tests) await body()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
