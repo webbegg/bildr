@@ -76,7 +76,29 @@ describe('golden API-only project: the generated files', () => {
     expect(files.filter(file => IMPORTS_DATABASE.test(file.content)).map(file => file.path)).toEqual([])
     const pkg = JSON.parse(files.find(file => file.path === 'package.json')!.content) as { dependencies: object, devDependencies: object }
     expect(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter(name => /drizzle|libsql/.test(name))).toEqual([])
-    expect(files.find(file => file.path === 'layers/main/server/utils/main.ts')!.content).toContain('restTaskRepository(useRemote(\'api\'))')
+    // A REST repository that looks up and writes answers a Result too (codegen-architecture R1'): wired to its source's client.
+    const root = files.find(file => file.path === 'layers/main/server/utils/main.ts')!.content
+    expect(root).toContain('const tasks = restTaskRepository(apiClient(), detail => console.error(')
+    expect(root).not.toContain('useRemote')
+  })
+
+  it('its REST port answers the source\'s errors, and its use-cases pass them on', () => {
+    const at = (path: string) => files.find(file => file.path === path)!.content
+    const port = at('layers/main/server/application/ports/task-repository.ts')
+    expect(port).toContain('  get(id: string): Promise<Result<Task | undefined, ApiSourceError>>\n')
+    expect(port).toContain('  update(id: string, task: Task): Promise<Result<Task, ApiSourceError>>\n')
+    expect(port).toContain('  delete(id: string): Promise<Result<undefined, ApiSourceError>>\n')
+    const complete = at('layers/main/server/application/actions/complete-task.ts')
+    expect(complete).toContain([
+      '    const taskLoaded = await tasks.get(id)',
+      '    if (!taskLoaded.ok) return taskLoaded',
+      '    const task = taskLoaded.value',
+      '    if (!task) return err(taskNotFound(id))'
+    ].join('\n'))
+    expect(complete).toContain('    return tasks.update(id, { ...task, ...taskChange })\n')
+    expect(at('layers/main/server/application/actions/create-task.ts')).toContain('    return tasks.create({ ...data })\n')
+    expect(at('layers/main/server/application/actions/delete-task.ts')).toContain('    return tasks.delete(id)\n')
+    expect(at('layers/main/shared/domain/errors.ts')).toContain('  | ApiSourceError\n')
   })
 
   it('has a memory data source: the in-memory adapter wired for real, seeded from the fixtures, no REST or database code', () => {
@@ -147,6 +169,7 @@ describe.skipIf(!!NEEDS_FIXTURE)(`golden API-only project: typecheck, lint and g
     expect(output).toContain('task.rest.test.ts')
     expect(output).toContain('create-task.test.ts')
     expect(output).toContain('create-note.test.ts')
+    expect(output).toContain('complete-task.test.ts')
   })
 
   it('the typecheck is real: a type error in a layer fails it', async () => {

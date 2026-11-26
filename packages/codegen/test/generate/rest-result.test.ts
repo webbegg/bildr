@@ -53,30 +53,21 @@ describe('a list-only REST repository answers a Result', () => {
     expect(content(`${BLOG}/server/application/queries/list-quotes.ts`)).toContain('  (page: PageRequest): Promise<Result<Page<Quote>, QuotesSourceError>> => quotes.list(page)')
   })
 
-  it('the adapter validates the answer with the entity\'s field rules under their remote names, and maps it', () => {
+  it('the adapter reads the answer through one schema: the remote names mapped, then the entity\'s own (its defaults applied)', () => {
     const adapter = content(`${BLOG}/server/infrastructure/repositories/quote.rest.ts`)!
     expect(adapter).toContain([
-      'const QuotesAnswerSchema = z.object({',
-      '  quotes: z.array(z.object({ id: QuoteSchema.shape.id, quote: QuoteSchema.shape.text, author: QuoteSchema.shape.author })),',
-      '  total: z.number()',
-      '})'
+      'const QuoteAnswerSchema = z.record(z.string(), z.unknown())',
+      '  .transform(row => ({ id: row.id, text: row.quote, author: row.author }) as z.input<typeof QuoteSchema>)',
+      '  .pipe(QuoteSchema)'
     ].join('\n'))
+    expect(adapter).toContain('const QuotePageAnswerSchema = z.object({ quotes: z.array(QuoteAnswerSchema), total: z.number() })')
     expect(adapter).toContain([
-      'export const restQuoteRepository = (http: ApiClient<QuotesSourceError>, onInvalidAnswer?: (detail: string) => void): QuoteRepository => ({',
-      '  async list({ limit, offset }) {',
-      '    const answer = await http(\'/quotes\', { method: \'GET\', query: { limit, skip: offset } })',
-      '    if (!answer.ok) return answer',
-      '    const page = QuotesAnswerSchema.safeParse(answer.value)',
-      '    if (!page.success) {',
-      '      onInvalidAnswer?.(page.error.message)',
-      '      return err(quotesInvalidAnswer())',
-      '    }',
-      '    return ok({',
-      '      items: page.data.quotes.map(row => ({ id: row.id, text: row.quote, author: row.author })),',
-      '      total: page.data.total',
-      '    })',
-      '  }',
-      '})'
+      '    async list({ limit, offset }) {',
+      '      const answer = await http(\'/quotes\', { method: \'GET\', query: { limit, skip: offset } })',
+      '      if (!answer.ok) return answer',
+      '      const page = read(QuotePageAnswerSchema, answer.value)',
+      '      return page.ok ? ok({ items: page.value.quotes, total: page.value.total }) : page',
+      '    }'
     ].join('\n'))
     expect(adapter).not.toContain('useRemote')
   })
@@ -105,6 +96,8 @@ describe('a list-only REST repository answers a Result', () => {
     quote.fields.find(field => field.name === 'id')!.type = 'uuid'
     Object.assign(quote.fields.find(field => field.name === 'author')!, { min: 12 })
     quote.fields.push({ id: 'fld_q_added', name: 'addedAt', type: 'datetime', required: true }, { id: 'fld_q_mail', name: 'contact', type: 'email', required: true })
+    // A field the map leaves out takes its default: the entity's schema reads the mapped row.
+    quote.fields.push({ id: 'fld_q_featured', name: 'featured', type: 'boolean', default: false })
     const repository = model.modules.blog!.repositories.find(entry => entry.id === 'repo_quote')!
     Object.assign(repository.rest!.fieldMap!, { addedAt: 'added_at', contact: 'contact' })
     const generated = generate(model)
@@ -158,7 +151,7 @@ describe('a list-only REST repository answers a Result', () => {
     expect(root.match(/remote_failed: 502/g)).toHaveLength(1)
     expect(at(`${BLOG}/shared/domain/sources/my-api.ts`)).toContain('export const myApiFailed = ')
     // No total in the answer: the page's total is how many items it has, as before.
-    expect(at(`${BLOG}/server/infrastructure/repositories/tip.rest.ts`)).toContain('      total: page.data.data.length\n')
+    expect(at(`${BLOG}/server/infrastructure/repositories/tip.rest.ts`)).toContain('ok({ items: page.value.data, total: page.value.data.length })')
     const dir = mkdtempSync(join(tmpdir(), 'bildr-rest-result-'))
     try {
       const tests: Array<[string, () => Promise<void>]> = []

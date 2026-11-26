@@ -6,10 +6,10 @@ import { camel, file, kebab, pascal, tsString } from './text.ts'
 /**
  * A module's REST data sources, read the way the apis layer reads an API (codegen-architecture R1'): the port of a repository on one
  * answers a Result, its adapter validates the answer and maps it to the domain, and a failure is the source's typed error, never a
- * throw. A list-only repository goes first; one that also looks up and writes still throws through core's useRemote.
+ * throw. Every operation does so: a use-case passes a failed call on as its own error, which the module's errors include.
  */
 export const answersResult = (context: ModuleContext, repository: RepositoryFile) =>
-  datasourceOf(context, repository).kind === 'rest' && repository.operations.every(op => op === 'list')
+  datasourceOf(context, repository).kind === 'rest'
 
 /** The REST sources the module's Result-answering repositories read, by name. */
 export const resultSources = (context: ModuleContext): DataSourceFile[] => {

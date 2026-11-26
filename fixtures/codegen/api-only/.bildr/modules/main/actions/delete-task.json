@@ -1,0 +1,35 @@
+{
+  "$schema": "https://bildr.dev/schema/action.v1.json",
+  "id": "act_delete_task",
+  "name": "deleteTask",
+  "label": "Delete task",
+  "http": {
+    "method": "DELETE",
+    "path": "/tasks/:id"
+  },
+  "input": {
+    "params": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "from": "route"
+      }
+    ]
+  },
+  "errors": [],
+  "steps": [
+    {
+      "kind": "repository",
+      "repository": "repo_task",
+      "op": "delete",
+      "id": {
+        "$input": "id"
+      }
+    }
+  ],
+  "client": {
+    "invalidates": [
+      "ent_task"
+    ]
+  }
+}

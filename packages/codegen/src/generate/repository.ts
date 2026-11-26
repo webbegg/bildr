@@ -5,7 +5,7 @@ import { contractImport, listContractNames } from './contracts.ts'
 import { answersResult, sourceNames } from './rest-source.ts'
 import { importLine } from './imports.ts'
 import { importPath } from './paths.ts'
-import { isBasicType, sampleOf, VALUE_TYPES } from '../model/field-types.ts'
+import { sampleOf, VALUE_TYPES } from '../model/field-types.ts'
 import { camel, docText, file, header, pascal, snake, tsLiteral, tsString } from './text.ts'
 
 const OPERATION_ORDER = ['list', 'get', 'create', 'update', 'delete'] as const
@@ -82,20 +82,19 @@ export const portFile = (context: ModuleContext, entity: EntityFile, repository:
     : source.kind === 'memory'
       ? `${writable ? 'Persistence' : 'Read-only'} port for ${names.type} (memory data source).`
       : `${writable ? 'Persistence' : 'Read-only'} port for ${names.type} (REST data source).`
+  const answer = portAnswer(context, repository)
+  const finders = () => finderFields(entity, repository).map(field => `  ${findBy(field)}(${field.name}: ${tsType(field)}): Promise<${answer.of(`${names.type} | undefined`)}>`)
   const methods: string[] = []
   for (const op of OPERATION_ORDER) {
     if (!has(repository, op)) {
-      if (op === 'get') methods.push(...finderFields(entity, repository).map(field => `  ${findBy(field)}(${field.name}: ${tsType(field)}): Promise<${names.type} | undefined>`))
+      if (op === 'get') methods.push(...finders())
       continue
     }
-    if (op === 'list') methods.push(`  list(page: PageRequest): Promise<${listAnswer(context, entity, repository).type}>`)
-    if (op === 'get') {
-      methods.push(`  get(id: ${key.type}): Promise<${names.type} | undefined>`)
-      methods.push(...finderFields(entity, repository).map(field => `  ${findBy(field)}(${field.name}: ${tsType(field)}): Promise<${names.type} | undefined>`))
-    }
-    if (op === 'create') methods.push(`  create(${names.variable}: ${names.type}): Promise<${names.type}>`)
-    if (op === 'update') methods.push(`  update(id: ${key.type}, ${names.variable}: ${names.type}): Promise<${names.type}>`)
-    if (op === 'delete') methods.push(`  delete(id: ${key.type}): Promise<void>`)
+    if (op === 'list') methods.push(`  list(page: PageRequest): Promise<${answer.of(`Page<${names.type}>`)}>`)
+    if (op === 'get') methods.push(`  get(id: ${key.type}): Promise<${answer.of(`${names.type} | undefined`)}>`, ...finders())
+    if (op === 'create') methods.push(`  create(${names.variable}: ${names.type}): Promise<${answer.of(names.type)}>`)
+    if (op === 'update') methods.push(`  update(id: ${key.type}, ${names.variable}: ${names.type}): Promise<${answer.of(names.type)}>`)
+    if (op === 'delete') methods.push(`  delete(id: ${key.type}): Promise<${answer.of('void')}>`)
   }
   return {
     path: context.paths.port(names.portFile),
@@ -103,9 +102,9 @@ export const portFile = (context: ModuleContext, entity: EntityFile, repository:
     content: file([
       header(context.source(repository.id)),
       has(repository, 'list') && 'import type { Page, PageRequest } from \'#core/kernel/page\'',
-      ...listAnswer(context, entity, repository).imports,
+      ...answer.imports,
       `import type { ${names.type} } from '#${context.name}/domain/${names.file}'`,
-      ...listAnswer(context, entity, repository).sourceImports,
+      ...answer.sourceImports,
       '',
       `/** ${doc} */`,
       `export interface ${names.port} {`,
@@ -238,15 +237,18 @@ const memoryDoc = (context: ModuleContext, repository: RepositoryFile, port: str
 export const memoryRepositoryFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
   const names = entityNames(entity)
   const row = names.variable
+  // The twin of a REST repository answers as its port says: a Result, always ok (R1').
+  const results = answersResult(context, repository)
+  const answer = (value: string) => results ? `ok(${value})` : value
   const body: string[] = []
-  if (has(repository, 'list')) body.push('    async list({ limit, offset }) {', '      return { items: sorted().slice(offset, offset + limit), total: rows.size }', '    }')
-  if (has(repository, 'get')) body.push('    async get(id) {', '      return rows.get(id)', '    }')
+  if (has(repository, 'list')) body.push('    async list({ limit, offset }) {', `      return ${answer('{ items: sorted().slice(offset, offset + limit), total: rows.size }')}`, '    }')
+  if (has(repository, 'get')) body.push('    async get(id) {', `      return ${answer('rows.get(id)')}`, '    }')
   for (const field of finderFields(entity, repository)) {
-    body.push(`    async ${findBy(field)}(${field.name}) {`, `      return [...rows.values()].find(${row} => ${row}.${field.name} === ${field.name})`, '    }')
+    body.push(`    async ${findBy(field)}(${field.name}) {`, `      return ${answer(`[...rows.values()].find(${row} => ${row}.${field.name} === ${field.name})`)}`, '    }')
   }
-  if (has(repository, 'create')) body.push(`    async create(${row}) {`, `      rows.set(${row}.id, ${row})`, `      return ${row}`, '    }')
-  if (has(repository, 'update')) body.push(`    async update(id, ${row}) {`, `      rows.set(id, ${row})`, `      return ${row}`, '    }')
-  if (has(repository, 'delete')) body.push('    async delete(id) {', '      rows.delete(id)', '    }')
+  if (has(repository, 'create')) body.push(`    async create(${row}) {`, `      rows.set(${row}.id, ${row})`, `      return ${answer(row)}`, '    }')
+  if (has(repository, 'update')) body.push(`    async update(id, ${row}) {`, `      rows.set(id, ${row})`, `      return ${answer(row)}`, '    }')
+  if (has(repository, 'delete')) body.push('    async delete(id) {', '      rows.delete(id)', ...(results ? ['      return ok(undefined)'] : []), '    }')
   const methods = body.map((line, index) => line === '    }' && index < body.length - 1 ? '    },' : line)
   const path = context.paths.repository(names.file, 'memory')
   return {
@@ -254,6 +256,7 @@ export const memoryRepositoryFile = (context: ModuleContext, entity: EntityFile,
     source: context.source(repository.id),
     content: file([
       header(context.source(repository.id)),
+      results && 'import { ok } from \'#core/kernel/result\'',
       `import type { ${names.type} } from '#${context.name}/domain/${names.file}'`,
       `import type { ${names.port} } from '${importPath(path, context.paths.port(names.portFile))}'`,
       '',
@@ -312,12 +315,6 @@ const restConfig = (repository: RepositoryFile): RestConfig & { paging: { style:
   return { ...rest, paging: { style: paging, limitParam: rest.paging?.limitParam ?? 'limit', offsetParam: rest.paging?.offsetParam ?? 'offset' } }
 }
 
-/** The REST config of a repository that only lists (the read-only shape, T5). */
-const listRestConfig = (repository: RepositoryFile) => {
-  const rest = restConfig(repository)
-  return { ...rest, list: rest.list! }
-}
-
 /** Whether a REST repository does more than list: then it gets the full adapter and an in-memory twin for use-case tests. */
 export const restDoesMoreThanList = (repository: RepositoryFile) => repository.operations.some(op => op !== 'list')
 
@@ -333,17 +330,64 @@ const shorthand = (remote: string, variable: string) => remote === variable ? va
 const pagingQuery = (rest: ReturnType<typeof restConfig>) =>
   `{ ${shorthand(rest.paging.limitParam!, 'limit')}, ${shorthand(rest.paging.offsetParam!, 'offset')} }`
 
+/**
+ * The REST adapter (codegen-architecture R1'): it calls through an ApiClient, so a failed call is the source's error, and it reads every
+ * answer through one schema that maps the remote names and then checks the result with the entity's own schema (its defaults applied).
+ * An answer that isn't what the model says is invalid_answer, its detail to `onInvalidAnswer` (the server log), never in the error.
+ */
 export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
-  if (restDoesMoreThanList(repository)) return restCrudRepositoryFile(context, entity, repository)
   const names = entityNames(entity)
-  const rest = listRestConfig(repository)
+  const rest = restConfig(repository)
   const source = datasourceOf(context, repository)
   const fields = remoteFields(entity, rest)
-  const items = rest.list.itemsPath
-  const total = rest.list.totalPath
   const errors = sourceNames(context, source)
-  const answer = `${pascal(entity.plural)}AnswerSchema`
+  const variable = names.variable
+  // The adapter's own locals, named so a variable of the entity's name can't shadow them.
+  const answer = freeName('answer', '_', new Set([variable]))
+  const itemSchema = `${names.type}AnswerSchema`
+  const pageSchema = `${names.type}PageAnswerSchema`
+  const writes = has(repository, 'create') || has(repository, 'update')
+  const byId = has(repository, 'get') || has(repository, 'update') || has(repository, 'delete')
+  const call = (op: RestEndpointOp, extra: string[] = []) =>
+    `const ${answer} = await http(${op === 'create' ? tsString(rest.create!.path) : idPath(rest[op]!.path)}, { ${[`method: ${tsString(methodOf(rest, op))}`, ...extra].join(', ')} })`
+  const body: string[] = []
+  if (has(repository, 'list')) {
+    const list = rest.list!
+    body.push(
+      '  async list({ limit, offset }) {',
+      `    const ${answer} = await http(${tsString(list.path)}, { method: 'GET', query: ${pagingQuery(rest)} })`,
+      `    if (!${answer}.ok) return ${answer}`,
+      `    const page = read(${pageSchema}, ${answer}.value)`,
+      `    return page.ok ? ok({ items: ${member('page.value', list.itemsPath)}, total: ${list.totalPath ? member('page.value', list.totalPath) : `${member('page.value', list.itemsPath)}.length`} }) : page`,
+      '  }'
+    )
+  }
+  if (has(repository, 'get')) {
+    body.push(
+      '  async get(id) {',
+      `    ${call('get')}`,
+      '    // The source has no such row: it answered 404, or nothing.',
+      `    if (!${answer}.ok) return ${answer}.error.type === 'remote_failed' && ${answer}.error.status === 404 ? ok(undefined) : ${answer}`,
+      `    return ${answer}.value === undefined ? ok(undefined) : read(${itemSchema}, ${answer}.value)`,
+      '  }'
+    )
+  }
+  for (const op of ['create', 'update'] as const) {
+    if (!has(repository, op)) continue
+    body.push(
+      `  async ${op}(${op === 'update' ? 'id, ' : ''}${variable}: ${names.type}) {`,
+      `    ${call(op, [`body: toRow(${variable})`])}`,
+      `    if (!${answer}.ok) return ${answer}`,
+      '    // A source that answers nothing took the row as it was sent.',
+      `    return ${answer}.value === undefined ? ok(${variable}) : read(${itemSchema}, ${answer}.value)`,
+      '  }'
+    )
+  }
+  if (has(repository, 'delete')) {
+    body.push('  async delete(id) {', `    ${call('delete')}`, `    return ${answer}.ok ? ok(undefined) : ${answer}`, '  }')
+  }
   const path = context.paths.repository(names.file, 'rest')
+  const paging = has(repository, 'list') ? ` Paging style: offset (${docText(String(rest.paging.offsetParam))}/${docText(String(rest.paging.limitParam))}).` : ''
   return {
     path,
     source: context.source(repository.id),
@@ -351,42 +395,44 @@ export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, r
       header(context.source(repository.id)),
       'import { z } from \'zod\'',
       'import type { ApiClient } from \'#core/http/api-client\'',
-      'import { err, ok } from \'#core/kernel/result\'',
-      `import { ${names.type}Schema } from '#${context.name}/domain/${names.file}'`,
+      'import { type Result, err, ok } from \'#core/kernel/result\'',
+      importLine(`#${context.name}/domain/${names.file}`, [...(writes ? [{ name: names.type, type: true }] : []), `${names.type}Schema`]),
       importLine(errors.from, [{ name: errors.error, type: true }, errors.invalidAnswer]),
       `import type { ${names.port} } from '${importPath(path, context.paths.port(names.portFile))}'`,
       '',
-      // The answer is checked before it is mapped: each item with the entity's own field rules, under the names the source uses.
-      `/** What the "${source.name}" REST data source answers for a page: each item checked with ${names.type}'s own field rules, under its remote names. */`,
-      `const ${answer} = z.object({`,
-      `  ${property(items)}: z.array(z.object({ ${fields.map(({ field, remote }) => `${property(remote)}: ${member(`${names.type}Schema.shape`, field.name)}`).join(', ')} }))${total ? ',' : ''}`,
-      total && `  ${property(total)}: z.number()`,
-      '})',
+      `/** A ${names.type} as the "${docText(source.name)}" source sends it: its remote names mapped, then checked with ${names.type}'s own rules. */`,
+      `const ${itemSchema} = z.record(z.string(), z.unknown())`,
+      // Typed as what the entity's schema takes: the pipe checks it right after.
+      `  .transform(row => ({ ${fields.map(({ field, remote }) => `${field.name}: ${member('row', remote)}`).join(', ')} }) as z.input<typeof ${names.type}Schema>)`,
+      `  .pipe(${names.type}Schema)`,
+      ...(has(repository, 'list')
+        ? [
+            '',
+            `/** A page of ${entity.plural} as the source sends it. */`,
+            `const ${pageSchema} = z.object({ ${property(rest.list!.itemsPath)}: z.array(${itemSchema})${rest.list!.totalPath ? `, ${property(rest.list!.totalPath)}: z.number()` : ''} })`
+          ]
+        : []),
+      writes && '',
+      writes && `const toRow = (${variable}: ${names.type}) => ({ ${fields.map(({ field, remote }) => `${property(remote)}: ${variable}.${field.name}`).join(', ')} })`,
+      byId && '',
+      byId && SEGMENT_HELPER,
       '',
-      `/** ${names.port} over the "${source.name}" REST data source. Paging style: offset (${docText(String(rest.paging.offsetParam))}/${docText(String(rest.paging.limitParam))}). A failed call answers its error; an answer that is not what the model says answers invalid_answer, its detail to \`onInvalidAnswer\`. */`,
-      `export const rest${names.port} = (http: ApiClient<${errors.error}>, onInvalidAnswer?: (detail: string) => void): ${names.port} => ({`,
-      '  async list({ limit, offset }) {',
-      `    const answer = await http(${tsString(rest.list.path)}, { method: 'GET', query: ${pagingQuery(rest)} })`,
-      '    if (!answer.ok) return answer',
-      `    const page = ${answer}.safeParse(answer.value)`,
-      '    if (!page.success) {',
-      '      onInvalidAnswer?.(page.error.message)',
-      `      return err(${errors.invalidAnswer}())`,
-      '    }',
-      '    return ok({',
-      `      items: ${member('page.data', items)}.map(row => ({ ${fields.map(({ field, remote }) => `${field.name}: ${member('row', remote)}`).join(', ')} })),`,
-      `      total: ${total ? member('page.data', total) : `${member('page.data', items)}.length`}`,
-      '    })',
+      `/** ${names.port} over the "${docText(source.name)}" REST data source.${paging} A failed call answers its error; an answer that is not what the model says answers invalid_answer, its detail to \`onInvalidAnswer\`. */`,
+      `export const rest${names.port} = (http: ApiClient<${errors.error}>, onInvalidAnswer?: (detail: string) => void): ${names.port} => {`,
+      '  /** The answer as `schema` reads it, or invalid_answer. */',
+      `  const read = <S extends z.ZodType>(schema: S, value: unknown): Result<z.output<S>, ${errors.error}> => {`,
+      '    const checked = schema.safeParse(value)',
+      '    if (checked.success) return ok(checked.data)',
+      '    onInvalidAnswer?.(checked.error.message)',
+      `    return err(${errors.invalidAnswer}())`,
       '  }',
-      '})'
+      '  return {',
+      joinMethods(body).split('\n').map(line => line ? `  ${line}` : line).join('\n'),
+      '  }',
+      '}'
     ])
   }
 }
-
-/** A field's value in a generated adapter test: 1, true or its name for the basic types (as before), the catalogue's sample for a SaaS one. */
-const sample = (field: Field) => !isBasicType(field.type)
-  ? sampleOf(field)
-  : field.type === 'integer' || field.type === 'number' ? 1 : field.type === 'boolean' ? true : field.name
 
 /**
  * A value a field's own rules take, for a test whose adapter checks them: the catalogue's sample of its type, within its bounds. With a
@@ -404,21 +450,102 @@ const validSample = (field: Field): string | number | boolean => {
 }
 
 /** A generated adapter test: fields and paging map to the REST source as modeled. */
+/** A row of the entity as the adapter answers it: each mapped field's sample, and an unmapped one's default (its schema applies it). */
+const modelSample = (entity: EntityFile, fields: Array<{ field: Field, remote: string }>) => allFields(entity).flatMap((field) => {
+  if (fields.some(entry => entry.field.name === field.name)) return [`${field.name}: ${tsLiteral(validSample(field))}`]
+  if (field.default !== undefined) return [`${field.name}: ${tsLiteral(field.default)}`]
+  return field.nullable ? [`${field.name}: null`] : []
+})
+
+/** A generated adapter test: each operation calls its endpoint with the remote names, and answers the source's errors (R1'). */
 export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
-  if (restDoesMoreThanList(repository)) return restCrudRepositoryTestFile(context, entity, repository)
   const names = entityNames(entity)
-  const rest = listRestConfig(repository)
+  const rest = restConfig(repository)
   const fields = remoteFields(entity, rest)
-  const items = rest.list.itemsPath
-  const total = rest.list.totalPath
-  // The adapter checks each item with the entity's rules (R1'), so the test's row has to meet them.
-  const remoteRow = `{ ${fields.map(({ field, remote }) => `${property(remote)}: ${tsLiteral(validSample(field))}`).join(', ')} }`
-  const modelRow = `{ ${fields.map(({ field }) => `${field.name}: ${tsLiteral(validSample(field))}`).join(', ')} }`
-  const query = `{ ${property(rest.paging.limitParam!)}: 10, ${property(rest.paging.offsetParam!)}: 20 }`
-  const source = datasourceOf(context, repository)
-  const errors = sourceNames(context, source)
-  const path = context.paths.test(`infrastructure/${names.file}.rest.test.ts`)
+  const errors = sourceNames(context, datasourceOf(context, repository))
   const adapter = `rest${names.port}`
+  const key = fields.find(({ field }) => field.name === keyOf(entity).name)
+  const id = key ? validSample(key.field) : SAMPLE_UUID
+  const at = (path: string) => tsString(path.replace(':id', encodeURIComponent(String(id))))
+  const request = (op: RestEndpointOp, extra: string[]) => `{ ${[`method: ${tsString(methodOf(rest, op))}`, ...extra].join(', ')} }`
+  const page = (rows: string) => `{ ${property(rest.list!.itemsPath)}: ${rows}${rest.list!.totalPath ? `, ${property(rest.list!.totalPath)}: 40` : ''} }`
+  // The first operation is the one the failure tests call; one that reads an answer, the invalid-answer test.
+  const first = OPERATION_ORDER.find(op => has(repository, op))!
+  const callOf = (op: typeof first) => op === 'list'
+    ? 'list({ limit: 10, offset: 0 })'
+    : op === 'create' ? `create(${names.variable})` : op === 'update' ? `update(${tsLiteral(id)}, ${names.variable})` : `${op}(${tsLiteral(id)})`
+  const reads = OPERATION_ORDER.find(op => op !== 'delete' && has(repository, op))
+  const tests: string[][] = []
+  if (has(repository, 'list')) {
+    tests.push([
+      '  it(\'maps fields and offset paging to the REST source\', async () => {',
+      `    const { calls, repository } = fake(ok(${page('[row]')}))`,
+      `    expect(await repository.list({ limit: 10, offset: 20 })).toEqual(ok({ items: [${names.variable}], total: ${rest.list!.totalPath ? 40 : 1} }))`,
+      `    expect(calls).toEqual([{ path: ${tsString(rest.list!.path)}, request: { method: 'GET', query: { ${property(rest.paging.limitParam)}: 10, ${property(rest.paging.offsetParam)}: 20 } } }])`,
+      '  })'
+    ])
+  }
+  if (has(repository, 'get')) {
+    tests.push([
+      '  it(\'gets one by id, and undefined when the source has none (404, or nothing)\', async () => {',
+      '    const found = fake(ok(row))',
+      `    expect(await found.repository.get(${tsLiteral(id)})).toEqual(ok(${names.variable}))`,
+      `    expect(found.calls).toEqual([{ path: ${at(rest.get!.path)}, request: ${request('get', [])} }])`,
+      `    expect(await fake(err(${errors.failed}(404, 'answered 404'))).repository.get(${tsLiteral(id)})).toEqual(ok(undefined))`,
+      `    expect(await fake(ok(undefined)).repository.get(${tsLiteral(id)})).toEqual(ok(undefined))`,
+      '  })'
+    ])
+  }
+  for (const op of ['create', 'update'] as const) {
+    if (!has(repository, op)) continue
+    tests.push([
+      `  it('${op === 'create' ? 'creates' : 'updates'} with the remote names, and answers the row sent when the source answers nothing', async () => {`,
+      '    const { calls, repository } = fake(ok(row))',
+      `    expect(await repository.${callOf(op)}).toEqual(ok(${names.variable}))`,
+      `    expect(calls).toEqual([{ path: ${op === 'create' ? tsString(rest.create!.path) : at(rest.update!.path)}, request: ${request(op, ['body: row'])} }])`,
+      `    expect(await fake(ok(undefined)).repository.${callOf(op)}).toEqual(ok(${names.variable}))`,
+      '  })'
+    ])
+  }
+  if (has(repository, 'delete')) {
+    tests.push([
+      '  it(\'deletes by id\', async () => {',
+      '    const { calls, repository } = fake(ok(undefined))',
+      `    expect(await repository.delete(${tsLiteral(id)})).toEqual(ok(undefined))`,
+      `    expect(calls).toEqual([{ path: ${at(rest.delete!.path)}, request: ${request('delete', [])} }])`,
+      '  })'
+    ])
+  }
+  tests.push([
+    '  it(\'answers the error of a failed call\', async () => {',
+    `    const failed = ${errors.failed}(503, 'answered 503')`,
+    `    expect(await fake(err(failed)).repository.${callOf(first)}).toEqual(err(failed))`,
+    '  })'
+  ])
+  if (reads) {
+    tests.push([
+      '  it(\'answers invalid_answer for an answer that is not what the model says, its detail to onInvalidAnswer\', async () => {',
+      '    const details: string[] = []',
+      `    const answer = await ${adapter}(async () => ok(${reads === 'list' ? page('\'not a list\'') : '\'not a row\''}), (detail) => {`,
+      '      details.push(detail)',
+      `    }).${callOf(reads)}`,
+      `    expect(answer).toEqual(err(${errors.invalidAnswer}()))`,
+      '    expect(details).toHaveLength(1)',
+      '  })'
+    ])
+  }
+  const lookup = (['get', 'update', 'delete'] as const).find(op => has(repository, op))
+  // Only text keys can be "." or ".." (a numeric key can't, and passing one wouldn't typecheck).
+  if (lookup && typeof id === 'string') {
+    tests.push([
+      '  it(\'refuses ids that would change the path\', async () => {',
+      '    const { calls, repository } = fake(ok(row))',
+      ...['..', '.', ''].map(bad => `    await expect(repository.${lookup}(${tsLiteral(bad)}${lookup === 'update' ? `, ${names.variable}` : ''})).rejects.toThrow('Not a valid id for a REST path')`),
+      '    expect(calls).toEqual([])',
+      '  })'
+    ])
+  }
+  const path = context.paths.test(`infrastructure/${names.file}.rest.test.ts`)
   return {
     path,
     source: context.source(repository.id),
@@ -426,43 +553,32 @@ export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFil
       header(context.source(repository.id)),
       'import { describe, expect, it } from \'vitest\'',
       'import type { ApiClient } from \'#core/http/api-client\'',
-      'import { err, ok } from \'#core/kernel/result\'',
-      importLine(errors.from, [{ name: errors.error, type: true }, errors.failed, errors.invalidAnswer]),
+      'import { type Result, err, ok } from \'#core/kernel/result\'',
+      importLine(errors.from, [{ name: errors.error, type: true }, errors.failed, ...(reads ? [errors.invalidAnswer] : [])]),
       `import { ${adapter} } from '${importPath(path, context.paths.repository(names.file, 'rest'))}'`,
       '',
+      // The adapter checks each row with the entity's rules, so the samples meet them.
+      `const row = { ${fields.map(({ field, remote }) => `${property(remote)}: ${tsLiteral(validSample(field))}`).join(', ')} }`,
+      `const ${names.variable} = { ${modelSample(entity, fields).join(', ')} }`,
+      '',
+      '/** A fake REST source that answers every call with `answer` and records the calls. */',
+      `const fake = (answer: Result<unknown, ${errors.error}>) => {`,
+      '  const calls: unknown[] = []',
+      `  const http: ApiClient<${errors.error}> = async (path, request) => {`,
+      '    calls.push({ path, request })',
+      '    return answer',
+      '  }',
+      `  return { calls, repository: ${adapter}(http) }`,
+      '}',
+      '',
       `describe('${adapter}', () => {`,
-      '  it(\'maps fields and offset paging to the REST source\', async () => {',
-      '    const calls: unknown[] = []',
-      `    const http: ApiClient<${errors.error}> = async (path, request) => {`,
-      '      calls.push({ path, request })',
-      `      return ok({ ${property(items)}: [${remoteRow}]${total ? `, ${property(total)}: 40` : ''} })`,
-      '    }',
-      `    const page = await ${adapter}(http).list({ limit: 10, offset: 20 })`,
-      `    expect(calls).toEqual([{ path: ${tsString(rest.list.path)}, request: { method: 'GET', query: ${query} } }])`,
-      `    expect(page).toEqual(ok({ items: [${modelRow}], total: ${total ? 40 : 1} }))`,
-      '  })',
-      '',
-      '  it(\'answers the error of a failed call\', async () => {',
-      `    const failed = ${errors.failed}(503, 'answered 503')`,
-      `    expect(await ${adapter}(async () => err(failed)).list({ limit: 10, offset: 0 })).toEqual(err(failed))`,
-      '  })',
-      '',
-      '  it(\'answers invalid_answer for an answer that is not what the model says, its detail to onInvalidAnswer\', async () => {',
-      '    const details: string[] = []',
-      `    const page = await ${adapter}(async () => ok({ ${property(items)}: 'not a list' }), (detail) => {`,
-      '      details.push(detail)',
-      '    }).list({ limit: 10, offset: 0 })',
-      `    expect(page).toEqual(err(${errors.invalidAnswer}()))`,
-      '    expect(details).toHaveLength(1)',
-      '  })',
+      tests.map(test => test.join('\n')).join('\n\n'),
       '})'
     ])
   }
 }
 
-// ── REST adapter with lookups and writes (V7: API-only projects) ───────
-
-const HTTP_OPTIONS = '{ method?: \'GET\' | \'POST\' | \'PUT\' | \'PATCH\' | \'DELETE\', query?: Record<string, string | number | undefined>, body?: unknown, optional?: boolean }'
+// ── REST paths ─────────────────────────────────────────────────────────
 
 /** `/posts/:id` → a template literal with the key as one URL-encoded segment. */
 const idPath = (path: string) => `\`${path.replace(':id', '${segment(id)}')}\``
@@ -479,206 +595,24 @@ const SEGMENT_HELPER = [
 
 const methodOf = (rest: RestConfig, op: RestEndpointOp) => rest[op]?.method ?? REST_ENDPOINTS[op]
 
-/** Options of one call: `method` only when it isn't GET. */
-const callOptions = (method: string, extra: string[]) => {
-  const entries = [...(method === 'GET' ? [] : [`method: ${tsString(method)}`]), ...extra]
-  return entries.length ? `, { ${entries.join(', ')} }` : ''
-}
-
-const restCrudRepositoryFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
-  const names = entityNames(entity)
-  const rest = restConfig(repository)
-  const source = datasourceOf(context, repository)
-  const fields = remoteFields(entity, rest)
-  const row = `${names.type}Row`
-  const response = `${pascal(entity.plural)}Response`
-  const variable = names.variable
-  const readsRows = has(repository, 'list') || has(repository, 'get') || has(repository, 'create') || has(repository, 'update')
-  const writesRows = has(repository, 'create') || has(repository, 'update')
-  const byId = has(repository, 'get') || has(repository, 'update') || has(repository, 'delete')
-  const body: string[] = []
-  if (has(repository, 'list')) {
-    const list = rest.list!
-    body.push(
-      '  async list({ limit, offset }) {',
-      `    const response = await http<${response}>(${tsString(list.path)}, { query: ${pagingQuery(rest)} })`,
-      '    return {',
-      `      items: ${member('response', list.itemsPath)}.map(fromRow),`,
-      `      total: ${list.totalPath ? member('response', list.totalPath) : `${member('response', list.itemsPath)}.length`}`,
-      '    }',
-      '  }'
-    )
-  }
-  if (has(repository, 'get')) {
-    body.push(
-      '  async get(id) {',
-      `    const row = await http<${row} | undefined>(${idPath(rest.get!.path)}${callOptions(methodOf(rest, 'get'), ['optional: true'])})`,
-      '    return row === undefined ? undefined : fromRow(row)',
-      '  }'
-    )
-  }
-  if (has(repository, 'create')) {
-    body.push(
-      `  async create(${variable}: ${names.type}) {`,
-      `    const row = await http<${row} | undefined>(${tsString(rest.create!.path)}${callOptions(methodOf(rest, 'create'), [`body: toRow(${variable})`])})`,
-      `    return row === undefined ? ${variable} : fromRow(row)`,
-      '  }'
-    )
-  }
-  if (has(repository, 'update')) {
-    body.push(
-      `  async update(id, ${variable}: ${names.type}) {`,
-      `    const row = await http<${row} | undefined>(${idPath(rest.update!.path)}${callOptions(methodOf(rest, 'update'), [`body: toRow(${variable})`])})`,
-      `    return row === undefined ? ${variable} : fromRow(row)`,
-      '  }'
-    )
-  }
-  if (has(repository, 'delete')) {
-    body.push('  async delete(id) {', `    await http<unknown>(${idPath(rest.delete!.path)}${callOptions(methodOf(rest, 'delete'), [])})`, '  }')
-  }
-  const path = context.paths.repository(names.file, 'rest')
-  return {
-    path,
-    source: context.source(repository.id),
-    content: file([
-      header(context.source(repository.id)),
-      importLine(`#${context.name}/domain/${names.file}`, [{ name: names.type, type: true }, ...(readsRows ? [`${names.type}Schema`] : [])]),
-      `import type { ${names.port} } from '${importPath(path, context.paths.port(names.portFile))}'`,
-      '',
-      '/** The minimal HTTP client this adapter needs (core\'s useRemote provides it). With `optional`, a 404 resolves to undefined. */',
-      `export type ${names.type}Http = <T>(path: string, options?: ${HTTP_OPTIONS}) => Promise<T>`,
-      '',
-      `/** A ${names.type} as the "${docText(source.name)}" source sends and takes it. */`,
-      `interface ${row} {`,
-      ...fields.map(({ field, remote }) => `  ${property(remote)}: ${tsType(field)}`),
-      '}',
-      ...(has(repository, 'list')
-        ? ['', `interface ${response} {`, `  ${property(rest.list!.itemsPath)}: ${row}[]`, ...(rest.list!.totalPath ? [`  ${property(rest.list!.totalPath)}: number`] : []), '}']
-        : []),
-      '',
-      readsRows && `const fromRow = (row: ${row}): ${names.type} => ${names.type}Schema.parse({ ${fields.map(({ field, remote }) => `${field.name}: ${member('row', remote)}`).join(', ')} })`,
-      writesRows && `const toRow = (${variable}: ${names.type}): ${row} => ({ ${fields.map(({ field, remote }) => `${property(remote)}: ${variable}.${field.name}`).join(', ')} })`,
-      byId && SEGMENT_HELPER,
-      '',
-      `/** ${names.port} over the "${docText(source.name)}" REST data source.${has(repository, 'list') ? ` Paging style: offset (${docText(String(rest.paging.offsetParam))}/${docText(String(rest.paging.limitParam))}).` : ''} */`,
-      `export const rest${names.port} = (http: ${names.type}Http): ${names.port} => ({`,
-      joinMethods(body),
-      '})'
-    ])
-  }
-}
-
+/** The key of a test row when the field map leaves it out. */
 const SAMPLE_UUID = '00000000-0000-4000-8000-000000000001'
-const crudSample = (field: Field) => field.type === 'uuid'
-  ? SAMPLE_UUID
-  : field.type === 'datetime' ? '2026-01-01T00:00:00.000Z' : field.type === 'date' ? '2026-01-01' : sample(field)
 
-/** Generated adapter tests: each declared operation calls its endpoint with the remote field names. */
-const restCrudRepositoryTestFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
-  const names = entityNames(entity)
-  const rest = restConfig(repository)
-  const fields = remoteFields(entity, rest)
-  const key = fields.find(({ field }) => field.name === keyOf(entity).name)
-  const id = key ? crudSample(key.field) : SAMPLE_UUID
-  const at = (path: string) => tsString(path.replace(':id', encodeURIComponent(String(id))))
-  const options = (op: RestEndpointOp, extra: string[]) => {
-    const method = methodOf(rest, op)
-    const entries = [...(method === 'GET' ? [] : [`method: ${tsString(method)}`]), ...extra]
-    return `{ ${entries.join(', ')} }`
-  }
-  const factory = `rest${names.port}`
-  const tests: string[][] = []
-  if (has(repository, 'list')) {
-    const list = rest.list!
-    const query = `{ ${property(rest.paging.limitParam)}: 10, ${property(rest.paging.offsetParam)}: 20 }`
-    tests.push([
-      '  it(\'maps fields and offset paging to the REST source\', async () => {',
-      `    const { calls, repository } = fake({ ${property(list.itemsPath)}: [row]${list.totalPath ? `, ${property(list.totalPath)}: 40` : ''} })`,
-      '    const page = await repository.list({ limit: 10, offset: 20 })',
-      `    expect(calls).toEqual([{ path: ${tsString(list.path)}, options: { query: ${query} } }])`,
-      `    expect(page).toEqual({ items: [${names.variable}], total: ${list.totalPath ? 40 : 1} })`,
-      '  })'
-    ])
-  }
-  if (has(repository, 'get')) {
-    tests.push([
-      '  it(\'gets one by id, and undefined when the source has none\', async () => {',
-      '    const found = fake(row)',
-      `    expect(await found.repository.get(${tsLiteral(id)})).toEqual(${names.variable})`,
-      `    expect(found.calls).toEqual([{ path: ${at(rest.get!.path)}, options: ${options('get', ['optional: true'])} }])`,
-      `    expect(await fake(undefined).repository.get(${tsLiteral(id)})).toBeUndefined()`,
-      '  })'
-    ])
-  }
-  for (const op of ['create', 'update'] as const) {
-    if (!has(repository, op)) continue
-    tests.push([
-      `  it('${op === 'create' ? 'creates' : 'updates'} with the remote field names', async () => {`,
-      '    const { calls, repository } = fake(row)',
-      `    expect(await repository.${op}(${op === 'update' ? `${tsLiteral(id)}, ` : ''}${names.variable})).toEqual(${names.variable})`,
-      `    expect(calls).toEqual([{ path: ${op === 'create' ? tsString(rest.create!.path) : at(rest.update!.path)}, options: ${options(op, ['body: row'])} }])`,
-      '  })'
-    ])
-  }
-  if (has(repository, 'delete')) {
-    tests.push([
-      '  it(\'deletes by id\', async () => {',
-      '    const { calls, repository } = fake(undefined)',
-      `    await repository.delete(${tsLiteral(id)})`,
-      `    expect(calls).toEqual([{ path: ${at(rest.delete!.path)}, options: ${options('delete', [])} }])`,
-      '  })'
-    ])
-  }
-  const lookup = (['get', 'update', 'delete'] as const).find(op => has(repository, op))
-  // Only text keys can be "." or ".." (a numeric key can't, and passing one wouldn't typecheck).
-  if (lookup && typeof id === 'string') {
-    tests.push([
-      '  it(\'refuses ids that would change the path\', async () => {',
-      '    const { calls, repository } = fake(row)',
-      ...['..', '.', ''].map(bad => `    await expect(repository.${lookup}(${tsLiteral(bad)}${lookup === 'update' ? `, ${names.variable}` : ''})).rejects.toThrow('Not a valid id for a REST path')`),
-      '    expect(calls).toEqual([])',
-      '  })'
-    ])
-  }
-  const path = context.paths.test(`infrastructure/${names.file}.rest.test.ts`)
-  return {
-    path,
-    source: context.source(repository.id),
-    content: file([
-      header(context.source(repository.id)),
-      'import { describe, expect, it } from \'vitest\'',
-      `import { type ${names.type}Http, ${factory} } from '${importPath(path, context.paths.repository(names.file, 'rest'))}'`,
-      '',
-      `const row = { ${fields.map(({ field, remote }) => `${property(remote)}: ${tsLiteral(crudSample(field))}`).join(', ')} }`,
-      `const ${names.variable} = { ${fields.map(({ field }) => `${field.name}: ${tsLiteral(crudSample(field))}`).join(', ')} }`,
-      '',
-      '/** A fake REST source that answers every call with `answer` and records the calls. */',
-      'const fake = (answer: unknown) => {',
-      '  const calls: unknown[] = []',
-      `  const http: ${names.type}Http = async <T>(path: string, options?: unknown) => {`,
-      '    calls.push({ path, options })',
-      '    return answer as T',
-      '  }',
-      `  return { calls, repository: ${factory}(http) }`,
-      '}',
-      '',
-      `describe('${factory}', () => {`,
-      tests.map(test => test.join('\n')).join('\n\n'),
-      '})'
-    ])
-  }
-}
-
-/** What listing answers: the page, or (from a REST source, R1') the page or the source's error. */
-const listAnswer = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
-  const page = `Page<${entityNames(entity).type}>`
-  if (!answersResult(context, repository)) return { type: page, imports: [], sourceImports: [] }
+/** What a repository's operations answer: the value, or (from a REST source, R1') the value or the source's error. */
+const portAnswer = (context: ModuleContext, repository: RepositoryFile) => {
+  if (!answersResult(context, repository)) return { of: (type: string) => type, imports: [], sourceImports: [] }
   const source = sourceNames(context, datasourceOf(context, repository))
   return {
-    type: `Result<${page}, ${source.error}>`,
+    of: (type: string) => `Result<${type === 'void' ? 'undefined' : type}, ${source.error}>`,
     imports: ['import type { Result } from \'#core/kernel/result\''],
     sourceImports: [`import type { ${source.error} } from '${source.from}'`]
   }
+}
+
+/** What listing answers: the page, or the page or the source's error. */
+const listAnswer = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
+  const answer = portAnswer(context, repository)
+  return { ...answer, type: answer.of(`Page<${entityNames(entity).type}>`) }
 }
 
 // ── List use-case and route ────────────────────────────────────────────

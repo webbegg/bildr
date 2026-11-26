@@ -1,0 +1,10 @@
+{
+  "entity": "ent_task",
+  "rows": [
+    {
+      "id": "6f1c2d3e-4b5a-4c6d-8e7f-000000000101",
+      "title": "Seeded from the model fixtures",
+      "done": false
+    }
+  ]
+}
