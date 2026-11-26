@@ -138,7 +138,7 @@ describe('node_interaction_add: runAction', () => {
       { kind: 'toast', when: 'success', title: 'Saved', color: 'success' },
       { kind: 'navigate', when: 'success', to: { page: 'pg_post_detail', params: { slug: { $form: 'slug' } } } }
     ] })
-    expect(generated(p.files)[NEW_POST_VUE]).toContain('if (await createPost({ ...form })) {')
+    expect(generated(p.files)[NEW_POST_VUE]).toContain('if ((await createPost({ ...form })).ok) {')
   })
 
   it('refuses an action that does not exist or is not in the page\'s module, and args the action does not take', () => {
@@ -176,17 +176,18 @@ describe('node_interaction_add: runAction on an action that takes no input (B7)'
     add(p, { on: 'click', do: [tidy, { kind: 'toast', when: 'success', title: 'Tidied' }] })
     add(p, { on: 'mouseenter', do: [tidy, { kind: 'toast', when: 'success', title: 'A' }, { kind: 'navigate', when: 'success', to: { page: 'pg_new_post' } }] })
     const vue = generated(p.files)[PAGE_VUE]!
-    expect(vue).toContain('if (await tidyPosts()) toast.add({ title: \'Tidied\' })')
-    expect(vue).toContain('if (await tidyPosts()) {')
+    // `run` answers a Result (T3c2): what follows runs once it is ok.
+    expect(vue).toContain('if ((await tidyPosts()).ok) toast.add({ title: \'Tidied\' })')
+    expect(vue).toContain('if ((await tidyPosts()).ok) {')
   })
 
-  it('generates a client composable whose execute takes nothing', () => {
+  it('generates a client composable whose run takes nothing', () => {
     const p = quiet()
     const composable = generated(p.files)['layers/blog/app/composables/blog/useTidyPosts.ts']!
-    expect(composable).toContain('const execute = async (): Promise<boolean> => {')
+    expect(composable).toContain('export const useTidyPosts = () => useAction(async () => ')
     // No optimistic action: TanStack DB only calls its mutationFn when something was mutated, so this one calls the route itself.
     expect(composable).not.toContain('createOptimisticAction')
-    expect(composable).toContain('await $fetch(\'/api/blog/posts/tidy-posts\', { method: \'POST\' })')
+    expect(composable).toContain('$fetch<undefined>(\'/api/blog/posts/tidy-posts\', { method: \'POST\' })')
     expect(generated(p.files)['layers/blog/server/api/blog/posts/tidy-posts.post.ts']).toContain('defineEventHandler(async () => {')
   })
 
@@ -249,7 +250,7 @@ describe('node_interaction_add: steps together', () => {
       { kind: 'toast', when: 'success', title: 'Done' },
       { kind: 'navigate', when: 'success', to: { page: 'pg_new_post' } }
     ] })
-    expect(generated(p.files)[PAGE_VUE]).toContain('if (await publishPost(')
+    expect(generated(p.files)[PAGE_VUE]).toContain('if ((await publishPost(')
   })
 
   it('runs navigate and toast in order without an action, and an action alone on submit', () => {

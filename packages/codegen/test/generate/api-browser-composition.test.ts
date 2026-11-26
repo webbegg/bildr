@@ -25,12 +25,13 @@ interface Composables {
 }
 
 const CONFIG = '__bildrBrowserCompositionConfig'
-/** The helpers of app/data/api-query.ts without TanStack: a query hands its options back, an action's `run` is its call; `fromRoute` marks what it read. */
+/** The helpers of app/data/api-query.ts without TanStack: a query hands its options back, an action's `run` is its call. */
 const QUERY_STUB = `
 export const useApiQuery = options => ({ options })
 export const useApiAction = (call, invalidates) => ({ run: call, invalidates })
-export const fromRoute = async call => ({ ok: true, value: { fromRoute: await call } })
 `
+/** The core's `fromRoute` (core-results.test.ts runs it), marking what it read. */
+const RESULTS_STUB = 'export const fromRoute = async call => ({ ok: true, value: { fromRoute: await call } })\n'
 const APP_STUB = `export const useRuntimeConfig = () => globalThis.${CONFIG}\n`
 
 describe('generated browser composition and composables, run', () => {
@@ -42,7 +43,7 @@ describe('generated browser composition and composables, run', () => {
     if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems))
     const sources = new Map(generate(loaded.model).map(file => [file.path, file.content]))
     sources.set('layers/apis/app/data/api-query.ts', QUERY_STUB)
-    const { load } = generatedRunner(sources, dir, { '#app': APP_STUB })
+    const { load } = generatedRunner(sources, dir, { '#app': APP_STUB, '#layers/core/app/data/results': RESULTS_STUB })
     const names: Array<keyof Composables> = ['useWeatherForecast', 'useWeatherReportForecast', 'useCatalogProducts', 'useCatalogDeleteProduct', 'useCatalogCreateProduct']
     composables = Object.assign({}, ...await Promise.all(names.map(name => load<Partial<Composables>>(`layers/apis/app/composables/apis/${name}.ts`)))) as Composables
   })

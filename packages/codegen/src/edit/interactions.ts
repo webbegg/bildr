@@ -191,7 +191,7 @@ const checkRunAction = (check: Check, context: ExpressionContext, step: Step, wh
     if (name !== param.name) fail('invalid', `${where}: ${action.name} takes "${param.name}", not "${name}"`)
     checkExpression(context, value, `${where} ${name}`)
     if (!isObject(value) && !fits(param.type, value, false)) fail('invalid', `${where}: ${JSON.stringify(value)} doesn't fit the parameter ${param.name} (${param.type})`)
-    // `execute(id: string)`: one plain value of the parameter's kind, never null or unset.
+    // `run(id: string)`: one plain value of the parameter's kind, never null or unset.
     expectValue(context, value, `${where} ${name}`, `the parameter ${param.name} (${param.type})`, { prims: [primOf(param.type)] })
   } else if (action.input.entity) {
     // The body of an action on a collection is a whole row of it: a row of that collection, or the form's.

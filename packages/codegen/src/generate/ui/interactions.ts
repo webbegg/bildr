@@ -9,7 +9,7 @@ import { attr, escapeAttr } from './markup.ts'
 
 export const runAction = (env: Env, node: ModelNode, step: Record<string, Value>, ctx: Ctx) => {
   const alias = env.aliases.actions.get(String(step.action)) ?? fail(env, node, `action ${String(step.action)} isn't in the page's uses.actions`)
-  use(env, `action:${alias}`, 'execute')
+  use(env, `action:${alias}`, 'run')
   const args = step.args
   // An action with no parameters and no collection input is run with nothing.
   const { input } = actionById(env, node, step.action)
@@ -85,7 +85,8 @@ export const handler = (env: Env, node: ModelNode, on: string, steps: Array<Reco
     summaries.push(...then.map(entry => entry.summary))
     body.push(...(!then.length
       ? [`  await ${run}`]
-      : then.length === 1 ? [`  if (await ${run}) ${then[0]!.code}`] : [`  if (await ${run}) {`, ...then.map(entry => `    ${entry.code}`), '  }']))
+      // `run` answers a Result: what follows runs once it is ok.
+      : then.length === 1 ? [`  if ((await ${run}).ok) ${then[0]!.code}`] : [`  if ((await ${run}).ok) {`, ...then.map(entry => `    ${entry.code}`), '  }']))
   } else {
     if (steps.some(step => step.when !== undefined)) unsupported()
     const all = steps.map(statement)

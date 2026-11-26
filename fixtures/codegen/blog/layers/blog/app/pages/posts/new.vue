@@ -2,13 +2,13 @@
 <script setup lang="ts">
 definePageMeta({ name: 'posts-new', layout: 'main', layoutValues: { title: 'Write' } })
 
-const { execute: createPost, pending: createPostPending, error: createPostError } = useCreatePost()
+const { run: createPost, pending: createPostPending, error: createPostError } = useCreatePost()
 const form = reactive({ title: '', slug: '', body: '', published: false })
 useSeoMeta({ title: 'New post' })
 
 // Interaction "submit": run action Create post, then go to /posts/:slug.
 const onFormSubmit = async () => {
-  if (await createPost({ ...form })) await navigateTo({ name: 'posts-slug', params: { slug: form.slug } })
+  if ((await createPost({ ...form })).ok) await navigateTo({ name: 'posts-slug', params: { slug: form.slug } })
 }
 
 // Interaction "click": go to /.
@@ -32,7 +32,7 @@ const onCancelClick = async () => {
         <UTextarea v-model="form.body" name="body" :rows="6" class="w-full" />
       </UFormField>
       <UCheckbox v-model="form.published" name="published" label="Publish now" />
-      <p v-if="createPostError" class="text-sm whitespace-pre-line text-error">{{ createPostError }}</p>
+      <p v-if="createPostError?.message" class="text-sm whitespace-pre-line text-error">{{ createPostError?.message }}</p>
       <div class="flex gap-2 self-stretch">
         <UButton type="submit" label="Create" icon="i-lucide-plus" :disabled="createPostPending" />
         <UButton label="Cancel" color="neutral" variant="ghost" @click="onCancelClick" />

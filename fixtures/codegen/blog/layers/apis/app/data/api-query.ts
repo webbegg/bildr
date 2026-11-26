@@ -3,15 +3,10 @@ import { QueryObserver } from '@tanstack/query-core'
 import type { QueryObserverResult } from '@tanstack/query-core'
 import { getCurrentScope, onScopeDispose, shallowRef, toValue, watch } from 'vue'
 import type { MaybeRefOrGetter } from 'vue'
-import { err, ok } from '#core/kernel/result'
 import type { ApiError, DomainError, Result } from '#core/kernel/result'
 import { queryClient } from '#layers/core/app/data/query-client'
-
-/**
- * Where a query is, as the `status` of Nuxt's useAsyncData: `pending` until it has an answer, then `success` or `error`. Fetching again
- * over an answer stays `success` (the page keeps showing it until the new one replaces it); after an error it is `pending` again.
- */
-export type ApiStatus = 'pending' | 'success' | 'error'
+import { Answered, failureOf, useAction } from '#layers/core/app/data/results'
+import type { DataStatus } from '#layers/core/app/data/results'
 
 /** What a query composable of an API data source gives `useApiQuery`. */
 export interface ApiQueryOptions<Input, Output, E extends DomainError> {
@@ -20,38 +15,6 @@ export interface ApiQueryOptions<Input, Output, E extends DomainError> {
   input: MaybeRefOrGetter<Input>
   /** The call: it answers a Result, never throws for an expected failure. */
   fetch: (input: Input, signal: AbortSignal) => Promise<Result<Output, ApiError<E>>>
-}
-
-/** A failure outside the source's errors (the server could not be reached, or a bug): its detail goes to the console, the UI gets a generic message. */
-const unexpected = (cause: unknown): ApiError<never> => {
-  console.error(cause)
-  return { type: 'unexpected', message: 'Something went wrong. Please try again.' }
-}
-
-const isDomainError = (value: unknown): value is DomainError =>
-  typeof value === 'object' && value !== null && typeof (value as DomainError).type === 'string' && typeof (value as DomainError).message === 'string'
-
-/**
- * What a server source's route answered (a `$fetch` of it): its value, or the source's error the route answered with. The route sends
- * the error as the `data` of its HTTP error (`unwrapOrThrow`); anything else is `unexpected`.
- */
-export const fromRoute = async <T, E extends DomainError>(call: Promise<T>): Promise<Result<T, ApiError<E>>> => {
-  try {
-    return ok(await call)
-  } catch (cause) {
-    const sent = typeof cause === 'object' && cause !== null ? (cause as { data?: { data?: unknown } }).data?.data : undefined
-    // The route answers only the errors of its source: the type says which they are.
-    return err(isDomainError(sent) ? sent as E : unexpected(cause))
-  }
-}
-
-/** The error a query's call answered, carried through TanStack Query (which knows only thrown errors) to the query's `error`. */
-class Answered extends Error {
-  readonly error: ApiError
-  constructor(error: ApiError) {
-    super(error.message)
-    this.error = error
-  }
 }
 
 /**
@@ -67,7 +30,7 @@ const retry = (count: number, cause: Error) => {
 
 /**
  * A query over the app's query client, with the contract of Nuxt's useAsyncData: `data`, `status` and `error` (the source's typed
- * error) are refs, `refresh()` fetches again. It also fetches again when `input` changes.
+ * error) are refs, `refresh()` fetches again. It also fetches again when `input` changes; after an error it is `pending` again.
  */
 export const useApiQuery = <Input, Output, E extends DomainError>({ key, input, fetch }: ApiQueryOptions<Input, Output, E>) => {
   const optionsFor = () => {
@@ -84,7 +47,7 @@ export const useApiQuery = <Input, Output, E extends DomainError>({ key, input, 
   }
   const observer = new QueryObserver<Output>(queryClient, optionsFor())
   const data = shallowRef<Output>()
-  const status = shallowRef<ApiStatus>('pending')
+  const status = shallowRef<DataStatus>('pending')
   const error = shallowRef<ApiError<E>>()
   // The observer reports a failure on each update: it is read (and an unexpected one logged) once, and stays the same error.
   let reported: Error | undefined
@@ -93,7 +56,7 @@ export const useApiQuery = <Input, Output, E extends DomainError>({ key, input, 
     if (cause !== reported || !failure) {
       reported = cause
       // What `fetch` answered is one of E: `Answered` carries it untyped through TanStack Query.
-      failure = cause instanceof Answered ? cause.error as ApiError<E> : unexpected(cause)
+      failure = failureOf<E>(cause)
     }
     return failure
   }
@@ -112,30 +75,10 @@ export const useApiQuery = <Input, Output, E extends DomainError>({ key, input, 
   return { data, status, error, refresh }
 }
 
-/** An action: `run` calls the API, then refetches the queries under `invalidates`. It answers a Result, never throws; `pending` and `error` are refs. */
-export const useApiAction = <Input, Output, E extends DomainError>(call: (input: Input) => Promise<Result<Output, ApiError<E>>>, invalidates: readonly unknown[]) => {
-  type RunArguments = undefined extends Input ? [input?: Input] : [input: Input]
-  const pending = shallowRef(false)
-  const error = shallowRef<ApiError<E>>()
-  // It is pending while any of its runs is.
-  let running = 0
-  const run = async (...[input]: RunArguments): Promise<Result<Output, ApiError<E>>> => {
-    running += 1
-    pending.value = true
-    error.value = undefined
-    try {
-      const result = await call(input as Input)
-      if (result.ok) await queryClient.invalidateQueries({ queryKey: invalidates })
-      else error.value = result.error
-      return result
-    } catch (cause) {
-      const failure = unexpected(cause)
-      error.value = failure
-      return err(failure)
-    } finally {
-      running -= 1
-      pending.value = running > 0
-    }
-  }
-  return { run, pending, error }
-}
+/** An action (`useAction`: it answers a Result, never throws): `run` calls the API, then refetches the queries under `invalidates`. */
+export const useApiAction = <Input, Output, E extends DomainError>(call: (input: Input) => Promise<Result<Output, ApiError<E>>>, invalidates: readonly unknown[]) =>
+  useAction(async (...[input]: undefined extends Input ? [input?: Input] : [input: Input]) => {
+    const result = await call(input as Input)
+    if (result.ok) await queryClient.invalidateQueries({ queryKey: invalidates })
+    return result
+  })

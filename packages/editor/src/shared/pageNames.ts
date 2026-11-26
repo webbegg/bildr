@@ -5,7 +5,7 @@ import { routeParams } from './interactionValues.ts'
 /**
  * The name a page gives what it uses (B4): a State, a query, an action or a computed value is read by name, in the page's script and in
  * its bindings. `freeAlias` is the first name the page can give one: not one of its uses, or a name a use derives (a State's `set…`, a
- * query's `…Loading`, an action's `…Pending` and `…Error`), not what a List calls its records (a name inside the List would read the
+ * query's `…Status`, an action's `…Pending` and `…Error`), not what a List calls its records (a name inside the List would read the
  * record instead), not a route parameter, and not one the page's script uses itself or Vue and Nuxt provide to it.
  *
  * The module refuses a name its script cannot declare (`page_use_add`, `page_computed_set`) and is the last word; this one is the
@@ -22,8 +22,7 @@ const capital = (name: string): string => name.charAt(0).toUpperCase() + name.sl
 /** The names the page's script declares for a use `as` of `kind`: the name, and what it derives from it. */
 const declaredBy = (as: string, kind: UseKind): string[] => {
   if (kind === 'state') return [as, `set${capital(as)}`]
-  if (kind === 'query') return [as, `${as}Loading`]
-  if (kind === 'api') return [as, `${as}Status`]
+  if (kind === 'query' || kind === 'api') return [as, `${as}Status`]
   if (kind === 'action') return [as, `${as}Pending`, `${as}Error`]
   return [as]
 }

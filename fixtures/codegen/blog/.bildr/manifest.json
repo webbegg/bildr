@@ -28,22 +28,22 @@
     },
     "layers/apis/app/composables/apis/useCatalogCreateProduct.ts": {
       "owner": "managed",
-      "sha256": "0ae3deeef65213b8811dd12cf27ecb54fe329e26e4d332e31db698c4fc4073c6",
+      "sha256": "d24ef06ee435ff97561a32ad29f2e45921ca719a77713ba7520b99f78212eaa6",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/app/composables/apis/useCatalogDeleteProduct.ts": {
       "owner": "managed",
-      "sha256": "18adcaa9bd4e112673a21adef9fc2dce5c4ce8c67b5429e5e240313000c52f9c",
+      "sha256": "913de28aa67b564aea9789421d5396b522f41932c4ca21989fec51df1273f087",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/app/composables/apis/useCatalogProduct.ts": {
       "owner": "managed",
-      "sha256": "01adcdee48fb02645117963ec707505368403fb4035a15b7c6edf384d284e8a7",
+      "sha256": "9e45fa9a7b9abb6a5b054599f279643af71ef1f752f415af25abee6f25e139e7",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/app/composables/apis/useCatalogProducts.ts": {
       "owner": "managed",
-      "sha256": "e0ac4c971339bd01edea467b5ead76e491cb61041ec19fbc6442a9fd1be8cd4a",
+      "sha256": "5acfd2d0f03ec8d1eee9ac431c62e20f3885726bf5a4927c55b935d9a24c43a7",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/app/composables/apis/useWeatherForecast.ts": {
@@ -58,7 +58,7 @@
     },
     "layers/apis/app/data/api-query.ts": {
       "owner": "managed",
-      "sha256": "7d982f928c4cf75434722be79de55a6f5a2dd60e4eedde82489d221ada22562c"
+      "sha256": "12fd36db0f47bb1ed607c96f7c713e2e8eb7d8091faae2d619026d0e6b85e9b7"
     },
     "layers/apis/app/data/weather.ts": {
       "owner": "managed",
@@ -296,7 +296,7 @@
     },
     "layers/blog/app/composables/blog/useAllPosts.ts": {
       "owner": "managed",
-      "sha256": "8d06a0d4b988739124a9df97d49e19f5cc25740f2188d39bd81c920a21555ad1",
+      "sha256": "03c1f43cb76690cec584b964b61f31b6bf5a7678af9f7d4cca6fa2ba9deea926",
       "source": ".bildr/modules/blog/queries/all-posts.json"
     },
     "layers/blog/app/composables/blog/useBlogPreferences.ts": {
@@ -306,27 +306,27 @@
     },
     "layers/blog/app/composables/blog/useCreatePost.ts": {
       "owner": "managed",
-      "sha256": "8ecaa0570a017863fef6c20c9c7532985a2648a8062acbe029252ee83277d96b",
+      "sha256": "05e95374440ea2fdf74db6337c990b4cb5ba1aa4865c5844ab92d335391f3d1a",
       "source": ".bildr/modules/blog/actions/create-post.json"
     },
     "layers/blog/app/composables/blog/useFeaturedPosts.ts": {
       "owner": "managed",
-      "sha256": "a329df95b70026d1ccb0d68ae4f21653463d5172c9028d0e8851d6c58e327eb1",
+      "sha256": "0420046c944f7d14564b9e13eba2cb3967bd2b8da2d12f7f54832148ce2512c0",
       "source": ".bildr/modules/blog/queries/featured-posts.json"
     },
     "layers/blog/app/composables/blog/useLatestQuotes.ts": {
       "owner": "managed",
-      "sha256": "4988102b0d10fd31e4dd77654025b618de1e655200b1e66fcb2314df870c9e94",
+      "sha256": "74c7c038baf50b89cd2e2c6c09649f16dd067006325925501d7b8701d9a71e5e",
       "source": ".bildr/modules/blog/queries/latest-quotes.json"
     },
     "layers/blog/app/composables/blog/usePostBySlug.ts": {
       "owner": "managed",
-      "sha256": "574987fd80e1cb6de55c68b34c4af9c1dd38ad319ad58cb079748e4dca62d256",
+      "sha256": "fb4b59edc892b9d1b5c69753ae94b093b161c52baf9f16d5d51ef60b84b351e4",
       "source": ".bildr/modules/blog/queries/post-by-slug.json"
     },
     "layers/blog/app/composables/blog/usePublishPost.ts": {
       "owner": "managed",
-      "sha256": "927be72e1c9a329bb1d87a51ab04d960a5a070676341bbfb083e10ef0b2b89c5",
+      "sha256": "86e7a646cbb9b25cea0115eed1f1800061d76f717e68315ac1c08e69f628fffa",
       "source": ".bildr/modules/blog/actions/publish-post.json"
     },
     "layers/blog/app/data/posts.collection.ts": {
@@ -351,17 +351,17 @@
     },
     "layers/blog/app/pages/index.vue": {
       "owner": "managed",
-      "sha256": "ccb0792a5f1ba76f1c28cabbe325df932e7499a8dad53e1d56aafba32a20d2ce",
+      "sha256": "0fce34f3f29c22baf0df1c8974fdc12e5e835702d10c640a638d1c0c5aed3fe3",
       "source": ".bildr/modules/blog/pages/index.json"
     },
     "layers/blog/app/pages/posts/[slug].vue": {
       "owner": "managed",
-      "sha256": "428c495e795f7af53720cc127f3c63fe041389a00e852dfec5c04de4d6923b8e",
+      "sha256": "ef21e3ccb5b46b3636896a9f67c6aa61cea538d5dba809122658488aaa3c07db",
       "source": ".bildr/modules/blog/pages/post-detail.json"
     },
     "layers/blog/app/pages/posts/new.vue": {
       "owner": "managed",
-      "sha256": "01be36242dbffa557430dc3d3b5cec4b8c4079f91ec84147dfaaf4805466e3d4",
+      "sha256": "747d7b81580fc5469c7f23f4fc8c0b673e847a60c93ccf7eaf0cc9dfca5cfe22",
       "source": ".bildr/modules/blog/pages/new-post.json"
     },
     "layers/blog/app/pages/weather/[city].vue": {
@@ -510,6 +510,10 @@
       "owner": "managed",
       "sha256": "5edda13ce52d11b72868c1f092512d685d48c1e2968682ae00550155b9ecbc42"
     },
+    "layers/core/app/data/results.ts": {
+      "owner": "managed",
+      "sha256": "e69b79bde3c21f7ad8de2bb0ef33a0c428860392ace7adebbf876fe9a98383e4"
+    },
     "layers/core/app/error.vue": {
       "owner": "managed",
       "sha256": "9a21dc7d9d3da427a3f044873087c62e65d02bd503146301e0a185a31e9043f7"
@@ -522,10 +526,6 @@
     "layers/core/app/types/page-meta.d.ts": {
       "owner": "managed",
       "sha256": "6e12023162dcc092ed1436e10fa0928ab4b6288d1aaa7ed3ea56d3b34a3121a0"
-    },
-    "layers/core/app/utils/errorMessage.ts": {
-      "owner": "managed",
-      "sha256": "c8bf20933f1d98cd9e3ce2d12b1358c76b86990b03480529bda930107dc8a345"
     },
     "layers/core/nuxt.config.ts": {
       "owner": "managed",

@@ -28,7 +28,7 @@ describe('generateUi: a guarded page whose data does not exist', () => {
     expect(page).toContain([
       '// The post doesn\'t exist: Nuxt\'s error page, a 404.',
       'watchEffect(() => {',
-      '  if (!postLoading.value && !post.value) showError({ status: 404, message: \'This post doesn\\\'t exist.\' })',
+      '  if (postStatus.value === \'success\' && !post.value) showError({ status: 404, message: \'This post doesn\\\'t exist.\' })',
       '})'
     ].join('\n'))
     expect(page).not.toContain('<p v-else class="text-muted">This post doesn\'t exist.</p>')
@@ -63,10 +63,11 @@ describe('generateUi: accessible semantics', () => {
       id: 'n_l', type: 'List', props: { items: { $bind: 'quotes' }, as: 'quote', ...extra }, children
     })
     const landmark = indexWith(row({ tag: 'nav' }, [text('n_t')]))
-    expect(landmark).toContain('<nav class="flex flex-col self-stretch">\n      <p v-for="quote in quotes" :key="quote.id">a</p>')
+    // A List over a query shows the query's error line instead of itself when it failed (T3c2).
+    expect(landmark).toContain('<nav v-else class="flex flex-col self-stretch">\n      <p v-for="quote in quotes" :key="quote.id">a</p>')
     expect(landmark).not.toContain('role="listitem">a</p>')
     const pairs = indexWith(row({}, [text('n_t'), text('n_u')]))
-    expect(pairs).toMatch(/<div class="[^"]*">\n\s*<template v-for="quote in quotes" :key="quote.id">/)
+    expect(pairs).toMatch(/<div v-else class="[^"]*">\n\s*<template v-for="quote in quotes" :key="quote.id">/)
   })
 })
 
@@ -178,7 +179,7 @@ describe('generateUi follows the canvas render rules', () => {
       // A one-record query may be empty: the handler checks it once, so the action gets a defined id.
       'const onPublishClick = async () => {',
       '  if (!post.value) return',
-      '  if (await publish(post.value.id)) toast.add({ title: `Published ${post.value.title}` })',
+      '  if ((await publish(post.value.id)).ok) toast.add({ title: `Published ${post.value.title}` })',
       '}'
     ].join('\n'))
   })
@@ -237,9 +238,9 @@ describe('generateUi follows the canvas render rules', () => {
 
   it('lays a List out by its `layout` (list-layout)', () => {
     const list = (layout?: string): ModelNode => ({ id: 'n_x', type: 'List', props: { items: { $bind: 'quotes' }, as: 'q', ...(layout ? { layout } : {}) }, children: [{ id: 'n_y', type: 'Container' }] })
-    expect(indexWith(list())).toContain('    <div role="list" class="flex flex-col self-stretch">\n      <div v-for="q in quotes" :key="q.id" role="listitem" class="flex flex-col self-stretch" />')
-    expect(indexWith(list('row'))).toContain('    <div role="list" class="flex flex-wrap self-stretch">\n      <div v-for="q in quotes" :key="q.id" role="listitem" class="flex flex-col" />')
-    expect(indexWith(list('grid'))).toContain('    <div role="list" class="grid self-stretch">\n      <div v-for="q in quotes" :key="q.id" role="listitem" class="flex flex-col" />')
+    expect(indexWith(list())).toContain('    <div v-else role="list" class="flex flex-col self-stretch">\n      <div v-for="q in quotes" :key="q.id" role="listitem" class="flex flex-col self-stretch" />')
+    expect(indexWith(list('row'))).toContain('    <div v-else role="list" class="flex flex-wrap self-stretch">\n      <div v-for="q in quotes" :key="q.id" role="listitem" class="flex flex-col" />')
+    expect(indexWith(list('grid'))).toContain('    <div v-else role="list" class="grid self-stretch">\n      <div v-for="q in quotes" :key="q.id" role="listitem" class="flex flex-col" />')
   })
 
   it('renders Column, Grid, Image and Card (generator-missing-types)', () => {

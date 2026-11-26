@@ -96,10 +96,7 @@ export const queryFile = (context: ModuleContext, query: QueryFile) => {
   // A live query refuses a limit without an ordering: a limited query with none is ordered by the entity key.
   if (query.limit !== undefined && !query.orderBy?.length) chain.push(`.orderBy(({ ${alias} }) => ${alias}.${keyOf(entity).name}, 'asc')`)
   if (query.limit !== undefined) chain.push(`.limit(${valueOf(query.limit)})`)
-  if (query.result === 'one') {
-    chain.push('.findOne()')
-    vue.add('computed')
-  }
+  if (query.result === 'one') chain.push('.findOne()')
 
   const signature = query.params.map((param) => {
     if (param.reactive) return `${param.name}: MaybeRefOrGetter<${paramType(param.type)}>`
@@ -113,15 +110,15 @@ export const queryFile = (context: ModuleContext, query: QueryFile) => {
     `${indent})`
   ].filter((line): line is string => line !== undefined)
 
-  const doc = `Query "${query.label}"${query.description ? `: ${query.description}` : '.'}`
-  const body = query.result === 'one'
-    ? [
-        `export const ${composable} = (${signature}) => {`,
-        `  const result = ${liveQuery('  ').join('\n')}`,
-        `  return { ...result, ${alias}: computed(() => result.data.value) }`,
-        '}'
-      ]
-    : [`export const ${composable} = (${signature}) =>`, `  ${liveQuery('  ').join('\n')}`]
+  // The contract of every composable that reads (useAsyncData's): `data`, `status`, `error`, `refresh` (refetching the collection).
+  const lead = `Query "${query.label}"${query.description ? `: ${query.description}` : ''}`
+  const doc = `${/[.!?]$/.test(lead) ? lead : `${lead}.`} \`data\`, \`status\` and \`error\` are refs, \`refresh()\` refetches the ${pascal(entity.plural)}.`
+  const body = [
+    `export const ${composable} = (${signature}) => {`,
+    `  const query = ${liveQuery('  ').join('\n')}`,
+    `  return fromLiveQuery(query, () => ${names.collection}.utils.refetch())`,
+    '}'
+  ]
 
   const path = context.paths.composable(composable)
   return {
@@ -131,6 +128,7 @@ export const queryFile = (context: ModuleContext, query: QueryFile) => {
       header(context.source(query.id)),
       importLine('@tanstack/vue-db', [...tanstack]),
       vue.size > 0 && importLine('vue', [...vue].map(name => name === 'MaybeRefOrGetter' ? { name, type: true } : name)),
+      'import { fromLiveQuery } from \'#layers/core/app/data/results\'',
       `import { ${names.collection} } from '${importPath(path, context.paths.collection(names.pluralFile))}'`,
       '',
       `/** ${docText(doc)} */`,

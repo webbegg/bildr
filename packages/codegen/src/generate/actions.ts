@@ -388,13 +388,17 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
 
 // ── Client composable ──────────────────────────────────────────────────
 
+const RUN_DOC = (context: ModuleContext) => `\`run\` answers a Result, its error one of ${errorTypeName(context)} or unexpected, and never throws; \`pending\` and \`error\` are refs.`
+
 interface Optimistic { kind: 'insert' | 'update' | 'delete', entity: string, key?: Value, unless?: string, set?: Record<string, Value> }
 
 /**
- * The client composable of an action with no `client.optimistic` (B7 for no input, fix/action-server-call for the rest): `execute(...)`
+ * The client composable of an action with no `client.optimistic` (B7 for no input, fix/action-server-call for the rest): `run(...)`
  * calls the route with its input, then refetches what the action invalidates. It is not a `createOptimisticAction` with an empty
  * `onMutate`: TanStack DB's transaction only calls its `mutationFn` when something was mutated, so that never reached the server.
- * The public surface is the optimistic composable's: `execute` (true when the server answered), `pending` and `error`.
+ * The public surface is the optimistic composable's and an API action's (T3c2, the core's `useAction`): `run` answers a Result whose
+ * error is one of the module's (`<Module>Error`) or `unexpected`, and never throws; `pending` and `error` are refs. It answers what the
+ * route answered.
  */
 const directComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
   const { action, inputEntity, params, output } = analyzed
@@ -403,7 +407,7 @@ const directComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
   const source = context.source(action.id)
   const invalidated = action.client.invalidates.map(id => entityById(context, id))
   const collections = new Set(invalidated.map(entity => entityNames(entity).collection))
-  const doc = `Action "${action.label}": runs the server use-case${invalidated.length ? `; invalidates ${invalidated.map(entity => entity.name).join(', ')}` : ''}.`
+  const doc = `Action "${action.label}": runs the server use-case${invalidated.length ? `; invalidates ${invalidated.map(entity => entity.name).join(', ')}` : ''}. ${RUN_DOC(context)}`
   const uuidInput = inputEntity?.idStrategy === 'uuid'
   // The input's and the output's types, each imported from its own entity's file.
   const domain = new Map<string, ImportName[]>()
@@ -415,14 +419,16 @@ const directComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
   const route = `/api/${context.name}${action.http.path}`
   const url = params.length ? `\`${route.replace(/:(\w+)/g, '${$1}')}\`` : tsString(route)
   const body = inputEntity ? `, body: ${uuidInput ? '{ ...input, id: newId() }' : 'input'}` : ''
+  const call = `fromRoute<${output?.name ?? 'undefined'}, ${errorTypeName(context)}>($fetch<${output?.name ?? 'undefined'}>(${url}, { method: ${tsString(action.http.method)}${body} }))`
   const path = context.paths.composable(composableOf(action.name))
   return {
     path,
     source,
     content: file([
       header(source),
-      'import { ref } from \'vue\'',
       uuidInput && importLine('#core/kernel/ids', ['newId']),
+      importLine('#layers/core/app/data/results', ['fromRoute', 'useAction']),
+      importLine(`#${context.name}/domain/errors`, [{ name: errorTypeName(context), type: true }]),
       ...[...domain.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([path, names]) => importLine(`#${context.name}/domain/${path}`, names)),
       ...[...collections].sort().map((collection) => {
         const entity = context.module.entities.find(entry => entityNames(entry).collection === collection)!
@@ -432,27 +438,17 @@ const directComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
       alias,
       alias !== undefined && '',
       `/** ${docText(doc)} */`,
-      `export const use${pascal(action.name)} = () => {`,
-      '  const pending = ref(false)',
-      '  const error = ref<string>()',
-      '',
-      `  const execute = async (${signature}): Promise<boolean> => {`,
-      '    pending.value = true',
-      '    error.value = undefined',
-      '    try {',
-      `      await $fetch${output ? `<${output.name}>` : ''}(${url}, { method: ${tsString(action.http.method)}${body} })`,
-      ...invalidated.map(entity => `      await ${entityNames(entity).collection}.utils.refetch()`),
-      '      return true',
-      '    } catch (cause) {',
-      '      error.value = errorMessage(cause)',
-      '      return false',
-      '    } finally {',
-      '      pending.value = false',
-      '    }',
-      '  }',
-      '',
-      '  return { execute, pending, error }',
-      '}'
+      ...(invalidated.length
+        ? [
+            `export const use${pascal(action.name)} = () => useAction(async (${signature}) => {`,
+            `  const result = await ${call}`,
+            '  if (result.ok) {',
+            ...invalidated.map(entity => `    await ${entityNames(entity).collection}.utils.refetch()`),
+            '  }',
+            '  return result',
+            '})'
+          ]
+        : [`export const use${pascal(action.name)} = () => useAction(async (${signature}) => ${call})`])
     ])
   }
 }
@@ -535,8 +531,9 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
 
   const route = `/api/${context.name}${action.http.path}`
   const url = params.length ? `\`${route.replace(/:(\w+)/g, '${$1}')}\`` : tsString(route)
-  const fetchType = output ? `<${output.name}>` : ''
-  const doc = `Action "${action.label}": optimistic ${optimistic.kind}, confirmed by the server use-case${invalidated.length ? `; invalidates ${invalidated.map(entity => entity.name).join(', ')}` : ''}.`
+  const answer = output?.name ?? 'undefined'
+  // An optimistic action answers nothing: what it changes is shown ahead, in the collection, and refetched once the server answers.
+  const doc = `Action "${action.label}": optimistic ${optimistic.kind}, confirmed by the server use-case${invalidated.length ? `; invalidates ${invalidated.map(entity => entity.name).join(', ')}` : ''}. ${RUN_DOC(context)} It answers nothing: the change is in the collection.`
   // The types it imports are the input's and the output's: an action with neither (a delete) imports none.
   const typed = inputEntity ?? output
 
@@ -547,8 +544,10 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
     content: file([
       header(source),
       'import { createOptimisticAction } from \'@tanstack/vue-db\'',
-      'import { ref } from \'vue\'',
       ids.size > 0 && importLine('#core/kernel/ids', [...ids]),
+      importLine('#core/kernel/result', ['ok', { name: 'ApiError', type: true }, { name: 'Result', type: true }]),
+      importLine('#layers/core/app/data/results', ['Answered', 'fromRoute', 'useAction']),
+      importLine(`#${context.name}/domain/errors`, [{ name: errorTypeName(context), type: true }]),
       typed && importLine(`#${context.name}/domain/${entityNames(typed).file}`, [...types].map(name => ({ name, type: true }))),
       ...[...collections].sort().map((collection) => {
         const entity = context.module.entities.find(entry => entityNames(entry).collection === collection)!
@@ -559,32 +558,20 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
       execute.alias !== undefined && '',
       `/** ${docText(doc)} */`,
       `export const ${composable} = () => {`,
-      '  const pending = ref(false)',
-      '  const error = ref<string>()',
-      '',
       `  const action = createOptimisticAction<${generic}>({`,
       ...mutate.map(line => `    ${line}`),
       `    mutationFn: async (${argument}) => {`,
-      `      await $fetch${fetchType}(${url}, { method: ${tsString(action.http.method)}${inputEntity ? ', body: input' : ''} })`,
+      `      const result = await fromRoute<${answer}, ${errorTypeName(context)}>($fetch<${answer}>(${url}, { method: ${tsString(action.http.method)}${inputEntity ? ', body: input' : ''} }))`,
+      '      // A transaction knows only thrown errors: `Answered` carries the module\'s error to `run`, and the change is rolled back.',
+      '      if (!result.ok) throw new Answered(result.error)',
       ...invalidated.map(entity => `      await ${entityNames(entity).collection}.utils.refetch()`),
       '    }',
       '  })',
       '',
-      `  const execute = async (${execute.signature}): Promise<boolean> => {`,
-      '    pending.value = true',
-      '    error.value = undefined',
-      '    try {',
-      `      await ${execute.call}.when('settled')`,
-      '      return true',
-      '    } catch (cause) {',
-      '      error.value = errorMessage(cause)',
-      '      return false',
-      '    } finally {',
-      '      pending.value = false',
-      '    }',
-      '  }',
-      '',
-      '  return { execute, pending, error }',
+      `  return useAction(async (${execute.signature}): Promise<Result<undefined, ApiError<${errorTypeName(context)}>>> => {`,
+      `    await ${execute.call}.when('settled')`,
+      '    return ok(undefined)',
+      '  })',
       '}'
     ])
   }

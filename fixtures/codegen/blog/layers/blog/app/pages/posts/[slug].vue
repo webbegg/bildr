@@ -10,31 +10,32 @@ definePageMeta({
 
 const route = useRoute('posts-slug')
 const toast = useToast()
-const { post, isLoading: postLoading } = usePostBySlug(() => route.params.slug)
-const { execute: publish, pending: publishPending, error: publishError } = usePublishPost()
+const { data: post, status: postStatus } = usePostBySlug(() => route.params.slug)
+const { run: publish, pending: publishPending, error: publishError } = usePublishPost()
 // The post doesn't exist: Nuxt's error page, a 404.
 watchEffect(() => {
-  if (!postLoading.value && !post.value) showError({ status: 404, message: 'This post doesn\'t exist.' })
+  if (postStatus.value === 'success' && !post.value) showError({ status: 404, message: 'This post doesn\'t exist.' })
 })
 useSeoMeta({ title: () => post.value?.title ?? 'Post' })
 
 // Interaction "click": run action Publish post, then show a toast.
 const onPublishClick = async () => {
   if (!post.value) return
-  if (await publish(post.value.id)) toast.add({ title: 'Post published', color: 'success' })
+  if ((await publish(post.value.id)).ok) toast.add({ title: 'Post published', color: 'success' })
 }
 </script>
 
 <template>
   <NuxtLayout name="main">
     <template #default>
-      <p v-if="postLoading" class="text-muted">Loading…</p>
+      <p v-if="postStatus === 'pending'" class="text-muted">Loading…</p>
+      <p v-else-if="postStatus === 'error'" class="text-error">Couldn't load this.</p>
       <article v-else-if="post" class="flex min-h-full flex-col gap-4">
         <h1 class="text-3xl font-semibold tracking-tight">{{ post.title }}</h1>
         <p class="whitespace-pre-line">{{ post.body }}</p>
         <div v-if="!post.published" class="flex items-center gap-3 self-stretch">
           <UButton label="Publish" icon="i-lucide-send" :disabled="publishPending" @click="onPublishClick" />
-          <p v-if="publishError" class="text-sm whitespace-pre-line text-error">{{ publishError }}</p>
+          <p v-if="publishError?.message" class="text-sm whitespace-pre-line text-error">{{ publishError?.message }}</p>
         </div>
       </article>
     </template>
