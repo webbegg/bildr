@@ -155,8 +155,9 @@ interface Rule {
   name: string
   entity: EntityFile
   kind: 'create' | 'update'
-  /** The row an update loads and changes (update only). */
+  /** The row an update loads and changes, and its id (update only). */
   row?: string
+  id?: Value
   /**
    * What it reads: the input (create), or the fields of the row its guards read (update). Only those fields: the server passes the
    * entity, the optimistic update the collection's draft, whose fields with a default are optional.
@@ -199,6 +200,8 @@ const ruleOf = (analyzed: Analyzed): Rule | undefined => {
   const row = from && typeof from === 'object' && !Array.isArray(from) && '$var' in from ? String(from.$var) : undefined
   // The row must be one the action loaded from the repository it updates: the rule takes it as that entity.
   if (!row || !steps.some(step => step.kind === 'load' && step.as === row && step.repository === last.repository)) return undefined
+  // The rule takes the row and the time: a row named `at` would be two parameters of one name.
+  if (row === 'at' && nowCount(set) > 0) return undefined
   // What it sets reads nothing (the row's fields would be optional on the draft); its guards read fields of the row.
   if (!readsOnly(set, () => false)) return undefined
   const fields = new Set<string>()
@@ -225,8 +228,8 @@ const ruleOf = (analyzed: Analyzed): Rule | undefined => {
   }
   // An update with no guard decides nothing (it sets constants, the time): the use-case says it inline.
   if (guards.length === 0) return undefined
-  const param = { name: row, type: `Partial<Pick<${entity.name}, ${[...fields].map(quotedKey).join(' | ')}>>` }
-  const rule: Rule = { name: ruleName(action), entity, kind: 'update', row, param, set, guards, at: nowCount(set) > 0 }
+  const param = { name: row, type: `Partial<Pick<${entity.name}, ${[...fields].sort().map(quotedKey).join(' | ')}>>` }
+  const rule: Rule = { name: ruleName(action), entity, kind: 'update', row, id: last.id as Value, param, set, guards, at: nowCount(set) > 0 }
   // The rule answers into a local of the use-case: with no free name for it, the action keeps its steps inline.
   return changeLocal(analyzed, rule) ? rule : undefined
 }
@@ -293,6 +296,8 @@ const canonical = (value: unknown): string => JSON.stringify(value, (_, item: un
 /** Whether an optimistic update says what the rule says (or nothing): then it applies the rule instead of its own code. */
 const agreesWith = (optimistic: Optimistic, rule: Rule) => {
   if (optimistic.kind !== 'update' || rule.kind !== 'update' || optimistic.entity !== rule.entity.id) return false
+  // It must change the row the server updates.
+  if (canonical(optimistic.key ?? null) !== canonical(rule.id ?? null)) return false
   if (optimistic.set === undefined && optimistic.unless === undefined) return true
   if (optimistic.set === undefined || canonical(optimistic.set) !== canonical(rule.set)) return false
   // A rule always has a guard: an update that sets the same with no `unless` says something else.

@@ -1,8 +1,12 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { generateActions } from '../../src/generate/actions'
 import { loadModel } from '../../src/model/load'
 import type { Model } from '../../src/model/load'
 import { fixtureModelFiles } from '../model/fixture'
+import { generatedRunner } from './run-generated'
 
 // codegen-architecture T4a: what an action changes is one pure function of the domain (`<entity>.rules.ts`), derived from the
 // action's steps. The use-case calls it, and so does the optimistic update when it says the same as the steps (or nothing).
@@ -24,6 +28,14 @@ const withPublishOptimistic = (edit: (optimistic: Record<string, unknown>) => vo
 const content = (files: ReturnType<typeof generateActions>, path: string) => files.find(file => file.path === path)?.content
 const RULES = 'layers/blog/shared/domain/post.rules.ts'
 const PUBLISH = 'layers/blog/app/composables/blog/usePublishPost.ts'
+const PUBLISH_USE_CASE = 'layers/blog/server/application/actions/publish-post.ts'
+
+/** The blog fixture with the "Publish post" action changed by `edit`. */
+const withPublish = (edit: (action: Model['modules'][string]['actions'][number]) => void) => {
+  const model = structuredClone(fixtureModel())
+  edit(model.modules.blog!.actions.find(entry => entry.name === 'publishPost')!)
+  return generateActions(model)
+}
 
 describe('the domain rules of an action', () => {
   const files = generateActions(fixtureModel())
@@ -99,6 +111,67 @@ describe('the domain rules of an action', () => {
     expect(content(files, PUBLISH)).toContain('        draft.published = true\n')
     expect(content(files, 'layers/blog/server/application/actions/publish-post.ts')).toContain('posts.update(id, { ...post, published: true, publishedAt: at, updatedAt: at })')
     expect(content(files, 'layers/blog/server/application/actions/create-post.ts')).toContain('posts.create({ ...data, publishedAt: at, createdAt: at, updatedAt: at })')
+  })
+
+  it('run, a rule answers what the steps would: nothing when a guard holds, the change otherwise', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bildr-domain-rules-'))
+    try {
+      const { load } = generatedRunner(new Map(files.map(file => [file.path, file.content])), dir, {})
+      type Rules = {
+        publishPostChange: (post: { published?: boolean }, at: string) => unknown
+        createPostChange: (input: { published?: boolean }, at: string) => unknown
+      }
+      const rules = await load<Rules>(RULES)
+      expect(rules.publishPostChange({ published: true }, 'T')).toBeUndefined()
+      expect(rules.publishPostChange({ published: false }, 'T')).toEqual({ published: true, publishedAt: 'T' })
+      expect(rules.createPostChange({ published: true }, 'T')).toEqual({ publishedAt: 'T' })
+      expect(rules.createPostChange({ published: false }, 'T')).toEqual({ publishedAt: null })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('two guards: the rule keeps both, in order, and the use-case reads neither itself', () => {
+    const files = withPublish((action) => {
+      action.steps.splice(1, 0, { kind: 'return', if: { $var: 'post.slug' }, value: { $var: 'post' } } as never)
+    })
+    expect(content(files, RULES)).toContain([
+      'export const publishPostChange = (post: Partial<Pick<Post, \'published\' | \'slug\'>>, at: string): Pick<Post, \'published\' | \'publishedAt\'> | undefined => {',
+      '  if (post.slug) return undefined',
+      '  if (post.published) return undefined',
+      '  return { published: true, publishedAt: at }'
+    ].join('\n'))
+    const useCase = content(files, PUBLISH_USE_CASE)!
+    expect(useCase).not.toContain('post.slug')
+    expect(useCase).not.toContain('post.published')
+    // One `unless` can't say two guards: the optimistic update keeps its own code.
+    expect(content(files, PUBLISH)).not.toContain('publishPostChange')
+  })
+
+  it('the use-case\'s local for the change takes a free name', () => {
+    const files = withPublish((action) => {
+      const load = structuredClone(action.steps[0]!) as Record<string, unknown>
+      action.steps.unshift({ ...load, as: 'postChange' } as never)
+    })
+    expect(content(files, PUBLISH_USE_CASE)).toContain('    const change = publishPostChange(post, at)\n    if (!change) return ok(post)\n')
+  })
+
+  it('a row named like the time the rule takes (`at`) keeps the steps inline', () => {
+    const files = withPublish((action) => {
+      const renamed = JSON.stringify(action.steps).replaceAll('"post"', '"at"').replaceAll('"post.', '"at.')
+      action.steps = JSON.parse(renamed) as typeof action.steps
+    })
+    expect(content(files, RULES)).not.toContain('publishPostChange')
+    expect(content(files, PUBLISH_USE_CASE)).not.toContain('publishPostChange')
+  })
+
+  it('an optimistic update of another row than the one the server updates keeps its own code', () => {
+    const files = withPublishOptimistic((optimistic) => {
+      optimistic.key = { $input: 'slug' }
+      delete optimistic.set
+      delete optimistic.unless
+    })
+    expect(content(files, PUBLISH)).not.toContain('publishPostChange')
   })
 
   it('an optimistic update that says something else keeps its own code', () => {
