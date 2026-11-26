@@ -188,9 +188,10 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
       if (writing !== undefined) reads.set(writing, (reads.get(writing) ?? new Set<string>()).add(entry.as))
     }, undefined, {
       // It loads, fails and has loaded as what its branches read does.
-      loading: () => [...loadingOf(env, entry.then), ...loadingOf(env, entry.else)],
-      errors: () => [...errorsOf(env, entry.then), ...errorsOf(env, entry.else)],
-      settled: () => [...settledOf(env, entry.then), ...settledOf(env, entry.else)]
+      // Each flag once: both branches may reach the same use, and TypeScript narrows a repeated comparison to an error.
+      loading: () => [...new Set([...loadingOf(env, entry.then), ...loadingOf(env, entry.else)])],
+      errors: () => [...new Set([...errorsOf(env, entry.then), ...errorsOf(env, entry.else)])],
+      settled: () => [...new Set([...settledOf(env, entry.then), ...settledOf(env, entry.else)])]
     }))
   }
 

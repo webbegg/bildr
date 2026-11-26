@@ -129,6 +129,21 @@ describe('a page that uses an API query', () => {
     expect(content).toContain('if (hereStatus.value === \'success\' && thereStatus.value === \'success\' && !shown.value) showError({ status: 404, message: \'No forecast.\' })')
   })
 
+  it('names each flag once when a computed value reaches the same use twice (TS narrows a repeated comparison away)', () => {
+    const p = shop()
+    const { pageId, nodeId } = p.edit('page_create', { name: 'weather-twice' })
+    p.edit('page_use_add', { page: pageId, as: 'here', api: { datasource: 'ds_weather', query: 'forecast' }, args: { city: 'Lisbon' } })
+    p.edit('page_use_add', { page: pageId, as: 'prefs', state: 'st_preferences' })
+    p.edit('page_computed_set', { page: pageId, as: 'near', if: { $bind: 'prefs.showDrafts' }, then: { $bind: 'here' }, else: { $bind: 'here' } })
+    p.edit('page_computed_set', { page: pageId, as: 'shown', if: { $bind: 'prefs.showDrafts' }, then: { $bind: 'near' }, else: { $bind: 'here' } })
+    p.edit('node_update_props', { file: pageId, nodeId, props: { when: { $bind: 'shown' }, loading: 'Loading…', empty: 'No forecast.' } })
+    p.edit('node_insert', { file: pageId, parentId: nodeId, type: 'Text', props: { text: { $bind: 'shown.city' } } })
+    const content = pageOf(p, 'weather-twice')
+    expect(content).toContain('<p v-if="hereStatus === \'pending\'" class="text-muted">Loading…</p>')
+    expect(content).toContain('<p v-else-if="hereStatus === \'error\'" class="text-error">Couldn\'t load this.</p>')
+    expect(content).toContain('if (hereStatus.value === \'success\' && !shown.value) showError({ status: 404, message: \'No forecast.\' })')
+  })
+
   it('reads nested fields of a row with optional chaining', () => {
     const p = shop()
     listPage(p, 'cities', PRODUCTS, {}, '{item.title} in {item.address.city}')
