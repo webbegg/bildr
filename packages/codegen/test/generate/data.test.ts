@@ -103,7 +103,7 @@ describe('generateData rules', () => {
     const query = model.modules.blog!.queries.find(entry => entry.name === 'allPosts')!
     query.description = 'it\'s */ done'
     const composable = generateData(model).find(file => file.path === 'layers/blog/app/composables/blog/useAllPosts.ts')!.content
-    expect(composable).toContain('/** Query "All posts": it\'s *\\/ done */')
+    expect(composable).toContain('/** Query "All posts": it\'s *\\/ done. `data`, `status` and `error` are refs, `refresh()` refetches the Posts. */')
   })
 
   it('generates REST get/create/update/delete over the endpoints the repository declares', () => {

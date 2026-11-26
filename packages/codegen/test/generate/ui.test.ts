@@ -91,8 +91,9 @@ describe('generateUi rules', () => {
 
   it('only declares the composable parts the template uses', () => {
     const page = indexPage(fixtureModel())
-    expect(page).toContain('const { data: quotes } = useLatestQuotes(3)')
-    expect(page).not.toContain('quotesLoading')
+    // The quotes List reads its status for its error line (T3c2), nothing else: no error, no refresh.
+    expect(page).toContain('const { data: quotes, status: quotesStatus } = useLatestQuotes(3)')
+    expect(page).not.toMatch(/quotesError|refresh/)
   })
 
   it('calls useSeoMeta after the declarations its getters read (unhead calls them at once)', () => {

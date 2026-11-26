@@ -145,11 +145,15 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
   const queries = (uses.queries ?? []).map(entry => ({ ...entry, file: context.module.queries.find(query => query.id === entry.query) ?? fail(env, undefined, `unknown query ${entry.query}`) }))
   for (const { as, file } of queries) {
     const one = queryNames(env, file).one
+    // It loads, failed or has loaded as its `status` (`<as>Status`) says, as an API query does.
+    const status = (check: string) => () => {
+      use(env, `query:${as}`, 'status')
+      return [`${useNames(as).status}${check}`]
+    }
     env.roots.set(as, refRoot(as, () => use(env, `query:${as}`, 'data'), one ? env.optional : undefined, {
-      loading: () => {
-        use(env, `query:${as}`, 'loading')
-        return [useNames(as).loading]
-      }
+      loading: status(' === \'pending\''),
+      errors: status(' === \'error\''),
+      settled: status('.value === \'success\'')
     }))
   }
   const apis = (uses.apis ?? []).map((entry) => {
@@ -168,7 +172,8 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
         const [member, ...rest] = members
         if ((member !== 'pending' && member !== 'error') || rest.length) return fail(env, undefined, `${as}.${members.join('.')}: actions expose pending and error`)
         use(env, `action:${as}`, member)
-        return `${as}${pascal(member)}${ctx === 'script' ? '.value' : ''}`
+        // The error is typed (one of the module's, or unexpected): a page shows its message.
+        return `${as}${pascal(member)}${ctx === 'script' ? '.value' : ''}${member === 'error' ? '?.message' : ''}`
       }
     })
   }
@@ -183,9 +188,10 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
       if (writing !== undefined) reads.set(writing, (reads.get(writing) ?? new Set<string>()).add(entry.as))
     }, undefined, {
       // It loads, fails and has loaded as what its branches read does.
-      loading: () => [...loadingOf(env, entry.then), ...loadingOf(env, entry.else)],
-      errors: () => [...errorsOf(env, entry.then), ...errorsOf(env, entry.else)],
-      settled: () => [...settledOf(env, entry.then), ...settledOf(env, entry.else)]
+      // Each flag once: both branches may reach the same use, and TypeScript narrows a repeated comparison to an error.
+      loading: () => [...new Set([...loadingOf(env, entry.then), ...loadingOf(env, entry.else)])],
+      errors: () => [...new Set([...errorsOf(env, entry.then), ...errorsOf(env, entry.else)])],
+      settled: () => [...new Set([...settledOf(env, entry.then), ...settledOf(env, entry.else)])]
     }))
   }
 
@@ -266,9 +272,8 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
   for (const { as, file, args } of queries) {
     const parts = env.used.get(`query:${as}`)
     if (!parts) continue
-    const { composable, one } = queryNames(env, file)
-    const data = one ? (as === one ? one : `${one}: ${as}`) : `data: ${as}`
-    const names = [parts.has('data') && data, parts.has('loading') && `isLoading: ${useNames(as).loading}`].filter(Boolean)
+    const { composable } = queryNames(env, file)
+    const names = [parts.has('data') && `data: ${as}`, parts.has('status') && `status: ${useNames(as).status}`].filter(Boolean)
     const argList = file.params.map((param) => {
       const value = args?.[param.name]
       if (value === undefined) return undefined
@@ -287,7 +292,7 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
   for (const { as, file } of actions) {
     const parts = env.used.get(`action:${as}`)
     if (!parts) continue
-    const names = [parts.has('execute') && `execute: ${as}`, parts.has('pending') && `pending: ${useNames(as).pending}`, parts.has('error') && `error: ${useNames(as).error}`].filter(Boolean)
+    const names = [parts.has('run') && `run: ${as}`, parts.has('pending') && `pending: ${useNames(as).pending}`, parts.has('error') && `error: ${useNames(as).error}`].filter(Boolean)
     declarations.push(`const { ${names.join(', ')} } = ${composableOf(file.name)}()`)
   }
 

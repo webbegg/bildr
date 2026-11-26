@@ -25,9 +25,10 @@ const DECLARED_IN_TESTS = ['describe', 'expect', 'it', 'input', 'result']
 
 /**
  * The composables a generated composable file imports from a package (generate/client.ts and generate/actions.ts):
- * the query's `useLiveQuery` from @tanstack/vue-db. A query or an action named `liveQuery` would declare it too.
+ * the query's `useLiveQuery` from @tanstack/vue-db, and the action's `useAction` from the core (layers/core/app/data/results.ts). A query
+ * or an action named `liveQuery` or `action` would declare it too.
  */
-const COMPOSABLES_THE_GENERATOR_IMPORTS = ['useLiveQuery']
+const COMPOSABLES_THE_GENERATOR_IMPORTS = ['useLiveQuery', 'useAction']
 
 /**
  * THE AUTO-IMPORT SET: the composables Nuxt, Vue, Nuxt UI and the modules the generated app enables auto-import, so

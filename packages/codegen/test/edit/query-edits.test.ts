@@ -116,6 +116,10 @@ describe('query_update (D10a: definition fields, in place)', () => {
     expect(update({ params: [{ name: 'flag', type: 'text' }], where: { op: 'eq', field: 'published', value: { $param: 'flag' } } })).toMatch(/parameter "flag" is text but published is boolean/)
     expect(update({ params: [{ name: 'a', type: 'text' }, { name: 'a', type: 'text' }] })).toMatch(/Two parameters are named "a"/)
     expect(update({ params: [{ name: 'Bad name', type: 'text' }] })).toMatch(/can't be a parameter name/)
+    // T3c2: the names the query's composable declares or imports next to its parameters.
+    for (const name of ['query', 'q', 'fromLiveQuery', 'useLiveQuery', 'toValue', 'eq', 'inArray']) {
+      expect(update({ params: [{ name, type: 'text' }] }), name).toMatch(new RegExp(`"${name}" is a name the generated query composable already uses`))
+    }
     expect(update({ params: [{ name: 'n', type: 'integer', default: 'many' }] })).toMatch(/parameter n: its default "many" doesn't fit integer/)
     expect(update({ limit: { $param: 'size' } })).toMatch(/no parameter "size"/)
     expect(update({ orderBy: [{ field: 'nope', direction: 'asc' }] })).toMatch(/Post has no field "nope"/)

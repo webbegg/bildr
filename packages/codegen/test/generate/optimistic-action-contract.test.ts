@@ -63,6 +63,29 @@ describe.skipIf(!!NEEDS_FIXTURE)(`TanStack DB's createOptimisticAction${NEEDS_FI
     expect(requests).toEqual([])
   })
 
+  it('rolls the change back and settles with the very error mutationFn threw (how a module action answers the route\'s error, T3c2)', async () => {
+    const { createCollection, createOptimisticAction } = await load()
+    const notes = createCollection<{ id: string }>({
+      id: 'notes-failing',
+      getKey: note => note.id,
+      sync: { sync: ({ markReady }) => markReady() },
+      onInsert: async () => {}
+    })
+    await notes.preload()
+    class Answered extends Error {}
+    const answered = new Answered('slug_taken')
+    const action = createOptimisticAction<string>({
+      onMutate: id => notes.insert({ id }),
+      mutationFn: async () => {
+        throw answered
+      }
+    })
+    const transaction = action('note-1')
+    expect(notes.has('note-1')).toBe(true)
+    await expect(transaction.when('settled')).rejects.toBe(answered)
+    expect(notes.has('note-1')).toBe(false)
+  })
+
   it('calls mutationFn when onMutate mutates something (the control)', async () => {
     const { createCollection, createOptimisticAction } = await load()
     const notes = createCollection<{ id: string }>({

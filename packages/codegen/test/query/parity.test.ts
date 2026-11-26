@@ -64,7 +64,9 @@ const generated = async (file: QueryFile, args: unknown[], data: Row[] = rows): 
       }),
       toValue: (value: unknown) => typeof value === 'function' ? value() : value
     },
-    '../../data/posts.collection': { postsCollection: collection }
+    '../../data/posts.collection': { postsCollection: collection },
+    // The composable's contract (T3c2) is beside the point here: the rows come from the live query collection above.
+    '#layers/core/app/data/results': { fromLiveQuery: (query: unknown) => query }
   }
   const exports: Record<string, (...input: unknown[]) => unknown> = {}
   const load = (name: string) => {

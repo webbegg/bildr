@@ -30,16 +30,18 @@ describe('freeAlias', () => {
     expect(freeAlias(shown, 'posts', 'computed')).toBe('posts2')
   })
 
-  it('leaves out the names a use derives: a state\'s set…, a query\'s …Loading, an action\'s …Pending and …Error', () => {
+  it('leaves out the names a use derives: a state\'s set…, a query\'s …Status, an action\'s …Pending and …Error', () => {
     const shown = page()
     shown.uses = { queries: [{ as: 'setPreferences', query: 'q_all_posts' }, { as: 'feed', query: 'q_all_posts' }] }
     expect(freeAlias(shown, 'preferences', 'state')).toBe('preferences2')
-    expect(freeAlias(shown, 'feedLoading', 'computed')).toBe('feedLoading2')
+    // codegen-architecture T3c2: a module query derives its status, as an API one does; its …Loading is free.
+    expect(freeAlias(shown, 'feedStatus', 'computed')).toBe('feedStatus2')
+    expect(freeAlias(shown, 'feedLoading', 'computed')).toBe('feedLoading')
     shown.uses = { actions: [{ as: 'save', action: 'act_create_post' }] }
     expect(freeAlias(shown, 'savePending', 'computed')).toBe('savePending2')
     expect(freeAlias(shown, 'saveError', 'computed')).toBe('saveError2')
     // A name whose own derived name is taken is not free either.
-    shown.uses = { queries: [{ as: 'listLoading', query: 'q_all_posts' }] }
+    shown.uses = { queries: [{ as: 'listStatus', query: 'q_all_posts' }] }
     expect(freeAlias(shown, 'list', 'query')).toBe('list2')
   })
 

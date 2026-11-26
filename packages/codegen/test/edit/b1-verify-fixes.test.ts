@@ -104,9 +104,9 @@ describe('names the generated code declares', () => {
 
   it('a use meeting what the page derives from another is refused, either way round', () => {
     const p = project()
-    // preferences → setPreferences; featured → featuredLoading; a new action → <as>Pending and <as>Error
+    // preferences → setPreferences; featured → featuredStatus (T3c2); a new action → <as>Pending and <as>Error
     p.refuse('page_use_add', { page: 'pg_index', as: 'setPreferences', query: 'q_all_posts' }, 'invalid')
-    p.refuse('page_use_add', { page: 'pg_index', as: 'featuredLoading', action: 'act_publish_post' }, 'invalid')
+    p.refuse('page_use_add', { page: 'pg_index', as: 'featuredStatus', action: 'act_publish_post' }, 'invalid')
     p.edit('page_computed_set', { page: 'pg_index', as: 'setHeading', if: { $bind: 'preferences.showDrafts' }, then: 'a', else: 'b' })
     p.refuse('page_use_add', { page: 'pg_index', as: 'heading', state: 'st_preferences' }, 'invalid')
     p.edit('page_computed_set', { page: 'pg_index', as: 'publishPending', if: { $bind: 'preferences.showDrafts' }, then: 'a', else: 'b' })

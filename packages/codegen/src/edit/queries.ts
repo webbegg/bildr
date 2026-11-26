@@ -109,10 +109,17 @@ const fieldTypeOf = (entity: EntityFile, name: string): Pick<EntityFile['fields'
   return entity.fields.find(field => field.name === name)
 }
 
+/**
+ * What the generated composable of a query declares or imports next to its parameters (generate/client.ts, queryFile): the `query` it
+ * holds, the `q` of the live query, `fromLiveQuery`, `useLiveQuery`, `toValue` and the functions of its conditions.
+ */
+const QUERY_LOCALS = ['query', 'q', 'fromLiveQuery', 'useLiveQuery', 'toValue', 'eq', 'not', 'lt', 'lte', 'gt', 'gte', 'inArray', 'like']
+
 const checkParams = (params: QueryFile['params']) => {
   const seen = new Set<string>()
   for (const param of params) {
     if (!/^[a-z][A-Za-z0-9]*$/.test(param.name) || isUnusable(param.name)) fail('invalid', `"${param.name}" can't be a parameter name: use camelCase, like "limit"`)
+    if (QUERY_LOCALS.includes(param.name)) fail('invalid', `"${param.name}" is a name the generated query composable already uses: pick another parameter name`)
     if (seen.has(param.name)) fail('invalid', `Two parameters are named "${param.name}"`)
     seen.add(param.name)
     if (param.default !== undefined && !fits(param.type, param.default, false)) fail('invalid', `parameter ${param.name}: its default ${JSON.stringify(param.default)} doesn't fit ${param.type}`)

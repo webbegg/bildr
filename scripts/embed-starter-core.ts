@@ -18,7 +18,7 @@ const STATIC_CORE = [
   'layers/core/server/utils/remote.ts',
   'layers/core/server/plugins/migrate.ts',
   'layers/core/app/data/query-client.ts',
-  'layers/core/app/utils/errorMessage.ts',
+  'layers/core/app/data/results.ts',
   'layers/core/app/composables/useVariantState.ts',
   'layers/core/app/types/page-meta.d.ts',
   'layers/core/app/app.vue',

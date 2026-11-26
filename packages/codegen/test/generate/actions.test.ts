@@ -72,17 +72,26 @@ describe('the composable of an action with no optimistic update', () => {
     const source = composable('useEditNote')
     expect(source).not.toContain('createOptimisticAction')
     expect(source).not.toContain('onMutate')
-    expect(source).toContain('const execute = async (id: string): Promise<boolean> => {')
-    expect(source).toContain('await $fetch<Note>(`/api/blog/notes/${id}`, { method: \'PATCH\' })')
-    expect(source).toContain('await notesCollection.utils.refetch()')
-    expect(source).toContain('return { execute, pending, error }')
+    // T3c2: the core's useAction; `run` answers the route's Result, typed by the module's errors, and refetches only once it is ok.
+    expect(source).toContain('import { fromRoute, useAction } from \'#layers/core/app/data/results\'')
+    expect(source).toContain('import type { BlogError } from \'#blog/domain/errors\'')
+    expect(source).toContain([
+      'export const useEditNote = () => useAction(async (id: string) => {',
+      '  const result = await fromRoute<Note, BlogError>($fetch<Note>(`/api/blog/notes/${id}`, { method: \'PATCH\' }))',
+      '  if (result.ok) {',
+      '    await notesCollection.utils.refetch()',
+      '  }',
+      '  return result',
+      '})'
+    ].join('\n'))
+    expect(source).not.toContain('vue')
   })
 
   it('a delete on an entity the app doesn\'t list posts and has nothing to refetch', () => {
     const source = composable('useRemoveSecret')
     expect(source).not.toContain('createOptimisticAction')
-    expect(source).toContain('const execute = async (id: string): Promise<boolean> => {')
-    expect(source).toContain('await $fetch(`/api/blog/secrets/${id}`, { method: \'DELETE\' })')
+    // Nothing to refetch: it answers the route's Result as it is; a route that answers nothing answers `undefined`.
+    expect(source).toContain('export const useRemoveSecret = () => useAction(async (id: string) => fromRoute<undefined, BlogError>($fetch<undefined>(`/api/blog/secrets/${id}`, { method: \'DELETE\' })))')
     expect(source).not.toContain('Collection')
   })
 
@@ -91,14 +100,14 @@ describe('the composable of an action with no optimistic update', () => {
     expect(source).not.toContain('createOptimisticAction')
     expect(source).toContain('import { newId } from \'#core/kernel/ids\'')
     expect(source).toContain('type TidyNotesInput = Omit<NewNote, \'id\'>')
-    expect(source).toContain('const execute = async (input: TidyNotesInput): Promise<boolean> => {')
-    expect(source).toContain('await $fetch(\'/api/blog/notes/tidy-notes\', { method: \'POST\', body: { ...input, id: newId() } })')
+    expect(source).toContain('useAction(async (input: TidyNotesInput) => ')
+    expect(source).toContain('$fetch<undefined>(\'/api/blog/notes/tidy-notes\', { method: \'POST\', body: { ...input, id: newId() } })')
   })
 
   it('an action with no input still posts with nothing', () => {
     const source = composable('useTidyPosts')
-    expect(source).toContain('const execute = async (): Promise<boolean> => {')
-    expect(source).toContain('await $fetch(\'/api/blog/posts/tidy-posts\', { method: \'POST\' })')
+    expect(source).toContain('useAction(async () => ')
+    expect(source).toContain('$fetch<undefined>(\'/api/blog/posts/tidy-posts\', { method: \'POST\' })')
   })
 
   it('an action with an optimistic update keeps createOptimisticAction', () => {

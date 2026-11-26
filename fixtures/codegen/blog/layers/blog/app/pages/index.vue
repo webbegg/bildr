@@ -3,9 +3,9 @@
 definePageMeta({ name: 'index', layout: 'main', layoutValues: { title: 'Posts' } })
 
 const { preferences, set: setPreferences } = useBlogPreferences()
-const { data: featured, isLoading: featuredLoading } = useFeaturedPosts(6)
-const { data: all, isLoading: allLoading } = useAllPosts()
-const { data: quotes } = useLatestQuotes(3)
+const { data: featured, status: featuredStatus } = useFeaturedPosts(6)
+const { data: all, status: allStatus } = useAllPosts()
+const { data: quotes, status: quotesStatus } = useLatestQuotes(3)
 const posts = computed(() => preferences.value.showDrafts ? all.value : featured.value)
 useSeoMeta({ title: 'Blog' })
 
@@ -18,7 +18,8 @@ const shownList = ref(6)
       <h1 class="text-3xl font-semibold tracking-tight">Posts</h1>
       <UCheckbox :model-value="preferences.showDrafts" label="Show drafts" @update:model-value="setPreferences({ showDrafts: $event === true })" />
     </div>
-    <p v-if="allLoading || featuredLoading" class="text-muted">Loading…</p>
+    <p v-if="allStatus === 'pending' || featuredStatus === 'pending'" class="text-muted">Loading…</p>
+    <p v-else-if="allStatus === 'error' || featuredStatus === 'error'" class="text-error">Couldn't load this.</p>
     <p v-else-if="!posts.length" class="text-muted">No posts yet.</p>
     <div v-else class="grid gap-4 self-stretch sm:grid-cols-2">
       <BlogPostCard v-for="post in posts.slice(0, shownList)" :key="post.id" :post="post">
@@ -33,7 +34,8 @@ const shownList = ref(6)
         <UButton label="Load more" @click="shownList += 6" />
       </div>
     </div>
-    <aside v-if="quotes.length" class="flex flex-col gap-2 self-stretch border-t border-default pt-6">
+    <p v-if="quotesStatus === 'error'" class="text-error">Couldn't load this.</p>
+    <aside v-else-if="quotes.length" class="flex flex-col gap-2 self-stretch border-t border-default pt-6">
       <p v-for="quote in quotes" :key="quote.id" class="text-sm whitespace-pre-line">“{{ quote.text }}” — {{ quote.author }}</p>
     </aside>
     <div class="grid grid-cols-1 items-center gap-6 self-stretch md:grid-cols-3">

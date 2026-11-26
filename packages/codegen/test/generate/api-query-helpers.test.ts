@@ -11,7 +11,8 @@ import { generatedRunner } from './run-generated'
  * codegen-architecture T3c: the generated query helpers (app/data/api-query.ts), run. Vue and TanStack Query are not dependencies of this
  * package: `vue` is the few functions the helpers call, the query observer one the test drives (what it answers, when), the query client
  * one that records what it invalidates. What is tested is the helpers' own: the contract `{ data, status, error, refresh }`, the typed
- * error carried through the observer, what is retried, the action's Result, and `fromRoute`.
+ * error carried through the observer, what is retried, and the action's Result. They run over the core's results (`useAction`, `Answered`),
+ * which core-results.test.ts tests with `fromRoute`.
  */
 type ApiError = { type: string, message: string, status?: number }
 type Result = { ok: true, value: unknown } | { ok: false, error: ApiError }
@@ -35,13 +36,13 @@ interface Helpers {
     pending: Ref<boolean>
     error: Ref<ApiError | undefined>
   }
-  fromRoute: (call: Promise<unknown>) => Promise<Result>
 }
 
 const STATE = '__bildrQueryHelpers'
 /** Vue's few functions the helpers call: a watcher and a scope the test drives (`state.watchers`, `state.scope`, `state.disposers`). */
 const VUE_STUB = `
 export const shallowRef = value => ({ value })
+export const computed = getter => ({ get value() { return getter() } })
 export const toValue = source => typeof source === 'function' ? source() : source
 export const watch = (source, callback) => { globalThis.${STATE}.watchers.push({ source, callback }) }
 export const getCurrentScope = () => globalThis.${STATE}.scope
@@ -245,29 +246,6 @@ describe('generated query helpers, run', () => {
       fails = false
       await action.run()
       expect(action.error.value).toBeUndefined()
-    })
-  })
-
-  describe('fromRoute', () => {
-    /** What `$fetch` rejects with for an HTTP error: the response body (h3's error: status, message, data) as `data`. */
-    const fetchError = (data: unknown) => Object.assign(new Error('[GET] "/api/apis/shop/item": 502'), { data })
-
-    it('answers the value of a call that succeeded', async () => {
-      await expect(helpers.fromRoute(Promise.resolve([1, 2]))).resolves.toEqual({ ok: true, value: [1, 2] })
-    })
-
-    it('answers the source\'s error the route sent as the data of its HTTP error, as it is', async () => {
-      const sent = { type: 'not_configured', message: 'The "shop" API is not configured: set NUXT_APIS_SHOP_API_KEY' }
-      await expect(helpers.fromRoute(Promise.reject(fetchError({ status: 503, message: sent.message, data: sent })))).resolves.toEqual({ ok: false, error: sent })
-    })
-
-    it('anything else is `unexpected`: no answer, an answer without an error of the source, or not an HTTP error', async () => {
-      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
-      const UNEXPECTED = { ok: false, error: { type: 'unexpected', message: 'Something went wrong. Please try again.' } }
-      for (const cause of [fetchError(undefined), fetchError({ status: 500, message: 'Server Error' }), fetchError({ data: { type: 'x' } }), new TypeError('bug'), null]) {
-        await expect(helpers.fromRoute(Promise.reject(cause))).resolves.toEqual(UNEXPECTED)
-      }
-      expect(log).toHaveBeenCalledTimes(5)
     })
   })
 })

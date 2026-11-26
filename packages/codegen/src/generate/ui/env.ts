@@ -55,7 +55,7 @@ export interface Env {
   componentSlots?: Map<string, string>
   /** Optional roots (a one-record query) read in script: those a handler `used`, and those it has `guarded` (checked first), which read without `?.`. */
   optional: { used: Set<string>, guarded: Set<string> }
-  /** Page aliases (`uses`) by artifact id: an action's alias names its `execute`, a state's its setter. */
+  /** Page aliases (`uses`) by artifact id: an action's alias names its `run`, a state's its setter. */
   aliases: { actions: Map<string, string>, state: Map<string, string> }
   /**
    * The item names of the Lists around the node being rendered, outermost first, each with the type of one item as a TS type (read
