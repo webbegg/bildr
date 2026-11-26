@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { err, ok } from '#core/kernel/result'
 import { remoteFailed } from '../../shared/domain/weather/errors'
-import { forecast } from '../../shared/domain/weather/use-cases/forecast'
+import { forecast } from '../../shared/application/weather/queries/forecast'
 import { fakeWeatherRepository } from './fake-repository'
 
 describe('forecast', () => {

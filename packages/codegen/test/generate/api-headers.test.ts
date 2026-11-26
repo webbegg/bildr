@@ -39,15 +39,16 @@ describe('the generated code of a call with headers', () => {
   const content = (path: string) => files.find(file => file.path === path)?.content ?? ''
 
   it('sends the fixed headers and the header parameters, a text one through headerValue', () => {
-    const repository = content('layers/apis/shared/data/shop-api/repositories/shop-api-repository.http.ts')
+    const repository = content('layers/apis/shared/infrastructure/shop-api/repositories/shop-api-repository.http.ts')
     expect(repository).toContain('    const localeHeader = headerValue(input.locale)\n    if (!localeHeader.ok) return localeHeader\n')
     expect(repository).toContain('headers: { \'X-Api-Version\': \'2\', \'Accept-Language\': localeHeader.value, \'X-Page\': input.page }')
     expect(repository).toContain('const headerValue = (value: string | undefined): KernelResult<string | undefined, ShopApiError> =>')
-    expect(content('layers/apis/shared/data/shop-api/client.ts')).toContain('  headers?: Record<string, string | number | boolean | undefined>')
+    // The request type is the core client's (T3d): its headers take the values the parameters can have.
+    expect(content('layers/core/shared/http/client.ts')).toContain('  headers?: Record<string, string | number | boolean | undefined>')
   })
 
   it('takes an optional header parameter as optional input, and a required one as required', () => {
-    expect(content('layers/apis/shared/domain/shop-api/use-cases/products.ts')).toContain('  locale: z.string().optional(),\n  page: z.number().int()\n')
+    expect(content('layers/apis/shared/application/shop-api/queries/products.ts')).toContain('  locale: z.string().optional(),\n  page: z.number().int()\n')
   })
 
   it('tests the request with its headers, and that a line break in a header parameter is refused', () => {

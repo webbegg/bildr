@@ -71,20 +71,26 @@ export const apisPaths = {
   testGlob: `${APIS}/test/**/*.test.ts`
 }
 
-/** One API data source in the `apis` layer (`dir` is the source's folder name). */
+/**
+ * One API data source in the `apis` layer (`dir` is the source's folder name), in the rings of a module (codegen-architecture T3d), all
+ * under `shared/`: the server and the browser run the same use-cases, only their composition differs.
+ */
 export const apiPaths = (dir: string) => {
   const domain = `${APIS}/shared/domain/${dir}`
-  const data = `${APIS}/shared/data/${dir}`
+  const application = `${APIS}/shared/application/${dir}`
+  const infrastructure = `${APIS}/shared/infrastructure/${dir}`
   return {
+    // domain: the entities and the errors
     entity: (file: string) => `${domain}/entities/${file}.ts`,
     errors: `${domain}/errors.ts`,
-    port: (file: string) => `${domain}/repositories/${file}.ts`,
-    useCase: (file: string) => `${domain}/use-cases/${file}.ts`,
-    dto: (file: string) => `${data}/models/${file}.dto.ts`,
-    dtoSchema: (file: string) => `${data}/validations/${file}.schema.ts`,
-    mapper: (file: string) => `${data}/mappers/${file}.mapper.ts`,
-    client: `${data}/client.ts`,
-    adapter: (file: string) => `${data}/repositories/${file}.ts`,
+    // application: the repository port and one use-case per query and action
+    port: (file: string) => `${application}/ports/${file}.ts`,
+    useCase: (kind: 'query' | 'action', file: string) => `${application}/${kind === 'query' ? 'queries' : 'actions'}/${file}.ts`,
+    // infrastructure: what the remote sends, and the HTTP repository over the core ApiClient
+    dto: (file: string) => `${infrastructure}/models/${file}.dto.ts`,
+    dtoSchema: (file: string) => `${infrastructure}/validations/${file}.schema.ts`,
+    mapper: (file: string) => `${infrastructure}/mappers/${file}.mapper.ts`,
+    adapter: (file: string) => `${infrastructure}/repositories/${file}.ts`,
     /** The server composition root of a source that runs on the server. */
     compositionRoot: `${APIS}/server/utils/${dir}.ts`,
     /** The composition root of a source that runs in the browser. */

@@ -13,6 +13,8 @@ const banned = {
 
 export default withNuxt(
   { files: ['layers/*/shared/**/*.ts'], rules: { 'no-restricted-imports': ['error', { patterns: [banned.vue, banned.server, banned.serverDirs, banned.appDirs] }] } },
+  // The rings an API source keeps under shared/ (it runs on the server or in the page): its domain and use-cases don't see its adapters.
+  { files: ['layers/*/shared/domain/**/*.ts', 'layers/*/shared/application/**/*.ts'], rules: { 'no-restricted-imports': ['error', { patterns: [banned.vue, banned.server, banned.serverDirs, banned.appDirs, banned.infrastructure] }] } },
   { files: ['layers/*/server/application/**/*.ts'], rules: { 'no-restricted-imports': ['error', { patterns: [banned.vue, banned.server, banned.infrastructure, banned.appDirs] }] } },
   { files: ['layers/*/server/api/**/*.ts'], rules: { 'no-restricted-imports': ['error', { patterns: [banned.vue, banned.infrastructure, banned.appDirs] }] } },
   { files: ['layers/*/server/infrastructure/**/*.ts'], rules: { 'no-restricted-imports': ['error', { patterns: [banned.vue, banned.appDirs] }] } },

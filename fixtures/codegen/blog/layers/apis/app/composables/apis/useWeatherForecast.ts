@@ -2,7 +2,7 @@
 import type { MaybeRefOrGetter } from 'vue'
 import type { Forecast } from '../../../shared/domain/weather/entities/forecast'
 import type { WeatherError } from '../../../shared/domain/weather/errors'
-import type { ForecastInput } from '../../../shared/domain/weather/use-cases/forecast'
+import type { ForecastInput } from '../../../shared/application/weather/queries/forecast'
 import { useApiQuery } from '../../data/api-query'
 import { useWeatherApi } from '../../data/weather'
 

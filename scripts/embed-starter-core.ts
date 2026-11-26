@@ -11,6 +11,7 @@ const STATIC_CORE = [
   'layers/core/shared/kernel/result.ts',
   'layers/core/shared/kernel/page.ts',
   'layers/core/shared/kernel/ids.ts',
+  'layers/core/shared/http/api-client.ts',
   'layers/core/shared/http/client.ts',
   'layers/core/test/infrastructure/http-client.test.ts',
   'layers/core/server/utils/db.ts',

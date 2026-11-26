@@ -70,3 +70,26 @@ describe.skipIf(!!NEEDS_FIXTURE)(`generated code passes the project's eslint${NE
     expect(reports.length).toBeGreaterThan(10)
   })
 })
+
+// The other half of the boundary: the rule that keeps an API source's domain and application off its
+// infrastructure (codegen-architecture T3d) reports an import that crosses it, and lets infrastructure import itself.
+describe.skipIf(!!NEEDS_FIXTURE)(`the project's eslint refuses an inward import of infrastructure${NEEDS_FIXTURE}`, { timeout: 120_000 }, () => {
+  const crossing = 'import { httpCatalogRepository } from \'../../../infrastructure/catalog/repositories/catalog-repository.http\'\nexport const probe = httpCatalogRepository\n'
+  const lint = async (path: string) => {
+    const child = run(process.execPath, [eslintBin, '--stdin', '--stdin-filename', path, '--format', 'json'], { cwd: fixtureRoot, maxBuffer: 16 * 1024 * 1024 })
+    child.child.stdin!.end(crossing)
+    const output = await child.then(({ stdout }) => stdout, (error: { stdout?: string }) => error.stdout ?? String(error))
+    return (JSON.parse(output) as Array<{ messages: Array<{ ruleId: string | null }> }>).flatMap(report => report.messages.map(message => message.ruleId))
+  }
+
+  it.each([
+    'layers/apis/shared/application/catalog/queries/probe.ts',
+    'layers/apis/shared/domain/catalog/entities/probe.ts'
+  ])('%s', async (path) => {
+    expect(await lint(path)).toContain('no-restricted-imports')
+  })
+
+  it('infrastructure may import infrastructure', async () => {
+    expect(await lint('layers/apis/shared/infrastructure/catalog/mappers/probe.ts')).not.toContain('no-restricted-imports')
+  })
+})

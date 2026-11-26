@@ -65,7 +65,7 @@ describe('an API model field of a SaaS type', () => {
   })
 
   it('types the DTO: strings, numbers, and a select as the union of its options', () => {
-    expect(read('layers/apis/shared/data/shop-api/models/contact.dto.ts')).toContain([
+    expect(read('layers/apis/shared/infrastructure/shop-api/models/contact.dto.ts')).toContain([
       'export interface ContactDto {',
       '  mail: string',
       '  site?: string',
@@ -93,7 +93,7 @@ describe('an API model field of a SaaS type', () => {
       '  status: z.enum([\'draft\', \'live\', \'it\\\'s off\']),',
       '  tags: z.array(z.enum([\'a\', \'b\']))'
     ].join('\n')
-    expect(read('layers/apis/shared/data/shop-api/validations/contact.schema.ts')).toContain(lines)
+    expect(read('layers/apis/shared/infrastructure/shop-api/validations/contact.schema.ts')).toContain(lines)
     expect(read('layers/apis/shared/domain/shop-api/entities/contact.ts')).toContain(lines)
   })
 

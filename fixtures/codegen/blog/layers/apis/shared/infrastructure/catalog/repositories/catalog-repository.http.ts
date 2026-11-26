@@ -5,8 +5,8 @@ import type { Result as KernelResult } from '#core/kernel/result'
 import { ProductDtoSchema } from '../validations/product.schema'
 import { fromProduct, toProduct } from '../mappers/product.mapper'
 import { type CatalogError, invalidAnswer, invalidInput } from '../../../domain/catalog/errors'
-import type { CatalogRepository } from '../../../domain/catalog/repositories/catalog-repository'
-import type { ApiClient } from '../client'
+import type { CatalogRepository } from '../../../application/catalog/ports/catalog-repository'
+import type { ApiClient } from '#core/http/api-client'
 
 /** The answer as `schema` reads it, or the error of an answer that is not what the model says: the error has no detail, `report` gets it. */
 const read = <T>(schema: ZodType<T>, answer: unknown, report?: (detail: string) => void): KernelResult<T, CatalogError> => {
@@ -35,7 +35,7 @@ const itemsAt = (answer: unknown, path: string[]): unknown =>
   path.reduce<unknown>((value, key) => typeof value === 'object' && value !== null && Object.hasOwn(value, key) ? (value as Record<string, unknown>)[key] : undefined, answer)
 
 /** CatalogRepository over an ApiClient: builds each path and query, reads the answer where the model says it is, validates it and maps it to the domain. `onInvalidAnswer` gets the detail of an answer that is not valid (the error has none). */
-export const httpCatalogRepository = (http: ApiClient, onInvalidAnswer?: (detail: string) => void): CatalogRepository => ({
+export const httpCatalogRepository = (http: ApiClient<CatalogError>, onInvalidAnswer?: (detail: string) => void): CatalogRepository => ({
   async products(input) {
     const localeHeader = headerValue(input.locale)
     if (!localeHeader.ok) return localeHeader

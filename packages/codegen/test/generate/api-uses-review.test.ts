@@ -72,7 +72,7 @@ describe('S1: a route parameter fills a number parameter', () => {
     const files = generate(p.model())
     expect(files.find(file => file.path === 'layers/blog/app/pages/detail/[id]/[ratio].vue')!.content).toContain('useShopProduct(() => ({ id: Number(route.params.id), ratio: Number(route.params.ratio) }))')
     // A route value that isn't a number reaches the use-case as NaN, which its schema refuses: the page shows its error line.
-    const useCase = files.find(file => file.path.endsWith('/use-cases/product.ts'))!.content
+    const useCase = files.find(file => file.path.endsWith('/queries/product.ts'))!.content
     expect(useCase).toContain('z.number().int()')
     expect(useCase).toContain('if (!parsed.success) return err(invalidInput(parsed.error.message))')
     expect(files.find(file => file.path === 'layers/blog/app/pages/detail/[id]/[ratio].vue')!.content).toContain('<p v-else-if="foundStatus === \'error\'" class="text-error">')

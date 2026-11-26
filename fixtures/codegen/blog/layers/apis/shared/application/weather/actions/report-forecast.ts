@@ -2,9 +2,9 @@
 import { z } from 'zod'
 import { err } from '#core/kernel/result'
 import type { Result as KernelResult } from '#core/kernel/result'
-import { type Forecast, ForecastSchema } from '../entities/forecast'
-import { type WeatherError, invalidInput } from '../errors'
-import type { WeatherRepository } from '../repositories/weather-repository'
+import { type Forecast, ForecastSchema } from '../../../domain/weather/entities/forecast'
+import { type WeatherError, invalidInput } from '../../../domain/weather/errors'
+import type { WeatherRepository } from '../ports/weather-repository'
 
 export const ReportForecastInputSchema = z.object({
   body: ForecastSchema

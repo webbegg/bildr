@@ -3,7 +3,7 @@ import type { MaybeRefOrGetter } from 'vue'
 import { fromRoute } from '#layers/core/app/data/results'
 import type { Product } from '../../../shared/domain/catalog/entities/product'
 import type { CatalogError } from '../../../shared/domain/catalog/errors'
-import type { ProductInput } from '../../../shared/domain/catalog/use-cases/product'
+import type { ProductInput } from '../../../shared/application/catalog/queries/product'
 import { useApiQuery } from '../../data/api-query'
 
 /** Query "product" of the "catalog" API: `data`, `status` and `error` are refs, `refresh()` fetches again; it also fetches again when the input changes. */

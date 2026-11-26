@@ -19,10 +19,11 @@ import { docText, file, header, kebab, pascal, tsString } from './text.ts'
  * The clean-architecture layers of the `api` data sources (simple data, SD-5). Every source, whatever its
  * runtime, generates into the one layer `layers/apis/`:
  *
- * - domain (`shared/domain/<source>/`): the entities and their zod schemas, the repository port, one use-case
- *   per query and action, the errors. No Nuxt, no fetch.
- * - data (`shared/data/<source>/`): the DTOs the remote sends, their zod schemas, the mappers between both,
- *   the HTTP repository and the `ApiClient` port it calls through.
+ * - domain (`shared/domain/<source>/`): the entities and their zod schemas, the errors. No Nuxt, no fetch.
+ * - application (`shared/application/<source>/`): the repository port (`ports/`), one use-case per query (`queries/`) and
+ *   action (`actions/`). No Nuxt, no fetch.
+ * - infrastructure (`shared/infrastructure/<source>/`): the DTOs the remote sends, their zod schemas, the mappers between
+ *   both, the HTTP repository over the core `ApiClient` (`#core/http/api-client`).
  * - the runtime: the server one (api-server.ts: composition root, Nitro routes, composables) for `runtime: 'server'`, the browser
  *   one (api-browser.ts: composition in app/, client over fetch, composables) for `runtime: 'browser'`. The domain and the data above
  *   are the same for both.
@@ -69,8 +70,7 @@ const sourceFiles = (model: Model, source: ApiSource): Emitted[] => {
   }
   add(paths.errors, errorLines(source, names))
   add(paths.port(names.portFile), portLines(source, names))
-  for (const operation of operationsOf(source)) add(paths.useCase(kebab(operation.name)), useCaseLines(source, names, operation))
-  add(paths.client, clientLines(names, importPath(paths.client, paths.errors)))
+  for (const operation of operationsOf(source)) add(paths.useCase(operation.kind, kebab(operation.name)), useCaseLines(source, names, operation))
   add(paths.adapter(names.adapterFile), adapterLines(source, names))
   out.push(...apiTestFiles(source, names))
   return out
@@ -143,15 +143,17 @@ const portMethod = (operation: Operation, errorName: string): string[] => {
   return [`  /** ${label} (${operation.method} ${docText(operation.path)}). */`, `  ${operation.name}(${fields.length ? `input: ${inputType(fields)}` : ''}): Promise<KernelResult<${resultType(operation)}, ${errorName}>>`]
 }
 
-/** `repositories/<s>-repository.ts`: the port, one method per query and action. */
+/** `ports/<s>-repository.ts`: the port, one method per query and action. */
 const portLines = (source: ApiSource, names: SourceNames): string[] => {
   const operations = operationsOf(source)
   const models = [...new Set(operations.flatMap(operation => [operation.result?.model, operation.body]).filter((name): name is string => !!name))].sort()
+  const paths = apiPaths(names.dir)
+  const path = paths.port(names.portFile)
   return [
     // Aliased: a model can be named Result.
     'import type { Result as KernelResult } from \'#core/kernel/result\'',
-    ...models.map(name => importLine(`../entities/${modelNames(name).file}`, [{ name: modelNames(name).type, type: true }])),
-    importLine('../errors', [{ name: names.error, type: true }]),
+    ...models.map(name => importLine(importPath(path, paths.entity(modelNames(name).file)), [{ name: modelNames(name).type, type: true }])),
+    importLine(importPath(path, paths.errors), [{ name: names.error, type: true }]),
     '',
     `/** What the "${source.name}" API offers: one method per query and action, each answering its value or the ${names.error} of the call. */`,
     `export interface ${names.port} {`,
@@ -160,9 +162,11 @@ const portLines = (source: ApiSource, names: SourceNames): string[] => {
   ]
 }
 
-/** `use-cases/<op>.ts`: validates the input with the params schema, calls the repository, answers a Result. */
+/** `queries/<op>.ts` or `actions/<op>.ts`: validates the input with the params schema, calls the repository, answers a Result. */
 const useCaseLines = (source: ApiSource, names: SourceNames, operation: Operation): Array<string | false> => {
   const fields = inputFields(operation)
+  const paths = apiPaths(names.dir)
+  const path = paths.useCase(operation.kind, kebab(operation.name))
   const type = pascal(operation.name)
   const result = resultType(operation)
   // The entity types and schemas the use-case names, by model (one import per entity file).
@@ -177,9 +181,9 @@ const useCaseLines = (source: ApiSource, names: SourceNames, operation: Operatio
     fields.length > 0 && 'import { err } from \'#core/kernel/result\'',
     // Aliased: a model can be named Result.
     'import type { Result as KernelResult } from \'#core/kernel/result\'',
-    ...[...byModel.entries()].sort(([a], [b]) => a < b ? -1 : 1).map(([model, entries]) => importLine(`../entities/${modelNames(model).file}`, entries)),
-    importLine('../errors', [{ name: names.error, type: true }, ...(fields.length ? ['invalidInput'] : [])]),
-    importLine(`../repositories/${names.portFile}`, [{ name: names.port, type: true }]),
+    ...[...byModel.entries()].sort(([a], [b]) => a < b ? -1 : 1).map(([model, entries]) => importLine(importPath(path, paths.entity(modelNames(model).file)), entries)),
+    importLine(importPath(path, paths.errors), [{ name: names.error, type: true }, ...(fields.length ? ['invalidInput'] : [])]),
+    importLine(importPath(path, paths.port(names.portFile)), [{ name: names.port, type: true }]),
     '',
     ...(fields.length
       ? [
@@ -276,23 +280,6 @@ const mapperLines = (name: string, source: ApiSource): string[] => {
   ]
 }
 
-const clientLines = (names: SourceNames, errors: string): string[] => [
-  // Aliased: a model can be named Result.
-  'import type { Result as KernelResult } from \'#core/kernel/result\'',
-  importLine(errors, [{ name: names.error, type: true }]),
-  '',
-  '/** One call to the API: the method, the query string and the headers (a value left undefined is not sent) and the JSON body. */',
-  'export interface ApiRequest {',
-  '  method: \'GET\' | \'POST\' | \'PUT\' | \'PATCH\' | \'DELETE\'',
-  '  query?: Record<string, string | number | boolean | undefined>',
-  '  headers?: Record<string, string | number | boolean | undefined>',
-  '  body?: unknown',
-  '}',
-  '',
-  '/** The port the HTTP repository calls through: the path under the API\'s base URL; the JSON answer (undefined when it is empty), or the error of the call. */',
-  `export type ApiClient = (path: string, request: ApiRequest) => Promise<KernelResult<unknown, ${names.error}>>`
-]
-
 /** `repositories/<s>-repository.http.ts`: builds the paths and queries, reads `itemsPath`, validates with the DTO schemas, maps. */
 const adapterLines = (source: ApiSource, names: SourceNames): Array<string | false> => {
   const operations = operationsOf(source)
@@ -316,11 +303,11 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
       ...(answered.includes(name) ? [modelNames(name).to] : []),
       ...(sent.includes(name) ? [modelNames(name).from] : [])
     ])),
-    // The errors the file makes: an invalid answer (a source with a result), and a path parameter that is not a segment or a header one that
-    // is not one line. A source with none of them only passes the client's on.
-    refuses && importLine(importPath(adapter, apiPaths(source.name).errors), [{ name: names.error, type: true }, ...(results.length ? ['invalidAnswer'] : []), ...(usesSegment || usesHeaderText ? ['invalidInput'] : [])]),
+    // The source's error type (the client answers it), and the errors the file makes: an invalid answer (a source with a result), and a path
+    // parameter that is not a segment or a header one that is not one line. A source with none of them only passes the client's on.
+    importLine(importPath(adapter, apiPaths(source.name).errors), [{ name: names.error, type: true }, ...(results.length ? ['invalidAnswer'] : []), ...(usesSegment || usesHeaderText ? ['invalidInput'] : [])]),
     importLine(importPath(adapter, apiPaths(source.name).port(names.portFile)), [{ name: names.port, type: true }]),
-    importLine('../client', [{ name: 'ApiClient', type: true }]),
+    importLine('#core/http/api-client', [{ name: 'ApiClient', type: true }]),
     '',
     ...(results.length
       ? [
@@ -365,7 +352,7 @@ const adapterLines = (source: ApiSource, names: SourceNames): Array<string | fal
         ]
       : []),
     `/** ${names.port} over an ApiClient: builds each path and query, reads the answer where the model says it is, validates it and maps it to the domain. \`onInvalidAnswer\` gets the detail of an answer that is not valid (the error has none). */`,
-    `export const ${names.adapter} = (http: ApiClient${results.length ? ', onInvalidAnswer?: (detail: string) => void' : ''}): ${names.port} => ({`,
+    `export const ${names.adapter} = (http: ApiClient<${names.error}>${results.length ? ', onInvalidAnswer?: (detail: string) => void' : ''}): ${names.port} => ({`,
     operations.map(operation => adapterMethod(operation)).join(',\n'),
     '})'
   ]
