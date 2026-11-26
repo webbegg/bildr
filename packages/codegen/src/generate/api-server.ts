@@ -20,7 +20,7 @@ export const generateServerRuntime = (model: Model, sources: ApiSource[]): Emitt
   const names = namesOf(model, source)
   return [
     rootFile(source, names),
-    ...operationsOf(source).flatMap(operation => [routeFileOf(source, names, operation), composableFile(source, names, operation)])
+    ...operationsOf(source).flatMap(operation => [contractFileOf(source, names, operation), routeFileOf(source, names, operation), composableFile(source, names, operation)])
   ]
 })
 
@@ -212,40 +212,100 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
 
 const paramsOf = (fields: InputField[]) => fields.filter(field => !field.model)
 
-/** `server/api/apis/<s>/<op>.<method>.ts`: reads the query string and the body, calls the use-case, answers or throws its error. */
+/** What a route of a server source and its composable import of its contract: `productsContract` and `ProductsResponse`. */
+const contractNamesOf = (names: SourceNames, operation: Operation) => ({
+  path: apiPaths(names.dir).contract(kebab(operation.name)),
+  value: `${operation.name}Contract`,
+  response: `${pascal(operation.name)}Response`
+})
+
+/** `import { type <Response>, <value> } from '…/shared/contracts/<s>/<op>'`, relative to `from`: what of it `from` uses. */
+const contractImport = (from: string, names: SourceNames, operation: Operation, uses: { response: boolean, value: boolean }) => {
+  const contract = contractNamesOf(names, operation)
+  const entries = [...(uses.response ? [{ name: contract.response, type: true }] : []), ...(uses.value ? [contract.value] : [])]
+  return entries.length > 0 && importLine(importPath(from, contract.path), entries)
+}
+
+/**
+ * `shared/contracts/<s>/<op>.ts` (codegen-architecture R2): the HTTP contract of a route of a server source, as a module's (T4b): its
+ * method, its path, the schema of its query string (as text, coerced) and of its body, and the type of its answer. The route validates
+ * with it and declares its answer as it; the composable calls its path with its method and reads its answer as it.
+ */
+const contractFileOf = (source: ApiSource, names: SourceNames, operation: Operation): Emitted => {
+  const fields = inputFields(operation)
+  const params = paramsOf(fields)
+  const body = fields.find(field => field.model)
+  const contract = contractNamesOf(names, operation)
+  const paths = apiPaths(names.dir)
+  // What it imports of each model of the source: the result's type, the body's schema; one line per model.
+  const models = new Map<string, Array<{ name: string, type?: boolean }>>()
+  const add = (model: string, entry: { name: string, type?: boolean }) => models.set(model, [...(models.get(model) ?? []), entry])
+  if (operation.result) add(operation.result.model, { name: operation.result.model, type: true })
+  if (body) add(body.model!, { name: modelNames(body.model!).schema })
+  const imported = [...models.values()].flat().map(entry => entry.name)
+  if (imported.includes(contract.response)) {
+    throw new Error(`${names.source}: the contract's response type ${contract.response} would take the name of the ${contract.response} it answers: rename the operation "${operation.name}" or the model`)
+  }
+  return {
+    path: contract.path,
+    source: names.source,
+    content: file([
+      header(names.source),
+      params.length > 0 && 'import { z } from \'zod\'',
+      ...[...models.entries()]
+        .map(([model, entries]) => importLine(importPath(contract.path, paths.entity(modelNames(model).file)), entries))
+        .sort(),
+      '',
+      `/** The HTTP contract of the ${operation.kind} "${operation.name}" of the "${source.name}" API: its route and its composable both read it. */`,
+      `export const ${contract.value} = {`,
+      [
+        `  method: ${tsString(operation.method)}`,
+        // Parameters travel in the query string (path ones too: the route has no path segments), the body as JSON.
+        `  path: ${tsString(`/api/apis/${names.dir}/${kebab(operation.name)}`)}`,
+        ...(params.length
+          ? [[
+              '  /** Its parameters, read from the query string (everything arrives as text). */',
+              '  query: z.object({',
+              params.map(field => `    ${field.name}: ${field.query}`).join(',\n'),
+              '  })'
+            ].join('\n')]
+          : []),
+        ...(body ? [`  body: ${modelNames(body.model!).schema}`] : [])
+      ].join(',\n'),
+      '} as const',
+      '',
+      '/** What the route answers. */',
+      // An action that answers nothing answers the route's empty answer (204): `undefined`, as its composable reads it.
+      `export type ${contract.response} = ${resultType(operation)}`
+    ])
+  }
+}
+
+/** `server/api/apis/<s>/<op>.<method>.ts`: reads the query string and the body as its contract says, calls the use-case, answers or throws its error. */
 const routeFileOf = (source: ApiSource, names: SourceNames, operation: Operation): Emitted => {
   const fields = inputFields(operation)
   const params = paramsOf(fields)
   const body = fields.find(field => field.model)
   const answers = !!operation.result
   const useEvent = fields.length > 0 || !answers
-  // Parameters travel in the query string (path ones too: the route has no path segments), the body as JSON.
   const call = params.length && body ? '{ ...params, body }' : params.length ? 'input' : body ? '{ body }' : ''
   const use = `unwrapOrThrow(await ${names.root}().${operation.name}(${call}), ${names.status})`
   const paths = apiPaths(names.dir)
   const path = paths.apiRoute(routeFile(operation))
+  const contract = contractNamesOf(names, operation)
   return {
     path,
     source: names.source,
     content: file([
       header(names.source),
       importLine('nuxt/server', ['defineEventHandler', ...(params.length ? ['getValidatedQuery'] : []), ...(body ? ['readValidatedBody'] : []), ...(answers ? [] : ['setResponseStatus'])]),
-      params.length > 0 && 'import { z } from \'zod\'',
-      body && importLine(importPath(path, paths.entity(modelNames(body.model!).file)), [modelNames(body.model!).schema]),
+      contractImport(path, names, operation, { response: answers, value: fields.length > 0 }),
       importLine(importPath(path, paths.compositionRoot), [names.root, names.status]),
       '',
-      ...(params.length
-        ? [
-            `/** The parameters of "${operation.name}", read from the query string (everything arrives as text). */`,
-            'const QuerySchema = z.object({',
-            params.map(field => `  ${field.name}: ${field.query}`).join(',\n'),
-            '})',
-            ''
-          ]
-        : []),
-      `export default defineEventHandler(async (${useEvent ? 'event' : ''}) => {`,
-      ...(params.length ? [`  const ${body ? 'params' : 'input'} = await getValidatedQuery(event, QuerySchema)`] : []),
-      ...(body ? [`  const body = await readValidatedBody(event, ${modelNames(body.model!).schema})`] : []),
+      // A route that answers nothing answers null (204), not its contract's `undefined`: its answer is not declared.
+      `export default defineEventHandler(async (${useEvent ? 'event' : ''})${answers ? `: Promise<${contract.response}>` : ''} => {`,
+      ...(params.length ? [`  const ${body ? 'params' : 'input'} = await getValidatedQuery(event, ${contract.value}.query)`] : []),
+      ...(body ? [`  const body = await readValidatedBody(event, ${contract.value}.body)`] : []),
       ...(answers
         ? [`  return ${use}`]
         : [`  ${use}`, '  setResponseStatus(event, 204)', '  return null']),
@@ -270,8 +330,9 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
   const body = fields.find(field => field.model)
   const type = pascal(operation.name)
   const name = `use${names.pascal}${type}`
-  const url = tsString(`/api/apis/${names.dir}/${kebab(operation.name)}`)
-  const result = resultType(operation)
+  const contract = contractNamesOf(names, operation)
+  // A server source's composable reads its route's answer as the contract says; a browser one has no route, the use-case answers.
+  const result = browser ? resultType(operation) : contract.response
   const input = `${type}Input`
   // The type arguments of useApiQuery / useApiAction: what it takes, what it answers, the source's error.
   const generics = `<${fields.length ? input : 'undefined'}, ${result}, ${names.error}>`
@@ -284,7 +345,9 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
   const imports = lines(
     ...(operation.kind === 'query' && fields.length ? ['import type { MaybeRefOrGetter } from \'vue\''] : []),
     ...(browser ? [] : ['import { fromRoute } from \'#layers/core/app/data/results\'']),
-    ...(operation.result ? [importLine(importPath(path, paths.entity(modelNames(operation.result.model).file)), [{ name: operation.result.model, type: true }])] : []),
+    ...(browser
+      ? operation.result ? [importLine(importPath(path, paths.entity(modelNames(operation.result.model).file)), [{ name: operation.result.model, type: true }])] : []
+      : [contractImport(path, names, operation, { response: true, value: true })]),
     importLine(importPath(path, paths.errors), [{ name: names.error, type: true }]),
     ...(fields.length ? [importLine(importPath(path, paths.useCase(operation.kind, kebab(operation.name))), [{ name: input, type: true }])] : []),
     importLine(importPath(path, apisPaths.apiQuery), [operation.kind === 'query' ? 'useApiQuery' : 'useApiAction']),
@@ -314,7 +377,7 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
     }
   }
   if (operation.kind === 'query') {
-    const fetch = `fromRoute($fetch<${result}>(${url}, { ${fields.length ? 'query, ' : ''}signal }))`
+    const fetch = `fromRoute($fetch<${result}>(${contract.value}.path, { method: ${contract.value}.method, ${fields.length ? 'query, ' : ''}signal }))`
     return {
       path,
       source: names.source,
@@ -351,9 +414,9 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
       ])
     }
   }
-  const request = [`method: ${tsString(operation.method)}`, ...(params.length ? ['query'] : []), ...(body ? ['body'] : [])].join(', ')
-  // An action that answers nothing gets the route's empty answer (204): `undefined`.
-  const fetch = `fromRoute($fetch<${result}>(${url}, { ${request} }))`
+  const request = [`method: ${contract.value}.method`, ...(params.length ? ['query'] : []), ...(body ? ['body'] : [])].join(', ')
+  // An action that answers nothing gets the route's empty answer (204): `undefined`, as its contract says.
+  const fetch = `fromRoute($fetch<${result}>(${contract.value}.path, { ${request} }))`
   const argument = params.length && body ? '{ body, ...query }' : body ? '{ body }' : params.length ? 'query' : ''
   const call = `${argument === 'query' ? argument : `(${argument})`} => ${fetch}`
   return {

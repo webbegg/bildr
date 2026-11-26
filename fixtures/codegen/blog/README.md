@@ -52,6 +52,7 @@ An API data source gets `layers/apis/`, in the same rings. They all live under `
 shared/domain/<source>/          entities (zod schemas + types) and the source's errors
 shared/application/<source>/     the repository port (ports/), one use-case per query (queries/) and action (actions/)
 shared/infrastructure/<source>/  what the API sends (models/, validations/), mappers, the HTTP repository
+shared/contracts/<source>/       one HTTP contract per route of a source that runs on the server: its route and composable read it
 server/utils/<source>.ts         composition root of a source that runs on the server, with its routes in server/api/apis/
 app/data/<source>.ts             composition of a source that runs in the page
 app/composables/apis/            one composable per query and action

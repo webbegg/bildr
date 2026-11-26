@@ -28,22 +28,22 @@
     },
     "layers/apis/app/composables/apis/useCatalogCreateProduct.ts": {
       "owner": "managed",
-      "sha256": "bda45ff4a5c171a22e9cf5e4287cab984673c0ec7c75877daa84ba5f7dc9778f",
+      "sha256": "8ffab2d2c2c0f2cf75cb71074edeeae3bdce678b82d0fb1033f0f520476404f3",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/app/composables/apis/useCatalogDeleteProduct.ts": {
       "owner": "managed",
-      "sha256": "01dd5d3cef051a25593fdd13c4893d995f1a7de432a06a337e8312990b933132",
+      "sha256": "884cf30aed369260701d1818dd06f38055f0867c8a278153dd166e68b8fdb019",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/app/composables/apis/useCatalogProduct.ts": {
       "owner": "managed",
-      "sha256": "1c43287dbba35c816337c2045d0c2b89703ad1e3b83ab28333b5760b7b24ce3c",
+      "sha256": "55f77b82b53a874c5de7b2eb09008d222472b9f872ff36d8b29d441fb43d33f2",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/app/composables/apis/useCatalogProducts.ts": {
       "owner": "managed",
-      "sha256": "0227159159d18b2926487ec4bb9e4c62270ee20a8bb783fa5e18d86e810d1930",
+      "sha256": "d66b33507aa6b3d2f9bb132a79f78da7550f96949d04a56d27e58f92d95d6a10",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/app/composables/apis/useWeatherForecast.ts": {
@@ -71,22 +71,22 @@
     },
     "layers/apis/server/api/apis/catalog/create-product.post.ts": {
       "owner": "managed",
-      "sha256": "9a9d30f440596e26c422032acf843e01843d0ee7b66b3bd9b6869091b722a726",
+      "sha256": "fe2ac4e7ec3244b6f2f7af7b6eea88c638483d7f7c36646f475ad52925bab187",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/server/api/apis/catalog/delete-product.delete.ts": {
       "owner": "managed",
-      "sha256": "f5956483516db04716786f0cdd328415fb1398563958070846c929cf6753ee79",
+      "sha256": "9c2f8a7a433932822694962c9bf204bd6abd04530207928903072d579d306323",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/server/api/apis/catalog/product.get.ts": {
       "owner": "managed",
-      "sha256": "a23638ba23034b11c639577d5b9aa862ad9caef0b5145300704022ca137939fd",
+      "sha256": "063e1feb19f5f9fab62aa5ec8466386bef506d8ed3e6e4cf38ce3737f049845a",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/server/api/apis/catalog/products.get.ts": {
       "owner": "managed",
-      "sha256": "5ce612a063e7d7084216d222ddc09dd5d3254a2f4df0758dac33441795977829",
+      "sha256": "e2a3b52eff5100401101d2ba9284cf14e949820a9e0a06791dea130470334e69",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/server/utils/catalog.ts": {
@@ -133,6 +133,26 @@
       "owner": "managed",
       "sha256": "0b5dfec64ba8d60197da87a00a54803c30e8786ad1fc62f5a0c6703d014d553e",
       "source": ".bildr/datasources/weather.json"
+    },
+    "layers/apis/shared/contracts/catalog/create-product.ts": {
+      "owner": "managed",
+      "sha256": "6816261f7dd5ad5148a7fcf78ee6544d95a292dd4e707fc0a95fcce844a3f875",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/contracts/catalog/delete-product.ts": {
+      "owner": "managed",
+      "sha256": "cd94ddad933018e4d80c047fa029522a176b22ca423a2c1bed53795c59a529b3",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/contracts/catalog/product.ts": {
+      "owner": "managed",
+      "sha256": "17621c6a5bc52d2b13a5faaacb2365a856f9c88aadbd242848bca183d94a8077",
+      "source": ".bildr/datasources/catalog.json"
+    },
+    "layers/apis/shared/contracts/catalog/products.ts": {
+      "owner": "managed",
+      "sha256": "d383e5f9be8d4a411307cb27d14dbc07a598eabe4d60627e2072c142f9e14e84",
+      "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/domain/catalog/entities/category.ts": {
       "owner": "managed",

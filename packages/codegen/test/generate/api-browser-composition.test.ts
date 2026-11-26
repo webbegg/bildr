@@ -92,7 +92,7 @@ describe('generated browser composition and composables, run', () => {
     await expect(composables.useCatalogDeleteProduct().run({ id: 7 })).resolves.toEqual({ ok: true, value: { fromRoute: 'answered' } })
     await composables.useCatalogCreateProduct().run({ body: { name: 'Lamp' } })
     expect(calls).toEqual([
-      ['/api/apis/catalog/products', { query: { category: 'lamps' }, signal }],
+      ['/api/apis/catalog/products', { method: 'GET', query: { category: 'lamps' }, signal }],
       ['/api/apis/catalog/delete-product', { method: 'DELETE', query: { id: 7 } }],
       ['/api/apis/catalog/create-product', { method: 'POST', body: { name: 'Lamp' } }]
     ])
