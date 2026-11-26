@@ -304,7 +304,7 @@ describe('generate: an API with auth refuses a call when its secret is not set (
   const root = read(generated, 'layers/apis/server/utils/catalog.ts')
 
   it('the client is told when the secret is empty, and the root answers a typed not_configured naming the env var (never a value)', () => {
-    expect(root).toContain('createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? \'\').trim() === \'\' })')
+    expect(root).toContain('createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? \'\').trim() === \'\', retries: 2 })')
     expect(root).toContain('return resultClient(call, failure => failure.notConfigured')
     expect(root).toContain('{ type: \'not_configured\', message: \'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY\' }')
     expect(root).toContain('  not_configured: 503')

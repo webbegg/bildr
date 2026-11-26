@@ -158,16 +158,65 @@ export interface HttpClientOptions {
   unconfigured?: boolean
   /** The caller's (a query that is cancelled): aborting it cancels the call, next to the timeout. */
   signal?: AbortSignal | undefined
+  /** How long a call waits for its answer, in ms (10 s when not said): every try of it, and the waits between them, fit in it. */
+  timeoutMs?: number
+  /** How many more times a GET is tried when it may pass on another try (RETRYING); none when not said. A write is never tried again. */
+  retries?: number
 }
+
+/** The longest wait a source may ask for (Retry-After) that a try waits out: a longer one is the call's answer, for its caller to wait. */
+const MAX_RETRY_WAIT_S = 2
+
+/**
+ * Whether another try may pass: the source is down or could not be reached, or asked to wait no longer than MAX_RETRY_WAIT_S. A call
+ * that took too long is not tried again: its caller has waited already.
+ */
+const retrying = (failure: HttpFailure) =>
+  (failure.reason === 'unreachable' || failure.type === 'unavailable' || failure.type === 'rate_limited') && (failure.retryAfter ?? 0) <= MAX_RETRY_WAIT_S
+
+/** Waits `ms`, or until `cancel` aborts: then it fails as cancelled. */
+const pause = (ms: number, cancel: AbortSignal | undefined) => new Promise<void>((resolve, reject) => {
+  const cancelled = () => new HttpFailure(0, 'was cancelled', 'cancelled')
+  if (cancel?.aborted) return reject(cancelled())
+  const done = () => {
+    clearTimeout(timer)
+    reject(cancelled())
+  }
+  const timer = setTimeout(() => {
+    cancel?.removeEventListener('abort', done)
+    resolve()
+  }, ms)
+  cancel?.addEventListener('abort', done, { once: true })
+})
 
 /**
  * A client over `fetch`, the same on the server and in the page: the path is under `baseUrl` (a path that leaves it, or has a "." or
  * ".." segment the URL would resolve, is refused), a redirect is not followed (it could leave the base URL, with the headers), no
  * cookies are sent, and an answer is cut off after the timeout and the size cap. It answers the parsed JSON, or undefined for an empty
- * answer, and throws an `HttpFailure` for anything else.
+ * answer, and throws an `HttpFailure` for anything else. A GET that may pass on another try is tried again `retries` times, after
+ * 250 ms, 500 ms … or the wait its source asked, as long as the next try can start within the call's timeout.
  */
-export const createHttpClient = ({ baseUrl, headers = {}, unconfigured = false, signal: cancel }: HttpClientOptions): HttpClient =>
-  async (path, { method, query, headers: given, body }) => {
+export const createHttpClient = (options: HttpClientOptions): HttpClient => {
+  const once = tryOnce(options)
+  const { retries = 0, signal: cancel, timeoutMs = TIMEOUT_MS } = options
+  return async (path, request) => {
+    const deadline = Date.now() + timeoutMs
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await once(path, request, attempt === 0 ? timeoutMs : deadline - Date.now())
+      } catch (cause) {
+        if (request.method !== 'GET' || attempt >= retries || !(cause instanceof HttpFailure) || !retrying(cause)) throw cause
+        const wait = Math.max(250 * 2 ** attempt, (cause.retryAfter ?? 0) * 1000)
+        if (Date.now() + wait >= deadline) throw cause
+        await pause(wait, cancel)
+      }
+    }
+  }
+}
+
+/** One try of a call, as createHttpClient says, waiting `left` ms at most for its answer. */
+const tryOnce = ({ baseUrl, headers = {}, unconfigured = false, signal: cancel, timeoutMs = TIMEOUT_MS }: HttpClientOptions) =>
+  async (path: string, { method, query, headers: given, body }: HttpRequest, left: number): Promise<unknown> => {
     if (unconfigured) throw new HttpFailure(0, 'has no secret set, so it was not called', 'not_configured')
     const base = baseOf(baseUrl)
     const relative = path.replace(/^\//, '')
@@ -182,12 +231,12 @@ export const createHttpClient = ({ baseUrl, headers = {}, unconfigured = false, 
       if (value !== undefined) url.searchParams.set(key, String(value))
     }
     const sent = sentHeaders(headers, given, body !== undefined)
-    const timeout = AbortSignal.timeout(TIMEOUT_MS)
+    const timeout = AbortSignal.timeout(left)
     const signal = cancel ? anyOf([cancel, timeout]) : timeout
     // A browser says nothing more about a failed call (a refusal by CORS looks like a network error).
     const unreachable = !('window' in globalThis) ? 'couldn\'t be reached' : 'couldn\'t be reached, or doesn\'t allow calls from this page'
     const gone = () => timeout.aborted
-      ? new HttpFailure(0, `didn't answer within ${TIMEOUT_MS / 1000} s`, 'timeout')
+      ? new HttpFailure(0, `didn't answer within ${timeoutMs / 1000} s`, 'timeout')
       : cancel?.aborted ? new HttpFailure(0, 'was cancelled', 'cancelled') : new HttpFailure(0, unreachable, 'unreachable')
     let response: Response
     try {

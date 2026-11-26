@@ -62,6 +62,16 @@ export const failedFactory = (name: string, error: string, subject: string): str
   `  ({ type, message: \`${subject} \${detail}.\`, status, ...(retryAfter === undefined ? {} : { retryAfter }) })`
 ]
 
+/** How many more times the server tries a read that may pass on another try (the core client's `retries`). */
+const SERVER_RETRIES = 2
+
+/**
+ * The options after the base URL and headers of a source's client: its timeout, when it says one, and on the server its retries (in the
+ * page the query tries again, so the client does not).
+ */
+export const clientOptions = (source: Pick<DataSourceFile, 'timeout'>, onServer: boolean): string =>
+  `${source.timeout === undefined ? '' : `, timeoutMs: ${source.timeout * 1000}`}${onServer ? `, retries: ${SERVER_RETRIES}` : ''}`
+
 /** The arguments of a failed call's factory, from the `failure` of the core client. */
 export const FAILURE_ARGS = 'failure.type, failure.status, failure.message, failure.retryAfter'
 
@@ -113,7 +123,7 @@ export const sourceClientLines = (context: ModuleContext, source: DataSourceFile
     `  const { baseUrl, apiKey } = ${config}`,
     '  const headers: Record<string, string> = { accept: \'application/json\' }',
     '  if (apiKey) headers.authorization = `Bearer ${apiKey}`',
-    `  return resultClient(createHttpClient({ baseUrl, headers }), failure => ${names.failed}(${FAILURE_ARGS}))`,
+    `  return resultClient(createHttpClient({ baseUrl, headers${clientOptions(source, true)} }), failure => ${names.failed}(${FAILURE_ARGS}))`,
     '}'
   ]
 }

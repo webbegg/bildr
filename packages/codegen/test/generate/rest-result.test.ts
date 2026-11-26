@@ -84,7 +84,7 @@ describe('a list-only REST repository answers a Result', () => {
       '  const { baseUrl, apiKey } = useRuntimeConfig().datasources.quotes',
       '  const headers: Record<string, string> = { accept: \'application/json\' }',
       '  if (apiKey) headers.authorization = `Bearer ${apiKey}`',
-      '  return resultClient(createHttpClient({ baseUrl, headers }), failure => quotesFailed(failure.type, failure.status, failure.message, failure.retryAfter))',
+      '  return resultClient(createHttpClient({ baseUrl, headers, retries: 2 }), failure => quotesFailed(failure.type, failure.status, failure.message, failure.retryAfter))',
       '}'
     ].join('\n'))
     expect(root).toContain('  const quotes = restQuoteRepository(quotesClient(), detail => console.error(\'The "quotes" data source answered something unexpected: \' + detail))\n')

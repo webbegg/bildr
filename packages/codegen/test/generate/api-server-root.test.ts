@@ -120,6 +120,22 @@ describe('generated server composition root, run', () => {
     expect(headersOf(result)).toEqual({ 'retry-after': '12' })
   })
 
+  // R4: the server tries a read again when the API was down; a write never.
+  it('a read the API answered 503 is tried again and answers the entity; a delete it answered 503 is not', async () => {
+    configure('key-1')
+    const answers = [json({ error: 'down' }, 503), json(DTO)]
+    const calls: string[] = []
+    vi.stubGlobal('fetch', (url: unknown, init: RequestInit) => {
+      calls.push(`${init.method} ${String(url)}`)
+      return Promise.resolve(answers.shift() ?? json({ error: 'down' }, 503))
+    })
+    expect(await root.useCatalogApi().product({ id: 7 })).toMatchObject({ ok: true, value: { id: 7, name: 'Lamp' } })
+    expect(calls).toEqual(['GET https://shop.example.com/v1/products/7', 'GET https://shop.example.com/v1/products/7'])
+    calls.length = 0
+    expect(await root.useCatalogApi().deleteProduct({ id: 7 })).toMatchObject({ ok: false, error: { type: 'unavailable', status: 503 } })
+    expect(calls).toEqual(['DELETE https://shop.example.com/v1/products/7'])
+  })
+
   it('a failure without a wait sends no Retry-After, and a route status that is not 503 none either', () => {
     expect(headersOf({ ok: false, error: { type: 'unavailable', status: 500, message: 'm' } })).toEqual({})
     expect(headersOf({ ok: false, error: { type: 'remote_failed', status: 409, retryAfter: 5, message: 'm' } })).toEqual({})
