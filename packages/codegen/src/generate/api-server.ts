@@ -4,7 +4,7 @@ import { descriptionOf, inputFields, modelNames, namesOf, operationsOf, resultTy
 import type { Emitted, InputField, Operation, SourceNames } from './api-model.ts'
 import { importLine } from './imports.ts'
 import { apiPaths, apisPaths, importPath } from './paths.ts'
-import { FAILURE_ARGS, SOURCE_ERRORS } from './rest-source.ts'
+import { clientOptions, FAILURE_ARGS, SOURCE_ERRORS } from './rest-source.ts'
 import { file, header, identifier, kebab, pascal, tsString } from './text.ts'
 
 /**
@@ -195,7 +195,7 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
       '  const headers: Record<string, string> = { accept: \'application/json\' }',
       ...(secret ? [`  if (config.${secret}) ${auth}`] : []),
       // Nuxt reads an env var as JSON when it can (a numeric secret arrives as a number), hence the String().
-      `  const call = createHttpClient({ baseUrl: config.baseUrl, headers${secret ? `, unconfigured: String(config.${secret} ?? '').trim() === ''` : ''} })`,
+      `  const call = createHttpClient({ baseUrl: config.baseUrl, headers${secret ? `, unconfigured: String(config.${secret} ?? '').trim() === ''` : ''}${clientOptions(source, true)} })`,
       ...(envVar
         ? [
             `  return resultClient(call, failure => failure.notConfigured`,

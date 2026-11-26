@@ -15,7 +15,7 @@ const catalogClient = (): ApiClient<CatalogError> => {
   const config = useRuntimeConfig().apis.catalog
   const headers: Record<string, string> = { accept: 'application/json' }
   if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`
-  const call = createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? '').trim() === '' })
+  const call = createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? '').trim() === '', retries: 2 })
   return resultClient(call, failure => failure.notConfigured
     ? { type: 'not_configured', message: 'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY' }
     : remoteFailed(failure.type, failure.status, failure.message, failure.retryAfter))

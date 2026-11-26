@@ -393,6 +393,9 @@ export const apiProblems = (source: ApiParts): ApiProblem[] => {
   return problems
 }
 
+/** The seconds a call to a remote source may wait for its answer: whole, 1 to 60. */
+export const SourceTimeoutSchema = z.number().int('A timeout is whole seconds').min(1, 'A timeout is 1 s at least').max(60, 'A timeout is 60 s at most')
+
 export const DataSourceFileSchema = z.object({
   ...schemaField,
   id: ArtifactIdSchema,
@@ -403,6 +406,8 @@ export const DataSourceFileSchema = z.object({
   /** Non-secret defaults written into runtimeConfig. */
   defaults: z.record(CamelNameSchema, z.string()).optional(),
   auth: z.object({ type: z.enum(['bearer', 'header']), secret: CamelNameSchema, header: z.string().optional() }).optional(),
+  /** `rest` and `api`: how long a call may wait for its answer (SOURCE_TIMEOUT); the client's 10 s when not said. */
+  timeout: SourceTimeoutSchema.optional(),
   // `api` only: the base URL its paths are under, where its calls run, and what it offers.
   baseUrl: z.string().max(2000).optional(),
   runtime: z.enum(API_RUNTIMES).optional(),
@@ -417,6 +422,9 @@ export const DataSourceFileSchema = z.object({
     for (const problem of apiProblems(source)) ctx.addIssue({ code: 'custom', path: problem.path, message: problem.message })
   } else {
     for (const key of apiKeys) if (source[key] !== undefined) ctx.addIssue({ code: 'custom', path: [key], message: `Only an API data source has "${key}"` })
+  }
+  if (source.timeout !== undefined && source.kind !== 'rest' && source.kind !== 'api') {
+    ctx.addIssue({ code: 'custom', path: ['timeout'], message: 'Only a REST or an API data source has a timeout' })
   }
   if (source.kind === 'memory') {
     for (const key of ['defaults', 'auth'] as const) {

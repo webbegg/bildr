@@ -91,7 +91,7 @@
     },
     "layers/apis/server/utils/catalog.ts": {
       "owner": "managed",
-      "sha256": "2a832cc23311d311aaafdd59ee5354805e2ecf26a4da38cf62873104a5d864a8",
+      "sha256": "c7fbebc7f13c1fdb502a46a45cfbeb00b03215ce2acf5d147cd1f1a5097b60e5",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/application/catalog/actions/create-product.ts": {
@@ -466,7 +466,7 @@
     },
     "layers/blog/server/utils/blog.ts": {
       "owner": "managed",
-      "sha256": "49b6329d7db12314e39714dbe78f37062ac3ce01f4ef49b6aaf101e614e2d9de",
+      "sha256": "f7887b62581519160210a6b555011887199ddc68130e8fe647567b2dc4220fa4",
       "source": ".bildr/modules/blog"
     },
     "layers/blog/shared/contracts/create-post.ts": {
@@ -588,7 +588,7 @@
     },
     "layers/core/shared/http/client.ts": {
       "owner": "managed",
-      "sha256": "a032a7728f85572dc2c13f4c7ecf4ce6886d4dd5a9c55eb8866b414ed00ea21f"
+      "sha256": "e2a83f716120c802d4d4adff49977152ba80c920518aedc5eb7e55094f8aa67b"
     },
     "layers/core/shared/kernel/ids.ts": {
       "owner": "managed",
@@ -604,7 +604,7 @@
     },
     "layers/core/test/infrastructure/http-client.test.ts": {
       "owner": "managed",
-      "sha256": "b93bfeca093838306b64413b00ca6cfccdb6689d83a296557de0e0dc95ed6fe8"
+      "sha256": "1744b612d91ffe1e875b69897ded2b7d4f185394801b2e25b6867f250d90de2a"
     },
     "nuxt.config.ts": {
       "owner": "scaffold",

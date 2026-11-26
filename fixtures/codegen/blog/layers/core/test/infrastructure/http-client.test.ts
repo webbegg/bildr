@@ -159,6 +159,96 @@ describe('createHttpClient', () => {
     }
   })
 
+  it('waits for an answer as long as its source says (timeoutMs), 10 s when it says nothing', async () => {
+    const { timeout } = AbortSignal
+    const asked: number[] = []
+    try {
+      AbortSignal.timeout = (ms: number) => {
+        asked.push(ms)
+        return AbortSignal.abort()
+      }
+      await withFetch(() => {
+        throw new DOMException('aborted', 'TimeoutError')
+      }, async () => {
+        await expect(createHttpClient({ baseUrl: BASE, timeoutMs: 2500 })('/things', { method: 'GET' })).rejects.toMatchObject({ reason: 'timeout', message: 'didn\'t answer within 2.5 s' })
+        await expect(createHttpClient({ baseUrl: BASE })('/things', { method: 'GET' })).rejects.toMatchObject({ reason: 'timeout', message: 'didn\'t answer within 10 s' })
+      })
+    } finally {
+      AbortSignal.timeout = timeout
+    }
+    expect(asked).toEqual([2500, 10_000])
+  })
+
+  describe('tries a read again (retries), never a write', () => {
+    /** Runs one call on a fake clock, `fetch` answering `answers` in turn (the last one after that): what it settled with, and when each try went out. */
+    const run = async (answers: Array<() => Response>, call: (client: ReturnType<typeof createHttpClient>) => Promise<unknown>, options: { retries?: number, signal?: AbortSignal } = {}) => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+      const at: number[] = []
+      const start = Date.now()
+      try {
+        let settled: { value?: unknown, error?: unknown } = {}
+        await withFetch(() => {
+          at.push(Date.now() - start)
+          return answers[Math.min(at.length - 1, answers.length - 1)]!()
+        }, async () => {
+          const pending = call(createHttpClient({ baseUrl: BASE, ...options })).then(value => ({ value }), (error: unknown) => ({ error }))
+          await vi.runAllTimersAsync()
+          settled = await pending
+        })
+        return { ...settled, at }
+      } finally {
+        vi.useRealTimers()
+      }
+    }
+    const status = (code: number, headers: Record<string, string> = {}) => () => new Response(null, { status: code, headers })
+    const offline = () => {
+      throw new TypeError('fetch failed')
+    }
+    const get = (client: ReturnType<typeof createHttpClient>) => client('/things', { method: 'GET' })
+
+    it('a GET that failed as a source that is down, or could not reach it, is tried again after 250 ms, then 500 ms', async () => {
+      expect(await run([status(503), offline, json], get, { retries: 2 })).toEqual({ value: { ok: true }, at: [0, 250, 750] })
+      const failed = await run([status(500)], get, { retries: 2 })
+      expect(failed.at).toEqual([0, 250, 750])
+      expect(failed.error).toMatchObject({ status: 500, type: 'unavailable' })
+    })
+
+    it('waits what a source that asked to wait asked (Retry-After), when it is 2 s at most; a longer wait is its answer at once', async () => {
+      expect(await run([status(429, { 'retry-after': '2' }), json], get, { retries: 2 })).toEqual({ value: { ok: true }, at: [0, 2000] })
+      const longer = await run([status(429, { 'retry-after': '3' }), json], get, { retries: 2 })
+      expect(longer.at).toEqual([0])
+      expect(longer.error).toMatchObject({ type: 'rate_limited', retryAfter: 3 })
+    })
+
+    it('does not try again what another try would not change, nor one that took too long (that would make the caller wait again)', async () => {
+      for (const answer of [status(404), status(401), status(409), status(504)]) expect((await run([answer, json], get, { retries: 2 })).at).toEqual([0])
+      const { timeout } = AbortSignal
+      try {
+        AbortSignal.timeout = () => AbortSignal.abort()
+        expect((await run([offline, json], get, { retries: 2 })).at).toEqual([0])
+      } finally {
+        AbortSignal.timeout = timeout
+      }
+    })
+
+    it('never tries a write again, and nothing unless it is told how many times (retries)', async () => {
+      for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) {
+        expect((await run([status(503), json], client => client('/things', { method }), { retries: 2 })).at, method).toEqual([0])
+      }
+      expect((await run([status(503), json], get)).at).toEqual([0])
+    })
+
+    it('a call cancelled while it waits to try again is cancelled, and not tried again', async () => {
+      const cancel = new AbortController()
+      const result = await run([() => {
+        queueMicrotask(() => cancel.abort())
+        return status(503)()
+      }, json], get, { retries: 2, signal: cancel.signal })
+      expect(result.at).toEqual([0])
+      expect(result.error).toMatchObject({ reason: 'cancelled', type: 'remote_failed' })
+    })
+  })
+
   it('a redirect the browser hides (status 0), or an answer over the size cap, failed as remote_failed', async () => {
     const opaque = () => {
       const response = new Response(null, { status: 200 })

@@ -1,9 +1,9 @@
 import { z } from 'zod'
-import { API_RUNTIMES, ApiActionSchema, ApiModelSchema, ApiQuerySchema, apiProblems, CamelNameSchema, PascalNameSchema } from '../model/schemas.ts'
+import { API_RUNTIMES, ApiActionSchema, ApiModelSchema, ApiQuerySchema, apiProblems, CamelNameSchema, PascalNameSchema, SourceTimeoutSchema } from '../model/schemas.ts'
 import type { ApiAction, ApiModel, ApiQuery, DataSourceFile } from '../model/schemas.ts'
 import { camel, defineEdit, fail, snake } from './core.ts'
 import type { Draft } from './core.ts'
-import { AuthInput, datasourceById, DataSourceRef, envNameOf, sourceName } from './datasources.ts'
+import { AuthInput, datasourceById, DataSourceRef, envNameOf, sourceName, TIMEOUT_TEXT } from './datasources.ts'
 import { apiNameProblem } from './generated-names.ts'
 import { apiMembersResolve } from './api-uses.ts'
 import type { ApiUse } from './api-uses.ts'
@@ -118,9 +118,10 @@ export const apiCreate = defineEdit({
     name: z.string().min(1).max(60).describe('Kebab-cased into its name, e.g. "Shop API" → "shop-api"; the id is ds_<name>'),
     baseUrl: z.string().max(2000).describe('The absolute URL every path is under, e.g. "https://api.example.com/v1"'),
     runtime: z.enum(API_RUNTIMES).optional().describe('server (default): calls run in the app server, which can hold a secret; browser: calls run in the page, with no secret'),
-    auth: AuthInput.optional()
+    auth: AuthInput.optional(),
+    timeout: SourceTimeoutSchema.optional().describe(TIMEOUT_TEXT)
   }),
-  apply: (draft, { name: given, baseUrl, runtime = 'server', auth }) => {
+  apply: (draft, { name: given, baseUrl, runtime = 'server', auth, timeout }) => {
     const name = sourceName(draft, given)
     const source: ApiSource = {
       id: draft.mint('ds', name),
@@ -128,6 +129,7 @@ export const apiCreate = defineEdit({
       kind: 'api',
       env: {},
       ...(auth ? { auth: { ...auth, secret: auth.secret ?? 'apiKey' } } : {}),
+      ...(timeout === undefined ? {} : { timeout }),
       baseUrl,
       runtime,
       models: [],
@@ -147,14 +149,17 @@ export const apiUpdate = defineEdit({
     name: z.string().min(1).max(60).optional().describe('A new name (kebab-cased); its file keeps its path'),
     baseUrl: z.string().max(2000).optional(),
     runtime: z.enum(API_RUNTIMES).optional(),
-    auth: AuthInput.nullable().optional().describe('The auth, or null for none')
+    auth: AuthInput.nullable().optional().describe('The auth, or null for none'),
+    timeout: SourceTimeoutSchema.nullable().optional().describe(`${TIMEOUT_TEXT}; null for the default`)
   }),
-  apply: (draft, { datasource: id, name, baseUrl, runtime, auth }) => {
+  apply: (draft, { datasource: id, name, baseUrl, runtime, auth, timeout }) => {
     const source = apiById(draft, id)
     const previous = { name: source.name }
     if (name !== undefined) source.name = sourceName(draft, name, id)
     if (baseUrl !== undefined) source.baseUrl = baseUrl
     if (runtime !== undefined) source.runtime = runtime
+    if (timeout === null) delete source.timeout
+    else if (timeout !== undefined) source.timeout = timeout
     if (auth === null) delete source.auth
     else if (auth) source.auth = { ...auth, secret: auth.secret ?? source.auth?.secret ?? 'apiKey' }
     settle(source, previous)

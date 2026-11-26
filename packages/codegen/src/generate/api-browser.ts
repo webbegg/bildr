@@ -5,7 +5,7 @@ import type { Emitted, SourceNames } from './api-model.ts'
 import { composableFile } from './api-server.ts'
 import { importLine } from './imports.ts'
 import { apiPaths, importPath } from './paths.ts'
-import { FAILURE_ARGS } from './rest-source.ts'
+import { clientOptions, FAILURE_ARGS } from './rest-source.ts'
 import { file, header, kebab, tsString } from './text.ts'
 
 /**
@@ -50,7 +50,7 @@ const compositionFile = (source: ApiSource, names: SourceNames): Emitted => {
       '',
       `/** The HTTP client of the "${source.name}" API: it calls the base URL it is given (the one of runtimeConfig.public.apis.${names.camel}), and nothing else. \`signal\` cancels its calls. */`,
       `const ${names.client} = (baseUrl: string, signal?: AbortSignal): ApiClient<${names.error}> =>`,
-      `  resultClient(createHttpClient({ baseUrl, headers: { accept: 'application/json' }, signal }), failure => remoteFailed(${FAILURE_ARGS}))`,
+      `  resultClient(createHttpClient({ baseUrl, headers: { accept: 'application/json' }, signal${clientOptions(source, false)} }), failure => remoteFailed(${FAILURE_ARGS}))`,
       '',
       `/**`,
       ` * The use-cases of the "${source.name}" API, wired to its HTTP repository. Call it in a composable's setup (it reads the runtime config): it answers`,
