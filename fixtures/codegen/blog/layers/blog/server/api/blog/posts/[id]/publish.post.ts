@@ -4,5 +4,5 @@ import { type PublishPostResponse, publishPostContract } from '#blog/contracts/p
 
 export default defineEventHandler(async (event): Promise<PublishPostResponse> => {
   const id = publishPostContract.params.id.parse(getRouterParam(event, 'id'))
-  return unwrapOrThrow(await useBlog().publishPost(id), blogErrorStatus)
+  return unwrapOrThrow(await useBlog().publishPost(id), blogErrorStatus, event)
 })

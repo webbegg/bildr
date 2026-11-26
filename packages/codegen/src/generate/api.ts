@@ -13,7 +13,7 @@ import { apiTestFiles } from './api-tests.ts'
 import { zodField } from './entity.ts'
 import type { KernelName } from './entity.ts'
 import { importLine } from './imports.ts'
-import { FAILURE_LINES } from './rest-source.ts'
+import { FAILURE_LINES, failedFactory } from './rest-source.ts'
 import { docText, file, header, kebab, pascal, tsString } from './text.ts'
 
 /**
@@ -125,8 +125,7 @@ const errorLines = (source: ApiSource, names: SourceNames): string[] => [
   '  | { type: \'invalid_input\', message: string }',
   ...(source.auth ? ['  | { type: \'not_configured\', message: string }'] : []),
   '',
-  `/** A failed call: \`type\` is why, \`status\` what the API answered (0 when it didn't answer); \`detail\` finishes "The API …". */`,
-  `export const remoteFailed = (type: SourceFailureType, status: number, detail: string): ${names.error} => ({ type, message: \`The "${source.name}" API \${detail}.\`, status })`,
+  ...failedFactory('remoteFailed', names.error, `The "${source.name}" API`),
   '',
   // Where the detail of an invalid answer goes: the server log (the error reaches the browser) or, for a source that runs in the page, the console.
   source.runtime === 'browser'

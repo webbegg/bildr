@@ -20,13 +20,29 @@ export interface ApiQueryOptions<Input, Output, E extends DomainError> {
 /** The failures of a source that may pass on a second try (SourceFailureType): it asked to wait, took too long, or is down. */
 const PASSING: ReadonlySet<string> = new Set<SourceFailureType>(['rate_limited', 'timeout', 'unavailable'])
 
+/** The longest wait a source may ask for (Retry-After) that the page waits out before trying again: a longer one shows the error. */
+const MAX_WAIT_S = 30
+
+/** The seconds the source asked to wait, when it said (`retryAfter`, its Retry-After). */
+const waitOf = (cause: Error): number | undefined => {
+  const wait = cause instanceof Answered ? (cause.error as { retryAfter?: unknown }).retryAfter : undefined
+  return typeof wait === 'number' ? wait : undefined
+}
+
 /**
  * Only a call that may pass on a second try is tried again, three times at most: something unexpected (the server could not be
- * reached), or a failure that passes (PASSING). What the API answered on purpose (a 404, a refusal) is its answer.
+ * reached), or a failure that passes (PASSING), unless it asked to wait longer than MAX_WAIT_S. What the API answered on purpose
+ * (a 404, a refusal) is its answer.
  */
 const retry = (count: number, cause: Error) => {
-  if (count >= 3) return false
+  if (count >= 3 || (waitOf(cause) ?? 0) > MAX_WAIT_S) return false
   return !(cause instanceof Answered) || cause.error.type === 'unexpected' || PASSING.has(cause.error.type)
+}
+
+/** How long before trying again: what the source asked, or a backoff (1 s, 2 s, 4 s …, at most 30 s). */
+const retryDelay = (count: number, cause: Error) => {
+  const wait = waitOf(cause)
+  return wait === undefined ? Math.min(1000 * 2 ** count, 30_000) : wait * 1000
 }
 
 /**
@@ -43,7 +59,8 @@ export const useApiQuery = <Input, Output, E extends DomainError>({ key, input, 
         if (!result.ok) throw new Answered(result.error)
         return result.value
       },
-      retry
+      retry,
+      retryDelay
     }
   }
   const observer = new QueryObserver<Output>(queryClient, optionsFor())

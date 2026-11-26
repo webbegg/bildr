@@ -516,11 +516,11 @@ const routeFile = (context: ModuleContext, analyzed: Analyzed) => {
       // A route that reads neither a body nor a parameter reads only its contract's response type.
       inputEntity || params.length ? contractImport(contract) : importLine(contract.from, [{ name: contract.response, type: true }]),
       '',
-      // A route that reads neither a body nor a parameter has no use for the event. It answers what its contract says.
-      `export default defineEventHandler(async (${inputEntity || params.length ? 'event' : ''}): Promise<${contract.response}> => {`,
+      // It answers what its contract says; the event also answers a remote source's Retry-After (R3'b).
+      `export default defineEventHandler(async (event): Promise<${contract.response}> => {`,
       inputEntity && `  const input = await readValidatedBody(event, ${contract.value}.body)`,
       ...params.map(param => `  const ${param.name} = ${contract.value}.params.${param.name}.parse(getRouterParam(event, ${tsString(param.name)}))`),
-      `  return unwrapOrThrow(await ${invoke}, ${camel(context.name)}ErrorStatus)`,
+      `  return unwrapOrThrow(await ${invoke}, ${camel(context.name)}ErrorStatus, event)`,
       '})'
     ])
   }

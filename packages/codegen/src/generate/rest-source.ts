@@ -48,9 +48,22 @@ export const SOURCE_ERRORS = [
 
 /** The lines of an error type: a failed call (SourceFailureType) or an invalid answer. */
 export const FAILURE_LINES = [
-  '  | { type: SourceFailureType, message: string, status: number }',
+  '  | { type: SourceFailureType, message: string, status: number, retryAfter?: number }',
   '  | { type: \'invalid_answer\', message: string }'
 ]
+
+/** The factory of a failed call, `name`, of the error type `error`: `subject` ("The "x" API") starts its message. */
+export const failedFactory = (name: string, error: string, subject: string): string[] => [
+  `/**`,
+  ` * A failed call: \`type\` is why, \`status\` what it answered (0 when it didn't answer), \`retryAfter\` the seconds it asked to wait (when it`,
+  ` * said); \`detail\` finishes "${subject} …".`,
+  ' */',
+  `export const ${name} = (type: SourceFailureType, status: number, detail: string, retryAfter?: number): ${error} =>`,
+  `  ({ type, message: \`${subject} \${detail}.\`, status, ...(retryAfter === undefined ? {} : { retryAfter }) })`
+]
+
+/** The arguments of a failed call's factory, from the `failure` of the core client. */
+export const FAILURE_ARGS = 'failure.type, failure.status, failure.message, failure.retryAfter'
 
 /**
  * Refuses what would make the module's errors ambiguous: an action error typed like a source's (one type in two shapes), or a module
@@ -82,8 +95,7 @@ export const sourceErrorsFile = (context: ModuleContext, source: DataSourceFile)
       `export type ${names.error} =`,
       ...FAILURE_LINES,
       '',
-      `/** A failed call: \`type\` is why, \`status\` what the source answered (0 when it didn't answer); \`detail\` finishes "The "${source.name}" data source …". */`,
-      `export const ${names.failed} = (type: SourceFailureType, status: number, detail: string): ${names.error} => ({ type, message: \`The "${source.name}" data source \${detail}.\`, status })`,
+      ...failedFactory(names.failed, names.error, `The "${source.name}" data source`),
       '',
       '/** The answer is not what the model says. The error has no detail: it reaches the browser, and the detail (field paths, what was expected) is for the server log. */',
       `export const ${names.invalidAnswer} = (): ${names.error} => ({ type: 'invalid_answer', message: ${tsString(`The "${source.name}" data source answered something unexpected`)} })`
@@ -101,7 +113,7 @@ export const sourceClientLines = (context: ModuleContext, source: DataSourceFile
     `  const { baseUrl, apiKey } = ${config}`,
     '  const headers: Record<string, string> = { accept: \'application/json\' }',
     '  if (apiKey) headers.authorization = `Bearer ${apiKey}`',
-    `  return resultClient(createHttpClient({ baseUrl, headers }), failure => ${names.failed}(failure.type, failure.status, failure.message))`,
+    `  return resultClient(createHttpClient({ baseUrl, headers }), failure => ${names.failed}(${FAILURE_ARGS}))`,
     '}'
   ]
 }

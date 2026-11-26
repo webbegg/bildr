@@ -101,7 +101,7 @@ describe('the route reads its contract and answers its response type', () => {
       '',
       'export default defineEventHandler(async (event): Promise<CreatePostResponse> => {',
       '  const input = await readValidatedBody(event, createPostContract.body)',
-      '  return unwrapOrThrow(await useBlog().createPost(input), blogErrorStatus)',
+      '  return unwrapOrThrow(await useBlog().createPost(input), blogErrorStatus, event)',
       '})',
       ''
     ].join('\n'))

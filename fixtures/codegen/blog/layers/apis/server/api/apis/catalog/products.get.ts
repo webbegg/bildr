@@ -5,5 +5,5 @@ import { catalogErrorStatus, useCatalogApi } from '../../../utils/catalog'
 
 export default defineEventHandler(async (event): Promise<ProductsResponse> => {
   const input = await getValidatedQuery(event, productsContract.query)
-  return unwrapOrThrow(await useCatalogApi().products(input), catalogErrorStatus)
+  return unwrapOrThrow(await useCatalogApi().products(input), catalogErrorStatus, event)
 })

@@ -188,7 +188,7 @@ describe('node_interaction_add: runAction on an action that takes no input (B7)'
     // No optimistic action: TanStack DB only calls its mutationFn when something was mutated, so this one calls the route itself.
     expect(composable).not.toContain('createOptimisticAction')
     expect(composable).toContain('$fetch<TidyPostsResponse>(tidyPostsContract.path, { method: tidyPostsContract.method })')
-    expect(generated(p.files)['layers/blog/server/api/blog/posts/tidy-posts.post.ts']).toContain('import type { TidyPostsResponse } from \'#blog/contracts/tidy-posts\'\n\nexport default defineEventHandler(async (): Promise<TidyPostsResponse> => {')
+    expect(generated(p.files)['layers/blog/server/api/blog/posts/tidy-posts.post.ts']).toContain('import type { TidyPostsResponse } from \'#blog/contracts/tidy-posts\'\n\nexport default defineEventHandler(async (event): Promise<TidyPostsResponse> => {')
   })
 
   it('refuses args it does not take, however they are given', () => {

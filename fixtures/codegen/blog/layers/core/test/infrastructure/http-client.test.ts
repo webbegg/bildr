@@ -100,6 +100,26 @@ describe('createHttpClient', () => {
     })
   })
 
+  it('a source that asks to wait (429, 503) says for how long: Retry-After in seconds or as a date, capped at a day; a bad one is not read', async () => {
+    const answered = async (status: number, retryAfter: string) => {
+      let failure: unknown
+      await withFetch(() => new Response(null, { status, headers: { 'retry-after': retryAfter } }), async () => {
+        failure = await createHttpClient({ baseUrl: BASE })('/things', { method: 'GET' }).catch((cause: unknown) => cause)
+      })
+      return failure as HttpFailure
+    }
+    expect(await answered(429, '7')).toMatchObject({ status: 429, type: 'rate_limited', retryAfter: 7 })
+    expect(await answered(503, '0')).toMatchObject({ type: 'unavailable', retryAfter: 0 })
+    const inAMinute = new Date(Date.now() + 60_000).toUTCString()
+    expect((await answered(429, inAMinute)).retryAfter).toBeGreaterThanOrEqual(58)
+    expect((await answered(429, inAMinute)).retryAfter).toBeLessThanOrEqual(60)
+    expect((await answered(429, new Date(Date.now() - 60_000).toUTCString())).retryAfter).toBe(0)
+    expect((await answered(429, '9999999')).retryAfter).toBe(86_400)
+    for (const bad of ['soon', '-1', '1.5', '']) expect((await answered(429, bad)).retryAfter, bad).toBeUndefined()
+    // Only a wait it asked for: another status's Retry-After means nothing.
+    expect((await answered(500, '7')).retryAfter).toBeUndefined()
+  })
+
   it('a call that was not answered failed as unavailable; one that took too long, as timeout', async () => {
     const { fetch } = globalThis
     try {

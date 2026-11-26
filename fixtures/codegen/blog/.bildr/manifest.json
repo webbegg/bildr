@@ -58,11 +58,11 @@
     },
     "layers/apis/app/data/api-query.ts": {
       "owner": "managed",
-      "sha256": "a0d05c517dd64fc9d3d20f096a4f0405a0d5f4e496762c9c10e751a96dd34f2c"
+      "sha256": "bc3a0be1dc7245d8b61536252a61ed8613207fa44bd977a17e052b427f2427e6"
     },
     "layers/apis/app/data/weather.ts": {
       "owner": "managed",
-      "sha256": "c7e46b0693f526239330cf0d70043de674ab498d6deef88f96571d224674d7d2",
+      "sha256": "a728b8cde0e11945c703de658dd401f161165757546cba9f38717fa78c088792",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/nuxt.config.ts": {
@@ -71,27 +71,27 @@
     },
     "layers/apis/server/api/apis/catalog/create-product.post.ts": {
       "owner": "managed",
-      "sha256": "fe2ac4e7ec3244b6f2f7af7b6eea88c638483d7f7c36646f475ad52925bab187",
+      "sha256": "b68b20aaa743f06414fe2c9e6162e05f63d1b116dfbeb31ee1203fe52c0659cb",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/server/api/apis/catalog/delete-product.delete.ts": {
       "owner": "managed",
-      "sha256": "9c2f8a7a433932822694962c9bf204bd6abd04530207928903072d579d306323",
+      "sha256": "f6471419c502df33fcea065fb233b9a6e89dc998e9dc113ee0f7265f45f4306d",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/server/api/apis/catalog/product.get.ts": {
       "owner": "managed",
-      "sha256": "063e1feb19f5f9fab62aa5ec8466386bef506d8ed3e6e4cf38ce3737f049845a",
+      "sha256": "693388e524945cce806264a561ea5f94e53fb5ba30bc3de299f948878fb31324",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/server/api/apis/catalog/products.get.ts": {
       "owner": "managed",
-      "sha256": "e2a3b52eff5100401101d2ba9284cf14e949820a9e0a06791dea130470334e69",
+      "sha256": "c7754c13c13639875ec3925f1df6bb0d6f0aadbdfec9e2394090386ee7d35abc",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/server/utils/catalog.ts": {
       "owner": "managed",
-      "sha256": "aa8e18d20a5924664932d9e1b366104ed06d861c0c100cab52218472e2839800",
+      "sha256": "2a832cc23311d311aaafdd59ee5354805e2ecf26a4da38cf62873104a5d864a8",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/application/catalog/actions/create-product.ts": {
@@ -166,7 +166,7 @@
     },
     "layers/apis/shared/domain/catalog/errors.ts": {
       "owner": "managed",
-      "sha256": "0a8ffef5751ade628c69d77847c6833271d4bcb33c288450ae319dd5fb0a495f",
+      "sha256": "0f1007c3759b7e83d6bb576d38aa23a745811f63de2c4e5047094f0e78f88910",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/domain/weather/entities/forecast.ts": {
@@ -176,7 +176,7 @@
     },
     "layers/apis/shared/domain/weather/errors.ts": {
       "owner": "managed",
-      "sha256": "174dc1501f7ead4515d4754c0640608e757e1e3ab4d56dcd23d64ffc12d8026e",
+      "sha256": "d74f199f14e6de894d6f1e2144d6f67d939ebca68845b95b3a1fd504087e27f3",
       "source": ".bildr/datasources/weather.json"
     },
     "layers/apis/shared/infrastructure/catalog/mappers/category.mapper.ts": {
@@ -386,7 +386,7 @@
     },
     "layers/blog/server/api/blog/posts/[id]/publish.post.ts": {
       "owner": "managed",
-      "sha256": "a89d86414cc7e9a73815f3b88179a34643c09c158177de3d9ef880a1b5f93b2b",
+      "sha256": "2b47c9218c91ac8281e3eb0f8d4d8079f35bc7df3a6548408ed929261046003a",
       "source": ".bildr/modules/blog/actions/publish-post.json"
     },
     "layers/blog/server/api/blog/posts/index.get.ts": {
@@ -396,12 +396,12 @@
     },
     "layers/blog/server/api/blog/posts/index.post.ts": {
       "owner": "managed",
-      "sha256": "768e3509bf9317c18144f201181ecdd1cb7a564d2fb481f823276f39a882cc7f",
+      "sha256": "c30ef9e728682fbaa6ddde929916ade8888a13b31a8ef2dd352a9792e28747c7",
       "source": ".bildr/modules/blog/actions/create-post.json"
     },
     "layers/blog/server/api/blog/quotes/index.get.ts": {
       "owner": "managed",
-      "sha256": "fb5268c6a29543f772e5dc408599e59a9dfb4f2db1ee26672bbf99c50cbdef59",
+      "sha256": "dd0209c5b8cac43425a14066623f9870a42bdf6d67e120fc979b51a917582b0d",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/blog/server/application/actions/create-post.ts": {
@@ -466,7 +466,7 @@
     },
     "layers/blog/server/utils/blog.ts": {
       "owner": "managed",
-      "sha256": "d871d2b660ce0840da1e0c9fd314304b1abfcf2a5791f8d8a0e5228926d08575",
+      "sha256": "49b6329d7db12314e39714dbe78f37062ac3ce01f4ef49b6aaf101e614e2d9de",
       "source": ".bildr/modules/blog"
     },
     "layers/blog/shared/contracts/create-post.ts": {
@@ -509,7 +509,7 @@
     },
     "layers/blog/shared/domain/sources/quotes.ts": {
       "owner": "managed",
-      "sha256": "147b636cae92a063f8ee6fa19e61b6385cddb5dcd96014c77313d44edbc76af7",
+      "sha256": "b0c54b41b636a6df52997ff8bc2d0ead0bcb6db2414c8d59d527941770c30630",
       "source": ".bildr/datasources/quotes.json"
     },
     "layers/blog/test/application/create-post.test.ts": {
@@ -580,7 +580,7 @@
     },
     "layers/core/server/utils/http-error.ts": {
       "owner": "managed",
-      "sha256": "b672493508e278d3111f59e58cfbad5fc53fb9c4329f933107a11421e130ea70"
+      "sha256": "a106b9f169331bee4be713df1b5f9084c8fd946c24a1eeb6f963c128da7941fb"
     },
     "layers/core/shared/http/api-client.ts": {
       "owner": "managed",
@@ -588,7 +588,7 @@
     },
     "layers/core/shared/http/client.ts": {
       "owner": "managed",
-      "sha256": "9e99e206c474d5d5125244820e75f1244c2466ae0850e4474cbe798d0de1dd13"
+      "sha256": "a668ed617f29710787ff5c5aed46c14c64b06b14862e85e72e98de447edf7058"
     },
     "layers/core/shared/kernel/ids.ts": {
       "owner": "managed",
@@ -604,7 +604,7 @@
     },
     "layers/core/test/infrastructure/http-client.test.ts": {
       "owner": "managed",
-      "sha256": "bbda4a230575f1291e7db0caf04afefa2877bc430a18db2f32526ea8b5fb6358"
+      "sha256": "93752fdbc9c3e6b44506783a2ac1838d3e54097ad0198aa591de79ffe22a097a"
     },
     "nuxt.config.ts": {
       "owner": "scaffold",

@@ -3,13 +3,17 @@ import type { SourceFailureType } from '#core/kernel/result'
 
 /** Every expected failure of the "catalog" API: it failed (why, by what it answered), it answered something unexpected, the input was not valid, or its secret is not set. */
 export type CatalogError =
-  | { type: SourceFailureType, message: string, status: number }
+  | { type: SourceFailureType, message: string, status: number, retryAfter?: number }
   | { type: 'invalid_answer', message: string }
   | { type: 'invalid_input', message: string }
   | { type: 'not_configured', message: string }
 
-/** A failed call: `type` is why, `status` what the API answered (0 when it didn't answer); `detail` finishes "The API …". */
-export const remoteFailed = (type: SourceFailureType, status: number, detail: string): CatalogError => ({ type, message: `The "catalog" API ${detail}.`, status })
+/**
+ * A failed call: `type` is why, `status` what it answered (0 when it didn't answer), `retryAfter` the seconds it asked to wait (when it
+ * said); `detail` finishes "The "catalog" API …".
+ */
+export const remoteFailed = (type: SourceFailureType, status: number, detail: string, retryAfter?: number): CatalogError =>
+  ({ type, message: `The "catalog" API ${detail}.`, status, ...(retryAfter === undefined ? {} : { retryAfter }) })
 
 /** The answer is not what the model says. The error has no detail: it reaches the browser, and the detail (field paths, what was expected) is for the server log. */
 export const invalidAnswer = (): CatalogError => ({ type: 'invalid_answer', message: 'The "catalog" API answered something unexpected' })

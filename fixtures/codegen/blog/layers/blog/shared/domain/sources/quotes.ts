@@ -3,11 +3,15 @@ import type { SourceFailureType } from '#core/kernel/result'
 
 /** Every expected failure of a call to the "quotes" REST data source: it failed (why, by what it answered), or it answered something unexpected. */
 export type QuotesSourceError =
-  | { type: SourceFailureType, message: string, status: number }
+  | { type: SourceFailureType, message: string, status: number, retryAfter?: number }
   | { type: 'invalid_answer', message: string }
 
-/** A failed call: `type` is why, `status` what the source answered (0 when it didn't answer); `detail` finishes "The "quotes" data source …". */
-export const quotesFailed = (type: SourceFailureType, status: number, detail: string): QuotesSourceError => ({ type, message: `The "quotes" data source ${detail}.`, status })
+/**
+ * A failed call: `type` is why, `status` what it answered (0 when it didn't answer), `retryAfter` the seconds it asked to wait (when it
+ * said); `detail` finishes "The "quotes" data source …".
+ */
+export const quotesFailed = (type: SourceFailureType, status: number, detail: string, retryAfter?: number): QuotesSourceError =>
+  ({ type, message: `The "quotes" data source ${detail}.`, status, ...(retryAfter === undefined ? {} : { retryAfter }) })
 
 /** The answer is not what the model says. The error has no detail: it reaches the browser, and the detail (field paths, what was expected) is for the server log. */
 export const quotesInvalidAnswer = (): QuotesSourceError => ({ type: 'invalid_answer', message: 'The "quotes" data source answered something unexpected' })

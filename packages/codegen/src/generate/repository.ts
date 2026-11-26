@@ -665,7 +665,7 @@ export const listRouteFile = (context: ModuleContext, entity: EntityFile, reposi
       `  const page = await getValidatedQuery(event, ${contract.value}.query)`,
       // From a REST source it answers a Result: the page, or the source's error thrown with its status (R1').
       answersResult(context, repository)
-        ? `  return unwrapOrThrow(await ${context.root}().list${pascal(entity.plural)}(page), ${camel(context.name)}ErrorStatus)`
+        ? `  return unwrapOrThrow(await ${context.root}().list${pascal(entity.plural)}(page), ${camel(context.name)}ErrorStatus, event)`
         : `  return ${context.root}().list${pascal(entity.plural)}(page)`,
       '})'
     ])

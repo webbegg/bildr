@@ -197,6 +197,22 @@ describe('generated query helpers, run', () => {
       for (const type of ['invalid_input', 'invalid_answer', 'not_configured']) expect(retry(0, await failing({ type, message: type }))).toBe(false)
     })
 
+    it('waits as long as the source asked (Retry-After), and does not try again a wait over 30 s; else backs off (R3\'b)', async () => {
+      const failing = async (error: ApiError) => thrown(query(async () => ({ ok: false, error })).observer) as Promise<Error>
+      const { retry, retryDelay } = query(async () => ({ ok: true, value: 1 })).observer.options as unknown as {
+        retry: (count: number, cause: Error) => boolean
+        retryDelay: (count: number, cause: Error) => number
+      }
+      const waiting = (retryAfter?: number) => failing({ type: 'rate_limited', status: 429, message: 'wait', ...(retryAfter === undefined ? {} : { retryAfter }) } as ApiError)
+      expect(retryDelay(0, await waiting(5))).toBe(5000)
+      expect(retryDelay(1, await waiting(0))).toBe(0)
+      expect(retry(0, await waiting(30))).toBe(true)
+      expect(retry(0, await waiting(31))).toBe(false)
+      expect(retryDelay(0, await waiting())).toBe(1000)
+      expect(retryDelay(2, await waiting())).toBe(4000)
+      expect(retryDelay(9, new TypeError('offline'))).toBe(30_000)
+    })
+
     it('refresh() fetches again and answers nothing', async () => {
       const { refresh, observer } = query(async () => ({ ok: true, value: 1 }))
       await expect(refresh()).resolves.toBeUndefined()

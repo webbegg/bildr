@@ -4,7 +4,7 @@ import { descriptionOf, inputFields, modelNames, namesOf, operationsOf, resultTy
 import type { Emitted, InputField, Operation, SourceNames } from './api-model.ts'
 import { importLine } from './imports.ts'
 import { apiPaths, apisPaths, importPath } from './paths.ts'
-import { SOURCE_ERRORS } from './rest-source.ts'
+import { FAILURE_ARGS, SOURCE_ERRORS } from './rest-source.ts'
 import { file, header, identifier, kebab, pascal, tsString } from './text.ts'
 
 /**
@@ -73,13 +73,29 @@ const queryHelpersFile = (): Emitted => ({
     '/** The failures of a source that may pass on a second try (SourceFailureType): it asked to wait, took too long, or is down. */',
     'const PASSING: ReadonlySet<string> = new Set<SourceFailureType>([\'rate_limited\', \'timeout\', \'unavailable\'])',
     '',
+    '/** The longest wait a source may ask for (Retry-After) that the page waits out before trying again: a longer one shows the error. */',
+    'const MAX_WAIT_S = 30',
+    '',
+    '/** The seconds the source asked to wait, when it said (`retryAfter`, its Retry-After). */',
+    'const waitOf = (cause: Error): number | undefined => {',
+    '  const wait = cause instanceof Answered ? (cause.error as { retryAfter?: unknown }).retryAfter : undefined',
+    '  return typeof wait === \'number\' ? wait : undefined',
+    '}',
+    '',
     '/**',
     ' * Only a call that may pass on a second try is tried again, three times at most: something unexpected (the server could not be',
-    ' * reached), or a failure that passes (PASSING). What the API answered on purpose (a 404, a refusal) is its answer.',
+    ' * reached), or a failure that passes (PASSING), unless it asked to wait longer than MAX_WAIT_S. What the API answered on purpose',
+    ' * (a 404, a refusal) is its answer.',
     ' */',
     'const retry = (count: number, cause: Error) => {',
-    '  if (count >= 3) return false',
+    '  if (count >= 3 || (waitOf(cause) ?? 0) > MAX_WAIT_S) return false',
     '  return !(cause instanceof Answered) || cause.error.type === \'unexpected\' || PASSING.has(cause.error.type)',
+    '}',
+    '',
+    '/** How long before trying again: what the source asked, or a backoff (1 s, 2 s, 4 s …, at most 30 s). */',
+    'const retryDelay = (count: number, cause: Error) => {',
+    '  const wait = waitOf(cause)',
+    '  return wait === undefined ? Math.min(1000 * 2 ** count, 30_000) : wait * 1000',
     '}',
     '',
     '/**',
@@ -96,7 +112,8 @@ const queryHelpersFile = (): Emitted => ({
     '        if (!result.ok) throw new Answered(result.error)',
     '        return result.value',
     '      },',
-    '      retry',
+    '      retry,',
+    '      retryDelay',
     '    }',
     '  }',
     '  const observer = new QueryObserver<Output>(queryClient, optionsFor())',
@@ -183,9 +200,9 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
         ? [
             `  return resultClient(call, failure => failure.notConfigured`,
             `    ? { type: 'not_configured', message: ${tsString(`The "${source.name}" API is not configured: set ${envVar}`)} }`,
-            '    : remoteFailed(failure.type, failure.status, failure.message))'
+            `    : remoteFailed(${FAILURE_ARGS}))`
           ]
-        : ['  return resultClient(call, failure => remoteFailed(failure.type, failure.status, failure.message))']),
+        : [`  return resultClient(call, failure => remoteFailed(${FAILURE_ARGS}))`]),
       '}',
       '',
       `/** The use-cases of the "${source.name}" API, wired to its HTTP repository. */`,
@@ -289,9 +306,9 @@ const routeFileOf = (source: ApiSource, names: SourceNames, operation: Operation
   const params = paramsOf(fields)
   const body = fields.find(field => field.model)
   const answers = !!operation.result
-  const useEvent = fields.length > 0 || !answers
   const call = params.length && body ? '{ ...params, body }' : params.length ? 'input' : body ? '{ body }' : ''
-  const use = `unwrapOrThrow(await ${names.root}().${operation.name}(${call}), ${names.status})`
+  // The event also answers the API's Retry-After (R3'b).
+  const use = `unwrapOrThrow(await ${names.root}().${operation.name}(${call}), ${names.status}, event)`
   const paths = apiPaths(names.dir)
   const path = paths.apiRoute(routeFile(operation))
   const contract = contractNamesOf(names, operation)
@@ -305,7 +322,7 @@ const routeFileOf = (source: ApiSource, names: SourceNames, operation: Operation
       importLine(importPath(path, paths.compositionRoot), [names.root, names.status]),
       '',
       // A route that answers nothing answers null (204), not its contract's `undefined`: its answer is not declared.
-      `export default defineEventHandler(async (${useEvent ? 'event' : ''})${answers ? `: Promise<${contract.response}>` : ''} => {`,
+      `export default defineEventHandler(async (event)${answers ? `: Promise<${contract.response}>` : ''} => {`,
       ...(params.length ? [`  const ${body ? 'params' : 'input'} = await getValidatedQuery(event, ${contract.value}.query)`] : []),
       ...(body ? [`  const body = await readValidatedBody(event, ${contract.value}.body)`] : []),
       ...(answers

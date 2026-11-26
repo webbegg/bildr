@@ -20,17 +20,20 @@ export type HttpFailureReason = 'answered' | 'timeout' | 'unreachable' | 'cancel
 
 /**
  * A call that failed. `status` is what the server answered, or 0 when it didn't; `message` finishes "The API …".
- * `notConfigured` is a call that was refused before it was sent: its credentials are not set.
+ * `notConfigured` is a call that was refused before it was sent: its credentials are not set. `retryAfter` is how many seconds the
+ * server asked to wait (its Retry-After, on a 429 or a 503), when it said.
  */
 export class HttpFailure extends Error {
   readonly status: number
   readonly reason: HttpFailureReason
+  readonly retryAfter: number | undefined
 
-  constructor(status: number, message: string, reason: HttpFailureReason = 'answered') {
+  constructor(status: number, message: string, reason: HttpFailureReason = 'answered', retryAfter?: number) {
     super(message)
     this.name = 'HttpFailure'
     this.status = status
     this.reason = reason
+    this.retryAfter = retryAfter
   }
 
   get notConfigured(): boolean {
@@ -52,6 +55,18 @@ export class HttpFailure extends Error {
 
 const TIMEOUT_MS = 10_000
 const MAX_BYTES = 1_000_000
+const MAX_WAIT_S = 86_400
+
+/**
+ * The seconds a Retry-After asks to wait: whole seconds, or an HTTP date (none, once it has passed), at most a day. Anything else is
+ * not read. A page reads it only from a source that exposes it (CORS: Access-Control-Expose-Headers).
+ */
+const waitOf = (value: string | null): number | undefined => {
+  if (value === null) return undefined
+  const text = value.trim()
+  const seconds = /^\d+$/.test(text) ? Number(text) : /[a-z]/i.test(text) ? Math.ceil((Date.parse(text) - Date.now()) / 1000) : Number.NaN
+  return Number.isNaN(seconds) ? undefined : Math.min(Math.max(seconds, 0), MAX_WAIT_S)
+}
 
 /** The body of the answer as text, refusing one over MAX_BYTES (by its header, or as it arrives). */
 const readCapped = async (response: Response): Promise<string> => {
@@ -193,7 +208,8 @@ export const createHttpClient = ({ baseUrl, headers = {}, unconfigured = false, 
     }
     if (!response.ok) {
       await response.body?.cancel()
-      throw new HttpFailure(response.status, `answered ${response.status}`)
+      const wait = response.status === 429 || response.status === 503 ? waitOf(response.headers.get('retry-after')) : undefined
+      throw new HttpFailure(response.status, `answered ${response.status}`, 'answered', wait)
     }
     let text: string
     try {
