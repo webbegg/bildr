@@ -2,10 +2,11 @@ import type { EntityFile, RepositoryFile } from '../model/schemas.ts'
 import { allFields, datasourceOf, entityNames, keyOf } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
 import { contractImport, listContractNames } from './contracts.ts'
+import { answersResult, sourceNames } from './rest-source.ts'
 import { importLine } from './imports.ts'
 import { importPath } from './paths.ts'
 import { isBasicType, sampleOf, VALUE_TYPES } from '../model/field-types.ts'
-import { docText, file, header, pascal, snake, tsLiteral, tsString } from './text.ts'
+import { camel, docText, file, header, pascal, snake, tsLiteral, tsString } from './text.ts'
 
 const OPERATION_ORDER = ['list', 'get', 'create', 'update', 'delete'] as const
 const has = (repository: RepositoryFile, op: RepositoryFile['operations'][number]) => repository.operations.includes(op)
@@ -87,7 +88,7 @@ export const portFile = (context: ModuleContext, entity: EntityFile, repository:
       if (op === 'get') methods.push(...finderFields(entity, repository).map(field => `  ${findBy(field)}(${field.name}: ${tsType(field)}): Promise<${names.type} | undefined>`))
       continue
     }
-    if (op === 'list') methods.push(`  list(page: PageRequest): Promise<Page<${names.type}>>`)
+    if (op === 'list') methods.push(`  list(page: PageRequest): Promise<${listAnswer(context, entity, repository).type}>`)
     if (op === 'get') {
       methods.push(`  get(id: ${key.type}): Promise<${names.type} | undefined>`)
       methods.push(...finderFields(entity, repository).map(field => `  ${findBy(field)}(${field.name}: ${tsType(field)}): Promise<${names.type} | undefined>`))
@@ -102,7 +103,9 @@ export const portFile = (context: ModuleContext, entity: EntityFile, repository:
     content: file([
       header(context.source(repository.id)),
       has(repository, 'list') && 'import type { Page, PageRequest } from \'#core/kernel/page\'',
+      ...listAnswer(context, entity, repository).imports,
       `import type { ${names.type} } from '#${context.name}/domain/${names.file}'`,
+      ...listAnswer(context, entity, repository).sourceImports,
       '',
       `/** ${doc} */`,
       `export interface ${names.port} {`,
@@ -335,35 +338,45 @@ export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, r
   const names = entityNames(entity)
   const rest = listRestConfig(repository)
   const source = datasourceOf(context, repository)
-  const response = `${pascal(entity.plural)}Response`
   const fields = remoteFields(entity, rest)
   const items = rest.list.itemsPath
   const total = rest.list.totalPath
+  const errors = sourceNames(context, source)
+  const answer = `${pascal(entity.plural)}AnswerSchema`
   const path = context.paths.repository(names.file, 'rest')
   return {
     path,
     source: context.source(repository.id),
     content: file([
       header(context.source(repository.id)),
+      'import { z } from \'zod\'',
+      'import type { ApiClient } from \'#core/http/api-client\'',
+      'import { err, ok } from \'#core/kernel/result\'',
       `import { ${names.type}Schema } from '#${context.name}/domain/${names.file}'`,
+      importLine(errors.from, [{ name: errors.error, type: true }, errors.invalidAnswer]),
       `import type { ${names.port} } from '${importPath(path, context.paths.port(names.portFile))}'`,
       '',
-      '/** The minimal HTTP client this adapter needs (core\'s useRemote provides it). */',
-      `export type ${names.type}Http = <T>(path: string, options?: { query?: Record<string, string | number | undefined> }) => Promise<T>`,
+      // The answer is checked before it is mapped: each item with the entity's own field rules, under the names the source uses.
+      `/** What the "${source.name}" REST data source answers for a page: each item checked with ${names.type}'s own field rules, under its remote names. */`,
+      `const ${answer} = z.object({`,
+      `  ${property(items)}: z.array(z.object({ ${fields.map(({ field, remote }) => `${property(remote)}: ${member(`${names.type}Schema.shape`, field.name)}`).join(', ')} }))${total ? ',' : ''}`,
+      total && `  ${property(total)}: z.number()`,
+      '})',
       '',
-      `interface ${response} {`,
-      `  ${property(items)}: Array<{ ${fields.map(({ field, remote }) => `${property(remote)}: ${tsType(field)}`).join(', ')} }>`,
-      total && `  ${property(total)}: number`,
-      '}',
-      '',
-      `/** ${names.port} over the "${source.name}" REST data source. Paging style: offset (${docText(String(rest.paging.offsetParam))}/${docText(String(rest.paging.limitParam))}). */`,
-      `export const rest${names.port} = (http: ${names.type}Http): ${names.port} => ({`,
+      `/** ${names.port} over the "${source.name}" REST data source. Paging style: offset (${docText(String(rest.paging.offsetParam))}/${docText(String(rest.paging.limitParam))}). A failed call answers its error; an answer that is not what the model says answers invalid_answer, its detail to \`onInvalidAnswer\`. */`,
+      `export const rest${names.port} = (http: ApiClient<${errors.error}>, onInvalidAnswer?: (detail: string) => void): ${names.port} => ({`,
       '  async list({ limit, offset }) {',
-      `    const response = await http<${response}>(${tsString(rest.list.path)}, { query: ${pagingQuery(rest)} })`,
-      '    return {',
-      `      items: ${member('response', items)}.map(row => ${names.type}Schema.parse({ ${fields.map(({ field, remote }) => `${field.name}: ${member('row', remote)}`).join(', ')} })),`,
-      `      total: ${total ? member('response', total) : `${member('response', items)}.length`}`,
+      `    const answer = await http(${tsString(rest.list.path)}, { method: 'GET', query: ${pagingQuery(rest)} })`,
+      '    if (!answer.ok) return answer',
+      `    const page = ${answer}.safeParse(answer.value)`,
+      '    if (!page.success) {',
+      '      onInvalidAnswer?.(page.error.message)',
+      `      return err(${errors.invalidAnswer}())`,
       '    }',
+      '    return ok({',
+      `      items: ${member('page.data', items)}.map(row => ({ ${fields.map(({ field, remote }) => `${field.name}: ${member('row', remote)}`).join(', ')} })),`,
+      `      total: ${total ? member('page.data', total) : `${member('page.data', items)}.length`}`,
+      '    })',
       '  }',
       '})'
     ])
@@ -375,6 +388,21 @@ const sample = (field: Field) => !isBasicType(field.type)
   ? sampleOf(field)
   : field.type === 'integer' || field.type === 'number' ? 1 : field.type === 'boolean' ? true : field.name
 
+/**
+ * A value a field's own rules take, for a test whose adapter checks them: the catalogue's sample of its type, within its bounds. With a
+ * pattern, its default when that matches (a value for any pattern is not generated yet).
+ */
+const validSample = (field: Field): string | number | boolean => {
+  if (field.pattern !== undefined && typeof field.default === 'string' && new RegExp(field.pattern).test(field.default)) return field.default
+  const value = sampleOf(field)
+  if (typeof value === 'number') return Math.min(Math.max(value, field.min ?? value), field.max ?? value)
+  if (typeof value === 'string' && field.type === 'text') {
+    const long = field.min !== undefined && value.length < field.min ? value.padEnd(field.min, 'x') : value
+    return field.max !== undefined ? long.slice(0, field.max) : long
+  }
+  return value
+}
+
 /** A generated adapter test: fields and paging map to the REST source as modeled. */
 export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
   if (restDoesMoreThanList(repository)) return restCrudRepositoryTestFile(context, entity, repository)
@@ -383,28 +411,49 @@ export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFil
   const fields = remoteFields(entity, rest)
   const items = rest.list.itemsPath
   const total = rest.list.totalPath
-  const remoteRow = `{ ${fields.map(({ field, remote }) => `${property(remote)}: ${tsLiteral(sample(field))}`).join(', ')} }`
-  const modelRow = `{ ${fields.map(({ field }) => `${field.name}: ${tsLiteral(sample(field))}`).join(', ')} }`
+  // The adapter checks each item with the entity's rules (R1'), so the test's row has to meet them.
+  const remoteRow = `{ ${fields.map(({ field, remote }) => `${property(remote)}: ${tsLiteral(validSample(field))}`).join(', ')} }`
+  const modelRow = `{ ${fields.map(({ field }) => `${field.name}: ${tsLiteral(validSample(field))}`).join(', ')} }`
   const query = `{ ${property(rest.paging.limitParam!)}: 10, ${property(rest.paging.offsetParam!)}: 20 }`
+  const source = datasourceOf(context, repository)
+  const errors = sourceNames(context, source)
   const path = context.paths.test(`infrastructure/${names.file}.rest.test.ts`)
+  const adapter = `rest${names.port}`
   return {
     path,
     source: context.source(repository.id),
     content: file([
       header(context.source(repository.id)),
       'import { describe, expect, it } from \'vitest\'',
-      `import { type ${names.type}Http, rest${names.port} } from '${importPath(path, context.paths.repository(names.file, 'rest'))}'`,
+      'import type { ApiClient } from \'#core/http/api-client\'',
+      'import { err, ok } from \'#core/kernel/result\'',
+      importLine(errors.from, [{ name: errors.error, type: true }, errors.failed, errors.invalidAnswer]),
+      `import { ${adapter} } from '${importPath(path, context.paths.repository(names.file, 'rest'))}'`,
       '',
-      `describe('rest${names.port}', () => {`,
+      `describe('${adapter}', () => {`,
       '  it(\'maps fields and offset paging to the REST source\', async () => {',
       '    const calls: unknown[] = []',
-      `    const http: ${names.type}Http = async <T>(path: string, options?: unknown) => {`,
-      '      calls.push({ path, options })',
-      `      return { ${property(items)}: [${remoteRow}]${total ? `, ${property(total)}: 40` : ''} } as T`,
+      `    const http: ApiClient<${errors.error}> = async (path, request) => {`,
+      '      calls.push({ path, request })',
+      `      return ok({ ${property(items)}: [${remoteRow}]${total ? `, ${property(total)}: 40` : ''} })`,
       '    }',
-      `    const page = await rest${names.port}(http).list({ limit: 10, offset: 20 })`,
-      `    expect(calls).toEqual([{ path: ${tsString(rest.list.path)}, options: { query: ${query} } }])`,
-      `    expect(page).toEqual({ items: [${modelRow}], total: ${total ? 40 : 1} })`,
+      `    const page = await ${adapter}(http).list({ limit: 10, offset: 20 })`,
+      `    expect(calls).toEqual([{ path: ${tsString(rest.list.path)}, request: { method: 'GET', query: ${query} } }])`,
+      `    expect(page).toEqual(ok({ items: [${modelRow}], total: ${total ? 40 : 1} }))`,
+      '  })',
+      '',
+      '  it(\'answers the error of a failed call\', async () => {',
+      `    const failed = ${errors.failed}(503, 'answered 503')`,
+      `    expect(await ${adapter}(async () => err(failed)).list({ limit: 10, offset: 0 })).toEqual(err(failed))`,
+      '  })',
+      '',
+      '  it(\'answers invalid_answer for an answer that is not what the model says, its detail to onInvalidAnswer\', async () => {',
+      '    const details: string[] = []',
+      `    const page = await ${adapter}(async () => ok({ ${property(items)}: 'not a list' }), (detail) => {`,
+      '      details.push(detail)',
+      '    }).list({ limit: 10, offset: 0 })',
+      `    expect(page).toEqual(err(${errors.invalidAnswer}()))`,
+      '    expect(details).toHaveLength(1)',
       '  })',
       '})'
     ])
@@ -620,6 +669,18 @@ const restCrudRepositoryTestFile = (context: ModuleContext, entity: EntityFile, 
   }
 }
 
+/** What listing answers: the page, or (from a REST source, R1') the page or the source's error. */
+const listAnswer = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
+  const page = `Page<${entityNames(entity).type}>`
+  if (!answersResult(context, repository)) return { type: page, imports: [], sourceImports: [] }
+  const source = sourceNames(context, datasourceOf(context, repository))
+  return {
+    type: `Result<${page}, ${source.error}>`,
+    imports: ['import type { Result } from \'#core/kernel/result\''],
+    sourceImports: [`import type { ${source.error} } from '${source.from}'`]
+  }
+}
+
 // ── List use-case and route ────────────────────────────────────────────
 
 export const listUseCaseFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
@@ -632,7 +693,9 @@ export const listUseCaseFile = (context: ModuleContext, entity: EntityFile, repo
     content: file([
       header(context.source(repository.id)),
       'import type { Page, PageRequest } from \'#core/kernel/page\'',
+      ...listAnswer(context, entity, repository).imports,
       `import type { ${names.type} } from '#${context.name}/domain/${names.file}'`,
+      ...listAnswer(context, entity, repository).sourceImports,
       `import type { ${names.port} } from '${importPath(path, context.paths.port(names.portFile))}'`,
       '',
       `export interface ${pascal(useCase)}Deps {`,
@@ -641,7 +704,7 @@ export const listUseCaseFile = (context: ModuleContext, entity: EntityFile, repo
       '',
       `/** Read use-case behind the ${names.type} collection sync. */`,
       `export const ${useCase} = ({ ${names.plural} }: ${pascal(useCase)}Deps) =>`,
-      `  (page: PageRequest): Promise<Page<${names.type}>> => ${names.plural}.list(page)`
+      `  (page: PageRequest): Promise<${listAnswer(context, entity, repository).type}> => ${names.plural}.list(page)`
     ])
   }
 }
@@ -659,7 +722,10 @@ export const listRouteFile = (context: ModuleContext, entity: EntityFile, reposi
       '',
       `export default defineEventHandler(async (event): Promise<${contract.response}> => {`,
       `  const page = await getValidatedQuery(event, ${contract.value}.query)`,
-      `  return ${context.root}().list${pascal(entity.plural)}(page)`,
+      // From a REST source it answers a Result: the page, or the source's error thrown with its status (R1').
+      answersResult(context, repository)
+        ? `  return unwrapOrThrow(await ${context.root}().list${pascal(entity.plural)}(page), ${camel(context.name)}ErrorStatus)`
+        : `  return ${context.root}().list${pascal(entity.plural)}(page)`,
       '})'
     ])
   }
