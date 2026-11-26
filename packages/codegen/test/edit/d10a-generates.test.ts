@@ -38,7 +38,8 @@ describe('a name the generated code can\'t declare is refused', () => {
     'drizzlePostRepository', 'restQuoteRepository', // the adapters it imports
     'postNotFound', // an error factory the errors file exports
     'publishPostChange', // the domain rule of an action (T4a)
-    'quotesClient', 'quotesFailed', 'quotesInvalidAnswer' // a REST source's client and error factories (R1')
+    'quotesClient', 'quotesFailed', 'quotesInvalidAnswer', // a REST source's client and error factories (R1')
+    'useRuntimeConfig', 'resultClient', 'createHttpClient', 'console' // what the root builds that client with, and logs through
   ])('action %s', (name) => {
     project().refuse('action_create', { entity: 'ent_post', template: 'delete', name }, 'invalid')
   })

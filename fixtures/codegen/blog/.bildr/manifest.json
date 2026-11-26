@@ -504,7 +504,7 @@
     },
     "layers/blog/test/infrastructure/quote.rest.test.ts": {
       "owner": "managed",
-      "sha256": "b485be9ab68dbef041ee9f35ba64ccbfd69fed305180fb9b2004a6a84b577dac",
+      "sha256": "9e3ad1328cc82ab58ebd171b1d5c4decd225b01693d157bfa5dda82e9eb0308f",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/core/app/app.config.ts": {

@@ -10,11 +10,11 @@ describe('restQuoteRepository', () => {
     const calls: unknown[] = []
     const http: ApiClient<QuotesSourceError> = async (path, request) => {
       calls.push({ path, request })
-      return ok({ quotes: [{ id: 1, quote: 'text', author: 'author' }], total: 40 })
+      return ok({ quotes: [{ id: 1, quote: 'text 1', author: 'author 1' }], total: 40 })
     }
     const page = await restQuoteRepository(http).list({ limit: 10, offset: 20 })
     expect(calls).toEqual([{ path: '/quotes', request: { method: 'GET', query: { limit: 10, skip: 20 } } }])
-    expect(page).toEqual(ok({ items: [{ id: 1, text: 'text', author: 'author' }], total: 40 }))
+    expect(page).toEqual(ok({ items: [{ id: 1, text: 'text 1', author: 'author 1' }], total: 40 }))
   })
 
   it('answers the error of a failed call', async () => {

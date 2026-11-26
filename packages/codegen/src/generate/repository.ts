@@ -388,6 +388,21 @@ const sample = (field: Field) => !isBasicType(field.type)
   ? sampleOf(field)
   : field.type === 'integer' || field.type === 'number' ? 1 : field.type === 'boolean' ? true : field.name
 
+/**
+ * A value a field's own rules take, for a test whose adapter checks them: the catalogue's sample of its type, within its bounds. With a
+ * pattern, its default when that matches (a value for any pattern is not generated yet).
+ */
+const validSample = (field: Field): string | number | boolean => {
+  if (field.pattern !== undefined && typeof field.default === 'string' && new RegExp(field.pattern).test(field.default)) return field.default
+  const value = sampleOf(field)
+  if (typeof value === 'number') return Math.min(Math.max(value, field.min ?? value), field.max ?? value)
+  if (typeof value === 'string' && field.type === 'text') {
+    const long = field.min !== undefined && value.length < field.min ? value.padEnd(field.min, 'x') : value
+    return field.max !== undefined ? long.slice(0, field.max) : long
+  }
+  return value
+}
+
 /** A generated adapter test: fields and paging map to the REST source as modeled. */
 export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
   if (restDoesMoreThanList(repository)) return restCrudRepositoryTestFile(context, entity, repository)
@@ -396,8 +411,9 @@ export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFil
   const fields = remoteFields(entity, rest)
   const items = rest.list.itemsPath
   const total = rest.list.totalPath
-  const remoteRow = `{ ${fields.map(({ field, remote }) => `${property(remote)}: ${tsLiteral(sample(field))}`).join(', ')} }`
-  const modelRow = `{ ${fields.map(({ field }) => `${field.name}: ${tsLiteral(sample(field))}`).join(', ')} }`
+  // The adapter checks each item with the entity's rules (R1'), so the test's row has to meet them.
+  const remoteRow = `{ ${fields.map(({ field, remote }) => `${property(remote)}: ${tsLiteral(validSample(field))}`).join(', ')} }`
+  const modelRow = `{ ${fields.map(({ field }) => `${field.name}: ${tsLiteral(validSample(field))}`).join(', ')} }`
   const query = `{ ${property(rest.paging.limitParam!)}: 10, ${property(rest.paging.offsetParam!)}: 20 }`
   const source = datasourceOf(context, repository)
   const errors = sourceNames(context, source)

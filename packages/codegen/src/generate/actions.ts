@@ -127,7 +127,7 @@ const messageExpression = (message: string, data: string[]) => {
 
 const errorsFile = (context: ModuleContext) => {
   const errors = errorsOf(context)
-  checkSourceErrorTypes(context, errors.map(error => error.type))
+  checkSourceErrorTypes(context, errors.map(error => error.type), errorTypeName(context))
   // A REST source's failures are the module's too: its Result-answering repositories pass them on (R1').
   const sources = resultSources(context).map(source => sourceNames(context, source))
   const type = errorTypeName(context)

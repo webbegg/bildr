@@ -34,11 +34,17 @@ export const sourceNames = (context: ModuleContext, source: DataSourceFile) => (
 /** Every error a REST source's call can answer, with its HTTP status: what it answered is not the app's to fix (502). */
 export const SOURCE_ERRORS = [{ type: 'remote_failed', status: 502 }, { type: 'invalid_answer', status: 502 }] as const
 
-/** Refuses an action error typed like a source's: the module's union would have one type in two shapes. */
-export const checkSourceErrorTypes = (context: ModuleContext, types: string[]) => {
-  const source = resultSources(context)[0]
+/**
+ * Refuses what would make the module's errors ambiguous: an action error typed like a source's (one type in two shapes), or a module
+ * whose error type has the name of a source's (`<Module>Error` both declared and imported).
+ */
+export const checkSourceErrorTypes = (context: ModuleContext, types: string[], moduleError: string) => {
+  const sources = resultSources(context)
+  if (!sources.length) return
   const taken = types.find(type => SOURCE_ERRORS.some(error => error.type === type))
-  if (source && taken) throw new Error(`${context.name}: the error type "${taken}" is the "${source.name}" data source's: name it another way`)
+  if (taken) throw new Error(`${context.name}: the error type "${taken}" is a REST data source's (${sources.map(source => `"${source.name}"`).join(', ')}): name it another way`)
+  const named = sources.find(source => sourceNames(context, source).error === moduleError)
+  if (named) throw new Error(`${context.name}: its error type ${moduleError} is the name of the "${named.name}" data source's errors: rename the module or the source`)
 }
 
 const sourceFile = (context: ModuleContext, source: DataSourceFile) => context.model.paths[source.id] ?? `.bildr/datasources/${source.name}.json`

@@ -20,7 +20,8 @@ export const generatedNames = (model: Model, module: string): Map<string, string
   }
   add(context.root, `the ${module} module's composition root`)
   add(`${camel(module)}ErrorStatus`, `the ${module} module's table of error statuses`)
-  for (const name of ['useDb', 'useRemote']) add(name, 'a helper the composition root calls')
+  // With a REST source, the root also builds its client and logs an invalid answer (R1'): claimed always, like useDb, so a new source can't clash.
+  for (const name of ['useDb', 'useRemote', 'useRuntimeConfig', 'resultClient', 'createHttpClient', 'console']) add(name, 'a helper the composition root calls')
   for (const entity of context.module.entities) {
     const entityName = entityNames(entity)
     add(entityName.plural, `the ${entity.name} repository inside the composition root`)

@@ -1,8 +1,12 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { generate } from '../../src/generate'
 import { loadModel } from '../../src/model/load'
 import type { Model } from '../../src/model/load'
 import { fixtureModelFiles } from '../model/fixture'
+import { generatedRunner } from './run-generated'
 
 // codegen-architecture R1': a module entity on a REST data source is read the way the apis layer reads an API. Its port answers a
 // Result, its adapter validates the answer and maps it to the domain, and a failure is the source's typed error, never a throw.
@@ -95,9 +99,79 @@ describe('a list-only REST repository answers a Result', () => {
     expect(content(`${BLOG}/server/api/blog/quotes/index.get.ts`)).toContain('  return unwrapOrThrow(await useBlog().listQuotes(page), blogErrorStatus)\n')
   })
 
+  it('its generated test passes, for fields whose rules a name is not a value of (a uuid key, a moment, an email, a minimum length)', async () => {
+    const model = structuredClone(fixtureModel())
+    const quote = model.modules.blog!.entities.find(entity => entity.id === 'ent_quote')!
+    quote.fields.find(field => field.name === 'id')!.type = 'uuid'
+    Object.assign(quote.fields.find(field => field.name === 'author')!, { min: 12 })
+    quote.fields.push({ id: 'fld_q_added', name: 'addedAt', type: 'datetime', required: true }, { id: 'fld_q_mail', name: 'contact', type: 'email', required: true })
+    const repository = model.modules.blog!.repositories.find(entry => entry.id === 'repo_quote')!
+    Object.assign(repository.rest!.fieldMap!, { addedAt: 'added_at', contact: 'contact' })
+    const generated = generate(model)
+    const dir = mkdtempSync(join(tmpdir(), 'bildr-rest-result-'))
+    try {
+      // The generated test's describe/it, collected and run here; its expect is vitest's own.
+      const tests: Array<[string, () => Promise<void>]> = []
+      const scope = globalThis as { generatedTests?: typeof tests }
+      scope.generatedTests = tests
+      const vitest = `export { expect } from ${JSON.stringify(import.meta.resolve('vitest'))}\nexport const describe = (_, body) => body()\nexport const it = (name, body) => globalThis.generatedTests.push([name, body])\n`
+      const { load } = generatedRunner(new Map(generated.map(file => [file.path, file.content])), dir, { vitest })
+      await load(`${BLOG}/test/infrastructure/quote.rest.test.ts`)
+      delete scope.generatedTests
+      expect(tests.map(([name]) => name)).toHaveLength(3)
+      for (const [, body] of tests) await body()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it('refuses an action error typed like one of the source\'s (one type, two shapes)', () => {
     const model = structuredClone(fixtureModel())
     model.modules.blog!.actions[0]!.errors.push({ type: 'remote_failed', status: 500, message: 'Nope.' })
-    expect(() => generate(model)).toThrow('the error type "remote_failed" is the "quotes" data source\'s: name it another way')
+    expect(() => generate(model)).toThrow('the error type "remote_failed" is a REST data source\'s ("quotes"): name it another way')
+  })
+
+  it('refuses a module whose error type is named like a source\'s (one name, two types)', () => {
+    const model = structuredClone(fixtureModel())
+    model.modules['quotes-source'] = model.modules.blog!
+    delete model.modules.blog
+    expect(() => generate(model)).toThrow('quotes-source: its error type QuotesSourceError is the name of the "quotes" data source\'s errors: rename the module or the source')
+  })
+
+  it('two sources in one module: each its errors and client, the statuses once; a source named like no identifier; a list with no total', async () => {
+    const model = structuredClone(fixtureModel())
+    const quotes = model.datasources.find(source => source.id === 'ds_quotes')!
+    model.datasources.push({ ...structuredClone(quotes), id: 'ds_my_api', name: 'my-api' })
+    const blog = model.modules.blog!
+    const quote = blog.entities.find(entity => entity.id === 'ent_quote')!
+    blog.entities.push({ ...structuredClone(quote), id: 'ent_tip', name: 'Tip', plural: 'tips' })
+    const repository = structuredClone(blog.repositories.find(entry => entry.id === 'repo_quote')!)
+    Object.assign(repository, { id: 'repo_tip', entity: 'ent_tip', datasource: 'ds_my_api' })
+    repository.rest!.list = { method: 'GET', path: '/tips', itemsPath: 'data' }
+    blog.repositories.push(repository)
+    const generated = generate(model)
+    const at = (path: string) => generated.find(file => file.path === path)?.content ?? ''
+    expect(at(`${BLOG}/shared/domain/errors.ts`)).toContain('  | MyApiSourceError\n  | QuotesSourceError\n')
+    const root = at(`${BLOG}/server/utils/blog.ts`)
+    expect(root).toContain('const myApiClient = (): ApiClient<MyApiSourceError> => {\n  const { baseUrl, apiKey } = useRuntimeConfig().datasources[\'my-api\']\n')
+    expect(root).toContain('  const tips = restTipRepository(myApiClient(), ')
+    expect(root.match(/remote_failed: 502/g)).toHaveLength(1)
+    expect(at(`${BLOG}/shared/domain/sources/my-api.ts`)).toContain('export const myApiFailed = ')
+    // No total in the answer: the page's total is how many items it has, as before.
+    expect(at(`${BLOG}/server/infrastructure/repositories/tip.rest.ts`)).toContain('      total: page.data.data.length\n')
+    const dir = mkdtempSync(join(tmpdir(), 'bildr-rest-result-'))
+    try {
+      const tests: Array<[string, () => Promise<void>]> = []
+      const scope = globalThis as { generatedTests?: typeof tests }
+      scope.generatedTests = tests
+      const vitest = `export { expect } from ${JSON.stringify(import.meta.resolve('vitest'))}\nexport const describe = (_, body) => body()\nexport const it = (name, body) => globalThis.generatedTests.push([name, body])\n`
+      const { load } = generatedRunner(new Map(generated.map(file => [file.path, file.content])), dir, { vitest })
+      await load(`${BLOG}/test/infrastructure/tip.rest.test.ts`)
+      delete scope.generatedTests
+      for (const [, body] of tests) await body()
+      expect(tests).toHaveLength(3)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
