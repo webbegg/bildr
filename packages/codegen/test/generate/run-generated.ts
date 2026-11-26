@@ -36,6 +36,9 @@ export const generatedRunner = (sources: Map<string, string>, dir: string, stubs
     if (CORE_ALIASES[specifier]) return emit(CORE_ALIASES[specifier])
     // `#layers/<layer>/…`: a file of a layer, from the project's root.
     if (specifier.startsWith('#layers/')) return emit(`layers/${specifier.slice('#layers/'.length)}.ts`)
+    // `#<module>/domain/…`: a module's domain (its rules are values the composables and use-cases run).
+    const domain = /^#([\w-]+)\/domain\/(.+)$/.exec(specifier)
+    if (domain) return emit(`layers/${domain[1]}/shared/domain/${domain[2]}.ts`)
     if (specifier.startsWith('.')) return emit(`${posix.normalize(posix.join(posix.dirname(from), specifier))}.ts`)
     return undefined
   }

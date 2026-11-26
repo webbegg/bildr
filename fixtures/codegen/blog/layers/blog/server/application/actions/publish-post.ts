@@ -3,6 +3,7 @@ import { now } from '#core/kernel/ids'
 import { type Result, err, ok } from '#core/kernel/result'
 import { type BlogError, postNotFound } from '#blog/domain/errors'
 import type { Post } from '#blog/domain/post'
+import { publishPostChange } from '#blog/domain/post.rules'
 import type { PostRepository } from '../ports/post-repository'
 
 export interface PublishPostDeps {
@@ -14,7 +15,8 @@ export const publishPost = ({ posts }: PublishPostDeps) =>
   async (id: string): Promise<Result<Post, BlogError>> => {
     const post = await posts.get(id)
     if (!post) return err(postNotFound(id))
-    if (post.published) return ok(post)
     const at = now()
-    return ok(await posts.update(id, { ...post, published: true, publishedAt: at, updatedAt: at }))
+    const postChange = publishPostChange(post, at)
+    if (!postChange) return ok(post)
+    return ok(await posts.update(id, { ...post, ...postChange, updatedAt: at }))
   }

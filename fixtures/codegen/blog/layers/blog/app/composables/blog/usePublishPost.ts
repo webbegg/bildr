@@ -5,6 +5,7 @@ import { type ApiError, type Result, ok } from '#core/kernel/result'
 import { Answered, fromRoute, useAction } from '#layers/core/app/data/results'
 import type { BlogError } from '#blog/domain/errors'
 import type { Post } from '#blog/domain/post'
+import { publishPostChange } from '#blog/domain/post.rules'
 import { postsCollection } from '../../data/posts.collection'
 
 /** Action "Publish post": optimistic update, confirmed by the server use-case; invalidates Post. `run` answers a Result, its error one of BlogError or unexpected, and never throws; `pending` and `error` are refs. It answers nothing: the change is in the collection. */
@@ -12,9 +13,8 @@ export const usePublishPost = () => {
   const action = createOptimisticAction<string>({
     onMutate: (id) => {
       postsCollection.update(id, (draft) => {
-        if (draft.published) return
-        draft.published = true
-        draft.publishedAt = now()
+        const change = publishPostChange(draft, now())
+        if (change) Object.assign(draft, change)
       })
     },
     mutationFn: async (id) => {

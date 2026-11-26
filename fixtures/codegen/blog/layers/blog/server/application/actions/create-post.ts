@@ -3,6 +3,7 @@ import { now } from '#core/kernel/ids'
 import { type Result, err, ok } from '#core/kernel/result'
 import { type BlogError, slugTaken } from '#blog/domain/errors'
 import { type NewPost, type Post, NewPostSchema } from '#blog/domain/post'
+import { createPostChange } from '#blog/domain/post.rules'
 import type { PostRepository } from '../ports/post-repository'
 
 export interface CreatePostDeps {
@@ -15,5 +16,5 @@ export const createPost = ({ posts }: CreatePostDeps) =>
     const data = NewPostSchema.parse(input)
     if (await posts.findBySlug(data.slug)) return err(slugTaken(data.slug))
     const at = now()
-    return ok(await posts.create({ ...data, publishedAt: data.published ? at : null, createdAt: at, updatedAt: at }))
+    return ok(await posts.create({ ...data, ...createPostChange(data, at), createdAt: at, updatedAt: at }))
   }

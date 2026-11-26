@@ -23,6 +23,7 @@ const ACTION_FILES = [
   'layers/blog/server/application/actions/publish-post.ts',
   'layers/blog/server/utils/blog.ts',
   'layers/blog/shared/domain/errors.ts',
+  'layers/blog/shared/domain/post.rules.ts',
   'layers/blog/test/application/create-post.test.ts',
   'layers/blog/test/application/publish-post.test.ts'
 ]
