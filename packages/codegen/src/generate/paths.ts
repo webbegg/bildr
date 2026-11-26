@@ -35,6 +35,9 @@ export const modulePaths = (module: string) => {
     /** What the actions change on an entity: pure functions the use-cases and the optimistic updates share. */
     rules: (file: string) => `${root}/shared/domain/${file}.rules.ts`,
     errors: `${root}/shared/domain/errors.ts`,
+    /** The folder the `#<module>/contracts` alias points at: one HTTP contract per route, read by the route and its client. */
+    contracts: `${root}/shared/contracts`,
+    contract: (file: string) => `${root}/shared/contracts/${file}.ts`,
     // server/application: ports and use-cases
     port: (file: string) => `${root}/server/application/ports/${file}.ts`,
     action: (file: string) => `${root}/server/application/actions/${file}.ts`,

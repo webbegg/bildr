@@ -4,6 +4,7 @@ import type { GeneratedFile } from '../sync/plan.ts'
 import { isBasicType, sampleOf } from '../model/field-types.ts'
 import { allFields, datasourceOf, entityById, entityNames, moduleContext, repositoryOf } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
+import { actionContractFile, actionContractNames, contractImport, contractPath } from './contracts.ts'
 import { importLine } from './imports.ts'
 import { composableOf } from './names.ts'
 import { importPath } from './paths.ts'
@@ -22,7 +23,9 @@ export const generateActions = (model: Model): GeneratedFile[] => {
     const context = moduleContext(model, name)
     const actions = context.module.actions.map(action => analyze(context, action))
     files.push(errorsFile(context), compositionRootFile(context, actions), ...rulesFiles(context, actions))
-    for (const action of actions) files.push(useCaseFile(context, action), routeFile(context, action), composableFile(context, action), useCaseTestFile(context, action))
+    for (const action of actions) {
+      files.push(useCaseFile(context, action), actionContractFile(context, action), routeFile(context, action), composableFile(context, action), useCaseTestFile(context, action))
+    }
   }
   return files
     .map(entry => ({ ...entry, owner: 'managed' as const }))
@@ -412,7 +415,8 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
     : params.map(param => `${readParams.has(param.name) ? param.name : `_${param.name}`}: ${tsType(param.type)}`).join(', ')
   // A use-case that reads no repository has no dependencies to take.
   const wired = analyzed.repositories.length > 0
-  const result = `Promise<Result<${output?.name ?? 'void'}, ${errorTypeName(context)}>>`
+  // An action with no output answers `undefined` (T3c1), as its route's contract and its client say.
+  const result = `Promise<Result<${output?.name ?? 'undefined'}, ${errorTypeName(context)}>>`
 
   const path = context.paths.action(kebab(action.name))
   return {
@@ -458,6 +462,7 @@ const routeFile = (context: ModuleContext, analyzed: Analyzed) => {
   const source = context.source(action.id)
   for (const param of params) if (param.type !== 'uuid' || param.from !== 'route') throw new Error(`${action.id}: only route uuid parameters are generated yet ("${param.name}")`)
   const invoke = `${context.root}().${action.name}(${inputEntity ? 'input' : params.map(param => param.name).join(', ')})`
+  const contract = actionContractNames(context, action)
   return {
     path: routePath(context, action),
     source,
@@ -466,13 +471,13 @@ const routeFile = (context: ModuleContext, analyzed: Analyzed) => {
       inputEntity
         ? 'import { defineEventHandler, readValidatedBody } from \'nuxt/server\''
         : `import { defineEventHandler${params.length ? ', getRouterParam' : ''} } from 'nuxt/server'`,
-      params.length > 0 && 'import { IdSchema } from \'#core/kernel/ids\'',
-      inputEntity && `import { New${inputEntity.name}Schema } from '#${context.name}/domain/${entityNames(inputEntity).file}'`,
+      // A route that reads neither a body nor a parameter reads only its contract's response type.
+      inputEntity || params.length ? contractImport(contract) : importLine(contract.from, [{ name: contract.response, type: true }]),
       '',
-      // A route that reads neither a body nor a parameter has no use for the event.
-      `export default defineEventHandler(async (${inputEntity || params.length ? 'event' : ''}) => {`,
-      inputEntity && `  const input = await readValidatedBody(event, New${inputEntity.name}Schema)`,
-      ...params.map(param => `  const ${param.name} = IdSchema.parse(getRouterParam(event, ${tsString(param.name)}))`),
+      // A route that reads neither a body nor a parameter has no use for the event. It answers what its contract says.
+      `export default defineEventHandler(async (${inputEntity || params.length ? 'event' : ''}): Promise<${contract.response}> => {`,
+      inputEntity && `  const input = await readValidatedBody(event, ${contract.value}.body)`,
+      ...params.map(param => `  const ${param.name} = ${contract.value}.params.${param.name}.parse(getRouterParam(event, ${tsString(param.name)}))`),
       `  return unwrapOrThrow(await ${invoke}, ${camel(context.name)}ErrorStatus)`,
       '})'
     ])
@@ -580,7 +585,7 @@ interface Optimistic { kind: 'insert' | 'update' | 'delete', entity: string, key
  * route answered.
  */
 const directComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
-  const { action, inputEntity, params, output } = analyzed
+  const { action, inputEntity, params } = analyzed
   if (action.client.optimistic) throw new Error(`${action.id}: an optimistic action goes through createOptimisticAction`)
   if (!inputEntity && params.length > 1) throw new Error(`${action.id}: client actions need one entity input or one parameter`)
   const source = context.source(action.id)
@@ -588,17 +593,14 @@ const directComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
   const collections = new Set(invalidated.map(entity => entityNames(entity).collection))
   const doc = `Action "${action.label}": runs the server use-case${invalidated.length ? `; invalidates ${invalidated.map(entity => entity.name).join(', ')}` : ''}. ${RUN_DOC(context)}`
   const uuidInput = inputEntity?.idStrategy === 'uuid'
-  // The input's and the output's types, each imported from its own entity's file.
+  // The input's type, from its entity's file; what the route answers is its contract's.
   const domain = new Map<string, ImportName[]>()
-  for (const [entity, name] of [[inputEntity, inputEntity && `New${inputEntity.name}`], [output, output?.name]] as const) {
-    if (entity && name) domain.set(entityNames(entity).file, [...(domain.get(entityNames(entity).file) ?? []), { name, type: true }])
-  }
+  if (inputEntity) domain.set(entityNames(inputEntity).file, [{ name: `New${inputEntity.name}`, type: true }])
+  const contract = actionContractNames(context, action)
   const alias = inputEntity && uuidInput ? `type ${pascal(action.name)}Input = Omit<New${inputEntity.name}, 'id'>` : undefined
   const signature = inputEntity ? `input: ${uuidInput ? `${pascal(action.name)}Input` : `New${inputEntity.name}`}` : params.map(param => `${param.name}: ${tsType(param.type)}`).join('')
-  const route = `/api/${context.name}${action.http.path}`
-  const url = params.length ? `\`${route.replace(/:(\w+)/g, '${$1}')}\`` : tsString(route)
   const body = inputEntity ? `, body: ${uuidInput ? '{ ...input, id: newId() }' : 'input'}` : ''
-  const call = `fromRoute<${output?.name ?? 'undefined'}, ${errorTypeName(context)}>($fetch<${output?.name ?? 'undefined'}>(${url}, { method: ${tsString(action.http.method)}${body} }))`
+  const call = fetchCall(context, contract, params.map(param => param.name), body)
   const path = context.paths.composable(composableOf(action.name))
   return {
     path,
@@ -607,6 +609,7 @@ const directComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
       header(source),
       uuidInput && importLine('#core/kernel/ids', ['newId']),
       importLine('#layers/core/app/data/results', ['fromRoute', 'useAction']),
+      contractImport(contract),
       importLine(`#${context.name}/domain/errors`, [{ name: errorTypeName(context), type: true }]),
       ...[...domain.entries()].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([path, names]) => importLine(`#${context.name}/domain/${path}`, names)),
       ...[...collections].sort().map((collection) => {
@@ -632,8 +635,12 @@ const directComposableFile = (context: ModuleContext, analyzed: Analyzed) => {
   }
 }
 
+/** The call of an action's route from its composable: its contract's path and method, its answer typed as the contract's response. */
+const fetchCall = (context: ModuleContext, contract: ReturnType<typeof actionContractNames>, params: string[], body: string) =>
+  `fromRoute<${contract.response}, ${errorTypeName(context)}>($fetch<${contract.response}>(${contractPath(contract, params)}, { method: ${contract.value}.method${body} }))`
+
 const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
-  const { action, inputEntity, params, output } = analyzed
+  const { action, inputEntity, params } = analyzed
   const optimistic = action.client.optimistic as Optimistic | undefined
   if (!optimistic) return directComposableFile(context, analyzed)
   if (!inputEntity && params.length === 0) throw new Error(`${action.id}: an action with no input can't be optimistic (it has no row or parameter to show ahead of the server)`)
@@ -643,7 +650,6 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
   const collections = new Set(invalidated.map(entity => entityNames(entity).collection))
   const ids = new Set<string>()
   const types = new Set<string>()
-  if (output) types.add(output.name)
 
   let generic: string
   let argument: string
@@ -725,13 +731,11 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
     mutate.push(`onMutate: (${argument}) => {`, `  ${collection}.delete(${compile(optimistic.key ?? null, { input: name => name, at: false })})`, '},')
   }
 
-  const route = `/api/${context.name}${action.http.path}`
-  const url = params.length ? `\`${route.replace(/:(\w+)/g, '${$1}')}\`` : tsString(route)
-  const answer = output?.name ?? 'undefined'
+  const contract = actionContractNames(context, action)
   // An optimistic action answers nothing: what it changes is shown ahead, in the collection, and refetched once the server answers.
   const doc = `Action "${action.label}": optimistic ${optimistic.kind}, confirmed by the server use-case${invalidated.length ? `; invalidates ${invalidated.map(entity => entity.name).join(', ')}` : ''}. ${RUN_DOC(context)} It answers nothing: the change is in the collection.`
-  // The types it imports are the input's and the output's: an action with neither (a delete) imports none.
-  const typed = inputEntity ?? output
+  // The type it imports is the input's: an action with none (a delete, a publish) imports none; what it answers is its contract's.
+  const typed = inputEntity
 
   const path = context.paths.composable(composable)
   return {
@@ -743,6 +747,7 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
       ids.size > 0 && importLine('#core/kernel/ids', [...ids]),
       importLine('#core/kernel/result', ['ok', { name: 'ApiError', type: true }, { name: 'Result', type: true }]),
       importLine('#layers/core/app/data/results', ['Answered', 'fromRoute', 'useAction']),
+      contractImport(contract),
       importLine(`#${context.name}/domain/errors`, [{ name: errorTypeName(context), type: true }]),
       typed && importLine(`#${context.name}/domain/${entityNames(typed).file}`, [...types].map(name => ({ name, type: true }))),
       rules.length > 0 && importLine(`#${context.name}/domain/${entityNames(entity).file}.rules`, rules),
@@ -758,7 +763,7 @@ const composableFile = (context: ModuleContext, analyzed: Analyzed) => {
       `  const action = createOptimisticAction<${generic}>({`,
       ...mutate.map(line => `    ${line}`),
       `    mutationFn: async (${argument}) => {`,
-      `      const result = await fromRoute<${answer}, ${errorTypeName(context)}>($fetch<${answer}>(${url}, { method: ${tsString(action.http.method)}${inputEntity ? ', body: input' : ''} }))`,
+      `      const result = await ${fetchCall(context, contract, params.map(param => param.name), inputEntity ? ', body: input' : '')}`,
       '      // A transaction knows only thrown errors: `Answered` carries the module\'s error to `run`, and the change is rolled back.',
       '      if (!result.ok) throw new Answered(result.error)',
       ...invalidated.map(entity => `      await ${entityNames(entity).collection}.utils.refetch()`),

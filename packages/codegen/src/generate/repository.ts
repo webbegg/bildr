@@ -1,6 +1,7 @@
 import type { EntityFile, RepositoryFile } from '../model/schemas.ts'
 import { allFields, datasourceOf, entityNames, keyOf } from './context.ts'
 import type { Field, ModuleContext } from './context.ts'
+import { contractImport, listContractNames } from './contracts.ts'
 import { importLine } from './imports.ts'
 import { importPath } from './paths.ts'
 import { isBasicType, sampleOf, VALUE_TYPES } from '../model/field-types.ts'
@@ -645,17 +646,21 @@ export const listUseCaseFile = (context: ModuleContext, entity: EntityFile, repo
   }
 }
 
-export const listRouteFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => ({
-  path: context.paths.apiRoute(`${entityNames(entity).pluralFile}/index.get.ts`),
-  source: context.source(repository.id),
-  content: file([
-    header(context.source(repository.id)),
-    'import { defineEventHandler, getValidatedQuery } from \'nuxt/server\'',
-    'import { PageRequestSchema } from \'#core/kernel/page\'',
-    '',
-    'export default defineEventHandler(async (event) => {',
-    '  const page = await getValidatedQuery(event, PageRequestSchema)',
-    `  return ${context.root}().list${pascal(entity.plural)}(page)`,
-    '})'
-  ])
-})
+/** The list route: it reads its page request and answers one page, as its contract says (T4b). */
+export const listRouteFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
+  const contract = listContractNames(context, entity)
+  return {
+    path: context.paths.apiRoute(`${entityNames(entity).pluralFile}/index.get.ts`),
+    source: context.source(repository.id),
+    content: file([
+      header(context.source(repository.id)),
+      'import { defineEventHandler, getValidatedQuery } from \'nuxt/server\'',
+      contractImport(contract),
+      '',
+      `export default defineEventHandler(async (event): Promise<${contract.response}> => {`,
+      `  const page = await getValidatedQuery(event, ${contract.value}.query)`,
+      `  return ${context.root}().list${pascal(entity.plural)}(page)`,
+      '})'
+    ])
+  }
+}

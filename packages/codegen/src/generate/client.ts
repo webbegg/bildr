@@ -3,7 +3,7 @@ import { datasourceOf, entityById, entityNames, isWritable, keyOf } from './cont
 import type { ModuleContext } from './context.ts'
 import { zodField } from './entity.ts'
 import type { KernelName } from './entity.ts'
-import { listRoute } from '../query/index.ts'
+import { contractImport, listContractNames } from './contracts.ts'
 import { importLine } from './imports.ts'
 import { composableOf, stateComposableOf } from './names.ts'
 import { importPath } from './paths.ts'
@@ -20,7 +20,8 @@ import { camel, docText, file, header, kebab, pascal, tsDuration, tsLiteral, tsS
 export const collectionFile = (context: ModuleContext, entity: EntityFile, repository: RepositoryFile) => {
   const names = entityNames(entity)
   const source = datasourceOf(context, repository)
-  const route = listRoute(context.model, entity.id) ?? `/api/${context.name}/${kebab(entity.plural)}`
+  // It syncs from the list route, through the route's contract (T4b).
+  const contract = listContractNames(context, entity)
   const doc = source.kind !== 'rest'
     ? `Client copy of every ${names.type}, synced from the ${names.type} repository's list route (sync mode: ${entity.client.sync}).`
     : `Client copy of the first page of ${pascal(entity.plural)} from the "${source.name}" REST data source${isWritable(repository) ? '' : ' (read-only)'}.`
@@ -32,17 +33,17 @@ export const collectionFile = (context: ModuleContext, entity: EntityFile, repos
       header(context.source(entity.id)),
       'import { queryCollectionOptions } from \'@tanstack/query-db-collection\'',
       'import { createCollection } from \'@tanstack/vue-db\'',
-      'import type { Page } from \'#core/kernel/page\'',
       'import { queryClient } from \'#layers/core/app/data/query-client\'',
-      importLine(`#${context.name}/domain/${names.file}`, [{ name: names.type, type: true }, `${names.type}Schema`]),
+      contractImport(contract),
+      importLine(`#${context.name}/domain/${names.file}`, [`${names.type}Schema`]),
       '',
       `/** ${docText(doc)} */`,
       `export const ${names.collection} = createCollection(`,
       '  queryCollectionOptions({',
       `    id: ${tsString(`${context.name}:${entity.plural}`)},`,
       `    queryKey: [${tsString(context.name)}, ${tsString(entity.plural)}],`,
-      `    queryFn: ({ signal }) => $fetch<Page<${names.type}>>(${tsString(route)}, { query: { limit: ${entity.client.limit ?? 500} }, signal }),`,
-      `    select: (page: Page<${names.type}>) => page.items,`,
+      `    queryFn: ({ signal }) => $fetch<${contract.response}>(${contract.value}.path, { method: ${contract.value}.method, query: { limit: ${entity.client.limit ?? 500} }, signal }),`,
+      `    select: (page: ${contract.response}) => page.items,`,
       '    queryClient,',
       `    schema: ${names.type}Schema,`,
       `    getKey: ${names.variable} => ${names.variable}.${key.name}${entity.client.staleTime !== undefined ? ',' : ''}`,

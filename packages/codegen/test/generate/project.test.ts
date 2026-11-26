@@ -83,10 +83,15 @@ describe('generateProject rules', () => {
     expect(content(model, 'layers/core/nuxt.config.ts')).toContain('    datasources: {}\n')
   })
 
-  it('mirrors every module\'s domain alias in vitest.config.ts', () => {
+  it('mirrors every module\'s domain and contracts aliases in vitest.config.ts', () => {
     const model = fixtureModel()
     model.modules.shop = { ...model.modules.blog! }
-    expect(content(model, 'vitest.config.ts')).toContain('      \'#blog/domain\': here(\'./layers/blog/shared/domain\'),\n      \'#shop/domain\': here(\'./layers/shop/shared/domain\')\n')
+    expect(content(model, 'vitest.config.ts')).toContain([
+      '      \'#blog/contracts\': here(\'./layers/blog/shared/contracts\'),',
+      '      \'#blog/domain\': here(\'./layers/blog/shared/domain\'),',
+      '      \'#shop/contracts\': here(\'./layers/shop/shared/contracts\'),',
+      '      \'#shop/domain\': here(\'./layers/shop/shared/domain\')\n'
+    ].join('\n'))
   })
 
   it('refuses a second sqlite data source', () => {

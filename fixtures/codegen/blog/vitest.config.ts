@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '#core': here('./layers/core/shared'),
+      '#blog/contracts': here('./layers/blog/shared/contracts'),
       '#blog/domain': here('./layers/blog/shared/domain')
     }
   },

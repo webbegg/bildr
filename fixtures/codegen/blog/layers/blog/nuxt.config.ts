@@ -6,6 +6,7 @@ const here = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 export default defineNuxtConfig({
   $meta: { name: 'blog' },
   alias: {
+    '#blog/contracts': here('./shared/contracts'),
     '#blog/domain': here('./shared/domain')
   },
   // Query, action and state composables live in app/composables/blog/ and are auto-imported.

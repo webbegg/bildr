@@ -36,6 +36,8 @@ const DATA_FILES = [
   'layers/blog/server/infrastructure/repositories/post.memory.ts',
   'layers/blog/server/infrastructure/repositories/quote.rest.ts',
   'layers/blog/server/tasks/blog/seed.ts',
+  'layers/blog/shared/contracts/list-posts.ts',
+  'layers/blog/shared/contracts/list-quotes.ts',
   'layers/blog/shared/domain/post.ts',
   'layers/blog/shared/domain/quote.ts',
   'layers/blog/test/infrastructure/quote.rest.test.ts'
