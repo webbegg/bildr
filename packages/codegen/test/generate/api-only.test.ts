@@ -71,6 +71,25 @@ describe('golden API-only project: the generated files', () => {
     ]))
   })
 
+  // R2: the shapes the blog's catalog has not, typechecked and linted below with the rest of the project.
+  it('an API source\'s routes read their contracts: a query with no parameters, an action with a parameter and a body', () => {
+    const content = (path: string) => files.find(file => file.path === path)!.content
+    expect(content('layers/apis/server/api/apis/status/health.get.ts')).toContain([
+      'import type { HealthResponse } from \'../../../../shared/contracts/status/health\'',
+      'import { statusErrorStatus, useStatusApi } from \'../../../utils/status\'',
+      '',
+      'export default defineEventHandler(async (): Promise<HealthResponse> => {'
+    ].join('\n'))
+    expect(content('layers/apis/shared/contracts/status/health.ts')).toContain('  method: \'GET\',\n  path: \'/api/apis/status/health\'\n} as const')
+    expect(content('layers/apis/server/api/apis/status/relabel.put.ts')).toContain([
+      '  const params = await getValidatedQuery(event, relabelContract.query)',
+      '  const body = await readValidatedBody(event, relabelContract.body)',
+      '  return unwrapOrThrow(await useStatusApi().relabel({ ...params, body }), statusErrorStatus)'
+    ].join('\n'))
+    expect(content('layers/apis/app/composables/apis/useStatusRelabel.ts')).toContain(
+      '    ({ body, ...query }) => fromRoute($fetch<RelabelResponse>(relabelContract.path, { method: relabelContract.method, query, body })),')
+  })
+
   it('has no database layer, no Drizzle or libSQL import, and no database dependency', () => {
     expect(paths.filter(path => /drizzle|\/db\/|server\/database|plugins\/migrate/.test(path))).toEqual([])
     expect(files.filter(file => IMPORTS_DATABASE.test(file.content)).map(file => file.path)).toEqual([])

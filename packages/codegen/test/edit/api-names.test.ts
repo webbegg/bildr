@@ -329,6 +329,13 @@ describe('what the generator declares is in the reserved lists (drift guard)', (
     expect(message).toContain('the answer type of the HTTP contract of the query "items"')
   })
 
+  it('an operation named like another one\'s contract is refused', () => {
+    const p = shop()
+    p.edit('api_query_set', { datasource: 'ds_shop', query: items('items') })
+    const message = p.refuse('api_query_set', { datasource: 'ds_shop', query: items('itemsContract') }, 'invalid').message
+    expect(message).toContain('the HTTP contract of the query "items"')
+  })
+
   it('every name an API file declares or imports, and every type it uses, is derived from the model or in the fixed lists', () => {
     // The golden blog's catalog API plus a source that uses every kind of operation, parameter and field.
     const model = wide()

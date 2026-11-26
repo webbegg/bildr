@@ -1,0 +1,63 @@
+{
+  "$schema": "https://bildr.dev/schema/datasource.v1.json",
+  "id": "ds_status",
+  "name": "status",
+  "kind": "api",
+  "env": {
+    "baseUrl": "NUXT_APIS_STATUS_BASE_URL"
+  },
+  "baseUrl": "http://127.0.0.1:4011",
+  "runtime": "server",
+  "models": [
+    {
+      "name": "Health",
+      "fields": [
+        {
+          "name": "up",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Label",
+      "fields": [
+        {
+          "name": "name",
+          "type": "text"
+        }
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "name": "health",
+      "path": "/health",
+      "params": [],
+      "result": {
+        "model": "Health",
+        "many": false
+      }
+    }
+  ],
+  "actions": [
+    {
+      "name": "relabel",
+      "method": "PUT",
+      "path": "/labels/:id",
+      "params": [
+        {
+          "name": "id",
+          "in": "path",
+          "type": "integer"
+        }
+      ],
+      "body": {
+        "model": "Label"
+      },
+      "result": {
+        "model": "Label",
+        "many": false
+      }
+    }
+  ]
+}

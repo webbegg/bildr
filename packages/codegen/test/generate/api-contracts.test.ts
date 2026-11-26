@@ -101,6 +101,30 @@ describe('the HTTP contract of an API data source\'s route', () => {
       '    query => fromRoute($fetch<DeleteProductResponse>(deleteProductContract.path, { method: deleteProductContract.method, query })),\n')
   })
 
+  it('every contract names the route Nitro serves: its path is the route file\'s, its method the file\'s suffix', () => {
+    const contracts = generated.filter(file => file.path.startsWith('layers/apis/shared/contracts/'))
+    expect(contracts.length).toBe(4)
+    const routes = generated.filter(file => file.path.startsWith('layers/apis/server/api/')).map(file => file.path)
+    for (const contract of contracts) {
+      const [, method, path] = /method: '(\w+)',\n {2}path: '([^']+)'/.exec(contract.content)!
+      expect(routes, contract.path).toContain(`layers/apis/server${path}.${method!.toLowerCase()}.ts`)
+    }
+  })
+
+  it('a hand-written model named like a contract\'s answer type is refused, not generated into two declarations', () => {
+    const files = fixtureModelFiles()
+    const catalog = JSON.parse(files['.bildr/datasources/catalog.json']!) as { models: Array<{ name: string }>, queries: Array<{ result?: { model: string } }> }
+    catalog.models.push({ ...catalog.models.find(model => model.name === 'Product')!, name: 'ProductsResponse' })
+    catalog.queries[0]!.result!.model = 'ProductsResponse'
+    files['.bildr/datasources/catalog.json'] = JSON.stringify(catalog)
+    Reflect.deleteProperty(files, '.bildr/modules/blog/pages/shop-catalog.json')
+    const model = loadModel(files)
+    expect(() => {
+      if (!model.ok) throw new Error(JSON.stringify(model.problems))
+      generate(model.model)
+    }).toThrow(/ProductsResponse/)
+  })
+
   it('a source that runs in the browser has no route, so no contract', () => {
     expect(generated.filter(file => file.path.startsWith('layers/apis/shared/contracts/weather'))).toEqual([])
   })
