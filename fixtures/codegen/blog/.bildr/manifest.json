@@ -588,7 +588,7 @@
     },
     "layers/core/shared/http/client.ts": {
       "owner": "managed",
-      "sha256": "e2a83f716120c802d4d4adff49977152ba80c920518aedc5eb7e55094f8aa67b"
+      "sha256": "0943093019732c7d5fba5749a2d28dfb3d1346fae61202d4a19c56d94a2da69f"
     },
     "layers/core/shared/kernel/ids.ts": {
       "owner": "managed",
@@ -604,7 +604,7 @@
     },
     "layers/core/test/infrastructure/http-client.test.ts": {
       "owner": "managed",
-      "sha256": "1744b612d91ffe1e875b69897ded2b7d4f185394801b2e25b6867f250d90de2a"
+      "sha256": "b329619039d6f893d5c52a650ace89f536efb961c67f26e95e73d6a6faf5a16b"
     },
     "nuxt.config.ts": {
       "owner": "scaffold",

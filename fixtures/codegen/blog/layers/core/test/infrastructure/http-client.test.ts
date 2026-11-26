@@ -181,7 +181,7 @@ describe('createHttpClient', () => {
 
   describe('tries a read again (retries), never a write', () => {
     /** Runs one call on a fake clock, `fetch` answering `answers` in turn (the last one after that): what it settled with, and when each try went out. */
-    const run = async (answers: Array<() => Response>, call: (client: ReturnType<typeof createHttpClient>) => Promise<unknown>, options: { retries?: number, signal?: AbortSignal } = {}) => {
+    const run = async (answers: Array<() => Response>, call: (client: ReturnType<typeof createHttpClient>) => Promise<unknown>, options: { retries?: number, signal?: AbortSignal, timeoutMs?: number } = {}) => {
       vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
       const at: number[] = []
       const start = Date.now()
@@ -238,7 +238,41 @@ describe('createHttpClient', () => {
       expect((await run([status(503), json], get)).at).toEqual([0])
     })
 
-    it('a call cancelled while it waits to try again is cancelled, and not tried again', async () => {
+    it('every try fits in the source\'s timeout: each waits what is left of it, and a try that could not start in it is not made', async () => {
+      const { timeout } = AbortSignal
+      const asked: number[] = []
+      try {
+        AbortSignal.timeout = (ms: number) => {
+          asked.push(ms)
+          return new AbortController().signal
+        }
+        const result = await run([status(503)], get, { retries: 2, timeoutMs: 600 })
+        expect(result.at).toEqual([0, 250])
+        expect(result.error).toMatchObject({ type: 'unavailable', status: 503 })
+      } finally {
+        AbortSignal.timeout = timeout
+      }
+      expect(asked).toEqual([600, 350])
+    })
+
+    it('a call cancelled while it waits to try again is cancelled at once, not tried again, and leaves no timer', async () => {
+      vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
+      const cancel = new AbortController()
+      try {
+        await withFetch(status(503), async (calls) => {
+          const pending = createHttpClient({ baseUrl: BASE, retries: 2, signal: cancel.signal })('/things', { method: 'GET' }).catch((cause: unknown) => cause)
+          await vi.advanceTimersByTimeAsync(100)
+          cancel.abort()
+          expect(await pending).toMatchObject({ reason: 'cancelled' })
+          expect(calls).toHaveLength(1)
+          expect(vi.getTimerCount()).toBe(0)
+        })
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('a call cancelled before it waits to try again is cancelled, and not tried again', async () => {
       const cancel = new AbortController()
       const result = await run([() => {
         queueMicrotask(() => cancel.abort())

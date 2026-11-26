@@ -20,7 +20,7 @@ export const DataSourceRef = ArtifactIdSchema.describe('A data source id, e.g. "
 const STORE_KINDS = ['sqlite', 'rest', 'memory'] as const
 
 /** What the `timeout` input of a remote source says. */
-export const TIMEOUT_TEXT = 'How long a call may wait for its answer, in whole seconds (1 to 60; 10 when not said). On the server a read that failed because the source was down is tried again twice'
+export const TIMEOUT_TEXT = 'How long a call may wait for its answer, in whole seconds (1 to 60; 10 when not said). On the server a read that failed because the source was down is tried again twice, within that time'
 const NO_HTTP = 'The app database is not called over HTTP: it takes no timeout'
 
 const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/
