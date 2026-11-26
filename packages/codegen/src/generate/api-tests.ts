@@ -123,7 +123,7 @@ const repositoryTestLines = (source: ApiSource, names: SourceNames, operations: 
       ],
       [
         `  it(${tsString(`${operation.name}: answers the error of the client as it is`)}, async () => {`,
-        '    const failed = err(remoteFailed(503, \'answered 503\'))',
+        '    const failed = err(remoteFailed(\'unavailable\', 503, \'answered 503\'))',
         `    const http: ApiClient<${names.error}> = async () => failed`,
         `    expect(await ${names.adapter}(http).${operation.name}(${argument})).toEqual(failed)`,
         '  })'
@@ -190,10 +190,10 @@ const useCaseTestLines = (source: ApiSource, names: SourceNames, operation: Oper
     `    expect(result).toEqual({ ok: true, value: ${operation.result ? value : 'undefined'} })`,
     '  })',
     '',
-    '  it(\'returns a failure of the API as a remote_failed error\', async () => {',
-    `    const repository = ${names.fake}({ ${operation.name}: async () => err(remoteFailed(503, 'answered 503')) })`,
+    '  it(\'returns a failure of the API as its error\', async () => {',
+    `    const repository = ${names.fake}({ ${operation.name}: async () => err(remoteFailed('unavailable', 503, 'answered 503')) })`,
     `    const result = ${use('repository', input)}`,
-    '    expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: \'remote_failed\', status: 503 }) })',
+    '    expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: \'unavailable\', status: 503 }) })',
     '  })',
     ...(fields.length
       ? [

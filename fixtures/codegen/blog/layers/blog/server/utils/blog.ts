@@ -17,7 +17,7 @@ const quotesClient = (): ApiClient<QuotesSourceError> => {
   const { baseUrl, apiKey } = useRuntimeConfig().datasources.quotes
   const headers: Record<string, string> = { accept: 'application/json' }
   if (apiKey) headers.authorization = `Bearer ${apiKey}`
-  return resultClient(createHttpClient({ baseUrl, headers }), failure => quotesFailed(failure.status, failure.message))
+  return resultClient(createHttpClient({ baseUrl, headers }), failure => quotesFailed(failure.type, failure.status, failure.message))
 }
 
 /** The blog module's use-cases, wired to the app database and the "quotes" data source. */
@@ -36,6 +36,11 @@ export const useBlog = () => {
 export const blogErrorStatus = {
   slug_taken: 409,
   post_not_found: 404,
+  not_found: 404,
+  unauthorized: 502,
+  rate_limited: 503,
+  timeout: 504,
+  unavailable: 503,
   remote_failed: 502,
   invalid_answer: 502
 } satisfies Record<BlogError['type'], number>

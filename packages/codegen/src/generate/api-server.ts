@@ -4,6 +4,7 @@ import { descriptionOf, inputFields, modelNames, namesOf, operationsOf, resultTy
 import type { Emitted, InputField, Operation, SourceNames } from './api-model.ts'
 import { importLine } from './imports.ts'
 import { apiPaths, apisPaths, importPath } from './paths.ts'
+import { SOURCE_ERRORS } from './rest-source.ts'
 import { file, header, identifier, kebab, pascal, tsString } from './text.ts'
 
 /**
@@ -69,15 +70,16 @@ const queryHelpersFile = (): Emitted => ({
     '}',
     '',
 
+    '/** The failures of a source that may pass on a second try (SourceFailureType): it asked to wait, took too long, or is down. */',
+    'const PASSING = new Set([\'rate_limited\', \'timeout\', \'unavailable\'])',
+    '',
     '/**',
-    ' * Only a call that may pass on a second try is tried again, three times at most: something unexpected (no server), an API that did not',
-    ' * answer (`status` 0), failed itself (5xx) or asked to wait (408, 429). What it answered on purpose (a 404) is its answer.',
+    ' * Only a call that may pass on a second try is tried again, three times at most: something unexpected (the server could not be',
+    ' * reached), or a failure that passes (PASSING). What the API answered on purpose (a 404, a refusal) is its answer.',
     ' */',
     'const retry = (count: number, cause: Error) => {',
     '  if (count >= 3) return false',
-    '  if (!(cause instanceof Answered) || cause.error.type === \'unexpected\') return true',
-    '  const status = cause.error.type === \'remote_failed\' ? (cause.error as { status?: unknown }).status : undefined',
-    '  return typeof status === \'number\' && (status === 0 || status === 408 || status === 429 || status >= 500)',
+    '  return !(cause instanceof Answered) || cause.error.type === \'unexpected\' || PASSING.has(cause.error.type)',
     '}',
     '',
     '/**',
@@ -139,7 +141,7 @@ const queryHelpersFile = (): Emitted => ({
 
 // ── Composition root ───────────────────────────────────────────────────
 
-const STATUSES = ['remote_failed: 502', 'invalid_answer: 502', 'invalid_input: 400']
+const STATUSES = [...SOURCE_ERRORS.map(error => `${error.type}: ${error.status}`), 'invalid_input: 400']
 // A source with auth whose secret is not set is not ours to call: the server is not configured (503), never a bad gateway.
 const NOT_CONFIGURED_STATUS = 'not_configured: 503'
 
@@ -181,9 +183,9 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
         ? [
             `  return resultClient(call, failure => failure.notConfigured`,
             `    ? { type: 'not_configured', message: ${tsString(`The "${source.name}" API is not configured: set ${envVar}`)} }`,
-            '    : remoteFailed(failure.status, failure.message))'
+            '    : remoteFailed(failure.type, failure.status, failure.message))'
           ]
-        : ['  return resultClient(call, failure => remoteFailed(failure.status, failure.message))']),
+        : ['  return resultClient(call, failure => remoteFailed(failure.type, failure.status, failure.message))']),
       '}',
       '',
       `/** The use-cases of the "${source.name}" API, wired to its HTTP repository. */`,

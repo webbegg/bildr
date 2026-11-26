@@ -18,7 +18,7 @@ const catalogClient = (): ApiClient<CatalogError> => {
   const call = createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? '').trim() === '' })
   return resultClient(call, failure => failure.notConfigured
     ? { type: 'not_configured', message: 'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY' }
-    : remoteFailed(failure.status, failure.message))
+    : remoteFailed(failure.type, failure.status, failure.message))
 }
 
 /** The use-cases of the "catalog" API, wired to its HTTP repository. */
@@ -35,6 +35,11 @@ export const useCatalogApi = () => {
 
 /** HTTP status of each "catalog" API error. */
 export const catalogErrorStatus = {
+  not_found: 404,
+  unauthorized: 502,
+  rate_limited: 503,
+  timeout: 504,
+  unavailable: 503,
   remote_failed: 502,
   invalid_answer: 502,
   invalid_input: 400,

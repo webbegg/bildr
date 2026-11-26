@@ -26,8 +26,8 @@ describe('reportForecast', () => {
     } })
   })
 
-  it('returns a failure of the API as a remote_failed error', async () => {
-    const repository = fakeWeatherRepository({ reportForecast: async () => err(remoteFailed(503, 'answered 503')) })
+  it('returns a failure of the API as its error', async () => {
+    const repository = fakeWeatherRepository({ reportForecast: async () => err(remoteFailed('unavailable', 503, 'answered 503')) })
     const result = await reportForecast({ weather: repository })({
       body: {
         city: 'city 1',
@@ -35,7 +35,7 @@ describe('reportForecast', () => {
         observedAt: '2024-01-02T03:04:05.000Z'
       }
     })
-    expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: 'remote_failed', status: 503 }) })
+    expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: 'unavailable', status: 503 }) })
   })
 
   it('refuses an input that is not valid, without calling the API', async () => {

@@ -88,12 +88,16 @@ describe('generated server composition root, run', () => {
     expect(routed(result)).toMatchObject({ status: 503 })
   })
 
-  it('answers a failed call as remote_failed with the status it got: the route answers 502', async () => {
+  // R3': a gateway's statuses. The API refusing the app's key is the server's to fix (502), never the user's session (401).
+  it.each([
+    [404, 'not_found', 404], [401, 'unauthorized', 502], [403, 'unauthorized', 502], [429, 'rate_limited', 503],
+    [504, 'timeout', 504], [500, 'unavailable', 503], [503, 'unavailable', 503], [409, 'remote_failed', 502]
+  ])('a call the API answered %i fails as %s: the route answers %i', async (status, type, answered) => {
     configure('key-1')
-    fakeFetch(json({ error: 'down' }, 503))
+    fakeFetch(json({ error: 'down' }, status))
     const result = await root.useCatalogApi().deleteProduct({ id: 7 })
-    expect(result).toEqual({ ok: false, error: { type: 'remote_failed', status: 503, message: 'The "catalog" API answered 503.' } })
-    expect(routed(result)).toEqual({ status: 502, message: 'The "catalog" API answered 503.' })
+    expect(result).toEqual({ ok: false, error: { type, status, message: `The "catalog" API answered ${status}.` } })
+    expect(routed(result)).toEqual({ status: answered, message: `The "catalog" API answered ${status}.` })
   })
 
   it('answers an unexpected answer as invalid_answer without detail, the detail in the server log: the route answers 502', async () => {

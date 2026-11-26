@@ -14,6 +14,13 @@ export interface DomainError {
 }
 
 /**
+ * Why a call to a remote source failed, by what it answered: it has no such thing (`not_found`), refused the app's credentials
+ * (`unauthorized`), asked to wait (`rate_limited`), took too long (`timeout`), is down or could not be reached (`unavailable`), or
+ * anything else (`remote_failed`). Only the waits, the timeouts and the outages may pass on a second try.
+ */
+export type SourceFailureType = 'not_found' | 'unauthorized' | 'rate_limited' | 'timeout' | 'unavailable' | 'remote_failed'
+
+/**
  * What a call failed with, seen from where it was made (the page): one of its domain errors, or `unexpected` when it failed outside them
  * (the server could not be reached, or a bug). `type` tells them apart, so a caller handles each error it knows by name.
  */

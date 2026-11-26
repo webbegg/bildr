@@ -121,11 +121,11 @@ describe('generated browser composition and composables, run', () => {
     expect(JSON.stringify(result)).not.toContain('celsius')
   })
 
-  it('an API that answers an error: remote_failed with the status, nothing of its body, nothing on the console', async () => {
+  it('an API that answers an error: why it failed, with the status, nothing of its body, nothing on the console', async () => {
     configure('https://weather.example.com/v1')
     fakeFetch(json({ secret_internal: 'upstream' }, 503))
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    await expect(forecast({ city: 'Lisbon' })).resolves.toEqual({ ok: false, error: { type: 'remote_failed', status: 503, message: 'The "weather" API answered 503.' } })
+    await expect(forecast({ city: 'Lisbon' })).resolves.toEqual({ ok: false, error: { type: 'unavailable', status: 503, message: 'The "weather" API answered 503.' } })
     expect(warn).not.toHaveBeenCalled()
   })
 
@@ -147,8 +147,8 @@ describe('generated browser composition and composables, run', () => {
     await expect(composables.useWeatherReportForecast().run({ body: FORECAST })).resolves.toEqual({ ok: true, value: FORECAST })
     expect(calls.map(call => call.url)).toEqual(['https://weather.example.com/v1/reports'])
     expect(calls[0]!.init).toMatchObject({ method: 'POST', body: JSON.stringify(REMOTE), credentials: 'omit' })
-    fakeFetch(json({}, 500))
-    await expect(composables.useWeatherReportForecast().run({ body: FORECAST })).resolves.toEqual({ ok: false, error: { type: 'remote_failed', status: 500, message: 'The "weather" API answered 500.' } })
+    fakeFetch(json({}, 422))
+    await expect(composables.useWeatherReportForecast().run({ body: FORECAST })).resolves.toEqual({ ok: false, error: { type: 'remote_failed', status: 422, message: 'The "weather" API answered 422.' } })
   })
 
   it('an input that is not valid never reaches the API', async () => {

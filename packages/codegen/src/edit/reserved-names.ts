@@ -144,6 +144,8 @@ export const BROWSER_SHARED_FILES: readonly string[] = ['api-query']
  */
 export const API_DECLARED_NAMES: Record<string, string[]> = {
   'the zod and kernel imports of a use-case': ['z', 'ok', 'err', 'KernelResult', 'ZodType'],
+  // The errors of a source type a failed call by why it failed (R3').
+  'the kernel type of a failed call': ['SourceFailureType'],
   'the error helpers of the domain': ['remoteFailed', 'invalidAnswer', 'invalidInput'],
   'the locals of the generated functions': ['input', 'parsed', 'cause', 'deps', 'repository', 'result', 'http', 'calls', 'answer', 'read', 'itemsAt', 'segment', 'headerValue', 'recording', 'unused', 'dto', 'dtos', 'failed', 'failure', 'methods', 'query', 'body', 'params', 'event', 'signal', 'headers', 'call', 'config', 'secret', 'path', 'request', 'baseUrl', 'fetch', 'text', 'value', 'api'],
   'the vitest imports of the generated tests': ['describe', 'expect', 'it'],

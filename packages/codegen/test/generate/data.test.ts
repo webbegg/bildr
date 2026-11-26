@@ -117,7 +117,7 @@ describe('generateData rules', () => {
     const adapter = files.find(file => file.path === 'layers/blog/server/infrastructure/repositories/quote.rest.ts')!.content
     expect(adapter).toContain('const answer = await http(`/quotes/${segment(id)}`, { method: \'GET\' })')
     // A 404 is no such row (R1'): ok(undefined), not the source's error.
-    expect(adapter).toContain('if (!answer.ok) return answer.error.type === \'remote_failed\' && answer.error.status === 404 ? ok(undefined) : answer')
+    expect(adapter).toContain('if (!answer.ok) return answer.error.type === \'not_found\' ? ok(undefined) : answer')
     // An id is one path segment: "." or ".." would move the request elsewhere once the URL is resolved.
     expect(adapter).toContain('if (value === \'\' || value === \'.\' || value === \'..\') throw new Error(`Not a valid id for a REST path: ${JSON.stringify(value)}`)')
     expect(adapter).toContain('return encodeURIComponent(value)')

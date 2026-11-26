@@ -26,7 +26,7 @@ describe('restQuoteRepository', () => {
   })
 
   it('answers the error of a failed call', async () => {
-    const failed = quotesFailed(503, 'answered 503')
+    const failed = quotesFailed('unavailable', 503, 'answered 503')
     expect(await fake(err(failed)).repository.list({ limit: 10, offset: 0 })).toEqual(err(failed))
   })
 

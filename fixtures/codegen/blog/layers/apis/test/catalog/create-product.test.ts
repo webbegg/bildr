@@ -53,8 +53,8 @@ describe('createProduct', () => {
     } })
   })
 
-  it('returns a failure of the API as a remote_failed error', async () => {
-    const repository = fakeCatalogRepository({ createProduct: async () => err(remoteFailed(503, 'answered 503')) })
+  it('returns a failure of the API as its error', async () => {
+    const repository = fakeCatalogRepository({ createProduct: async () => err(remoteFailed('unavailable', 503, 'answered 503')) })
     const result = await createProduct({ catalog: repository })({
       body: {
         id: 1,
@@ -71,7 +71,7 @@ describe('createProduct', () => {
         ]
       }
     })
-    expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: 'remote_failed', status: 503 }) })
+    expect(result).toEqual({ ok: false, error: expect.objectContaining({ type: 'unavailable', status: 503 }) })
   })
 
   it('refuses an input that is not valid, without calling the API', async () => {

@@ -87,7 +87,37 @@ describe('createHttpClient', () => {
   it('fails the call with the status of an error answer', async () => {
     await withFetch(() => new Response('{"internal":"detail"}', { status: 503 }), async () => {
       const call = createHttpClient({ baseUrl: BASE })
-      await expect(call('/things', { method: 'GET' })).rejects.toMatchObject({ status: 503, message: 'answered 503' })
+      await expect(call('/things', { method: 'GET' })).rejects.toMatchObject({ status: 503, message: 'answered 503', type: 'unavailable' })
+    })
+  })
+
+  it.each([
+    [404, 'not_found'], [401, 'unauthorized'], [403, 'unauthorized'], [429, 'rate_limited'], [504, 'timeout'], [500, 'unavailable'],
+    [502, 'unavailable'], [503, 'unavailable'], [400, 'remote_failed'], [409, 'remote_failed'], [422, 'remote_failed'], [302, 'remote_failed']
+  ])('a call answered %i failed as %s', async (status, type) => {
+    await withFetch(() => new Response(null, { status }), async () => {
+      await expect(createHttpClient({ baseUrl: BASE })('/things', { method: 'GET' })).rejects.toMatchObject({ status, type })
+    })
+  })
+
+  it('a call that was not answered failed as unavailable; one that took too long, as timeout', async () => {
+    const { fetch } = globalThis
+    try {
+      globalThis.fetch = (async () => {
+        throw new TypeError('fetch failed')
+      }) as typeof fetch
+      await expect(createHttpClient({ baseUrl: BASE })('/things', { method: 'GET' })).rejects.toMatchObject({ status: 0, type: 'unavailable' })
+      expect(new HttpFailure(0, 'didn\'t answer within 10 s', 'timeout').type).toBe('timeout')
+    } finally {
+      globalThis.fetch = fetch
+    }
+  })
+
+  it('a call it refused, or an answer that is not JSON, failed as remote_failed: retrying it changes nothing', async () => {
+    await withFetch(() => new Response('not json', { status: 200 }), async () => {
+      await expect(createHttpClient({ baseUrl: BASE })('/things', { method: 'GET' })).rejects.toMatchObject({ status: 200, type: 'remote_failed' })
+      await expect(createHttpClient({ baseUrl: '' })('/things', { method: 'GET' })).rejects.toMatchObject({ status: 0, type: 'remote_failed' })
+      await expect(createHttpClient({ baseUrl: BASE, unconfigured: true })('/things', { method: 'GET' })).rejects.toMatchObject({ type: 'remote_failed', notConfigured: true })
     })
   })
 
