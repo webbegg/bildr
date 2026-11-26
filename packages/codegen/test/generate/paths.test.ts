@@ -23,7 +23,11 @@ describe('output paths', () => {
   it('names the core, module and API-source artifacts', () => {
     expect(corePaths.layout('main')).toBe('layers/core/app/layouts/main.vue')
     expect(modulePaths('blog').repository('post', 'drizzle')).toBe('layers/blog/server/infrastructure/repositories/post.drizzle.ts')
-    expect(apiPaths('catalog').port('catalog-repository')).toBe('layers/apis/shared/domain/catalog/repositories/catalog-repository.ts')
+    // An API source in the rings of a module, all under shared/ (codegen-architecture T3d).
+    expect(apiPaths('catalog').port('catalog-repository')).toBe('layers/apis/shared/application/catalog/ports/catalog-repository.ts')
+    expect(apiPaths('catalog').useCase('query', 'products')).toBe('layers/apis/shared/application/catalog/queries/products.ts')
+    expect(apiPaths('catalog').useCase('action', 'create-product')).toBe('layers/apis/shared/application/catalog/actions/create-product.ts')
+    expect(apiPaths('catalog').adapter('catalog-repository.http')).toBe('layers/apis/shared/infrastructure/catalog/repositories/catalog-repository.http.ts')
   })
 })
 

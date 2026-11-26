@@ -124,7 +124,7 @@ export const JS_RESERVED_WORDS: readonly string[] = [
 ]
 
 /**
- * The folders of an API source (`shared/domain/<source>/…`, `shared/data/<source>/…`) that the generated eslint config restricts in
+ * The folders of an API source (`shared/domain/<source>/…`, `shared/application/<source>/…`, `shared/infrastructure/<source>/…`) that the generated eslint config restricts in
  * an import path (the `banned` patterns of the starter's eslint.config.mjs: any path with an app, server or infrastructure folder in it):
  * a source with one of these names would make its own files fail the lint.
  */
@@ -148,9 +148,9 @@ export const API_DECLARED_NAMES: Record<string, string[]> = {
   'the locals of the generated functions': ['input', 'parsed', 'cause', 'deps', 'repository', 'result', 'http', 'calls', 'answer', 'read', 'itemsAt', 'segment', 'headerValue', 'recording', 'unused', 'dto', 'dtos', 'failed', 'methods', 'query', 'body', 'params', 'event', 'signal', 'headers', 'call', 'config', 'secret', 'path', 'request', 'baseUrl', 'fetch', 'text', 'value', 'api'],
   'the vitest imports of the generated tests': ['describe', 'expect', 'it'],
   'the helpers of the server runtime': ['useRuntimeConfig', 'defineEventHandler', 'getValidatedQuery', 'readValidatedBody', 'setResponseStatus', 'unwrapOrThrow', 'useApiQuery', 'useApiAction', 'fromRoute'],
-  'the core HTTP client (both runtimes)': ['createHttpClient', 'HttpFailure'],
+  'the core HTTP client (both runtimes)': ['createHttpClient', 'resultClient', 'HttpFailure'],
   'the kernel schemas an entity imports': ['IdSchema', 'TimestampSchema'],
-  'the types the generated files import': ['ApiClient', 'ApiRequest', 'ErrorStatusMap', 'MaybeRefOrGetter', 'QuerySchema'],
+  'the types the generated files import': ['ApiClient', 'HttpRequest', 'ErrorStatusMap', 'MaybeRefOrGetter', 'QuerySchema'],
   // `console` is called, and `AbortSignal` named as a type, in the composition next to the use-cases it imports under their own names: an operation called `console` would hide it.
   // Only the globals of files that also name something of the model are here: the core HTTP client (HttpFailure, createHttpClient…) imports nothing from it.
   'a global the generated files use': ['Array', 'Error', 'Object', 'Partial', 'Promise', 'Record', 'String', 'T', 'console', 'encodeURIComponent', 'AbortSignal']

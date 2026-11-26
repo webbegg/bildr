@@ -46,7 +46,7 @@ describe('an API model field\'s min and max', () => {
   })
 
   it('are not checked on the answer, which still loads when the remote sends more', () => {
-    const dto = read(FIELDS, 'layers/apis/shared/data/shop-api/validations/contact.schema.ts')
+    const dto = read(FIELDS, 'layers/apis/shared/infrastructure/shop-api/validations/contact.schema.ts')
     expect(dto).not.toMatch(/\.min\(|\.max\(/)
   })
 

@@ -5,8 +5,8 @@ import type { Result as KernelResult } from '#core/kernel/result'
 import { ForecastDtoSchema } from '../validations/forecast.schema'
 import { fromForecast, toForecast } from '../mappers/forecast.mapper'
 import { type WeatherError, invalidAnswer } from '../../../domain/weather/errors'
-import type { WeatherRepository } from '../../../domain/weather/repositories/weather-repository'
-import type { ApiClient } from '../client'
+import type { WeatherRepository } from '../../../application/weather/ports/weather-repository'
+import type { ApiClient } from '#core/http/api-client'
 
 /** The answer as `schema` reads it, or the error of an answer that is not what the model says: the error has no detail, `report` gets it. */
 const read = <T>(schema: ZodType<T>, answer: unknown, report?: (detail: string) => void): KernelResult<T, WeatherError> => {
@@ -17,7 +17,7 @@ const read = <T>(schema: ZodType<T>, answer: unknown, report?: (detail: string) 
 }
 
 /** WeatherRepository over an ApiClient: builds each path and query, reads the answer where the model says it is, validates it and maps it to the domain. `onInvalidAnswer` gets the detail of an answer that is not valid (the error has none). */
-export const httpWeatherRepository = (http: ApiClient, onInvalidAnswer?: (detail: string) => void): WeatherRepository => ({
+export const httpWeatherRepository = (http: ApiClient<WeatherError>, onInvalidAnswer?: (detail: string) => void): WeatherRepository => ({
   async forecast(input) {
     const answer = await http('/forecast', { method: 'GET', query: { q: input.city }, headers: { 'X-Units': 'metric' } })
     if (!answer.ok) return answer

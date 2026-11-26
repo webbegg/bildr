@@ -106,9 +106,9 @@ describe('a name the generated files import or declare is refused', () => {
     const p = shop()
     p.edit('api_model_set', { datasource: 'ds_shop', model: { name: 'Result', fields: [{ name: 'id', type: 'integer' }] } })
     p.edit('api_query_set', { datasource: 'ds_shop', query: items('results', 'Result') })
-    const use = generate(p.model()).find(file => file.path === 'layers/apis/shared/domain/shop/use-cases/results.ts')!.content
+    const use = generate(p.model()).find(file => file.path === 'layers/apis/shared/application/shop/queries/results.ts')!.content
     expect(use).toContain('import type { Result as KernelResult } from \'#core/kernel/result\'')
-    expect(use).toContain('import type { Result } from \'../entities/result\'')
+    expect(use).toContain('import type { Result } from \'../../../domain/shop/entities/result\'')
   })
 })
 

@@ -6,8 +6,8 @@ import { fixtureModelFiles } from '../model/fixture'
 
 /**
  * Codegen of the `api` data sources, server runtime (simple data P2, SD-5): one layer `layers/apis/` with the
- * domain (entities, repository port, use-cases, errors), the data (DTOs, validations, mappers, HTTP repository,
- * ApiClient port), the server composition root, routes and composables, and the generated tests.
+ * domain (entities, errors), the application (repository port, use-cases), the infrastructure (DTOs, validations, mappers, HTTP
+ * repository over the core ApiClient), the server composition root, routes and composables, and the generated tests.
  * The golden fixture's "catalog" source: two models (Product nests Category in a list), a query with a query
  * parameter (remote key `cat`) and an itemsPath, a query with a path parameter, a POST action with a body and a
  * result, and a DELETE action with no result. The "weather" source runs in the browser (P3): see the browser group below.
@@ -48,22 +48,21 @@ const APIS_FILES = [
   'layers/apis/server/api/apis/catalog/product.get.ts',
   'layers/apis/server/api/apis/catalog/products.get.ts',
   'layers/apis/server/utils/catalog.ts',
-  'layers/apis/shared/data/catalog/client.ts',
-  'layers/apis/shared/data/catalog/mappers/category.mapper.ts',
-  'layers/apis/shared/data/catalog/mappers/product.mapper.ts',
-  'layers/apis/shared/data/catalog/models/category.dto.ts',
-  'layers/apis/shared/data/catalog/models/product.dto.ts',
-  'layers/apis/shared/data/catalog/repositories/catalog-repository.http.ts',
-  'layers/apis/shared/data/catalog/validations/category.schema.ts',
-  'layers/apis/shared/data/catalog/validations/product.schema.ts',
+  'layers/apis/shared/application/catalog/actions/create-product.ts',
+  'layers/apis/shared/application/catalog/actions/delete-product.ts',
+  'layers/apis/shared/application/catalog/ports/catalog-repository.ts',
+  'layers/apis/shared/application/catalog/queries/product.ts',
+  'layers/apis/shared/application/catalog/queries/products.ts',
   'layers/apis/shared/domain/catalog/entities/category.ts',
   'layers/apis/shared/domain/catalog/entities/product.ts',
   'layers/apis/shared/domain/catalog/errors.ts',
-  'layers/apis/shared/domain/catalog/repositories/catalog-repository.ts',
-  'layers/apis/shared/domain/catalog/use-cases/create-product.ts',
-  'layers/apis/shared/domain/catalog/use-cases/delete-product.ts',
-  'layers/apis/shared/domain/catalog/use-cases/product.ts',
-  'layers/apis/shared/domain/catalog/use-cases/products.ts',
+  'layers/apis/shared/infrastructure/catalog/mappers/category.mapper.ts',
+  'layers/apis/shared/infrastructure/catalog/mappers/product.mapper.ts',
+  'layers/apis/shared/infrastructure/catalog/models/category.dto.ts',
+  'layers/apis/shared/infrastructure/catalog/models/product.dto.ts',
+  'layers/apis/shared/infrastructure/catalog/repositories/catalog-repository.http.ts',
+  'layers/apis/shared/infrastructure/catalog/validations/category.schema.ts',
+  'layers/apis/shared/infrastructure/catalog/validations/product.schema.ts',
   'layers/apis/test/catalog/catalog-repository.http.test.ts',
   'layers/apis/test/catalog/create-product.test.ts',
   'layers/apis/test/catalog/delete-product.test.ts',
@@ -78,16 +77,15 @@ const BROWSER_FILES = [
   'layers/apis/app/composables/apis/useWeatherForecast.ts',
   'layers/apis/app/composables/apis/useWeatherReportForecast.ts',
   'layers/apis/app/data/weather.ts',
-  'layers/apis/shared/data/weather/client.ts',
-  'layers/apis/shared/data/weather/mappers/forecast.mapper.ts',
-  'layers/apis/shared/data/weather/models/forecast.dto.ts',
-  'layers/apis/shared/data/weather/repositories/weather-repository.http.ts',
-  'layers/apis/shared/data/weather/validations/forecast.schema.ts',
+  'layers/apis/shared/application/weather/actions/report-forecast.ts',
+  'layers/apis/shared/application/weather/ports/weather-repository.ts',
+  'layers/apis/shared/application/weather/queries/forecast.ts',
   'layers/apis/shared/domain/weather/entities/forecast.ts',
   'layers/apis/shared/domain/weather/errors.ts',
-  'layers/apis/shared/domain/weather/repositories/weather-repository.ts',
-  'layers/apis/shared/domain/weather/use-cases/forecast.ts',
-  'layers/apis/shared/domain/weather/use-cases/report-forecast.ts',
+  'layers/apis/shared/infrastructure/weather/mappers/forecast.mapper.ts',
+  'layers/apis/shared/infrastructure/weather/models/forecast.dto.ts',
+  'layers/apis/shared/infrastructure/weather/repositories/weather-repository.http.ts',
+  'layers/apis/shared/infrastructure/weather/validations/forecast.schema.ts',
   'layers/apis/test/weather/fake-repository.ts',
   'layers/apis/test/weather/forecast.test.ts',
   'layers/apis/test/weather/mappers.mapper.test.ts',
@@ -119,7 +117,7 @@ describe('generate: server-runtime api sources', () => {
       '  categories: z.array(CategorySchema)',
       '})'
     ].join('\n'))
-    expect(read(generated, 'layers/apis/shared/data/catalog/models/product.dto.ts')).toContain([
+    expect(read(generated, 'layers/apis/shared/infrastructure/catalog/models/product.dto.ts')).toContain([
       'export interface ProductDto {',
       '  id: number',
       '  name: string',
@@ -130,14 +128,14 @@ describe('generate: server-runtime api sources', () => {
       '  categories: CategoryDto[]',
       '}'
     ].join('\n'))
-    const schema = read(generated, 'layers/apis/shared/data/catalog/validations/product.schema.ts')
+    const schema = read(generated, 'layers/apis/shared/infrastructure/catalog/validations/product.schema.ts')
     expect(schema).toContain('export const ProductDtoSchema: z.ZodType<ProductDto> = z.object({')
     expect(schema).toContain('  created_at: z.iso.datetime({ offset: true }),')
     expect(schema).toContain('  categories: z.array(CategoryDtoSchema)')
   })
 
   it('maps both ways between the DTO and the entity, nested models included', () => {
-    const mapper = read(generated, 'layers/apis/shared/data/catalog/mappers/product.mapper.ts')
+    const mapper = read(generated, 'layers/apis/shared/infrastructure/catalog/mappers/product.mapper.ts')
     expect(mapper).toContain('export const toProduct = (dto: ProductDto): Product => ({')
     expect(mapper).toContain('  inStock: dto.in_stock,')
     expect(mapper).toContain('  createdAt: dto.created_at,')
@@ -148,7 +146,7 @@ describe('generate: server-runtime api sources', () => {
   })
 
   it('has a port with one method per query and action, and one use-case each that validates its input', () => {
-    const port = read(generated, 'layers/apis/shared/domain/catalog/repositories/catalog-repository.ts')
+    const port = read(generated, 'layers/apis/shared/application/catalog/ports/catalog-repository.ts')
     expect(port).toContain('export interface CatalogRepository {')
     // Result-only (T3b): the port answers the error of a call, it never throws it.
     expect(port).toContain('  products(input: { category?: string, locale?: string }): Promise<KernelResult<Product[], CatalogError>>')
@@ -156,15 +154,15 @@ describe('generate: server-runtime api sources', () => {
     expect(port).toContain('  createProduct(input: { body: Product }): Promise<KernelResult<Product, CatalogError>>')
     // An operation that answers nothing answers `undefined`: it is a type argument of its composable, which `void` can't be.
     expect(port).toContain('  deleteProduct(input: { id: number }): Promise<KernelResult<undefined, CatalogError>>')
-    const useCase = read(generated, 'layers/apis/shared/domain/catalog/use-cases/products.ts')
+    const useCase = read(generated, 'layers/apis/shared/application/catalog/queries/products.ts')
     expect(useCase).toContain('export const ProductsInputSchema = z.object({\n  category: z.string().optional(),\n  locale: z.string().optional()\n})')
     expect(useCase).toContain('export const products = (deps: ProductsDeps) =>')
     expect(useCase).toContain('Promise<KernelResult<Product[], CatalogError>>')
     expect(useCase).toContain('ProductsInputSchema.safeParse(input)')
     expect(useCase).toContain('    return deps.catalog.products(parsed.data)\n')
     expect(useCase).not.toContain('catch')
-    expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/create-product.ts')).toContain('  body: ProductSchema')
-    expect(read(generated, 'layers/apis/shared/domain/catalog/use-cases/delete-product.ts')).toContain('Promise<KernelResult<undefined, CatalogError>>')
+    expect(read(generated, 'layers/apis/shared/application/catalog/actions/create-product.ts')).toContain('  body: ProductSchema')
+    expect(read(generated, 'layers/apis/shared/application/catalog/actions/delete-product.ts')).toContain('Promise<KernelResult<undefined, CatalogError>>')
     expect(read(generated, 'layers/apis/shared/domain/catalog/errors.ts')).not.toContain('class')
     // No source's files declare or throw a failure of their own any more (T3b): only the core client's HttpFailure is named.
     // The query helpers are the exception: TanStack Query knows only thrown errors, so a query's error Result travels through it in one (`Answered`).
@@ -174,8 +172,8 @@ describe('generate: server-runtime api sources', () => {
   })
 
   it('builds the paths (encoded), the query on its remote key, reads itemsPath and validates the answers', () => {
-    const http = read(generated, 'layers/apis/shared/data/catalog/repositories/catalog-repository.http.ts')
-    expect(http).toContain('export const httpCatalogRepository = (http: ApiClient, onInvalidAnswer?: (detail: string) => void): CatalogRepository => ({')
+    const http = read(generated, 'layers/apis/shared/infrastructure/catalog/repositories/catalog-repository.http.ts')
+    expect(http).toContain('export const httpCatalogRepository = (http: ApiClient<CatalogError>, onInvalidAnswer?: (detail: string) => void): CatalogRepository => ({')
     // A query parameter on its remote key, a list read under data.items.
     expect(http).toContain('http(\'/products\', { method: \'GET\', query: { cat: input.category }, headers: { \'X-Api-Version\': \'2\', \'Accept-Language\': localeHeader.value } })')
     // The client's error is passed on as it is; the answer is read, then mapped.
@@ -196,8 +194,15 @@ describe('generate: server-runtime api sources', () => {
     expect(http).not.toContain('throw')
   })
 
-  it('has the ApiClient port the repository calls through', () => {
-    expect(read(generated, 'layers/apis/shared/data/catalog/client.ts')).toContain('export type ApiClient = (path: string, request: ApiRequest) => Promise<KernelResult<unknown, CatalogError>>')
+  it('calls through the core ApiClient, typed by the source\'s error: no client of its own (codegen-architecture T3d)', () => {
+    expect(read(generated, 'layers/apis/shared/infrastructure/catalog/repositories/catalog-repository.http.ts')).toContain('import type { ApiClient } from \'#core/http/api-client\'')
+    expect(paths(generated).filter(path => path.startsWith('layers/apis/') && path.endsWith('/client.ts'))).toEqual([])
+  })
+
+  it('keeps the source in the rings of a module: its domain and use-cases import no adapter', () => {
+    for (const file of generated.filter(entry => /^layers\/apis\/shared\/(domain|application)\//.test(entry.path))) {
+      expect(file.content, file.path).not.toMatch(/from '[^']*infrastructure/)
+    }
   })
 
   it('wires the server: a client over fetch under the base URL, a route per operation, a composable each', () => {
@@ -208,10 +213,10 @@ describe('generate: server-runtime api sources', () => {
     // Every error type has its status: one added without it does not compile.
     expect(root).toContain('export const catalogErrorStatus = {')
     expect(root).toContain('} satisfies Record<CatalogError[\'type\'], number>')
-    expect(root).toContain('      return ok(await call(path, request))')
-    expect(root).toContain('      return err(remoteFailed(cause.status, cause.message))')
-    // The core HTTP client (T3a), the one every source calls through.
-    expect(root).toContain('import { HttpFailure, createHttpClient } from \'#core/http/client\'')
+    // A failed call is the source's error, through the core client (T3a, T3d).
+    expect(root).toContain(': remoteFailed(failure.status, failure.message))')
+    expect(root).toContain('import { type ApiClient, resultClient } from \'#core/http/api-client\'')
+    expect(root).toContain('import { createHttpClient } from \'#core/http/client\'')
     const client = read(generated, 'layers/core/shared/http/client.ts')
     expect(client).toContain('redirect: \'manual\'')
     expect(client).toContain('AbortSignal.timeout(')
@@ -295,7 +300,7 @@ describe('generate: an API with auth refuses a call when its secret is not set (
 
   it('the client is told when the secret is empty, and the root answers a typed not_configured naming the env var (never a value)', () => {
     expect(root).toContain('createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? \'\').trim() === \'\' })')
-    expect(root).toContain('if (cause.notConfigured) return err({ type: \'not_configured\'')
+    expect(root).toContain('return resultClient(call, failure => failure.notConfigured')
     expect(root).toContain('{ type: \'not_configured\', message: \'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY\' }')
     expect(root).toContain('  not_configured: 503')
     expect(read(generated, 'layers/apis/shared/domain/catalog/errors.ts')).toContain('  | { type: \'not_configured\', message: string }')
@@ -419,8 +424,8 @@ describe('generate: browser-runtime api sources', () => {
 
   it('has the entities, the port and the use-cases of the model', () => {
     expect(fromWeather('shared/domain/weather/entities/forecast.ts')).toContain('  observedAt: z.iso.datetime({ offset: true })')
-    expect(fromWeather('shared/domain/weather/repositories/weather-repository.ts')).toContain('  forecast(input: { city: string }): Promise<KernelResult<Forecast, WeatherError>>')
-    expect(fromWeather('shared/domain/weather/use-cases/report-forecast.ts')).toContain('deps.weather.reportForecast(parsed.data)')
+    expect(fromWeather('shared/application/weather/ports/weather-repository.ts')).toContain('  forecast(input: { city: string }): Promise<KernelResult<Forecast, WeatherError>>')
+    expect(fromWeather('shared/application/weather/actions/report-forecast.ts')).toContain('deps.weather.reportForecast(parsed.data)')
   })
 
   it('composes in app/: a browser client over the base URL of runtimeConfig.public.apis.weather, nothing else', () => {

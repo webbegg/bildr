@@ -100,7 +100,7 @@ describe('generated http repository: a path parameter is one segment', () => {
 
   /** The `segment` function of the generated repository, run with the kernel's ok/err and an invalidInput that keeps its detail. */
   const segmentOf = () => {
-    const adapter = generated().find(file => file.path === 'layers/apis/shared/data/catalog/repositories/catalog-repository.http.ts')!.content
+    const adapter = generated().find(file => file.path === 'layers/apis/shared/infrastructure/catalog/repositories/catalog-repository.http.ts')!.content
     const start = adapter.indexOf('const segment = ')
     const code = adapter.slice(start, adapter.indexOf('\n}\n', start) + 2)
     const js = ts.transpileModule(code, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.None } }).outputText

@@ -40,6 +40,19 @@ app/components, app/pages the UI; components only use composables
 test/                     use-case, adapter and API tests
 ```
 
+## Inside the apis layer
+
+An API data source gets `layers/apis/`, in the same rings. They all live under `shared/`, because a source can run on the server or in the page:
+
+```
+shared/domain/<source>/          entities (zod schemas + types) and the source's errors
+shared/application/<source>/     the repository port (ports/), one use-case per query (queries/) and action (actions/)
+shared/infrastructure/<source>/  what the API sends (models/, validations/), mappers, the HTTP repository
+server/utils/<source>.ts         composition root of a source that runs on the server, with its routes in server/api/apis/
+app/data/<source>.ts             composition of a source that runs in the page
+app/composables/apis/            one composable per query and action
+```
+
 ## Changing generated code
 
 - **Prefer overriding.** Put a file at the same path under the root `app/` or `server/`. Nuxt uses yours, and bildr keeps updating its own copy.

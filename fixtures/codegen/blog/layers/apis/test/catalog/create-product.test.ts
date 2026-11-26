@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { err, ok } from '#core/kernel/result'
 import { remoteFailed } from '../../shared/domain/catalog/errors'
-import { createProduct } from '../../shared/domain/catalog/use-cases/create-product'
+import { createProduct } from '../../shared/application/catalog/actions/create-product'
 import { fakeCatalogRepository } from './fake-repository'
 
 describe('createProduct', () => {

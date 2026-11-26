@@ -2,7 +2,7 @@
 import { fromRoute } from '#layers/core/app/data/results'
 import type { Product } from '../../../shared/domain/catalog/entities/product'
 import type { CatalogError } from '../../../shared/domain/catalog/errors'
-import type { CreateProductInput } from '../../../shared/domain/catalog/use-cases/create-product'
+import type { CreateProductInput } from '../../../shared/application/catalog/actions/create-product'
 import { useApiAction } from '../../data/api-query'
 
 /** Action "createProduct" of the "catalog" API: `run(input)` calls the API, refetches the queries of the source and answers a Result. */

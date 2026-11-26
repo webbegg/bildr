@@ -2,8 +2,8 @@
 import { z } from 'zod'
 import { err } from '#core/kernel/result'
 import type { Result as KernelResult } from '#core/kernel/result'
-import { type CatalogError, invalidInput } from '../errors'
-import type { CatalogRepository } from '../repositories/catalog-repository'
+import { type CatalogError, invalidInput } from '../../../domain/catalog/errors'
+import type { CatalogRepository } from '../ports/catalog-repository'
 
 export const DeleteProductInputSchema = z.object({
   id: z.number().int()

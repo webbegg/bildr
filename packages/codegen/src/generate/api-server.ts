@@ -161,32 +161,29 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
       header(names.source),
       `// Composition root of the "${source.name}" API: the only place where its use-cases meet the HTTP repository.`,
       'import { useRuntimeConfig } from \'nuxt/server\'',
-      importLine('#core/http/client', ['createHttpClient', 'HttpFailure']),
-      importLine('#core/kernel/result', ['err', 'ok']),
-      importLine(importPath(path, paths.client), [{ name: 'ApiClient', type: true }]),
+      importLine('#core/http/api-client', [{ name: 'ApiClient', type: true }, 'resultClient']),
+      importLine('#core/http/client', ['createHttpClient']),
       importLine(importPath(path, paths.adapter(names.adapterFile)), [names.adapter]),
       importLine(importPath(path, paths.errors), [{ name: names.error, type: true }, 'remoteFailed']),
       ...operations
-        .map(operation => ({ path: importPath(path, paths.useCase(kebab(operation.name))), name: operation.name }))
+        .map(operation => ({ path: importPath(path, paths.useCase(operation.kind, kebab(operation.name))), name: operation.name }))
         .sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
         .map(entry => importLine(entry.path, [entry.name])),
       '',
       `/** The HTTP client of the "${source.name}" API: it calls the base URL of runtimeConfig.apis.${names.camel}, sending its secret there and nowhere else.${secret ? ' Without its secret it refuses the call.' : ''} */`,
-      `const ${names.client} = (): ApiClient => {`,
+      `const ${names.client} = (): ApiClient<${names.error}> => {`,
       `  const config = useRuntimeConfig().apis.${names.camel}`,
       '  const headers: Record<string, string> = { accept: \'application/json\' }',
       ...(secret ? [`  if (config.${secret}) ${auth}`] : []),
       // Nuxt reads an env var as JSON when it can (a numeric secret arrives as a number), hence the String().
       `  const call = createHttpClient({ baseUrl: config.baseUrl, headers${secret ? `, unconfigured: String(config.${secret} ?? '').trim() === ''` : ''} })`,
-      '  return async (path, request) => {',
-      '    try {',
-      '      return ok(await call(path, request))',
-      '    } catch (cause) {',
-      '      if (!(cause instanceof HttpFailure)) throw cause',
-      ...(envVar ? [`      if (cause.notConfigured) return err({ type: 'not_configured', message: ${tsString(`The "${source.name}" API is not configured: set ${envVar}`)} })`] : []),
-      '      return err(remoteFailed(cause.status, cause.message))',
-      '    }',
-      '  }',
+      ...(envVar
+        ? [
+            `  return resultClient(call, failure => failure.notConfigured`,
+            `    ? { type: 'not_configured', message: ${tsString(`The "${source.name}" API is not configured: set ${envVar}`)} }`,
+            '    : remoteFailed(failure.status, failure.message))'
+          ]
+        : ['  return resultClient(call, failure => remoteFailed(failure.status, failure.message))']),
       '}',
       '',
       `/** The use-cases of the "${source.name}" API, wired to its HTTP repository. */`,
@@ -289,7 +286,7 @@ export const composableFile = (source: ApiSource, names: SourceNames, operation:
     ...(browser ? [] : ['import { fromRoute } from \'#layers/core/app/data/results\'']),
     ...(operation.result ? [importLine(importPath(path, paths.entity(modelNames(operation.result.model).file)), [{ name: operation.result.model, type: true }])] : []),
     importLine(importPath(path, paths.errors), [{ name: names.error, type: true }]),
-    ...(fields.length ? [importLine(importPath(path, paths.useCase(kebab(operation.name))), [{ name: input, type: true }])] : []),
+    ...(fields.length ? [importLine(importPath(path, paths.useCase(operation.kind, kebab(operation.name))), [{ name: input, type: true }])] : []),
     importLine(importPath(path, apisPaths.apiQuery), [operation.kind === 'query' ? 'useApiQuery' : 'useApiAction']),
     ...(browser ? [importLine(importPath(path, paths.browserRoot), [names.root])] : [])
   )
