@@ -10,7 +10,7 @@
     "palettes": "node --experimental-strip-types scripts/generate-palettes.ts",
     "lint": "eslint .",
     "release": "node scripts/release.ts",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=50%",
     "typecheck": "pnpm --filter './packages/**' typecheck"
   },
   "devDependencies": {

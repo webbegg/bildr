@@ -643,14 +643,37 @@ export async function resetModel(api = call) {
   return [...new Set([...Object.keys(want), ...Object.keys(current)])].filter(path => want[path] !== current[path])
 }
 
-/** Boots a project: create-bildr, the golden model, `nuxt dev`. Returns `{ base, token, root, log, stop }`. */
+/**
+ * Boots a project: create-bildr, the golden model, `nuxt dev`. Returns `{ base, token, root, log, stop }`.
+ * When it fails to start, it stops what it started and deletes the project dir (unless E2E_KEEP=1), printing
+ * the logs' tails first: a failed boot leaves nothing in the (often RAM-backed) temp dir.
+ */
 export async function boot({ keep = process.env.E2E_KEEP === '1', desktop = false } = {}) {
   const parent = process.env.E2E_TMP || tmpdir()
   mkdirSync(parent, { recursive: true })
   const tmp = mkdtempSync(join(parent, 'bildr-e2e-module-'))
+  const started = []
+  try {
+    return await bootIn(tmp, { keep, desktop, started })
+  } catch (error) {
+    await Promise.all(started.map(stop))
+    if (keep) console.log(`kept ${tmp}`)
+    else {
+      for (const name of ['create.log', 'dev.log']) {
+        const text = readOr(join(tmp, name))
+        if (text) console.log(`${name} (tail):\n${text.trimEnd().split('\n').slice(-15).map(line => `    | ${line}`).join('\n')}`)
+      }
+      rmSync(tmp, { recursive: true, force: true })
+    }
+    throw error
+  }
+}
+
+async function bootIn(tmp, { keep, desktop, started }) {
   const root = join(tmp, 'app')
   const log = join(tmp, 'dev.log')
   const create = start(process.execPath, ['--experimental-strip-types', '--no-warnings', CLI, root, '--name', 'Blog', '--module', 'blog'], { cwd: tmp, log: join(tmp, 'create.log') })
+  started.push(create)
   const created = await Promise.race([create.exited, sleep(MINUTE).then(() => undefined)])
   if (created?.code !== 0) throw new Error(`create-bildr failed (log ${join(tmp, 'create.log')})`)
   symlinkSync(join(FIXTURE, 'node_modules'), join(root, 'node_modules'), 'dir')
@@ -663,6 +686,7 @@ export async function boot({ keep = process.env.E2E_KEEP === '1', desktop = fals
   const port = await freePort()
   const base = `http://127.0.0.1:${port}`
   const dev = start(join(root, 'node_modules/.bin/nuxt'), ['dev', '--port', String(port), '--host', '127.0.0.1'], { cwd: root, log })
+  started.push(dev)
   const token = await waitFor('the editor link in the dev log', () => /\/__bildr\?token=([0-9a-f]{48})/.exec(readOr(log) ?? '')?.[1], 3 * MINUTE)
   Object.assign(app, { base, token, root, log })
   await waitFor('health_get to answer', async () => (await call('health_get').catch(() => ({}))).ok, 2 * MINUTE, 1000)
