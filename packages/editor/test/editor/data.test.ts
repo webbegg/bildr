@@ -1081,6 +1081,26 @@ describe('connections', () => {
     expect(inputs(actions, 'datasource_update')).toEqual([{ datasource: 'ds_quotes', name: 'dummy' }, { datasource: 'ds_quotes', defaults: { baseUrl: 'https://example.org/v2' } }])
   })
 
+  it('edits its timeout in seconds: a whole number from 1 to 60, empty for the default 10 s; anything else is not sent', async () => {
+    const { actions } = await open({ datasource_update: ok() })
+    await click(q('[data-connection-name]'))
+    const input = () => q('[data-connection-panel]')!.querySelector<HTMLInputElement>('[aria-label="Timeout"]')
+    expect(input()?.value).toBe('')
+    expect(input()?.placeholder).toBe('10')
+    for (const value of ['5', '0', '61', '2.5', 'abc']) await typeInto(input(), value)
+    expect(inputs(actions, 'datasource_update')).toEqual([{ datasource: 'ds_quotes', timeout: 5 }])
+  })
+
+  it('shows the timeout a connection has, and clearing it gives the default back', async () => {
+    world.model.datasources.find(source => source.id === 'ds_quotes')!.timeout = 20
+    const { actions } = await open({ datasource_update: ok() })
+    await click(q('[data-connection-name]'))
+    const input = q('[data-connection-panel]')!.querySelector<HTMLInputElement>('[aria-label="Timeout"]')
+    expect(input?.value).toBe('20')
+    await typeInto(input, '')
+    expect(inputs(actions, 'datasource_update')).toEqual([{ datasource: 'ds_quotes', timeout: null }])
+  })
+
   it('changes how it authenticates, and says the secret is an env var: Header takes a header name', async () => {
     const { actions } = await open({ datasource_update: ok() })
     await click(q('[data-connection-name]'))

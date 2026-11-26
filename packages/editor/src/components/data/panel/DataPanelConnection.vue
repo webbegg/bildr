@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, useTemplateRef } from 'vue'
+import { computed, nextTick, onMounted, ref, useTemplateRef } from 'vue'
 import { useEditor } from '../../../editor/useEditor.ts'
 import { NEW_CONNECTION_URL } from '../../../shared/dataModel.ts'
 import type { DataConnection } from '../../../shared/dataModel.ts'
 
 /**
- * The connection's settings, the top of its Endpoints tab: its name, base URL and how it authenticates (`datasource_update`,
+ * The connection's settings, the top of its Endpoints tab: its name, base URL, timeout and how it authenticates (`datasource_update`,
  * undoable). A connection is a REST data source. The hosted headers list becomes its `auth`: a
  * bearer token or one header, whose secret is an env var only, never a value in the model. The
  * panel says whether that variable is set (`env_status`, read-only: the user edits `.env`).
@@ -32,6 +32,15 @@ function setAuthType(type: string) {
 
 function setHeader(header: string) {
   if (auth.value && header.trim()) void update({ auth: { type: 'header', secret: auth.value.secret, header: header.trim() } })
+}
+
+/** A timeout is whole seconds, 1 to 60; empty gives the default back. Anything else is not sent, and the field says so. */
+const timeoutInvalid = ref(false)
+function setTimeoutS(value: string) {
+  const text = value.trim()
+  const seconds = Number(text)
+  timeoutInvalid.value = text !== '' && !(/^\d+$/.test(text) && seconds >= 1 && seconds <= 60)
+  if (!timeoutInvalid.value) void update({ timeout: text === '' ? null : seconds })
 }
 
 function showVariables() {
@@ -98,6 +107,23 @@ onMounted(async () => {
             Set <code>{{ connection.baseUrlEnv }}</code> in <code>.env</code> to change it per environment{{ baseUrlStatus?.set ? ' (set)' : '' }}
           </p>
         </template>
+      </EditorRow>
+      <EditorRow
+        label="Timeout"
+        title="Seconds a call may wait for its answer (1 to 60), retries included; empty for 10"
+        name="timeout"
+      >
+        <EditorCommitInput
+          :model-value="connection.timeout === undefined ? '' : String(connection.timeout)"
+          aria-label="Timeout"
+          placeholder="10"
+          size="xs"
+          variant="soft"
+          numeric
+          :invalid="timeoutInvalid"
+          data-connection-timeout
+          @commit="setTimeoutS"
+        />
       </EditorRow>
     </EditorStyleSection>
 

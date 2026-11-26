@@ -617,7 +617,8 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
       ...(stores.length ? ['// Memory data sources: one store per server process, seeded from the model fixtures, never persisted.', ...stores, ''] : []),
       ...clients.flatMap(source => [...sourceClientLines(context, source), '']),
       `/** The ${context.name} module's use-cases${wired.length ? `, wired to ${wired.join(' and ')}` : ''}. */`,
-      `export const ${context.root} = () => {`,
+      // With a REST source, a read route gives its request's signal: when the browser goes away, the call stops (R4b).
+      `export const ${context.root} = (${clients.length ? 'signal?: AbortSignal' : ''}) => {`,
       ...wiring,
       ...(entries.length ? ['  return {', entries.join(',\n'), '  }'] : ['  return {}']),
       '}',

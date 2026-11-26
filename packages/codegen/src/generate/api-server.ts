@@ -190,12 +190,12 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
         .map(entry => importLine(entry.path, [entry.name])),
       '',
       `/** The HTTP client of the "${source.name}" API: it calls the base URL of runtimeConfig.apis.${names.camel}, sending its secret there and nowhere else.${secret ? ' Without its secret it refuses the call.' : ''} */`,
-      `const ${names.client} = (): ApiClient<${names.error}> => {`,
+      `const ${names.client} = (signal?: AbortSignal): ApiClient<${names.error}> => {`,
       `  const config = useRuntimeConfig().apis.${names.camel}`,
       '  const headers: Record<string, string> = { accept: \'application/json\' }',
       ...(secret ? [`  if (config.${secret}) ${auth}`] : []),
       // Nuxt reads an env var as JSON when it can (a numeric secret arrives as a number), hence the String().
-      `  const call = createHttpClient({ baseUrl: config.baseUrl, headers${secret ? `, unconfigured: String(config.${secret} ?? '').trim() === ''` : ''}${clientOptions(source, true)} })`,
+      `  const call = createHttpClient({ baseUrl: config.baseUrl, headers${secret ? `, unconfigured: String(config.${secret} ?? '').trim() === ''` : ''}${clientOptions(source, true)}, signal })`,
       ...(envVar
         ? [
             `  return resultClient(call, failure => failure.notConfigured`,
@@ -205,15 +205,15 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
         : [`  return resultClient(call, failure => remoteFailed(${FAILURE_ARGS}))`]),
       '}',
       '',
-      `/** The use-cases of the "${source.name}" API, wired to its HTTP repository. */`,
-      `export const ${names.root} = () => {`,
+      `/** The use-cases of the "${source.name}" API, wired to its HTTP repository. A read route gives its request's signal: when the browser goes away, the call stops. */`,
+      `export const ${names.root} = (signal?: AbortSignal) => {`,
       // A source whose operations answer nothing has no invalid answer to report: its repository takes no reporter.
       ...(operations.some(operation => operation.result)
         ? [
             '  // The detail of an answer that is not what the model says (field paths, expected types) stays in the server log: the error that reaches the browser has none.',
-            `  const repository = ${names.adapter}(${names.client}(), detail => console.error(${tsString(`The "${source.name}" API answered something unexpected: `)} + detail))`
+            `  const repository = ${names.adapter}(${names.client}(signal), detail => console.error(${tsString(`The "${source.name}" API answered something unexpected: `)} + detail))`
           ]
-        : [`  const repository = ${names.adapter}(${names.client}())`]),
+        : [`  const repository = ${names.adapter}(${names.client}(signal))`]),
       '  return {',
       operations.map(operation => `    ${operation.name}: ${operation.name}({ ${names.camel}: repository })`).join(',\n'),
       '  }',
@@ -308,7 +308,8 @@ const routeFileOf = (source: ApiSource, names: SourceNames, operation: Operation
   const answers = !!operation.result
   const call = params.length && body ? '{ ...params, body }' : params.length ? 'input' : body ? '{ body }' : ''
   // The event also answers the API's Retry-After (R3'b).
-  const use = `unwrapOrThrow(await ${names.root}().${operation.name}(${call}), ${names.status}, event)`
+  // A read stops when its browser goes away; a write is not cut half done (R4b).
+  const use = `unwrapOrThrow(await ${names.root}(${operation.kind === 'query' ? 'event.req.signal' : ''}).${operation.name}(${call}), ${names.status}, event)`
   const paths = apiPaths(names.dir)
   const path = paths.apiRoute(routeFile(operation))
   const contract = contractNamesOf(names, operation)
