@@ -17,7 +17,7 @@ describe('needsRestart', () => {
   })
 
   it('restarts in place when a loaded layer rewrites its nuxt.config', () => {
-    expect(needsRestart({ written: ['layers/core/nuxt.config.ts', 'layers/core/server/utils/remote.ts'], removed: [] }, ['core', 'blog']))
+    expect(needsRestart({ written: ['layers/core/nuxt.config.ts', 'layers/core/server/utils/http-error.ts'], removed: [] }, ['core', 'blog']))
       .toEqual({ hard: false, files: ['layers/core/nuxt.config.ts'] })
   })
 
