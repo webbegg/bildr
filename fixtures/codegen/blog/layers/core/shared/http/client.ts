@@ -58,13 +58,14 @@ const MAX_BYTES = 1_000_000
 const MAX_WAIT_S = 86_400
 
 /**
- * The seconds a Retry-After asks to wait: whole seconds, or an HTTP date (none, once it has passed), at most a day. Anything else is
- * not read. A page reads it only from a source that exposes it (CORS: Access-Control-Expose-Headers).
+ * The seconds a Retry-After asks to wait: whole seconds, or an HTTP date (IMF-fixdate; none, once it has passed), at most a day.
+ * Anything else is not read. A page reads it only from a source that exposes it (CORS: Access-Control-Expose-Headers).
  */
+const HTTP_DATE = /^[A-Z][a-z]{2}, \d{2} [A-Z][a-z]{2} \d{4} \d{2}:\d{2}:\d{2} GMT$/
 const waitOf = (value: string | null): number | undefined => {
   if (value === null) return undefined
   const text = value.trim()
-  const seconds = /^\d+$/.test(text) ? Number(text) : /[a-z]/i.test(text) ? Math.ceil((Date.parse(text) - Date.now()) / 1000) : Number.NaN
+  const seconds = /^\d+$/.test(text) ? Number(text) : HTTP_DATE.test(text) ? Math.ceil((Date.parse(text) - Date.now()) / 1000) : Number.NaN
   return Number.isNaN(seconds) ? undefined : Math.min(Math.max(seconds, 0), MAX_WAIT_S)
 }
 

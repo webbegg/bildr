@@ -58,7 +58,7 @@
     },
     "layers/apis/app/data/api-query.ts": {
       "owner": "managed",
-      "sha256": "bc3a0be1dc7245d8b61536252a61ed8613207fa44bd977a17e052b427f2427e6"
+      "sha256": "7b58bc1fd0ce5b008942f803004272c590116b21099997dc9331fc268e9d5851"
     },
     "layers/apis/app/data/weather.ts": {
       "owner": "managed",
@@ -588,7 +588,7 @@
     },
     "layers/core/shared/http/client.ts": {
       "owner": "managed",
-      "sha256": "a668ed617f29710787ff5c5aed46c14c64b06b14862e85e72e98de447edf7058"
+      "sha256": "a032a7728f85572dc2c13f4c7ecf4ce6886d4dd5a9c55eb8866b414ed00ea21f"
     },
     "layers/core/shared/kernel/ids.ts": {
       "owner": "managed",
@@ -604,7 +604,7 @@
     },
     "layers/core/test/infrastructure/http-client.test.ts": {
       "owner": "managed",
-      "sha256": "93752fdbc9c3e6b44506783a2ac1838d3e54097ad0198aa591de79ffe22a097a"
+      "sha256": "b93bfeca093838306b64413b00ca6cfccdb6689d83a296557de0e0dc95ed6fe8"
     },
     "nuxt.config.ts": {
       "owner": "scaffold",

@@ -197,7 +197,7 @@ describe('generated query helpers, run', () => {
       for (const type of ['invalid_input', 'invalid_answer', 'not_configured']) expect(retry(0, await failing({ type, message: type }))).toBe(false)
     })
 
-    it('waits as long as the source asked (Retry-After), and does not try again a wait over 30 s; else backs off (R3\'b)', async () => {
+    it('waits at least as long as the source asked (Retry-After), and does not try again a wait over 10 s; else backs off (R3\'b)', async () => {
       const failing = async (error: ApiError) => thrown(query(async () => ({ ok: false, error })).observer) as Promise<Error>
       const { retry, retryDelay } = query(async () => ({ ok: true, value: 1 })).observer.options as unknown as {
         retry: (count: number, cause: Error) => boolean
@@ -205,9 +205,12 @@ describe('generated query helpers, run', () => {
       }
       const waiting = (retryAfter?: number) => failing({ type: 'rate_limited', status: 429, message: 'wait', ...(retryAfter === undefined ? {} : { retryAfter }) } as ApiError)
       expect(retryDelay(0, await waiting(5))).toBe(5000)
-      expect(retryDelay(1, await waiting(0))).toBe(0)
-      expect(retry(0, await waiting(30))).toBe(true)
-      expect(retry(0, await waiting(31))).toBe(false)
+      // A wait of 0 (or a date that has passed) is no reason to hammer it: the backoff still applies.
+      expect(retryDelay(1, await waiting(0))).toBe(2000)
+      expect(retryDelay(2, await waiting(1))).toBe(4000)
+      // Three waits of 10 s at most: a rate-limited query shows its error within about half a minute.
+      expect(retry(0, await waiting(10))).toBe(true)
+      expect(retry(0, await waiting(11))).toBe(false)
       expect(retryDelay(0, await waiting())).toBe(1000)
       expect(retryDelay(2, await waiting())).toBe(4000)
       expect(retryDelay(9, new TypeError('offline'))).toBe(30_000)
