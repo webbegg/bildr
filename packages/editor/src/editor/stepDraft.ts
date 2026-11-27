@@ -48,14 +48,25 @@ export interface StepsContext {
   repos: RepoInfo[]
   /** The names a loaded row cannot take: bildr's own code uses them (the action's input and its collections). */
   reserved: Set<string>
+  /** The REST data sources the module's collections read, by name: their failures' names are not the action's to take. */
+  restSources: string[]
 }
+
+/** What a call to a REST data source fails with (`SOURCE_ERRORS` in codegen's `generate/rest-source.ts`, which refuses them as an action's). */
+export const SOURCE_ERROR_TYPES: readonly string[] = ['not_found', 'unauthorized', 'rate_limited', 'timeout', 'unavailable', 'remote_failed', 'invalid_answer']
 
 const RESERVED = ['input', 'data', 'at', 'ok', 'err', 'now', 'undefined', 'result', 'describe', 'expect', 'it', 'Promise', 'Result']
 
 export function contextOf(model: Model, action: ActionFile): StepsContext {
   const repos = repositoriesOf(model, action.id)
   const plurals = repos.map(repo => entityById(model, repo.entity)?.plural).filter((plural): plural is string => plural !== undefined)
-  return { model, action, repos, reserved: new Set([...RESERVED, ...plurals]) }
+  const owner = Object.values(model.modules).find(mod => mod.actions.some(entry => entry.id === action.id))
+  const restSources = [...new Set((owner?.repositories ?? [])
+    .filter(repository => owner!.entities.some(entity => entity.id === repository.entity))
+    .map(repository => model.datasources.find(source => source.id === repository.datasource))
+    .filter(source => source?.kind === 'rest')
+    .map(source => source!.name))].sort()
+  return { model, action, repos, reserved: new Set([...RESERVED, ...plurals]), restSources }
 }
 
 const errorOf = (error: ActionFile['errors'][number]): DraftError => ({
@@ -294,12 +305,16 @@ const unset = (value: unknown) => value === undefined || value === '' || (isObje
 
 /**
  * What is wrong with an error on its own, said once for the error list and for the form that adds one on a step: its name
- * (lowercase, and not one of `taken`, the names declared before it), its HTTP status, its message and what it carries.
+ * (lowercase, not one of `taken`, the names declared before it, nor a failure of the REST `sources` the module reads), its HTTP
+ * status, its message and what it carries.
  */
-export function errorProblems(error: DraftError, taken: ReadonlySet<string>): string[] {
+export function errorProblems(error: DraftError, taken: ReadonlySet<string>, sources: readonly string[] = []): string[] {
   const found: string[] = []
   if (!/^[a-z][a-z0-9_]*$/.test(error.type)) found.push('Use a name like “slug_taken”: lowercase letters, digits and _')
   else if (taken.has(error.type)) found.push(`“${error.type}” is already declared`)
+  else if (sources.length && SOURCE_ERROR_TYPES.includes(error.type)) {
+    found.push(`“${error.type}” is what a call to the ${sources.map(source => `“${source}”`).join(', ')} ${sources.length > 1 ? 'data sources fail' : 'data source fails'} with: name it another way`)
+  }
   if (!/^\d+$/.test(error.status.trim()) || Number(error.status) < 400 || Number(error.status) > 599) found.push('The status is an HTTP error code, from 400 to 599')
   if (error.message.trim() === '') found.push('Add the message the client gets')
   error.data.forEach((entry, at) => {
@@ -431,7 +446,7 @@ export function problemsOf(draft: StepsDraft, ctx: StepsContext): StepProblem[] 
   }
 
   draft.errors.forEach((error, index) => {
-    for (const message of errorProblems(error, new Set(draft.errors.slice(0, index).map(other => other.type)))) found.push({ error: index, message })
+    for (const message of errorProblems(error, new Set(draft.errors.slice(0, index).map(other => other.type)), ctx.restSources)) found.push({ error: index, message })
   })
   return found
 }

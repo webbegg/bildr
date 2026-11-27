@@ -1,8 +1,8 @@
 import { parseStyleKey } from '../../design/tokens.ts'
 import type { ComponentFile, ModelNode, PropertyDef, Value } from '../../model/schemas.ts'
-import { DEFAULT_TRANSITION, FILL, fillStyle, transitionTimingClasses } from '../../render/rules.ts'
+import { DEFAULT_TRANSITION, FILL, fillStyle, stateTimingClasses, transitionTimingClasses } from '../../render/rules.ts'
 import { camel, kebab, tsString } from '../text.ts'
-import type { Env, Variant } from './env.ts'
+import type { Env, PointerState, Variant } from './env.ts'
 import { fail, isObject } from './env.ts'
 import { attr, staticAttr } from './markup.ts'
 import { changedKeys } from './style.ts'
@@ -140,13 +140,18 @@ export const variantsOf = (env: Env, component: ComponentFile, nodes: Map<string
       const pressed = stateOf(base.id, 'pressed')
       const hoverStyle = hover ? styleOf.get(hover.name)! : at
       const hoverKeys = changedKeys(at, hoverStyle)
-      const entries: Array<{ prefix: string, style: Record<string, string>, keys: string[] }> = hoverKeys.length ? [{ prefix: hoverPrefix, style: hoverStyle, keys: hoverKeys }] : []
+      // The timing of each: a state animates its way in with its own transition (`stateTimingClasses`).
+      const baseTiming = timing?.get(base.name) ?? ''
+      const hoverTiming = hover && hoverKeys.length ? timing?.get(hover.name) : undefined
+      const entries: PointerState[] = hoverKeys.length
+        ? [{ prefix: hoverPrefix, style: hoverStyle, keys: hoverKeys, timing: hoverTiming === undefined ? undefined : stateTimingClasses(hoverTiming, baseTiming, hoverPrefix) }]
+        : []
       if (pressed) {
         // Pressed wins over hover: it restates every key hover changes, so each needs a value.
         const pressedStyle = styleOf.get(pressed.name)!
         const keys = [...new Set([...changedKeys(at, pressedStyle), ...hoverKeys])]
         if (keys.some(key => pressedStyle[key] === undefined)) css = false
-        if (keys.length) entries.push({ prefix: pressedPrefix, style: pressedStyle, keys })
+        if (keys.length) entries.push({ prefix: pressedPrefix, style: pressedStyle, keys, timing: timing && stateTimingClasses(timing.get(pressed.name) ?? '', baseTiming, pressedPrefix, hoverTiming) })
       }
       if (entries.length) pointer.set(base.name, entries)
     }

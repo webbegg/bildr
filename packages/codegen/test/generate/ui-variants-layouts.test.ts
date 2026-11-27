@@ -140,6 +140,31 @@ describe('generateUi: variants', () => {
     expect(code).not.toContain('useVariantState')
   })
 
+  // CSS reads a transition from the style it goes to: under hover:, the hover state's own timing animates the way in.
+  it('animates the way into a state with the state\'s own transition, and pressed restates the base\'s over it', () => {
+    const code = badgeOut((component) => {
+      component.variants.push(
+        { id: 'var_hover', name: 'hovered', overrides: { n_badge: { style: { px: '3' } } }, state: { of: '', kind: 'hover' }, transition: { type: 'ease', duration: 0.5, easing: 'linear' } },
+        { id: 'var_pressed', name: 'pressed', overrides: { n_badge: { style: { px: '4' } } }, state: { of: '', kind: 'pressed' } }
+      )
+      component.transition = { type: 'ease', duration: 0.2, easing: 'ease-out' }
+    })
+    const root = /<div class="([^"]*)" :class="badgeBgClasses\[props.tone\]">/.exec(code)?.[1]?.split(' ') ?? []
+    expect(root).toEqual(expect.arrayContaining(['duration-200', 'ease-[ease-out]', 'motion-reduce:duration-0', 'hover:duration-500', 'hover:ease-linear', 'hover:motion-reduce:duration-0', 'active:duration-200', 'active:ease-[ease-out]', 'active:motion-reduce:duration-0']))
+    // A state with the base's timing adds none.
+    const same = badgeOut((component) => {
+      component.variants.push({ id: 'var_hover', name: 'hovered', overrides: { n_badge: { style: { px: '3' } } }, state: { of: '', kind: 'hover' }, transition: { type: 'ease', duration: 0.2, easing: 'ease-out' } })
+      component.transition = { type: 'ease', duration: 0.2, easing: 'ease-out' }
+    })
+    expect(same).not.toContain('hover:duration')
+    // An instant state: no time on the way in, on a descendant too (its group prefix).
+    const instant = badgeOut((component) => {
+      component.root.children[0].style = { color: 'muted' }
+      component.variants.push({ id: 'var_hover', name: 'hovered', overrides: { n_badge_text: { style: { color: 'primary' } } }, state: { of: '', kind: 'hover' }, transition: { type: 'instant' } })
+    })
+    expect(instant).toContain('group-hover/badge:duration-0')
+  })
+
   it('renders hover and pressed states on a descendant with group classes from the root', () => {
     const code = badgeOut((component) => {
       component.root.children[0].style = { color: 'muted' }

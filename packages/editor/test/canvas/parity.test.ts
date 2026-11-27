@@ -137,6 +137,17 @@ describe('canvas render parity with the generated app', () => {
     expect(canvas(component('PostCard'), { post: draft }, { id: 'var_hovered', label: 'hovered' })).toEqual(normalized(hovered))
   })
 
+  it('PostCard component file, a hover state with its own transition: its timing under hover:, on both sides', () => {
+    const changed = model()
+    const card = changed.modules.blog!.components.find(entry => entry.name === 'PostCard')!
+    card.variants.find(variant => variant.id === 'var_hovered')!.transition = { type: 'ease', duration: 0.5, easing: 'linear' }
+    const sfcOf = loadSfc(generateUi(changed).find(file => file.path === 'layers/blog/app/components/blog/PostCard.vue')!.content)
+    const generated = renderGenerated(app, sfcOf, { props: { ...sfcOf.defaults, post: draft }, variant: 'default', $slots: {} })
+    const rendered = normalized(planElements(renderPlan({ file: card, components: changed.modules.blog!.components, layouts: changed.layouts, data: { post: draft } })))
+    expect(rendered).toEqual(normalized(generated))
+    expect(rendered[0]).toContain('hover:duration-500 hover:ease-linear hover:motion-reduce:duration-0')
+  })
+
   it.each([
     ['default', undefined],
     ['collapsed', { id: 'var_collapsed', label: 'collapsed' }]

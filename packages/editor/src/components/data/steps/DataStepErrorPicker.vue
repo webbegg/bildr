@@ -11,12 +11,14 @@ import type { StepScope } from '../../../editor/stepScope.ts'
  * spot, or, for a load, none (it carries on without the row), and a value for each thing the error carries (`errorData`). It does
  * not change the step: it says what would change (`change`), and an error added here (`add-error`) is added to the draft first.
  */
-const { step, field, scope, errors, label, help } = defineProps<{
+const { step, field, scope, errors, sources = [], label, help } = defineProps<{
   step: Step
   /** The part of the step that names the error. */
   field: 'error' | 'orError'
   scope: StepScope
   errors: DraftError[]
+  /** The REST data sources the module reads (`StepsContext.restSources`): a new error may not take their failures' names. */
+  sources?: readonly string[]
   label: string
   help?: string
 }>()
@@ -43,7 +45,7 @@ const dataFor = (type: string) => Object.fromEntries((errors.find(error => error
 
 const adding = ref(false)
 const fresh = reactive({ type: '', status: '422', message: '' })
-const problem = computed(() => errorProblems({ ...fresh, data: [] }, new Set(errors.map(error => error.type)))[0] ?? '')
+const problem = computed(() => errorProblems({ ...fresh, data: [] }, new Set(errors.map(error => error.type)), sources)[0] ?? '')
 
 function pick(type: string) {
   if (type === NEW) {

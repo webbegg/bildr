@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { applyEdit } from '@bildr/codegen/edit'
 import { loadModel, serializeModel } from '@bildr/codegen/model'
 import type { ActionFile, Model } from '@bildr/codegen/model'
-import { ADDABLE_KINDS, addError, addStep, changedOutside, changesOf, contextOf, draftOf, duplicateStep, errorProblems, moveStep, problemsOf, rebaseDraft, removeStep, renameError, renameLoad, stepsNamed } from '../../src/editor/stepDraft.ts'
+import { SOURCE_ERRORS } from '../../../codegen/src/generate/rest-source.ts'
+import { ADDABLE_KINDS, SOURCE_ERROR_TYPES, addError, addStep, changedOutside, changesOf, contextOf, draftOf, duplicateStep, errorProblems, moveStep, problemsOf, rebaseDraft, removeStep, renameError, renameLoad, stepsNamed } from '../../src/editor/stepDraft.ts'
 import type { StepsDraft } from '../../src/editor/stepDraft.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 
@@ -311,6 +312,23 @@ describe('errorProblems', () => {
     expect(at(0)).toEqual(errorProblems(draft.errors[0]!, new Set()))
     expect(at(1)).toEqual(errorProblems(draft.errors[1]!, new Set(['slug_taken'])))
     expect(at(2)).toEqual(errorProblems(draft.errors[2]!, new Set(['slug_taken', 'other'])))
+  })
+
+  it('the failures of a REST source are its: an error of a module that reads one may not take their names (as the generator refuses)', () => {
+    expect([...SOURCE_ERROR_TYPES]).toEqual(SOURCE_ERRORS.map(entry => entry.type))
+    expect(contextOf(model, create()).restSources).toEqual(['quotes'])
+    const taken = '“rate_limited” is what a call to the “quotes” data source fails with: name it another way'
+    expect(errorProblems(error({ type: 'rate_limited' }), new Set(), ['quotes'])).toEqual([taken])
+    expect(errorProblems(error({ type: 'rate_limited' }), new Set())).toEqual([])
+    const action = create()
+    const draft = draftOf(action)
+    draft.errors = [...draft.errors, error({ type: 'rate_limited' })]
+    expect(problemsOf(draft, contextOf(model, action)).filter(problem => problem.error === 1).map(problem => problem.message)).toEqual([taken])
+  })
+
+  it('and the module refuses such an error too', () => {
+    const outcome = applyEdit(blogModelFiles(), 'action_update', { action: 'act_create_post', errors: [...create().errors, { type: 'not_found', status: 404, message: 'Gone.' }] })
+    expect(outcome.ok ? 'accepted' : outcome.message).toContain('the error type "not_found" is a REST data source\'s ("quotes")')
   })
 })
 

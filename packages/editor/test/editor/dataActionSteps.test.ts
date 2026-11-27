@@ -270,6 +270,10 @@ describe('Action Steps (S10, D10c)', () => {
       await typeInto(q('[data-new-error="message"]'), 'Not allowed.')
       expect(text(q('[data-new-error-problem]'))).toBe('Use a name like “slug_taken”: lowercase letters, digits and _')
       expect(q('[data-new-error-add]')?.hasAttribute('disabled')).toBe(true)
+      // The blog reads the "quotes" REST source: what a call to it fails with is its name, not the action's.
+      await typeInto(q('[data-new-error="type"]'), 'timeout')
+      expect(text(q('[data-new-error-problem]'))).toBe('“timeout” is what a call to the “quotes” data source fails with: name it another way')
+      expect(q('[data-new-error-add]')?.hasAttribute('disabled')).toBe(true)
       await typeInto(q('[data-new-error="type"]'), 'not_allowed')
       await typeInto(q('[data-new-error="status"]'), '403')
       await click(q('[data-new-error-add]'))
@@ -607,6 +611,8 @@ describe('Action Steps (S10, D10c)', () => {
       expect(qa('[data-error-row="1"] [data-error-problem]').map(text)).toEqual(['“slug_taken” is already declared', 'The status is an HTTP error code, from 400 to 599', 'Add the message the client gets'])
       await typeInto(q('[data-error-row="1"] [data-error-field="type"]'), 'Slug Taken')
       expect(text(q('[data-error-row="1"] [data-error-problem]'))).toBe('Use a name like “slug_taken”: lowercase letters, digits and _')
+      await typeInto(q('[data-error-row="1"] [data-error-field="type"]'), 'not_found')
+      expect(text(q('[data-error-row="1"] [data-error-problem]'))).toBe('“not_found” is what a call to the “quotes” data source fails with: name it another way')
     })
   })
 

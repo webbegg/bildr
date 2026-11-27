@@ -45,6 +45,7 @@ const emit = defineEmits<{ 'update:step': [step: Step], 'add-error': [error: Par
     field="orError"
     :scope="scope"
     :errors="errors"
+    :sources="ctx.restSources"
     label="If there is none"
     help="Refuses with an error, or carries on without the row"
     @change="emit('update:step', patched(step, $event))"

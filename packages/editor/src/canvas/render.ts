@@ -4,7 +4,7 @@ import type { ComponentFile, LayoutFile, ModelNode, PageFile, PropertyDef, Value
 import {
   animatedProperties, CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, containerTag, DEFAULT_HEADING_LEVEL,
   DEFAULT_TRANSITION, displayOf, fallbackStyle, FILL, fillStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, isSafeUrl, LINK_CLASS,
-  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, selfFallback, structuralStyle, textClasses, transitionTimingClasses,
+  LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, selfFallback, stateTimingClasses, structuralStyle, textClasses, transitionTimingClasses,
   formatValue
 } from '@bildr/codegen/render'
 import type { LayoutParent, ValueFormats } from '@bildr/codegen/render'
@@ -190,7 +190,8 @@ const stringOf = (value: Value | undefined, scope: Scope): string | undefined =>
 type Override = ComponentFile['variants'][number]['overrides'][string]
 type VariantDef = ComponentFile['variants'][number]
 
-interface Pointer { prefix: string, style: Record<string, string>, keys: string[] }
+/** The generator's `PointerState`: a state CSS shows, with its own timing (prefixed) when it is not its base's. */
+interface Pointer { prefix: string, style: Record<string, string>, keys: string[], timing?: string }
 interface NodeVariants {
   styles: Map<string, Record<string, string>>
   pointer: Map<string, Pointer[]>
@@ -303,12 +304,16 @@ const componentShell = (component: ComponentFile, base?: BreakpointBase): Shell 
         const pressed = stateOf(base.id, 'pressed')
         const hoverStyle = hover ? styles.get(hover.name)! : at
         const hoverKeys = changedKeys(at, hoverStyle)
-        const entries: Pointer[] = hoverKeys.length ? [{ prefix: hoverPrefix, style: hoverStyle, keys: hoverKeys }] : []
+        const baseTiming = timing?.get(base.name) ?? ''
+        const hoverTiming = hover && hoverKeys.length ? timing?.get(hover.name) : undefined
+        const entries: Pointer[] = hoverKeys.length
+          ? [{ prefix: hoverPrefix, style: hoverStyle, keys: hoverKeys, timing: hoverTiming === undefined ? undefined : stateTimingClasses(hoverTiming, baseTiming, hoverPrefix) }]
+          : []
         if (pressed) {
           const pressedStyle = styles.get(pressed.name)!
           const keys = [...new Set([...changedKeys(at, pressedStyle), ...hoverKeys])]
           if (keys.some(key => pressedStyle[key] === undefined)) css = false
-          if (keys.length) entries.push({ prefix: pressedPrefix, style: pressedStyle, keys })
+          if (keys.length) entries.push({ prefix: pressedPrefix, style: pressedStyle, keys, timing: timing && stateTimingClasses(timing.get(pressed.name) ?? '', baseTiming, pressedPrefix, hoverTiming) })
         }
         if (entries.length) pointer.set(base.name, entries)
       }
@@ -412,7 +417,7 @@ const styleOf = (frame: Frame, node: ModelNode, { display = '', fallback = {}, c
     const entry = variant.styles.get(name) ?? style
     classes.push(
       styleClasses(only({ ...fallback, ...entry })),
-      ...(variant.pointer.get(name) ?? []).map(state => prefixedClasses(only({ ...fallback, ...state.style }, state.keys), state.prefix)),
+      ...(variant.pointer.get(name) ?? []).flatMap(state => [prefixedClasses(only({ ...fallback, ...state.style }, state.keys), state.prefix), animated.length && state.timing ? state.timing : '']),
       animated.length && !sharedTiming ? variant.timing!.get(name) || 'duration-0' : ''
     )
   }
