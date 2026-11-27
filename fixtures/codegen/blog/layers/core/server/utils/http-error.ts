@@ -5,10 +5,12 @@ import type { DomainError, ErrorStatusMap, Result } from '#core/kernel/result'
 
 /**
  * HTTP adapter for use-case results: return the value, or throw the domain error as an HTTP error. Given the route's `event`, a 503
- * whose error says how long to wait (`retryAfter`, a remote source's Retry-After) answers the same Retry-After.
+ * whose error says how long to wait (`retryAfter`, a remote source's Retry-After) answers the same Retry-After, and a call that failed
+ * because its browser went away (the request's signal) answers 499: not a server error, which Nuxt would report as one.
  */
-export const unwrapOrThrow = <T, E extends DomainError>(result: Result<T, E>, statuses: ErrorStatusMap, event?: Pick<RequestEvent, 'res'>): T => {
+export const unwrapOrThrow = <T, E extends DomainError>(result: Result<T, E>, statuses: ErrorStatusMap, event?: { req?: { signal?: AbortSignal } } & Pick<RequestEvent, 'res'>): T => {
   if (result.ok) return result.value
+  if (event?.req?.signal?.aborted) throw createError({ status: 499, message: 'The client closed the request' })
   const status = statuses[result.error.type] ?? 400 // unknown types become 400
   const wait = (result.error as { retryAfter?: unknown }).retryAfter
   if (event && status === 503 && typeof wait === 'number') event.res.headers.set('retry-after', String(wait))

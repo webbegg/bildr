@@ -13,17 +13,17 @@ import { drizzlePostRepository } from '../infrastructure/repositories/post.drizz
 import { restQuoteRepository } from '../infrastructure/repositories/quote.rest'
 
 /** The client of the "quotes" REST data source: its base URL and secret come from runtimeConfig.datasources (env), and the secret is sent there only. */
-const quotesClient = (): ApiClient<QuotesSourceError> => {
+const quotesClient = (signal?: AbortSignal): ApiClient<QuotesSourceError> => {
   const { baseUrl, apiKey } = useRuntimeConfig().datasources.quotes
   const headers: Record<string, string> = { accept: 'application/json' }
   if (apiKey) headers.authorization = `Bearer ${apiKey}`
-  return resultClient(createHttpClient({ baseUrl, headers, retries: 2 }), failure => quotesFailed(failure.type, failure.status, failure.message, failure.retryAfter))
+  return resultClient(createHttpClient({ baseUrl, headers, retries: 2, signal }), failure => quotesFailed(failure.type, failure.status, failure.message, failure.retryAfter))
 }
 
 /** The blog module's use-cases, wired to the app database and the "quotes" data source. */
-export const useBlog = () => {
+export const useBlog = (signal?: AbortSignal) => {
   const posts = drizzlePostRepository(useDb())
-  const quotes = restQuoteRepository(quotesClient(), detail => console.error('The "quotes" data source answered something unexpected: ' + detail))
+  const quotes = restQuoteRepository(quotesClient(signal), detail => console.error('The "quotes" data source answered something unexpected: ' + detail))
   return {
     listPosts: listPosts({ posts }),
     createPost: createPost({ posts }),

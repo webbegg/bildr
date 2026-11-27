@@ -81,17 +81,17 @@
     },
     "layers/apis/server/api/apis/catalog/product.get.ts": {
       "owner": "managed",
-      "sha256": "693388e524945cce806264a561ea5f94e53fb5ba30bc3de299f948878fb31324",
+      "sha256": "da1610980e0927435f16d092c83177e2bcc9768e0e19ebf43652ab53240a92f1",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/server/api/apis/catalog/products.get.ts": {
       "owner": "managed",
-      "sha256": "c7754c13c13639875ec3925f1df6bb0d6f0aadbdfec9e2394090386ee7d35abc",
+      "sha256": "0b3cfbb143927b5dead5b5bf7fb970a96216119a3ca24e3a40f46cf5c9702082",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/server/utils/catalog.ts": {
       "owner": "managed",
-      "sha256": "c7fbebc7f13c1fdb502a46a45cfbeb00b03215ce2acf5d147cd1f1a5097b60e5",
+      "sha256": "3a29ed375495379f923d2ce01522d08dc64b0f88ea9ebe1f63b1625729959456",
       "source": ".bildr/datasources/catalog.json"
     },
     "layers/apis/shared/application/catalog/actions/create-product.ts": {
@@ -401,7 +401,7 @@
     },
     "layers/blog/server/api/blog/quotes/index.get.ts": {
       "owner": "managed",
-      "sha256": "dd0209c5b8cac43425a14066623f9870a42bdf6d67e120fc979b51a917582b0d",
+      "sha256": "5c472b592bbcd1152b08b51b2270e44b2317b57a2b2a8af47eefdbdb897f2bf6",
       "source": ".bildr/modules/blog/repositories/quote.json"
     },
     "layers/blog/server/application/actions/create-post.ts": {
@@ -466,7 +466,7 @@
     },
     "layers/blog/server/utils/blog.ts": {
       "owner": "managed",
-      "sha256": "f7887b62581519160210a6b555011887199ddc68130e8fe647567b2dc4220fa4",
+      "sha256": "08476fa507f626ca15486a0941587df27dfd8c4caed30743a68ad5d8773969bd",
       "source": ".bildr/modules/blog"
     },
     "layers/blog/shared/contracts/create-post.ts": {
@@ -580,7 +580,7 @@
     },
     "layers/core/server/utils/http-error.ts": {
       "owner": "managed",
-      "sha256": "a106b9f169331bee4be713df1b5f9084c8fd946c24a1eeb6f963c128da7941fb"
+      "sha256": "9652c0665d7a1d8e8b9213d6d5bcf49b214a9e723feae9c8aba3c66a65d35e1d"
     },
     "layers/core/shared/http/api-client.ts": {
       "owner": "managed",
@@ -588,7 +588,7 @@
     },
     "layers/core/shared/http/client.ts": {
       "owner": "managed",
-      "sha256": "0943093019732c7d5fba5749a2d28dfb3d1346fae61202d4a19c56d94a2da69f"
+      "sha256": "2acfaaeefaa51e8ed8bc69100b06734de44a09292719518aece76a8c34f8dd91"
     },
     "layers/core/shared/kernel/ids.ts": {
       "owner": "managed",
@@ -604,7 +604,7 @@
     },
     "layers/core/test/infrastructure/http-client.test.ts": {
       "owner": "managed",
-      "sha256": "b329619039d6f893d5c52a650ace89f536efb961c67f26e95e73d6a6faf5a16b"
+      "sha256": "53f0c628953e296f2836d5aaf13082ea50152f3f045772a50c779347c5665676"
     },
     "nuxt.config.ts": {
       "owner": "scaffold",

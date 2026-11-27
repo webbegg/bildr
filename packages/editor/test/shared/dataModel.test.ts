@@ -69,8 +69,12 @@ describe('connectionsOf', () => {
       name: 'quotes',
       baseUrl: 'https://dummyjson.com',
       baseUrlEnv: 'NUXT_DATASOURCES_QUOTES_BASE_URL',
-      auth: { type: 'bearer', secret: 'apiKey', env: 'NUXT_DATASOURCES_QUOTES_API_KEY' }
+      auth: { type: 'bearer', secret: 'apiKey', env: 'NUXT_DATASOURCES_QUOTES_API_KEY' },
+      timeout: undefined
     }])
+    const model = load()
+    model.datasources.find(source => source.id === 'ds_quotes')!.timeout = 5
+    expect(connectionsOf(model)[0]!.timeout).toBe(5)
   })
 })
 

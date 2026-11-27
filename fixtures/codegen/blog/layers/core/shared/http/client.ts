@@ -137,17 +137,22 @@ const decoded = (path: string): string => {
 }
 
 /** The signals as one that aborts when any of them does: `AbortSignal.any`, or by hand in a browser that has none yet. */
-const anyOf = (signals: AbortSignal[]): AbortSignal => {
-  if (typeof AbortSignal.any === 'function') return AbortSignal.any(signals)
+const anyOf = (signals: AbortSignal[]): { signal: AbortSignal, release: () => void } => {
+  if (typeof AbortSignal.any === 'function') return { signal: AbortSignal.any(signals), release: () => {} }
   const joined = new AbortController()
+  // A caller's signal outlives the try: its listener is taken off when the try ends.
+  const listening: Array<() => void> = []
+  const release = () => listening.splice(0).forEach(stop => stop())
   for (const signal of signals) {
     if (signal.aborted) {
       joined.abort(signal.reason)
       break
     }
-    signal.addEventListener('abort', () => joined.abort(signal.reason), { once: true })
+    const abort = () => joined.abort(signal.reason)
+    signal.addEventListener('abort', abort, { once: true })
+    listening.push(() => signal.removeEventListener('abort', abort))
   }
-  return joined.signal
+  return { signal: joined.signal, release }
 }
 
 export interface HttpClientOptions {
@@ -232,45 +237,58 @@ const tryOnce = ({ baseUrl, headers = {}, unconfigured = false, signal: cancel, 
     }
     const sent = sentHeaders(headers, given, body !== undefined)
     const timeout = AbortSignal.timeout(left)
-    const signal = cancel ? anyOf([cancel, timeout]) : timeout
-    // A browser says nothing more about a failed call (a refusal by CORS looks like a network error).
-    const unreachable = !('window' in globalThis) ? 'couldn\'t be reached' : 'couldn\'t be reached, or doesn\'t allow calls from this page'
-    const gone = () => timeout.aborted
-      ? new HttpFailure(0, `didn't answer within ${timeoutMs / 1000} s`, 'timeout')
-      : cancel?.aborted ? new HttpFailure(0, 'was cancelled', 'cancelled') : new HttpFailure(0, unreachable, 'unreachable')
-    let response: Response
+    const { signal, release } = cancel ? anyOf([cancel, timeout]) : { signal: timeout, release: () => {} }
     try {
-      response = await fetch(url, {
-        method,
-        headers: sent,
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        // A redirect is never followed: the browser answers an "opaqueredirect" (status 0), a server-side fetch the 3xx itself.
-        redirect: 'manual',
-        credentials: 'omit',
-        signal
-      })
-    } catch {
-      throw gone()
-    }
-    if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
-      await response.body?.cancel()
-      throw new HttpFailure(response.status, response.status ? `answered ${response.status}: a redirect is not followed` : 'answered a redirect, which is not followed')
-    }
-    if (!response.ok) {
-      await response.body?.cancel()
-      const wait = response.status === 429 || response.status === 503 ? waitOf(response.headers.get('retry-after')) : undefined
-      throw new HttpFailure(response.status, `answered ${response.status}`, 'answered', wait)
-    }
-    let text: string
-    try {
-      text = await readCapped(response)
-    } catch (cause) {
-      throw cause instanceof HttpFailure ? cause : gone()
-    }
-    if (!text) return undefined
-    try {
-      return JSON.parse(text) as unknown
-    } catch {
-      throw new HttpFailure(response.status, 'answered without JSON')
+      return await answerOf(url, { method, headers: sent, body, signal }, () => timeout.aborted
+        ? new HttpFailure(0, `didn't answer within ${timeoutMs / 1000} s`, 'timeout')
+        : cancel?.aborted ? new HttpFailure(0, 'was cancelled', 'cancelled') : undefined)
+    } finally {
+      release()
     }
   }
+
+/** Sends one try and reads its answer; `stopped` says why its signal aborted (else it could not reach the source). */
+const answerOf = async (
+  url: URL,
+  { method, headers: sent, body, signal }: { method: HttpRequest['method'], headers: Headers, body: unknown, signal: AbortSignal },
+  stopped: () => HttpFailure | undefined
+): Promise<unknown> => {
+  // A browser says nothing more about a failed call (a refusal by CORS looks like a network error).
+  const unreachable = !('window' in globalThis) ? 'couldn\'t be reached' : 'couldn\'t be reached, or doesn\'t allow calls from this page'
+  const gone = () => stopped() ?? new HttpFailure(0, unreachable, 'unreachable')
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method,
+      headers: sent,
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      // A redirect is never followed: the browser answers an "opaqueredirect" (status 0), a server-side fetch the 3xx itself.
+      redirect: 'manual',
+      credentials: 'omit',
+      signal
+    })
+  } catch {
+    throw gone()
+  }
+  if (response.type === 'opaqueredirect' || (response.status >= 300 && response.status < 400)) {
+    await response.body?.cancel()
+    throw new HttpFailure(response.status, response.status ? `answered ${response.status}: a redirect is not followed` : 'answered a redirect, which is not followed')
+  }
+  if (!response.ok) {
+    await response.body?.cancel()
+    const wait = response.status === 429 || response.status === 503 ? waitOf(response.headers.get('retry-after')) : undefined
+    throw new HttpFailure(response.status, `answered ${response.status}`, 'answered', wait)
+  }
+  let text: string
+  try {
+    text = await readCapped(response)
+  } catch (cause) {
+    throw cause instanceof HttpFailure ? cause : gone()
+  }
+  if (!text) return undefined
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    throw new HttpFailure(response.status, 'answered without JSON')
+  }
+}

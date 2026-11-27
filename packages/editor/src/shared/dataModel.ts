@@ -87,6 +87,8 @@ export interface DataConnection {
   /** The env var that overrides the base URL at runtime. */
   baseUrlEnv: string | undefined
   auth: { type: 'bearer' | 'header', secret: string, header?: string, env: string | undefined } | undefined
+  /** How long a call may wait for its answer, in seconds; undefined for the generated client's 10 s. */
+  timeout: number | undefined
 }
 
 /** A new connection's base URL until it is set in the right panel (a data source needs one). */
@@ -214,7 +216,8 @@ export const connectionsOf = (model: Model): DataConnection[] =>
     name: source.name,
     baseUrl: source.defaults?.baseUrl ?? '',
     baseUrlEnv: source.env.baseUrl,
-    auth: source.auth ? { type: source.auth.type, secret: source.auth.secret, ...(source.auth.header ? { header: source.auth.header } : {}), env: source.env[source.auth.secret] } : undefined
+    auth: source.auth ? { type: source.auth.type, secret: source.auth.secret, ...(source.auth.header ? { header: source.auth.header } : {}), env: source.env[source.auth.secret] } : undefined,
+    timeout: source.timeout
   }))
 
 /** A query, an action or a state as the Data tree lists it: its label (the name when it has none) and the collection it works on (a state has none). */

@@ -11,20 +11,20 @@ import { product } from '../../shared/application/catalog/queries/product'
 import { products } from '../../shared/application/catalog/queries/products'
 
 /** The HTTP client of the "catalog" API: it calls the base URL of runtimeConfig.apis.catalog, sending its secret there and nowhere else. Without its secret it refuses the call. */
-const catalogClient = (): ApiClient<CatalogError> => {
+const catalogClient = (signal?: AbortSignal): ApiClient<CatalogError> => {
   const config = useRuntimeConfig().apis.catalog
   const headers: Record<string, string> = { accept: 'application/json' }
   if (config.apiKey) headers.authorization = `Bearer ${config.apiKey}`
-  const call = createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? '').trim() === '', retries: 2 })
+  const call = createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? '').trim() === '', retries: 2, signal })
   return resultClient(call, failure => failure.notConfigured
     ? { type: 'not_configured', message: 'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY' }
     : remoteFailed(failure.type, failure.status, failure.message, failure.retryAfter))
 }
 
-/** The use-cases of the "catalog" API, wired to its HTTP repository. */
-export const useCatalogApi = () => {
+/** The use-cases of the "catalog" API, wired to its HTTP repository. A read route gives its request's signal: when the browser goes away, the call stops. */
+export const useCatalogApi = (signal?: AbortSignal) => {
   // The detail of an answer that is not what the model says (field paths, expected types) stays in the server log: the error that reaches the browser has none.
-  const repository = httpCatalogRepository(catalogClient(), detail => console.error('The "catalog" API answered something unexpected: ' + detail))
+  const repository = httpCatalogRepository(catalogClient(signal), detail => console.error('The "catalog" API answered something unexpected: ' + detail))
   return {
     products: products({ catalog: repository }),
     product: product({ catalog: repository }),

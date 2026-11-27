@@ -155,7 +155,7 @@ describe('generateActions rules', () => {
     const root = generateActions(model).find(file => file.path.endsWith('utils/blog.ts'))!.content
     expect(root).not.toContain('const posts')
     expect(root).not.toContain('drizzlePostRepository')
-    expect(root).toContain('  const quotes = restQuoteRepository(quotesClient(), ')
+    expect(root).toContain('  const quotes = restQuoteRepository(quotesClient(signal), ')
     expect(root).toContain('const quotesClient = ')
     expect(root).toContain('/** The blog module\'s use-cases, wired to the "quotes" data source. */\n')
     // Nothing consumed at all: no adapter, no wiring claim.

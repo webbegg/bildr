@@ -97,7 +97,7 @@ describe('golden API-only project: the generated files', () => {
     expect(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter(name => /drizzle|libsql/.test(name))).toEqual([])
     // A REST repository that looks up and writes answers a Result too (codegen-architecture R1'): wired to its source's client.
     const root = files.find(file => file.path === 'layers/main/server/utils/main.ts')!.content
-    expect(root).toContain('const tasks = restTaskRepository(apiClient(), detail => console.error(')
+    expect(root).toContain('const tasks = restTaskRepository(apiClient(signal), detail => console.error(')
     expect(root).not.toContain('useRemote')
   })
 

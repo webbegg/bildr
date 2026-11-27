@@ -80,19 +80,19 @@ describe('a list-only REST repository answers a Result', () => {
   it('the composition root builds the source\'s client from runtimeConfig, and logs an invalid answer\'s detail on the server', () => {
     const root = content(`${BLOG}/server/utils/blog.ts`)!
     expect(root).toContain([
-      'const quotesClient = (): ApiClient<QuotesSourceError> => {',
+      'const quotesClient = (signal?: AbortSignal): ApiClient<QuotesSourceError> => {',
       '  const { baseUrl, apiKey } = useRuntimeConfig().datasources.quotes',
       '  const headers: Record<string, string> = { accept: \'application/json\' }',
       '  if (apiKey) headers.authorization = `Bearer ${apiKey}`',
-      '  return resultClient(createHttpClient({ baseUrl, headers, retries: 2 }), failure => quotesFailed(failure.type, failure.status, failure.message, failure.retryAfter))',
+      '  return resultClient(createHttpClient({ baseUrl, headers, retries: 2, signal }), failure => quotesFailed(failure.type, failure.status, failure.message, failure.retryAfter))',
       '}'
     ].join('\n'))
-    expect(root).toContain('  const quotes = restQuoteRepository(quotesClient(), detail => console.error(\'The "quotes" data source answered something unexpected: \' + detail))\n')
+    expect(root).toContain('  const quotes = restQuoteRepository(quotesClient(signal), detail => console.error(\'The "quotes" data source answered something unexpected: \' + detail))\n')
     expect(root).not.toContain('useRemote')
   })
 
   it('the list route answers the page, or throws the source\'s error with its status', () => {
-    expect(content(`${BLOG}/server/api/blog/quotes/index.get.ts`)).toContain('  return unwrapOrThrow(await useBlog().listQuotes(page), blogErrorStatus, event)\n')
+    expect(content(`${BLOG}/server/api/blog/quotes/index.get.ts`)).toContain('  return unwrapOrThrow(await useBlog(event.req.signal).listQuotes(page), blogErrorStatus, event)\n')
   })
 
   it('its generated test passes, for fields whose rules a name is not a value of (a uuid key, a moment, an email, a minimum length)', async () => {
@@ -151,8 +151,8 @@ describe('a list-only REST repository answers a Result', () => {
     const at = (path: string) => generated.find(file => file.path === path)?.content ?? ''
     expect(at(`${BLOG}/shared/domain/errors.ts`)).toContain('  | MyApiSourceError\n  | QuotesSourceError\n')
     const root = at(`${BLOG}/server/utils/blog.ts`)
-    expect(root).toContain('const myApiClient = (): ApiClient<MyApiSourceError> => {\n  const { baseUrl, apiKey } = useRuntimeConfig().datasources[\'my-api\']\n')
-    expect(root).toContain('  const tips = restTipRepository(myApiClient(), ')
+    expect(root).toContain('const myApiClient = (signal?: AbortSignal): ApiClient<MyApiSourceError> => {\n  const { baseUrl, apiKey } = useRuntimeConfig().datasources[\'my-api\']\n')
+    expect(root).toContain('  const tips = restTipRepository(myApiClient(signal), ')
     expect(root.match(/remote_failed: 502/g)).toHaveLength(1)
     expect(at(`${BLOG}/shared/domain/sources/my-api.ts`)).toContain('export const myApiFailed = ')
     // No total in the answer: the page's total is how many items it has, as before.

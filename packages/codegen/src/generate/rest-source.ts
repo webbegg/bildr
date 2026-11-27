@@ -119,15 +119,15 @@ export const sourceClientLines = (context: ModuleContext, source: DataSourceFile
   const config = /^[A-Za-z_$][\w$]*$/.test(source.name) ? `useRuntimeConfig().datasources.${source.name}` : `useRuntimeConfig().datasources[${tsString(source.name)}]`
   return [
     `/** The client of the "${source.name}" REST data source: its base URL and secret come from runtimeConfig.datasources (env), and the secret is sent there only. */`,
-    `const ${names.client} = (): ApiClient<${names.error}> => {`,
+    `const ${names.client} = (signal?: AbortSignal): ApiClient<${names.error}> => {`,
     `  const { baseUrl, apiKey } = ${config}`,
     '  const headers: Record<string, string> = { accept: \'application/json\' }',
     '  if (apiKey) headers.authorization = `Bearer ${apiKey}`',
-    `  return resultClient(createHttpClient({ baseUrl, headers${clientOptions(source, true)} }), failure => ${names.failed}(${FAILURE_ARGS}))`,
+    `  return resultClient(createHttpClient({ baseUrl, headers${clientOptions(source, true)}, signal }), failure => ${names.failed}(${FAILURE_ARGS}))`,
     '}'
   ]
 }
 
 /** The repository wired to its source's client, an invalid answer's detail logged on the server (the error that reaches the browser has none). */
 export const sourceAdapterArgs = (context: ModuleContext, source: DataSourceFile) =>
-  `${sourceNames(context, source).client}(), detail => console.error(${tsString(`The "${source.name}" data source answered something unexpected: `)} + detail)`
+  `${sourceNames(context, source).client}(signal), detail => console.error(${tsString(`The "${source.name}" data source answered something unexpected: `)} + detail)`

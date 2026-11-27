@@ -14,13 +14,13 @@ import { generatedRunner } from './run-generated'
  */
 type Result = { ok: true, value: unknown } | { ok: false, error: { type: string, message: string, status?: number, retryAfter?: number } }
 interface Root {
-  useCatalogApi: () => {
+  useCatalogApi: (signal?: AbortSignal) => {
     product: (input: unknown) => Promise<Result>
     deleteProduct: (input: unknown) => Promise<Result>
   }
   catalogErrorStatus: Record<string, number>
 }
-type Unwrap = (result: Result, statuses: Record<string, number>, event?: { res: { headers: Headers } }) => unknown
+type Unwrap = (result: Result, statuses: Record<string, number>, event?: { req?: { signal?: AbortSignal }, res: { headers: Headers } }) => unknown
 
 const CONFIG = '__bildrServerRootConfig'
 const NUXT_STUB = [
@@ -134,6 +134,30 @@ describe('generated server composition root, run', () => {
     calls.length = 0
     expect(await root.useCatalogApi().deleteProduct({ id: 7 })).toMatchObject({ ok: false, error: { type: 'unavailable', status: 503 } })
     expect(calls).toEqual(['DELETE https://shop.example.com/v1/products/7'])
+  })
+
+  // R4b: a read whose caller went away (its request's signal) is not tried again.
+  it('a read cancelled by its request (the browser went away) is not tried again, and fails as cancelled', async () => {
+    configure('key-1')
+    const gone = new AbortController()
+    const calls: string[] = []
+    vi.stubGlobal('fetch', (url: unknown, init: RequestInit) => {
+      calls.push(String(url))
+      expect(init.signal?.aborted).toBe(false)
+      gone.abort()
+      return Promise.resolve(json({ error: 'down' }, 503))
+    })
+    const result = await root.useCatalogApi(gone.signal).product({ id: 7 })
+    expect(result).toMatchObject({ ok: false, error: { type: 'remote_failed' } })
+    expect(calls).toHaveLength(1)
+    // Not a 5xx: Nuxt would report a browser that went away as a server failure.
+    let thrown: unknown
+    try {
+      unwrapOrThrow(result, root.catalogErrorStatus, { req: { signal: gone.signal }, res: { headers: new Headers() } })
+    } catch (cause) {
+      thrown = cause
+    }
+    expect(thrown).toMatchObject({ status: 499, message: 'The client closed the request' })
   })
 
   it('a failure without a wait sends no Retry-After, and a route status that is not 503 none either', () => {

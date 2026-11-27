@@ -272,6 +272,30 @@ describe('createHttpClient', () => {
       }
     })
 
+    it('where the runtime has no AbortSignal.any, a try leaves no listener on its caller\'s signal', async () => {
+      const cancel = new AbortController()
+      let listening = 0
+      const add = cancel.signal.addEventListener.bind(cancel.signal)
+      const remove = cancel.signal.removeEventListener.bind(cancel.signal)
+      cancel.signal.addEventListener = ((...args: Parameters<typeof add>) => {
+        listening++
+        add(...args)
+      }) as typeof add
+      cancel.signal.removeEventListener = ((...args: Parameters<typeof remove>) => {
+        listening--
+        remove(...args)
+      }) as typeof remove
+      const { any } = AbortSignal
+      try {
+        Reflect.deleteProperty(AbortSignal, 'any')
+        expect(await run([status(503), json], get, { retries: 2, signal: cancel.signal })).toEqual({ value: { ok: true }, at: [0, 250] })
+        await run([status(404)], get, { signal: cancel.signal })
+      } finally {
+        AbortSignal.any = any
+      }
+      expect(listening).toBe(0)
+    })
+
     it('a call cancelled before it waits to try again is cancelled, and not tried again', async () => {
       const cancel = new AbortController()
       const result = await run([() => {

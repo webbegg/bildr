@@ -4,5 +4,5 @@ import { type ListQuotesResponse, listQuotesContract } from '#blog/contracts/lis
 
 export default defineEventHandler(async (event): Promise<ListQuotesResponse> => {
   const page = await getValidatedQuery(event, listQuotesContract.query)
-  return unwrapOrThrow(await useBlog().listQuotes(page), blogErrorStatus, event)
+  return unwrapOrThrow(await useBlog(event.req.signal).listQuotes(page), blogErrorStatus, event)
 })

@@ -212,8 +212,8 @@ describe('generate: server-runtime api sources', () => {
   it('wires the server: a client over fetch under the base URL, a route per operation, a composable each', () => {
     const root = read(generated, 'layers/apis/server/utils/catalog.ts')
     expect(root).toContain('useRuntimeConfig().apis.catalog')
-    expect(root).toContain('export const useCatalogApi = () => {')
-    expect(root).toContain('httpCatalogRepository(catalogClient(), detail => console.error(')
+    expect(root).toContain('export const useCatalogApi = (signal?: AbortSignal) => {')
+    expect(root).toContain('httpCatalogRepository(catalogClient(signal), detail => console.error(')
     // Every error type has its status: one added without it does not compile.
     expect(root).toContain('export const catalogErrorStatus = {')
     expect(root).toContain('} satisfies Record<CatalogError[\'type\'], number>')
@@ -228,7 +228,7 @@ describe('generate: server-runtime api sources', () => {
     expect(client).toContain('const MAX_BYTES = 1_000_000')
     const route = read(generated, 'layers/apis/server/api/apis/catalog/products.get.ts')
     expect(route).toContain('getValidatedQuery(event, productsContract.query)')
-    expect(route).toContain('unwrapOrThrow(await useCatalogApi().products(input), catalogErrorStatus, event)')
+    expect(route).toContain('unwrapOrThrow(await useCatalogApi(event.req.signal).products(input), catalogErrorStatus, event)')
     expect(read(generated, 'layers/apis/shared/contracts/catalog/product.ts')).toContain('id: z.coerce.number().int()')
     const post = read(generated, 'layers/apis/server/api/apis/catalog/create-product.post.ts')
     expect(post).toContain('readValidatedBody(event, createProductContract.body)')
@@ -288,8 +288,8 @@ describe('generate: an invalid upstream answer never reaches the browser (verify
 
   it('the composition root logs the detail on the server, and the route hands the browser the error as it is', () => {
     const root = read(generated, 'layers/apis/server/utils/catalog.ts')
-    expect(root).toContain('httpCatalogRepository(catalogClient(), detail => console.error(\'The "catalog" API answered something unexpected: \' + detail))')
-    expect(read(generated, 'layers/apis/server/api/apis/catalog/products.get.ts')).toContain('unwrapOrThrow(await useCatalogApi().products(input), catalogErrorStatus, event)')
+    expect(root).toContain('httpCatalogRepository(catalogClient(signal), detail => console.error(\'The "catalog" API answered something unexpected: \' + detail))')
+    expect(read(generated, 'layers/apis/server/api/apis/catalog/products.get.ts')).toContain('unwrapOrThrow(await useCatalogApi(event.req.signal).products(input), catalogErrorStatus, event)')
   })
 
   it('the generated repository test asserts the generic message and the report', () => {
@@ -304,7 +304,7 @@ describe('generate: an API with auth refuses a call when its secret is not set (
   const root = read(generated, 'layers/apis/server/utils/catalog.ts')
 
   it('the client is told when the secret is empty, and the root answers a typed not_configured naming the env var (never a value)', () => {
-    expect(root).toContain('createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? \'\').trim() === \'\', retries: 2 })')
+    expect(root).toContain('createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? \'\').trim() === \'\', retries: 2, signal })')
     expect(root).toContain('return resultClient(call, failure => failure.notConfigured')
     expect(root).toContain('{ type: \'not_configured\', message: \'The "catalog" API is not configured: set NUXT_APIS_CATALOG_API_KEY\' }')
     expect(root).toContain('  not_configured: 503')
