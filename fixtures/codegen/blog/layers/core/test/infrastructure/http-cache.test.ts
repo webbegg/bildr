@@ -172,24 +172,30 @@ describe('cachedClient', () => {
 
 /**
  * The clients of requests to one source sharing one cache, as generated: `clientOf(signal)` is a request's, whose HTTP client stops a
- * call (as cancelled) when the request's signal aborts. Its GETs wait until `answer(n)` settles the n-th; `calls` is what was asked.
+ * call (as cancelled) when the request's signal aborts. Its calls wait until `answer(n)` or `fail(n)` settles the n-th (a write too,
+ * when `holdWrites`); `calls` is what was asked.
  */
-const waiting = () => {
-  const pending: Array<(value: unknown) => void> = []
+const waiting = ({ holdWrites = false } = {}) => {
+  const pending: Array<{ resolve: (value: unknown) => void, reject: (error: unknown) => void }> = []
   const calls: HttpRequest[] = []
   const cache = memoryCache()
   const clientOf = (signal?: AbortSignal) => {
     const call: HttpClient = (_path, request) => {
       calls.push(request)
-      if (request.method !== 'GET') return Promise.resolve({ wrote: true })
+      if (request.method !== 'GET' && !holdWrites) return Promise.resolve({ wrote: true })
       return new Promise((resolve, reject) => {
-        pending.push(resolve)
-        signal?.addEventListener('abort', () => reject(new HttpFailure(0, 'was cancelled', 'cancelled')))
+        pending.push({ resolve, reject })
+        signal?.addEventListener('abort', () => reject(new HttpFailure(0, 'was cancelled', 'cancelled')), { once: true })
       })
     }
     return cachedClient(call, cache, 60_000, signal)
   }
-  return { clientOf, calls, answer: (n: number, value: unknown) => pending[n - 1]!(value) }
+  return {
+    clientOf,
+    calls,
+    answer: (n: number, value: unknown) => pending[n - 1]!.resolve(value),
+    fail: (n: number, error: unknown) => pending[n - 1]!.reject(error)
+  }
 }
 
 // R5b: reads alike sent at once are one call to the source (no stampede when an answer expires).
@@ -239,5 +245,54 @@ describe('cachedClient, reads at once', () => {
     answer(1, { stale: true })
     answer(2, { fresh: true })
     expect([await before, await after]).toEqual([{ stale: true }, { fresh: true }])
+  })
+
+  it('the read sent before a write, ending last, leaves the one sent after it for reads alike to join', async () => {
+    const { clientOf, calls, answer } = waiting()
+    const before = clientOf()('/things', { method: 'GET' })
+    await clientOf()('/things', { method: 'PUT', body: {} })
+    const after = clientOf()('/things', { method: 'GET' })
+    answer(1, { stale: true })
+    await before
+    const joining = clientOf()('/things', { method: 'GET' })
+    expect(calls).toHaveLength(3)
+    answer(2, { fresh: true })
+    expect([await after, await joining]).toEqual([{ fresh: true }, { fresh: true }])
+  })
+
+  it('a read sent while a write goes on is not joined by reads sent once it is done', async () => {
+    const { clientOf, calls, answer } = waiting({ holdWrites: true })
+    const write = clientOf()('/things', { method: 'PUT', body: {} })
+    const during = clientOf()('/things', { method: 'GET' })
+    answer(1, { wrote: true })
+    await write
+    const after = clientOf()('/things', { method: 'GET' })
+    expect(calls.map(request => request.method)).toEqual(['PUT', 'GET', 'GET'])
+    answer(2, { during: true })
+    answer(3, { after: true })
+    expect([await during, await after]).toEqual([{ during: true }, { after: true }])
+  })
+
+  it('a failure of the call reaches every read waiting for it, once: none calls again, and none is kept', async () => {
+    const { clientOf, calls, answer, fail } = waiting()
+    const reads = [clientOf()('/things', { method: 'GET' }), clientOf()('/things', { method: 'GET' })]
+    fail(1, new HttpFailure(503, 'is unavailable'))
+    for (const read of reads) await expect(read).rejects.toMatchObject({ status: 503 })
+    expect(calls).toHaveLength(1)
+    const again = clientOf()('/things', { method: 'GET' })
+    answer(2, { n: 2 })
+    expect(await again).toEqual({ n: 2 })
+  })
+
+  it('the answer each waiting read gets is what the source said, even if the caller that made the call changes its own first', async () => {
+    const { clientOf, answer } = waiting()
+    const first = clientOf()('/things', { method: 'GET' }).then((value) => {
+      (value as { list: number[] }).list.push(9)
+      return value
+    })
+    const second = clientOf()('/things', { method: 'GET' })
+    answer(1, { list: [1] })
+    expect(await first).toEqual({ list: [1, 9] })
+    expect(await second).toEqual({ list: [1] })
   })
 })

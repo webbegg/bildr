@@ -134,13 +134,16 @@ export const cachedClient = (call: HttpClient, cache: AnswerCache, ttlMs: number
     }
     const before = forgotten.get(cache) ?? 0
     const answer = call(path, request)
-    reads.set(key, answer)
+    // The others copy what the source said, taken before this caller gets it (and may change it).
+    const snapshot = answer.then(value => structuredClone(value))
+    snapshot.catch(() => {})
+    reads.set(key, snapshot)
     try {
       const value = await answer
       if (value !== undefined && (forgotten.get(cache) ?? 0) === before) cache.set(key, value, ttlMs)
       return value
     } finally {
-      if (reads.get(key) === answer) reads.delete(key)
+      if (reads.get(key) === snapshot) reads.delete(key)
     }
   }
   return async (path, request) => {
