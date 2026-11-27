@@ -584,6 +584,8 @@ function quotesStub() {
  */
 function catalogStub() {
   const calls = []
+  // The calls to product 97, which is never answered: when each was made and when its connection closed (R4b: the app hung up).
+  const hung = []
   const product = id => ({ id, name: 'Stub product', price: 9.5, created_at: '2024-01-02T03:04:05Z', note: null, categories: [{ id: 1, name: 'Stub category' }] })
   const server = createServer((request, response) => {
     const url = new URL(request.url, 'http://stub')
@@ -599,6 +601,13 @@ function catalogStub() {
       // `cat=broken` is a failing remote: the page that lists it shows its error line.
       if (request.method === 'GET' && url.pathname === '/products' && url.searchParams.get('cat') === 'broken') return send(500, { message: 'boom' })
       if (request.method === 'GET' && url.pathname === '/products') return send(200, { data: { items: url.searchParams.get('cat') === 'none' ? [] : [product(1)] } })
+      // Product 97 never answers: only the app hanging up ends the call.
+      if (request.method === 'GET' && one?.[1] === '97') {
+        const entry = { opened: Date.now(), closed: undefined }
+        hung.push(entry)
+        response.on('close', () => (entry.closed = Date.now()))
+        return
+      }
       // Product 98 is rate limited: the source asks to wait 12 s (R3'b).
       if (request.method === 'GET' && one?.[1] === '98') {
         response.writeHead(429, { 'retry-after': '12' })
@@ -611,7 +620,7 @@ function catalogStub() {
       send(404, { message: 'not found' })
     })
   })
-  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({ server, calls })))
+  return new Promise(resolve => server.listen(0, '127.0.0.1', () => resolve({ server, calls, hung })))
 }
 
 /**
@@ -847,6 +856,19 @@ async function smoke(ctx) {
     const limited = await fetch(`${base}/api/apis/catalog/product?id=98`, { headers: { accept: 'application/json' } })
     const limitedBody = await limited.json().catch(() => undefined)
     check(limited.status === 503 && limited.headers.get('retry-after') === '12' && limitedBody?.data?.type === 'rate_limited' && limitedBody?.data?.retryAfter === 12, `API: a source that answers 429 with Retry-After 12 is a 503 with the same Retry-After (${limited.status} ${limited.headers.get('retry-after')} ${JSON.stringify(limitedBody)?.slice(0, 300)})`)
+    // R4b-002: a browser that goes away mid-read stops the call to the source, on the built server (its request signal), and it is not tried again.
+    const leaving = new AbortController()
+    const left = fetch(`${base}/api/apis/catalog/product?id=97`, { signal: leaving.signal }).catch(() => undefined)
+    const until = async (done, ms) => {
+      for (const end = Date.now() + ms; !done() && Date.now() < end;) await new Promise(resolve => setTimeout(resolve, 25))
+      return done()
+    }
+    await until(() => catalog.hung.length > 0, 3000)
+    leaving.abort()
+    await left
+    const hungUp = await until(() => catalog.hung[0]?.closed !== undefined, 3000)
+    await new Promise(resolve => setTimeout(resolve, 1500))
+    check(hungUp && catalog.hung.length === 1, `API: a read whose browser went away closes its call to the source within 3 s, and makes no other (${JSON.stringify(catalog.hung.map(entry => entry.closed === undefined ? 'open' : `${entry.closed - entry.opened} ms`))})`)
     // An answer that is not the model: a generic 502 for the browser (no field paths, no types, no upstream body), the detail in the server log.
     const unexpected = await fetch(`${base}/api/apis/catalog/product?id=99`)
     const unexpectedText = await unexpected.text()
