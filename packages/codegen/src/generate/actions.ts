@@ -389,8 +389,16 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
     const answer = freeLocal(`${name}Loaded`)
     return [`const ${answer} = await ${call(step)}`, `if (!${answer}.ok) return ${answer}`, `const ${name} = ${answer}.value`]
   }
-  /** The answer of a write: its Result as it is, or the row wrapped in one. */
-  const written = (step: object, expression: string) => answersOf(step) ? `return ${expression}` : `return ${okOf(`await ${expression}`)}`
+  /**
+   * The answer of a write: its Result as it is, or the row wrapped in one. With no output the use-case answers `undefined` (T3c1), so
+   * the row is not its answer: only a failure of the write is.
+   */
+  const written = (step: object, expression: string): string[] => {
+    if (output) return [answersOf(step) ? `return ${expression}` : `return ${okOf(`await ${expression}`)}`]
+    if (!answersOf(step)) return [`await ${expression}`, `return ${okOf('undefined')}`]
+    const answer = freeLocal('written')
+    return [`const ${answer} = await ${expression}`, `if (!${answer}.ok) return ${answer}`, `return ${okOf('undefined')}`]
+  }
 
   for (const step of analyzed.steps) {
     if (guarded.has(step)) continue
@@ -430,17 +438,19 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
       const applied = (of: string) => applyRule(rule!, of, scope.at ? 'at' : 'now()')
       if (step.op === 'create') {
         const set = rule ? [`...${applied('data')}`] : setEntries(step.set as Record<string, Value>, scope)
-        body.push(written(step, `${variable}.create({ ${['...data', ...set, ...stamped].join(', ')} })`))
+        // Unvalidated, the create writes its input as it came (its type is the entity's body already).
+        if (!validated) readsInput = true
+        body.push(...written(step, `${variable}.create({ ${[validated ? '...data' : '...input', ...set, ...stamped].join(', ')} })`))
       } else if (step.op === 'update' && rule) {
         // The rule's guards decide whether anything changes: nothing, and the row is answered as it is.
         const local = changeLocal(analyzed, rule)!
         body.push(
           `const ${local} = ${applied(rule.row!)}`,
-          `if (!${local}) return ${okOf(rule.row!)}`,
-          written(step, `${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${rule.row}`, `...${local}`, ...stamped].join(', ')} })`)
+          `if (!${local}) return ${okOf(output ? rule.row! : 'undefined')}`,
+          ...written(step, `${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${rule.row}`, `...${local}`, ...stamped].join(', ')} })`)
         )
       } else if (step.op === 'update') {
-        body.push(written(step, `${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${compile(step.from as Value, scope)}`, ...setEntries(step.set as Record<string, Value>, scope), ...stamped].join(', ')} })`))
+        body.push(...written(step, `${variable}.update(${compile(step.id as Value, scope)}, { ${[`...${compile(step.from as Value, scope)}`, ...setEntries(step.set as Record<string, Value>, scope), ...stamped].join(', ')} })`))
       } else if (step.op === 'delete') {
         body.push(...(answersOf(step) ? [`return ${variable}.delete(${compile(step.id as Value, scope)})`] : [`await ${variable}.delete(${compile(step.id as Value, scope)})`, `return ${okOf('undefined')}`]))
       } else {

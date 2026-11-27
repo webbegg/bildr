@@ -101,10 +101,16 @@ describe('a list-only REST repository answers a Result', () => {
     quote.fields.find(field => field.name === 'id')!.type = 'uuid'
     Object.assign(quote.fields.find(field => field.name === 'author')!, { min: 12 })
     quote.fields.push({ id: 'fld_q_added', name: 'addedAt', type: 'datetime', required: true }, { id: 'fld_q_mail', name: 'contact', type: 'email', required: true })
+    // Patterned fields with no default that matches: a code, a slug, a hex colour written as text.
+    quote.fields.push(
+      { id: 'fld_q_code', name: 'code', type: 'text', required: true, pattern: '^[A-Z]{3}-\\d{3}$' },
+      { id: 'fld_q_slug', name: 'slug', type: 'text', required: true, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', default: 'Not A Slug' },
+      { id: 'fld_q_tint', name: 'tint', type: 'text', required: true, pattern: '^#[0-9a-f]{6}$' }
+    )
     // A field the map leaves out takes its default: the entity's schema reads the mapped row.
     quote.fields.push({ id: 'fld_q_featured', name: 'featured', type: 'boolean', default: false })
     const repository = model.modules.blog!.repositories.find(entry => entry.id === 'repo_quote')!
-    Object.assign(repository.rest!.fieldMap!, { addedAt: 'added_at', contact: 'contact' })
+    Object.assign(repository.rest!.fieldMap!, { addedAt: 'added_at', contact: 'contact', code: 'code', slug: 'slug', tint: 'tint' })
     const generated = generate(model)
     const dir = mkdtempSync(join(tmpdir(), 'bildr-rest-result-'))
     try {
