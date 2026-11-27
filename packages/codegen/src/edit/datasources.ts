@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { Model } from '../model/load.ts'
-import { ArtifactIdSchema, CamelNameSchema, EnvNameSchema, SourceTimeoutSchema, urlProblem } from '../model/schemas.ts'
+import { ArtifactIdSchema, CamelNameSchema, EnvNameSchema, SourceCacheSchema, SourceTimeoutSchema, urlProblem } from '../model/schemas.ts'
 import type { DataSourceFile } from '../model/schemas.ts'
 import { DATABASE_DEPENDENCIES } from '../starter/starter.ts'
 import { camel, defineEdit, fail, kebab, snake } from './core.ts'
@@ -21,7 +21,9 @@ const STORE_KINDS = ['sqlite', 'rest', 'memory'] as const
 
 /** What the `timeout` input of a remote source says. */
 export const TIMEOUT_TEXT = 'How long a call may wait for its answer, in whole seconds (1 to 60; 10 when not said). On the server a read that failed because the source was down is tried again twice, within that time'
-const NO_HTTP = 'The app database is not called over HTTP: it takes no timeout'
+/** What the `cache` input of a remote source says. */
+export const CACHE_TEXT = 'How long the server keeps the answers to its reads, { ttl } in whole seconds (1 to 86400; none when not said). In this server\'s memory: a write through the source forgets them; a change made elsewhere shows up when they expire'
+const NO_HTTP = 'The app database is not called over HTTP: it takes no timeout or cache'
 
 const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/
 export const AuthInput = z.object({
@@ -82,22 +84,23 @@ export const datasourceCreate = defineEdit({
     defaults: SettingsInput.optional().describe('Non-secret settings, e.g. { "baseUrl": "https://api.example.com/v1" } (rest) or { "url": "file:.data/app.db" } (sqlite)'),
     env: EnvInput.optional().describe('Setting → the env var that holds its value at runtime (default NUXT_DATASOURCES_<NAME>_<SETTING>)'),
     auth: AuthInput.optional(),
-    timeout: SourceTimeoutSchema.optional().describe(`rest only: ${TIMEOUT_TEXT}`)
+    timeout: SourceTimeoutSchema.optional().describe(`rest only: ${TIMEOUT_TEXT}`),
+    cache: SourceCacheSchema.optional().describe(`rest only: ${CACHE_TEXT}`)
   }),
-  apply: (draft, { name: given, kind, defaults, env, auth, timeout }) => {
+  apply: (draft, { name: given, kind, defaults, env, auth, timeout, cache }) => {
     const name = sourceName(draft, given)
     let source: DataSourceFile
     if (kind === 'memory') {
-      if (defaults || env || auth || timeout !== undefined) fail('invalid', 'A memory data source keeps its rows in the server process: it has no settings')
+      if (defaults || env || auth || timeout !== undefined || cache) fail('invalid', 'A memory data source keeps its rows in the server process: it has no settings')
       source = { id: '', name, kind, env: {} }
     } else if (kind === 'sqlite') {
       const database = hasSqlite(draft)
       if (database) fail('invalid', `The project already has its app database (${database.id}): a project has at most one sqlite data source`)
       if (auth) fail('invalid', 'The app database takes no auth')
-      if (timeout !== undefined) fail('invalid', NO_HTTP)
+      if (timeout !== undefined || cache) fail('invalid', NO_HTTP)
       source = { id: '', name, kind, env: { url: 'NUXT_DB_URL', ...env }, defaults: { url: 'file:.data/app.db', ...defaults } }
     } else {
-      source = { id: '', name, kind, env: env ?? {}, ...(defaults ? { defaults } : {}), ...(auth ? { auth: { ...auth, secret: auth.secret ?? 'apiKey' } } : {}), ...(timeout === undefined ? {} : { timeout }) }
+      source = { id: '', name, kind, env: env ?? {}, ...(defaults ? { defaults } : {}), ...(auth ? { auth: { ...auth, secret: auth.secret ?? 'apiKey' } } : {}), ...(timeout === undefined ? {} : { timeout }), ...(cache ? { cache } : {}) }
       settleRest(source)
     }
     source.id = draft.mint('ds', name)
@@ -118,18 +121,21 @@ export const datasourceUpdate = defineEdit({
     defaults: Patch(z.string().max(2000)).optional().describe('Settings to set; null removes one'),
     env: Patch(EnvNameSchema).optional().describe('Setting → env var to set; null removes one (a setting in use gets its default env var back)'),
     auth: AuthInput.nullable().optional().describe('The auth, or null for none'),
-    timeout: SourceTimeoutSchema.nullable().optional().describe(`rest only: ${TIMEOUT_TEXT}; null for the default`)
+    timeout: SourceTimeoutSchema.nullable().optional().describe(`rest only: ${TIMEOUT_TEXT}; null for the default`),
+    cache: SourceCacheSchema.nullable().optional().describe(`rest only: ${CACHE_TEXT}; null for none`)
   }),
-  apply: (draft, { datasource: id, name, defaults, env, auth, timeout }) => {
+  apply: (draft, { datasource: id, name, defaults, env, auth, timeout, cache }) => {
     const source = datasourceById(draft, id)
     if (source.kind === 'api') fail('invalid', `"${source.name}" is an API data source: change it with api_update`)
     if (name !== undefined) source.name = sourceName(draft, name, id)
-    const timed = timeout !== undefined && timeout !== null
+    const timed = (timeout !== undefined && timeout !== null) || Boolean(cache)
     if (source.kind === 'memory' && (defaults || env || auth || timed)) fail('invalid', 'A memory data source keeps its rows in the server process: it has no settings')
     if (source.kind === 'sqlite' && auth) fail('invalid', 'The app database takes no auth')
     if (source.kind === 'sqlite' && timed) fail('invalid', NO_HTTP)
     if (timeout === null) delete source.timeout
     else if (timeout !== undefined) source.timeout = timeout
+    if (cache === null) delete source.cache
+    else if (cache) source.cache = cache
     const merge = (current: Record<string, string> | undefined, patch: Record<string, string | null>) => {
       const next = { ...current }
       for (const [key, value] of Object.entries(patch)) {

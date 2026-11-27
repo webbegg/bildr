@@ -51,8 +51,8 @@ describe('createProject', () => {
       'layers/core/app/data/query-client.ts', 'layers/core/app/data/results.ts', 'layers/core/app/error.vue', 'layers/core/app/layouts/main.vue',
       'layers/core/app/types/page-meta.d.ts', 'layers/core/nuxt.config.ts', 'layers/core/server/plugins/migrate.ts',
       'layers/core/server/utils/db.ts', 'layers/core/server/utils/http-error.ts',
-      'layers/core/shared/http/api-client.ts', 'layers/core/shared/http/client.ts', 'layers/core/shared/kernel/ids.ts', 'layers/core/shared/kernel/page.ts', 'layers/core/shared/kernel/result.ts',
-      'layers/core/test/infrastructure/http-client.test.ts',
+      'layers/core/shared/http/api-client.ts', 'layers/core/shared/http/cache.ts', 'layers/core/shared/http/client.ts', 'layers/core/shared/kernel/ids.ts', 'layers/core/shared/kernel/page.ts', 'layers/core/shared/kernel/result.ts',
+      'layers/core/test/infrastructure/http-cache.test.ts', 'layers/core/test/infrastructure/http-client.test.ts',
       'layers/main/app/pages/index.vue', 'layers/main/nuxt.config.ts', 'layers/main/server/utils/main.ts', 'layers/main/shared/domain/errors.ts',
       'nuxt.config.ts', 'package.json', 'pnpm-workspace.yaml', 'server/README.md', 'tsconfig.json', 'vitest.config.ts'
     ])

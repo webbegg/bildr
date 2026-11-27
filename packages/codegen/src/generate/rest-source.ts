@@ -72,6 +72,17 @@ const SERVER_RETRIES = 2
 export const clientOptions = (source: Pick<DataSourceFile, 'timeout'>, onServer: boolean): string =>
   `${source.timeout === undefined ? '' : `, timeoutMs: ${source.timeout * 1000}`}${onServer ? `, retries: ${SERVER_RETRIES}` : ''}`
 
+/**
+ * A server source's client call, its reads kept in the source's answer cache when it says one (`cache.ttl`): one cache per source, shared
+ * by the modules that call it, so a write in one is seen by all.
+ */
+export const cachedCall = (source: Pick<DataSourceFile, 'name' | 'cache'>, call: string): string =>
+  source.cache ? `cachedClient(${call}, answerCache(${tsString(source.name)}), ${source.cache.ttl * 1000})` : call
+
+/** The import of the answer cache, for a root whose sources say one. */
+export const cacheImports = (sources: ReadonlyArray<Pick<DataSourceFile, 'cache'>>): string[] =>
+  sources.some(source => source.cache) ? ['import { answerCache, cachedClient } from \'#core/http/cache\''] : []
+
 /** The arguments of a failed call's factory, from the `failure` of the core client. */
 export const FAILURE_ARGS = 'failure.type, failure.status, failure.message, failure.retryAfter'
 
@@ -123,7 +134,7 @@ export const sourceClientLines = (context: ModuleContext, source: DataSourceFile
     `  const { baseUrl, apiKey } = ${config}`,
     '  const headers: Record<string, string> = { accept: \'application/json\' }',
     '  if (apiKey) headers.authorization = `Bearer ${apiKey}`',
-    `  return resultClient(createHttpClient({ baseUrl, headers${clientOptions(source, true)}, signal }), failure => ${names.failed}(${FAILURE_ARGS}))`,
+    `  return resultClient(${cachedCall(source, `createHttpClient({ baseUrl, headers${clientOptions(source, true)}, signal })`)}, failure => ${names.failed}(${FAILURE_ARGS}))`,
     '}'
   ]
 }

@@ -150,7 +150,7 @@ export const API_DECLARED_NAMES: Record<string, string[]> = {
   'the locals of the generated functions': ['input', 'parsed', 'cause', 'deps', 'repository', 'result', 'http', 'calls', 'answer', 'read', 'itemsAt', 'segment', 'headerValue', 'recording', 'unused', 'dto', 'dtos', 'failed', 'failure', 'methods', 'query', 'body', 'params', 'event', 'signal', 'headers', 'call', 'config', 'secret', 'path', 'request', 'baseUrl', 'fetch', 'text', 'value', 'api'],
   'the vitest imports of the generated tests': ['describe', 'expect', 'it'],
   'the helpers of the server runtime': ['useRuntimeConfig', 'defineEventHandler', 'getValidatedQuery', 'readValidatedBody', 'setResponseStatus', 'unwrapOrThrow', 'useApiQuery', 'useApiAction', 'fromRoute'],
-  'the core HTTP client (both runtimes)': ['createHttpClient', 'resultClient', 'HttpFailure'],
+  'the core HTTP client (both runtimes)': ['createHttpClient', 'resultClient', 'HttpFailure', 'cachedClient', 'answerCache'],
   'the kernel schemas an entity imports': ['IdSchema', 'TimestampSchema'],
   'the types the generated files import': ['ApiClient', 'HttpRequest', 'ErrorStatusMap', 'MaybeRefOrGetter', 'QuerySchema'],
   // `console` is called, and `AbortSignal` named as a type, in the composition next to the use-cases it imports under their own names: an operation called `console` would hide it.

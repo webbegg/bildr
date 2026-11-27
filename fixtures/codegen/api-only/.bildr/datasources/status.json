@@ -6,6 +6,9 @@
   "env": {
     "baseUrl": "NUXT_APIS_STATUS_BASE_URL"
   },
+  "cache": {
+    "ttl": 60
+  },
   "baseUrl": "http://127.0.0.1:4011",
   "runtime": "server",
   "models": [

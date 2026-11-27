@@ -9,7 +9,7 @@ import { importLine } from './imports.ts'
 import { composableOf } from './names.ts'
 import { importPath } from './paths.ts'
 import type { RepositoryAdapter } from './paths.ts'
-import { SOURCE_ERRORS, answersResult, checkSourceErrorTypes, resultSources, sourceAdapterArgs, sourceClientLines, sourceErrorsFile, sourceNames } from './rest-source.ts'
+import { SOURCE_ERRORS, answersResult, cacheImports, checkSourceErrorTypes, resultSources, sourceAdapterArgs, sourceClientLines, sourceErrorsFile, sourceNames } from './rest-source.ts'
 import type { ImportName } from './imports.ts'
 import { camel, docText, file, header, identifier, kebab, pascal, propertyPath, tsLiteral, tsString } from './text.ts'
 
@@ -597,6 +597,7 @@ const compositionRootFile = (context: ModuleContext, actions: Analyzed[]) => {
     ? [
         'import { useRuntimeConfig } from \'nuxt/server\'',
         'import { type ApiClient, resultClient } from \'#core/http/api-client\'',
+        ...cacheImports(clients),
         'import { createHttpClient } from \'#core/http/client\'',
         ...clients.map(source => importLine(sourceNames(context, source).from, [{ name: sourceNames(context, source).error, type: true }, sourceNames(context, source).failed]))
       ]
