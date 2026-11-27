@@ -1,6 +1,6 @@
 {
   "$schema": "https://bildr.dev/schema/manifest.v1.json",
-  "generatorVersion": "0.1.0",
+  "generatorVersion": "0.2.0",
   "files": {
     ".env.example": {
       "owner": "scaffold",

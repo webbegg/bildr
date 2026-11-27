@@ -3,7 +3,7 @@ import { CUSTOM_COLORS_MAX, CustomColorsPatchSchema, DEFAULT_THEME, defaultTheme
 import type { Theme } from '../design/theme.ts'
 import { breakpointsOf, isResponsiveToken, STYLE_TOKENS } from '../design/tokens.ts'
 import { NODE_PROPS } from '../render/rules.ts'
-import { GENERATOR_VERSION } from '../starter/version.ts'
+import { GENERATOR_VERSION, isNewerGenerator } from '../starter/version.ts'
 import { defineEdit, fail } from './core.ts'
 import type { Draft } from './core.ts'
 import { INTERNAL_TYPES, LEGACY_LAYOUT_TYPES, PALETTE } from './palette.ts'
@@ -134,6 +134,7 @@ export const projectUpdate = defineEdit({
     const project = draft.model.project
     const from = project.generatorVersion
     if (upgradeGenerator && from === GENERATOR_VERSION) fail('invalid', `The project is already on generator ${GENERATOR_VERSION}`)
+    if (upgradeGenerator && isNewerGenerator(from)) fail('invalid', `The project is on generator ${from}, newer than this bildr's (${GENERATOR_VERSION}): update bildr instead`)
     if (name !== undefined) project.name = name
     if (description === null || description === '') delete project.description
     else if (description !== undefined) project.description = description

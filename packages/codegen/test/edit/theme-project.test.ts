@@ -58,6 +58,12 @@ describe('project_update', () => {
     expect(p.json('.bildr/bildr.json').generatorVersion).toBe('0.2.0')
     expect(p.refuse('project_update', { upgradeGenerator: true }, 'invalid').message).toBe('The project is already on generator 0.2.0')
   })
+
+  it('upgradeGenerator never moves a newer project down: this generator would write older code over it', () => {
+    const p = project({ ...fixtureModelFiles(), '.bildr/bildr.json': JSON.stringify({ ...JSON.parse(fixtureModelFiles()['.bildr/bildr.json']!), generatorVersion: '0.3.0' }) })
+    expect(p.refuse('project_update', { upgradeGenerator: true }, 'invalid').message).toBe('The project is on generator 0.3.0, newer than this bildr\'s (0.2.0): update bildr instead')
+    expect(p.json('.bildr/bildr.json').generatorVersion).toBe('0.3.0')
+  })
 })
 
 describe('catalog_get', () => {

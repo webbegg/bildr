@@ -3,6 +3,7 @@ import { customColorNames } from '../design/theme.ts'
 import { isStyleKeyOf, styleTokenProblem } from '../design/tokens.ts'
 import type { BreakpointBase } from '../design/tokens.ts'
 import { apiArgsProblem, pageNamesProblem } from '../edit/page-uses.ts'
+import { entityNameProblem } from '../edit/reserved-names.ts'
 import { ICON_NAME, nodePropProblems, propValues, STRUCTURAL_PROPS, takesProp, uiStepProblems } from '../render/rules.ts'
 import {
   ActionFileSchema, ComponentFileSchema, DataSourceFileSchema, EntityFileSchema, EXPRESSION_KEYS, FixturesFileSchema, LAYOUT_VARIABLE_KINDS, PATH_EXPRESSIONS, PROPERTY_PATH,
@@ -272,6 +273,9 @@ const crossCheck = (model: Model, entries: Entry[]): ModelProblem[] => {
       if (seenNames.has(key)) report(entry.path, 'name', `Duplicate ${label} "${name}"${entry.module ? ` in module "${entry.module}"` : ''}`)
       else seenNames.set(key, entry.path)
     }
+    // T6: a hand-written entity named like a core type would be declared where that type is imported.
+    const kernel = entry.kind === 'entity' && name ? entityNameProblem(name) : undefined
+    if (kernel) report(entry.path, 'name', kernel)
     if (entry.kind in byKind) byKind[entry.kind as RefKind].add(id)
     if (entry.module) moduleOfId.set(id, entry.module)
   }

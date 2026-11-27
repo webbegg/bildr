@@ -18,7 +18,7 @@ export type MigrationOutcome = MigrationResult | { kind: 'error', message: strin
 export type RegenerateResult = (
   | { ok: true, report: SyncReport, migration: MigrationOutcome }
   | { ok: false, problems: ModelProblem[] }
-  | { ok: false, error: string }
+  | { ok: false, error: string, held?: true }
 ) & {
   /** Why the Health report couldn't be refreshed (it never changes the rest of the result). */
   healthError?: string
@@ -53,7 +53,7 @@ export const regenerate = async (root: string, options: RegenerateOptions = {}):
   // T6: a project of another generator keeps its code (the model still edits) until its owner upgrades it.
   const hold = generatorHold(loaded.model.project.generatorVersion)
   if (hold) {
-    return withHealth(root, { ok: false, error: hold }, () => ({
+    return withHealth(root, { ok: false, held: true, error: hold }, () => ({
       model: { ok: true },
       drift: { error: hold },
       migration: readPendingMigration(root)
