@@ -230,6 +230,34 @@ describe('a REST repository that looks up and writes answers a Result; a use-cas
     expect(useCase).toContain('import { type Result, err } from \'#core/kernel/result\'\n')
   })
 
+  it('with no output, a REST write answers undefined, or its failure; its answer\'s local takes a free name', () => {
+    const generated = crudQuotes([{
+      id: 'act_mark_quote', name: 'markQuote', label: 'Mark quote', http: { method: 'POST', path: '/quotes/:id/mark' }, input: idParam,
+      errors: [],
+      steps: [
+        { kind: 'load', as: 'written', repository: 'repo_quote', op: 'get', args: byId },
+        { kind: 'repository', repository: 'repo_quote', op: 'update', id: { $input: 'id' }, from: { $var: 'written' }, set: { author: 'Marked' } }
+      ]
+    }])
+    const useCase = generated.find(file => file.path === `${BLOG}/server/application/actions/mark-quote.ts`)!.content
+    expect(useCase).toContain('): Promise<Result<undefined, BlogError>> => {')
+    expect(useCase).toContain([
+      '    const written_ = await quotes.update(id, { ...written, author: \'Marked\' })',
+      '    if (!written_.ok) return written_',
+      '    return ok(undefined)'
+    ].join('\n'))
+    const test = generated.find(file => file.path === `${BLOG}/test/application/mark-quote.test.ts`)!.content
+    expect(test).toContain('    expect(result).toEqual({ ok: true, value: undefined })\n')
+  })
+
+  it('refuses a create in an action that takes route parameters (no row to write)', () => {
+    expect(() => crudQuotes([{
+      id: 'act_copy_quote', name: 'copyQuote', label: 'Copy quote', http: { method: 'POST', path: '/quotes/:id/copy' }, input: idParam,
+      errors: [],
+      steps: [{ kind: 'repository', repository: 'repo_quote', op: 'create' }]
+    }])).toThrow('act_copy_quote: a create needs an entity input (its body), not route parameters')
+  })
+
   it('a local never takes the name of an error factory (an error named like it)', () => {
     const generated = crudQuotes([{
       id: 'act_touch_quote', name: 'touchQuote', label: 'Touch quote', http: { method: 'POST', path: '/quotes/:id/touch' }, input: idParam,

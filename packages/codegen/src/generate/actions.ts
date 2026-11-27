@@ -438,7 +438,8 @@ const useCaseFile = (context: ModuleContext, analyzed: Analyzed) => {
       const applied = (of: string) => applyRule(rule!, of, scope.at ? 'at' : 'now()')
       if (step.op === 'create') {
         const set = rule ? [`...${applied('data')}`] : setEntries(step.set as Record<string, Value>, scope)
-        // Unvalidated, the create writes its input as it came (its type is the entity's body already).
+        // Unvalidated, the create writes its input as it came (its type is the entity's body already). Route parameters are no row.
+        if (!inputEntity) throw new Error(`${action.id}: a create needs an entity input (its body), not route parameters`)
         if (!validated) readsInput = true
         body.push(...written(step, `${variable}.create({ ${[validated ? '...data' : '...input', ...set, ...stamped].join(', ')} })`))
       } else if (step.op === 'update' && rule) {
@@ -866,7 +867,9 @@ const sampleValue = (field: Field): Value => {
 
 /** Success plus one test per modeled error, against the in-memory repositories. */
 const useCaseTestFile = (context: ModuleContext, analyzed: Analyzed) => {
-  const { action, inputEntity, params } = analyzed
+  const { action, inputEntity, params, output } = analyzed
+  // An action with no output answers undefined, whatever it writes: its test says so, not only that it succeeded.
+  const succeeded = output ? '    expect(result.ok).toBe(true)' : '    expect(result).toEqual({ ok: true, value: undefined })'
   const source = context.source(action.id)
   const deps = analyzed.repositories.map(({ entity }) => entity.plural).join(', ')
   const built = deps ? `{ ${deps} }` : ''
@@ -888,7 +891,7 @@ const useCaseTestFile = (context: ModuleContext, analyzed: Analyzed) => {
     const picked = action.input.pick ?? allFields(inputEntity).map(field => field.name)
     const fields = picked.map(name => allFields(inputEntity).find(field => field.name === name)!)
     preamble.push(`const input = { ${fields.map(field => `${field.name}: ${tsLiteral(sampleValue(field))}`).join(', ')} }`, '')
-    tests.push(['  it(\'succeeds\', async () => {', ...setup(false), `    const result = await ${action.name}(${built})(input)`, '    expect(result.ok).toBe(true)', '  })'])
+    tests.push(['  it(\'succeeds\', async () => {', ...setup(false), `    const result = await ${action.name}(${built})(input)`, succeeded, '  })'])
     for (const step of analyzed.steps.filter(entry => entry.kind === 'assert')) {
       const again = inputEntity.idStrategy === 'uuid' ? `{ ...input, id: ${tsString(sampleId(2))} }` : 'input'
       tests.push([
@@ -911,7 +914,7 @@ const useCaseTestFile = (context: ModuleContext, analyzed: Analyzed) => {
       imports.push(named(`${entityNames(loaded.entity).variable}Seed`, seedFile))
     }
     const existing = loaded ? `${entityNames(loaded.entity).variable}Seed[0]!.id` : tsString(sampleId(1))
-    tests.push(['  it(\'succeeds\', async () => {', ...setup(Boolean(loaded)), `    const result = await ${action.name}(${built})(${params.map(() => existing).join(', ')})`, '    expect(result.ok).toBe(true)', '  })'])
+    tests.push(['  it(\'succeeds\', async () => {', ...setup(Boolean(loaded)), `    const result = await ${action.name}(${built})(${params.map(() => existing).join(', ')})`, succeeded, '  })'])
     if (load?.orError) {
       tests.push([
         `  it('fails with ${String(load.orError)}', async () => {`,

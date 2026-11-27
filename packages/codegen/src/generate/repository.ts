@@ -458,7 +458,8 @@ const validSample = (field: Field): string | number | boolean => {
     const pattern = new RegExp(field.pattern)
     const fits = (value: string) => pattern.test(value) && value.length >= (field.min ?? 0) && value.length <= (field.max ?? Infinity)
     const sample = sampleOf(field)
-    const found = [field.default, sample, ...PATTERN_CANDIDATES].find((value): value is string => typeof value === 'string' && fits(value))
+    // A format type (email, url, uuid…) checks its own shape too: only plain text tries the candidates.
+    const found = [field.default, sample, ...(field.type === 'text' ? PATTERN_CANDIDATES : [])].find((value): value is string => typeof value === 'string' && fits(value))
     if (found !== undefined) return found
   }
   const value = sampleOf(field)
