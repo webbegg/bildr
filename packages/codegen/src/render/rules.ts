@@ -549,6 +549,16 @@ export function transitionTimingClasses(transition: TransitionSpec): string {
 }
 
 /**
+ * The timing a hover or pressed state animates its way in with, under its pseudo-class `prefix` (`hover:duration-500 …`), when it is
+ * not `base`'s (the timing of the variant it is a state of); CSS reads a transition from the style it goes to. `under` is the timing
+ * of a state already shown under this one (pressed over hover): one that differs is restated too. An instant one is `duration-0`.
+ */
+export function stateTimingClasses(timing: string, base: string, prefix: string, under?: string): string | undefined {
+  if (timing === base && (under === undefined || under === base)) return undefined
+  return (timing || 'duration-0').split(' ').map(token => `${prefix}${token}`).join(' ')
+}
+
+/**
  * Where the generator and the canvas still render a node differently. P2a
  * resolved the other P1 entries (E3); this one waits for paged queries (P5).
  */

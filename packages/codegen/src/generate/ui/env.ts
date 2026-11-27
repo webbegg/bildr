@@ -80,13 +80,24 @@ export interface NotFound {
   message: string
 }
 
+/** A hover or pressed state CSS shows: its class prefix, its style, the keys it changes and its own timing (prefixed), if any. */
+export interface PointerState {
+  prefix: string
+  style: Record<string, string>
+  keys: string[]
+  timing?: string
+}
+
 export interface Variant {
   /** The base of its class map constants, e.g. `card` for `cardVariants`. */
   base: string
   /** `default`, then every variant of the component, with the node's style in it (overrides and `unset` applied); without the states `pointer` shows. */
   styles: Array<[string, Record<string, string>]>
-  /** Hover and pressed states rendered in CSS: per base variant, the class prefix, the state's style and the keys it changes. */
-  pointer: Map<string, Array<{ prefix: string, style: Record<string, string>, keys: string[] }>>
+  /**
+   * Hover and pressed states rendered in CSS: per base variant, the class prefix, the state's style, the keys it changes and, when
+   * it is not the base's, the prefixed timing it animates its way in with (`stateTimingClasses`).
+   */
+  pointer: Map<string, PointerState[]>
   hiddenIn: string[]
   /** An interactive component's transition timing classes per variant (the target's); empty for instant. */
   timing?: Map<string, string>

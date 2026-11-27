@@ -49,7 +49,7 @@ export const styleAttrs = (env: Env, node: ModelNode, { display = '', fallback =
   const perVariant = variant && keys.length
     ? variant.styles.map(([name, entry]): [string, string] => [name, tidyClasses([
         styleClasses(only({ ...fallback, ...entry })),
-        ...(variant.pointer.get(name) ?? []).map(state => prefixedClasses(only({ ...fallback, ...state.style }, state.keys), state.prefix)),
+        ...(variant.pointer.get(name) ?? []).flatMap(state => [prefixedClasses(only({ ...fallback, ...state.style }, state.keys), state.prefix), animated.length && state.timing ? state.timing : '']),
         animated.length && !sharedTiming ? variant.timing!.get(name) || 'duration-0' : ''
       ])])
     : []
