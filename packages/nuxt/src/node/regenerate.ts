@@ -2,6 +2,7 @@ import { existsSync, rmSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { generate, hasDatabase } from '@bildr/codegen/generate'
 import { schemaIds } from '@bildr/codegen/migrate'
+import { generatorHold } from '@bildr/codegen/starter'
 import { loadModel } from '@bildr/codegen/model'
 import type { Model, ModelProblem } from '@bildr/codegen/model'
 import type { GeneratedFile, SyncReport } from '@bildr/codegen/sync'
@@ -49,6 +50,15 @@ const needsMigrations = (root: string, model: Model) => hasDatabase(model)
 export const regenerate = async (root: string, options: RegenerateOptions = {}): Promise<RegenerateResult> => {
   const loaded = loadModel(readModelFiles(root))
   if (!loaded.ok) return withHealth(root, { ok: false, problems: loaded.problems }, () => ({ model: { ok: false, problems: loaded.problems } }))
+  // T6: a project of another generator keeps its code (the model still edits) until its owner upgrades it.
+  const hold = generatorHold(loaded.model.project.generatorVersion)
+  if (hold) {
+    return withHealth(root, { ok: false, error: hold }, () => ({
+      model: { ok: true },
+      drift: { error: hold },
+      migration: readPendingMigration(root)
+    }))
+  }
   let files: GeneratedFile[]
   try {
     files = generate(loaded.model)

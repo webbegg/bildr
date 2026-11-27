@@ -62,7 +62,11 @@ app/composables/apis/            one composable per query and action
 
 - **Prefer overriding.** Put a file at the same path under the root `app/` or `server/`. Nuxt uses yours, and bildr keeps updating its own copy.
 - **Editing a generated file is allowed.** bildr notices the edit, marks the file *detached* in `.bildr/manifest.json`, and stops overwriting it. The editor shows it as drift. You can reattach it later, which replaces your edits with the generated version.
-- **Custom logic** for an action goes in `server/application/custom/`. You own those files, and bildr only imports them.
+- **Your own code** (routes, server utils, composables, components) goes in the root `app/` and `server/`. bildr never regenerates them.
+
+## Upgrading bildr
+
+`.bildr/bildr.json` records the generator that wrote this app (`generatorVersion`). A bildr whose generator writes different code keeps the app as it is and says so in Health. Read its MIGRATING.md, then run `project_update { upgradeGenerator: true }` to regenerate.
 
 ## Scripts
 

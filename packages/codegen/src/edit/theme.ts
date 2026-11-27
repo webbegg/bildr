@@ -3,6 +3,7 @@ import { CUSTOM_COLORS_MAX, CustomColorsPatchSchema, DEFAULT_THEME, defaultTheme
 import type { Theme } from '../design/theme.ts'
 import { breakpointsOf, isResponsiveToken, STYLE_TOKENS } from '../design/tokens.ts'
 import { NODE_PROPS } from '../render/rules.ts'
+import { GENERATOR_VERSION } from '../starter/version.ts'
 import { defineEdit, fail } from './core.ts'
 import type { Draft } from './core.ts'
 import { INTERNAL_TYPES, LEGACY_LAYOUT_TYPES, PALETTE } from './palette.ts'
@@ -126,14 +127,19 @@ export const themeApply = defineEdit({
 export const projectUpdate = defineEdit({
   input: z.object({
     name: z.string().trim().min(1).max(100).optional().describe('The project (and app) name'),
-    description: z.string().max(500).nullable().optional().describe('What the app is; null removes it')
+    description: z.string().max(500).nullable().optional().describe('What the app is; null removes it'),
+    upgradeGenerator: z.literal(true).optional().describe(`Moves a project made by an older generator to this one (${GENERATOR_VERSION}), so bildr regenerates it again. Read MIGRATING.md first: the generated code changes, and your own code may need to follow`)
   }),
-  apply: (draft, { name, description }) => {
+  apply: (draft, { name, description, upgradeGenerator }) => {
     const project = draft.model.project
+    const from = project.generatorVersion
+    if (upgradeGenerator && from === GENERATOR_VERSION) fail('invalid', `The project is already on generator ${GENERATOR_VERSION}`)
     if (name !== undefined) project.name = name
     if (description === null || description === '') delete project.description
     else if (description !== undefined) project.description = description
-    return {}
+    if (!upgradeGenerator) return {}
+    project.generatorVersion = GENERATOR_VERSION
+    return { generatorVersion: { from, to: GENERATOR_VERSION } }
   }
 })
 

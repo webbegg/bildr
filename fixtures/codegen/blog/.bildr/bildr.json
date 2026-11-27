@@ -1,7 +1,7 @@
 {
   "$schema": "https://bildr.dev/schema/project.v1.json",
   "schemaVersion": 1,
-  "generatorVersion": "0.1.0",
+  "generatorVersion": "0.2.0",
   "starterKit": "1",
   "name": "Blog",
   "description": "A blog built with bildr.",
