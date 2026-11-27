@@ -393,8 +393,16 @@ export const apiProblems = (source: ApiParts): ApiProblem[] => {
   return problems
 }
 
+/** Why an API called from the page takes no cache. */
+export const BROWSER_CACHE = 'An API called from the page has no server cache: its queries keep their answers in the page'
+
 /** The seconds a call to a remote source may wait for its answer: whole, 1 to 60. */
 export const SourceTimeoutSchema = z.number().int('A timeout is whole seconds').min(1, 'A timeout is 1 s at least').max(60, 'A timeout is 60 s at most')
+
+/** How long the server keeps a remote source's answers to its reads: whole seconds, 1 to a day. */
+export const SourceCacheSchema = z.object({
+  ttl: z.number().int('A cache TTL is whole seconds').min(1, 'A cache TTL is 1 s at least').max(86_400, 'A cache TTL is a day at most')
+}).strict()
 
 export const DataSourceFileSchema = z.object({
   ...schemaField,
@@ -408,6 +416,8 @@ export const DataSourceFileSchema = z.object({
   auth: z.object({ type: z.enum(['bearer', 'header']), secret: CamelNameSchema, header: z.string().optional() }).optional(),
   /** `rest` and `api`: how long a call may wait for its answer (SOURCE_TIMEOUT); the client's 10 s when not said. */
   timeout: SourceTimeoutSchema.optional(),
+  /** `rest` and a server `api`: the server keeps the answers to its reads `ttl` seconds (SOURCE_CACHE); none when not said. */
+  cache: SourceCacheSchema.optional(),
   // `api` only: the base URL its paths are under, where its calls run, and what it offers.
   baseUrl: z.string().max(2000).optional(),
   runtime: z.enum(API_RUNTIMES).optional(),
@@ -425,6 +435,12 @@ export const DataSourceFileSchema = z.object({
   }
   if (source.timeout !== undefined && source.kind !== 'rest' && source.kind !== 'api') {
     ctx.addIssue({ code: 'custom', path: ['timeout'], message: 'Only a REST or an API data source has a timeout' })
+  }
+  if (source.cache && source.kind !== 'rest' && source.kind !== 'api') {
+    ctx.addIssue({ code: 'custom', path: ['cache'], message: 'Only a REST or an API data source has a cache' })
+  }
+  if (source.cache && source.kind === 'api' && source.runtime === 'browser') {
+    ctx.addIssue({ code: 'custom', path: ['cache'], message: BROWSER_CACHE })
   }
   if (source.kind === 'memory') {
     for (const key of ['defaults', 'auth'] as const) {

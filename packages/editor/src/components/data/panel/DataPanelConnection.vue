@@ -34,13 +34,28 @@ function setHeader(header: string) {
   if (auth.value && header.trim()) void update({ auth: { type: 'header', secret: auth.value.secret, header: header.trim() } })
 }
 
-/** A timeout is whole seconds, 1 to 60; empty gives the default back. Anything else is not sent, and the field says so. */
+/** Whole seconds from 1 to `max`, null for an empty field, or undefined for anything else (not sent; the field says so). */
+const secondsOf = (value: string, max: number): number | null | undefined => {
+  const text = value.trim()
+  if (text === '') return null
+  const seconds = Number(text)
+  return /^\d+$/.test(text) && seconds >= 1 && seconds <= max ? seconds : undefined
+}
+
+/** A timeout is 1 to 60 s; empty gives the default back. */
 const timeoutInvalid = ref(false)
 function setTimeoutS(value: string) {
-  const text = value.trim()
-  const seconds = Number(text)
-  timeoutInvalid.value = text !== '' && !(/^\d+$/.test(text) && seconds >= 1 && seconds <= 60)
-  if (!timeoutInvalid.value) void update({ timeout: text === '' ? null : seconds })
+  const seconds = secondsOf(value, 60)
+  timeoutInvalid.value = seconds === undefined
+  if (seconds !== undefined) void update({ timeout: seconds })
+}
+
+/** How long the server keeps its reads: 1 s to a day; empty for no cache. */
+const cacheInvalid = ref(false)
+function setCacheTtl(value: string) {
+  const seconds = secondsOf(value, 86_400)
+  cacheInvalid.value = seconds === undefined
+  if (seconds !== undefined) void update({ cache: seconds === null ? null : { ttl: seconds } })
 }
 
 function showVariables() {
@@ -124,6 +139,24 @@ onMounted(async () => {
           data-connection-timeout
           @edit="timeoutInvalid = false"
           @commit="setTimeoutS"
+        />
+      </EditorRow>
+      <EditorRow
+        label="Cache"
+        title="Seconds the server keeps the answers to its reads (1 to 86400), in its memory; a write through it forgets them. Empty for none"
+        name="cache"
+      >
+        <EditorCommitInput
+          :model-value="connection.cacheTtl === undefined ? '' : String(connection.cacheTtl)"
+          aria-label="Cache"
+          placeholder="None"
+          size="xs"
+          variant="soft"
+          numeric
+          :invalid="cacheInvalid"
+          data-connection-cache
+          @edit="cacheInvalid = false"
+          @commit="setCacheTtl"
         />
       </EditorRow>
     </EditorStyleSection>

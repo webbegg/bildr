@@ -28,7 +28,7 @@ describe('the timeout of a remote source', () => {
     expect(p.refuse('datasource_create', { name: 'rows', kind: 'memory', timeout: 5 }, 'invalid').message)
       .toBe('A memory data source keeps its rows in the server process: it has no settings')
     expect(p.refuse('datasource_update', { datasource: 'ds_main', timeout: 5 }, 'invalid').message)
-      .toBe('The app database is not called over HTTP: it takes no timeout')
+      .toBe('The app database is not called over HTTP: it takes no timeout or cache')
   })
 
   it('a model file that gives the app database a timeout does not load', () => {

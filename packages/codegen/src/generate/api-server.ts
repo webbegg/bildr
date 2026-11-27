@@ -4,7 +4,7 @@ import { descriptionOf, inputFields, modelNames, namesOf, operationsOf, resultTy
 import type { Emitted, InputField, Operation, SourceNames } from './api-model.ts'
 import { importLine } from './imports.ts'
 import { apiPaths, apisPaths, importPath } from './paths.ts'
-import { clientOptions, FAILURE_ARGS, SOURCE_ERRORS } from './rest-source.ts'
+import { cachedCall, cacheImports, clientOptions, FAILURE_ARGS, SOURCE_ERRORS } from './rest-source.ts'
 import { file, header, identifier, kebab, pascal, tsString } from './text.ts'
 
 /**
@@ -181,6 +181,7 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
       `// Composition root of the "${source.name}" API: the only place where its use-cases meet the HTTP repository.`,
       'import { useRuntimeConfig } from \'nuxt/server\'',
       importLine('#core/http/api-client', [{ name: 'ApiClient', type: true }, 'resultClient']),
+      ...cacheImports([source]),
       importLine('#core/http/client', ['createHttpClient']),
       importLine(importPath(path, paths.adapter(names.adapterFile)), [names.adapter]),
       importLine(importPath(path, paths.errors), [{ name: names.error, type: true }, 'remoteFailed']),
@@ -195,7 +196,7 @@ const rootFile = (source: ApiSource, names: SourceNames): Emitted => {
       '  const headers: Record<string, string> = { accept: \'application/json\' }',
       ...(secret ? [`  if (config.${secret}) ${auth}`] : []),
       // Nuxt reads an env var as JSON when it can (a numeric secret arrives as a number), hence the String().
-      `  const call = createHttpClient({ baseUrl: config.baseUrl, headers${secret ? `, unconfigured: String(config.${secret} ?? '').trim() === ''` : ''}${clientOptions(source, true)}, signal })`,
+      `  const call = ${cachedCall(source, `createHttpClient({ baseUrl: config.baseUrl, headers${secret ? `, unconfigured: String(config.${secret} ?? '').trim() === ''` : ''}${clientOptions(source, true)}, signal })`)}`,
       ...(envVar
         ? [
             `  return resultClient(call, failure => failure.notConfigured`,

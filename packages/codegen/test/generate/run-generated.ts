@@ -8,6 +8,7 @@ const CORE_ALIASES: Record<string, string> = {
   '#core/kernel/result': 'layers/core/shared/kernel/result.ts',
   '#core/kernel/ids': 'layers/core/shared/kernel/ids.ts',
   '#core/http/client': 'layers/core/shared/http/client.ts',
+  '#core/http/cache': 'layers/core/shared/http/cache.ts',
   '#core/http/api-client': 'layers/core/shared/http/api-client.ts'
 }
 

@@ -89,6 +89,8 @@ export interface DataConnection {
   auth: { type: 'bearer' | 'header', secret: string, header?: string, env: string | undefined } | undefined
   /** How long a call may wait for its answer, in seconds; undefined for the generated client's 10 s. */
   timeout: number | undefined
+  /** How long the server keeps the answers to its reads, in seconds; undefined when it keeps none. */
+  cacheTtl: number | undefined
 }
 
 /** A new connection's base URL until it is set in the right panel (a data source needs one). */
@@ -217,7 +219,8 @@ export const connectionsOf = (model: Model): DataConnection[] =>
     baseUrl: source.defaults?.baseUrl ?? '',
     baseUrlEnv: source.env.baseUrl,
     auth: source.auth ? { type: source.auth.type, secret: source.auth.secret, ...(source.auth.header ? { header: source.auth.header } : {}), env: source.env[source.auth.secret] } : undefined,
-    timeout: source.timeout
+    timeout: source.timeout,
+    cacheTtl: source.cache?.ttl
   }))
 
 /** A query, an action or a state as the Data tree lists it: its label (the name when it has none) and the collection it works on (a state has none). */

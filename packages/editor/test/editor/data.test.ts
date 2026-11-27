@@ -1096,6 +1096,16 @@ describe('connections', () => {
     expect(input()?.getAttribute('aria-invalid')).toBeNull()
   })
 
+  it('edits how long the server keeps its reads (cache): whole seconds from 1 to a day, empty for none', async () => {
+    world.model.datasources.find(source => source.id === 'ds_quotes')!.cache = { ttl: 30 }
+    const { actions } = await open({ datasource_update: ok() })
+    await click(q('[data-connection-name]'))
+    const input = () => q('[data-connection-panel]')!.querySelector<HTMLInputElement>('[aria-label="Cache"]')
+    expect(input()?.value).toBe('30')
+    for (const value of ['300', '0', '86401', '']) await typeInto(input(), value)
+    expect(inputs(actions, 'datasource_update')).toEqual([{ datasource: 'ds_quotes', cache: { ttl: 300 } }, { datasource: 'ds_quotes', cache: null }])
+  })
+
   it('shows the timeout a connection has, and clearing it gives the default back', async () => {
     world.model.datasources.find(source => source.id === 'ds_quotes')!.timeout = 20
     const { actions } = await open({ datasource_update: ok() })
