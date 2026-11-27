@@ -38,8 +38,11 @@ const input = computed(() => settingsInput(draft.value, base.value))
 
 function setRuntime(runtime: Runtime) {
   draft.value.runtime = runtime
-  // The browser can't keep a secret: an API that runs there has no sign-in.
-  if (runtime === 'browser') draft.value.signIn = 'none'
+  // The browser can't keep a secret, and the server keeps no answers for it: an API that runs there has no sign-in and no cache.
+  if (runtime === 'browser') {
+    draft.value.signIn = 'none'
+    draft.value.cacheTtl = ''
+  }
 }
 
 async function save() {
@@ -163,6 +166,35 @@ const note = computed(() => urlProblem.value ? 'Fix the base URL to save.' : pro
           >
             An API that runs in the browser has no secret key, so it can't sign in. Run it on the server to use one.
           </p>
+          <div class="grid grid-cols-2 gap-4">
+            <EditorFormRow
+              label="Timeout"
+              help="Seconds a call may wait for its answer (1 to 60), retries included. Empty for 10"
+              stacked
+            >
+              <EditorInput
+                v-model="draft.timeout"
+                placeholder="10"
+                inputmode="numeric"
+                aria-label="Timeout"
+                data-api-timeout
+              />
+            </EditorFormRow>
+            <EditorFormRow
+              label="Cache"
+              :help="draft.runtime === 'browser' ? 'Only an API run on the server keeps its answers' : 'Seconds the server keeps the answers to its reads (1 to 86400). A write through this API forgets them; a change made elsewhere shows when they expire. Empty for none'"
+              stacked
+            >
+              <EditorInput
+                v-model="draft.cacheTtl"
+                placeholder="None"
+                inputmode="numeric"
+                aria-label="Cache"
+                :disabled="draft.runtime === 'browser'"
+                data-api-cache
+              />
+            </EditorFormRow>
+          </div>
           <EditorFormRow
             v-if="draft.signIn === 'header'"
             label="Header name"

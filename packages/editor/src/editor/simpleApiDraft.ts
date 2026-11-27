@@ -24,6 +24,10 @@ export interface SettingsDraft {
   runtime: Runtime
   signIn: SignIn
   header: string
+  /** Seconds a call may wait, as typed; empty for the client's 10 s. */
+  timeout: string
+  /** Seconds the server keeps the answers to its reads, as typed; empty for none. */
+  cacheTtl: string
 }
 
 export const settingsOf = (source: ApiSource): SettingsDraft => ({
@@ -31,8 +35,20 @@ export const settingsOf = (source: ApiSource): SettingsDraft => ({
   baseUrl: source.baseUrl,
   runtime: source.runtime,
   signIn: source.auth?.type ?? 'none',
-  header: source.auth?.header ?? ''
+  header: source.auth?.header ?? '',
+  timeout: source.timeout === undefined ? '' : String(source.timeout),
+  cacheTtl: source.cache === undefined ? '' : String(source.cache.ttl)
 })
+
+/** Whole seconds from 1 to `max` as typed: the number, null for an empty field, undefined for anything else. */
+const secondsOf = (value: string, max: number): number | null | undefined => {
+  const text = value.trim()
+  if (text === '') return null
+  const seconds = Number(text)
+  return /^\d+$/.test(text) && seconds >= 1 && seconds <= max ? seconds : undefined
+}
+const TIMEOUT_MAX = 60
+const CACHE_MAX = 86_400
 
 export const settingsDirty = (draft: SettingsDraft, base: ApiSource): boolean => !sameJson(draft, settingsOf(base))
 export const settingsChangedOutside = (base: ApiSource, stored: ApiSource): boolean => !sameJson(settingsOf(base), settingsOf(stored))
@@ -42,7 +58,7 @@ export function settingsRebase(draft: SettingsDraft, base: ApiSource, stored: Ap
   const was = settingsOf(base)
   const now = settingsOf(stored)
   const keep = <K extends keyof SettingsDraft>(key: K): SettingsDraft[K] => sameJson(draft[key], was[key]) ? now[key] : draft[key]
-  return { name: keep('name'), baseUrl: keep('baseUrl'), runtime: keep('runtime'), signIn: keep('signIn'), header: keep('header') }
+  return { name: keep('name'), baseUrl: keep('baseUrl'), runtime: keep('runtime'), signIn: keep('signIn'), header: keep('header'), timeout: keep('timeout'), cacheTtl: keep('cacheTtl') }
 }
 
 /** What saving the settings asks of `api_update` besides the API's id: only what changed; null when nothing did. */
@@ -55,6 +71,11 @@ export function settingsInput(draft: SettingsDraft, base: ApiSource): Record<str
   if (draft.signIn !== was.signIn || (draft.signIn === 'header' && draft.header.trim() !== was.header)) {
     input.auth = draft.signIn === 'none' ? null : { type: draft.signIn, ...(draft.signIn === 'header' ? { header: draft.header.trim() } : {}) }
   }
+  // An invalid number is a problem of the draft (settingsProblems): it is not sent.
+  const timeout = secondsOf(draft.timeout, TIMEOUT_MAX)
+  if (timeout !== undefined && timeout !== secondsOf(was.timeout, TIMEOUT_MAX)) input.timeout = timeout
+  const ttl = secondsOf(draft.cacheTtl, CACHE_MAX)
+  if (ttl !== undefined && ttl !== secondsOf(was.cacheTtl, CACHE_MAX)) input.cache = ttl === null ? null : { ttl }
   return Object.keys(input).length ? input : null
 }
 
@@ -64,6 +85,8 @@ export function settingsProblems(draft: SettingsDraft): string[] {
   if (!draft.name.trim()) problems.push('Give the API a name')
   if (!draft.baseUrl.trim()) problems.push('Give the base URL')
   if (draft.signIn === 'header' && !draft.header.trim()) problems.push('Give the header name, like “X-Api-Key”')
+  if (secondsOf(draft.timeout, TIMEOUT_MAX) === undefined) problems.push('The timeout is whole seconds, 1 to 60')
+  if (secondsOf(draft.cacheTtl, CACHE_MAX) === undefined) problems.push('The cache is whole seconds, 1 to 86400 (a day)')
   return problems
 }
 

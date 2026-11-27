@@ -280,6 +280,44 @@ describe('an API\'s panel', () => {
     expect(q('[data-simple-api-unsaved]')).toBeNull()
   })
 
+  it('saves the timeout and the cache as whole seconds, and an emptied one as the default (null)', async () => {
+    shop()
+    const { actions } = await mounted()
+    expect(field('data-api-timeout').value).toBe('')
+    expect(field('data-api-cache').value).toBe('')
+    await type('data-api-timeout', '20')
+    await type('data-api-cache', '300')
+    await click(q('[data-simple-api-save]'))
+    expect(calls(actions, 'api_update')).toEqual([{ datasource: ID, timeout: 20, cache: { ttl: 300 } }])
+    expect(field('data-api-timeout').value).toBe('20')
+    expect(field('data-api-cache').value).toBe('300')
+    expect(q('[data-simple-api-unsaved]')).toBeNull()
+    await type('data-api-timeout', '')
+    await type('data-api-cache', '')
+    await click(q('[data-simple-api-save]'))
+    expect(calls(actions, 'api_update').at(-1)).toEqual({ datasource: ID, timeout: null, cache: null })
+  })
+
+  it.each([['data-api-timeout', '61', 'The timeout is whole seconds, 1 to 60'], ['data-api-timeout', '1.5', 'The timeout is whole seconds, 1 to 60'], ['data-api-cache', '0', 'The cache is whole seconds, 1 to 86400 (a day)']])('does not offer Save for a %s of %s', async (hook, value, problem) => {
+    shop()
+    const { actions } = await mounted()
+    await type(hook, value)
+    expect(text(q('[data-simple-api-blocked]'))).toBe(problem)
+    expect(q('[data-simple-api-save]')?.hasAttribute('disabled')).toBe(true)
+    expect(calls(actions, 'api_update')).toEqual([])
+  })
+
+  it('an API run in the browser has no cache: choosing the browser clears it and saves its removal', async () => {
+    shop({ cache: { ttl: 60 } })
+    const { actions } = await mounted()
+    expect(field('data-api-cache').value).toBe('60')
+    await click(q('[data-api-runtime="browser"]'))
+    expect(field('data-api-cache').value).toBe('')
+    expect(field('data-api-cache').disabled).toBe(true)
+    await click(q('[data-simple-api-save]'))
+    expect(calls(actions, 'api_update')).toEqual([{ datasource: ID, runtime: 'browser', cache: null }])
+  })
+
   it('changes the sign-in, and sends the header name only for an API key header', async () => {
     shop()
     const { actions } = await mounted()
