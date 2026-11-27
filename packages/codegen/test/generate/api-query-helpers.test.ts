@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { generate } from '../../src/generate/index'
 import { loadModel } from '../../src/model/load'
-import { fixtureModelFiles } from '../model/fixture'
+import { fixtureModelFiles, fixtureRoot } from '../model/fixture'
 import { generatedRunner } from './run-generated'
 
 /**
@@ -266,5 +267,77 @@ describe('generated query helpers, run', () => {
       await action.run()
       expect(action.error.value).toBeUndefined()
     })
+  })
+})
+
+// R3'b RELIABILITY-004: the retry rule above, over the golden blog's pinned TanStack Query, on a clock the test moves: what the page
+// does when a source asks it to wait, not only what the helpers would tell TanStack.
+const pnpmStore = join(fixtureRoot, 'node_modules/.pnpm')
+const queryCoreDirectory = existsSync(pnpmStore) ? readdirSync(pnpmStore).find(name => /^@tanstack\+query-core@/.test(name)) : undefined
+const NEEDS_FIXTURE = queryCoreDirectory || process.env.CI ? '' : ' (skipped: run `pnpm --dir fixtures/codegen/blog install` first)'
+
+describe.skipIf(!!NEEDS_FIXTURE)(`generated query helpers over TanStack Query, on a fake clock${NEEDS_FIXTURE}`, () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bildr-query-clock-'))
+  let helpers: Helpers
+
+  beforeAll(async () => {
+    const core = pathToFileURL(join(pnpmStore, queryCoreDirectory!, 'node_modules/@tanstack/query-core/build/modern/index.js')).href
+    const loaded = loadModel(fixtureModelFiles())
+    if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems))
+    const { load } = generatedRunner(new Map(generate(loaded.model).map(file => [file.path, file.content])), dir, {
+      'vue': VUE_STUB,
+      '@tanstack/query-core': `export * from ${JSON.stringify(core)}`,
+      '#layers/core/app/data/query-client': `import { QueryClient } from ${JSON.stringify(core)}\nexport const queryClient = new QueryClient()`
+    })
+    helpers = await load<Helpers>('layers/apis/app/data/api-query.ts')
+  })
+  beforeEach(() => {
+    Object.assign(globalThis, { [STATE]: { observers: [], invalidated: [], watchers: [], disposers: [] } })
+    vi.useFakeTimers()
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    Reflect.deleteProperty(globalThis, STATE)
+  })
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  /** A query whose source fails with `error` first, then answers; how many times it was called. */
+  const failingOnce = (key: string, error: ApiError) => {
+    let calls = 0
+    const answer = helpers.useApiQuery({
+      key: ['apis', 'shop', key],
+      input: { id: 1 },
+      fetch: async () => (calls++ === 0 ? { ok: false, error } : { ok: true, value: { id: 1 } })
+    })
+    return { ...answer, calls: () => calls }
+  }
+
+  it('waits the seconds the source asked (Retry-After) before trying again, then shows the answer', async () => {
+    const query = failingOnce('waited', { type: 'unavailable', status: 503, message: 'down', retryAfter: 5 } as ApiError)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(query.calls()).toBe(1)
+    // Longer than the first backoff (1 s): it is the source's wait that holds the second try.
+    await vi.advanceTimersByTimeAsync(4_999)
+    expect([query.calls(), query.status.value]).toEqual([1, 'pending'])
+    await vi.advanceTimersByTimeAsync(1)
+    expect([query.calls(), query.status.value, query.data.value]).toEqual([2, 'success', { id: 1 }])
+  })
+
+  it('a source that asks to wait longer than 10 s is not tried again: its error shows at once', async () => {
+    const query = failingOnce('too-long', { type: 'rate_limited', status: 503, message: 'slow down', retryAfter: 11 } as ApiError)
+    await vi.advanceTimersByTimeAsync(0)
+    expect([query.calls(), query.status.value, query.error.value?.type]).toEqual([1, 'error', 'rate_limited'])
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(query.calls()).toBe(1)
+  })
+
+  it('with no wait asked, a passing failure backs off a second before its second try', async () => {
+    const query = failingOnce('backoff', { type: 'timeout', status: 504, message: 'slow' } as ApiError)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(query.calls()).toBe(1)
+    await vi.advanceTimersByTimeAsync(1)
+    expect([query.calls(), query.status.value]).toEqual([2, 'success'])
   })
 })
