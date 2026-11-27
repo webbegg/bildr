@@ -75,6 +75,18 @@ describe('the domain rules of an action', () => {
     expect(publish).not.toContain('post.published')
   })
 
+  it('with no output, the use-case answers undefined both when the rule changes nothing and after the update', () => {
+    const publish = content(withPublish((action) => {
+      delete action.output
+    }), PUBLISH_USE_CASE)!
+    expect(publish).toContain([
+      '    const postChange = publishPostChange(post, at)',
+      '    if (!postChange) return ok(undefined)',
+      '    await posts.update(id, { ...post, ...postChange, updatedAt: at })',
+      '    return ok(undefined)'
+    ].join('\n'))
+  })
+
   it('the optimistic updates apply them too', () => {
     const create = content(files, 'layers/blog/app/composables/blog/useCreatePost.ts')!
     expect(create).toContain('import { createPostChange } from \'#blog/domain/post.rules\'')

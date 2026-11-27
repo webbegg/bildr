@@ -366,9 +366,9 @@ export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, r
     body.push(
       '  async get(id) {',
       `    ${call('get')}`,
-      '    // The source has no such row: it answered 404, or nothing.',
+      '    // The source has no such row: it answered 404, nothing, or null.',
       `    if (!${answer}.ok) return ${answer}.error.type === 'not_found' ? ok(undefined) : ${answer}`,
-      `    return ${answer}.value === undefined ? ok(undefined) : read(${itemSchema}, ${answer}.value)`,
+      `    return ${answer}.value === undefined || ${answer}.value === null ? ok(undefined) : read(${itemSchema}, ${answer}.value)`,
       '  }'
     )
   }
@@ -441,11 +441,27 @@ export const restRepositoryFile = (context: ModuleContext, entity: EntityFile, r
 }
 
 /**
+ * Values a patterned text field may take, tried in order after its default and its type's sample: the shapes patterns usually ask
+ * for (codes, slugs, identifiers, digits, hex). A pattern none matches keeps the type's sample, and its generated test says so.
+ */
+const PATTERN_CANDIDATES = [
+  'abc', 'ABC', 'Abc', 'a', 'A', '1', '123', '123456', 'abc123', 'ABC123', 'a1', 'A1', 'abc-123', 'ABC-123', 'abc_123', 'abc-def', 'abc.def',
+  'AB12', 'AB-1234', 'AB-12-CD', '#ffffff', '#FFFFFF', 'ffffff', 'x@y.co', '2026-01-01', '10:30', '+34600000000', 'abc def', 'Abc def'
+]
+
+/**
  * A value a field's own rules take, for a test whose adapter checks them: the catalogue's sample of its type, within its bounds. With a
- * pattern, its default when that matches (a value for any pattern is not generated yet).
+ * pattern, the first of its default, its sample and PATTERN_CANDIDATES that matches it and its bounds.
  */
 const validSample = (field: Field): string | number | boolean => {
-  if (field.pattern !== undefined && typeof field.default === 'string' && new RegExp(field.pattern).test(field.default)) return field.default
+  if (field.pattern !== undefined) {
+    const pattern = new RegExp(field.pattern)
+    const fits = (value: string) => pattern.test(value) && value.length >= (field.min ?? 0) && value.length <= (field.max ?? Infinity)
+    const sample = sampleOf(field)
+    // A format type (email, url, uuid…) checks its own shape too: only plain text tries the candidates.
+    const found = [field.default, sample, ...(field.type === 'text' ? PATTERN_CANDIDATES : [])].find((value): value is string => typeof value === 'string' && fits(value))
+    if (found !== undefined) return found
+  }
   const value = sampleOf(field)
   if (typeof value === 'number') return Math.min(Math.max(value, field.min ?? value), field.max ?? value)
   if (typeof value === 'string' && field.type === 'text') {
@@ -499,6 +515,7 @@ export const restRepositoryTestFile = (context: ModuleContext, entity: EntityFil
       `    expect(found.calls).toEqual([{ path: ${at(rest.get!.path)}, request: ${request('get', [])} }])`,
       `    expect(await fake(err(${errors.failed}('not_found', 404, 'answered 404'))).repository.get(${tsLiteral(id)})).toEqual(ok(undefined))`,
       `    expect(await fake(ok(undefined)).repository.get(${tsLiteral(id)})).toEqual(ok(undefined))`,
+      `    expect(await fake(ok(null)).repository.get(${tsLiteral(id)})).toEqual(ok(undefined))`,
       '  })'
     ])
   }

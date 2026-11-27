@@ -101,10 +101,16 @@ describe('a list-only REST repository answers a Result', () => {
     quote.fields.find(field => field.name === 'id')!.type = 'uuid'
     Object.assign(quote.fields.find(field => field.name === 'author')!, { min: 12 })
     quote.fields.push({ id: 'fld_q_added', name: 'addedAt', type: 'datetime', required: true }, { id: 'fld_q_mail', name: 'contact', type: 'email', required: true })
+    // Patterned fields with no default that matches: a code, a slug, a hex colour written as text.
+    quote.fields.push(
+      { id: 'fld_q_code', name: 'code', type: 'text', required: true, pattern: '^[A-Z]{3}-\\d{3}$' },
+      { id: 'fld_q_slug', name: 'slug', type: 'text', required: true, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', default: 'Not A Slug' },
+      { id: 'fld_q_tint', name: 'tint', type: 'text', required: true, pattern: '^#[0-9a-f]{6}$' }
+    )
     // A field the map leaves out takes its default: the entity's schema reads the mapped row.
     quote.fields.push({ id: 'fld_q_featured', name: 'featured', type: 'boolean', default: false })
     const repository = model.modules.blog!.repositories.find(entry => entry.id === 'repo_quote')!
-    Object.assign(repository.rest!.fieldMap!, { addedAt: 'added_at', contact: 'contact' })
+    Object.assign(repository.rest!.fieldMap!, { addedAt: 'added_at', contact: 'contact', code: 'code', slug: 'slug', tint: 'tint' })
     const generated = generate(model)
     const dir = mkdtempSync(join(tmpdir(), 'bildr-rest-result-'))
     try {
@@ -222,6 +228,34 @@ describe('a REST repository that looks up and writes answers a Result; a use-cas
     ].join('\n'))
     // Every answer is a REST repository's Result or an error: `ok` is not imported.
     expect(useCase).toContain('import { type Result, err } from \'#core/kernel/result\'\n')
+  })
+
+  it('with no output, a REST write answers undefined, or its failure; its answer\'s local takes a free name', () => {
+    const generated = crudQuotes([{
+      id: 'act_mark_quote', name: 'markQuote', label: 'Mark quote', http: { method: 'POST', path: '/quotes/:id/mark' }, input: idParam,
+      errors: [],
+      steps: [
+        { kind: 'load', as: 'written', repository: 'repo_quote', op: 'get', args: byId },
+        { kind: 'repository', repository: 'repo_quote', op: 'update', id: { $input: 'id' }, from: { $var: 'written' }, set: { author: 'Marked' } }
+      ]
+    }])
+    const useCase = generated.find(file => file.path === `${BLOG}/server/application/actions/mark-quote.ts`)!.content
+    expect(useCase).toContain('): Promise<Result<undefined, BlogError>> => {')
+    expect(useCase).toContain([
+      '    const written_ = await quotes.update(id, { ...written, author: \'Marked\' })',
+      '    if (!written_.ok) return written_',
+      '    return ok(undefined)'
+    ].join('\n'))
+    const test = generated.find(file => file.path === `${BLOG}/test/application/mark-quote.test.ts`)!.content
+    expect(test).toContain('    expect(result).toEqual({ ok: true, value: undefined })\n')
+  })
+
+  it('refuses a create in an action that takes route parameters (no row to write)', () => {
+    expect(() => crudQuotes([{
+      id: 'act_copy_quote', name: 'copyQuote', label: 'Copy quote', http: { method: 'POST', path: '/quotes/:id/copy' }, input: idParam,
+      errors: [],
+      steps: [{ kind: 'repository', repository: 'repo_quote', op: 'create' }]
+    }])).toThrow('act_copy_quote: a create needs an entity input (its body), not route parameters')
   })
 
   it('a local never takes the name of an error factory (an error named like it)', () => {
