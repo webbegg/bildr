@@ -517,7 +517,7 @@ async function settledApiOnly(ctx, action, log, golden) {
 
 /** Breaks the generated app on purpose (E2E_MUTATE), so a run proves the smoke checks notice. */
 const MUTATIONS = {
-  submit: ['layers/blog/app/pages/posts/new.vue', ' @submit.prevent="onFormSubmit"', ''],
+  submit: ['layers/blog/app/pages/posts/new.vue', ' @submit="onFormSubmit"', ''],
   list: ['layers/blog/app/components/blog/PostCard.vue', /\n\s*<h2[^\n]*props\.post\.title[^\n]*<\/h2>/, ''],
   hover: ['layers/blog/app/components/blog/PostCard.vue', ' hover:shadow-md', '']
 }
@@ -887,6 +887,11 @@ async function smoke(ctx) {
     await page.getByRole('link', { name: 'New post' }).click()
     await visible(page.getByRole('heading', { name: 'New post' }), 'the layout\'s "New post" link opens the create form')
     await page.locator('input[name="title"]').fill(post.title)
+    // T2: the page checks with the route's own schema, its message under the field, and sends nothing until it passes.
+    await page.locator('input[name="slug"]').fill('Not A Slug')
+    await page.getByRole('button', { name: 'Create' }).click()
+    await visible(page.getByText('Use lowercase letters, numbers and dashes'), 'create: a slug the schema refuses shows its message under the field')
+    check(new URL(page.url()).pathname === '/posts/new', `create: a form the schema refuses stays on its page (at ${page.url()})`)
     await page.locator('input[name="slug"]').fill(post.slug)
     await page.locator('textarea[name="body"]').fill(post.body)
     await page.getByText('Publish now').click()

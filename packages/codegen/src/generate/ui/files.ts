@@ -299,13 +299,21 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
   const formLines: string[] = []
   if (env.needs.has('form') && env.form) {
     const initial = env.form.fields.map((field) => {
+      // A choice not made yet is none of its options (the dropdown shows its placeholder), typed as one of them: what UForm's state takes.
+      if (field.type === 'select' && field.default === undefined && field.options?.length) {
+        return `${field.name}: undefined as ${field.options.map(option => tsString(option)).join(' | ')} | undefined`
+      }
       const value = field.default ?? (field.type === 'boolean' ? false : VALUE_TYPES[field.type].ts === 'number' ? 0 : '')
       return `${field.name}: ${expression(env, undefined, value as Value, 'script')}`
     })
     formLines.push(`const form = reactive({ ${initial.join(', ')} })`)
+    // The route's own schema, narrowed to the fields the Form edits: the page refuses what the route would, with the same messages.
+    // A read-only field is not in what a client sends (the body omits it): the route drops it, so the page doesn't check it.
+    const sent = env.form.fields.filter(field => !field.readonly)
+    formLines.push(`const formSchema = ${env.form.contract.value}.body.pick({ ${sent.map(field => `${field.name}: true`).join(', ')} })`)
   }
 
-  const imports: string[] = []
+  const imports: string[] = env.needs.has('form') && env.form ? [`import { ${env.form.contract.value} } from '${env.form.contract.from}'`] : []
   const meta = [`name: ${tsString(page.name)}`]
   if (layout) meta.push(`layout: ${fills.length ? 'false' : tsString(layout.name)}`)
   const layoutValues = Object.entries(page.layoutValues ?? {}).map(([id, value]) => {

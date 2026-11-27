@@ -30,7 +30,8 @@ export const EVENT_NAMES: Record<string, string> = { click: 'click', change: 'up
 
 export const events = (env: Env, node: ModelNode): Attr[] => (node.interactions ?? []).map((interaction) => {
   const steps = interaction.do as Array<Record<string, Value>>
-  if (interaction.on === 'submit') return attr('event', `@submit.prevent="${handler(env, node, interaction.on, steps)}"`)
+  // A Form is a UForm: it stops the browser's submit itself, and calls the handler once its schema passes.
+  if (interaction.on === 'submit') return attr('event', `@submit="${handler(env, node, interaction.on, steps)}"`)
   const name = EVENT_NAMES[interaction.on] ?? fail(env, node, `${interaction.on} interactions can't be generated yet`)
   if (steps.length !== 1) return attr('event', `@${name}="${handler(env, node, interaction.on, steps)}"`)
   const step = steps[0]!

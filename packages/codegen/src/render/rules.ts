@@ -22,7 +22,8 @@ export const NODE_ELEMENTS = {
   Link: 'ULink',
   Image: 'img',
   Checkbox: 'UCheckbox',
-  Form: 'form',
+  /** A Form validates with its action's contract (the generator's only: the canvas has no Form element of its own). */
+  Form: 'UForm',
   /** The labelled field wrapping an Input's control. */
   Input: 'UFormField',
   InputControl: 'UInput',

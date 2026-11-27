@@ -46,7 +46,8 @@ export interface Env {
   /** Script blocks of interaction handlers. */
   handlers: string[][]
   /** The Form being rendered: its action and the entity fields it edits. */
-  form?: { fields: Field[] }
+  /** The Form's fields and the contract of the action it runs, whose body validates them. */
+  form?: { fields: Field[], contract: { value: string, from: string } }
   /** Component variants: node id → the style each variant overrides (rendered as a class map) and the variants that hide it. */
   variants?: Map<string, Variant>
   /** The variant class map constants the template uses, in template order. */
