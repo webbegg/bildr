@@ -883,7 +883,14 @@ const useCaseTestFile = (context: ModuleContext, analyzed: Analyzed) => {
     named(action.name, context.paths.action(kebab(action.name))),
     ...memory.map(({ entity, factory }) => named(factory, context.paths.repository(entityNames(entity).file, 'memory')))
   ]
-  const setup = (seeded: boolean) => memory.map(({ entity, factory }) => `    const ${entity.plural} = ${factory}(${seeded ? `${entityNames(entity).variable}Seed` : ''})`)
+  // A seeded test fills every repository that has sample rows with them, each from its own seed (imported once, below).
+  const seedsUsed = new Set<string>()
+  const hasSeed = (entity: EntityFile) => context.module.fixtures.some(fixtures => fixtures.entity === entity.id)
+  const setup = (seeded: boolean) => memory.map(({ entity, factory }) => {
+    const seed = seeded && hasSeed(entity) ? `${entityNames(entity).variable}Seed` : ''
+    if (seed) seedsUsed.add(entity.id)
+    return `    const ${entity.plural} = ${factory}(${seed})`
+  })
   const tests: string[][] = []
   const preamble: string[] = []
 
@@ -908,11 +915,6 @@ const useCaseTestFile = (context: ModuleContext, analyzed: Analyzed) => {
     const loaded = load ? analyzed.repositories.find(entry => entry.repository.id === load.repository) : undefined
     const seeded = loaded && context.module.fixtures.some(fixtures => fixtures.entity === loaded.entity.id)
     if (loaded && !seeded) throw new Error(`${action.id}: generated tests need fixtures for ${loaded.entity.name}`)
-    if (loaded) {
-      // A database entity's rows are its seed; a memory or REST one's, the memory seed (a REST twin's rows in these tests).
-      const seedFile = datasourceOf(context, loaded.repository).kind === 'sqlite' ? context.paths.dbSeed : context.paths.memorySeed
-      imports.push(named(`${entityNames(loaded.entity).variable}Seed`, seedFile))
-    }
     const existing = loaded ? `${entityNames(loaded.entity).variable}Seed[0]!.id` : tsString(sampleId(1))
     tests.push(['  it(\'succeeds\', async () => {', ...setup(Boolean(loaded)), `    const result = await ${action.name}(${built})(${params.map(() => existing).join(', ')})`, succeeded, '  })'])
     if (load?.orError) {
@@ -924,6 +926,13 @@ const useCaseTestFile = (context: ModuleContext, analyzed: Analyzed) => {
         '  })'
       ])
     }
+  }
+
+  for (const { entity, repository } of analyzed.repositories) {
+    if (!seedsUsed.has(entity.id)) continue
+    // A database entity's rows are its seed; a memory or REST one's, the memory seed (a REST twin's rows in these tests).
+    const seedFile = datasourceOf(context, repository).kind === 'sqlite' ? context.paths.dbSeed : context.paths.memorySeed
+    imports.push(named(`${entityNames(entity).variable}Seed`, seedFile))
   }
 
   return {
