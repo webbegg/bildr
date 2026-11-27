@@ -63,10 +63,10 @@ describe('the generated clients', () => {
     const files = generated(p.files)
     const catalog = files['layers/apis/server/utils/catalog.ts']!
     expect(catalog).toContain('import { answerCache, cachedClient } from \'#core/http/cache\'\n')
-    expect(catalog).toContain('  const call = cachedClient(createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? \'\').trim() === \'\', retries: 2, signal }), answerCache(\'catalog\'), 60000)\n')
+    expect(catalog).toContain('  const call = cachedClient(createHttpClient({ baseUrl: config.baseUrl, headers, unconfigured: String(config.apiKey ?? \'\').trim() === \'\', retries: 2, signal }), answerCache(\'catalog\'), 60000, signal)\n')
     const blog = files['layers/blog/server/utils/blog.ts']!
     expect(blog).toContain('import { answerCache, cachedClient } from \'#core/http/cache\'\n')
-    expect(blog).toContain('  return resultClient(cachedClient(createHttpClient({ baseUrl, headers, retries: 2, signal }), answerCache(\'quotes\'), 30000), failure => ')
+    expect(blog).toContain('  return resultClient(cachedClient(createHttpClient({ baseUrl, headers, retries: 2, signal }), answerCache(\'quotes\'), 30000, signal), failure => ')
   })
 })
 

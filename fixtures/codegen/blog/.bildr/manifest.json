@@ -588,7 +588,7 @@
     },
     "layers/core/shared/http/cache.ts": {
       "owner": "managed",
-      "sha256": "fffb043d41f58fcb1abaa722851489d1f75d540af91861ed67c334dc3f9ab315"
+      "sha256": "cbce88b90400e2ff4eca0fc634c1decae22a60b6cc2450fadb30cef357526a86"
     },
     "layers/core/shared/http/client.ts": {
       "owner": "managed",
@@ -608,7 +608,7 @@
     },
     "layers/core/test/infrastructure/http-cache.test.ts": {
       "owner": "managed",
-      "sha256": "88f84683599d283daeb03081de8167d44365a75e8a8fbc49df75cf19cc78298b"
+      "sha256": "3312fa12f23c83e85df4730d233c8693a06a9a44b966a703d7545e2a70626e18"
     },
     "layers/core/test/infrastructure/http-client.test.ts": {
       "owner": "managed",
