@@ -74,10 +74,11 @@ export const clientOptions = (source: Pick<DataSourceFile, 'timeout'>, onServer:
 
 /**
  * A server source's client call, its reads kept in the source's answer cache when it says one (`cache.ttl`): one cache per source, shared
- * by the modules that call it, so a write in one is seen by all.
+ * by the modules that call it, so a write in one is seen by all. It is given the root's `signal` too: a read whose request went away
+ * stops waiting for one alike in flight (R5b).
  */
 export const cachedCall = (source: Pick<DataSourceFile, 'name' | 'cache'>, call: string): string =>
-  source.cache ? `cachedClient(${call}, answerCache(${tsString(source.name)}), ${source.cache.ttl * 1000})` : call
+  source.cache ? `cachedClient(${call}, answerCache(${tsString(source.name)}), ${source.cache.ttl * 1000}, signal)` : call
 
 /** The import of the answer cache, for a root whose sources say one. */
 export const cacheImports = (sources: ReadonlyArray<Pick<DataSourceFile, 'cache'>>): string[] =>
