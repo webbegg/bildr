@@ -22,7 +22,7 @@ const STORE_KINDS = ['sqlite', 'rest', 'memory'] as const
 /** What the `timeout` input of a remote source says. */
 export const TIMEOUT_TEXT = 'How long a call may wait for its answer, in whole seconds (1 to 60; 10 when not said). On the server a read that failed because the source was down is tried again twice, within that time'
 /** What the `cache` input of a remote source says. */
-export const CACHE_TEXT = 'How long the server keeps the answers to its reads, { ttl } in whole seconds (1 to 86400; none when not said). In this server\'s memory: a write through the source forgets them'
+export const CACHE_TEXT = 'How long the server keeps the answers to its reads, { ttl } in whole seconds (1 to 86400; none when not said). In this server\'s memory: a write through the source forgets them; a change made elsewhere shows up when they expire'
 const NO_HTTP = 'The app database is not called over HTTP: it takes no timeout or cache'
 
 const HEADER_NAME = /^[A-Za-z0-9-]{1,64}$/

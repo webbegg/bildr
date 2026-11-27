@@ -15,7 +15,7 @@ const QUOTES = '.bildr/datasources/quotes.json'
 describe('the cache of a remote source', () => {
   it('a server API source keeps its TTL in seconds (1 to a day, whole); null takes it away', () => {
     const p = project()
-    p.edit('api_update', { datasource: 'ds_catalog', cache: { ttl: 60 } })
+    for (const ttl of [1, 86_400, 60]) p.edit('api_update', { datasource: 'ds_catalog', cache: { ttl } })
     expect(p.json(CATALOG).cache).toEqual({ ttl: 60 })
     for (const cache of [{ ttl: 0 }, { ttl: 86_401 }, { ttl: 1.5 }, { ttl: 5, stale: 1 }, {}]) p.refuse('api_update', { datasource: 'ds_catalog', cache }, 'invalid_input')
     p.edit('api_update', { datasource: 'ds_catalog', cache: null })
@@ -81,16 +81,45 @@ describe('a cached source\'s composition root, run', () => {
     Reflect.deleteProperty(globalThis, CONFIG)
   })
 
-  it('a read asked again within the TTL is not sent again, in another request too; a write makes the next read go to the API', async () => {
+  type Call = (input: unknown) => Promise<{ ok: boolean, value?: unknown }>
+  type Root = { useCatalogApi: (signal?: AbortSignal) => { product: Call, products: Call, deleteProduct: Call } }
+  let loaded: Promise<Root> | undefined
+  /** The catalog root, its source caching 60 s, loaded once: answerCache keeps one cache per source for the module's life. */
+  const cachedRoot = () => loaded ??= (async () => {
     const p = project()
     p.edit('api_update', { datasource: 'ds_catalog', cache: { ttl: 60 } })
-    const loaded = loadModel(p.files)
-    if (!loaded.ok) throw new Error(JSON.stringify(loaded.problems))
-    const { load } = generatedRunner(new Map(generate(loaded.model).map(file => [file.path, file.content])), dir, {
+    const model = loadModel(p.files)
+    if (!model.ok) throw new Error(JSON.stringify(model.problems))
+    const { load } = generatedRunner(new Map(generate(model.model).map(file => [file.path, file.content])), dir, {
       'nuxt/server': `export const useRuntimeConfig = () => globalThis.${CONFIG}\nexport const createError = ({ status, message }) => Object.assign(new Error(message), { status })`
     })
-    type Call = (input: unknown) => Promise<{ ok: boolean, value?: unknown }>
-    const root = await load<{ useCatalogApi: (signal?: AbortSignal) => { product: Call, deleteProduct: Call } }>('layers/apis/server/utils/catalog.ts')
+    return load<Root>('layers/apis/server/utils/catalog.ts')
+  })()
+
+  it('a read with another query or header (one a user gives) is sent, and keeps its own answer', async () => {
+    const root = await cachedRoot()
+    Object.assign(globalThis, { [CONFIG]: { apis: { catalog: { baseUrl: 'https://shop.example.com/v1', apiKey: 'key-1' } } } })
+    const sent: string[] = []
+    vi.stubGlobal('fetch', (url: unknown, init: RequestInit) => {
+      const locale = new Headers(init.headers).get('accept-language')
+      sent.push(`${String(url)} ${locale}`)
+      const dto = { id: sent.length, name: `${locale} ${new URL(String(url)).searchParams.get('cat')}`, price: 1, in_stock: true, created_at: '2026-05-01T10:00:00Z', note: null, categories: [] }
+      return Promise.resolve(new Response(JSON.stringify({ data: { items: [dto] } })))
+    })
+    const names = async (input: unknown) => ((await root.useCatalogApi().products(input)).value as Array<{ name: string }>).map(product => product.name)
+    expect(await names({ category: 'home', locale: 'es' })).toEqual(['es home'])
+    expect(await names({ category: 'home', locale: 'en' })).toEqual(['en home'])
+    expect(await names({ category: 'garden', locale: 'es' })).toEqual(['es garden'])
+    expect(await names({ category: 'home', locale: 'es' })).toEqual(['es home'])
+    expect(sent).toEqual([
+      'https://shop.example.com/v1/products?cat=home es',
+      'https://shop.example.com/v1/products?cat=home en',
+      'https://shop.example.com/v1/products?cat=garden es'
+    ])
+  })
+
+  it('a read asked again within the TTL is not sent again, in another request too; a write makes the next read go to the API', async () => {
+    const root = await cachedRoot()
     Object.assign(globalThis, { [CONFIG]: { apis: { catalog: { baseUrl: 'https://shop.example.com/v1', apiKey: 'key-1' } } } })
     const sent: string[] = []
     let price = 12.5

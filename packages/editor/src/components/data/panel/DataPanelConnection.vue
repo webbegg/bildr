@@ -143,7 +143,7 @@ onMounted(async () => {
       </EditorRow>
       <EditorRow
         label="Cache"
-        title="Seconds the server keeps the answers to its reads (1 to 86400), in its memory; a write through it forgets them. Empty for none"
+        title="Seconds the server keeps the answers to its reads (1 to 86400), in its memory: a write through this source forgets them, but a change made elsewhere (another server, another app) shows up only when they expire. Empty for none"
         name="cache"
       >
         <EditorCommitInput

@@ -40,6 +40,26 @@ describe('memoryCache', () => {
     cache.clear()
     expect(cache.get('c')).toBeUndefined()
   })
+
+  it('keeps maxBytes at most (as JSON), dropping the oldest; an answer bigger than a tenth of it is not kept', () => {
+    const cache = memoryCache(500, 100)
+    // Each is 10 as JSON (its quotes too): the eleventh makes 110.
+    const keys = Array.from({ length: 11 }, (_, n) => `k${n}`)
+    for (const key of keys) cache.set(key, 'x'.repeat(8), 1000)
+    expect(keys.filter(key => cache.get(key) === undefined)).toEqual(['k0'])
+    cache.set('big', 'x'.repeat(9), 1000)
+    expect(cache.get('big')).toBeUndefined()
+    expect(cache.get('k10')).toBeDefined()
+  })
+
+  it('drops what has expired when it keeps something new, so expired answers make no room scarce', () => {
+    const cache = memoryCache(2)
+    cache.set('long', 2, 60_000)
+    cache.set('old', 1, 1000)
+    vi.advanceTimersByTime(1000)
+    cache.set('new', 3, 1000)
+    expect(['old', 'long', 'new'].map(key => cache.get(key))).toEqual([undefined, 2, 3])
+  })
 })
 
 describe('answerCache', () => {

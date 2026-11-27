@@ -15,28 +15,45 @@ export interface AnswerCache {
 
 /** The most answers a memoryCache keeps when not said: past it, the oldest is dropped. */
 const MAX_ENTRIES = 500
+/** The most a memoryCache keeps when not said, measured as the JSON of its answers (about its bytes): 16 MB. */
+const MAX_BYTES = 16 * 1024 * 1024
 
-/** An AnswerCache in this server's memory: each server instance has its own, and it is gone when the server restarts. */
-export const memoryCache = (maxEntries = MAX_ENTRIES): AnswerCache => {
-  const entries = new Map<string, { answer: unknown, expires: number }>()
+/**
+ * An AnswerCache in this server's memory: each server instance has its own, and it is gone when the server restarts. It keeps
+ * `maxEntries` answers and `maxBytes` at most, dropping the expired first and then the oldest; an answer bigger than a tenth of
+ * `maxBytes` is not kept, so one answer never pushes out all others.
+ */
+export const memoryCache = (maxEntries = MAX_ENTRIES, maxBytes = MAX_BYTES): AnswerCache => {
+  const entries = new Map<string, { answer: unknown, expires: number, bytes: number }>()
+  let total = 0
+  const drop = (key: string) => {
+    total -= entries.get(key)?.bytes ?? 0
+    entries.delete(key)
+  }
   return {
     get(key) {
       const entry = entries.get(key)
       if (!entry) return undefined
       if (entry.expires > Date.now()) return structuredClone(entry.answer)
-      entries.delete(key)
+      drop(key)
       return undefined
     },
     set(key, answer, ttlMs) {
-      entries.delete(key)
-      entries.set(key, { answer: structuredClone(answer), expires: Date.now() + ttlMs })
+      drop(key)
+      const bytes = JSON.stringify(answer)?.length ?? 0
+      if (bytes > maxBytes / 10) return
+      const now = Date.now()
+      for (const [kept, entry] of entries) if (entry.expires <= now) drop(kept)
+      entries.set(key, { answer: structuredClone(answer), expires: now + ttlMs, bytes })
+      total += bytes
       for (const oldest of entries.keys()) {
-        if (entries.size <= maxEntries) break
-        entries.delete(oldest)
+        if (entries.size <= maxEntries && total <= maxBytes) break
+        drop(oldest)
       }
     },
     clear() {
       entries.clear()
+      total = 0
     }
   }
 }
