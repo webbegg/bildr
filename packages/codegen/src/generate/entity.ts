@@ -64,10 +64,7 @@ export const domainFile = (context: ModuleContext, entity: EntityFile) => {
             '',
             `/** What a client may send to create a ${names.type}.${entity.idStrategy === 'uuid' ? ' The id is client-generated for optimistic inserts.' : ''} */`,
             `export const New${names.type}Schema = ${omitted.length ? `${names.type}Schema.omit({ ${omitted.map(name => `${name}: true`).join(', ')} })` : `${names.type}Schema`}`,
-            `export type New${names.type} = z.input<typeof New${names.type}Schema>`,
-            '',
-            `export const ${names.type}PatchSchema = New${names.type}Schema.omit({ id: true }).partial()`,
-            `export type ${names.type}Patch = z.infer<typeof ${names.type}PatchSchema>`
+            `export type New${names.type} = z.input<typeof New${names.type}Schema>`
           ]
         : []),
       ...(unique.length ? ['', ...unique.map(field => `export const ${names.type}${pascal(field.name)}Schema = ${names.type}Schema.shape.${field.name}`)] : [])
