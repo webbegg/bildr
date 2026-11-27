@@ -222,6 +222,23 @@ const GROUPS: Array<[string, (session: Session) => void]> = [
       ]
     })
   }],
+  // A use-case over two entities, one of them loaded: its test seeds each from its own sample rows and passes the loaded one's id.
+  ['an action that loads a row of one entity and writes another', (session) => {
+    session.edit('datasource_create', { name: 'scratch', kind: 'memory' })
+    session.edit('entity_create', { name: 'note', source: 'ds_scratch', fields: [{ name: 'title', type: 'text', required: true }] })
+    session.fixtureRow('.bildr/modules/blog/fixtures/note.json', 'ent_note', { id: '0b6f6a52-1c7a-4c1e-9a52-7a0e2f3d9b01', title: 'First note' })
+    session.edit('action_create', { entity: 'ent_note', template: 'blank', name: 'pinNote' })
+    session.edit('action_update', {
+      action: 'act_pin_note',
+      http: { path: '/notes/:id/pin' },
+      input: { params: [{ name: 'id', type: 'uuid', from: 'route' }] },
+      errors: [{ type: 'post_missing', status: 404, message: 'Post not found.' }],
+      steps: [
+        { kind: 'load', as: 'post', repository: 'repo_post', op: 'get', args: { id: { $input: 'id' } }, orError: 'post_missing' },
+        { kind: 'repository', repository: 'repo_note', op: 'delete', id: { $input: 'id' } }
+      ]
+    })
+  }],
   ['computed values that read each other, and a List that shows one', (session) => {
     session.edit('page_computed_set', { page: 'pg_index', as: 'label', if: { not: { $bind: 'preferences.showDrafts' } }, then: 'Featured posts', else: 'All posts' })
     session.edit('page_computed_set', { page: 'pg_index', as: 'heading', if: { $bind: 'preferences.showDrafts' }, then: { $bind: 'label' }, else: 'Posts' })
