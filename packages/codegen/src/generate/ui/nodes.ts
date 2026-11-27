@@ -7,6 +7,7 @@ import {
   CARD_DEFAULT_STYLE, CARD_STACK_KEYS, CARD_SURFACE_CLASS, CARD_SURFACE_STYLE, childrenInStack, CONTAINER_TAGS, containerTag, DEFAULT_HEADING_LEVEL, displayOf, fallbackStyle, fillStyle, HEADING_TOKENS, headingLevel, headingTag, ICON_CLASS, IMAGE_FALLBACK_STYLE, INPUT_CONTROL_CLASS, LINK_CLASS, LINK_ICON_CLASS, LINK_ICON_DISPLAY, linkTarget, LOAD_MORE_CLASS, LOAD_MORE_LABEL, loadMoreSize, NODE_ELEMENTS, nodePropProblems, selfFallback, structuralStyle, textClasses
 } from '../../render/rules.ts'
 import type { Field } from '../context.ts'
+import { actionContractNames } from '../contracts.ts'
 import { itemParam, itemPosition, loadMoreCounter } from '../names.ts'
 import { identifier, kebab, pascal, tsString } from '../text.ts'
 import type { Env } from './env.ts'
@@ -302,9 +303,11 @@ export const form = (env: Env, node: ModelNode, extra: Attr[], indent: string, o
   if (!entity) return fail(env, node, 'a Form needs an action with an entity input')
   const ids = Array.isArray(node.props?.fields) ? node.props.fields : []
   const fields = ids.map(id => entity.fields.find(field => field.id === id) ?? fail(env, node, `unknown field ${String(id)}`))
-  env.form = { fields }
+  env.form = { fields, contract: actionContractNames(env.context!, action) }
   env.needs.add('form')
-  const attrs = [...extra, ...styleAttrs(env, node, { display: displayOf(node.type), fallback: fallbackOf(node, options) }), ...events(env, node)]
+  // UForm validates with `formSchema` as the user types and on submit; the browser's own checks would stop it first.
+  const validation = [boundAttr('schema', 'formSchema'), boundAttr('state', 'form'), attr('attr', 'novalidate')]
+  const attrs = [...extra, ...validation, ...styleAttrs(env, node, { display: displayOf(node.type), fallback: fallbackOf(node, options) }), ...events(env, node)]
   return element(NODE_ELEMENTS.Form, attrs, slotted(env, node, children(env, node, indent, options), `${indent}  `, options), indent)
 }
 

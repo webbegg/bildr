@@ -371,7 +371,7 @@
     },
     "layers/blog/app/pages/posts/new.vue": {
       "owner": "managed",
-      "sha256": "747d7b81580fc5469c7f23f4fc8c0b673e847a60c93ccf7eaf0cc9dfca5cfe22",
+      "sha256": "8dde5b7837aafbcc9aad1cae0cf1e0ccebf58cdc8ab7baca2e9009d3679521dc",
       "source": ".bildr/modules/blog/pages/new-post.json"
     },
     "layers/blog/app/pages/weather/[city].vue": {

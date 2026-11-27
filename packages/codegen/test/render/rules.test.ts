@@ -167,7 +167,7 @@ describe('render rules', () => {
   it('names the element of each type', () => {
     expect(headingTag(DEFAULT_HEADING_LEVEL)).toBe('h2')
     expect(headingTag(5)).toBe('h5')
-    expect(NODE_ELEMENTS).toMatchObject({ Text: 'p', Button: 'UButton', Checkbox: 'UCheckbox', Form: 'form', Link: 'ULink', Image: 'img', Input: 'UFormField', InputControl: 'UInput', InputMultiline: 'UTextarea' })
+    expect(NODE_ELEMENTS).toMatchObject({ Text: 'p', Button: 'UButton', Checkbox: 'UCheckbox', Form: 'UForm', Link: 'ULink', Image: 'img', Input: 'UFormField', InputControl: 'UInput', InputMultiline: 'UTextarea' })
     expect(CONTAINER_TAGS[0]).toBe('div')
     expect(INPUT_CONTROL_CLASS).toBe('w-full')
   })
