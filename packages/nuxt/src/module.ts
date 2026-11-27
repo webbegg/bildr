@@ -144,6 +144,8 @@ const bildrModule: NuxtModule<ModuleOptions, ModuleOptions, false> = defineNuxtM
         if (result.healthError) logger.warn(`bildr could not update the health report: ${result.healthError}`)
         if (!result.ok && 'problems' in result) {
           logger.warn(['bildr model has problems, the app was not regenerated:', ...result.problems.map(problem => `  - ${problem.path}: ${problem.message}`)].join('\n'))
+        } else if (!result.ok && 'held' in result) {
+          logger.warn(`bildr kept the app as it is: ${result.error}`)
         } else if (!result.ok) {
           logger.warn(`bildr can't generate this model yet, the app was not regenerated: ${result.error}`)
         } else {

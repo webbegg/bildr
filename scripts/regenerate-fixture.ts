@@ -9,6 +9,7 @@ import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { generate } from '../packages/codegen/src/generate/index.ts'
 import { loadModel } from '../packages/codegen/src/model/load.ts'
+import { GENERATOR_VERSION } from '../packages/codegen/src/starter/version.ts'
 import { planSync } from '../packages/codegen/src/sync/plan.ts'
 
 const name = process.argv[2] ?? 'blog'
@@ -40,7 +41,7 @@ for (const write of plan.writes) {
   writeFileSync(join(root, write.path), write.content)
 }
 for (const path of plan.deletes) rmSync(join(root, path))
-writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, files: plan.manifest }, null, 2)}\n`)
+writeFileSync(manifestPath, `${JSON.stringify({ ...manifest, generatorVersion: GENERATOR_VERSION, files: plan.manifest }, null, 2)}\n`)
 
 const { written, deleted, detached, orphaned } = plan.report
 console.log(JSON.stringify({ written, deleted, detached, orphaned }, null, 2))

@@ -50,6 +50,20 @@ describe('project_update', () => {
     p.edit('project_update', { description: 'Notes.' })
     expect(p.json('.bildr/bildr.json').description).toBe('Notes.')
   })
+
+  // T6: the owner says they read MIGRATING.md: the project takes this generator's version, so bildr regenerates it again.
+  it('upgradeGenerator gives an older project this generator\'s version, and answers the one it had', () => {
+    const p = project({ ...fixtureModelFiles(), '.bildr/bildr.json': JSON.stringify({ ...JSON.parse(fixtureModelFiles()['.bildr/bildr.json']!), generatorVersion: '0.1.0' }) })
+    expect(p.edit('project_update', { upgradeGenerator: true })).toMatchObject({ generatorVersion: { from: '0.1.0', to: '0.2.0' } })
+    expect(p.json('.bildr/bildr.json').generatorVersion).toBe('0.2.0')
+    expect(p.refuse('project_update', { upgradeGenerator: true }, 'invalid').message).toBe('The project is already on generator 0.2.0')
+  })
+
+  it('upgradeGenerator never moves a newer project down: this generator would write older code over it', () => {
+    const p = project({ ...fixtureModelFiles(), '.bildr/bildr.json': JSON.stringify({ ...JSON.parse(fixtureModelFiles()['.bildr/bildr.json']!), generatorVersion: '0.3.0' }) })
+    expect(p.refuse('project_update', { upgradeGenerator: true }, 'invalid').message).toBe('The project is on generator 0.3.0, newer than this bildr\'s (0.2.0): update bildr instead')
+    expect(p.json('.bildr/bildr.json').generatorVersion).toBe('0.3.0')
+  })
 })
 
 describe('catalog_get', () => {

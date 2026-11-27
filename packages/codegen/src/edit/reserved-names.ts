@@ -157,3 +157,13 @@ export const API_DECLARED_NAMES: Record<string, string[]> = {
   // Only the globals of files that also name something of the model are here: the core HTTP client (HttpFailure, createHttpClient…) imports nothing from it.
   'a global the generated files use': ['Array', 'Error', 'Object', 'Partial', 'Promise', 'Record', 'String', 'T', 'console', 'encodeURIComponent', 'AbortSignal']
 }
+
+/**
+ * The types of the generated core (#core/kernel) that module files import next to the entity's own: an entity named `Result` or `Page`
+ * would be declared where `Result` or `Page` is imported, and `Id` or `Timestamp` would make `IdSchema` or `TimestampSchema` twice.
+ */
+export const KERNEL_TYPE_NAMES = ['Result', 'Page', 'PageRequest', 'Id', 'Timestamp', 'ApiError', 'DomainError', 'ErrorStatusMap', 'SourceFailureType', 'KernelResult']
+
+/** Why an entity can't take `name` (PascalCase), or undefined. */
+export const entityNameProblem = (name: string): string | undefined =>
+  KERNEL_TYPE_NAMES.includes(name) ? `"${name}" is a type of the generated app's core (#core/kernel): name the entity otherwise, like "${name}Item"` : undefined

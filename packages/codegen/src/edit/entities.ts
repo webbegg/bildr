@@ -7,6 +7,7 @@ import { camel, defineEdit, fail, kebab, pascal, uniqueName } from './core.ts'
 import type { Draft } from './core.ts'
 import { datasourceById, DataSourceRef } from './datasources.ts'
 import { sentence, spaced } from './naming.ts'
+import { entityNameProblem } from './reserved-names.ts'
 import { entityUsesOf, fieldUsesOf, refusalLabels } from './usage.ts'
 
 /**
@@ -269,6 +270,8 @@ export const entityCreate = defineEdit({
     if (source.kind === 'api') fail('invalid', `"${source.name}" is an API data source: it has queries and actions, not collections`)
     const name = pascal(given)
     if (!/^[A-Z][A-Za-z0-9]*$/.test(name)) fail('invalid', `"${given}" can't be an entity name: start with a letter, like "Post"`)
+    const kernel = entityNameProblem(name)
+    if (kernel) fail('invalid', kernel)
     const taken = mod.entities.find(entity => entity.name.toLowerCase() === name.toLowerCase())
     if (taken) fail('invalid', `Module "${module}" already has the entity ${taken.name} (${taken.id})`)
     const plural = givenPlural === undefined ? pluralOf(camel(name)) : camel(givenPlural)
@@ -370,6 +373,8 @@ export const entityUpdate = defineEdit({
     if (name !== undefined) {
       const value = pascal(name)
       if (!/^[A-Z][A-Za-z0-9]*$/.test(value)) fail('invalid', `"${name}" can't be an entity name: start with a letter, like "Post"`)
+      const kernel = entityNameProblem(value)
+      if (kernel) fail('invalid', kernel)
       const taken = mod.entities.find(other => other.id !== id && other.name.toLowerCase() === value.toLowerCase())
       if (taken) fail('invalid', `Module "${module}" already has the entity ${taken.name} (${taken.id})`)
       entity.name = value

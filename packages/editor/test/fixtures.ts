@@ -37,7 +37,7 @@ export const moduleFile = () => ({
 export const modelResult = () => ({
   ok: true,
   model: {
-    project: { schemaVersion: 1, generatorVersion: '0.1.0', starterKit: 'default', name: 'Demo', defaultModule: 'blog', modules: ['blog'] },
+    project: { schemaVersion: 1, generatorVersion: '0.2.0', starterKit: 'default', name: 'Demo', defaultModule: 'blog', modules: ['blog'] },
     datasources: [mainFile()],
     layouts: [],
     modules: {
