@@ -1,6 +1,7 @@
 import { apiFieldPaths } from '@bildr/codegen/edit'
 import type { Model, Value } from '@bildr/codegen/model'
 import { apiAutoArgs, apiChoices, apiMissingArgs, apiUseRows } from './apiPageUse.ts'
+import type { ApiParam } from './apiPageUse.ts'
 import { pageOf } from './nodeInteractions.ts'
 import { freeAlias } from './pageNames.ts'
 import { stateChoices, statePropExpect } from './stateBinding.ts'
@@ -9,8 +10,8 @@ import { stateChoices, statePropExpect } from './stateBinding.ts'
  * The data a page's text can show but the page doesn't use yet: its module's stores and every API query. The Insert variable menu
  * (EditorVariablePicker) lists them next to the names the page already reads, so one place offers all the data; picking a field adds the
  * page's use (`page_use_add` with `use`) and then inserts `{path}`. A store offers its fields a text shows (as the binding dot does); an
- * API query its answer's fields, or a list's `length`. A query whose required parameters the page's route doesn't give can't be added
- * from a text field: `missing` names them, and the page's "Data this page uses" asks for them.
+ * API query its answer's fields, or a list's `length`. A query whose required parameters the page's route doesn't give lists them in
+ * `missing`: the picker asks for them before it adds the use.
  */
 export interface PageDataOffer {
   /** The store's label, or "<API> · <query>". */
@@ -21,7 +22,7 @@ export interface PageDataOffer {
   /** What `{…}` reads once the use is added: `alias.field`. */
   paths: string[]
   /** The required parameters the page can't give by itself. */
-  missing: string[]
+  missing: ApiParam[]
 }
 
 /** What a Text's text takes: the same rule the binding dot offers a store's fields by. */
@@ -51,7 +52,7 @@ export function pageDataOffers(model: Model | null | undefined, pageId: string):
         source: 'api',
         use: { as, api: { datasource: choice.datasource, query: choice.query }, ...(Object.keys(args).length ? { args } : {}) },
         paths: fields.map(field => `${as}.${field}`),
-        missing: apiMissingArgs(choice.params, args).map(param => param.name)
+        missing: apiMissingArgs(choice.params, args)
       }]
     })
   return [...stores.values(), ...apis].filter(offer => offer.paths.length)

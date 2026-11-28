@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { PageFile } from '@bildr/codegen/model'
 import { Failure, allByTestId, byTestId, click, settle, typeInto } from '../helpers.ts'
 import { moduleEdits } from '../editor/dataKit.ts'
-import { caretAtEnd, choose, menuLabels, open, openPicker, pickerPick, pickerRow, pickerSearch, propRow, select, setupHarness, world } from './harness.ts'
+import { caretAtEnd, choose, menuLabels, open, openPicker, pickerLabels, pickerPick, pickerRow, pickerSearch, propRow, select, setupHarness, world } from './harness.ts'
 
 /**
  * What a page uses, with API queries (simple data P7b, B2, B3), mounted as the Design screen over the module's own edits: the page's
@@ -167,13 +167,42 @@ describe('the data picker of a text', () => {
     expect(props(actions)).toEqual([{ file: 'pg_new_post', nodeId: 'n_h1', props: { text: { $template: 'New post{preferences.appName}' } } }])
   })
 
-  it('inserts nothing when the use is refused, and a query that needs a parameter can\'t be picked', async () => {
+  it('asks a query\'s required parameters first, then shows its fields; the use is added with them', async () => {
+    const { actions } = await open(edits(), 'pg_new_post')
+    await select('n_h1')
+    caretAtEnd('text')
+    await openPicker('text')
+    expect(suffix('catalog · product')).toBe('Needs id')
+    await pickerPick('catalog · product')
+    const next = byTestId('picker-params-next') as HTMLButtonElement
+    expect(next.disabled).toBe(true)
+    await typeInto(byTestId('picker-arg-id'), '7')
+    expect(next.disabled).toBe(false)
+    await click(next)
+    expect(pickerLabels()).toEqual(expect.arrayContaining(['id', 'name', 'categories']))
+    await pickerPick('name')
+    expect(actions.named('page_use_add').map(call => call.input)).toEqual([{ page: 'pg_new_post', as: 'product', api: { datasource: 'ds_catalog', query: 'product' }, args: { id: 7 } }])
+    expect(props(actions)).toEqual([{ file: 'pg_new_post', nodeId: 'n_h1', props: { text: { $template: 'New post{product.name}' } } }])
+  })
+
+  it('goes back from the parameters to the sources, and keeps nothing it was given', async () => {
+    const { actions } = await open(edits(), 'pg_new_post')
+    await select('n_h1')
+    await openPicker('text')
+    await pickerPick('catalog · product')
+    await typeInto(byTestId('picker-arg-id'), '7')
+    await click(byTestId('picker-params-back'))
+    expect(pickerLabels()).toContain('catalog · product')
+    await pickerPick('catalog · product')
+    expect((byTestId('picker-params-next') as HTMLButtonElement).disabled).toBe(true)
+    expect(actions.named('page_use_add')).toEqual([])
+  })
+
+  it('inserts nothing when the use is refused', async () => {
     const { actions } = await open({ ...edits(), page_use_add: () => new Failure(422, 'invalid', 'Refused') }, 'pg_new_post')
     await select('n_h1')
     caretAtEnd('text')
     await openPicker('text')
-    expect(suffix('catalog · product')).toBe('Needs id: set it in Data this page uses')
-    expect(pickerRow('catalog · product')!.hasAttribute('data-disabled')).toBe(true)
     await pickerPick('catalog · products')
     await pickerPick('length')
     expect(actions.named('page_use_add')).toHaveLength(1)

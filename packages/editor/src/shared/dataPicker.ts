@@ -29,7 +29,7 @@ export interface PickerSource {
   leaves: string[]
   /** The page's use to add first, for a source the page doesn't use yet. */
   offer?: PageDataOffer
-  /** The required parameters the page can't give by itself: the source can't be picked from here. */
+  /** The names of the required parameters the page can't give by itself: the picker asks for them (the offer's `missing`) before its fields. */
   missing: string[]
 }
 
@@ -78,7 +78,7 @@ export function pickerSources(scope: readonly ScopeName[], offers: readonly Page
   const offered = offers.map((offer): PickerSource => {
     const fields = fieldTree(offer.use.as, offer.paths)
     const id = 'state' in offer.use ? `store:${offer.use.state}` : `api:${offer.use.api.datasource}:${offer.use.api.query}`
-    return { id, group: offer.source, label: offer.label, description: OFFER_WORDS[offer.source], alias: offer.use.as, fields, leaves: leavesOf(fields), offer, missing: offer.missing }
+    return { id, group: offer.source, label: offer.label, description: OFFER_WORDS[offer.source], alias: offer.use.as, fields, leaves: leavesOf(fields), offer, missing: offer.missing.map(param => param.name) }
   })
   return [...own, ...offered].filter(source => source.leaves.length)
 }

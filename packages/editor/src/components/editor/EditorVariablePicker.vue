@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 import type { CommandPaletteGroup, CommandPaletteItem } from '@nuxt/ui'
 import type { ScopeName } from '@bildr/codegen/edit'
+import type { Value } from '@bildr/codegen/model'
+import ApiArgInput from '../../design/ApiArgInput.vue'
 import { ACTION } from '../../editorUi.ts'
 import { useEditor } from '../../editor/useEditor.ts'
 import { insertAt, pathToken } from '../../shared/bindings.ts'
@@ -17,7 +19,7 @@ import { pageDataOffers } from '../../shared/pageDataOffers.ts'
  * field at once. Picking a field types `{path}` over the field's selection and emits `insert` with the new text (the parent commits
  * it, as a `{ $bind }` or `{ $template }`, see `textValue`), then puts focus and the caret back after the token; for a store or an
  * API query the page doesn't use yet, the page's use is added first (`page_use_add`), and a refused use inserts nothing. A query
- * whose required parameters the page's route doesn't give is shown, but its parameters are set in the page's Data this page uses.
+ * whose required parameters the page's route doesn't give asks for them first (ApiArgInput, as the page's Data this page uses does).
  * The field is the nearest input or textarea around the button. `names` lists other names instead, and no offers (a step's text in
  * the Interactions popover reads only what the generated handler resolves).
  */
@@ -45,7 +47,10 @@ async function choose(source: PickerSource, path: string) {
   const at = selectionOf(el)
   open.value = false
   const page = editor.page?.id
-  if (source.offer && (!page || !await editor.run('page_use_add', { page, ...source.offer.use }))) return
+  const use = source.offer && source.offer.missing.length && 'api' in source.offer.use
+    ? { ...source.offer.use, args: { ...source.offer.use.args, ...given.value } }
+    : source.offer?.use
+  if (use && (!page || !await editor.run('page_use_add', { page, ...use }))) return
   const result = insertAt(at.value, at.start, at.end, pathToken(path))
   emit('insert', result.text)
   caret = result.caret
@@ -74,6 +79,41 @@ const scope = computed(() => props.names ?? (editor.selectedId ? editor.scopeOf(
 const offers = computed(() => (props.names || !editor.selectedId || editor.component || editor.layout || !editor.page ? [] : pageDataOffers(editor.model, editor.page.id)))
 const sources = computed(() => pickerSources(scope.value, offers.value))
 
+/**
+ * A query that needs parameters the route doesn't give asks for them first (`asking`, the values in `given`), then lists its fields
+ * (`chosen`); the use is added with them when a field is picked. Each opening starts again from the sources.
+ */
+const asking = ref<PickerSource | null>(null)
+const chosen = ref<PickerSource | null>(null)
+const given = ref<Record<string, Value>>({})
+watch(open, (now) => {
+  if (!now) return
+  asking.value = null
+  chosen.value = null
+  given.value = {}
+  searchTerm.value = ''
+})
+const ask = (source: PickerSource) => {
+  given.value = {}
+  asking.value = source
+}
+const setGiven = (name: string, value: Value | null) => {
+  const next = { ...given.value }
+  if (value === null) Reflect.deleteProperty(next, name)
+  else next[name] = value
+  given.value = next
+}
+const ready = computed(() => !!asking.value?.offer?.missing.every(param => given.value[param.name] !== undefined))
+function toFields() {
+  chosen.value = asking.value
+  asking.value = null
+}
+function back() {
+  asking.value = null
+  chosen.value = null
+  given.value = {}
+}
+
 const ICONS: Record<PickerSource['group'], string> = { page: 'i-lucide-file-text', store: 'i-lucide-box', api: 'i-lucide-globe' }
 const GROUP_LABELS: Record<PickerSource['group'], string> = { page: 'This page reads', store: 'Stores', api: 'APIs' }
 
@@ -83,13 +123,14 @@ const fieldItem = (source: PickerSource, entry: PickerField): CommandPaletteItem
 
 function sourceItem(source: PickerSource): CommandPaletteItem {
   const base = { label: source.label, icon: ICONS[source.group] }
-  if (source.missing.length) return { ...base, suffix: `Needs ${source.missing.join(', ')}: set it in Data this page uses`, disabled: true }
+  if (source.missing.length) return { ...base, suffix: `Needs ${source.missing.join(', ')}`, onSelect: () => ask(source) }
   const lone = source.fields.length === 1 && source.fields[0]!.path === source.alias ? source.fields[0]! : undefined
   if (lone) return { ...base, suffix: source.description, onSelect: () => void choose(source, lone.path!) }
   return { ...base, suffix: source.description, placeholder: `Fields of ${source.label}…`, children: source.fields.map(entry => fieldItem(source, entry)) }
 }
 
 const groups = computed<CommandPaletteGroup[]>(() => {
+  if (chosen.value) return [{ id: 'fields', label: chosen.value.label, items: chosen.value.fields.map(entry => fieldItem(chosen.value!, entry)) }]
   const byGroup = (['page', 'store', 'api'] as const)
     .map(group => ({ id: group, label: GROUP_LABELS[group], items: sources.value.filter(source => source.group === group).map(sourceItem) }))
     .filter(group => group.items.length)
@@ -136,21 +177,79 @@ const PALETTE_UI = {
         />
       </button>
       <template #content>
-        <UCommandPalette
-          v-model:search-term="searchTerm"
-          :groups="groups"
-          :fuse="{ resultLimit: 50 }"
-          preserve-group-order
-          size="sm"
-          :ui="PALETTE_UI"
-          placeholder="Search data…"
-          class="h-[min(22rem,60vh)] w-72"
-          data-data-picker
+        <form
+          v-if="asking"
+          class="flex w-72 flex-col gap-2 p-3 text-[12px]"
+          data-picker-params
+          @submit.prevent="ready && toFields()"
         >
-          <template #empty>
-            Nothing to insert here
-          </template>
-        </UCommandPalette>
+          <p class="text-dimmed">
+            <span class="text-default">{{ asking.label }}</span> needs a value for what it reads. The page keeps it.
+          </p>
+          <label
+            v-for="param in asking.offer?.missing ?? []"
+            :key="param.name"
+            class="grid grid-cols-[4.5rem_minmax(0,1fr)] items-start gap-2 text-dimmed"
+          >
+            <span class="truncate pt-1 font-mono">{{ param.name }}</span>
+            <ApiArgInput
+              :param="param"
+              :value="given[param.name]"
+              :required="true"
+              :test-id="`picker-arg-${param.name}`"
+              @commit="setGiven(param.name, $event)"
+            />
+          </label>
+          <div class="flex justify-between gap-1">
+            <EditorButton
+              variant="ghost"
+              icon="i-lucide-arrow-left"
+              label="Back"
+              data-testid="picker-params-back"
+              @click="back"
+            />
+            <EditorButton
+              type="submit"
+              variant="primary"
+              label="Choose a field"
+              :disabled="!ready"
+              data-testid="picker-params-next"
+            />
+          </div>
+        </form>
+        <div
+          v-else
+          class="flex flex-col"
+        >
+          <button
+            v-if="chosen"
+            type="button"
+            class="flex items-center gap-1 px-3 pt-2 text-[11px] text-dimmed hover:text-default"
+            data-testid="picker-fields-back"
+            @click="back"
+          >
+            <UIcon
+              name="i-lucide-arrow-left"
+              class="size-3"
+            />
+            All data
+          </button>
+          <UCommandPalette
+            v-model:search-term="searchTerm"
+            :groups="groups"
+            :fuse="{ resultLimit: 50 }"
+            preserve-group-order
+            size="sm"
+            :ui="PALETTE_UI"
+            placeholder="Search data…"
+            class="h-[min(22rem,60vh)] w-72"
+            data-data-picker
+          >
+            <template #empty>
+              Nothing to insert here
+            </template>
+          </UCommandPalette>
+        </div>
       </template>
     </UPopover>
   </span>
