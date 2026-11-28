@@ -110,6 +110,7 @@ const setOption = (value: string) => emit('update', props.def.numeric ? Number(v
         :name="def.name"
         :prop="def"
         :value="value"
+        :picker="!chipped && !expression && TEXT_KINDS.includes(def.kind) && scope.length > 0"
         @update="emit('update', $event)"
       />
       <EditorFieldLabel

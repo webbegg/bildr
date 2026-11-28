@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { PageFile } from '@bildr/codegen/model'
 import { Failure, allByTestId, byTestId, click, settle, typeInto } from '../helpers.ts'
 import { moduleEdits } from '../editor/dataKit.ts'
-import { caretAtEnd, choose, menuLabels, open, openPicker, pickerLabels, pickerPick, pickerRow, pickerSearch, propRow, select, setupHarness, world } from './harness.ts'
+import { caretAtEnd, choose, menuLabels, open, openPicker, pickOpenItem, pickerLabels, pickerPick, pickerRow, pickerSearch, propInput, propRow, select, setupHarness, world } from './harness.ts'
 
 /**
  * What a page uses, with API queries (simple data P7b, B2, B3), mounted as the Design screen over the module's own edits: the page's
@@ -196,6 +196,19 @@ describe('the data picker of a text', () => {
     await pickerPick('catalog · product')
     expect((byTestId('picker-params-next') as HTMLButtonElement).disabled).toBe(true)
     expect(actions.named('page_use_add')).toEqual([])
+  })
+
+  it('is what the binding dot\'s Bind to data opens, the text\'s end where it inserts; the dot lists no store fields of its own for a text', async () => {
+    world.model.modules.blog!.state.find(state => state.id === 'st_preferences')!.fields.push({ id: 'fld_app_name', name: 'appName', type: 'text', default: 'Sample app' })
+    const { actions } = await open(edits(), 'pg_new_post')
+    await select('n_h1')
+    propInput('text')!.setSelectionRange(0, 0)
+    expect(await menuLabels(propRow('text')!.querySelector('[data-binding-dot]'))).toEqual(['Bind to data'])
+    await pickOpenItem('Bind to data')
+    expect(pickerLabels()).toEqual(expect.arrayContaining(['site', 'Blog preferences', 'catalog · products']))
+    await pickerPick('site')
+    await pickerPick('name')
+    expect(props(actions)).toEqual([{ file: 'pg_new_post', nodeId: 'n_h1', props: { text: { $template: 'New post{site.name}' } } }])
   })
 
   it('inserts nothing when the use is refused', async () => {

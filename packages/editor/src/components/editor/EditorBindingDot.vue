@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, useTemplateRef } from 'vue'
 import type { DropdownMenuItem } from '@nuxt/ui'
 import { bindingPaths } from '@bildr/codegen/edit'
 import { customColorNames, STYLE_HEX } from '@bildr/codegen/design'
@@ -47,6 +47,11 @@ type PropertyBinding = NonNullable<PropertyDef['bindings']>[number]
  * On a page, a prop that takes State (a Checkbox's value, the text a node shows, B4) lists the fields of the module's States the prop
  * can read, under each State's label: a field of a State the page does not use yet is bound the same way, the page's use being
  * added first (`bindPropToState`: a refused bind takes the use off again).
+ *
+ * A text prop whose row has the Insert variable button binds data through it: Bind to data opens that data picker
+ * (EditorVariablePicker: what the node reads, the module's stores and the API queries) with the caret at the text's end, so one
+ * picker offers all the data and the dot lists no State fields of its own there. A row without the button (its value a chip) keeps
+ * the names in scope as a submenu.
  */
 const props = defineProps<{
   mode: 'style' | 'prop'
@@ -54,6 +59,8 @@ const props = defineProps<{
   name: string
   prop?: PropDef
   value?: Value
+  /** The row's text field shows the Insert variable button: Bind to data opens it. */
+  picker?: boolean
 }>()
 const emit = defineEmits<{ update: [value: Value | null] }>()
 const editor = useEditor()
@@ -136,6 +143,24 @@ const stateOptions = computed<StateChoice[]>(() => {
   return expect && model ? stateChoices(model, placeOf(editor, node!.id), expect) : []
 })
 
+const trigger = useTemplateRef<HTMLElement>('trigger')
+/** The row's Insert variable button, when its text field shows. */
+const rowPicker = () => trigger.value?.closest('[data-prop-row]')?.querySelector<HTMLElement>('[data-variable-picker]') ?? null
+let pickerNext = false
+/** Bind to data: the row's data picker opens once the menu has closed (`menuClosed`), its insert going after the text. */
+function openPicker() {
+  const field = trigger.value?.closest('[data-prop-row]')?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea')
+  field?.setSelectionRange(field.value.length, field.value.length)
+  pickerNext = true
+}
+/** Focus going back to the dot would close the picker opening over it: it opens instead. */
+function menuClosed(event: Event) {
+  if (!pickerNext) return
+  pickerNext = false
+  event.preventDefault()
+  rowPicker()?.click()
+}
+
 const bindState = (choice: StateChoice) => {
   const node = single.value
   if (node) void bindPropToState(editor, node, props.name, choice)
@@ -185,9 +210,13 @@ const items = computed<DropdownMenuItem[][]>(() => {
   if (props.mode === 'prop' && dataBindable.value) {
     // The hosted dot inserted `{{ env.X }}` here; the model binds a name in scope (`{ $bind }`, or a `{ $template }` after text).
     const text = valueText(props.value)
-    const names = readable.value.map(path => ({ label: path, icon: 'i-lucide-database', onSelect: () => emit('update', textValue(`${text}${pathToken(path)}`, scopeNames.value)) }))
     // A brace group that is no name cannot sit in a template (the model has no escape): the text must change first.
     const problem = readable.value.length ? appendProblem(text, readable.value[0]!, scopeNames.value) : undefined
+    if (props.picker) {
+      groups.push([{ label: 'Bind to data', icon: 'i-lucide-braces', disabled: !!problem, ...(problem ? { description: problem } : {}), onSelect: openPicker }])
+      return groups
+    }
+    const names = readable.value.map(path => ({ label: path, icon: 'i-lucide-database', onSelect: () => emit('update', textValue(`${text}${pathToken(path)}`, scopeNames.value)) }))
     groups.push([{ label: 'Bind to data', icon: 'i-lucide-braces', disabled: !names.length || !!problem, ...(problem ? { description: problem } : {}), children: names }])
   }
   // One group per State: its label, then the fields the prop can read.
@@ -218,8 +247,10 @@ const label = computed(() => {
     v-if="shown"
     :items="items"
     :content="{ side: 'left', align: 'start' }"
+    :on-close-auto-focus="menuClosed"
   >
     <button
+      ref="trigger"
       type="button"
       class="absolute -start-3 top-1/2 grid size-3 -translate-y-1/2 place-items-center rounded-full outline-none focus-visible:opacity-100 aria-expanded:opacity-100"
       :class="bound ? 'opacity-100' : 'opacity-0 group-hover/row:opacity-100'"

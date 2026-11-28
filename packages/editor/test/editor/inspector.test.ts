@@ -2,7 +2,7 @@ import { defineComponent, h } from 'vue'
 import { describe, expect, it } from 'vitest'
 import EditorCommitInput from '../../src/components/editor/EditorCommitInput.vue'
 import { click, mountWithApp, settle, typeInto } from '../helpers.ts'
-import { byLabel, chooseDevice, inspectorHead, menuItem, menuLabels, open, optionLabels, pickOpenItem, postCard, propInput, propRow, propSelect, resetStyle, select, selectLayer, selectOption, setupHarness, showVariant, styleField, typeStyle } from '../design/harness.ts'
+import { byLabel, chooseDevice, inspectorHead, menuItem, menuLabels, open, optionLabels, pickOpenItem, pickerPick, postCard, propInput, propRow, propSelect, resetStyle, select, selectLayer, selectOption, setupHarness, showVariant, styleField, typeStyle } from '../design/harness.ts'
 
 /**
  * The hosted inspector over the module (U4): the head, the Page section, the prop sections with the
@@ -490,7 +490,8 @@ describe('the binding dot and its chip', () => {
     const labels = await menuLabels(propRow('text')!.querySelector('[data-binding-dot]'))
     expect(labels).toEqual(['Bind to data'])
     await pickOpenItem('Bind to data')
-    await pickOpenItem('site.name')
+    await pickerPick('site')
+    await pickerPick('name')
     expect(actions.named('node_update_props').at(-1)?.input).toEqual({ file: 'pg_index', nodeId: 'n_h1', props: { text: { $template: 'Posts{site.name}' } } })
   })
 })
