@@ -92,6 +92,21 @@ await run('behaviour', async ({ page, browser, errors }) => {
   await page.waitForTimeout(300)
   await snap(page, 'b4-bound-chip')
 
+  // A text's binding dot opens the one data picker (the page's data, its stores and APIs), which stays open over the row.
+  await page.locator('[data-layer-id="n_h1"]').click()
+  const textRow = page.locator('[data-prop-row="text"]')
+  await textRow.waitFor()
+  await textRow.hover()
+  await textRow.locator('[data-binding-dot]').click()
+  await page.getByRole('menuitem', { name: /Bind to data/ }).click()
+  const dataPicker = page.locator('[data-data-picker]')
+  check(await until(() => dataPicker.isVisible()), 'Bind to data on a text opens the data picker')
+  await page.waitForTimeout(300)
+  const offered = (await dataPicker.innerText()).replace(/\s+/g, ' ')
+  check(await dataPicker.isVisible() && offered.includes('site') && offered.includes('Blog preferences'), `and it stays open, listing the page's data and its stores (${offered})`)
+  await page.keyboard.press('Escape')
+  await page.locator('[data-layer-id="n_toggle"]').click()
+
   // S4: the List's source depends on that value.
   await page.locator('[data-layer-id="n_list"]').click()
   const items = page.locator('[data-testid="list-items"]')
