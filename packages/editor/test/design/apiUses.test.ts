@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { PageFile } from '@bildr/codegen/model'
 import { Failure, allByTestId, byTestId, click, settle, typeInto } from '../helpers.ts'
 import { moduleEdits } from '../editor/dataKit.ts'
-import { caretAtEnd, choose, menuLabels, open, propRow, select, setupHarness, variablePicker, world } from './harness.ts'
+import { caretAtEnd, choose, menuLabels, open, openPicker, pickerPick, pickerRow, pickerSearch, propRow, select, setupHarness, world } from './harness.ts'
 
 /**
  * What a page uses, with API queries (simple data P7b, B2, B3), mounted as the Design screen over the module's own edits: the page's
@@ -136,14 +136,73 @@ describe('the page\'s API uses', () => {
   })
 })
 
+// One place for all the data: the braces popover lists the sources first (what the page reads, its module's stores, the API queries it
+// doesn't use yet), then a source's fields; picking a field of one the page doesn't use adds the use, then inserts it.
+describe('the data picker of a text', () => {
+  const props = (actions: Awaited<ReturnType<typeof open>>['actions']) => actions.named('node_update_props').map(call => call.input)
+  const suffix = (label: string) => pickerRow(label)?.querySelector('[data-slot="itemLabelSuffix"]')?.textContent?.trim()
+
+  it('lists the sources first, an API query the page doesn\'t use among them; picking its field adds the use, then inserts it', async () => {
+    const { actions } = await open(edits(), 'pg_new_post')
+    await select('n_h1')
+    caretAtEnd('text')
+    expect(await openPicker('text')).toEqual(['createPost', 'site', 'catalog · products', 'catalog · product', 'weather · forecast'])
+    expect(suffix('catalog · products')).toBe('API, added to this page')
+    expect(await pickerPick('catalog · products')).toEqual(['length'])
+    await pickerPick('length')
+    expect(actions.named('page_use_add').map(call => call.input)).toEqual([{ page: 'pg_new_post', as: 'products', api: { datasource: 'ds_catalog', query: 'products' } }])
+    expect(props(actions)).toEqual([{ file: 'pg_new_post', nodeId: 'n_h1', props: { text: { $template: 'New post{products.length}' } } }])
+    expect(page('pg_new_post').uses!.apis).toEqual([{ as: 'products', datasource: 'ds_catalog', query: 'products' }])
+  })
+
+  it('offers a store\'s text fields, and binds one with the store added to the page', async () => {
+    world.model.modules.blog!.state.find(state => state.id === 'st_preferences')!.fields.push({ id: 'fld_app_name', name: 'appName', type: 'text', default: 'Sample app' })
+    const { actions } = await open(edits(), 'pg_new_post')
+    await select('n_h1')
+    caretAtEnd('text')
+    expect(await openPicker('text')).toContain('Blog preferences')
+    expect(await pickerPick('Blog preferences')).toEqual(['appName'])
+    await pickerPick('appName')
+    expect(actions.named('page_use_add').map(call => call.input)).toEqual([{ page: 'pg_new_post', as: 'preferences', state: 'st_preferences' }])
+    expect(props(actions)).toEqual([{ file: 'pg_new_post', nodeId: 'n_h1', props: { text: { $template: 'New post{preferences.appName}' } } }])
+  })
+
+  it('inserts nothing when the use is refused, and a query that needs a parameter can\'t be picked', async () => {
+    const { actions } = await open({ ...edits(), page_use_add: () => new Failure(422, 'invalid', 'Refused') }, 'pg_new_post')
+    await select('n_h1')
+    caretAtEnd('text')
+    await openPicker('text')
+    expect(suffix('catalog · product')).toBe('Needs id: set it in Data this page uses')
+    expect(pickerRow('catalog · product')!.hasAttribute('data-disabled')).toBe(true)
+    await pickerPick('catalog · products')
+    await pickerPick('length')
+    expect(actions.named('page_use_add')).toHaveLength(1)
+    expect(props(actions)).toEqual([])
+  })
+
+  it('opens a nested model and a list as levels of their own, and searching lists every field at once', async () => {
+    await open(edits(), 'pg_shop_catalog')
+    await select('n_product')
+    caretAtEnd('text')
+    expect(await openPicker('text')).toEqual(['product', 'products', 'site', 'catalog · product', 'weather · forecast'])
+    expect(await pickerPick('product')).toEqual(['id', 'name', 'price', 'inStock', 'createdAt', 'note', 'categories'])
+    expect(await pickerPick('categories')).toEqual(['length'])
+    await open(edits(), 'pg_shop_catalog')
+    await select('n_product')
+    await openPicker('text')
+    expect(await pickerSearch('price')).toContain('product.price')
+  })
+})
+
 describe('the binding pickers over an API query\'s fields (B3)', () => {
   it('offer the fields of the item of a List over it, nested paths included, and the list\'s length', async () => {
     await open(edits(), 'pg_shop_catalog')
     await select('n_product')
     caretAtEnd('text')
-    const labels = await menuLabels(variablePicker('text'))
+    await openPicker('text')
+    const labels = await pickerSearch('product')
     expect(labels).toEqual(expect.arrayContaining(['product.id', 'product.name', 'product.price', 'product.inStock', 'product.createdAt', 'product.note', 'product.categories.length', 'products.length']))
-    expect(labels).not.toContain('products')
+    expect(labels).not.toContain('product.categories')
   })
 
   it('offer a record\'s fields, and the nested ones of a model, for a query that answers one', async () => {
@@ -154,7 +213,8 @@ describe('the binding pickers over an API query\'s fields (B3)', () => {
     await open(edits(), 'pg_shop_catalog')
     await select('n_note')
     caretAtEnd('text')
-    const labels = await menuLabels(variablePicker('text'))
+    await openPicker('text')
+    const labels = await pickerSearch('.')
     expect(labels).toEqual(expect.arrayContaining(['featured.id', 'featured.name', 'featured.categories.length']))
     // The list of a many query reads by its length, a record by its fields.
     expect(labels).not.toContain('featured.length')
