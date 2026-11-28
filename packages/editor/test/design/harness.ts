@@ -286,6 +286,42 @@ export const menuLabels = async (trigger: Element | null) => {
 /** The braces button of a prop row's text field (EditorVariablePicker). */
 export const variablePicker = (name: string) => propRow(name)?.querySelector<HTMLElement>('[data-variable-picker]') ?? null
 
+/** The rows of the open data picker (EditorVariablePicker's popover): each one's label, without the suffix saying what it is. */
+export const pickerLabels = () => [...document.body.querySelectorAll<HTMLElement>('[data-data-picker] [role="option"]')]
+  .map(option => option.querySelector<HTMLElement>('[data-slot="itemLabelBase"]')?.textContent?.trim() ?? '')
+
+/** Opens the data picker of a prop row's text field, as a user does, and answers its first level: the sources. */
+export const openPicker = async (name: string) => {
+  const trigger = variablePicker(name)
+  if (!trigger) throw new Error(`no data picker on ${name}`)
+  trigger.click()
+  await settle()
+  return pickerLabels()
+}
+
+/** The row of the open data picker labelled `label` exactly. */
+export const pickerRow = (label: string) => [...document.body.querySelectorAll<HTMLElement>('[data-data-picker] [role="option"]')]
+  .find(option => option.querySelector('[data-slot="itemLabelBase"]')?.textContent?.trim() === label)
+
+/** Picks the row `label` of the open data picker (a source or a nested model opens its fields), and answers the rows then shown. */
+export const pickerPick = async (label: string) => {
+  const row = pickerRow(label)
+  if (!row) throw new Error(`no picker row ${label}: ${pickerLabels().join(', ')}`)
+  row.click()
+  await settle()
+  return pickerLabels()
+}
+
+/** Types into the open data picker's search, and answers the rows then shown. */
+export const pickerSearch = async (term: string) => {
+  const input = document.body.querySelector<HTMLInputElement>('[data-data-picker] input')
+  if (!input) throw new Error('no data picker search')
+  input.value = term
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await settle()
+  return pickerLabels()
+}
+
 /** Puts the caret at the end of a prop row's text, where the variable picker types. */
 export const caretAtEnd = (name: string) => {
   const input = propInput(name)
