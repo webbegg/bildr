@@ -33,7 +33,7 @@ describe('pageDataOffers', () => {
 
   it('offers each API query the page doesn\'t use: a list by its length, one record by its fields', () => {
     const offers = pageDataOffers(fresh(), 'pg_new_post').filter(offer => offer.source === 'api')
-    expect(offers.map(offer => [offer.label, offer.use.as, offer.missing])).toEqual([
+    expect(offers.map(offer => [offer.label, offer.use.as, offer.missing.map(param => param.name)])).toEqual([
       ['catalog · products', 'products', []],
       ['catalog · product', 'product', ['id']],
       ['weather · forecast', 'forecast', ['city']]

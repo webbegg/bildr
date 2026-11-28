@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ScopeName } from '@bildr/codegen/edit'
 import { fieldTree, pickerSources } from '../../src/shared/dataPicker.ts'
+import type { ApiParam } from '../../src/shared/apiPageUse.ts'
 import type { PageDataOffer } from '../../src/shared/pageDataOffers.ts'
 
 /** The Insert variable popover's two levels: the sources a text reads, then each one's fields, nested models and lists as levels of their own. */
@@ -29,7 +30,7 @@ describe('pickerSources', () => {
   ]
   const offers: PageDataOffer[] = [
     { label: 'Blog preferences', source: 'store', use: { as: 'preferences', state: 'st_preferences' }, paths: ['preferences.appName'], missing: [] },
-    { label: 'catalog · product', source: 'api', use: { as: 'product', api: { datasource: 'ds_catalog', query: 'product' } }, paths: ['product.name'], missing: ['id'] }
+    { label: 'catalog · product', source: 'api', use: { as: 'product', api: { datasource: 'ds_catalog', query: 'product' } }, paths: ['product.name'], missing: [{ name: 'id', in: 'path', type: 'integer' } as ApiParam] }
   ]
 
   it('lists what the page reads, then the stores and APIs it would add, each with what it is and its fields', () => {
