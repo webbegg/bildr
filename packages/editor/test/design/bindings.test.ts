@@ -3,7 +3,7 @@ import { applyEdit } from '../../../codegen/src/edit/index.ts'
 import { blogModelFiles } from '../canvas/fixture.ts'
 import { allByTestId, byTestId, click, Failure, settle, typeInto } from '../helpers.ts'
 import { behaviourModule } from '../editor/dataKit.ts'
-import { caretAtEnd, check, choose, combo, find, indexPage, insertComponent, insertType, menuLabels, open, optionLabels, pickOpenItem, propInput, propRow, propSelect, select, selectOption, setupHarness, variablePicker, world } from './harness.ts'
+import { caretAtEnd, check, choose, combo, find, indexPage, insertComponent, insertType, menuLabels, open, openPicker, optionLabels, pickerPick, pickerSearch, propInput, propRow, propSelect, select, selectOption, setupHarness, world } from './harness.ts'
 
 /**
  * The binding panels (P5, mapping §4): a List's source and its query's sort, filter and
@@ -110,10 +110,11 @@ describe('what a prop can bind', () => {
     const { actions } = await open({ node_update_props: ok() }, 'pg_index')
     await select('n_h1')
     caretAtEnd('text')
-    const labels = await menuLabels(variablePicker('text'))
-    expect(labels).toContain('site.name')
-    expect(labels).not.toContain('post.title')
-    await pickOpenItem('site.name')
+    const sources = await openPicker('text')
+    expect(sources).toContain('site')
+    expect(sources).not.toContain('post')
+    expect(await pickerPick('site')).toEqual(['name', 'description'])
+    await pickerPick('name')
     expect(actions.named('node_update_props').map(call => call.input)).toEqual([{ file: 'pg_index', nodeId: 'n_h1', props: { text: { $template: 'Posts{site.name}' } } }])
   })
 
@@ -121,12 +122,12 @@ describe('what a prop can bind', () => {
     const { actions } = await open({ node_update_props: ok() }, 'pg_index')
     await select('n_read_more')
     caretAtEnd('text')
-    const labels = await menuLabels(variablePicker('text'))
+    await openPicker('text')
+    const labels = await pickerSearch('.')
     expect(labels).toContain('post.title')
     expect(labels).toContain('featured.length')
-    expect(labels).not.toContain('featured')
-    expect(labels).not.toContain('post')
-    await pickOpenItem('post.title')
+    expect(labels).not.toContain('featured.title')
+    await pickerPick('post.title')
     expect(lastProps(actions)).toEqual({ file: 'pg_index', nodeId: 'n_read_more', props: { text: { $template: 'Read more{post.title}' } } })
   })
 
@@ -257,8 +258,9 @@ describe('what a prop can bind', () => {
     const { actions } = await open({ node_update_props: ok() }, 'lay_main')
     await select('n_footer_link')
     caretAtEnd('text')
-    expect(await menuLabels(variablePicker('text'))).toEqual(expect.arrayContaining(['layout.title', 'site.name']))
-    await pickOpenItem('layout.title')
+    expect(await openPicker('text')).toEqual(['layout', 'site'])
+    await pickerSearch('title')
+    await pickerPick('layout.title')
     expect(lastProps(actions)).toMatchObject({ file: 'lay_main', nodeId: 'n_footer_link', props: { text: { $template: 'Built with Nuxt{layout.title}' } } })
   })
 })
