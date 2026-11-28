@@ -18,7 +18,4 @@ export type Post = z.infer<typeof PostSchema>
 export const NewPostSchema = PostSchema.omit({ createdAt: true, updatedAt: true, publishedAt: true })
 export type NewPost = z.input<typeof NewPostSchema>
 
-export const PostPatchSchema = NewPostSchema.omit({ id: true }).partial()
-export type PostPatch = z.infer<typeof PostPatchSchema>
-
 export const PostSlugSchema = PostSchema.shape.slug

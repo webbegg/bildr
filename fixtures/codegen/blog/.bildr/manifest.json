@@ -499,7 +499,7 @@
     },
     "layers/blog/shared/domain/post.ts": {
       "owner": "managed",
-      "sha256": "82a78b9a58e71be9db4fdaa6d3fdf4f2ae2c1fa09a8593fed0e9db0d9a7dae22",
+      "sha256": "93487b351eba6c55296452f5051a03f5c54a823f05539d9a207e2a9325e331c0",
       "source": ".bildr/modules/blog/entities/post.json"
     },
     "layers/blog/shared/domain/quote.ts": {

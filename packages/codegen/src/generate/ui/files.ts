@@ -2,7 +2,7 @@ import { apiQueryOf, apiRowsOf } from '../../edit/api-uses.ts'
 import { valueFormats } from '../../edit/formats.ts'
 import { VALUE_TYPES } from '../../model/field-types.ts'
 import type { Model } from '../../model/load.ts'
-import type { ComponentFile, LayoutFile, PageFile, PropertyDef, QueryFile, Value } from '../../model/schemas.ts'
+import type { ComponentFile, LayoutFile, PageFile, PropertyDef, Value } from '../../model/schemas.ts'
 import type { GeneratedFile } from '../../sync/plan.ts'
 import type { ModuleContext } from '../context.ts'
 import { entityNames } from '../context.ts'
@@ -125,11 +125,6 @@ export const pagePath = (path: string) => {
   return `${parts.length ? parts.join('/') : 'index'}.vue`
 }
 
-export const queryNames = (env: Env, query: QueryFile) => {
-  const entity = entityOf(env, undefined, query.from)
-  return { composable: composableOf(query.name), one: query.result === 'one' ? entityNames(entity).variable : undefined }
-}
-
 export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile => {
   const source = context.source(page.id)
   const env = newEnv(context.model, source, context)
@@ -144,7 +139,7 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
   }
   const queries = (uses.queries ?? []).map(entry => ({ ...entry, file: context.module.queries.find(query => query.id === entry.query) ?? fail(env, undefined, `unknown query ${entry.query}`) }))
   for (const { as, file } of queries) {
-    const one = queryNames(env, file).one
+    const one = file.result === 'one'
     // It loads, failed or has loaded as its `status` (`<as>Status`) says, as an API query does.
     const status = (check: string) => () => {
       use(env, `query:${as}`, 'status')
@@ -272,7 +267,7 @@ export const pageFile = (context: ModuleContext, page: PageFile): GeneratedFile 
   for (const { as, file, args } of queries) {
     const parts = env.used.get(`query:${as}`)
     if (!parts) continue
-    const { composable } = queryNames(env, file)
+    const composable = composableOf(file.name)
     const names = [parts.has('data') && `data: ${as}`, parts.has('status') && `status: ${useNames(as).status}`].filter(Boolean)
     const argList = file.params.map((param) => {
       const value = args?.[param.name]

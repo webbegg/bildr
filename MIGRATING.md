@@ -47,6 +47,7 @@ This version is a clean-architecture layout per module (`layers/<module>/`) on N
 ### Contracts, domain and composables
 
 - **One HTTP contract per route** in `layers/<module>/shared/contracts/<route>.ts`. API sources use `layers/apis/shared/contracts/<source>/`. Each contract holds the method, the path and the schema of what the route reads. The route and its client both import it, so a client you wrote should too, instead of spelling the path out.
+- **No `<Entity>PatchSchema` or `<Entity>Patch`.** Nothing generated used them. Code that imported one can derive it: `New<Entity>Schema.omit({ id: true }).partial()`.
 - **Domain rules** live in `layers/<module>/shared/domain/<entity>.rules.ts`. The use-case and the optimistic update share them.
 - **Composables** answer `{ data, status, error, refresh }`. Actions answer `{ run, pending, error }`, and `run` answers a `Result`. `error` is the source's typed error or `{ type: 'unexpected' }`.
 - **API sources** follow the same rings as a module, in `layers/apis/`: application, infrastructure, contracts, a server root in `server/utils/<source>.ts`, and a page root in `app/data/<source>.ts`.
@@ -54,7 +55,7 @@ This version is a clean-architecture layout per module (`layers/<module>/`) on N
 ### UI
 
 - **A Form is a `UForm`.** It validates with its action contract's schema (`formSchema`) as the user types and on submit, and shows the messages under each field. The submit handler is bound with `@submit`, not `@submit.prevent`. A select with no default starts empty.
-- **New reserved page names:** `formSchema` and `execute`, next to `form`, `route`, `props`, `site`, `layout`, `toast` and `set`. A page use named one of them has to be renamed.
+- **New reserved page name:** `formSchema`, next to `form`, `route`, `props`, `site`, `layout`, `toast` and `set`. A page use named one of them has to be renamed.
 - **Hover and pressed** are states, not variants: a component no longer takes them as a `variant` value.
 - **A guarded page** whose record doesn't exist answers 404 (`showError`).
 - Generated classes follow Tailwind's order. No-op classes are dropped.

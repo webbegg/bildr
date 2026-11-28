@@ -13,7 +13,7 @@ import { walk } from './tree.ts'
  */
 
 /** Names the generated page script declares itself: a use can't take them. */
-export const RESERVED = ['site', 'layout', 'route', 'form', 'formSchema', 'props', 'toast', 'set', 'execute']
+export const RESERVED = ['site', 'layout', 'route', 'form', 'formSchema', 'props', 'toast', 'set']
 
 /** Every alias a page already uses. */
 export const aliasesOf = (page: PageFile): string[] => [
