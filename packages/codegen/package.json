@@ -1,6 +1,6 @@
 {
   "name": "@bildr/codegen",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "The bildr model (.bildr/ files) and the generator that turns it into a clean-architecture Nuxt app. Pure TypeScript: no Vue, Nitro or fs.",
   "license": "MIT",
   "repository": {

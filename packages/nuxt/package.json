@@ -1,6 +1,6 @@
 {
   "name": "@bildr/nuxt",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "The bildr visual editor as a dev-only Nuxt module: `nuxt dev` serves it at /__bildr on starter-kit projects.",
   "license": "MIT",
   "repository": {
