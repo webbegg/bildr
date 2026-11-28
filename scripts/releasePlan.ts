@@ -38,8 +38,9 @@ export function releaseSteps(version: string, { dryRun, packDir = '' }: { dryRun
     step('typecheck', 'pnpm', 'run', 'typecheck'),
     // The migration tests use the golden fixture's drizzle-kit install (as in ci.yml).
     step('install golden fixture', 'pnpm', '--dir', 'fixtures/codegen/blog', 'install', '--frozen-lockfile'),
-    // A worker per CPU runs a many-core machine out of memory (the editor suites use happy-dom).
-    step('test', 'pnpm', 'run', 'test', '--maxWorkers=3')
+    // A worker per CPU runs a many-core machine out of memory (the editor suites use happy-dom). vitest itself: the `test` script
+    // already sets --maxWorkers, and vitest refuses the option twice.
+    step('test', 'pnpm', 'exec', 'vitest', 'run', '--maxWorkers=3')
   ]
   if (dryRun) return [...checks, step('pack', 'pnpm', '-r', '--filter', './packages/**', 'pack', '--pack-destination', packDir)]
   return [

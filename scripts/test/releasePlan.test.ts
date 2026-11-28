@@ -30,7 +30,8 @@ describe('releaseSteps', () => {
 
   it('runs the tests on a few workers, so a many-core machine does not run out of memory', () => {
     const test = releaseSteps('0.2.0', { dryRun: true }).find(step => step.label === 'test')
-    expect(test?.args).toEqual(['run', 'test', '--maxWorkers=3'])
+    // vitest itself, not `pnpm run test`: that script already sets --maxWorkers, and vitest refuses the option twice.
+    expect([test?.command, ...test!.args]).toEqual(['pnpm', 'exec', 'vitest', 'run', '--maxWorkers=3'])
   })
 
   it('runs every check before it commits, publishes or pushes', () => {
