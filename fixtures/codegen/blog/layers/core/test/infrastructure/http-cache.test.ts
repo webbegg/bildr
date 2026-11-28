@@ -184,8 +184,14 @@ const waiting = ({ holdWrites = false } = {}) => {
       calls.push(request)
       if (request.method !== 'GET' && !holdWrites) return Promise.resolve({ wrote: true })
       return new Promise((resolve, reject) => {
-        pending.push({ resolve, reject })
-        signal?.addEventListener('abort', () => reject(new HttpFailure(0, 'was cancelled', 'cancelled')), { once: true })
+        // Settled either way, the call stops listening: the request's signal outlives it, as a real client's does.
+        const cancel = () => reject(new HttpFailure(0, 'was cancelled', 'cancelled'))
+        const settle = <T>(done: (value: T) => void) => (value: T) => {
+          signal?.removeEventListener('abort', cancel)
+          done(value)
+        }
+        pending.push({ resolve: settle(resolve), reject: settle(reject) })
+        signal?.addEventListener('abort', cancel, { once: true })
       })
     }
     return cachedClient(call, cache, 60_000, signal)
